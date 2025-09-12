@@ -1,0 +1,14 @@
+name: Mirror to Epitech
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: {}
+
+jobs:
+  call:
+    uses: luis1454/epitech-mirror/.github/workflows/subtree-reusable.yml@main
+    with:
+      epitech_repo: git@github.com:EpitechPromo2027/G-EIP-600-lil-6-1-eip-luis.fernandes.git
+      branch: main
+      prefix: network
+    secrets: inherit
