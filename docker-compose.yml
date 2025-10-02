@@ -1,0 +1,9 @@
+services:
+  solana-cli:
+    build: .
+    image: network/solana-cli
+    command: ["--version"]
+    tty: true
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
