@@ -67,7 +67,7 @@ USAGE
         entrypoint.testnet.solana.com:8001
         entrypoint2.testnet.solana.com:8001
         entrypoint3.testnet.solana.com:8001
-        entrypoint4.testnet.solana.com:8001
+        # Some historical hosts may not exist; we filter unresolved below
       )
       ;;
     mainnet|mainnet-beta)
@@ -109,6 +109,7 @@ USAGE
     --wal-recovery-mode skip_any_corrupted_record
     --no-port-check
     --limit-ledger-size
+    --no-os-network-limits-test
   )
 
   if [[ -n "$vote_account_path" ]]; then
@@ -117,9 +118,29 @@ USAGE
     cmd+=(--no-voting)
   fi
 
+  # Only include entrypoints that resolve to avoid validator CLI errors
+  local resolved_count=0
   for entrypoint in "${entrypoints[@]}"; do
-    cmd+=(--entrypoint "$entrypoint")
+    local host="${entrypoint%%:*}"
+    if command -v getent >/dev/null 2>&1; then
+      if getent hosts "$host" >/dev/null 2>&1; then
+        cmd+=(--entrypoint "$entrypoint")
+        ((resolved_count++)) || true
+      else
+        echo "Warning: skipping unresolved entrypoint $entrypoint" >&2
+      fi
+    else
+      # Fallback: best-effort, include without pre-check
+      cmd+=(--entrypoint "$entrypoint")
+      ((resolved_count++)) || true
+    fi
   done
+
+  if [[ $resolved_count -eq 0 ]]; then
+    echo "Error: no entrypoints resolved for network '$network'." >&2
+    echo "Check DNS/connectivity or pass --entrypoint HOST:PORT via extra args." >&2
+    exit 1
+  fi
 
   cmd+=("${extra_args[@]}")
 

@@ -3,13 +3,18 @@ services:
     build: .
     image: network/silicium-node
     command: ["silicium-node", "start", "--network", "testnet"]
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     tty: true
     ports:
       - "8899:8899"
       - "8000-8020:8000-8020"
     volumes:
-      - .:/workspace
-      - ./data/ledger:/home/solana/.silicium/ledger
+      - .:/workspace:Z
+      - ./data/ledger:/home/solana/.silicium/ledger:Z
     working_dir: /workspace
     environment:
       - SILICIUM_NETWORK=testnet
+    security_opt:
+      - label=disable
