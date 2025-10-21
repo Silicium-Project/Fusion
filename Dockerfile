@@ -11,7 +11,6 @@ RUN apk add --no-cache \
         build-base \
         pkgconf \
         openssl-dev \
-        perl \
         eudev-dev \
         python3 \
         py3-pip \
@@ -28,8 +27,6 @@ RUN chmod +x /usr/local/bin/solana-entrypoint
 USER solana
 WORKDIR /home/solana
 SHELL ["/bin/bash", "-lc"]
-
-ENV OPENSSL_NO_VENDOR=1
 
 RUN curl -sSfL https://release.solana.com/stable/install | bash -s stable --data-dir /usr/local/solana \
     && curl https://sh.rustup.rs -sSf | bash -s -- -y \
