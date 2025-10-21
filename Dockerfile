@@ -11,8 +11,6 @@ RUN apk add --no-cache \
         build-base \
         pkgconf \
         openssl-dev \
-        perl \
-        perl-utils \
         eudev-dev \
         python3 \
         py3-pip \
@@ -30,10 +28,7 @@ USER solana
 WORKDIR /home/solana
 SHELL ["/bin/bash", "-lc"]
 
-ENV OPENSSL_NO_VENDOR=1
-
-RUN which perl \
-    && curl -sSfL https://release.solana.com/stable/install | bash -s stable --data-dir /usr/local/solana \
+RUN curl -sSfL https://release.solana.com/stable/install | bash -s stable --data-dir /usr/local/solana \
     && curl https://sh.rustup.rs -sSf | bash -s -- -y \
     && . "$HOME/.cargo/env" \
     && rustup component add rustfmt clippy \
