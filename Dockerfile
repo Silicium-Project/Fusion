@@ -1,28 +1,23 @@
-FROM debian:bookworm-slim
+FROM alpine:3.19
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    RUSTUP_HOME=/home/solana/.rustup \
+ENV RUSTUP_HOME=/home/solana/.rustup \
     CARGO_HOME=/home/solana/.cargo
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN apk add --no-cache \
         bash \
         ca-certificates \
         curl \
         git \
-        build-essential \
-        pkg-config \
-        libssl-dev \
-        libudev-dev \
-        libusb-1.0-0-dev \
-        libhidapi-dev \
+        build-base \
+        pkgconf \
+        openssl-dev \
+        eudev-dev \
         python3 \
-        python3-pip \
-        perl \
-    && update-ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+        py3-pip \
+    && update-ca-certificates
 
-RUN useradd -m -s /bin/bash solana \
+RUN addgroup -S solana \
+    && adduser -S -G solana -h /home/solana solana \
     && mkdir -p /usr/local/solana \
     && chown -R solana:solana /home/solana /usr/local/solana
 
@@ -32,8 +27,6 @@ RUN chmod +x /usr/local/bin/solana-entrypoint
 USER solana
 WORKDIR /home/solana
 SHELL ["/bin/bash", "-lc"]
-
-ENV OPENSSL_NO_VENDOR=1
 
 RUN curl -sSfL https://release.solana.com/stable/install | bash -s stable --data-dir /usr/local/solana \
     && curl https://sh.rustup.rs -sSf | bash -s -- -y \

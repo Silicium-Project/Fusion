@@ -1,6 +1,6 @@
 # Network
 
-Ce projet fournit une image Docker optimisée basée sur Debian slim permettant de déployer un nœud **Silicium**, une surcouche (layer 2) reposant sur la blockchain Solana. L'image embarque les CLI Solana et Anchor ainsi qu'un script de gestion qui facilite le lancement d'un validateur connecté au testnet ou au mainnet Solana.
+Ce projet fournit une image Docker légère basée sur Alpine Linux permettant de déployer un nœud **Silicium**, une surcouche (layer 2) reposant sur la blockchain Solana. L'image embarque les CLI Solana et Anchor ainsi qu'un script de gestion qui facilite le lancement d'un validateur connecté au testnet ou au mainnet Solana.
 
 ## Prérequis
 
