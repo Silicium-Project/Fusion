@@ -1,9 +1,15 @@
 services:
-  solana-cli:
+  silicium-node:
     build: .
-    image: network/solana-cli
-    command: ["--version"]
+    image: network/silicium-node
+    command: ["silicium-node", "start", "--network", "testnet"]
     tty: true
+    ports:
+      - "8899:8899"
+      - "8000-8020:8000-8020"
     volumes:
       - .:/workspace
+      - ./data/ledger:/home/solana/.silicium/ledger
     working_dir: /workspace
+    environment:
+      - SILICIUM_NETWORK=testnet
