@@ -1,6 +1,132 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+run_silicium_node() {
+  local subcommand="${1:-start}"
+  if [[ "${subcommand}" != "start" ]]; then
+    cat >&2 <<'USAGE'
+Usage: silicium-node start [--network testnet|mainnet] [--ledger PATH] [--identity PATH] [--vote-account PATH] [--rpc-port PORT]
+       [--dynamic-port-range START-END] [--] [additional solana-validator args]
+USAGE
+    exit 1
+  fi
+  shift || true
+
+  local network="${SILICIUM_NETWORK:-testnet}"
+  local ledger_dir="${SILICIUM_LEDGER_DIR:-$HOME/.silicium/ledger}"
+  local identity_path="${SILICIUM_IDENTITY_PATH:-$HOME/.config/solana/validator-identity.json}"
+  local vote_account_path="${SILICIUM_VOTE_ACCOUNT_PATH:-}"
+  local rpc_port="${SILICIUM_RPC_PORT:-8899}"
+  local dynamic_port_range="${SILICIUM_DYNAMIC_PORT_RANGE:-8000-8020}"
+  local extra_args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --network)
+        network="$2"
+        shift 2
+        ;;
+      --ledger)
+        ledger_dir="$2"
+        shift 2
+        ;;
+      --identity)
+        identity_path="$2"
+        shift 2
+        ;;
+      --vote-account)
+        vote_account_path="$2"
+        shift 2
+        ;;
+      --rpc-port)
+        rpc_port="$2"
+        shift 2
+        ;;
+      --dynamic-port-range)
+        dynamic_port_range="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        extra_args+=("$@")
+        break
+        ;;
+      *)
+        extra_args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  local rpc_url=""
+  local entrypoints=()
+  case "$network" in
+    testnet)
+      rpc_url="https://api.testnet.solana.com"
+      entrypoints=(
+        entrypoint.testnet.solana.com:8001
+        entrypoint2.testnet.solana.com:8001
+        entrypoint3.testnet.solana.com:8001
+        entrypoint4.testnet.solana.com:8001
+      )
+      ;;
+    mainnet|mainnet-beta)
+      rpc_url="https://api.mainnet-beta.solana.com"
+      entrypoints=(
+        entrypoint.mainnet-beta.solana.com:8001
+        entrypoint2.mainnet-beta.solana.com:8001
+        entrypoint3.mainnet-beta.solana.com:8001
+        entrypoint4.mainnet-beta.solana.com:8001
+      )
+      network="mainnet-beta"
+      ;;
+    *)
+      echo "Unknown network '$network'. Use 'testnet' or 'mainnet'." >&2
+      exit 1
+      ;;
+  esac
+
+  mkdir -p "$(dirname "$identity_path")" "$ledger_dir"
+  if [[ ! -f "$identity_path" ]]; then
+    solana-keygen new --no-bip39-passphrase --force --outfile "$identity_path" >/dev/null
+    echo "Generated validator identity at $identity_path"
+  fi
+
+  if [[ -n "$vote_account_path" && ! -f "$vote_account_path" ]]; then
+    mkdir -p "$(dirname "$vote_account_path")"
+    solana-keygen new --no-bip39-passphrase --force --outfile "$vote_account_path" >/dev/null
+    echo "Generated vote account keypair at $vote_account_path"
+  fi
+
+  solana config set --url "$rpc_url" >/dev/null
+
+  local cmd=(
+    solana-validator
+    --identity "$identity_path"
+    --ledger "$ledger_dir"
+    --rpc-port "$rpc_port"
+    --dynamic-port-range "$dynamic_port_range"
+    --wal-recovery-mode skip_any_corrupted_record
+    --no-port-check
+    --limit-ledger-size
+  )
+
+  if [[ -n "$vote_account_path" ]]; then
+    cmd+=(--vote-account "$vote_account_path")
+  else
+    cmd+=(--no-voting)
+  fi
+
+  for entrypoint in "${entrypoints[@]}"; do
+    cmd+=(--entrypoint "$entrypoint")
+  done
+
+  cmd+=("${extra_args[@]}")
+
+  echo "Starting silicium node on network '$network' (RPC URL: $rpc_url)"
+  exec "${cmd[@]}"
+}
+
 if [[ $# -eq 0 ]]; then
   exec solana
 fi
@@ -9,6 +135,10 @@ case "$1" in
   solana)
     shift
     exec solana "$@"
+    ;;
+  silicium-node)
+    shift
+    run_silicium_node "$@"
     ;;
   -*)
     exec solana "$@"
