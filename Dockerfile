@@ -33,7 +33,7 @@ RUN curl -sSfL https://release.solana.com/stable/install | bash -s stable --data
     && . "$HOME/.cargo/env" \
     && rustup component add rustfmt clippy \
     && rustup target add wasm32-unknown-unknown \
-    && cargo install --git https://github.com/coral-xyz/anchor anchor-cli --locked
+    && OPENSSL_NO_VENDOR=1 cargo install --git https://github.com/coral-xyz/anchor anchor-cli --locked
 
 ENV PATH="/home/solana/.local/share/solana/install/active_release/bin:/home/solana/.cargo/bin:${PATH}"
 
