@@ -4,6 +4,10 @@ FROM solanalabs/solana:stable
 ENV HOME=/home/solana
 WORKDIR /home/solana
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Script d'entrée qui enveloppe solana / solana-validator
 COPY docker/solana-entrypoint.sh /usr/local/bin/solana-entrypoint
 RUN chmod +x /usr/local/bin/solana-entrypoint \
