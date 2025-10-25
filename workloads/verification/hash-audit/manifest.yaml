@@ -1,0 +1,24 @@
+id: verification/hash-audit/sha256
+version: 0.1.0
+engine: container
+command: >
+  sha256sum {artifact} > computed.hash &&
+  diff -q computed.hash {expected_hash}
+resources:
+  cpu: 1
+  gpu: none
+  memory: 512Mi
+artifacts:
+  input:
+    - name: artifact
+      type: application/octet-stream
+    - name: expected_hash
+      type: text/plain
+  output:
+    - name: audit_report
+      type: text/plain
+validation:
+  policy: requires_non_producer
+payment:
+  unit: audit
+  estimated_cost: 0.0001

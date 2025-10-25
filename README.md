@@ -153,10 +153,113 @@ Toutes les variables définies dans `docker-compose.yml` peuvent être surcharg�
 
 ---
 
+## Tests
+
+Une suite Pytest couvre la logique du script d'entrée (sélection des réseaux, configuration du CLI, génération des clés).
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Les tests créent des stubs pour les binaires Solana, ils s'exécutent donc sans dépendances externes ni accès réseau, tout en validant les commandes critiques (lancement des nœuds, `solana balance`, `solana airdrop`, `solana transfer`, etc.).
+
+---
+
+## DSL de tests Silicium
+
+La suite `tests/test_entrypoint.py` ne contient plus de valeurs en dur : elle lit `tests/testdata.txt`, un fichier texte facile à éditer ligne par ligne.
+
+### Syntaxe
+
+| Mot-clé | Rôle |
+| --- | --- |
+| `var <nom> <valeur>` | Définit un placeholder référencé par `${nom}` ailleurs dans le fichier. |
+| `scenario <id>` / `end` | Début/fin d'un scénario. |
+| `desc <texte>` | Description libre (affichée dans les logs Pytest). |
+| `env <KEY> <value>` | Ajoute/écrase une variable d'environnement pour ce scénario. |
+| `op ...` | Décrit l'opération lancée par l'entrypoint. Types disponibles : `start_network [network] [extra args...]`, `cli_command <program> [args...]`, `airdrop <amount> <dest> [flags...]`, `transfer <dest> <amount> [flags...]`. |
+| `rule ...` | Assertion exécutée côté test (`expect_success`, `expect_failure`, `stderr_contains <txt>`, `log_contains <log> <snippet>`, `log_requires_entries <log>`, `file_exists <relative_path>`). |
+
+### Exemple minimal
+
+```txt
+var urls.localnet http://127.0.0.1:8899
+
+scenario localnet_uses_test_validator
+desc Vérifie que le CLI pointe sur le RPC local
+op start_network silicium
+rule expect_success
+rule log_contains solana config set --url ${urls.localnet}
+end
+```
+
+Ajouter un scénario = copier/coller ce bloc, adapter `op` et les `rule`. Aucun changement Python nécessaire.
+
+---
+
+## Catalogue de calculs (`workloads/`)
+
+Le dossier `workloads/` décrit les types de calcul que le réseau peut dispatcher.  
+Pour chaque profil (encodage vidéo, simulation mathématique, inference IA, rendu, data processing) on fournit :
+
+- un `manifest.yaml` machine-lisible (commande à exécuter, ressources nécessaires, artefacts attendus, règles de validation) ;
+- un `README.md` expliquant le format des entrées/sorties et les recommandations matérielles.
+
+Les devices téléchargent le manifest correspondant au job pour sélectionner le bon exécutable et reporter les preuves (hash, logs). Ajoutez vos propres profils en créant un nouveau sous-dossier dans `workloads/` puis en complétant les deux fichiers de référence.
+
+Chaque manifest de calcul référence au moins une opération de vérification (`workloads/verification/...`). Lors du scheduling, seuls des noeuds n'ayant pas participé au calcul peuvent exécuter la vérification correspondante, garantissant une séparation stricte entre production et audit.
+
+---
+
+## Architecture on-chain Silicium (briques prévues)
+
+| Programme | Responsabilité principale | Comptes clés |
+| --- | --- | --- |
+| **JobRegistry** | Enregistrement des jobs soumis via l'UI, escrow des SPL payés par les clients, suivi des fragments émis/réceptionnés. | PDA Job, coffre SPL, compte client. |
+| **FragmentCertifier** | Enregistre chaque fragment calculé, stocke le hash/proof fournie par le node, valide la cohérence via un quorum ou une preuve externe. | PDA Fragment, compte du compute node (stake), références vers JobRegistry. |
+| **ResultAssembler** | Agrège les fragments certifiés, publie le hash final et signale que le job est terminé (déblocage du paiement). | PDA Result, JobRegistry, comptes outputs (URI/IPFS). |
+| **StakeManager** | Gestion du staking / réputation des compute nodes (collatéral en SPL, slashing en cas de fraude). | PDA Node, coffre staking, compte admin/gouvernance. |
+| **Governance** | Paramètres protocolaires (frais, listes blanches de Program IDs custom, gestion des mises à jour). | Realm (p.ex. SPL Governance), comptes de votes. |
+
+Flux simplifié : l'UI appelle JobRegistry pour créer un job + escrow SPL → les compute nodes réclament des fragments, les soumettent à FragmentCertifier → ResultAssembler valide que tous les fragments sont présents et signés → JobRegistry règle les nodes via StakeManager (bonus/malus). Cette découpe garde l'économie sous contrôle tout en permettant d'ajouter des “plugins” (programmes clients) via une liste blanche de Program IDs autorisés dans les CPI.
+
+---
+
+## Interface web & API (esquisse)
+
+### Écrans principaux
+1. **Dashboard client** : dépôt d'un job (upload artefacts, choisir ressources, budget SPL).  
+2. **Suivi de job** : timeline des fragments, statut (file d'attente, en cours, agrégé), lien vers résultat final.  
+3. **Compute node console** : enregistrement/staking, liste des tâches assignées, preuves soumises, récompenses.  
+4. **Gouvernance** : votes sur mises à jour, limites économiques, programmes autorisés.
+
+### API backend (REST/GraphQL minimal)
+| Endpoint | Description |
+| --- | --- |
+| `POST /jobs` | Crée un job, renvoie l'instruction Solana à signer pour JobRegistry + métadonnées IPFS/S3. |
+| `GET /jobs/:id` | Statut agrégé (on-chain + off-chain). |
+| `POST /nodes/register` | Fournit l'instruction StakeManager à signer (stake, KYC éventuel). |
+| `POST /fragments/:id/proof` | Upload de la preuve + signature qui seront ensuite poussées on-chain via FragmentCertifier. |
+| `GET /governance/proposals` | Liste synchrone avec le programme de gouvernance. |
+
+Le backend agit comme “indexeur” : il surveille les programmes Solana (via WebSocket RPC ou service type Helius), stocke les évènements pour l'UI, et prépare les transactions que les utilisateurs signeront dans leur wallet.
+
+---
+
+## Checklist exploitation Mainnet
+
+1. **Clés & secrets** : générer les keypairs validator/vote sur une machine hors-ligne, les injecter via volumes chiffrés, conserver des sauvegardes scellées.  
+2. **Monitoring** : activer Prometheus/Grafana ou au minimum `solana-validator --log` + alertes (RAM, vote distance, skipped slots).  
+3. **Réseau** : ouvrir uniquement les ports nécessaires (8899 + plage TPU), placer un reverse proxy TLS pour le RPC public, limiter les IP si besoin.  
+4. **Mises à jour** : script de rolling upgrade (arrêt propre, sauvegarde ledger, mise à jour Docker image, redémarrage, vérification `solana-validator monitor`).  
+5. **Sécurité applicative** : valider chaque nouvelle version des programmes on-chain (audit interne ou externe), publier les Program IDs et procédures de migration.  
+6. **Plan de reprise** : documenter la restauration à partir des backups (keypairs, snapshot Solana, configuration Docker), tester régulièrement.
+
+---
+
 ## Aller plus loin
 
 - Automatisez vos déploiements prod en injectant vos clés validator/vote via des volumes chiffrés.
 - Ajoutez un observateur ou un RPC privé en passant les flags Solana supplémentaires après `--` dans `command`.
 - Contribuez au script d'entrée pour gérer d'autres profils (clusters internes, entrypoints custom).
-
-Bonne construction de réseau Silicium !

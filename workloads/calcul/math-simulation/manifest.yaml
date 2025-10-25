@@ -1,0 +1,25 @@
+id: calcul/math-simulation/generic
+version: 0.1.0
+engine: python
+command: python simulate.py --config {config} --input {task} --out {output}
+resources:
+  cpu: 2
+  gpu: none
+  memory: 2Gi
+artifacts:
+  input:
+    - name: config
+      type: application/json
+    - name: task
+      type: application/octet-stream
+  output:
+    - name: result
+      type: application/json
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier: verification/statistical-consistency
+  hash: sha256
+payment:
+  unit: batch
+  estimated_cost: 0.0005

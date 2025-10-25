@@ -1,0 +1,26 @@
+id: calcul/video-encoding/h265-segment
+version: 0.2.0
+engine: container
+command: >
+  ffmpeg -y -i {input} -c:v {codec} -preset {preset} -crf {crf} -c:a copy {output}
+resources:
+  cpu: 4
+  gpu: optional
+  memory: 4Gi
+artifacts:
+  input:
+    - name: input
+      type: video/mp4
+    - name: encoding
+      type: application/json
+  output:
+    - name: segment
+      type: video/mp4
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier: verification/hash-audit
+  redundancy: 0.1
+payment:
+  unit: fragment
+  estimated_cost: 0.001

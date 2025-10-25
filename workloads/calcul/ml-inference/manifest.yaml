@@ -1,0 +1,26 @@
+id: calcul/ml-inference/embeddings
+version: 0.2.0
+engine: python
+command: python infer.py --model {model} --batch {batch} --out {output} --dtype {dtype}
+resources:
+  cpu: 4
+  gpu: optional
+  memory: 6Gi
+artifacts:
+  input:
+    - name: model
+      type: application/octet-stream
+    - name: batch
+      type: application/json
+  output:
+    - name: embeddings
+      type: application/json
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier:
+    - verification/hash-audit
+    - verification/statistical-consistency
+payment:
+  unit: batch
+  estimated_cost: 0.002

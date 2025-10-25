@@ -1,0 +1,26 @@
+id: calcul/rendering/blender
+version: 0.2.0
+engine: container
+command: blender -b {scene} -o {output_pattern} -f {frame}
+resources:
+  cpu: 8
+  gpu: optional
+  memory: 8Gi
+artifacts:
+  input:
+    - name: scene
+      type: application/octet-stream
+    - name: frame
+      type: text/plain
+  output:
+    - name: image
+      type: image/png
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier:
+    - verification/rendering-spotcheck
+    - verification/hash-audit
+payment:
+  unit: frame
+  estimated_cost: 0.003

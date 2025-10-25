@@ -1,0 +1,25 @@
+id: calcul/data-compression/zstd
+version: 0.1.0
+engine: container
+command: >
+  tar -cf {output_tar} {input_dir} &&
+  zstd -{level} {output_tar} -o {output} &&
+  sha256sum {output} > {hash_file}
+resources:
+  cpu: 2
+  gpu: none
+  memory: 2Gi
+artifacts:
+  input:
+    - name: input_dir
+      type: application/octet-stream
+  output:
+    - name: archive
+      type: application/zstd
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier: verification/hash-audit
+payment:
+  unit: batch
+  estimated_cost: 0.0008

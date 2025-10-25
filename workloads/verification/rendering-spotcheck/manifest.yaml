@@ -1,0 +1,31 @@
+id: verification/rendering-spotcheck/blender
+version: 0.1.0
+engine: container
+command: >
+  blender -b {scene} -o {output_pattern} -f {frame} &&
+  python compare.py --reference {reference} --candidate {candidate} --out {report}
+resources:
+  cpu: 4
+  gpu: optional
+  memory: 4Gi
+artifacts:
+  input:
+    - name: scene
+      type: application/octet-stream
+    - name: frame
+      type: text/plain
+    - name: reference
+      type: image/png
+  output:
+    - name: candidate
+      type: image/png
+    - name: report
+      type: application/json
+validation:
+  policy: requires_non_producer
+  metrics:
+    - name: psnr
+      threshold: 45
+payment:
+  unit: audit
+  estimated_cost: 0.0006

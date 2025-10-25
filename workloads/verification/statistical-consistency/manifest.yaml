@@ -1,0 +1,27 @@
+id: verification/statistical-consistency/subsample
+version: 0.1.0
+engine: python
+command: python verify_stats.py --config {config} --chunk {chunk} --subset {subset} --out {report}
+resources:
+  cpu: 2
+  gpu: optional
+  memory: 2Gi
+artifacts:
+  input:
+    - name: config
+      type: application/json
+    - name: chunk
+      type: application/json
+    - name: subset
+      type: text/plain
+  output:
+    - name: report
+      type: application/json
+validation:
+  policy: requires_non_producer
+  metrics:
+    - name: z_score
+      threshold: 3
+payment:
+  unit: audit
+  estimated_cost: 0.0004

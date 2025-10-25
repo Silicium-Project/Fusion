@@ -1,0 +1,24 @@
+id: calcul/monte-carlo/payoff
+version: 0.1.0
+engine: python
+command: python montecarlo.py --config {config} --seed {seed} --iterations {iterations} --out {output}
+resources:
+  cpu: 4
+  gpu: optional
+  memory: 4Gi
+artifacts:
+  input:
+    - name: config
+      type: application/json
+  output:
+    - name: chunk
+      type: application/json
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier:
+    - verification/statistical-consistency
+    - verification/hash-audit
+payment:
+  unit: chunk
+  estimated_cost: 0.002
