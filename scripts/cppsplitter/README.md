@@ -1,0 +1,147 @@
+# cppsplitter
+
+## Vue d'ensemble
+
+Ce dossier regroupe deux outils C++ expérimentaux destinés à l'analyse de binaires x86_64 :
+
+- `splitter` désassemble un exécutable (ELF ou PE), reconstruit les fonctions, analyse leurs dépendances, détecte certaines boucles et génère des fragments autonomes (ASM et code machine) accompagnés d'un fichier `summary.json`.
+- `fragment_executor` émule l'exécution de ces fragments en reconstruisant l'état des registres, avec une option facultative pour exécuter le code machine natif (JIT) à vos risques et périls.
+
+Les scripts s'appuient sur `objdump`/`readelf` (binutils) pour la phase de désassemblage et ciblent principalement un environnement Linux x86_64.
+
+## Contenu principal
+
+- `splitter.cpp` : découpeur/désassembleur de binaires, génère `.asm`, `.bin`, wrappers C et `summary.json`.
+- `fragment_executor.cpp` : exécuteur de fragments avec émulateur de registres et mode natif expérimental.
+- `splitter`, `fragment_executor`, `splitter_gui`, `splitter_test`, `fragment_executor_test` : binaires déjà compilés (Linux).
+- `disassembly_full.asm` : exemple de désassemblage complet produit par `splitter`.
+- `partitions/` & `partitions_test/` : sorties d'exemple contenant fragments, wrappers et `summary.json`.
+- `partitions/*.asm`, `*.bin`, `*_wrapper.c` : fragments individuels générés par `splitter`.
+
+## Prérequis
+
+- Linux x86_64 (le mode natif de `fragment_executor` repose sur `mmap`).
+- Un compilateur C++17 (`g++` 10+ recommandé).
+- binutils (`objdump`, `readelf`) disponibles dans le `PATH`.
+- Accès en lecture à l'exécutable à analyser.
+
+## Compilation
+
+- `make` : compile `splitter` et `fragment_executor` avec `g++` (C++17).
+- `make clean` : supprime les binaires générés et la sortie de démo.
+
+Si vous préférez compiler manuellement :
+
+```bash
+g++ -std=c++17 -O2 splitter.cpp -o splitter
+g++ -std=c++17 -O2 fragment_executor.cpp -o fragment_executor
+```
+
+Les binaires précompilés fournis peuvent être utilisés directement si votre plateforme correspond.
+
+## Démo automatisée
+
+Une cible `make demo` prépare un binaire jouet (`demo/hello.c`), lance le partitionnement puis exécute les fragments en mode émulation :
+
+```bash
+make demo
+```
+
+La sortie console montre :
+
+- l’exécution de `splitter` sur `demo/hello_demo`,
+- la génération des partitions dans `demo/output/`,
+- l’exécution séquentielle des fragments via `fragment_executor` (avec l’impression des registres modifiés).
+- les appels à `puts`/`printf` détectés pendant l’émulation sont rejoués pour capturer la sortie standard attendue dans `fragment_executor.log`, sans les messages de l’exécuteur.
+
+Une cible `make demo-native` relance la même chaîne mais tente le mode `--native`. Celui-ci mappe le code machine et peut planter selon votre environnement ; la cible ignore l’échec mais laissez-la uniquement pour vos propres expérimentations.
+
+⚠️ Le mode natif ne recrée pas la PLT/GOT du binaire original. Les fragments qui appellent des fonctions externes (ex. `puts@plt`) provoqueront donc un segfault lors d’une exécution isolée (`--native` sur un seul `.asm`). Ce mode sert uniquement à tester des fragments totalement autonomes ou à expérimenter une exécution complète via `--summary` associée au binaire d’origine.
+
+Pour automatiser compilation + découpage/exécution à partir d’un fichier source C/C++ :
+
+```bash
+make run PROGRAM=./chemin/vers/source.c        # mode émulation
+make run-native PROGRAM=./chemin/vers/source.c # mode natif (risqué)
+```
+
+Extensions supportées : `.c`, `.cc`, `.cxx`, `.cpp`. Les binaires intermédiaires sont placés dans `run_build/`.  
+Variables optionnelles : `OUT=<dir>` pour choisir le dossier de partitions, `LOG=<fichier>` pour fixer le fichier de capture (`fragment_executor.log` par défaut).
+
+Pour vérifier rapidement le comportement original (sans partitionnement) :
+
+```bash
+make run-binary PROGRAM=./chemin/vers/source.c ARGS="arg1 arg2"
+```
+
+Ensuite, utilisez les redirections shell habituelles (`< input.txt`, pipes…) pour fournir `stdin`.
+
+## Utilisation
+
+### 1. Découper un binaire
+
+```bash
+./splitter ./chemin/vers/binaire --output-dir partitions
+```
+
+Résultats générés par défaut :
+
+- `disassembly_full.asm` : désassemblage complet pour inspection.
+- `partitions/<id>.asm` : code assembleur Intel de chaque fragment.
+- `partitions/<id>.bin` : code machine brut (pour le mode natif).
+- `partitions/<id>_wrapper.c` : squelette C pour intégrer le fragment.
+- `partitions/summary.json` : métadonnées (dépendances, registres, parallélisabilité, chemins de fichiers).
+
+### 2. Exécuter des fragments
+
+- Exécution sécurisée (émulateur) sur un ou plusieurs fichiers ASM :
+
+  ```bash
+  ./fragment_executor partitions/func_3_main.asm --input rax=0x100 rbx=42
+  ```
+
+- Exécution en chaîne à partir du `summary.json` produit par `splitter` :
+
+  ```bash
+  ./fragment_executor --summary partitions/summary.json --input rax=0x0
+  ```
+
+  L'outil reconstruit l'ordre d'exécution via un tri topologique et injecte les valeurs `--input` requises par chaque fragment.
+
+- Mode natif (JIT) :
+
+  ```bash
+  ./fragment_executor --summary partitions/summary.json --native
+  ```
+
+  ⚠️ Ce mode mappe le code machine en mémoire exécutable. Les fragments qui appellent la PLT (ex. `puts`) dépendront d’un environnement identique au binaire original et peuvent crasher lorsqu’ils sont lancés isolément.
+
+Ajoutez l'option `--log fichier.log` pour enregistrer **uniquement** la sortie standard produite par les fragments (détection basique de `puts`/`printf` incluse).
+
+Les valeurs passées à `--input` peuvent être décimales ou hexadécimales (`0x...`). Après chaque fragment, l'outil affiche les registres modifiés et l'état global.
+
+## Exemple de flux de travail
+
+1. Compiler ou copier un binaire cible (ELF x86_64).
+2. `./splitter ./a.out --output-dir partitions_test`
+3. Inspecter `partitions_test/summary.json` et les fichiers ASM générés.
+4. `./fragment_executor --summary partitions_test/summary.json --input rax=0x0`
+5. Ajuster les entrées ou exécuter des fragments isolés selon les besoins.
+
+Les dossiers `partitions/` et `partitions_test/` fournis servent d'exemples reproductibles pour valider la chaîne.
+
+## Limitations connues
+
+- L'émulateur d'instructions couvre un sous-ensemble d'opcodes x86_64 courants (`mov`, `add`, `sub`, `xor`, `inc`, `dec`, `push`, `pop`, `ret`, `nop`). Les instructions inconnues sont ignorées, ce qui peut tronquer certains effets de bord.
+- La détection de boucles/parallélisabilité reste heuristique.
+- Le mode natif n'est implémenté que sous Linux et ne capture pas automatiquement l'état mémoire ; il est principalement destiné à des expérimentations locales.
+
+## Dépannage rapide
+
+- **`Erreur: objdump introuvable`** : installez `binutils` (`sudo apt install binutils` sur Debian/Ubuntu).
+- **Sorties vides ou partielles** : vérifiez que le binaire cible n'est pas stripé de toutes les symboles et que `objdump -d` le prend bien en charge.
+- **`--input` ignoré** : `fragment_executor` signale les registres fournis mais non consommés par les fragments déclarés dans le `summary.json`.
+
+## Ressources complémentaires
+
+Les fichiers `.asm`, `.bin` et `summary.json` générés constituent des points de départ pour brancher vos propres analyses, visualisations ou pipelines d'exécution.

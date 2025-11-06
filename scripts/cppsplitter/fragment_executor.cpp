@@ -22,6 +22,33 @@
 #include <cctype>
 #include <functional>
 #include <stdexcept>
+#include <elf.h>
+
+std::string ascii_from_uint64(uint64_t value) {
+    std::string bytes;
+    bytes.reserve(8);
+    bool has_printable = false;
+    for (int i = 0; i < 8; ++i) {
+        unsigned char byte = static_cast<unsigned char>((value >> (i * 8)) & 0xFF);
+        if (std::isprint(byte)) {
+            bytes.push_back(static_cast<char>(byte));
+            has_printable = true;
+        } else if (byte != 0) {
+            bytes.push_back('.');
+        } else {
+            bytes.push_back(' ');
+        }
+    }
+
+    if (!has_printable) {
+        return "";
+    }
+
+    while (!bytes.empty() && bytes.back() == ' ') {
+        bytes.pop_back();
+    }
+    return bytes;
+}
 
 #ifdef __linux__
 #include <sys/mman.h>
@@ -177,7 +204,12 @@ struct PartitionInfo {
     bool parallelizable = false;
 };
 
-std::vector<PartitionInfo> load_partition_summary(const std::string& summary_path) {
+struct PartitionSummary {
+    std::string binary_path;
+    std::vector<PartitionInfo> partitions;
+};
+
+PartitionSummary load_partition_summary(const std::string& summary_path) {
     std::ifstream file(summary_path);
     if (!file) {
         throw std::runtime_error("Impossible d'ouvrir le fichier de résumé: " + summary_path);
@@ -186,7 +218,7 @@ std::vector<PartitionInfo> load_partition_summary(const std::string& summary_pat
     std::string content((std::istreambuf_iterator<char>(file)),
                         std::istreambuf_iterator<char>());
     
-    std::vector<PartitionInfo> partitions;
+    PartitionSummary summary;
     
     size_t partitions_pos = content.find("\"partitions\"");
     if (partitions_pos == std::string::npos) {
@@ -237,15 +269,27 @@ std::vector<PartitionInfo> load_partition_summary(const std::string& summary_pat
             throw std::runtime_error("Résumé invalide: partition sans identifiant ou fichier ASM");
         }
         
-        partitions.push_back(std::move(info));
+        summary.partitions.push_back(std::move(info));
         cursor = obj_end + 1;
     }
     
-    if (partitions.empty()) {
+    size_t binary_pos = content.find("\"binary\"");
+    if (binary_pos != std::string::npos) {
+        size_t colon = content.find(':', binary_pos);
+        if (colon != std::string::npos) {
+            size_t quote1 = content.find('"', colon);
+            size_t quote2 = (quote1 != std::string::npos) ? content.find('"', quote1 + 1) : std::string::npos;
+            if (quote1 != std::string::npos && quote2 != std::string::npos && quote2 > quote1) {
+                summary.binary_path = content.substr(quote1 + 1, quote2 - quote1 - 1);
+            }
+        }
+    }
+    
+    if (summary.partitions.empty()) {
         throw std::runtime_error("Résumé valide mais aucune partition trouvée");
     }
     
-    return partitions;
+    return summary;
 }
 
 std::vector<const PartitionInfo*> build_execution_plan(const std::vector<PartitionInfo>& partitions) {
@@ -401,7 +445,12 @@ public:
             std::cout << std::setw(4) << reg << " = 0x" 
                       << std::hex << std::setw(16) << std::setfill('0') 
                       << val << std::dec << std::setfill(' ') 
-                      << " (" << val << ")\n";
+                      << " (" << val << ")";
+            std::string ascii = ascii_from_uint64(val);
+            if (!ascii.empty()) {
+                std::cout << "  '" << ascii << "'";
+            }
+            std::cout << "\n";
         }
         std::cout << "\nFlags: ZF=" << ZF << " SF=" << SF 
                   << " CF=" << CF << " OF=" << OF << "\n";
@@ -426,6 +475,7 @@ struct ExecutionResult {
     // Statistiques
     size_t instructions_executed = 0;
     size_t memory_accesses = 0;
+    std::string program_stdout;
     
     void print() const {
         if (!success) {
@@ -440,9 +490,24 @@ struct ExecutionResult {
         if (!changed_regs.empty()) {
             std::cout << "\n=== Registres modifiés ===\n";
             for (const auto& [reg, vals] : changed_regs) {
+                std::string ascii_before = ascii_from_uint64(vals.first);
+                std::string ascii_after = ascii_from_uint64(vals.second);
                 std::cout << std::setw(4) << reg << ": "
                           << "0x" << std::hex << std::setw(16) << std::setfill('0') << vals.first
-                          << " → 0x" << std::setw(16) << vals.second << std::dec << std::setfill(' ') << "\n";
+                          << " → 0x" << std::setw(16) << vals.second << std::dec << std::setfill(' ');
+                if (!ascii_before.empty() || !ascii_after.empty()) {
+                    std::cout << "  ('" << (ascii_before.empty() ? "" : ascii_before) 
+                              << "' → '" << (ascii_after.empty() ? "" : ascii_after) << "')";
+                }
+                std::cout << "\n";
+            }
+        }
+
+        if (!program_stdout.empty()) {
+            std::cout << "\n=== Sortie standard du fragment ===\n";
+            std::cout << program_stdout;
+            if (!program_stdout.empty() && program_stdout.back() != '\n') {
+                std::cout << "\n";
             }
         }
     }
@@ -456,6 +521,17 @@ class FragmentExecutor {
 private:
     RegisterEmulator emulator;
     bool use_native_execution;
+    std::string binary_path;
+    
+    struct SegmentMapping {
+        uint64_t vaddr = 0;
+        uint64_t memsz = 0;
+        uint64_t offset = 0;
+    };
+    
+    mutable bool segments_loaded = false;
+    mutable std::vector<SegmentMapping> segments;
+    mutable std::unordered_map<uint64_t, std::string> string_cache;
     
 public:
     FragmentExecutor(bool native = false) : use_native_execution(native) {}
@@ -469,6 +545,13 @@ public:
         for (const auto& [reg, val] : inputs) {
             emulator.set(reg, val);
         }
+    }
+
+    void set_binary_path(const std::string& path) {
+        binary_path = path;
+        segments_loaded = false;
+        segments.clear();
+        string_cache.clear();
     }
 
     uint64_t get_register(const std::string& reg) const {
@@ -554,8 +637,7 @@ public:
         try {
             // Exécuter le code (TRÈS DANGEREUX)
             void (*func)() = (void(*)())exec_mem;
-            func();
-            
+            result.program_stdout = capture_program_stdout([&]() { func(); });
             result.success = true;
         } catch (...) {
             result.error_message = "Crash pendant l'exécution native";
@@ -575,6 +657,138 @@ public:
     }
     
 private:
+#ifdef __linux__
+    std::string capture_program_stdout(const std::function<void()>& func) {
+        int pipefd[2];
+        if (pipe(pipefd) == -1) {
+            func();
+            return "";
+        }
+
+        int old_stdout = dup(STDOUT_FILENO);
+        if (old_stdout == -1) {
+            close(pipefd[0]);
+            close(pipefd[1]);
+            func();
+            return "";
+        }
+
+        fflush(stdout);
+        if (dup2(pipefd[1], STDOUT_FILENO) == -1) {
+            close(pipefd[0]);
+            close(pipefd[1]);
+            close(old_stdout);
+            func();
+            return "";
+        }
+        close(pipefd[1]);
+
+        std::string output;
+        try {
+            func();
+        } catch (...) {
+            fflush(stdout);
+            dup2(old_stdout, STDOUT_FILENO);
+            close(old_stdout);
+            close(pipefd[0]);
+            throw;
+        }
+
+        fflush(stdout);
+        dup2(old_stdout, STDOUT_FILENO);
+        close(old_stdout);
+
+        char buffer[256];
+        ssize_t n;
+        while ((n = read(pipefd[0], buffer, sizeof(buffer))) > 0) {
+            output.append(buffer, n);
+        }
+        close(pipefd[0]);
+        return output;
+    }
+#else
+    std::string capture_program_stdout(const std::function<void()>& func) {
+        func();
+        return "";
+    }
+#endif
+
+    bool ensure_segments_loaded() const {
+        if (segments_loaded || binary_path.empty()) {
+            return segments_loaded;
+        }
+        
+        std::ifstream bin(binary_path, std::ios::binary);
+        if (!bin) {
+            return false;
+        }
+        
+        Elf64_Ehdr ehdr;
+        bin.read(reinterpret_cast<char*>(&ehdr), sizeof(ehdr));
+        if (!bin || std::memcmp(ehdr.e_ident, ELFMAG, SELFMAG) != 0 || ehdr.e_ident[EI_CLASS] != ELFCLASS64) {
+            return false;
+        }
+        
+        bin.seekg(ehdr.e_phoff, std::ios::beg);
+        segments.clear();
+        for (uint16_t i = 0; i < ehdr.e_phnum; ++i) {
+            Elf64_Phdr phdr;
+            bin.read(reinterpret_cast<char*>(&phdr), sizeof(phdr));
+            if (!bin) {
+                segments.clear();
+                return false;
+            }
+            if (phdr.p_type == PT_LOAD && phdr.p_filesz > 0) {
+                SegmentMapping seg;
+                seg.vaddr = phdr.p_vaddr;
+                seg.memsz = phdr.p_memsz;
+                seg.offset = phdr.p_offset;
+                segments.push_back(seg);
+            }
+        }
+        
+        segments_loaded = true;
+        return true;
+    }
+
+    std::string read_string_from_binary(uint64_t address) const {
+        if (!ensure_segments_loaded()) {
+            return "";
+        }
+        
+        auto cache_it = string_cache.find(address);
+        if (cache_it != string_cache.end()) {
+            return cache_it->second;
+        }
+        
+        for (const auto& seg : segments) {
+            if (address >= seg.vaddr && address < seg.vaddr + seg.memsz) {
+                uint64_t offset = seg.offset + (address - seg.vaddr);
+                std::ifstream bin(binary_path, std::ios::binary);
+                if (!bin) {
+                    return "";
+                }
+                bin.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+                if (!bin) {
+                    return "";
+                }
+                std::string result;
+                result.reserve(64);
+                char c;
+                size_t count = 0;
+                while (count < 512 && bin.get(c)) {
+                    if (c == '\0') break;
+                    result.push_back(c);
+                    count++;
+                }
+                string_cache[address] = result;
+                return result;
+            }
+        }
+        
+        return "";
+    }
+
     bool emulate_instruction(const std::string& line, ExecutionResult& result) {
         // Parser l'instruction (format: address: opcode operands)
         size_t colon_pos = line.find(':');
@@ -604,6 +818,8 @@ private:
             return emulate_push(iss, result);
         } else if (opcode == "pop" || opcode == "popq") {
             return emulate_pop(iss, result);
+        } else if (opcode == "call" || opcode == "callq") {
+            return emulate_call(iss, result);
         } else if (opcode == "ret" || opcode == "retq") {
             return true; // Fin de fonction
         } else if (opcode == "nop") {
@@ -775,6 +991,43 @@ private:
         return true;
     }
     
+    bool emulate_call(std::istringstream& iss, ExecutionResult& result) {
+        std::string target;
+        std::getline(iss, target);
+        target = trim(target);
+        if (target.empty()) {
+            iss.clear();
+            iss >> target;
+        }
+        if (target.empty()) {
+            return true;
+        }
+        
+        // Gestion basique des appels à puts/printf pour capturer la sortie
+        if (target.find("puts") != std::string::npos) {
+            uint64_t addr = emulator.get("rdi");
+            std::string text = read_string_from_binary(addr);
+            if (!text.empty()) {
+                result.program_stdout += text;
+                result.program_stdout.push_back('\n');
+            }
+            emulator.set("rax", text.empty() ? 0 : text.size());
+            return true;
+        }
+        
+        if (target.find("printf") != std::string::npos) {
+            uint64_t addr = emulator.get("rdi");
+            std::string format = read_string_from_binary(addr);
+            if (!format.empty()) {
+                // Très simplifié: n'interprète pas les placeholders, affiche tel quel
+                result.program_stdout += format;
+            }
+            return true;
+        }
+        
+        return true;
+    }
+    
     uint64_t parse_immediate(const std::string& str) const {
         std::string s = str;
         if (s[0] == '$') s = s.substr(1);
@@ -798,9 +1051,27 @@ private:
 // ============================================================================
 
 int main(int argc, char* argv[]) {
+    bool log_missing_arg = false;
+    std::string log_path;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--log") {
+            if (i + 1 < argc) {
+                log_path = argv[i + 1];
+            } else {
+                log_missing_arg = true;
+            }
+            break;
+        }
+    }
+
+    if (log_missing_arg) {
+        std::cerr << "❌ Option --log requiert un fichier (ex: --log exec.log)\n";
+        return 1;
+    }
+
     if (argc < 2) {
-        std::cout << "Usage: " << argv[0] << " <asm_file> [<asm_file> ...] [--input reg=value ...] [--native]\n"
-                  << "   ou : " << argv[0] << " --summary partitions/summary.json [--input reg=value ...] [--native]\n\n"
+        std::cout << "Usage: " << argv[0] << " <asm_file> [<asm_file> ...] [--input reg=value ...] [--native] [--log fichier]\n"
+                  << "   ou : " << argv[0] << " --summary partitions/summary.json [--input reg=value ...] [--native] [--log fichier]\n\n"
                   << "Exemples:\n"
                   << "  " << argv[0] << " partition.asm\n"
                   << "  " << argv[0] << " func_0.asm func_1.asm --input rax=42 rbx=100\n"
@@ -808,8 +1079,18 @@ int main(int argc, char* argv[]) {
                   << "Options:\n"
                   << "  --summary fichier : Charger le graphe d'exécution généré par splitter\n"
                   << "  --input reg=value : Définir une valeur d'entrée pour un registre\n"
-                  << "  --native          : Exécution native (DANGEREUX!)\n";
+                  << "  --native          : Exécution native (DANGEREUX!)\n"
+                  << "  --log fichier     : Capture uniquement la sortie stdout des fragments dans un fichier\n";
         return 1;
+    }
+    
+    std::ofstream program_log;
+    if (!log_path.empty()) {
+        program_log.open(log_path, std::ios::out | std::ios::trunc);
+        if (!program_log) {
+            std::cerr << "⚠️  Impossible d'ouvrir le fichier de log: " << log_path << "\n";
+            log_path.clear();
+        }
     }
     
     std::vector<std::string> asm_files;
@@ -853,6 +1134,12 @@ int main(int argc, char* argv[]) {
                 std::cerr << "❌ Argument d'entrée invalide: " << input_arg << "\n";
                 return 1;
             }
+        } else if (arg == "--log") {
+            if (i + 1 >= argc) {
+                std::cerr << "❌ Option --log requiert un fichier (ex: --log exec.log)\n";
+                return 1;
+            }
+            i++;  // le chemin de log a déjà été traité en amont
         } else {
             asm_files.push_back(arg);
         }
@@ -869,12 +1156,19 @@ int main(int argc, char* argv[]) {
     }
     
     std::vector<PartitionInfo> partition_infos;
+    PartitionSummary summary_data;
     std::vector<const PartitionInfo*> ordered_partitions;
+    
+    FragmentExecutor executor(native_mode);
     
     if (!summary_file.empty()) {
         try {
-            partition_infos = load_partition_summary(summary_file);
+            summary_data = load_partition_summary(summary_file);
+            partition_infos = summary_data.partitions;
             ordered_partitions = build_execution_plan(partition_infos);
+            if (!summary_data.binary_path.empty()) {
+                executor.set_binary_path(summary_data.binary_path);
+            }
         } catch (const std::exception& e) {
             std::cerr << "❌ Erreur lors du chargement du graphe: " << e.what() << "\n";
             return 1;
@@ -884,9 +1178,6 @@ int main(int argc, char* argv[]) {
     std::cout << "╔════════════════════════════════════════════════════════════╗\n";
     std::cout << "║         EXÉCUTEUR DE FRAGMENTS BINAIRES                   ║\n";
     std::cout << "╚════════════════════════════════════════════════════════════╝\n";
-    
-    // Créer l'exécuteur
-    FragmentExecutor executor(native_mode);
     
     // Définir les entrées
     if (!inputs.empty()) {
@@ -1035,6 +1326,11 @@ int main(int argc, char* argv[]) {
         std::cout << "║                    RÉSULTATS                               ║\n";
         std::cout << "╚════════════════════════════════════════════════════════════╝\n\n";
         last_result.print();
+        
+        if (program_log && !last_result.program_stdout.empty()) {
+            program_log << last_result.program_stdout;
+            program_log.flush();
+        }
         
         if (!last_result.success) {
             all_success = false;
