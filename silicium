@@ -1,0 +1,981 @@
+#!/usr/bin/env python3
+"""
+Silicium project helper CLI and interactive shell.
+"""
+
+from __future__ import annotations
+
+import argparse
+import atexit
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Iterable
+
+try:
+    import readline
+except ImportError:  # pragma: no cover - windows fallback
+    readline = None  # type: ignore[assignment]
+
+try:
+    from colorama import Fore, Style, init as colorama_init
+except ImportError:  # pragma: no cover
+    colorama_init = None
+    Fore = Style = None  # type: ignore
+
+
+REPO_ROOT = Path(__file__).resolve().parent
+CPP_SPLITTER_DIR = REPO_ROOT / "tools" / "experiments" / "cppsplitter"
+WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
+DOCKER_BIN = os.environ.get("DOCKER", "docker")
+LEDGER_PREFIX = os.environ.get("SILICIUM_LEDGER_PREFIX", "silicium")
+LEDGER_SUFFIX = {
+    "localnet": "local-ledger",
+    "devnet": "devnet-ledger",
+    "testnet": "testnet-ledger",
+    "mainnet": "mainnet-ledger",
+}
+LEDGER_NETWORKS = sorted(LEDGER_SUFFIX.keys())
+START_TARGETS = {
+    "localnet": ("silicium-localnet", None),
+    "devnet": ("silicium-devnet", "devnet"),
+    "testnet": ("silicium-node", None),
+    "mainnet": ("silicium-mainnet", "mainnet"),
+    "proxy": ("silicium-proxy", "proxy"),
+    "proxy-smoke": ("proxy-smoke-target", "smoke"),
+}
+START_CHOICES = sorted(START_TARGETS.keys())
+SERVICE_MAP: dict[str, tuple[str, str | None]] = {}
+for alias, (svc, profile) in START_TARGETS.items():
+    SERVICE_MAP[alias] = (svc, profile)
+    SERVICE_MAP[svc] = (svc, profile)
+# Explicit compose service name
+SERVICE_MAP["proxy-smoke-target"] = START_TARGETS["proxy-smoke"]
+LOG_CHOICES = sorted(SERVICE_MAP.keys())
+HISTORY_FILE = Path.home() / ".silicium_history"
+COMPOSE_FILE = REPO_ROOT / "infra" / "docker-compose.yml"
+SERVICE_CHOICES = sorted(
+    {
+        "silicium-localnet",
+        "silicium-devnet",
+        "silicium-node",
+        "silicium-mainnet",
+        "silicium-proxy",
+        "proxy-smoke-target",
+    }
+)
+TOP_LEVEL_COMMANDS = [
+    "test",
+    "smoke",
+    "tools",
+    "clean",
+    "ledger",
+    "history",
+    "workload",
+    "start",
+    "stop",
+    "status",
+    "logs",
+    "exec",
+    "alias",
+    "shell",
+    "help",
+    "exit",
+    "quit",
+]
+SUBCOMMANDS = {
+    "tools": ["demo", "clean"],
+    "ledger": ["list", "wipe", "export", "import"],
+    "history": ["show", "clear"],
+    "clean": ["cache", "ledgers", "all"],
+    "workload": ["list", "show"],
+}
+
+COLOR_ENABLED = False
+if colorama_init:
+    colorama_init()
+    COLOR_ENABLED = True
+    COLOR_CYAN = Fore.CYAN
+    COLOR_GREEN = Fore.GREEN
+    COLOR_YELLOW = Fore.YELLOW
+    COLOR_RESET = Style.RESET_ALL
+else:  # pragma: no cover
+    COLOR_CYAN = COLOR_GREEN = COLOR_YELLOW = COLOR_RESET = ""
+
+
+def colorize(text: str, color: str) -> str:
+    if not COLOR_ENABLED:
+        return text
+    return f"{color}{text}{COLOR_RESET}"
+
+
+def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) -> None:
+    pretty = " ".join(cmd)
+    print(colorize(f">> {pretty}", COLOR_GREEN))
+    subprocess.run(cmd, cwd=cwd or REPO_ROOT, env=env, check=True)
+
+
+def remove_path(path: Path) -> None:
+    if not path.exists():
+        return
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def confirm(prompt: str) -> bool:
+    reply = input(f"{colorize(prompt, COLOR_YELLOW)} [y/N] ").strip().lower()
+    return reply in {"y", "yes"}
+
+
+def resolve_service(name: str) -> tuple[str, str | None]:
+    if name not in SERVICE_MAP:
+        print(f"Unknown service '{name}'.")
+        sys.exit(1)
+    return SERVICE_MAP[name]
+
+
+def compose_base() -> list[str]:
+    return [DOCKER_BIN, "compose", "-f", str(COMPOSE_FILE)]
+
+
+def compose_up(service: str, profile: str | None = None) -> None:
+    cmd = compose_base()
+    if profile:
+        cmd += ["--profile", profile]
+    cmd += ["up", "-d", service]
+    run(cmd)
+
+
+def compose_stop(service: str, profile: str | None = None, remove: bool = False) -> None:
+    cmd = compose_base()
+    if profile:
+        cmd += ["--profile", profile]
+    cmd += ["stop", service]
+    run(cmd)
+    if remove:
+        rm_cmd = compose_base()
+        if profile:
+            rm_cmd += ["--profile", profile]
+        rm_cmd += ["rm", "-f", service]
+        run(rm_cmd)
+
+
+def compose_down(volumes: bool = False) -> None:
+    cmd = compose_base() + ["down"]
+    if volumes:
+        cmd.append("-v")
+    run(cmd)
+
+
+def cmd_test(_: argparse.Namespace) -> None:
+    run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
+    run([sys.executable, "-m", "pip", "install", "-r", "requirements-dev.txt"])
+    run(["pytest"])
+
+
+def cmd_smoke(_: argparse.Namespace) -> None:
+    run(["tests/smoke/run_proxy_smoke.sh"])
+
+
+def cmd_tools_demo(_: argparse.Namespace) -> None:
+    run(["make", "demo"], cwd=CPP_SPLITTER_DIR)
+
+
+def cmd_tools_clean(_: argparse.Namespace) -> None:
+    run(["make", "clean"], cwd=CPP_SPLITTER_DIR)
+
+
+def clean_artifacts() -> None:
+    print(colorize("Cleaning caches and temporary artifacts...", COLOR_YELLOW))
+    paths = [
+        REPO_ROOT / ".pytest_cache",
+        REPO_ROOT / "tests" / "__pycache__",
+        CPP_SPLITTER_DIR / "run_build",
+        CPP_SPLITTER_DIR / "run_output",
+        CPP_SPLITTER_DIR / "fragment_executor.log",
+        CPP_SPLITTER_DIR / "disassembly_full.asm",
+    ]
+    for path in paths:
+        remove_path(path)
+    run(["make", "demo-clean"], cwd=CPP_SPLITTER_DIR)
+
+
+def cmd_clean(args: argparse.Namespace) -> None:
+    mode = args.mode or "cache"
+    if args.ledgers:
+        mode = "all"
+    if mode in {"cache", "all"}:
+        clean_artifacts()
+    if mode in {"ledgers", "all"}:
+        ledger_wipe(networks=list(LEDGER_SUFFIX.keys()), assume_yes=args.yes)
+
+
+def ledger_volume_name(network: str) -> str:
+    suffix = LEDGER_SUFFIX[network]
+    return f"{LEDGER_PREFIX}-{suffix}"
+
+
+def ledger_wipe(*, networks: Iterable[str], assume_yes: bool = False) -> None:
+    volumes = [ledger_volume_name(net) for net in networks]
+    if not volumes:
+        print("No ledger volumes selected.")
+        return
+    if not assume_yes:
+        listing = "\n  ".join(volumes)
+        if not confirm(f"Delete the following volumes?\n  {listing}"):
+            print("Aborted.")
+            return
+    for volume in volumes:
+        cmd = [DOCKER_BIN, "volume", "rm", "-f", volume]
+        try:
+            run(cmd)
+        except subprocess.CalledProcessError as exc:
+            print(f"Warning: failed to remove {volume} ({exc}).")
+
+
+def cmd_ledger_list(_: argparse.Namespace) -> None:
+    try:
+        result = subprocess.run(
+            [DOCKER_BIN, "volume", "ls", "--format", "{{.Name}}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        print(f"Failed to list volumes via {DOCKER_BIN}: {exc}")
+        sys.exit(exc.returncode)
+    names = [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.startswith(f"{LEDGER_PREFIX}-")
+    ]
+    if not names:
+        print("No Silicium ledger volumes found.")
+        return
+    print("Ledger volumes:")
+    for name in names:
+        print(f"  - {name}")
+
+
+def cmd_ledger_wipe(args: argparse.Namespace) -> None:
+    if args.all:
+        networks = list(LEDGER_SUFFIX.keys())
+    else:
+        selected: list[str] = []
+        if args.network:
+            selected.extend(args.network)
+        if args.networks:
+            selected.extend(args.networks)
+        networks = list(dict.fromkeys(selected))
+    if not networks:
+        print("Specify networks (positional or --network) or use --all.")
+        sys.exit(1)
+    ledger_wipe(networks=networks, assume_yes=args.yes)
+
+
+def ledger_export(target: str, dest: Path) -> None:
+    cmd = [
+        DOCKER_BIN,
+        "run",
+        "--rm",
+        "-v",
+        f"{target}:/data:ro",
+        "-v",
+        f"{dest.parent}:/backup",
+        "alpine",
+        "sh",
+        "-c",
+        "cd /data && tar czf /backup/ledger.tar.gz .",
+    ]
+    run(cmd)
+
+
+def ledger_import(target: str, src: Path) -> None:
+    if not src.exists():
+        print(f"Archive not found: {src}")
+        sys.exit(1)
+    cmd = [
+        DOCKER_BIN,
+        "run",
+        "--rm",
+        "-v",
+        f"{target}:/data",
+        "-v",
+        f"{src.parent}:/backup",
+        "alpine",
+        "sh",
+        "-c",
+        "rm -rf /data/* && tar xzf /backup/ledger.tar.gz -C /data",
+    ]
+    env = os.environ.copy()
+    env["LEDGER_ARCHIVE"] = str(src)
+    run(cmd, env=env)
+
+
+def cmd_ledger_export(args: argparse.Namespace) -> None:
+    volume = ledger_volume_name(args.network)
+    dest = Path(args.output or f"{volume}.tar.gz").resolve()
+    if dest.exists() and not args.force:
+        print(f"{dest} already exists. Use --force to overwrite.")
+        sys.exit(1)
+    print(colorize(f"Exporting {volume} -> {dest}", COLOR_YELLOW))
+    cmd = [
+        DOCKER_BIN,
+        "run",
+        "--rm",
+        "-v",
+        f"{volume}:/data:ro",
+        "-v",
+        f"{dest.parent}:/backup",
+        "alpine",
+        "sh",
+        "-c",
+        f"cd /data && tar czf /backup/{dest.name} .",
+    ]
+    run(cmd)
+
+
+def cmd_ledger_import(args: argparse.Namespace) -> None:
+    volume = ledger_volume_name(args.network)
+    archive = Path(args.archive).resolve()
+    if not archive.exists():
+        print(f"Archive not found: {archive}")
+        sys.exit(1)
+    if not args.yes and not confirm(f"Overwrite volume {volume} from {archive}?"):
+        print("Aborted.")
+        return
+    cmd = [
+        DOCKER_BIN,
+        "run",
+        "--rm",
+        "-v",
+        f"{volume}:/data",
+        "-v",
+        f"{archive.parent}:/backup",
+        "alpine",
+        "sh",
+        "-c",
+        f"rm -rf /data/* && tar xzf /backup/{archive.name} -C /data",
+    ]
+    run(cmd)
+
+
+def workload_paths() -> list[str]:
+    if not WORKLOAD_ROOT.exists():
+        return []
+    paths: list[str] = []
+    for manifest in WORKLOAD_ROOT.rglob("manifest.yaml"):
+        rel = manifest.parent.relative_to(WORKLOAD_ROOT)
+        paths.append(str(rel).replace("\\", "/"))
+    return sorted(paths)
+
+
+def cmd_workload_list(args: argparse.Namespace) -> None:
+    paths = workload_paths()
+    if not paths:
+        print("No workloads found.")
+        return
+    if not args.tree:
+        for path in paths:
+            print(path)
+        return
+
+    def insert(node: dict, parts: list[str]) -> None:
+        if not parts:
+            return
+        head, *tail = parts
+        child = node.setdefault(head, {})
+        insert(child, tail)
+
+    tree: dict = {}
+    for path in paths:
+        insert(tree, path.split("/"))
+
+    def print_tree(node: dict, depth: int = 0) -> None:
+        for name in sorted(node):
+            child = node[name]
+            prefix = "  " * depth + "- "
+            print(f"{prefix}{name}")
+            print_tree(child, depth + 1)
+
+    print_tree(tree)
+
+
+def cmd_workload_show(args: argparse.Namespace) -> None:
+    manifest = WORKLOAD_ROOT / args.path / "manifest.yaml"
+    if not manifest.exists():
+        print(f"Manifest not found: {manifest}")
+        sys.exit(1)
+    print(colorize(f"==> {manifest}", COLOR_YELLOW))
+    print(manifest.read_text(encoding="utf-8"))
+    if args.readme:
+        readme = manifest.with_name("README.md")
+        if readme.exists():
+            print(colorize(f"\n==> {readme}", COLOR_YELLOW))
+            print(readme.read_text(encoding="utf-8"))
+        else:
+            print("No README.md for this workload.")
+
+
+def cmd_history_show(args: argparse.Namespace) -> None:
+    if not HISTORY_FILE.exists():
+        print("No history entries yet.")
+        return
+    lines = HISTORY_FILE.read_text(encoding="utf-8").splitlines()
+    tail = args.tail
+    if tail:
+        lines = lines[-tail:]
+    for line in lines:
+        print(line)
+
+
+def cmd_history_clear(_: argparse.Namespace) -> None:
+    if HISTORY_FILE.exists():
+        HISTORY_FILE.unlink()
+    HISTORY_FILE.touch()
+    if readline:
+        readline.clear_history()  # type: ignore[arg-type]
+    print("History cleared.")
+
+
+def cmd_start(args: argparse.Namespace) -> None:
+    service, profile = START_TARGETS[args.target]
+    compose_up(service, profile)
+
+
+def cmd_stop(args: argparse.Namespace) -> None:
+    target = args.target or "all"
+    if target == "all":
+        compose_down(volumes=args.volumes)
+    else:
+        service, profile = START_TARGETS[target]
+        compose_stop(service, profile, remove=args.remove)
+
+
+def cmd_status(args: argparse.Namespace) -> None:
+    cmd = compose_base() + ["ps"]
+    run(cmd)
+
+
+def cmd_logs(args: argparse.Namespace) -> None:
+    service, profile = resolve_service(args.target)
+    cmd = compose_base()
+    if profile:
+        cmd += ["--profile", profile]
+    cmd += ["logs"]
+    if args.follow:
+        cmd.append("-f")
+    cmd.append(service)
+    run(cmd)
+
+
+def cmd_exec(args: argparse.Namespace) -> None:
+    service_name, profile = resolve_service(args.service)
+    cmd = compose_base() + ["exec"]
+    if profile:
+        cmd += ["--profile", profile]
+    if args.user:
+        cmd += ["-u", args.user]
+    cmd.append(service_name)
+    command = list(args.command)
+    if command and command[0] == "--":
+        command = command[1:]
+    if not command:
+        command = ["/bin/bash"]
+    cmd += command
+    run(cmd)
+
+
+def cmd_alias(args: argparse.Namespace) -> None:
+    shell = args.shell or "bash"
+    function = '''silicium() {
+    local cmd=$1
+    shift
+    case "$cmd" in
+        test|smoke|clean|shell)
+            ./silicium "$cmd" "$@"
+            ;;
+        tools)
+            ./silicium tools "$@"
+            ;;
+        ledger)
+            ./silicium ledger "$@"
+            ;;
+        history)
+            ./silicium history "$@"
+            ;;
+        start)
+            ./silicium start "$@"
+            ;;
+        stop)
+            ./silicium stop "$@"
+            ;;
+        start-local)
+            ./silicium start localnet "$@"
+            ;;
+        start-dev)
+            ./silicium start devnet "$@"
+            ;;
+        start-test)
+            ./silicium start testnet "$@"
+            ;;
+        start-main)
+            ./silicium start mainnet "$@"
+            ;;
+        *)
+            ./silicium "$cmd" "$@"
+            ;;
+    esac
+}'''
+    alias_snippet = f"""
+# Silicium helper function
+{function}
+alias sl='silicium ledger list'
+alias st='silicium test'
+alias ss='silicium smoke'
+alias sc='silicium clean cache'
+alias sca='silicium clean all -y'
+alias shist='silicium history show --tail 20'
+alias sstart='silicium start localnet'
+alias sstop='silicium stop'
+"""
+
+    rc_map = {
+        "bash": "~/.bashrc",
+        "zsh": "~/.zshrc",
+        "fish": "~/.config/fish/config.fish",
+    }
+    path = args.path or rc_map.get(shell)
+    if not path:
+        print("Unsupported shell; provide --path to append manually.")
+        return
+    target = Path(path).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as fh:
+        fh.write("\n" + alias_snippet + "\n")
+    print(f"Aliases appended to {target}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="silicium",
+        description="Silicium CLI and shell",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    test_p = sub.add_parser("test", help="Install dev deps and run pytest")
+    test_p.set_defaults(func=cmd_test)
+
+    smoke_p = sub.add_parser("smoke", help="Run the proxy smoke test")
+    smoke_p.set_defaults(func=cmd_smoke)
+
+    tools_p = sub.add_parser("tools", help="Toolbox helpers")
+    tools_sub = tools_p.add_subparsers(dest="tools_cmd", required=True)
+
+    tools_demo = tools_sub.add_parser("demo", help="Run cppsplitter demo")
+    tools_demo.set_defaults(func=cmd_tools_demo)
+
+    tools_clean = tools_sub.add_parser("clean", help="Remove cppsplitter outputs/binaries")
+    tools_clean.set_defaults(func=cmd_tools_clean)
+
+    clean_p = sub.add_parser("clean", help="Clean caches/ledgers")
+    clean_p.add_argument(
+        "mode",
+        nargs="?",
+        choices=["cache", "ledgers", "all"],
+        help="What to clean (default cache).",
+    )
+    clean_p.add_argument(
+        "--ledgers",
+        action="store_true",
+        help="Legacy flag: clean caches and ledgers (same as 'all').",
+    )
+    clean_p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Skip confirmations when cleaning ledgers.",
+    )
+    clean_p.set_defaults(func=cmd_clean)
+
+    ledger_p = sub.add_parser("ledger", help="Manage ledger volumes")
+    ledger_sub = ledger_p.add_subparsers(dest="ledger_cmd", required=True)
+
+    ledger_list = ledger_sub.add_parser("list", help="List managed ledger volumes")
+    ledger_list.set_defaults(func=cmd_ledger_list)
+
+    ledger_wipe_p = ledger_sub.add_parser("wipe", help="Delete ledger volumes")
+    ledger_wipe_p.add_argument(
+        "-n",
+        "--network",
+        choices=sorted(LEDGER_SUFFIX.keys()),
+        action="append",
+        help="Network to wipe (repeatable).",
+    )
+    ledger_wipe_p.add_argument(
+        "--all",
+        action="store_true",
+        help="Wipe all known ledger volumes.",
+    )
+    ledger_wipe_p.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Skip confirmation prompt.",
+    )
+    ledger_wipe_p.add_argument(
+        "networks",
+        nargs="*",
+        choices=LEDGER_NETWORKS,
+        help="Network names to wipe (shortcut for repeated --network).",
+    )
+    ledger_wipe_p.set_defaults(func=cmd_ledger_wipe)
+
+    ledger_export = ledger_sub.add_parser("export", help="Archive a ledger volume")
+    ledger_export.add_argument(
+        "network",
+        choices=LEDGER_NETWORKS,
+        help="Which ledger to export.",
+    )
+    ledger_export.add_argument(
+        "-o",
+        "--output",
+        help="Output tar.gz path (default: <volume>.tar.gz).",
+    )
+    ledger_export.add_argument(
+        "-f",
+        "--force",
+        action="store_true",
+        help="Overwrite the output file if it exists.",
+    )
+    ledger_export.set_defaults(func=cmd_ledger_export)
+
+    ledger_import = ledger_sub.add_parser("import", help="Restore a ledger volume")
+    ledger_import.add_argument(
+        "network",
+        choices=LEDGER_NETWORKS,
+        help="Which ledger to import into.",
+    )
+    ledger_import.add_argument(
+        "--archive",
+        required=True,
+        help="Path to the tar.gz archive to restore.",
+    )
+    ledger_import.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Skip confirmation prompt.",
+    )
+    ledger_import.set_defaults(func=cmd_ledger_import)
+
+    workload_p = sub.add_parser("workload", help="Inspect workload manifests")
+    workload_sub = workload_p.add_subparsers(dest="workload_cmd", required=True)
+
+    workload_list = workload_sub.add_parser("list", help="List workloads")
+    workload_list.add_argument(
+        "--tree",
+        action="store_true",
+        help="Display full tree instead of compact list.",
+    )
+    workload_list.set_defaults(func=cmd_workload_list)
+
+    workload_show = workload_sub.add_parser("show", help="Show a workload manifest")
+    workload_show.add_argument(
+        "path",
+        help="Workload path (e.g., calcul/math-simulation).",
+    )
+    workload_show.add_argument(
+        "--readme",
+        action="store_true",
+        help="Also display README.md if present.",
+    )
+    workload_show.set_defaults(func=cmd_workload_show)
+
+    history_p = sub.add_parser("history", help="Inspect Silicium shell history")
+    history_sub = history_p.add_subparsers(dest="history_cmd", required=True)
+
+    history_show = history_sub.add_parser("show", help="Display history entries")
+    history_show.add_argument(
+        "--tail",
+        type=int,
+        help="Show only the last N entries.",
+    )
+    history_show.set_defaults(func=cmd_history_show)
+
+    history_clear = history_sub.add_parser("clear", help="Purge history file")
+    history_clear.set_defaults(func=cmd_history_clear)
+
+    start_p = sub.add_parser("start", help="Start a Silicium service")
+    start_p.add_argument(
+        "target",
+        choices=START_CHOICES,
+        help="Which service to start.",
+    )
+    start_p.set_defaults(func=cmd_start)
+
+    stop_p = sub.add_parser("stop", help="Stop services")
+    stop_p.add_argument(
+        "target",
+        nargs="?",
+        choices=START_CHOICES + ["all"],
+        help="Service to stop (default all).",
+    )
+    stop_p.add_argument(
+        "-v",
+        "--volumes",
+        action="store_true",
+        help="When stopping all, also remove volumes (compose down -v).",
+    )
+    stop_p.add_argument(
+        "--remove",
+        action="store_true",
+        help="When stopping a single service, also remove its container.",
+    )
+    stop_p.set_defaults(func=cmd_stop)
+
+    status_p = sub.add_parser("status", help="Show docker compose ps")
+    status_p.set_defaults(func=cmd_status)
+
+    logs_p = sub.add_parser("logs", help="Tail service logs")
+    logs_p.add_argument(
+        "target",
+        nargs="?",
+        default="localnet",
+        help="Service alias or compose name (default localnet).",
+    )
+    logs_p.add_argument(
+        "-f",
+        "--follow",
+        action="store_true",
+        help="Follow logs (docker compose logs -f).",
+    )
+    logs_p.set_defaults(func=cmd_logs)
+
+    exec_p = sub.add_parser("exec", help="Run command in a service container")
+    exec_p.add_argument(
+        "service",
+        help="Service alias or compose name.",
+    )
+    exec_p.add_argument(
+        "-u",
+        "--user",
+        help="User to run as inside the container.",
+    )
+    exec_p.add_argument(
+        "command",
+        nargs=argparse.REMAINDER,
+        help="Command to run (default /bin/bash).",
+    )
+    exec_p.set_defaults(func=cmd_exec)
+
+    alias_p = sub.add_parser("alias", help="Install helper function/aliases in shell rc")
+    alias_p.add_argument(
+        "--shell",
+        choices=["bash", "zsh", "fish"],
+        help="Shell type for auto-detection (default bash).",
+    )
+    alias_p.add_argument(
+        "--path",
+        help="Custom rc file to append aliases.",
+    )
+    alias_p.set_defaults(func=cmd_alias)
+
+    shell_p = sub.add_parser("shell", help="Start interactive shell")
+    shell_p.set_defaults(func=lambda _: launch_shell())
+
+    return parser
+
+
+def execute(argv: list[str]) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    args.func(args)
+
+
+def setup_readline(parser: argparse.ArgumentParser) -> None:
+    if not readline:  # pragma: no cover - depends on platform
+        return
+    history_file = HISTORY_FILE
+    try:
+        history_file.touch(exist_ok=True)
+    except OSError:
+        history_file = None  # type: ignore
+    else:
+        try:
+            readline.read_history_file(history_file)
+        except OSError:
+            pass
+        def _save_history(file_path=history_file):
+            try:
+                readline.write_history_file(file_path)  # type: ignore[arg-type]
+            except OSError as exc:
+                print(f"Warning: unable to write history file: {exc}")
+
+        atexit.register(_save_history)
+    readline.set_history_length(1000)
+    readline.parse_and_bind("tab: complete")
+
+    def completer(text: str, state: int) -> str | None:
+        buffer = readline.get_line_buffer()
+        begidx = readline.get_begidx()
+        prefix = buffer[:begidx]
+        try:
+            tokens = shlex.split(prefix)
+        except ValueError:
+            tokens = prefix.split()
+        options = _completion_options(tokens, text)
+        try:
+            return options[state]
+        except IndexError:
+            return None
+
+    readline.set_completer(completer)
+
+
+def _completion_options(tokens: list[str], text: str) -> list[str]:
+    if not tokens:
+        return [cmd for cmd in TOP_LEVEL_COMMANDS if cmd.startswith(text)]
+    first = tokens[0]
+    subcommands = SUBCOMMANDS.get(first)
+    if subcommands:
+        if len(tokens) == 1:
+            return [cmd for cmd in subcommands if cmd.startswith(text)]
+    if first == "ledger":
+        if len(tokens) == 1:
+            return [cmd for cmd in SUBCOMMANDS["ledger"] if cmd.startswith(text)]
+        sub = tokens[1]
+        if sub == "wipe":
+            opts = ["--network", "-n", "--all", "--yes", "-y"]
+            if text.startswith("-"):
+                return [opt for opt in opts if opt.startswith(text)]
+            if tokens[-1] in {"--network", "-n"}:
+                return [net for net in LEDGER_NETWORKS if net.startswith(text)]
+            return [net for net in LEDGER_NETWORKS if net.startswith(text)]
+        if sub == "export":
+            opts = ["--output", "-o", "--force"]
+            if len(tokens) <= 2:
+                return [net for net in LEDGER_NETWORKS if net.startswith(text)]
+            if text.startswith("-"):
+                return [opt for opt in opts if opt.startswith(text)]
+            if tokens[-1] in opts:
+                return []
+            return [net for net in LEDGER_NETWORKS if net.startswith(text)]
+        if sub == "import":
+            opts = ["--archive", "-y", "--yes"]
+            if len(tokens) <= 2:
+                return [net for net in LEDGER_NETWORKS if net.startswith(text)]
+            if text.startswith("-"):
+                return [opt for opt in opts if opt.startswith(text)]
+            if tokens[-1] == "--archive":
+                return []
+            return [net for net in LEDGER_NETWORKS if net.startswith(text)]
+        return []
+    if first == "clean":
+        if len(tokens) == 1:
+            return [cmd for cmd in SUBCOMMANDS["clean"] if cmd.startswith(text)]
+        flags = ["-y", "--yes", "--ledgers"]
+        return [flag for flag in flags if flag.startswith(text)]
+    if first == "history":
+        if len(tokens) == 1:
+            return [cmd for cmd in SUBCOMMANDS["history"] if cmd.startswith(text)]
+        if tokens[1] == "show":
+            return [flag for flag in ["--tail"] if flag.startswith(text)]
+        return []
+    if first == "start":
+        if len(tokens) == 1:
+            return [opt for opt in START_CHOICES if opt.startswith(text)]
+        return []
+    if first == "stop":
+        choices = START_CHOICES + ["all"]
+        if len(tokens) == 1:
+            return [opt for opt in choices if opt.startswith(text)]
+        return [flag for flag in ["-v", "--volumes", "--remove"] if flag.startswith(text)]
+    if first == "workload":
+        if len(tokens) == 1:
+            return [cmd for cmd in SUBCOMMANDS["workload"] if cmd.startswith(text)]
+        sub = tokens[1]
+        if sub == "list":
+            return [flag for flag in ["--tree"] if flag.startswith(text)]
+        if sub == "show":
+            paths = workload_paths()
+            return [p for p in paths if p.startswith(text)]
+        return []
+    if first == "logs":
+        if len(tokens) == 1:
+            return [opt for opt in LOG_CHOICES if opt.startswith(text)]
+        return [flag for flag in ["-f", "--follow"] if flag.startswith(text)]
+    if first == "exec":
+        if len(tokens) == 1:
+            return [opt for opt in LOG_CHOICES if opt.startswith(text)]
+        return [flag for flag in ["-u", "--user"] if flag.startswith(text)]
+    return []
+
+
+def get_prompt() -> str:
+    base = "silicium"
+    if COLOR_ENABLED:
+        return f"{COLOR_CYAN}{base}{COLOR_RESET} {colorize('>', COLOR_GREEN)} "
+    return f"{base}> "
+
+
+def launch_shell() -> None:
+    parser = build_parser()
+    setup_readline(parser)
+    print(
+        colorize(
+            "Silicium shell – type 'help' for commands, 'exit' to quit.",
+            COLOR_CYAN,
+        )
+    )
+    prompt = get_prompt()
+    while True:
+        try:
+            line = input(prompt).strip()
+        except EOFError:
+            print()
+            break
+        except KeyboardInterrupt:
+            print()
+            continue
+        if not line:
+            continue
+        if line in {"exit", "quit"}:
+            break
+        if line in {"help", "?"}:
+            parser.print_help()
+            continue
+        try:
+            tokens = shlex.split(line)
+        except ValueError as exc:
+            print(f"Parse error: {exc}")
+            continue
+        try:
+            args = parser.parse_args(tokens)
+            args.func(args)
+        except SystemExit:
+            continue
+
+
+def main(argv: list[str] | None = None) -> None:
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        launch_shell()
+        return
+    try:
+        execute(argv)
+    except KeyboardInterrupt:
+        print()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

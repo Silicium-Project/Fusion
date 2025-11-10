@@ -1,0 +1,18 @@
+# Local IDE / tooling state
+.vscode/
+.pytest_cache/
+tests/__pycache__/
+
+# Experimental leftovers
+tools/experiments/old_tests/
+
+# Secrets generated for the reverse proxy (certificates/private keys)
+infra/docker/reverse-proxy/certs/*.crt
+infra/docker/reverse-proxy/certs/*.key
+infra/docker/reverse-proxy/certs/*.pem
+infra/docker/reverse-proxy/certs/*.pfx
+infra/docker/reverse-proxy/certs/*.p12
+infra/docker/reverse-proxy/certs/*.csr
+
+# WireGuard peer configuration
+infra/secure-stack/wireguard/config/

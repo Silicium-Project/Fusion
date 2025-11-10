@@ -7,7 +7,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-ENTRYPOINT = REPO_ROOT / "docker" / "solana-entrypoint.sh"
+ENTRYPOINT = REPO_ROOT / "infra" / "docker" / "solana-entrypoint.sh"
 COMMANDS_TO_STUB = [
     "solana",
     "solana-keygen",

@@ -16,7 +16,7 @@ RUN_OUT := $(if $(OUT),$(OUT),run_output/$(RUN_NAME))
 RUN_LOG := $(if $(LOG),$(LOG),fragment_executor.log)
 ARGS ?=
 
-.PHONY: all clean demo demo-native demo-clean run run-native run-internal run-binary prep-program
+.PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program
 
 all: $(BINARIES)
 
@@ -85,3 +85,8 @@ demo-clean:
 
 clean: demo-clean
 	rm -f $(BINARIES) $(LOG_FILE)
+
+fclean: clean
+	rm -rf $(RUN_BUILD_DIR) run_output
+
+re: fclean all

@@ -1,5 +1,7 @@
 # Workloads catalogue
 
+Ce dossier (`catalog/workloads`) centralise les profils officiels distribués aux calculateurs et vérificateurs.
+
 Le réseau Silicium distingue désormais **deux familles** de profils :
 
 1. `calcul/` – tâches qui produisent une valeur (encodage, simulation, rendu, etc.).

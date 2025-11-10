@@ -50,6 +50,12 @@ std::string ascii_from_uint64(uint64_t value) {
     return bytes;
 }
 
+struct MemoryPatch {
+    uint64_t address = 0;
+    std::vector<uint8_t> before;
+    std::vector<uint8_t> after;
+};
+
 #ifdef __linux__
 #include <sys/mman.h>
 #include <unistd.h>
@@ -386,6 +392,7 @@ public:
     // Mémoire simulée (1MB)
     std::vector<uint8_t> memory;
     uint64_t stack_base;
+    std::vector<MemoryPatch>* patch_log = nullptr;
     
     RegisterEmulator() {
         memory.resize(1024 * 1024, 0);  // 1MB
@@ -429,6 +436,18 @@ public:
     
     void write_memory(uint64_t addr, const void* data, size_t size) {
         if (addr + size <= memory.size()) {
+            if (patch_log && size > 0) {
+                std::vector<uint8_t> before(size);
+                std::memcpy(before.data(), &memory[addr], size);
+                if (std::memcmp(before.data(), data, size) != 0) {
+                    MemoryPatch patch;
+                    patch.address = addr;
+                    patch.before = std::move(before);
+                    patch.after.assign(static_cast<const uint8_t*>(data),
+                                       static_cast<const uint8_t*>(data) + size);
+                    patch_log->push_back(std::move(patch));
+                }
+            }
             std::memcpy(&memory[addr], data, size);
         }
     }
@@ -437,6 +456,10 @@ public:
         if (addr + size <= memory.size()) {
             std::memcpy(data, &memory[addr], size);
         }
+    }
+
+    void set_patch_log(std::vector<MemoryPatch>* log) {
+        patch_log = log;
     }
     
     void print_state() const {
@@ -455,6 +478,18 @@ public:
         std::cout << "\nFlags: ZF=" << ZF << " SF=" << SF 
                   << " CF=" << CF << " OF=" << OF << "\n";
     }
+};
+
+class PatchLogGuard {
+public:
+    PatchLogGuard(RegisterEmulator& emu, std::vector<MemoryPatch>* log) : emulator(emu) {
+        emulator.set_patch_log(log);
+    }
+    ~PatchLogGuard() {
+        emulator.set_patch_log(nullptr);
+    }
+private:
+    RegisterEmulator& emulator;
 };
 
 // ============================================================================
@@ -476,6 +511,7 @@ struct ExecutionResult {
     size_t instructions_executed = 0;
     size_t memory_accesses = 0;
     std::string program_stdout;
+    std::vector<MemoryPatch> memory_patches;
     
     void print() const {
         if (!success) {
@@ -500,6 +536,43 @@ struct ExecutionResult {
                               << "' → '" << (ascii_after.empty() ? "" : ascii_after) << "')";
                 }
                 std::cout << "\n";
+            }
+        }
+        if (!memory_patches.empty()) {
+            std::cout << "\n=== Modifications mémoire (type diff) ===\n";
+            const char* RESET = "\033[0m";
+            const char* RED = "\033[31m";
+            const char* GREEN = "\033[32m";
+            const char* DIM = "\033[90m";
+            for (const auto& patch : memory_patches) {
+                auto format_bytes = [&](const std::vector<uint8_t>& bytes,
+                                        const std::vector<uint8_t>& other,
+                                        const char* color) {
+                    std::ostringstream oss;
+                    size_t limit = std::min<size_t>(bytes.size(), 16);
+                    for (size_t i = 0; i < limit; ++i) {
+                        if (i > 0) oss << ' ';
+                        bool changed = (i >= other.size()) || bytes[i] != other[i];
+                        const char* prefix = changed ? color : DIM;
+                        if (i < bytes.size()) {
+                            oss << prefix << std::hex << std::setw(2) << std::setfill('0')
+                                << static_cast<int>(bytes[i]) << RESET;
+                        } else {
+                            oss << prefix << "--" << RESET;
+                        }
+                    }
+                    if (bytes.size() > limit) {
+                        oss << " …";
+                    }
+                    return oss.str();
+                };
+                
+                std::cout << " @0x" << std::hex << patch.address << std::dec
+                          << " (" << patch.before.size() << " bytes)\n";
+                std::cout << "    - avant : ["
+                          << format_bytes(patch.before, patch.after, RED) << "]\n";
+                std::cout << "    + après : ["
+                          << format_bytes(patch.after, patch.before, GREEN) << "]\n";
             }
         }
 
@@ -561,6 +634,7 @@ public:
     // Exécution SÉCURISÉE via émulation (recommandé)
     ExecutionResult execute_safe(const std::string& asm_file) {
         ExecutionResult result;
+        PatchLogGuard patch_guard(emulator, &result.memory_patches);
         
         // Lire le fichier ASM
         std::ifstream file(asm_file);
@@ -608,6 +682,7 @@ public:
     // Exécution NATIVE via JIT (DANGEREUX - à utiliser avec précaution)
     ExecutionResult execute_native(const std::vector<uint8_t>& binary_code) {
         ExecutionResult result;
+        PatchLogGuard patch_guard(emulator, &result.memory_patches);
         
         std::cout << "\n⚠️  AVERTISSEMENT: Exécution NATIVE (JIT)\n";
         std::cout << "Ceci est potentiellement dangereux!\n";

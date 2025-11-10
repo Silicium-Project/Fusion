@@ -1,6 +1,6 @@
 # Network
 
-Cette base de code fournit une image Docker unique permettant de lancer un nœud **Silicium** (surcouche Solana) dans plusieurs contextes : localnet isolé, Devnet, Testnet ou Mainnet. Tout est orchestré via Docker Compose et un script d'entrée (`docker/solana-entrypoint.sh`) qui gère les clés, la configuration Solana et le lancement du validateur ou du test validator.
+Cette base de code fournit une image Docker unique permettant de lancer un nœud **Silicium** (surcouche Solana) dans plusieurs contextes : localnet isolé, Devnet, Testnet ou Mainnet. Tout est orchestré via Docker Compose et un script d'entrée (`infra/docker/solana-entrypoint.sh`) qui gère les clés, la configuration Solana et le lancement du validateur ou du test validator.
 
 ---
 
@@ -8,10 +8,16 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 | Élément | Rôle |
 | --- | --- |
-| `Dockerfile` | Image basée sur `solanalabs/solana:stable`, ajout des CA TLS et du script d'entrée. |
-| `docker-compose.yml` | Définit les services `silicium-localnet`, `silicium-node` (testnet), `silicium-devnet`, `silicium-mainnet`. |
-| `docker/solana-entrypoint.sh` | Point d'entrée qui expose `solana`, `silicium-node` et configure automatiquement clés + RPC. |
-| `data/` | Persistences des ledgers/clépairs (créé lors des premiers démarrages). |
+| `infra/Dockerfile` | Image basée sur `solanalabs/solana:stable`, ajout des CA TLS et du script d'entrée. |
+| `infra/docker-compose.yml` | Définit les services `silicium-localnet`, `silicium-node` (testnet), `silicium-devnet`, `silicium-mainnet` + le proxy TLS. |
+| `infra/.env` | Valeurs par défaut pour les chemins/ports utilisés par Compose (`WORKSPACE_ROOT`, `PROXY_*`, `SILICIUM_LEDGER_PREFIX`). |
+| `infra/docker/solana-entrypoint.sh` | Point d'entrée qui expose `solana`, `silicium-node` et configure automatiquement clés + RPC. |
+| `infra/docker/reverse-proxy/` | Scripts Caddy + emplacements TLS pour exposer l'API via un reverse proxy HTTPS. |
+| `infra/bin/run-with-proxy.sh` | Lance un service Silicium + le proxy TLS, génère un certificat auto-signé et attend `/healthz`. |
+| `infra/secure-stack/` | Docker Compose + scripts pour un RPC Solana confiné derrière un VPN WireGuard. |
+| `catalog/workloads/` | Catalogue des manifests calcul/vérification. |
+| `tools/experiments/` | Prototypes non supportés (anciens tests, outils internes). |
+| Volumes Docker (`silicium-*-ledger`) | Persistences des ledgers/clépairs, gérées automatiquement via Compose. |
 | `README.md` | Ce document. |
 
 ---
@@ -22,6 +28,48 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 - [Docker Compose v2](https://docs.docker.com/compose/install/)
 
 > Assurez-vous que votre utilisateur peut communiquer avec le daemon Docker (groupe `docker` ou exécution avec `sudo`).
+
+> Toutes les commandes `docker compose` supposent :
+> ```bash
+> export COMPOSE_FILE=infra/docker-compose.yml
+> ```
+> Personnalisez `infra/.env` si vous devez changer les ports ou chemins montés sans modifier le YAML.
+
+---
+
+## Silicium CLI
+
+Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches courantes (tests, démos outils, nettoyage, gestion des volumes ledger) et fournit un shell interactif (`./silicium shell`). Les principales commandes :
+
+```bash
+./silicium test                  # installe les deps et lance pytest
+./silicium smoke                 # proxy + healthcheck
+./silicium tools demo            # démo cppsplitter
+./silicium clean all -y          # nettoie caches + volumes (mode "fclean")
+./silicium ledger export devnet  # archive devnet (tar.gz)
+./silicium ledger import devnet --archive backups/devnet.tar.gz -y
+./silicium ledger wipe devnet    # supprime uniquement le ledger devnet
+./silicium workload list --tree  # liste les workloads (calcul/..., verification/...)
+./silicium workload show calcul/math-simulation --readme
+./silicium start localnet        # démarre un service (compose up -d)
+./silicium logs proxy-smoke -f   # logs suivis (profil smoke auto)
+./silicium status                # docker compose ps
+./silicium logs silicium-localnet -f
+./silicium exec silicium-localnet -- /bin/bash
+./silicium history show --tail 20# affiche les dernières commandes
+./silicium shell                 # démarre un shell REPL Silicium (help/exit)
+```
+
+`SILICIUM_LEDGER_PREFIX` (dans `infra/.env`) contrôle le nommage des volumes (`<prefix>-local-ledger`, etc.). Utilisez `./silicium clean --ledgers -y` pour reproduire l'ancien “fclean” en une seule commande.
+
+Pour installer des alias (`silicium start-local`, `silicium ledger list`, `sl`, etc.), exécutez :
+
+```bash
+./silicium alias --shell bash   # ou zsh/fish
+source ~/.bashrc
+```
+
+Le shell interactif supporte l'historique (~/.silicium_history), Tab-completion (réseaux `ledger wipe`, `clean all`, etc.) et des commandes dédiées (`history show/clear`, `start/stop`, `clean all`).
 
 ---
 
@@ -42,6 +90,7 @@ docker compose build --no-cache # rebuild complet (après changement d'entrypoin
 | Devnet | `silicium-devnet` (profil `devnet`) | `docker compose --profile devnet up -d silicium-devnet` | `8910:8899`, `8200-8220` | `https://api.devnet.solana.com` | Tests publics avec faucet |
 | Testnet | `silicium-node` | `docker compose up -d silicium-node` | `8899:8899`, `8000-8020` | `https://api.testnet.solana.com` | Pré-production |
 | Mainnet | `silicium-mainnet` (profil `mainnet`) | `docker compose --profile mainnet up -d silicium-mainnet` | `8920:8899`, `8300-8320` | `https://api.mainnet-beta.solana.com` | Production / observateur |
+| Reverse proxy TLS (Caddy) | `silicium-proxy` (profil `proxy`) | `docker compose --profile proxy up -d silicium-proxy` | `9443:443` (modifiable) | `https://<host>:9443` | Terminaison TLS + protections HTTP devant le RPC |
 
 > Activez un profil en ajoutant `--profile devnet` ou `--profile mainnet` à toutes les commandes Compose (ou définissez `COMPOSE_PROFILES=devnet` dans votre shell).
 
@@ -70,7 +119,7 @@ Pour arrêter et nettoyer :
 
 ```bash
 docker compose down         # stoppe les services en cours
-docker compose down -v      # supprime aussi les volumes (ledger, clés)
+docker compose down -v      # supprime aussi les volumes Docker (silicium-*-ledger)
 ```
 
 ---
@@ -101,7 +150,7 @@ docker compose down -v      # supprime aussi les volumes (ledger, clés)
 
 ## Gestion des clés et du CLI
 
-- Au premier démarrage, `docker/solana-entrypoint.sh` génère un `validator-identity.json`, copie un signer par défaut dans `~/.config/solana/id.json` et alimente `solana config`.
+- Au premier démarrage, `infra/docker/solana-entrypoint.sh` génère un `validator-identity.json`, copie un signer par défaut dans `~/.config/solana/id.json` et alimente `solana config`.
 - Pour créer un portefeuille dédié :
   ```bash
   docker compose exec silicium-localnet solana-keygen new --outfile /workspace/wallet.json
@@ -112,7 +161,7 @@ docker compose down -v      # supprime aussi les volumes (ledger, clés)
   solana-keygen pubkey /workspace/wallet.json
   ```
 
-Les fichiers générés persistent via les volumes montés (`./data/...`). Sauvegardez-les avant toute suppression.
+Les fichiers générés persistent désormais dans des volumes Docker nommés (`silicium-<network>-ledger`). Sauvegardez-les (`silicium-cli ledger list` + `docker run -v volume:/data ...`) avant toute suppression.
 
 ---
 
@@ -142,6 +191,143 @@ Toutes les variables définies dans `docker-compose.yml` peuvent être surcharg�
 4. **Sécurité** : placez idéalement un reverse proxy TLS (Nginx, Caddy) ou un VPN (WireGuard) devant `8899` si l'accès doit être restreint.
 5. **Clients distants** : communiquez l'URL (ex: `https://mon-rpc.example.com`) et demandez-leur d'exécuter `solana config set --url ...`.
 
+## Reverse proxy TLS intégré
+
+`silicium-proxy` (profil `proxy`) embarque Caddy et sécurise l'accès RPC : terminaison TLS, en-têtes `X-Forwarded-*`, endpoint `/healthz` et persistance des certificats via les volumes `caddy-data` / `caddy-config`. Par défaut l'hôte publie `9443:443`, modifiez le mapping si vous exposez directement 443.
+
+1. **Choisissez votre mode TLS** (`PROXY_TLS_MODE`) :
+   | Mode | Usage recommandé | Prérequis |
+   | --- | --- | --- |
+   | `local` (défaut) | Certificats gérés à la main. | Déposer `tls.crt` / `tls.key` dans `infra/docker/reverse-proxy/certs/`. Exemple auto-signé :<br>`openssl req -x509 -nodes -newkey rsa:4096 -keyout infra/docker/reverse-proxy/certs/tls.key -out infra/docker/reverse-proxy/certs/tls.crt -subj "/CN=rpc.local.silicium"` |
+   | `acme` | Certificat Let's Encrypt automatique. | Un DNS public pointant vers votre serveur, ports 80/443 ouverts, variables `PROXY_SITE_ADDRESS=rpc.example.com` et `PROXY_TLS_EMAIL=ops@example.com`. |
+   | `internal` | Lab / réseau privé avec autorité interne. | Caddy émet un certificat autosigné ; distribuez la racine (`caddy trust` ou export depuis `caddy-data`). |
+2. **Désignez la cible RPC** : ajustez `PROXY_UPSTREAM_HOST` / `PROXY_UPSTREAM_PORT` pour pointer vers `silicium-localnet`, `silicium-node`, etc. (par défaut `silicium-localnet:8899`). Utilisez un fichier `.env` ou passez les variables inline :
+   ```bash
+   PROXY_UPSTREAM_HOST=silicium-node \
+   PROXY_SITE_ADDRESS=rpc.example.com \
+   PROXY_TLS_MODE=acme \
+   PROXY_TLS_EMAIL=ops@example.com \
+   docker compose --profile proxy up -d silicium-proxy
+   ```
+3. **Lancez le nœud visé puis le proxy** :
+   ```bash
+   docker compose up -d silicium-localnet
+   docker compose --profile proxy up -d silicium-proxy
+   ```
+   Pour un accès mondial, mappez les ports standards (`PROXY_HTTP_PORT=80`, `PROXY_HTTPS_PORT=443`) ou ajustez les règles de pare-feu en conséquence.
+4. **Vérifiez la publication** :
+   ```bash
+   curl -k https://localhost:9443/healthz
+   curl -k https://localhost:9443/
+   ```
+   Retirez `-k` lorsque vous utilisez un certificat de confiance publique.
+
+Variables clés :
+
+| Variable | Description |
+| --- | --- |
+| `PROXY_SITE_ADDRESS` | Hôte (et éventuellement port) servi par Caddy (`:443` par défaut, mettre `rpc.example.com` pour ACME). |
+| `PROXY_UPSTREAM_HOST` / `PROXY_UPSTREAM_PORT` | Service RPC à protéger (ex: `silicium-node:8899`). |
+| `PROXY_TLS_MODE` | `local`, `acme`, ou `internal`. |
+| `PROXY_TLS_EMAIL` | Email Let’s Encrypt (requis pour `acme`). |
+| `PROXY_TLS_CERT_PATH` / `PROXY_TLS_KEY_PATH` | Emplacements des fichiers utilisés en mode `local`. |
+| `PROXY_HTTP_PORT` / `PROXY_HTTPS_PORT` | Ports hôte mappés sur `80/443` du proxy (`9080` / `9443` par défaut, passez à `80` / `443` pour l'exposer publiquement). |
+| `PROXY_TEST_URL` | URL pingée par le script d'automatisation (défaut `https://localhost:${PROXY_HTTPS_PORT}/healthz`). |
+
+### Démarrage automatisé (script)
+
+Pour tester rapidement le proxy + SSL, utilisez `infra/bin/run-with-proxy.sh` :
+
+```bash
+infra/bin/run-with-proxy.sh                   # localnet + certificat auto-signé + proxy
+PROXY_COMPOSE_PROFILES=proxy,devnet \
+infra/bin/run-with-proxy.sh silicium-devnet   # active aussi le profil devnet
+PROXY_TLS_MODE=acme \
+PROXY_SITE_ADDRESS=rpc.example.com \
+PROXY_TLS_EMAIL=ops@example.com \
+infra/bin/run-with-proxy.sh silicium-node
+```
+
+Le script :
+
+- génère un certificat auto-signé si besoin (`PROXY_TLS_MODE=local`);
+- démarre le service demandé et `silicium-proxy` avec les profils fournis (`PROXY_COMPOSE_PROFILES`, par défaut `proxy`);
+- attend que `https://localhost:${PROXY_HTTPS_PORT}/healthz` (9443 par défaut, customisable via `PROXY_TEST_URL`) réponde avant de quitter.
+
+#### Exemple : exposer un RPC mondial (Let's Encrypt)
+
+```bash
+PROXY_TLS_MODE=acme \
+PROXY_SITE_ADDRESS=rpc.example.com \
+PROXY_TLS_EMAIL=ops@example.com \
+PROXY_HTTP_PORT=80 \
+PROXY_HTTPS_PORT=443 \
+infra/bin/run-with-proxy.sh silicium-node
+```
+
+Conditions :
+
+- `rpc.example.com` pointe sur l'IP publique de votre machine.
+- Les ports TCP 80 et 443 sont ouverts/redirigés jusqu'au serveur Docker.
+- Les clients distants ciblent ensuite `https://rpc.example.com` (`solana config set --url https://rpc.example.com`).
+- Si vous testez depuis une autre machine que le serveur, surchagez `PROXY_TEST_URL=https://rpc.example.com/healthz` pour éviter que le script ne ping `localhost`.
+
+Les secrets TLS demeurent hors Git grâce à `.gitignore`. Les artefacts ACME/internal sont conservés dans les volumes Docker, pensez à les sauvegarder si vous migrez le proxy.
+
+---
+
+## RPC privé pour calculateurs / vérificateurs
+
+Le dossier `infra/secure-stack/` fournit un exemple minimal de déploiement sécurisé pour un réseau de calcul distribué :
+
+| Service | Rôle |
+| --- | --- |
+| `solana-rpc` | Lance un `solana-test-validator` (ou fork) avec RPC interne `10.42.0.2:8899`. Aucun port n'est publié sur Internet. |
+| `wireguard-hub` | Passerelle VPN (WireGuard) qui n'ouvre que `UDP/51820`. Seuls les peers autorisés (calculateurs/vérificateurs) peuvent atteindre le RPC via le sous-réseau `10.13.13.0/24`. |
+
+### Démarrage
+
+```bash
+cd infra/secure-stack
+./bootstrap.sh
+```
+
+Le script :
+
+1. Vérifie que le module WireGuard est chargé.
+2. Tire les images Docker et démarre les services (`docker-compose.yaml`).
+3. Liste les fichiers de configuration générés pour chaque peer (`wireguard/config/peer-*/peer.conf`).
+
+### Ajouter / retirer des peers
+
+Modifiez `PEERS` dans `infra/secure-stack/docker-compose.yaml` (ex: `PEERS=calculator01,calculator02,verifier01`) puis relancez :
+
+```bash
+docker compose -f infra/secure-stack/docker-compose.yaml down
+docker compose -f infra/secure-stack/docker-compose.yaml up -d
+```
+
+Chaque répertoire `wireguard/config/peer-<name>/` contient un `peer.conf` (clé privée, clé publique du hub, routes). Transférez ce fichier de manière sécurisée au noeud correspondant.
+
+### Connexion côté worker / verifier
+
+Sur un poste Linux :
+
+```bash
+sudo wg-quick up ./peer.conf   # tunnel chiffré (ChaCha20-Poly1305)
+export SOLANA_URL=http://10.42.0.2:8899
+solana balance                 # ou tout autre appel RPC
+curl -s http://10.42.0.2:8899 -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}' -H 'Content-Type: application/json'
+```
+
+- Les échanges passent uniquement par WireGuard, donc le RPC n'est jamais exposé au réseau public.
+- L'IP réelle du worker n'apparaît pas côté Solana : seule l'adresse virtuelle `10.13.13.x` est visible.
+- Les tâches calculées (transactions, programmes, résolutions) restent confidentielles car le trafic est chiffré et isolé.
+
+Pour les vérificateurs, utilisez la même procédure : importer la configuration `peer-verifierXX`, établir le tunnel, puis lire les comptes / publier des attestations via RPC. Vous pouvez également scinder les peers par rôles (ex: `ALLOWEDIPS` spécifiques) si vous voulez cloisonner calculateurs et vérificateurs.
+
+> Aucune intégration Let’s Encrypt / DNS public n’est nécessaire : l’authentification repose sur les clés WireGuard, et seul le port UDP 51820 doit être exposé.
+
 ---
 
 ## Troubleshooting de base
@@ -149,13 +335,13 @@ Toutes les variables définies dans `docker-compose.yml` peuvent être surcharg�
 - `service "<name>" is not running` : relancez la commande avec le profil actif (`docker compose --profile devnet exec ...`) ou vérifiez `docker compose --profile devnet ps`.
 - `certificate verify failed` : rebuild l'image (les CA sont installés dans le Dockerfile) et assurez-vous que la machine a accès au réseau.
 - `airdrop request failed` sur testnet/mainnet : normal, seuls Devnet/Localnet disposent d'une faucet intégrée.
-- Pour réinitialiser totalement la localnet : `docker compose down -v silicium-localnet`.
+- Pour réinitialiser totalement la localnet : `./silicium-cli ledger wipe --network localnet` puis relancez `docker compose up -d silicium-localnet`.
 
 ---
 
 ## Tests
 
-Une suite Pytest couvre la logique du script d'entrée (sélection des réseaux, configuration du CLI, génération des clés).
+Une suite Pytest couvre la logique du script d'entrée (sélection des réseaux, configuration du CLI, génération des clés) et valide les manifests (`catalog/workloads/**/manifest.yaml`).
 
 ```bash
 pip install -r requirements-dev.txt
@@ -163,6 +349,10 @@ pytest
 ```
 
 Les tests créent des stubs pour les binaires Solana, ils s'exécutent donc sans dépendances externes ni accès réseau, tout en validant les commandes critiques (lancement des nœuds, `solana balance`, `solana airdrop`, `solana transfer`, etc.).
+
+### Smoke test proxy
+
+`tests/smoke/run_proxy_smoke.sh` démarre un service factice (`proxy-smoke-target`, profil `smoke`) plus `silicium-proxy` pour vérifier que la génération TLS + l'endpoint `/healthz` fonctionnent. Le script s'appuie sur `infra/bin/run-with-proxy.sh` et arrête ensuite les services.
 
 ---
 
@@ -198,17 +388,17 @@ Ajouter un scénario = copier/coller ce bloc, adapter `op` et les `rule`. Aucun 
 
 ---
 
-## Catalogue de calculs (`workloads/`)
+## Catalogue de calculs (`catalog/workloads/`)
 
-Le dossier `workloads/` décrit les types de calcul que le réseau peut dispatcher.  
+Le dossier `catalog/workloads/` décrit les types de calcul que le réseau peut dispatcher.  
 Pour chaque profil (encodage vidéo, simulation mathématique, inference IA, rendu, data processing) on fournit :
 
 - un `manifest.yaml` machine-lisible (commande à exécuter, ressources nécessaires, artefacts attendus, règles de validation) ;
 - un `README.md` expliquant le format des entrées/sorties et les recommandations matérielles.
 
-Les devices téléchargent le manifest correspondant au job pour sélectionner le bon exécutable et reporter les preuves (hash, logs). Ajoutez vos propres profils en créant un nouveau sous-dossier dans `workloads/` puis en complétant les deux fichiers de référence.
+Les devices téléchargent le manifest correspondant au job pour sélectionner le bon exécutable et reporter les preuves (hash, logs). Ajoutez vos propres profils en créant un nouveau sous-dossier dans `catalog/workloads/` puis en complétant les deux fichiers de référence.
 
-Chaque manifest de calcul référence au moins une opération de vérification (`workloads/verification/...`). Lors du scheduling, seuls des noeuds n'ayant pas participé au calcul peuvent exécuter la vérification correspondante, garantissant une séparation stricte entre production et audit.
+Chaque manifest de calcul référence au moins une opération de vérification (`catalog/workloads/verification/...`). Lors du scheduling, seuls des noeuds n'ayant pas participé au calcul peuvent exécuter la vérification correspondante, garantissant une séparation stricte entre production et audit.
 
 ---
 

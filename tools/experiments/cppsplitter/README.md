@@ -136,6 +136,14 @@ Les dossiers `partitions/` et `partitions_test/` fournis servent d'exemples repr
 - La détection de boucles/parallélisabilité reste heuristique.
 - Le mode natif n'est implémenté que sous Linux et ne capture pas automatiquement l'état mémoire ; il est principalement destiné à des expérimentations locales.
 
+## Travaux prévus
+
+- Ajout d’un format de snapshot (registres + plages mémoire écrites) pour transporter l’état d’un fragment à l’autre et simuler la mémoire partagée.
+- Étendre l’analyse pour détecter les dépendances mémoire implicites et verrouiller les zones conflictuelles.
+- Introduire un score de fiabilité par nœud (audits, fragments de test) qui influence les récompenses et la planification.
+- Intégrer la mesure de consommation énergétique (via prises connectées) et l’intensité carbone locale pour valoriser les kWh “verts”.
+- Simuler la spécialisation du réseau (pools CPU, GPU, stockage froid) dans l’orchestrateur et le démonstrateur local.
+
 ## Dépannage rapide
 
 - **`Erreur: objdump introuvable`** : installez `binutils` (`sudo apt install binutils` sur Debian/Ubuntu).

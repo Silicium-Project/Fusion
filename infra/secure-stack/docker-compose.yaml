@@ -1,0 +1,70 @@
+version: "3.9"
+
+# Simple secure stack: Solana RPC + WireGuard gateway on an isolated network.
+
+services:
+  solana-rpc:
+    image: solanalabs/solana:stable
+    container_name: solana-rpc
+    command: >
+      bash -lc "
+        solana-test-validator
+          --reset
+          --rpc-port 8899
+          --no-os-network-limits-test
+          --limit-ledger-size 500000000
+          --ledger /home/solana/ledger
+          --entrypoint 0.0.0.0:8001
+          --dynamic-port-range 8000-8010
+      "
+    environment:
+      - RUST_LOG=info
+    volumes:
+      - solana-ledger:/home/solana/ledger
+    expose:
+      - "8899"
+    networks:
+      secure-overlay:
+        ipv4_address: 10.42.0.2
+
+  wireguard-hub:
+    image: lscr.io/linuxserver/wireguard:1.0.20210914
+    container_name: wireguard-hub
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - SERVERURL=auto            # auto-detect public IP
+      - SERVERPORT=51820
+      - PEERS=calculator01,calculator02,verifier01
+      - INTERNAL_SUBNET=10.13.13.0
+      - ALLOWEDIPS=10.13.13.0/24,10.42.0.0/24
+      - PEERDNS=10.13.13.1
+      - POSTUP=iptables -t nat -A POSTROUTING -s 10.13.13.0/24 -o eth0 -j MASQUERADE; iptables -A FORWARD -i wg0 -d 10.42.0.0/24 -j ACCEPT; iptables -A FORWARD -o wg0 -s 10.42.0.0/24 -j ACCEPT
+      - POSTDOWN=iptables -t nat -D POSTROUTING -s 10.13.13.0/24 -o eth0 -j MASQUERADE; iptables -D FORWARD -i wg0 -d 10.42.0.0/24 -j ACCEPT; iptables -D FORWARD -o wg0 -s 10.42.0.0/24 -j ACCEPT
+    volumes:
+      - /lib/modules:/lib/modules:ro
+      - ./wireguard/config:/config
+    ports:
+      - "51820:51820/udp"        # WireGuard ingress (only port exposed)
+    networks:
+      secure-overlay:
+        ipv4_address: 10.42.0.3
+    depends_on:
+      - solana-rpc
+
+networks:
+  secure-overlay:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.42.0.0/24
+
+volumes:
+  solana-ledger:
