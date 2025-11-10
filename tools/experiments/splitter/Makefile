@@ -3,7 +3,9 @@ CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic
 CC := gcc
 CFLAGS := -O0 -g -no-pie
 
-BINARIES := splitter fragment_executor
+SPLITTER_BIN := splitter
+EXECUTOR_DIR := ../fragment-executor
+EXECUTOR_BIN := $(EXECUTOR_DIR)/fragment_executor
 DEMO_BIN := demo/hello_demo
 DEMO_OUT := demo/output
 LOG_FILE := fragment_executor.log
@@ -16,34 +18,36 @@ RUN_OUT := $(if $(OUT),$(OUT),run_output/$(RUN_NAME))
 RUN_LOG := $(if $(LOG),$(LOG),fragment_executor.log)
 ARGS ?=
 
-.PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program
+.PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program executor
 
-all: $(BINARIES)
+all: $(SPLITTER_BIN)
 
-splitter: splitter.cpp
+$(SPLITTER_BIN): splitter.cpp
 	$(CXX) $(CXXFLAGS) $< -o $@
 
-fragment_executor: fragment_executor.cpp
-	$(CXX) $(CXXFLAGS) $< -o $@
+executor: $(EXECUTOR_BIN)
+
+$(EXECUTOR_BIN):
+	$(MAKE) -C $(EXECUTOR_DIR)
 
 $(DEMO_BIN): demo/hello.c
 	$(CC) $(CFLAGS) $< -o $@
 
-demo: all $(DEMO_BIN)
+demo: all executor $(DEMO_BIN)
 	@rm -f $(LOG_FILE)
 	@echo "==> Génération des partitions de démonstration"
 	@rm -rf $(DEMO_OUT)
 	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
 	@echo "==> Exécution via fragment_executor (mode émulation)"
-	./fragment_executor --summary $(DEMO_OUT)/summary.json --log $(LOG_FILE)
+	$(EXECUTOR_BIN) --summary $(DEMO_OUT)/summary.json --log $(LOG_FILE)
 
-demo-native: all $(DEMO_BIN)
+demo-native: all executor $(DEMO_BIN)
 	@rm -f $(LOG_FILE)
 	@echo "==> Génération des partitions de démonstration"
 	@rm -rf $(DEMO_OUT)
 	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
 	@echo "==> Exécution via fragment_executor (mode natif - DANGEREUX, peut planter)"
-	-./fragment_executor --summary $(DEMO_OUT)/summary.json --native --log $(LOG_FILE)
+	-$(EXECUTOR_BIN) --summary $(DEMO_OUT)/summary.json --native --log $(LOG_FILE)
 
 run: MODE = emulation
 run: run-internal
@@ -63,7 +67,7 @@ prep-program:
 	  *) echo "Extension source non supportée: $$ext (attendu .c, .cc, .cxx, .cpp)"; exit 1 ;; \
 	esac
 
-run-internal: all prep-program
+run-internal: all executor prep-program
 	@rm -f $(RUN_LOG)
 	@echo "==> Partitionnement de $(RUN_BIN)"
 	@rm -rf $(RUN_OUT)
@@ -71,9 +75,9 @@ run-internal: all prep-program
 	./splitter $(RUN_BIN) --output-dir $(RUN_OUT)
 	@echo "==> Exécution via fragment_executor ($(MODE))"
 	@if [ "$(MODE)" = "native" ]; then \
-		./fragment_executor --summary $(RUN_OUT)/summary.json --native --log $(RUN_LOG) || true; \
+		$(EXECUTOR_BIN) --summary $(RUN_OUT)/summary.json --native --log $(RUN_LOG) || true; \
 	else \
-		./fragment_executor --summary $(RUN_OUT)/summary.json --log $(RUN_LOG); \
+		$(EXECUTOR_BIN) --summary $(RUN_OUT)/summary.json --log $(RUN_LOG); \
 	fi
 
 run-binary: all prep-program
@@ -84,7 +88,7 @@ demo-clean:
 	@rm -rf $(DEMO_OUT) $(DEMO_BIN)
 
 clean: demo-clean
-	rm -f $(BINARIES) $(LOG_FILE)
+	rm -f $(SPLITTER_BIN) $(LOG_FILE)
 
 fclean: clean
 	rm -rf $(RUN_BUILD_DIR) run_output

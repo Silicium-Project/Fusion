@@ -16,7 +16,7 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 | `infra/bin/run-with-proxy.sh` | Lance un service Silicium + le proxy TLS, génère un certificat auto-signé et attend `/healthz`. |
 | `infra/secure-stack/` | Docker Compose + scripts pour un RPC Solana confiné derrière un VPN WireGuard. |
 | `catalog/workloads/` | Catalogue des manifests calcul/vérification. |
-| `tools/experiments/` | Prototypes non supportés (anciens tests, outils internes). |
+| `tools/experiments/` | Prototypes non supportés (`splitter/`, `fragment-executor/`, anciens tests). |
 | Volumes Docker (`silicium-*-ledger`) | Persistences des ledgers/clépairs, gérées automatiquement via Compose. |
 | `README.md` | Ce document. |
 
@@ -44,7 +44,7 @@ Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches couran
 ```bash
 ./silicium test                  # installe les deps et lance pytest
 ./silicium smoke                 # proxy + healthcheck
-./silicium tools demo            # démo cppsplitter
+./silicium tools demo            # démo splitter + fragment executor
 ./silicium clean all -y          # nettoie caches + volumes (mode "fclean")
 ./silicium ledger export devnet  # archive devnet (tar.gz)
 ./silicium ledger import devnet --archive backups/devnet.tar.gz -y

@@ -28,7 +28,8 @@ except ImportError:  # pragma: no cover
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-CPP_SPLITTER_DIR = REPO_ROOT / "tools" / "experiments" / "cppsplitter"
+SPLITTER_DIR = REPO_ROOT / "tools" / "experiments" / "splitter"
+EXECUTOR_DIR = REPO_ROOT / "tools" / "experiments" / "fragment-executor"
 WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
 DOCKER_BIN = os.environ.get("DOCKER", "docker")
 LEDGER_PREFIX = os.environ.get("SILICIUM_LEDGER_PREFIX", "silicium")
@@ -186,11 +187,12 @@ def cmd_smoke(_: argparse.Namespace) -> None:
 
 
 def cmd_tools_demo(_: argparse.Namespace) -> None:
-    run(["make", "demo"], cwd=CPP_SPLITTER_DIR)
+    run(["make", "demo"], cwd=SPLITTER_DIR)
 
 
 def cmd_tools_clean(_: argparse.Namespace) -> None:
-    run(["make", "clean"], cwd=CPP_SPLITTER_DIR)
+    run(["make", "clean"], cwd=SPLITTER_DIR)
+    run(["make", "clean"], cwd=EXECUTOR_DIR)
 
 
 def clean_artifacts() -> None:
@@ -198,14 +200,14 @@ def clean_artifacts() -> None:
     paths = [
         REPO_ROOT / ".pytest_cache",
         REPO_ROOT / "tests" / "__pycache__",
-        CPP_SPLITTER_DIR / "run_build",
-        CPP_SPLITTER_DIR / "run_output",
-        CPP_SPLITTER_DIR / "fragment_executor.log",
-        CPP_SPLITTER_DIR / "disassembly_full.asm",
+        SPLITTER_DIR / "run_build",
+        SPLITTER_DIR / "run_output",
+        SPLITTER_DIR / "fragment_executor.log",
+        SPLITTER_DIR / "disassembly_full.asm",
     ]
     for path in paths:
         remove_path(path)
-    run(["make", "demo-clean"], cwd=CPP_SPLITTER_DIR)
+    run(["make", "demo-clean"], cwd=SPLITTER_DIR)
 
 
 def cmd_clean(args: argparse.Namespace) -> None:
@@ -580,10 +582,10 @@ def build_parser() -> argparse.ArgumentParser:
     tools_p = sub.add_parser("tools", help="Toolbox helpers")
     tools_sub = tools_p.add_subparsers(dest="tools_cmd", required=True)
 
-    tools_demo = tools_sub.add_parser("demo", help="Run cppsplitter demo")
+    tools_demo = tools_sub.add_parser("demo", help="Run splitter demo")
     tools_demo.set_defaults(func=cmd_tools_demo)
 
-    tools_clean = tools_sub.add_parser("clean", help="Remove cppsplitter outputs/binaries")
+    tools_clean = tools_sub.add_parser("clean", help="Clean splitter + fragment executor artifacts")
     tools_clean.set_defaults(func=cmd_tools_clean)
 
     clean_p = sub.add_parser("clean", help="Clean caches/ledgers")

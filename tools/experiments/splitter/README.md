@@ -1,19 +1,18 @@
-# cppsplitter
+# Splitter
 
-## Vue d'ensemble
-
-Ce dossier regroupe deux outils C++ expérimentaux destinés à l'analyse de binaires x86_64 :
+Ce dossier contient uniquement le découpeur/désassembleur (`splitter`).  
+L'exécuteur vit désormais dans `../fragment-executor` et est invoqué automatiquement par les cibles `make demo`, `make run`, etc.
 
 - `splitter` désassemble un exécutable (ELF ou PE), reconstruit les fonctions, analyse leurs dépendances, détecte certaines boucles et génère des fragments autonomes (ASM et code machine) accompagnés d'un fichier `summary.json`.
-- `fragment_executor` émule l'exécution de ces fragments en reconstruisant l'état des registres, avec une option facultative pour exécuter le code machine natif (JIT) à vos risques et périls.
+- `../fragment-executor/fragment_executor` émule l'exécution de ces fragments (mode sécurisé ou natif).
 
-Les scripts s'appuient sur `objdump`/`readelf` (binutils) pour la phase de désassemblage et ciblent principalement un environnement Linux x86_64.
+Les scripts s'appuient sur `objdump`/`readelf` (binutils) pour la phase de désassemblage et ciblent principalement Linux x86_64.
 
 ## Contenu principal
 
 - `splitter.cpp` : découpeur/désassembleur de binaires, génère `.asm`, `.bin`, wrappers C et `summary.json`.
-- `fragment_executor.cpp` : exécuteur de fragments avec émulateur de registres et mode natif expérimental.
-- `splitter`, `fragment_executor`, `splitter_gui`, `splitter_test`, `fragment_executor_test` : binaires déjà compilés (Linux).
+- `../fragment-executor/fragment_executor.cpp` : exécuteur de fragments avec émulateur de registres et mode natif expérimental.
+- `splitter` et `../fragment-executor/fragment_executor` : binaires générés (Linux).
 - `disassembly_full.asm` : exemple de désassemblage complet produit par `splitter`.
 - `partitions/` & `partitions_test/` : sorties d'exemple contenant fragments, wrappers et `summary.json`.
 - `partitions/*.asm`, `*.bin`, `*_wrapper.c` : fragments individuels générés par `splitter`.
@@ -27,17 +26,15 @@ Les scripts s'appuient sur `objdump`/`readelf` (binutils) pour la phase de désa
 
 ## Compilation
 
-- `make` : compile `splitter` et `fragment_executor` avec `g++` (C++17).
+- `make` : compile `splitter` (et déclenche `make` dans `../fragment-executor` au besoin).
 - `make clean` : supprime les binaires générés et la sortie de démo.
 
 Si vous préférez compiler manuellement :
 
 ```bash
 g++ -std=c++17 -O2 splitter.cpp -o splitter
-g++ -std=c++17 -O2 fragment_executor.cpp -o fragment_executor
+cd ../fragment-executor && g++ -std=c++17 -O2 fragment_executor.cpp -o fragment_executor
 ```
-
-Les binaires précompilés fournis peuvent être utilisés directement si votre plateforme correspond.
 
 ## Démo automatisée
 
@@ -97,13 +94,13 @@ Résultats générés par défaut :
 - Exécution sécurisée (émulateur) sur un ou plusieurs fichiers ASM :
 
   ```bash
-  ./fragment_executor partitions/func_3_main.asm --input rax=0x100 rbx=42
+  ../fragment-executor/fragment_executor partitions/func_3_main.asm --input rax=0x100 rbx=42
   ```
 
 - Exécution en chaîne à partir du `summary.json` produit par `splitter` :
 
   ```bash
-  ./fragment_executor --summary partitions/summary.json --input rax=0x0
+  ../fragment-executor/fragment_executor --summary partitions/summary.json --input rax=0x0
   ```
 
   L'outil reconstruit l'ordre d'exécution via un tri topologique et injecte les valeurs `--input` requises par chaque fragment.
@@ -111,7 +108,7 @@ Résultats générés par défaut :
 - Mode natif (JIT) :
 
   ```bash
-  ./fragment_executor --summary partitions/summary.json --native
+  ../fragment-executor/fragment_executor --summary partitions/summary.json --native
   ```
 
   ⚠️ Ce mode mappe le code machine en mémoire exécutable. Les fragments qui appellent la PLT (ex. `puts`) dépendront d’un environnement identique au binaire original et peuvent crasher lorsqu’ils sont lancés isolément.
