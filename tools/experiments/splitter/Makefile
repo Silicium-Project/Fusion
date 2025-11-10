@@ -3,6 +3,7 @@ CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic
 CC := gcc
 CFLAGS := -O0 -g -no-pie
 
+SRC_DIR := src
 SPLITTER_BIN := splitter
 EXECUTOR_DIR := ../fragment-executor
 EXECUTOR_BIN := $(EXECUTOR_DIR)/fragment_executor
@@ -20,10 +21,21 @@ ARGS ?=
 
 .PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program executor
 
+SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
+OBJ_DIR := build
+OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
+CPPFLAGS := -Iinclude
+
 all: $(SPLITTER_BIN)
 
-$(SPLITTER_BIN): splitter.cpp
-	$(CXX) $(CXXFLAGS) $< -o $@
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+$(SPLITTER_BIN): $(OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
 
 executor: $(EXECUTOR_BIN)
 
@@ -89,6 +101,7 @@ demo-clean:
 
 clean: demo-clean
 	rm -f $(SPLITTER_BIN) $(LOG_FILE)
+	rm -rf $(OBJ_DIR)
 
 fclean: clean
 	rm -rf $(RUN_BUILD_DIR) run_output

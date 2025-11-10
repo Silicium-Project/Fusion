@@ -24,6 +24,10 @@
 #include <stdexcept>
 #include <elf.h>
 
+#include "fragment/app.hpp"
+
+namespace fragment {
+
 std::string ascii_from_uint64(uint64_t value) {
     std::string bytes;
     bytes.reserve(8);
@@ -414,9 +418,9 @@ public:
             }
         }
         
-        return 0;
-    }
-    
+    return 0;
+}
+
     void set(const std::string& reg, uint64_t value) {
         auto it = regs64.find(reg);
         if (it != regs64.end()) {
@@ -1125,7 +1129,7 @@ private:
 // PROGRAMME PRINCIPAL
 // ============================================================================
 
-int main(int argc, char* argv[]) {
+int run_cli(int argc, char* argv[]) {
     bool log_missing_arg = false;
     std::string log_path;
     for (int i = 1; i < argc; ++i) {
@@ -1441,3 +1445,5 @@ int main(int argc, char* argv[]) {
     
     return all_success ? 0 : 1;
 }
+
+}  // namespace fragment

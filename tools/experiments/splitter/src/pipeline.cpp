@@ -24,6 +24,10 @@
 #include <iomanip>
 #include <optional>
 
+#include "splitter/pipeline.hpp"
+
+namespace splitter {
+
 namespace fs = std::filesystem;
 
 // ============================================================================
@@ -639,7 +643,7 @@ PartitionFiles create_standalone_partition(const BinaryPartition& partition,
 // PROGRAMME PRINCIPAL
 // ============================================================================
 
-int main(int argc, char* argv[]) {
+int run_cli(int argc, char* argv[]) {
     if (argc < 2) {
         std::cout << "Usage: " << argv[0] << " <binary_file> [--output-dir <dir>]\n\n"
                   << "Exemples:\n"
@@ -909,3 +913,5 @@ int main(int argc, char* argv[]) {
     
     return 0;
 }
+
+}  // namespace splitter
