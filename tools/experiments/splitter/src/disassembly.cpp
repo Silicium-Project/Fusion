@@ -1,7 +1,7 @@
 #include "splitter/disassembly.hpp"
 
 #include <filesystem>
-#include <fstream>
+#include <optional>
 #include <regex>
 #include <sstream>
 
@@ -10,69 +10,94 @@
 
 namespace splitter {
 
-namespace fs = std::filesystem;
+    namespace fs = std::filesystem;
 
-std::vector<Function> parse_objdump_output(const std::string& output) {
-    std::vector<Function> functions;
-    Function* current_function = nullptr;
+    static const std::regex kFunctionPattern("^([0-9a-f]+) <(.+)>:$");
+    static const std::regex kInstructionPattern("^\\s*([0-9a-f]+):\\s+([0-9a-f ]+)\\s+(\\w+)\\s*(.*)$");
 
-    std::regex func_pattern("^([0-9a-f]+) <(.+)>:$");
-    std::regex inst_pattern("^\\s*([0-9a-f]+):\\s+([0-9a-f ]+)\\s+(\\w+)\\s*(.*)$");
+    static Function make_function(const std::smatch& match) {
+        Function func;
 
-    std::istringstream stream(output);
-    std::string line;
+        func.start_addr = std::stoull(match[1].str(), nullptr, 16);
+        func.end_addr = func.start_addr;
+        func.name = match[2].str();
+        return func;
+    }
 
-    while (std::getline(stream, line)) {
+    static AsmInstruction make_instruction(const std::smatch& match) {
+        AsmInstruction inst;
+
+        inst.address = std::stoull(match[1].str(), nullptr, 16);
+        inst.bytes = match[2].str();
+        inst.opcode = match[3].str();
+        inst.operands = trim(match[4].str());
+        analyze_instruction(inst);
+        return inst;
+    }
+
+    static void flush_current(std::vector<Function>& functions, std::optional<Function>& current) {
+        if (!current.has_value())
+            return;
+        functions.push_back(*current);
+        current.reset();
+    }
+
+    static bool start_new_function(const std::string& line,
+                                std::optional<Function>& current,
+                                std::vector<Function>& functions) {
         std::smatch match;
-        if (std::regex_match(line, match, func_pattern)) {
-            if (current_function) {
-                functions.push_back(*current_function);
-                delete current_function;
-            }
-            uint64_t addr = std::stoull(match[1].str(), nullptr, 16);
-            std::string name = match[2].str();
-            current_function = new Function();
-            current_function->name = name;
-            current_function->start_addr = addr;
-            current_function->end_addr = addr;
-            continue;
+
+        if (!std::regex_match(line, match, kFunctionPattern))
+            return false;
+        flush_current(functions, current);
+        current = make_function(match);
+        return true;
+    }
+
+    static void append_instruction(const std::string& line, std::optional<Function>& current) {
+        if (!current.has_value())
+            return;
+
+        std::smatch match;
+
+        if (!std::regex_match(line, match, kInstructionPattern))
+            return;
+        AsmInstruction inst = make_instruction(match);
+        current->instructions.push_back(inst);
+        current->end_addr = inst.address;
+    }
+
+    std::vector<Function> parse_objdump_output(const std::string& output) {
+        std::vector<Function> functions;
+        std::optional<Function> current;
+        std::istringstream stream(output);
+        std::string line;
+
+        while (std::getline(stream, line)) {
+            if (start_new_function(line, current, functions))
+                continue;
+            append_instruction(line, current);
         }
-        if (std::regex_match(line, match, inst_pattern) && current_function) {
-            AsmInstruction inst;
-            inst.address = std::stoull(match[1].str(), nullptr, 16);
-            inst.bytes = match[2].str();
-            inst.opcode = match[3].str();
-            inst.operands = trim(match[4].str());
-            analyze_instruction(inst);
-            current_function->instructions.push_back(inst);
-            current_function->end_addr = inst.address;
+
+        flush_current(functions, current);
+        return functions;
+    }
+
+    std::pair<std::vector<Function>, std::string> disassemble_binary(const std::string& binary_path) {
+        if (!fs::exists(binary_path))
+            throw std::runtime_error("Binaire introuvable: " + binary_path);
+
+        std::string cmd = "objdump -d -M intel " + binary_path;
+        std::string disasm_output;
+
+        try {
+            disasm_output = exec_command(cmd);
+        } catch (const std::exception&) {
+            throw std::runtime_error("Désassemblage échoué. Installez binutils: apt-get install binutils");
         }
+
+        auto functions = parse_objdump_output(disasm_output);
+        return {functions, disasm_output};
     }
-
-    if (current_function) {
-        functions.push_back(*current_function);
-        delete current_function;
-    }
-
-    return functions;
-}
-
-std::pair<std::vector<Function>, std::string> disassemble_binary(const std::string& binary_path) {
-    if (!fs::exists(binary_path)) {
-        throw std::runtime_error("Binaire introuvable: " + binary_path);
-    }
-
-    std::string cmd = "objdump -d -M intel " + binary_path;
-    std::string disasm_output;
-
-    try {
-        disasm_output = exec_command(cmd);
-    } catch (const std::exception&) {
-        throw std::runtime_error("Désassemblage échoué. Installez binutils: apt-get install binutils");
-    }
-
-    auto functions = parse_objdump_output(disasm_output);
-    return {functions, disasm_output};
-}
 
 }  // namespace splitter

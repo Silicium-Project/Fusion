@@ -1,10 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
-#include <iomanip>
-#include <iostream>
+#include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -33,30 +32,24 @@ public:
     std::vector<uint8_t> memory;
     uint64_t stack_base = 0;
 
-    RegisterEmulator() {
-        memory.resize(1024 * 1024, 0);
-        stack_base = memory.size() - 0x10000;
-        regs64["rsp"] = stack_base;
-        regs64["rbp"] = stack_base;
-    }
+    RegisterEmulator();
 
     uint64_t get(const std::string& reg) const;
     void set(const std::string& reg, uint64_t value);
-    void write_memory(uint64_t addr, const void* data, size_t size);
-    void read_memory(uint64_t addr, void* data, size_t size) const;
-    void set_patch_log(std::vector<MemoryPatch>* log) { patch_log = log; }
+    void write_qword(uint64_t addr, uint64_t value);
+    uint64_t read_qword(uint64_t addr) const;
+    void enable_patch_log(std::vector<MemoryPatch>& log);
+    void disable_patch_log();
     void print_state() const;
 
 private:
-    std::vector<MemoryPatch>* patch_log = nullptr;
+    std::optional<std::reference_wrapper<std::vector<MemoryPatch>>> patch_log;
 };
 
 class PatchLogGuard {
 public:
-    PatchLogGuard(RegisterEmulator& emu, std::vector<MemoryPatch>* log) : emulator(emu) {
-        emulator.set_patch_log(log);
-    }
-    ~PatchLogGuard() { emulator.set_patch_log(nullptr); }
+    PatchLogGuard(RegisterEmulator& emu, std::vector<MemoryPatch>& log);
+    ~PatchLogGuard();
 
 private:
     RegisterEmulator& emulator;

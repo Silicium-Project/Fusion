@@ -27,5 +27,6 @@ struct PartitionSummary {
 
 PartitionSummary load_partition_summary(const std::string& summary_path);
 std::vector<std::string> order_partitions(const PartitionSummary& summary);
+std::vector<std::string> order_partitions(const std::vector<PartitionInfo>& partitions);
 
 }  // namespace fragment

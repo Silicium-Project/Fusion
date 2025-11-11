@@ -1,5 +1,13 @@
 #include "splitter/pipeline.hpp"
 
+#include <string_view>
+#include <vector>
+
 int main(int argc, char** argv) {
-    return splitter::run_cli(argc, argv);
+    std::vector<std::string_view> args;
+    args.reserve(static_cast<size_t>(argc));
+    for (int i = 0; i < argc; ++i)
+        args.emplace_back(argv[i]);
+
+    return splitter::run_cli(args);
 }
