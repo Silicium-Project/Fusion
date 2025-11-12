@@ -17,6 +17,7 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 | `infra/secure-stack/` | Docker Compose + scripts pour un RPC Solana confiné derrière un VPN WireGuard. |
 | `catalog/workloads/` | Catalogue des manifests calcul/vérification. |
 | `tools/experiments/` | Prototypes non supportés (`splitter/`, `fragment-executor/`, anciens tests). |
+| `tools/worker/` | Prototype de worker local qui consomme des partitions générées par `splitter`. |
 | Volumes Docker (`silicium-*-ledger`) | Persistences des ledgers/clépairs, gérées automatiquement via Compose. |
 | `README.md` | Ce document. |
 

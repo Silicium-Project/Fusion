@@ -36,6 +36,20 @@ g++ -std=c++17 -O2 splitter.cpp -o splitter
 cd ../fragment-executor && g++ -std=c++17 -O2 fragment_executor.cpp -o fragment_executor
 ```
 
+## Tests unitaires
+
+```bash
+make test
+```
+
+Comme pour `fragment-executor`, la première exécution construit automatiquement
+l'image Docker `silicium/cpp-tests` (compilateurs + googletest). Une fois l'image
+présente en local, les tests s'exécutent en quelques secondes. Vous pouvez
+surcharger l'image en exportant `CPP_TEST_IMAGE=<tag>` avant d'appeler `make test`.
+Un cache `ccache` partagé (`.cache/cpp-tests/ccache`) est monté dans le conteneur :
+après la première compilation (~15 s), les itérations suivantes retombent sous la
+seconde tant que les sources restent inchangées.
+
 ## Démo automatisée
 
 Une cible `make demo` prépare un binaire jouet (`demo/hello.c`), lance le partitionnement puis exécute les fragments en mode émulation :

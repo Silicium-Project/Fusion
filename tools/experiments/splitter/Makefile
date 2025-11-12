@@ -4,6 +4,11 @@ CC := gcc
 CFLAGS := -O0 -g -no-pie
 
 SRC_DIR := src
+REPO_ROOT := $(abspath ../../..)
+CPP_TEST_IMAGE ?= silicium/cpp-tests:latest
+CPP_TEST_DOCKERFILE := $(REPO_ROOT)/infra/docker/cpp-tests/Dockerfile
+CPP_TEST_CONTEXT := $(dir $(CPP_TEST_DOCKERFILE))
+CCACHE_DIR := $(REPO_ROOT)/.cache/cpp-tests/ccache
 SPLITTER_BIN := splitter
 EXECUTOR_DIR := ../fragment-executor
 EXECUTOR_BIN := $(EXECUTOR_DIR)/fragment_executor
@@ -19,7 +24,7 @@ RUN_OUT := $(if $(OUT),$(OUT),run_output/$(RUN_NAME))
 RUN_LOG := $(if $(LOG),$(LOG),fragment_executor.log)
 ARGS ?=
 
-.PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program executor test
+.PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program executor test build-cpp-test-image
 
 SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_DIR := build
@@ -29,6 +34,14 @@ CPPFLAGS := -Iinclude
 TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp
 TEST_EXTRA_SRCS := src/instruction_analysis.cpp src/disassembly.cpp src/util.cpp
 TEST_BUILD_DIR := build/tests
+TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
+TEST_BIN := $(TEST_BUILD_DIR)/splitter_tests
+TEST_TEST_OBJS := $(patsubst tests/%.cpp,$(TEST_OBJ_DIR)/tests/%.o,$(TEST_SRCS))
+TEST_EXTRA_OBJS := $(patsubst src/%.cpp,$(TEST_OBJ_DIR)/src/%.o,$(TEST_EXTRA_SRCS))
+TEST_OBJS := $(TEST_TEST_OBJS) $(TEST_EXTRA_OBJS)
+TEST_CXX ?= $(CXX)
+TEST_CXXFLAGS ?= $(CXXFLAGS) --coverage
+TEST_LDFLAGS ?= --coverage -lgtest -lgtest_main -pthread
 
 all: $(SPLITTER_BIN)
 
@@ -40,6 +53,24 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 
 $(SPLITTER_BIN): $(OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@
+
+$(TEST_BUILD_DIR):
+	mkdir -p $(TEST_BUILD_DIR)
+
+$(TEST_OBJ_DIR)/tests:
+	mkdir -p $(TEST_OBJ_DIR)/tests
+
+$(TEST_OBJ_DIR)/src:
+	mkdir -p $(TEST_OBJ_DIR)/src
+
+$(TEST_OBJ_DIR)/tests/%.o: tests/%.cpp | $(TEST_OBJ_DIR)/tests
+	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
+
+$(TEST_OBJ_DIR)/src/%.o: src/%.cpp | $(TEST_OBJ_DIR)/src
+	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
+
+$(TEST_BIN): $(TEST_OBJS) | $(TEST_BUILD_DIR)
+	$(TEST_CXX) $(TEST_OBJS) -o $@ $(TEST_LDFLAGS)
 
 executor: $(EXECUTOR_BIN)
 
@@ -103,21 +134,25 @@ run-binary: all prep-program
 HOST_UID := $(shell id -u)
 HOST_GID := $(shell id -g)
 
-test:
+test: build-cpp-test-image
+	@mkdir -p $(CCACHE_DIR)
 	docker run --rm \
 		-e HOST_UID=$(HOST_UID) -e HOST_GID=$(HOST_GID) \
+		-e CCACHE_DIR=/ccache \
 		-v $(abspath ../../..):/workspace:Z -w /workspace \
-		debian:bookworm-slim bash -lc '\
+		-v $(CCACHE_DIR):/ccache \
+		$(CPP_TEST_IMAGE) bash -lc '\
 		set -euo pipefail; \
-		apt-get update >/dev/null && apt-get install -y --no-install-recommends build-essential cmake libgtest-dev lcov >/dev/null; \
-		cmake -S /usr/src/googletest -B /tmp/gtest >/dev/null && cmake --build /tmp/gtest >/dev/null && cmake --install /tmp/gtest >/dev/null; \
-	cd tools/experiments/splitter; \
-	rm -rf $(TEST_BUILD_DIR) && mkdir -p $(TEST_BUILD_DIR); \
-	g++ -Iinclude -std=c++17 -O2 -Wall -Wextra -pedantic --coverage \
-		$(TEST_SRCS) $(TEST_EXTRA_SRCS) \
-		-o $(TEST_BUILD_DIR)/splitter_tests --coverage -lgtest -lgtest_main -pthread; \
-	$(TEST_BUILD_DIR)/splitter_tests; \
+		ccache -M 2G >/dev/null; \
+		cd tools/experiments/splitter; \
+		env TEST_CXX="ccache g++" $(MAKE) $(TEST_BIN); \
+		$(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID tools/experiments/splitter/build && rm -f tools/experiments/splitter/*.gcov'
+
+build-cpp-test-image:
+	@docker image inspect $(CPP_TEST_IMAGE) >/dev/null 2>&1 || \
+		(echo ">> Building $(CPP_TEST_IMAGE) image (one-time setup)"; \
+		 docker build -t $(CPP_TEST_IMAGE) -f $(CPP_TEST_DOCKERFILE) $(CPP_TEST_CONTEXT))
 
 demo-clean:
 	@rm -rf $(DEMO_OUT) $(DEMO_BIN)
