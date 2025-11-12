@@ -1,6 +1,6 @@
 {
   "binary": "",
-  "partitions_count": 2,
+  "partitions_count": 3,
   "parallelizable_count": 0,
   "partitions": [
     {
@@ -16,6 +16,22 @@
       "dependencies": [],
       "unresolved_calls": [],
       "asm": "demo/writer.asm",
+      "bin": "",
+      "wrapper": ""
+    },
+    {
+      "id": "mutator",
+      "start": "0x800",
+      "end": "0x820",
+      "size": 32,
+      "parallelizable": false,
+      "inputs": [],
+      "external_inputs": [],
+      "outputs": ["rcx", "rsp"],
+      "parents": [],
+      "dependencies": [],
+      "unresolved_calls": [],
+      "asm": "demo/mutator.asm",
       "bin": "",
       "wrapper": ""
     },
