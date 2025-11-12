@@ -1,0 +1,39 @@
+{
+  "binary": "",
+  "partitions_count": 2,
+  "parallelizable_count": 0,
+  "partitions": [
+    {
+      "id": "writer",
+      "start": "0x0",
+      "end": "0x18",
+      "size": 24,
+      "parallelizable": false,
+      "inputs": [],
+      "external_inputs": [],
+      "outputs": ["rax", "rsp"],
+      "parents": [],
+      "dependencies": [],
+      "unresolved_calls": [],
+      "asm": "demo/writer.asm",
+      "bin": "",
+      "wrapper": ""
+    },
+    {
+      "id": "reader",
+      "start": "0x1000",
+      "end": "0x1010",
+      "size": 16,
+      "parallelizable": false,
+      "inputs": [],
+      "external_inputs": [],
+      "outputs": ["rbx", "rsp"],
+      "parents": [],
+      "dependencies": [],
+      "unresolved_calls": [],
+      "asm": "demo/reader.asm",
+      "bin": "",
+      "wrapper": ""
+    }
+  ]
+}

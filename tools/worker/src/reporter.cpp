@@ -8,6 +8,19 @@ namespace worker {
 
 namespace {
 
+std::string format_bytes(const std::vector<uint8_t>& bytes, size_t limit = 16) {
+    std::ostringstream oss;
+    for (size_t i = 0; i < bytes.size() && i < limit; ++i) {
+        if (i)
+            oss << ' ';
+        oss << std::hex << std::setw(2) << std::setfill('0')
+            << static_cast<int>(bytes[i]);
+    }
+    if (bytes.size() > limit)
+        oss << " ...";
+    return oss.str();
+}
+
 std::string escape_json(std::string_view input) {
     std::string out;
     out.reserve(input.size() + 4);
@@ -94,6 +107,16 @@ void Reporter::emit_text(const WorkerReport& report) {
 
         if (!task.result.program_stdout.empty())
             *stream_ << "  Sortie fragment:\n" << task.result.program_stdout;
+
+        if (!task.result.memory_patches.empty()) {
+            *stream_ << "  Écritures mémoire:\n";
+            for (const auto& patch : task.result.memory_patches) {
+                *stream_ << "    @0x" << std::hex << patch.address << std::dec
+                         << " (" << patch.after.size() << " octets)\n";
+                *stream_ << "      avant : " << format_bytes(patch.before) << "\n";
+                *stream_ << "      après : " << format_bytes(patch.after) << "\n";
+            }
+        }
     }
 
     *stream_ << "\n";
@@ -134,6 +157,19 @@ void Reporter::emit_json(const WorkerReport& report) {
                 << "\"name\":\"" << escape_json(name) << "\","
                 << "\"before\":" << values.first << ","
                 << "\"after\":" << values.second
+                << "}";
+        }
+        oss << "]";
+        oss << ",\"memory_patches\":[";
+        size_t patch_idx = 0;
+        for (const auto& patch : task.result.memory_patches) {
+            if (patch_idx++)
+                oss << ",";
+            oss << "{"
+                << "\"address\":" << patch.address << ","
+                << "\"size\":" << patch.after.size() << ","
+                << "\"before\":\"" << escape_json(format_bytes(patch.before, patch.before.size())) << "\","
+                << "\"after\":\"" << escape_json(format_bytes(patch.after, patch.after.size())) << "\""
                 << "}";
         }
         oss << "]";

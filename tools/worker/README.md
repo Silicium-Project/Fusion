@@ -34,7 +34,9 @@ worker --summary <summary.json> --queue queue.txt [--output json]
   relire les écritures mémoire/régistres des précédents). Même lorsque les
   fragments sont exécutés de manière détachée, le worker reconstruit la mémoire
   en réappliquant uniquement les zones modifiées (diffs capturés dans
-  `memory_patches`), ce qui évite de transporter toute la RAM.
+  `memory_patches`), ce qui évite de transporter toute la RAM. Le reporter
+  liste ces patchs mémoire (adresse + octets avant/après) pour faciliter le
+  débogage.
 
 Exemple de file :
 
@@ -54,3 +56,23 @@ Les tests réutilisent l'image Docker `silicium/cpp-tests` (buildée pour
 `splitter`/`fragment-executor`) et montent un cache `ccache` partagé dans
 `.cache/cpp-tests/ccache`. La première compilation prend ~15 s, puis les
 relances se font en moins d'une seconde tant que les sources n'ont pas changé.
+
+## Démo mémoire
+
+Le dossier `tools/worker/demo/` contient deux fragments factices :
+
+- `writer.asm` pousse une valeur sur la pile,
+- `reader.asm` la dépile.
+
+Un `summary.json` minimal et une file `queue.txt` sont fournis. Pour tester le
+transfert d'état (mémoire + registres) :
+
+```bash
+./tools/worker/worker \
+  --summary tools/worker/demo/summary.json \
+  --queue tools/worker/demo/queue.txt
+```
+
+La sortie montre que `reader` récupère bien la valeur écrite par `writer`
+grâce au mécanisme de diff mémoire. Ajoutez `--reset-state` si vous souhaitez
+revenir à un worker stateless.
