@@ -24,7 +24,7 @@ FRAGMENT_SOURCES := fragment_executor.cpp register_emulator.cpp instruction_emul
 	segment_loader.cpp execution_result.cpp logging.cpp utils.cpp cli.cpp partition_summary.cpp
 FRAGMENT_OBJS := $(patsubst %.cpp,$(FRAGMENT_OBJ_DIR)/%.o,$(FRAGMENT_SOURCES))
 
-TEST_SRCS := tests/queue_loader_test.cpp tests/worker_runner_test.cpp
+TEST_SRCS := tests/queue_loader_test.cpp tests/worker_runner_test.cpp tests/stateful_worker_test.cpp
 TEST_BUILD_DIR := $(OBJ_DIR)/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
 TEST_BIN := $(TEST_BUILD_DIR)/worker_tests

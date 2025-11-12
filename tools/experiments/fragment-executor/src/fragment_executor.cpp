@@ -53,6 +53,15 @@ void FragmentExecutor::set_inputs(const std::map<std::string, uint64_t>& inputs)
         emulator.set(reg, val);
 }
 
+void FragmentExecutor::apply_memory_bytes(uint64_t address, const std::vector<uint8_t>& bytes) {
+    emulator.write_bytes(address, bytes);
+}
+
+void FragmentExecutor::apply_memory_patches(const std::vector<MemoryPatch>& patches) {
+    for (const auto& patch : patches)
+        emulator.write_bytes(patch.address, patch.after);
+}
+
 ExecutionResult FragmentExecutor::execute_safe(const std::string& asm_file) {
     ExecutionResult result;
     PatchLogGuard patch_guard(emulator, result.memory_patches);

@@ -20,6 +20,8 @@ public:
     uint64_t get_register(const std::string& reg) const;
     void set_input(const std::string& reg, uint64_t value);
     void set_inputs(const std::map<std::string, uint64_t>& inputs);
+    void apply_memory_bytes(uint64_t address, const std::vector<uint8_t>& bytes);
+    void apply_memory_patches(const std::vector<MemoryPatch>& patches);
 
     ExecutionResult execute_safe(const std::string& asm_file);
     ExecutionResult execute_native(const std::vector<uint8_t>& binary_code);

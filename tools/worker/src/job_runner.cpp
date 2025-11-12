@@ -11,21 +11,20 @@ std::string resolve_path(const std::filesystem::path& base, const std::string& c
         return "";
 
     std::filesystem::path path(candidate);
-    if (path.is_relative())
-        path = base / path;
-    path = path.lexically_normal();
+    if (path.is_absolute())
+        return path.lexically_normal().string();
 
-    if (std::filesystem::exists(path))
-        return path.string();
+    std::filesystem::path probe = base;
+    while (true) {
+        auto combined = (probe / path).lexically_normal();
+        if (std::filesystem::exists(combined))
+            return combined.string();
+        if (!probe.has_parent_path())
+            break;
+        probe = probe.parent_path();
+    }
 
-    if (path.is_absolute() || !base.has_parent_path())
-        return path.string();
-
-    auto fallback = (base.parent_path() / std::filesystem::path(candidate)).lexically_normal();
-    if (std::filesystem::exists(fallback))
-        return fallback.string();
-
-    return path.string();
+    return (base / path).lexically_normal().string();
 }
 
 }  // namespace
@@ -47,12 +46,7 @@ TaskReport JobRunner::execute(const Task& task) {
 
     const auto& partition = summary_.partitions[it->second];
     const std::string asm_path = resolve_path(base_dir_, partition.asm_path);
-
-    std::string binary_path = resolve_path(base_dir_, partition.bin_path);
-    if (binary_path.empty())
-        binary_path = resolved_binary_path_;
-
-    return worker_.run_task(partition, asm_path, binary_path, task);
+    return worker_.run_task(partition, asm_path, resolved_binary_path_, task);
 }
 
 }  // namespace worker

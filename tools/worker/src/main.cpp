@@ -18,6 +18,7 @@ struct CliOptions {
     bool native_mode = false;
     worker::OutputFormat output = worker::OutputFormat::Text;
     std::string log_path;
+    bool reset_state = false;
 };
 
 void print_usage(const char* prog) {
@@ -31,6 +32,7 @@ void print_usage(const char* prog) {
               << "  --input reg=val    Valeur par défaut pour les tâches ajoutées via --task\n"
               << "  --native           Active l'exécution native\n"
               << "  --output text|json Format de sortie (text par défaut)\n"
+              << "  --reset-state      Réinitialise l'état entre chaque tâche\n"
               << "  --log <file>       Capture la sortie stdout détectée dans un fichier\n"
               << "  --help             Affiche cette aide\n";
 }
@@ -66,6 +68,8 @@ CliOptions parse_cli(int argc, char** argv) {
             opts.default_inputs[reg] = worker::parse_register_value(value);
         } else if (arg == "--native")
             opts.native_mode = true;
+        else if (arg == "--reset-state")
+            opts.reset_state = true;
         else if (arg == "--output") {
             if (++i >= argc)
                 throw std::runtime_error("--output requiert text|json");
@@ -117,6 +121,7 @@ int main(int argc, char** argv) {
         worker::WorkerConfig config;
         config.native_mode = opts.native_mode;
         config.executor.use_native_execution = opts.native_mode;
+        config.reset_between_tasks = opts.reset_state;
 
         worker::JobRunner runner(opts.summary_path, config);
 

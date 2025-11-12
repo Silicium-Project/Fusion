@@ -4,6 +4,9 @@
 tests/__pycache__/
 .cache/
 tools/**/build/
+tools/experiments/splitter/splitter
+tools/experiments/fragment-executor/fragment_executor
+tools/worker/worker
 
 # Experimental leftovers
 tools/experiments/old_tests/

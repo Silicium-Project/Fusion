@@ -29,6 +29,12 @@ worker --summary <summary.json> --queue queue.txt [--output json]
 - `--output` : `text` (défaut) ou `json`.
 - `--log` : capture la sortie standard détectée (`puts`/`printf`) dans un
   fichier unique.
+- `--reset-state` : force la réinitialisation des registres/mémoire entre chaque
+  tâche (par défaut le worker conserve l'état, ce qui permet à un fragment de
+  relire les écritures mémoire/régistres des précédents). Même lorsque les
+  fragments sont exécutés de manière détachée, le worker reconstruit la mémoire
+  en réappliquant uniquement les zones modifiées (diffs capturés dans
+  `memory_patches`), ce qui évite de transporter toute la RAM.
 
 Exemple de file :
 

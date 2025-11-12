@@ -17,6 +17,7 @@ struct Task {
 struct WorkerConfig {
     fragment::ExecutorConfig executor;
     bool native_mode = false;
+    bool reset_between_tasks = false;
 };
 
 struct TaskReport {

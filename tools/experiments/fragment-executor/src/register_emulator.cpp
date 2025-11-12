@@ -93,6 +93,27 @@ uint64_t RegisterEmulator::read_qword(uint64_t addr) const {
     return value;
 }
 
+void RegisterEmulator::write_bytes(uint64_t addr, const std::vector<uint8_t>& bytes) {
+    if (bytes.empty() || addr >= memory.size())
+        return;
+
+    size_t len = std::min(bytes.size(), memory.size() - addr);
+    if (len == 0)
+        return;
+
+    std::vector<uint8_t> before(memory.begin() + addr, memory.begin() + addr + len);
+
+    if (patch_log && before != std::vector<uint8_t>(bytes.begin(), bytes.begin() + len)) {
+        MemoryPatch patch;
+        patch.address = addr;
+        patch.before = before;
+        patch.after.assign(bytes.begin(), bytes.begin() + len);
+        patch_log->get().push_back(std::move(patch));
+    }
+
+    std::copy(bytes.begin(), bytes.begin() + len, memory.begin() + addr);
+}
+
 void RegisterEmulator::print_state() const {
     log::subsection("État des registres");
 
