@@ -1,8 +1,5 @@
 #include "fragment/utils.hpp"
 
-#include <cctype>
-#include <sstream>
-
 namespace fragment {
 
 static void skip_whitespace(const std::string& text, size_t& pos) {

@@ -1,9 +1,5 @@
 #include "fragment/logging.hpp"
 
-#include <iostream>
-#include <string>
-#include <string_view>
-
 namespace fragment::log {
 
 static constexpr size_t separator_width = 60;
@@ -55,4 +51,3 @@ void error(std::string_view message) {
 }
 
 }  // namespace fragment::log
-

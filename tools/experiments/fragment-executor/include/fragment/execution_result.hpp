@@ -1,9 +1,6 @@
 #pragma once
 
-#include <map>
-#include <string>
-#include <vector>
-
+#include "fragment/common.hpp"
 #include "fragment/memory.hpp"
 
 namespace fragment {

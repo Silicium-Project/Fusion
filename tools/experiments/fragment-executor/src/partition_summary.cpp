@@ -1,15 +1,11 @@
 #include "fragment/partition_summary.hpp"
 
-#include <fstream>
-#include <queue>
-#include <stdexcept>
-#include <unordered_map>
-
 #include "fragment/utils.hpp"
 
 namespace fragment {
 
 using StringPair = std::pair<size_t, size_t>;
+
 using Graph = std::unordered_map<std::string, std::vector<std::string>>;
 
 static std::string read_summary_file(const std::string& path) {

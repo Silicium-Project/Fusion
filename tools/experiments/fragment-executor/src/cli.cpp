@@ -1,13 +1,5 @@
 #include "fragment/cli.hpp"
 
-#include <algorithm>
-#include <cctype>
-#include <functional>
-#include <iostream>
-#include <sstream>
-#include <string_view>
-#include <unordered_map>
-
 #include "fragment/logging.hpp"
 
 namespace fragment {

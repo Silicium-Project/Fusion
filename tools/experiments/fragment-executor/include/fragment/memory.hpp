@@ -1,11 +1,6 @@
 #pragma once
 
-#include <cstdint>
-#include <functional>
-#include <map>
-#include <optional>
-#include <string>
-#include <vector>
+#include "fragment/common.hpp"
 
 namespace fragment {
 
@@ -35,11 +30,17 @@ public:
     RegisterEmulator();
 
     uint64_t get(const std::string& reg) const;
+
     void set(const std::string& reg, uint64_t value);
+
     void write_qword(uint64_t addr, uint64_t value);
+
     uint64_t read_qword(uint64_t addr) const;
+
     void enable_patch_log(std::vector<MemoryPatch>& log);
+
     void disable_patch_log();
+
     void print_state() const;
 
 private:

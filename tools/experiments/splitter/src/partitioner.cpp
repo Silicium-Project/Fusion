@@ -1,7 +1,6 @@
 #include "splitter/partitioner.hpp"
 
 #include <algorithm>
-#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -11,156 +10,224 @@
 #include <set>
 #include <sstream>
 #include <unordered_map>
+#include <utility>
 
 #include "splitter/instruction_analysis.hpp"
 #include "splitter/util.hpp"
 
 namespace splitter {
 
-    using CallRef = std::pair<std::optional<uint64_t>, std::string>;
-    using CallMatrix = std::vector<std::vector<CallRef>>;
+    namespace {
 
-    static bool should_skip_function(const Function& func) {
-        if (func.name.empty())
-            return true;
-        if (func.name.front() == '_')
-            return true;
+        using CallRef = std::pair<std::optional<uint64_t>, std::string>;
+        using CallMatrix = std::vector<std::vector<CallRef>>;
 
-        return func.name.find("@plt") != std::string::npos;
-    }
+        bool should_skip_function(const Function& func) {
+            if (func.name.empty())
+                return true;
+            if (func.name.front() == '_')
+                return true;
 
-    static BinaryPartition init_partition(Function& func,
-                                          const std::string& binary_path,
-                                          int partition_id) {
-        analyze_function_loops(func);
-        auto loop_info = detect_loop_patterns(func);
-        BinaryPartition partition;
-
-        partition.id = "func_" + std::to_string(partition_id) + "_" + func.name;
-        partition.functions.push_back(func);
-        partition.start_addr = func.start_addr;
-        partition.end_addr = func.end_addr;
-        partition.asm_code = function_to_asm(func);
-        partition.raw_bytes = extract_binary_segment(binary_path, func.start_addr, func.end_addr);
-        partition.is_parallelizable = loop_info["parallelizable"] == "true";
-
-        return partition;
-    }
-
-    static std::vector<CallRef> collect_function_calls(const Function& func, BinaryPartition& partition) {
-        std::set<std::string> reads;
-        std::set<std::string> writes;
-        std::vector<CallRef> calls;
-
-        for (const auto& inst : func.instructions) {
-            reads.insert(inst.reads.begin(), inst.reads.end());
-            writes.insert(inst.writes.begin(), inst.writes.end());
-            if (inst.is_call)
-                calls.push_back({inst.target_addr, inst.operands});
+            return func.name.find("@plt") != std::string::npos;
         }
 
-        std::set<std::string> inputs;
-        std::set_difference(reads.begin(), reads.end(),
-                            writes.begin(), writes.end(),
-                            std::inserter(inputs, inputs.begin()));
+        std::string unresolved_label(const CallRef& call) {
+            if (!call.second.empty())
+                return call.second;
+            if (!call.first.has_value())
+                return "[indirect call]";
 
-        partition.inputs = inputs;
-        partition.outputs = writes;
+            std::ostringstream oss;
 
-        return calls;
-    }
-
-    static std::unordered_map<uint64_t, size_t> build_address_index(const std::vector<BinaryPartition>& partitions) {
-        std::unordered_map<uint64_t, size_t> index;
-
-        for (size_t idx = 0; idx < partitions.size(); ++idx)
-            for (const auto& func : partitions[idx].functions)
-                index[func.start_addr] = idx;
-
-        return index;
-    }
-
-    static std::unordered_map<std::string, size_t> build_id_index(const std::vector<BinaryPartition>& partitions) {
-        std::unordered_map<std::string, size_t> index;
-
-        for (size_t idx = 0; idx < partitions.size(); ++idx)
-            index[partitions[idx].id] = idx;
-
-        return index;
-    }
-
-    static std::string unresolved_label(const CallRef& call) {
-        if (!call.second.empty())
-            return call.second;
-        if (!call.first.has_value())
-            return "[indirect call]";
-
-        std::ostringstream oss;
-
-        oss << "0x" << std::hex << call.first.value();
-        return oss.str();
-    }
-
-    static void resolve_dependencies(std::vector<BinaryPartition>& partitions,
-                                     const CallMatrix& calls,
-                                     const std::unordered_map<uint64_t, size_t>& addr_index,
-                                     std::vector<std::set<std::string>>& parent_sets) {
-        for (size_t idx = 0; idx < partitions.size(); ++idx) {
-            std::set<std::string> dependency_set;
-            std::set<std::string> unresolved_set;
-            for (const auto& call : calls[idx]) {
-                if (call.first.has_value()) {
-                    uint64_t target = call.first.value();
-                    auto it = addr_index.find(target);
-                    if (it != addr_index.end()) {
-                        const std::string& child_id = partitions[it->second].id;
-                        if (child_id != partitions[idx].id) {
-                            dependency_set.insert(child_id);
-                            parent_sets[it->second].insert(partitions[idx].id);
-                        }
-                    } else {
-                        unresolved_set.insert(unresolved_label(call));
-                    }
-                } else {
-                    unresolved_set.insert(unresolved_label(call));
-                }
-            }
-            partitions[idx].dependencies.assign(dependency_set.begin(), dependency_set.end());
-            partitions[idx].unresolved_dependencies.assign(unresolved_set.begin(), unresolved_set.end());
+            oss << "0x" << std::hex << call.first.value();
+            return oss.str();
         }
-    }
 
-    static void attach_parents(std::vector<BinaryPartition>& partitions,
-                               const std::vector<std::set<std::string>>& parent_sets) {
-        for (size_t idx = 0; idx < partitions.size(); ++idx)
-            partitions[idx].parents.assign(parent_sets[idx].begin(), parent_sets[idx].end());
-    }
+    }  // namespace
 
-    static void compute_external_inputs(std::vector<BinaryPartition>& partitions,
-                                        const std::unordered_map<std::string, size_t>& id_index) {
-        for (auto& partition : partitions) {
-            std::set<std::string> provided;
+    class Partitioner::Impl {
+    public:
+        explicit Impl(std::string binary_path)
+        : binary_path_(std::move(binary_path)) {}
 
-            for (const auto& parent_id : partition.parents) {
-                auto it = id_index.find(parent_id);
+        std::vector<BinaryPartition> run(std::vector<Function>& functions) {
+            reset();
 
-                if (it == id_index.end())
+            int partition_id = 0;
+            for (auto& func : functions) {
+                if (should_skip_function(func))
                     continue;
 
-                const auto& outputs = partitions[it->second].outputs;
-                provided.insert(outputs.begin(), outputs.end());
+                auto partition = init_partition(func, partition_id);
+                auto calls = collect_function_calls(func, partition);
+
+                partitions_.push_back(std::move(partition));
+                call_refs_.push_back(std::move(calls));
+                ++partition_id;
             }
 
-            std::set<std::string> external;
-            std::set_difference(partition.inputs.begin(), partition.inputs.end(),
-                                provided.begin(), provided.end(),
-                                std::inserter(external, external.begin()));
-            partition.external_inputs = external;
+            if (partitions_.empty()) {
+                reset();
+                return {};
+            }
+
+            build_indices();
+            resolve_dependencies();
+            attach_parents();
+            compute_external_inputs();
+
+            auto output = std::move(partitions_);
+            reset();
+
+            return output;
         }
+
+    private:
+        BinaryPartition init_partition(Function& func, int partition_id) const {
+            analyze_function_loops(func);
+            auto loop_info = detect_loop_patterns(func);
+            BinaryPartition partition;
+
+            partition.id = "func_" + std::to_string(partition_id) + "_" + func.name;
+            partition.functions.push_back(func);
+            partition.start_addr = func.start_addr;
+            partition.end_addr = func.end_addr;
+            partition.asm_code = function_to_asm(func);
+            partition.raw_bytes = extract_binary_segment(binary_path_, func.start_addr, func.end_addr);
+            partition.is_parallelizable = loop_info.parallelizable;
+
+            return partition;
+        }
+
+        std::vector<CallRef> collect_function_calls(const Function& func, BinaryPartition& partition) const {
+            std::set<std::string> reads;
+            std::set<std::string> writes;
+            std::vector<CallRef> calls;
+
+            for (const auto& inst : func.instructions) {
+                reads.insert(inst.reads.begin(), inst.reads.end());
+                writes.insert(inst.writes.begin(), inst.writes.end());
+                if (inst.is_call)
+                    calls.push_back({inst.target_addr, inst.operands});
+            }
+
+            std::set<std::string> inputs;
+            std::set_difference(reads.begin(), reads.end(),
+                                writes.begin(), writes.end(),
+                                std::inserter(inputs, inputs.begin()));
+
+            partition.inputs = inputs;
+            partition.outputs = writes;
+
+            return calls;
+        }
+
+        void build_indices() {
+            addr_index_.clear();
+            id_index_.clear();
+            parent_sets_.clear();
+
+            parent_sets_.resize(partitions_.size());
+
+            for (size_t idx = 0; idx < partitions_.size(); ++idx) {
+                for (const auto& func : partitions_[idx].functions)
+                    addr_index_[func.start_addr] = idx;
+
+                id_index_[partitions_[idx].id] = idx;
+            }
+        }
+
+        void resolve_dependencies() {
+            for (size_t idx = 0; idx < partitions_.size(); ++idx) {
+                std::set<std::string> dependency_set;
+                std::set<std::string> unresolved_set;
+
+                for (const auto& call : call_refs_[idx]) {
+                    if (call.first.has_value()) {
+                        uint64_t target = call.first.value();
+                        auto it = addr_index_.find(target);
+
+                        if (it != addr_index_.end()) {
+                            const std::string& child_id = partitions_[it->second].id;
+
+                            if (child_id != partitions_[idx].id) {
+                                dependency_set.insert(child_id);
+                                parent_sets_[it->second].insert(partitions_[idx].id);
+                            }
+                        } else
+                            unresolved_set.insert(unresolved_label(call));
+                    } else
+                        unresolved_set.insert(unresolved_label(call));
+                }
+
+                partitions_[idx].dependencies.assign(dependency_set.begin(), dependency_set.end());
+                partitions_[idx].unresolved_dependencies.assign(unresolved_set.begin(), unresolved_set.end());
+            }
+        }
+
+        void attach_parents() {
+            for (size_t idx = 0; idx < partitions_.size(); ++idx)
+                partitions_[idx].parents.assign(parent_sets_[idx].begin(), parent_sets_[idx].end());
+        }
+
+        void compute_external_inputs() {
+            for (auto& partition : partitions_) {
+                std::set<std::string> provided;
+
+                for (const auto& parent_id : partition.parents) {
+                    auto it = id_index_.find(parent_id);
+
+                    if (it == id_index_.end())
+                        continue;
+
+                    const auto& outputs = partitions_[it->second].outputs;
+                    provided.insert(outputs.begin(), outputs.end());
+                }
+
+                std::set<std::string> external;
+                std::set_difference(partition.inputs.begin(), partition.inputs.end(),
+                                    provided.begin(), provided.end(),
+                                    std::inserter(external, external.begin()));
+
+                partition.external_inputs = external;
+            }
+        }
+
+        void reset() {
+            partitions_.clear();
+            call_refs_.clear();
+            addr_index_.clear();
+            id_index_.clear();
+            parent_sets_.clear();
+        }
+
+        std::string binary_path_;
+        std::vector<BinaryPartition> partitions_;
+        CallMatrix call_refs_;
+        std::unordered_map<uint64_t, size_t> addr_index_;
+        std::unordered_map<std::string, size_t> id_index_;
+        std::vector<std::set<std::string>> parent_sets_;
+    };
+
+    Partitioner::Partitioner(std::string binary_path)
+    : impl_(std::make_unique<Impl>(std::move(binary_path))) {}
+
+    Partitioner::~Partitioner() = default;
+    Partitioner::Partitioner(Partitioner&&) noexcept = default;
+    Partitioner& Partitioner::operator=(Partitioner&&) noexcept = default;
+
+    std::vector<BinaryPartition> Partitioner::run(std::vector<Function>& functions) {
+        return impl_->run(functions);
+    }
+
+    std::vector<BinaryPartition> partition_binary(std::vector<Function>& functions,
+                                                  const std::string& binary_path) {
+        Partitioner partitioner(binary_path);
+        return partitioner.run(functions);
     }
 
     std::vector<uint8_t> extract_binary_segment(const std::string& binary_path,
-                                        uint64_t start_addr, uint64_t end_addr) {
+                                                uint64_t start_addr, uint64_t end_addr) {
 
         std::vector<uint8_t> result;
 
@@ -181,6 +248,7 @@ namespace splitter {
                 && match[1].str().find(".text") != std::string::npos) {
                     text_vaddr = std::stoull(match[2].str(), nullptr, 16);
                     text_offset = std::stoull(match[3].str(), nullptr, 16);
+
                     break;
                 }
 
@@ -213,35 +281,6 @@ namespace splitter {
             oss << "0x" << std::hex << inst.address << ": "
                 << std::left << std::setw(8) << inst.opcode << " " << inst.operands << "\n";
         return oss.str();
-    }
-
-    std::vector<BinaryPartition> partition_binary(std::vector<Function>& functions,
-                                                const std::string& binary_path) {
-        std::vector<BinaryPartition> partitions;
-        CallMatrix call_refs;
-        int partition_id = 0;
-
-        for (auto& func : functions) {
-            if (should_skip_function(func))
-                continue;
-
-            auto partition = init_partition(func, binary_path, partition_id);
-            auto calls = collect_function_calls(func, partition);
-
-            partitions.push_back(std::move(partition));
-            call_refs.push_back(std::move(calls));
-            ++partition_id;
-        }
-
-        auto addr_index = build_address_index(partitions);
-        auto id_index = build_id_index(partitions);
-        std::vector<std::set<std::string>> parent_sets(partitions.size());
-
-        resolve_dependencies(partitions, call_refs, addr_index, parent_sets);
-        attach_parents(partitions, parent_sets);
-        compute_external_inputs(partitions, id_index);
-
-        return partitions;
     }
 
 }  // namespace splitter

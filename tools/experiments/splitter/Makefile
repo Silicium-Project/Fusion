@@ -19,12 +19,16 @@ RUN_OUT := $(if $(OUT),$(OUT),run_output/$(RUN_NAME))
 RUN_LOG := $(if $(LOG),$(LOG),fragment_executor.log)
 ARGS ?=
 
-.PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program executor
+.PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program executor test
 
 SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_DIR := build
 OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
 CPPFLAGS := -Iinclude
+
+TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp
+TEST_EXTRA_SRCS := src/instruction_analysis.cpp src/disassembly.cpp src/util.cpp
+TEST_BUILD_DIR := build/tests
 
 all: $(SPLITTER_BIN)
 
@@ -95,6 +99,25 @@ run-internal: all executor prep-program
 run-binary: all prep-program
 	@echo "==> Exécution du binaire original: $(RUN_BIN) $(ARGS)"
 	@$(RUN_BIN) $(ARGS)
+
+HOST_UID := $(shell id -u)
+HOST_GID := $(shell id -g)
+
+test:
+	docker run --rm \
+		-e HOST_UID=$(HOST_UID) -e HOST_GID=$(HOST_GID) \
+		-v $(abspath ../../..):/workspace:Z -w /workspace \
+		debian:bookworm-slim bash -lc '\
+		set -euo pipefail; \
+		apt-get update >/dev/null && apt-get install -y --no-install-recommends build-essential cmake libgtest-dev lcov >/dev/null; \
+		cmake -S /usr/src/googletest -B /tmp/gtest >/dev/null && cmake --build /tmp/gtest >/dev/null && cmake --install /tmp/gtest >/dev/null; \
+	cd tools/experiments/splitter; \
+	rm -rf $(TEST_BUILD_DIR) && mkdir -p $(TEST_BUILD_DIR); \
+	g++ -Iinclude -std=c++17 -O2 -Wall -Wextra -pedantic --coverage \
+		$(TEST_SRCS) $(TEST_EXTRA_SRCS) \
+		-o $(TEST_BUILD_DIR)/splitter_tests --coverage -lgtest -lgtest_main -pthread; \
+	$(TEST_BUILD_DIR)/splitter_tests; \
+		cd /workspace && chown -R $$HOST_UID:$$HOST_GID tools/experiments/splitter/build && rm -f tools/experiments/splitter/*.gcov'
 
 demo-clean:
 	@rm -rf $(DEMO_OUT) $(DEMO_BIN)

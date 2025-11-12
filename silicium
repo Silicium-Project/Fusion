@@ -113,10 +113,13 @@ def colorize(text: str, color: str) -> str:
     return f"{color}{text}{COLOR_RESET}"
 
 
-def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None) -> None:
+def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None, allow_failure: bool = False) -> int:
     pretty = " ".join(cmd)
     print(colorize(f">> {pretty}", COLOR_GREEN))
-    subprocess.run(cmd, cwd=cwd or REPO_ROOT, env=env, check=True)
+    result = subprocess.run(cmd, cwd=cwd or REPO_ROOT, env=env, check=not allow_failure)
+    if allow_failure and result.returncode != 0:
+        print(colorize(f"[WARN] Command failed but ignored (code {result.returncode})", COLOR_YELLOW))
+    return result.returncode
 
 
 def remove_path(path: Path) -> None:
@@ -177,9 +180,9 @@ def compose_down(volumes: bool = False) -> None:
 
 
 def cmd_test(_: argparse.Namespace) -> None:
-    run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
-    run([sys.executable, "-m", "pip", "install", "-r", "requirements-dev.txt"])
-    run(["pytest"])
+    run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], allow_failure=True)
+    run([sys.executable, "-m", "pip", "install", "-r", "requirements-dev.txt"], allow_failure=True)
+    run([sys.executable, "-m", "pytest"])
 
 
 def cmd_smoke(_: argparse.Namespace) -> None:

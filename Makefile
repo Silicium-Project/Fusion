@@ -1,25 +1,44 @@
 SHELL := /bin/bash
-CLI := ./silicium
 
-.PHONY: test smoke tools-demo clean clean-tools clean-ledgers fclean
+.PHONY: all splitter executor demo demo-native run run-native run-binary test clean fclean re
+
+all: splitter executor
+
+splitter:
+	$(MAKE) -C tools/experiments/splitter all
+
+executor:
+	$(MAKE) -C tools/experiments/fragment-executor all
+
+demo: splitter executor
+	$(MAKE) -C tools/experiments/splitter demo
+
+demo-native: splitter executor
+	$(MAKE) -C tools/experiments/splitter demo-native
+
+run: splitter executor
+	$(MAKE) -C tools/experiments/splitter run
+
+run-native: splitter executor
+	$(MAKE) -C tools/experiments/splitter run-native
+
+run-binary: splitter
+	$(MAKE) -C tools/experiments/splitter run-binary
 
 test:
-	$(CLI) test
-
-smoke:
-	$(CLI) smoke
-
-tools-demo:
-	$(CLI) tools demo
+	$(MAKE) -C tools/experiments/splitter test
+	$(MAKE) -C tools/experiments/fragment-executor test
+	python3 -m pip install -r requirements-dev.txt
+	python3 -m pytest
 
 clean:
-	$(CLI) clean
-
-clean-tools:
-	$(CLI) tools clean
-
-clean-ledgers:
-	$(CLI) ledger wipe --all
+	$(MAKE) -C tools/experiments/splitter clean
+	$(MAKE) -C tools/experiments/fragment-executor clean
 
 fclean:
-	$(CLI) clean --ledgers
+	$(MAKE) -C tools/experiments/splitter fclean
+	$(MAKE) -C tools/experiments/fragment-executor clean
+
+re:
+	$(MAKE) fclean
+	$(MAKE) all

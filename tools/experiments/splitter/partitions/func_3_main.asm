@@ -1,0 +1,9 @@
+; Function: main
+; Address: 0x400448 - 0x40045a
+
+0x400448: mov      eax,0x64
+0x40044d: nop      DWORD PTR [rax]
+0x400450: sub      eax,0x1
+0x400453: jne      400450 <main+0x8>
+0x400455: mov      eax,0x0
+0x40045a: ret      

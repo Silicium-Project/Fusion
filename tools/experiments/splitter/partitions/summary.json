@@ -1,0 +1,71 @@
+{
+  "binary": "../a.out",
+  "partitions_count": 4,
+  "parallelizable_count": 0,
+  "partitions": [
+    {
+      "id": "func_0_deregister_tm_clones",
+      "start": "0x4003a0",
+      "end": "0x4003cc",
+      "size": 44,
+      "parallelizable": false,
+      "inputs": [],
+      "external_inputs": [],
+      "outputs": ["cl", "eax", "edi", "rax", "rsp"],
+      "parents": [],
+      "dependencies": [],
+      "unresolved_calls": [],
+      "asm": "./partitions/func_0_deregister_tm_clones.asm",
+      "bin": "./partitions/func_0_deregister_tm_clones.bin",
+      "wrapper": "./partitions/func_0_deregister_tm_clones_wrapper.c"
+    },
+    {
+      "id": "func_1_register_tm_clones",
+      "start": "0x4003d0",
+      "end": "0x40040c",
+      "size": 60,
+      "parallelizable": false,
+      "inputs": [],
+      "external_inputs": [],
+      "outputs": ["cl", "eax", "edi", "esi", "rax", "rsi", "rsp"],
+      "parents": [],
+      "dependencies": [],
+      "unresolved_calls": [],
+      "asm": "./partitions/func_1_register_tm_clones.asm",
+      "bin": "./partitions/func_1_register_tm_clones.bin",
+      "wrapper": "./partitions/func_1_register_tm_clones_wrapper.c"
+    },
+    {
+      "id": "func_2_frame_dummy",
+      "start": "0x400440",
+      "end": "0x400446",
+      "size": 6,
+      "parallelizable": false,
+      "inputs": [],
+      "external_inputs": [],
+      "outputs": ["cl"],
+      "parents": [],
+      "dependencies": [],
+      "unresolved_calls": [],
+      "asm": "./partitions/func_2_frame_dummy.asm",
+      "bin": "./partitions/func_2_frame_dummy.bin",
+      "wrapper": "./partitions/func_2_frame_dummy_wrapper.c"
+    },
+    {
+      "id": "func_3_main",
+      "start": "0x400448",
+      "end": "0x40045a",
+      "size": 18,
+      "parallelizable": false,
+      "inputs": ["rax"],
+      "external_inputs": ["rax"],
+      "outputs": ["eax", "rsp"],
+      "parents": [],
+      "dependencies": [],
+      "unresolved_calls": [],
+      "asm": "./partitions/func_3_main.asm",
+      "bin": "./partitions/func_3_main.bin",
+      "wrapper": "./partitions/func_3_main_wrapper.c"
+    }
+  ]
+}

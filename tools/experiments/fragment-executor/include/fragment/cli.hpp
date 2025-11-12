@@ -1,14 +1,6 @@
 #pragma once
 
-#include <fstream>
-#include <functional>
-#include <map>
-#include <optional>
-#include <set>
-#include <string>
-#include <string_view>
-#include <vector>
-
+#include "fragment/common.hpp"
 #include "fragment/fragment_executor.hpp"
 #include "fragment/partition_summary.hpp"
 

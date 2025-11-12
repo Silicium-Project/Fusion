@@ -6,18 +6,27 @@
 #include <string>
 #include <vector>
 
+#include "splitter/containers.hpp"
+
 namespace splitter {
+
+    struct LoopDescriptor {
+        uint64_t source_addr = 0;
+        uint64_t target_addr = 0;
+        bool backward = false;
+    };
 
     struct AsmInstruction {
         uint64_t address = 0;
         std::string bytes;
         std::string opcode;
         std::string operands;
-        std::set<std::string> reads;
-        std::set<std::string> writes;
+        FlatStringSet reads;
+        FlatStringSet writes;
         bool is_jump = false;
         bool is_call = false;
         bool is_memory = false;
+        bool writes_memory = false;
         std::optional<uint64_t> target_addr;
 
         std::string to_string() const;
@@ -29,6 +38,7 @@ namespace splitter {
         uint64_t end_addr = 0;
         std::vector<AsmInstruction> instructions;
         bool is_loop = false;
+        std::vector<LoopDescriptor> loops;
     };
 
     struct BinaryPartition {

@@ -1,8 +1,3 @@
-#include <fstream>
-#include <iostream>
-#include <set>
-#include <vector>
-
 #include "fragment/cli.hpp"
 #include "fragment/logging.hpp"
 #include "fragment/runner.hpp"
@@ -39,7 +34,9 @@ int run_cli(const std::vector<std::string_view>& args) {
     if (!opts.log_path.empty() && !open_log_file(opts.log_path, program_log))
         log::warning("Impossible d'ouvrir le fichier de log: " + opts.log_path);
 
-    FragmentExecutor executor(opts.native_mode);
+    ExecutorConfig exec_cfg;
+    exec_cfg.use_native_execution = opts.native_mode;
+    FragmentExecutor executor(exec_cfg);
     std::vector<ExecutionEntry> execution_plan;
     std::set<std::string> expected_external_inputs;
     std::vector<PartitionInfo> partition_infos;
