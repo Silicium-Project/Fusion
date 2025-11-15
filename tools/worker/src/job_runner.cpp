@@ -14,17 +14,21 @@ std::string resolve_path(const std::filesystem::path& base, const std::string& c
     if (path.is_absolute())
         return path.lexically_normal().string();
 
+    auto normalize = [](const std::filesystem::path& p) {
+        return std::filesystem::absolute(p).lexically_normal().string();
+    };
+
     std::filesystem::path probe = base;
     while (true) {
         auto combined = (probe / path).lexically_normal();
         if (std::filesystem::exists(combined))
-            return combined.string();
+            return normalize(combined);
         if (!probe.has_parent_path())
             break;
         probe = probe.parent_path();
     }
 
-    return (base / path).lexically_normal().string();
+    return normalize((base / path).lexically_normal());
 }
 
 }  // namespace
@@ -35,8 +39,27 @@ JobRunner::JobRunner(std::string summary_path, WorkerConfig config)
 , resolved_binary_path_(resolve_path(base_dir_, summary_.binary_path))
 , summary_path_(std::move(summary_path))
 , worker_(std::move(config)) {
+    for (auto& partition : summary_.partitions) {
+        partition.asm_path = resolve_path(base_dir_, partition.asm_path);
+        if (!partition.bin_path.empty())
+            partition.bin_path = resolve_path(base_dir_, partition.bin_path);
+        if (!partition.wrapper_path.empty())
+            partition.wrapper_path = resolve_path(base_dir_, partition.wrapper_path);
+    }
     for (size_t idx = 0; idx < summary_.partitions.size(); ++idx)
         partition_index_.emplace(summary_.partitions[idx].id, idx);
+
+    if (!summary_.initial_memory.empty()) {
+        std::vector<MemorySnapshot> snapshots;
+        snapshots.reserve(summary_.initial_memory.size());
+        for (const auto& region : summary_.initial_memory) {
+            MemorySnapshot snapshot;
+            snapshot.address = region.address;
+            snapshot.bytes = region.bytes;
+            snapshots.push_back(std::move(snapshot));
+        }
+        worker_.load_initial_memory(snapshots);
+    }
 }
 
 TaskReport JobRunner::execute(const Task& task) {
@@ -46,7 +69,10 @@ TaskReport JobRunner::execute(const Task& task) {
 
     const auto& partition = summary_.partitions[it->second];
     const std::string asm_path = resolve_path(base_dir_, partition.asm_path);
-    return worker_.run_task(partition, asm_path, resolved_binary_path_, task);
+    fragment::set_partition_registry(&summary_.partitions);
+    TaskReport report = worker_.run_task(partition, asm_path, resolved_binary_path_, task);
+    fragment::set_partition_registry(nullptr);
+    return report;
 }
 
 }  // namespace worker

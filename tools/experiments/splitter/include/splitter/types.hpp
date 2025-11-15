@@ -57,10 +57,16 @@ namespace splitter {
         std::vector<std::string> unresolved_dependencies;
     };
 
-    struct PartitionFiles {
-        std::string asm_file;
-        std::string bin_file;
-        std::string wrapper_file;
-    };
+struct PartitionFiles {
+    std::string asm_file;
+    std::string bin_file;
+    std::string wrapper_file;
+};
+
+struct MemorySegment {
+    std::string name;
+    uint64_t address = 0;
+    std::vector<uint8_t> bytes;
+};
 
 }  // namespace splitter

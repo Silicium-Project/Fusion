@@ -4,6 +4,7 @@
 #include <functional>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <optional>
 #include <sstream>
 
@@ -101,6 +102,7 @@ namespace splitter {
 
     void ArtifactBuilder::write_summary(const std::vector<BinaryPartition>& partitions,
                                         const std::vector<PartitionFiles>& artifacts,
+                                        const std::vector<MemorySegment>& memory_segments,
                                         const std::string& binary_path) const {
         fs::create_directories(output_dir_);
 
@@ -113,6 +115,8 @@ namespace splitter {
         write_summary_header(summary, binary_path, partitions.size(),
                              count_parallelizable(partitions));
         write_partitions_block(summary, partitions, artifacts);
+        summary << "  ],\n";
+        write_memory_block(summary, memory_segments);
         write_summary_footer(summary);
 
         std::cout << "\nRésumé: " << summary_path << "\n";
@@ -162,7 +166,6 @@ namespace splitter {
     }
 
     void ArtifactBuilder::write_summary_footer(std::ofstream& out) const {
-        out << "  ]\n";
         out << "}\n";
     }
 
@@ -175,6 +178,30 @@ namespace splitter {
         }
     }
 
+    static std::string bytes_to_hex(const std::vector<uint8_t>& bytes) {
+        std::ostringstream oss;
+        oss << std::hex << std::setfill('0');
+        for (uint8_t byte : bytes)
+            oss << std::setw(2) << static_cast<int>(byte);
+        return oss.str();
+    }
+
+    void ArtifactBuilder::write_memory_block(std::ofstream& out,
+                                             const std::vector<MemorySegment>& memory_segments) const {
+        out << "  \"initial_memory\": [\n";
+        for (size_t idx = 0; idx < memory_segments.size(); ++idx) {
+            const auto& segment = memory_segments[idx];
+            bool is_last = (idx + 1 == memory_segments.size());
+            out << "    {\n";
+            out << "      \"name\": \"" << json_escape(segment.name) << "\",\n";
+            out << "      \"address\": \"0x" << std::hex << segment.address << "\",\n";
+            out << std::dec;
+            out << "      \"bytes\": \"" << bytes_to_hex(segment.bytes) << "\"\n";
+            out << "    }" << (is_last ? "\n" : ",\n");
+        }
+        out << "  ]\n";
+    }
+
     PartitionFiles create_standalone_partition(const BinaryPartition& partition,
                                                const std::string& output_dir) {
         ArtifactBuilder builder(output_dir);
@@ -183,10 +210,11 @@ namespace splitter {
 
     void write_summary(const std::vector<BinaryPartition>& partitions,
                        const std::vector<PartitionFiles>& artifacts,
+                       const std::vector<MemorySegment>& memory_segments,
                        const std::string& output_dir,
                        const std::string& binary_path) {
         ArtifactBuilder builder(output_dir);
-        builder.write_summary(partitions, artifacts, binary_path);
+        builder.write_summary(partitions, artifacts, memory_segments, binary_path);
     }
 
 }  // namespace splitter

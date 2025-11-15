@@ -41,7 +41,7 @@ bool SegmentLoader::ensure_loaded() const {
         return false;
 
     Elf64_Ehdr header{};
-    if (!read_struct(bin, header) || std::memcmp(header.e_ident, ELFMAG, SELFMAG) != 0
+    if (!read_struct(bin, header) || std::memcmp(header.e_ident, ELFMAG, SELFMAG)
         || header.e_ident[EI_CLASS] != ELFCLASS64)
         return false;
 

@@ -17,7 +17,7 @@ std::string ascii_from_uint64(uint64_t value) {
         if (std::isprint(byte)) {
             bytes.push_back(static_cast<char>(byte));
             has_printable = true;
-        } else if (byte != 0)
+        } else if (byte)
             bytes.push_back('.');
         else
             bytes.push_back(' ');
@@ -49,7 +49,7 @@ size_t find_matching(const std::string& text, size_t start, char open_char, char
             depth++;
         else if (text[i] == close_char) {
             depth--;
-            if (depth == 0)
+            if (!depth)
                 return i;
         }
     }
@@ -188,6 +188,54 @@ bool extract_json_bool(const std::string& object_text, const std::string& key, b
         return false;
 
     return default_value;
+}
+
+uint64_t extract_json_uint64(const std::string& object_text,
+                             const std::string& key,
+                             uint64_t default_value) {
+    std::string pattern = "\"" + key + "\"";
+
+    size_t pos = object_text.find(pattern);
+    if (pos == std::string::npos)
+        return default_value;
+
+    pos = object_text.find(':', pos);
+    if (pos == std::string::npos)
+        return default_value;
+
+    ++pos;
+    while (pos < object_text.size() && std::isspace(static_cast<unsigned char>(object_text[pos])))
+        ++pos;
+
+    if (pos >= object_text.size())
+        return default_value;
+
+    bool is_hex = false;
+    if (object_text.compare(pos, 2, "0x") == 0 || object_text.compare(pos, 2, "0X") == 0) {
+        is_hex = true;
+        pos += 2;
+    }
+
+    size_t end = pos;
+    while (end < object_text.size()) {
+        char c = object_text[end];
+        if (is_hex) {
+            if (!std::isxdigit(static_cast<unsigned char>(c)))
+                break;
+        } else if (!std::isdigit(static_cast<unsigned char>(c)))
+            break;
+        ++end;
+    }
+
+    if (end == pos)
+        return default_value;
+
+    std::string number = object_text.substr(pos, end - pos);
+    try {
+        return std::stoull(number, nullptr, is_hex ? 16 : 10);
+    } catch (...) {
+        return default_value;
+    }
 }
 
 }  // namespace fragment

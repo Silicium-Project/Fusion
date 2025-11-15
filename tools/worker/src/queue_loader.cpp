@@ -49,7 +49,8 @@ std::vector<Task> load_queue_file(const std::string& path) {
         std::string token;
         while (iss >> token) {
             size_t eq = token.find('=');
-            if (eq == std::string::npos || eq == 0 || eq + 1 >= token.size()) {
+
+            if (eq == std::string::npos || !eq || eq + 1 >= token.size()) {
                 throw std::runtime_error("Ligne " + std::to_string(line_no)
                                          + ": argument invalide \"" + token + "\"");
             }

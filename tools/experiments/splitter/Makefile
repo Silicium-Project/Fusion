@@ -24,7 +24,7 @@ RUN_OUT := $(if $(OUT),$(OUT),run_output/$(RUN_NAME))
 RUN_LOG := $(if $(LOG),$(LOG),fragment_executor.log)
 ARGS ?=
 
-.PHONY: all clean fclean re demo demo-native demo-clean run run-native run-internal run-binary prep-program executor test build-cpp-test-image
+.PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test build-cpp-test-image
 
 SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
 OBJ_DIR := build
@@ -95,6 +95,14 @@ demo-native: all executor $(DEMO_BIN)
 	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
 	@echo "==> Exécution via fragment_executor (mode natif - DANGEREUX, peut planter)"
 	-$(EXECUTOR_BIN) --summary $(DEMO_OUT)/summary.json --native --log $(LOG_FILE)
+
+demo-native-force: all executor $(DEMO_BIN)
+	@rm -f $(LOG_FILE)
+	@echo "==> Génération des partitions de démonstration"
+	@rm -rf $(DEMO_OUT)
+	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
+	@echo "==> Exécution via fragment_executor (mode natif FORCÉ - très dangereux)"
+	-$(EXECUTOR_BIN) --summary $(DEMO_OUT)/summary.json --native --native-force --log $(LOG_FILE)
 
 run: MODE = emulation
 run: run-internal

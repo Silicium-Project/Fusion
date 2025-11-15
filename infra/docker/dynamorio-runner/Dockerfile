@@ -1,0 +1,38 @@
+FROM debian:bookworm-slim AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential make \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+COPY tools/experiments/fragment-executor /src/tools/experiments/fragment-executor
+COPY tools/worker /src/tools/worker
+
+RUN cd tools/worker && make clean && make dynamo_fragment_runner
+
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    DYNAMORIO_VERSION=10.0.0 \
+    DYNAMORIO_HOME=/opt/dynamorio \
+    DYNAMO_RUNNER_HOME=/opt/dynamo-runner
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates wget tar libstdc++6 libgcc-s1 \
+ && wget -q https://github.com/DynamoRIO/dynamorio/releases/download/release_${DYNAMORIO_VERSION}/DynamoRIO-Linux-${DYNAMORIO_VERSION}.tar.gz -O /tmp/dynamorio.tar.gz \
+ && mkdir -p /opt \
+ && tar -C /opt -xf /tmp/dynamorio.tar.gz \
+ && mv /opt/DynamoRIO-Linux-${DYNAMORIO_VERSION} ${DYNAMORIO_HOME} \
+ && rm -rf /tmp/dynamorio.tar.gz /var/lib/apt/lists/*
+
+RUN mkdir -p ${DYNAMO_RUNNER_HOME}
+
+COPY --from=builder /src/tools/worker/dynamo_fragment_runner ${DYNAMO_RUNNER_HOME}/dynamo_fragment_runner
+
+ENV PATH="${DYNAMORIO_HOME}/bin64:${PATH}"
+
+ENTRYPOINT ["/opt/dynamorio/bin64/drrun"]
+CMD ["--help"]

@@ -5,24 +5,35 @@
 
 namespace fragment {
 
-static void print_changed_registers(const ExecutionResult& result) {
-    if (result.changed_regs.empty())
-        return;
+static void print_registers(const std::map<std::string, uint64_t>& initial,
+                            const std::map<std::string, uint64_t>& final) {
+    constexpr std::string_view RESET = "\033[0m";
+    constexpr std::string_view GREEN = "\033[32m";
+    constexpr std::string_view CYAN = "\033[36m";
 
-    log::subsection("Registres modifiés");
+    log::subsection("Registres (initial -> final)");
 
-    for (const auto& [reg, vals] : result.changed_regs) {
-        std::string ascii_before = ascii_from_uint64(vals.first);
-        std::string ascii_after = ascii_from_uint64(vals.second);
+    for (const auto& [reg, final_value] : final) {
+        auto init_it = initial.find(reg);
+        uint64_t init_value = (init_it == initial.end()) ? 0 : init_it->second;
+        bool changed = (init_value != final_value);
+        std::string_view color = changed ? GREEN : CYAN;
 
-        std::cout << std::setw(4) << reg << ": "
-                  << "0x" << std::hex << std::setw(16) << std::setfill('0') << vals.first
-                  << " -> 0x" << std::setw(16) << vals.second
+        std::string ascii_before = ascii_from_uint64(init_value);
+        std::string ascii_after = ascii_from_uint64(final_value);
+
+        std::cout << color
+                  << std::setw(4) << reg << RESET << ": "
+                  << "0x" << std::hex << std::setw(16) << std::setfill('0') << init_value
+                  << " -> 0x" << std::setw(16) << final_value
                   << std::dec << std::setfill(' ');
 
         if (!ascii_before.empty() || !ascii_after.empty())
             std::cout << "  ('" << (ascii_before.empty() ? "" : ascii_before)
                       << "' -> '" << (ascii_after.empty() ? "" : ascii_after) << "')";
+
+        if (changed)
+            std::cout << " *";
 
         std::cout << "\n";
     }
@@ -35,19 +46,16 @@ static std::string format_bytes(const std::vector<uint8_t>& bytes,
     constexpr std::string_view DIM = "\033[90m";
 
     std::ostringstream oss;
-    size_t limit = std::min<size_t>(bytes.size(), 16);
-
-    for (size_t i = 0; i < limit; ++i) {
+    for (size_t i = 0; i < bytes.size(); ++i) {
         if (i)
             oss << ' ';
         bool changed = i >= other.size() || bytes[i] != other[i];
         std::string_view prefix = changed ? color : DIM;
         oss << prefix << std::hex << std::setw(2) << std::setfill('0')
             << static_cast<int>(bytes[i]) << RESET;
+        if ((i + 1) % 16 == 0 && i + 1 < bytes.size())
+            oss << "\n              ";
     }
-
-    if (bytes.size() > limit)
-        oss << " ...";
 
     return oss.str();
 }
@@ -90,7 +98,7 @@ void ExecutionResult::print() const {
     std::cout << "Instructions exécutées: " << instructions_executed << "\n";
     std::cout << "Accès mémoire: " << memory_accesses << "\n";
 
-    print_changed_registers(*this);
+    print_registers(initial_regs, final_regs);
     print_memory_patches(*this);
     print_program_stdout(*this);
 }

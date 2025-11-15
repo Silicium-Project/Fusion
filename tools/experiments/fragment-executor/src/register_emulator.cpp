@@ -98,7 +98,7 @@ void RegisterEmulator::write_bytes(uint64_t addr, const std::vector<uint8_t>& by
         return;
 
     size_t len = std::min(bytes.size(), memory.size() - addr);
-    if (len == 0)
+    if (!len)
         return;
 
     std::vector<uint8_t> before(memory.begin() + addr, memory.begin() + addr + len);
@@ -112,6 +112,16 @@ void RegisterEmulator::write_bytes(uint64_t addr, const std::vector<uint8_t>& by
     }
 
     std::copy(bytes.begin(), bytes.begin() + len, memory.begin() + addr);
+}
+
+std::vector<uint8_t> RegisterEmulator::read_bytes(uint64_t addr, std::size_t len) const {
+    std::vector<uint8_t> out;
+    if (!len || addr >= memory.size())
+        return out;
+
+    const std::size_t available = std::min<std::size_t>(len, memory.size() - addr);
+    out.insert(out.end(), memory.begin() + addr, memory.begin() + addr + available);
+    return out;
 }
 
 void RegisterEmulator::print_state() const {

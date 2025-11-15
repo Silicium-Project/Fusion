@@ -22,9 +22,11 @@ public:
     void set_inputs(const std::map<std::string, uint64_t>& inputs);
     void apply_memory_bytes(uint64_t address, const std::vector<uint8_t>& bytes);
     void apply_memory_patches(const std::vector<MemoryPatch>& patches);
+    void preload_native_chunk(uint64_t address, const std::vector<uint8_t>& bytes);
 
     ExecutionResult execute_safe(const std::string& asm_file);
-    ExecutionResult execute_native(const std::vector<uint8_t>& binary_code);
+    ExecutionResult execute_native(const std::vector<uint8_t>& binary_code,
+                                   std::optional<uint64_t> original_address = std::nullopt);
     void print_register_state() const;
 
 private:
@@ -32,11 +34,13 @@ private:
     ExecutorConfig config_;
     SegmentLoader segment_loader_;
     InstructionEmulator instruction_emulator_;
+    std::map<uint64_t, std::vector<uint8_t>> native_memory_chunks_;
 
     std::string capture_program_stdout(const std::function<void()>& func);
     bool emulate_instruction(const std::string& line, ExecutionResult& result);
     bool emulate_call(std::istringstream& iss, ExecutionResult& result);
     std::optional<std::string> read_string_from_binary(uint64_t address) const;
+    void record_native_memory(uint64_t address, const std::vector<uint8_t>& bytes);
 };
 
 }  // namespace fragment

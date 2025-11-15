@@ -18,4 +18,8 @@ std::vector<std::string> extract_json_array(const std::string& object_text, cons
 
 bool extract_json_bool(const std::string& object_text, const std::string& key, bool default_value = false);
 
+uint64_t extract_json_uint64(const std::string& object_text,
+                             const std::string& key,
+                             uint64_t default_value = 0);
+
 }  // namespace fragment

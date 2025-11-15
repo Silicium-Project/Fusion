@@ -117,7 +117,7 @@ def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None, all
     pretty = " ".join(cmd)
     print(colorize(f">> {pretty}", COLOR_GREEN))
     result = subprocess.run(cmd, cwd=cwd or REPO_ROOT, env=env, check=not allow_failure)
-    if allow_failure and result.returncode != 0:
+    if allow_failure and result.returncode:
         print(colorize(f"[WARN] Command failed but ignored (code {result.returncode})", COLOR_YELLOW))
     return result.returncode
 

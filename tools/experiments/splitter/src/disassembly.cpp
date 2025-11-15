@@ -1,5 +1,6 @@
 #include "splitter/disassembly.hpp"
 
+#include <cctype>
 #include <filesystem>
 #include <optional>
 #include <regex>
@@ -16,6 +17,17 @@ namespace splitter {
     namespace {
         const std::regex kFunctionPattern("^([0-9a-f]+) <(.+)>:$");
         const std::regex kInstructionPattern("^\\s*([0-9a-f]+):\\s+([0-9a-f ]+)\\s+(\\w+)\\s*(.*)$");
+
+        std::size_t instruction_size_from_bytes(const std::string& bytes) {
+            std::size_t nybbles = 0;
+            for (char ch : bytes)
+                if (std::isxdigit(static_cast<unsigned char>(ch)))
+                    ++nybbles;
+
+            if (!nybbles)
+                return 0;
+            return (nybbles + 1) / 2;
+        }
 
         Function make_function(const std::smatch& match) {
             Function func;
@@ -66,7 +78,8 @@ namespace splitter {
                 return;
             AsmInstruction inst = make_instruction(match);
             current->instructions.push_back(inst);
-            current->end_addr = inst.address;
+            std::size_t inst_size = instruction_size_from_bytes(inst.bytes);
+            current->end_addr = inst.address + inst_size;
         }
     }  // namespace
 

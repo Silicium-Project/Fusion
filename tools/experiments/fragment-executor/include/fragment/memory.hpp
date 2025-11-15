@@ -37,7 +37,8 @@ public:
 
     uint64_t read_qword(uint64_t addr) const;
 
-    void write_bytes(uint64_t addr, const std::vector<uint8_t>& bytes);
+        void write_bytes(uint64_t addr, const std::vector<uint8_t>& bytes);
+        std::vector<uint8_t> read_bytes(uint64_t addr, std::size_t len) const;
 
     void enable_patch_log(std::vector<MemoryPatch>& log);
 

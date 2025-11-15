@@ -35,3 +35,22 @@ TEST(FragmentExecutor, ExecuteSafeSimpleProgram) {
     EXPECT_EQ(result.instructions_executed, 3u);
 }
 
+TEST(FragmentExecutor, MovUpdatesMemoryAndPushHandlesMemoryOperands) {
+    const std::string asm_path = write_temp_asm(
+        "0000000000002000: push rax\n"
+        "0000000000002008: mov QWORD PTR [rsp], rbx\n"
+        "0000000000002010: pop rcx\n"
+        "0000000000002018: ret\n",
+        "fragment_executor_memory.asm");
+
+    FragmentExecutor executor;
+    executor.set_input("rax", 0);
+    executor.set_input("rbx", 0x42);
+
+    auto result = executor.execute_safe(asm_path);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_TRUE(result.final_regs.count("rcx"));
+    EXPECT_EQ(result.final_regs.at("rcx"), 0x42u);
+    EXPECT_FALSE(result.memory_patches.empty());
+}

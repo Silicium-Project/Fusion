@@ -69,9 +69,9 @@ namespace splitter {
             static bool is_immediate(const std::string& value) {
                 if (value.empty())
                     return false;
-                if (value.rfind("0x", 0) == 0)
+                if (!value.rfind("0x", 0))
                     return true;
-                auto is_digit = [](unsigned char c) { return std::isdigit(c) != 0; };
+                auto is_digit = [](unsigned char c) { return !!std::isdigit(c); };
                 if (value[0] == '-' || value[0] == '+')
                     return value.size() > 1
                         && std::all_of(value.begin() + 1, value.end(),
@@ -141,7 +141,7 @@ namespace splitter {
         }
 
         const std::regex& jump_target_regex() {
-            static const std::regex pattern("0x([0-9a-f]+)", std::regex::icase | std::regex::optimize);
+            static const std::regex pattern("(?:0x)?([0-9a-f]+)", std::regex::icase | std::regex::optimize);
             return pattern;
         }
 

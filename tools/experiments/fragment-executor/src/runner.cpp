@@ -50,6 +50,7 @@ int run_cli(const std::vector<std::string_view>& args) {
             return 1;
         }
         partition_infos = summary.partitions;
+        set_partition_registry(&partition_infos);
         try {
             execution_plan = plan_from_summary(partition_infos, expected_external_inputs);
         } catch (const std::exception& e) {
@@ -58,8 +59,12 @@ int run_cli(const std::vector<std::string_view>& args) {
         }
         if (!summary.binary_path.empty())
             executor.set_binary_path(summary.binary_path);
+        if (!summary.initial_memory.empty())
+            for (const auto& region : summary.initial_memory)
+                executor.apply_memory_bytes(region.address, region.bytes);
         print_plan_overview(opts.summary_file, execution_plan);
     } else {
+        set_partition_registry(nullptr);
         execution_plan = plan_from_files(opts.asm_files);
     }
 
@@ -77,9 +82,17 @@ int run_cli(const std::vector<std::string_view>& args) {
         const auto& entry = execution_plan[idx];
 
         describe_entry(idx, entry);
-        prepare_external_inputs(entry, executor, opts.inputs, consumed_external_inputs);
+        bool missing_inputs = prepare_external_inputs(entry, executor, opts.inputs, consumed_external_inputs);
 
-        if (!execute_entry(entry, opts.native_mode, executor, last_result)) {
+        bool entry_native_mode = opts.native_mode && (!missing_inputs || opts.force_native);
+        if (opts.native_mode && missing_inputs && !opts.force_native)
+            log::warning("Entrées externes manquantes pour " + entry.name
+                         + " - repli sur l'émulation sécurisée.");
+        else if (opts.native_mode && missing_inputs && opts.force_native)
+            log::warning("Entrées externes manquantes pour " + entry.name
+                         + ", exécution native forcée.");
+
+        if (!execute_entry(entry, entry_native_mode, opts.force_native, executor, last_result)) {
             all_success = false;
             break;
         }
@@ -103,6 +116,7 @@ int run_cli(const std::vector<std::string_view>& args) {
     if (!opts.summary_file.empty() && !opts.inputs.empty())
         warn_unused_inputs(expected_external_inputs, consumed_external_inputs, opts.inputs);
 
+    set_partition_registry(nullptr);
     return all_success ? 0 : 1;
 }
 

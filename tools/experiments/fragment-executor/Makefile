@@ -1,5 +1,6 @@
 CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic -fPIE
+LDFLAGS := -pie
 CPPFLAGS := -Iinclude
 
 REPO_ROOT := $(abspath ../../..)
@@ -40,7 +41,7 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(BIN): $(OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
 $(TEST_BUILD_DIR):
 	mkdir -p $(TEST_BUILD_DIR)

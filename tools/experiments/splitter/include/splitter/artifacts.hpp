@@ -16,6 +16,7 @@ namespace splitter {
         PartitionFiles create_partition(const BinaryPartition& partition) const;
         void write_summary(const std::vector<BinaryPartition>& partitions,
                            const std::vector<PartitionFiles>& artifacts,
+                           const std::vector<MemorySegment>& memory_segments,
                            const std::string& binary_path) const;
 
         [[nodiscard]] const std::string& output_dir() const noexcept {
@@ -35,6 +36,8 @@ namespace splitter {
         void write_partitions_block(std::ofstream& out,
                                     const std::vector<BinaryPartition>& partitions,
                                     const std::vector<PartitionFiles>& artifacts) const;
+        void write_memory_block(std::ofstream& out,
+                                const std::vector<MemorySegment>& memory_segments) const;
 
         std::string output_dir_;
     };
@@ -43,8 +46,9 @@ namespace splitter {
         const BinaryPartition& partition, const std::string& output_dir);
 
     void write_summary(const std::vector<BinaryPartition>& partitions,
-                        const std::vector<PartitionFiles>& artifacts,
-                        const std::string& output_dir,
-                        const std::string& binary_path);
+                       const std::vector<PartitionFiles>& artifacts,
+                       const std::vector<MemorySegment>& memory_segments,
+                       const std::string& output_dir,
+                       const std::string& binary_path);
 
 }  // namespace splitter

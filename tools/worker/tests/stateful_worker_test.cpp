@@ -17,10 +17,13 @@ std::string write_fragment(const std::string& name, std::string_view content) {
 }
 
 fragment::PartitionInfo make_partition(const std::string& id,
-                                       const std::string& asm_path) {
+                                       const std::string& asm_path,
+                                       uint64_t start_addr = 0) {
     fragment::PartitionInfo info;
     info.id = id;
     info.asm_path = asm_path;
+    if (start_addr)
+        info.start_address = start_addr;
     return info;
 }
 
@@ -38,8 +41,8 @@ TEST(StatefulWorker, MemoryWritesAreVisibleAcrossFragments) {
         "0000000000002000: pop rbx\n"
         "0000000000002008: ret\n");
 
-    fragment::PartitionInfo writer = make_partition("writer", writer_path);
-    fragment::PartitionInfo reader = make_partition("reader", reader_path);
+    fragment::PartitionInfo writer = make_partition("writer", writer_path, 0x1000);
+    fragment::PartitionInfo reader = make_partition("reader", reader_path, 0x2000);
 
     worker::WorkerConfig config;
     worker::Worker worker(config);

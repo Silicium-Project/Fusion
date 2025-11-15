@@ -1,6 +1,6 @@
 CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic
-CPPFLAGS := -Iinclude -I../experiments/fragment-executor/include
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic -fPIE
+CPPFLAGS := -Iinclude -I../experiments/fragment-executor/include -MMD -MP
 
 REPO_ROOT := $(abspath ../..)
 CPP_TEST_IMAGE ?= silicium/cpp-tests:latest
@@ -13,11 +13,15 @@ OBJ_DIR := build
 WORKER_OBJ_DIR := $(OBJ_DIR)/worker
 FRAGMENT_OBJ_DIR := $(OBJ_DIR)/fragment
 BIN := worker
+DYNAMO_RUNNER_BIN := dynamo_fragment_runner
 
-WORKER_SRC := $(wildcard $(SRC_DIR)/*.cpp)
+ALL_SRCS := $(wildcard $(SRC_DIR)/*.cpp)
+RUNNER_MAIN_SRC := $(SRC_DIR)/dynamo_fragment_runner_main.cpp
+WORKER_SRC := $(filter-out $(RUNNER_MAIN_SRC), $(ALL_SRCS))
 WORKER_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(WORKER_OBJ_DIR)/%.o,$(WORKER_SRC))
 WORKER_MAIN_OBJ := $(WORKER_OBJ_DIR)/main.o
 WORKER_LIB_OBJS := $(filter-out $(WORKER_MAIN_OBJ), $(WORKER_OBJS))
+DYNAMO_RUNNER_OBJ := $(WORKER_OBJ_DIR)/$(notdir $(RUNNER_MAIN_SRC:.cpp=.o))
 
 FRAGMENT_SRC_DIR := ../experiments/fragment-executor/src
 FRAGMENT_SOURCES := fragment_executor.cpp register_emulator.cpp instruction_emulator.cpp \
@@ -40,7 +44,7 @@ HOST_GID := $(shell id -g)
 
 .PHONY: all clean test build-cpp-test-image
 
-all: $(BIN)
+all: $(BIN) $(DYNAMO_RUNNER_BIN)
 
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
@@ -72,6 +76,9 @@ $(FRAGMENT_OBJ_DIR)/%.o: $(FRAGMENT_SRC_DIR)/%.cpp | $(FRAGMENT_OBJ_DIR)
 $(BIN): $(WORKER_OBJS) $(FRAGMENT_OBJS)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
+$(DYNAMO_RUNNER_BIN): $(DYNAMO_RUNNER_OBJ) $(WORKER_LIB_OBJS) $(FRAGMENT_OBJS)
+	$(CXX) $(CXXFLAGS) $^ -o $@
+
 $(TEST_OBJ_DIR)/tests/%.o: tests/%.cpp | $(TEST_OBJ_DIR)/tests
 	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
 
@@ -85,7 +92,7 @@ $(TEST_BIN): $(TEST_OBJS) $(TEST_WORKER_OBJS) $(TEST_FRAGMENT_OBJS) | $(TEST_BUI
 	$(TEST_CXX) $^ -o $@ $(TEST_LDFLAGS)
 
 clean:
-	rm -f $(BIN)
+	rm -f $(BIN) $(DYNAMO_RUNNER_BIN)
 	rm -rf $(OBJ_DIR)
 
 test: build-cpp-test-image
@@ -107,3 +114,10 @@ build-cpp-test-image:
 	@docker image inspect $(CPP_TEST_IMAGE) >/dev/null 2>&1 || \
 		(echo ">> Building $(CPP_TEST_IMAGE) image (one-time setup)"; \
 		 docker build -t $(CPP_TEST_IMAGE) -f $(CPP_TEST_DOCKERFILE) $(CPP_TEST_CONTEXT))
+
+-include $(WORKER_OBJS:.o=.d) \
+         $(FRAGMENT_OBJS:.o=.d) \
+         $(DYNAMO_RUNNER_OBJ:.o=.d) \
+         $(TEST_OBJS:.o=.d) \
+         $(TEST_WORKER_OBJS:.o=.d) \
+         $(TEST_FRAGMENT_OBJS:.o=.d)

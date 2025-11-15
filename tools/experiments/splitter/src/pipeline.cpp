@@ -101,7 +101,8 @@ namespace splitter {
             }
         }
 
-        artifact_builder_->write_summary(partitions, generated_files, config_.binary_path);
+        auto memory_segments = extract_data_sections(config_.binary_path);
+        artifact_builder_->write_summary(partitions, generated_files, memory_segments, config_.binary_path);
         std::cout << "\n=== Terminé ===\n";
         std::cout << "\nPartitions: " << config_.output_dir << "/\n";
         return 0;
