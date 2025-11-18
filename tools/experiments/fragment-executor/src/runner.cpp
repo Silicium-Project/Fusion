@@ -89,8 +89,6 @@ bool reexec_in_gui_wrapper(const std::vector<std::string>& raw_args, const std::
     return true;
 }
 
-}  // namespace
-
 int run_cli(const std::vector<std::string_view>& args,
             const std::vector<std::string>& raw_args) {
     if (args.size() < 2) {
