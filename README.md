@@ -432,10 +432,12 @@ fragments en mode `--native`, configurez un wrapper Docker headless :
    # Optionnel : exposer le serveur VNC local sur 5901
    export FRAGMENT_GUI_VNC_PORT=5901
    ```
-3. Lancer `fragment_executor --native` (ou `make run-native …`). Les fragments
-   marqués `requires_display` seront automatiquement ré-exécutés via Docker et
-   disposeront d’un `DISPLAY` headless + VNC (`RUNNING_IN_GUI_CONTAINER=1` assure
-   que le wrapper n’est invoqué qu’une fois).
+3. Lancer `fragment_executor --native` (ou `make run-native …`). Sans variable
+   particulière, l’outil utilise automatiquement
+   `tools/worker/scripts/gui_wrapper.sh` si Docker est disponible dans le dépôt ;
+   configurez `FRAGMENT_GUI_WRAPPER` / `FRAGMENT_GUI_DOCKER_IMAGE` pour
+   personnaliser l’image. Les fragments `requires_display` sont rejoués dans ce
+   conteneur headless + VNC (`RUNNING_IN_GUI_CONTAINER=1` évite toute récursion).
 
 Vous pouvez vous connecter au serveur VNC (`localhost:${FRAGMENT_GUI_VNC_PORT}`)
 pour observer la fenêtre si nécessaire. Les workers dépourvus de GUI continueront

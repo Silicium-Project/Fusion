@@ -9,6 +9,13 @@ fi
 IMAGE="${FRAGMENT_GUI_DOCKER_IMAGE:-silicium/gui-runner:latest}"
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 WORKDIR="$(pwd)"
+DOCKERFILE="${FRAGMENT_GUI_DOCKERFILE:-${REPO_ROOT}/tools/docker/gui-runner/Dockerfile}"
+DOCKER_CONTEXT="$(dirname "${DOCKERFILE}")"
+
+if ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+    echo "[gui-wrapper] Building image ${IMAGE}..."
+    docker build -t "${IMAGE}" -f "${DOCKERFILE}" "${DOCKER_CONTEXT}"
+fi
 
 docker_args=(--rm --network host -e RUNNING_IN_GUI_CONTAINER=1)
 

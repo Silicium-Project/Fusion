@@ -3,8 +3,10 @@
 #include "fragment/runner.hpp"
 
 #include <algorithm>
+#include <optional>
 #include <set>
 #include <unistd.h>
+#include <filesystem>
 
 #ifdef __linux__
 #include <dlfcn.h>
@@ -46,6 +48,23 @@ void ensure_required_libraries(const PartitionSummary&) {}
 
 }  // namespace
 
+std::optional<std::string> default_gui_wrapper(const std::vector<std::string_view>& args) {
+    namespace fs = std::filesystem;
+    if (args.empty())
+        return std::nullopt;
+    try {
+        fs::path exe = fs::canonical(std::string(args.front()));
+        fs::path repo = exe.parent_path();
+        for (int i = 0; i < 3 && repo.has_parent_path(); ++i)
+            repo = repo.parent_path();
+        fs::path candidate = repo / "tools/worker/scripts/gui_wrapper.sh";
+        if (fs::exists(candidate))
+            return candidate.string();
+    } catch (...) {
+    }
+    return std::nullopt;
+}
+
 bool partitions_require_gui(const std::vector<PartitionInfo>& partitions) {
     return std::any_of(partitions.begin(), partitions.end(),
                        [](const PartitionInfo& info) { return info.requires_display; });
@@ -56,17 +75,17 @@ bool running_in_gui_wrapper() {
     return flag && *flag;
 }
 
-bool reexec_in_gui_wrapper(const std::vector<std::string>& raw_args, const char* wrapper) {
+bool reexec_in_gui_wrapper(const std::vector<std::string>& raw_args, const std::string& wrapper) {
     std::vector<char*> argv;
     argv.reserve(raw_args.size() + 2);
-    argv.push_back(const_cast<char*>(wrapper));
+    argv.push_back(const_cast<char*>(wrapper.c_str()));
     for (const auto& arg : raw_args)
         argv.push_back(const_cast<char*>(arg.c_str()));
     argv.push_back(nullptr);
 
-    log::info("Exécution des fragments GUI via " + std::string(wrapper));
-    execvp(wrapper, argv.data());
-    log::error("execvp(" + std::string(wrapper) + ") a échoué");
+    log::info("Exécution des fragments GUI via " + wrapper);
+    execvp(argv[0], argv.data());
+    log::error("execvp(" + wrapper + ") a échoué");
     return true;
 }
 
@@ -120,13 +139,19 @@ int run_cli(const std::vector<std::string_view>& args,
         }
         partition_infos = summary.partitions;
         if (opts.native_mode && partitions_require_gui(partition_infos) && !running_in_gui_wrapper()) {
-            const char* wrapper = std::getenv("FRAGMENT_GUI_WRAPPER");
-            if (wrapper && *wrapper) {
-                if (reexec_in_gui_wrapper(raw_args, wrapper))
-                    return 1;
-            } else {
-                log::warning("Fragments GUI détectés mais FRAGMENT_GUI_WRAPPER n'est pas défini.");
+            std::string wrapper_path;
+            if (const char* wrapper_env = std::getenv("FRAGMENT_GUI_WRAPPER");
+                wrapper_env && *wrapper_env) {
+                wrapper_path = wrapper_env;
+            } else if (auto fallback = default_gui_wrapper(args); fallback.has_value()) {
+                wrapper_path = *fallback;
             }
+
+            if (!wrapper_path.empty()) {
+                if (reexec_in_gui_wrapper(raw_args, wrapper_path))
+                    return 1;
+            } else
+                log::warning("Fragments GUI détectés mais aucun wrapper GUI n'est disponible.");
         }
         set_partition_registry(&partition_infos);
         try {
