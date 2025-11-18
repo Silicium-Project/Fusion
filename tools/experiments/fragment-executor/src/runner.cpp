@@ -2,7 +2,47 @@
 #include "fragment/logging.hpp"
 #include "fragment/runner.hpp"
 
+#include <set>
+
+#ifdef __linux__
+#include <dlfcn.h>
+#endif
+
 namespace fragment {
+
+namespace {
+
+void preload_initial_memory(const PartitionSummary& summary, FragmentExecutor& executor) {
+    for (const auto& region : summary.initial_memory) {
+        executor.apply_memory_bytes(region.address, region.bytes);
+        executor.preload_native_chunk(region.address, region.bytes);
+    }
+}
+
+#ifdef __linux__
+void ensure_required_libraries(const PartitionSummary& summary) {
+    std::set<std::string> libraries(summary.required_libraries.begin(),
+                                    summary.required_libraries.end());
+    for (const auto& partition : summary.partitions)
+        libraries.insert(partition.required_libraries.begin(),
+                         partition.required_libraries.end());
+
+    for (const auto& lib : libraries) {
+        if (lib.empty())
+            continue;
+        void* handle = dlopen(lib.c_str(), RTLD_LAZY | RTLD_GLOBAL);
+        if (!handle) {
+            const char* err = dlerror();
+            log::warning("Impossible de charger la bibliothèque " + lib + ": "
+                         + (err ? err : "motif inconnu"));
+        }
+    }
+}
+#else
+void ensure_required_libraries(const PartitionSummary&) {}
+#endif
+
+}  // namespace
 
 int run_cli(const std::vector<std::string_view>& args) {
     if (args.size() < 2) {
@@ -59,9 +99,9 @@ int run_cli(const std::vector<std::string_view>& args) {
         }
         if (!summary.binary_path.empty())
             executor.set_binary_path(summary.binary_path);
-        if (!summary.initial_memory.empty())
-            for (const auto& region : summary.initial_memory)
-                executor.apply_memory_bytes(region.address, region.bytes);
+        preload_initial_memory(summary, executor);
+        if (opts.native_mode)
+            ensure_required_libraries(summary);
         print_plan_overview(opts.summary_file, execution_plan);
     } else {
         set_partition_registry(nullptr);

@@ -6,6 +6,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #ifdef __linux__

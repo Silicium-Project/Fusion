@@ -1,0 +1,23 @@
+id: calcul/libm/sin
+version: 0.1.0
+engine: python
+command: python -m silicium.libm_runner --function sin --value {value} --out {output}
+resources:
+  cpu: 1
+  gpu: none
+  memory: 256Mi
+artifacts:
+  input:
+    - name: value
+      type: application/json
+  output:
+    - name: result
+      type: application/json
+    - name: hash
+      type: text/plain
+validation:
+  hash: blake3
+  redundancy: quorum
+payment:
+  unit: invocation
+  estimated_cost: 0.00005
