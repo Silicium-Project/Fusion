@@ -4,6 +4,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include "splitter/types.hpp"
 
@@ -31,11 +32,13 @@ namespace splitter {
         void write_summary_header(std::ofstream& out,
                                   const std::string& binary_path,
                                   size_t partition_count,
-                                  size_t parallelizable_count) const;
+                                  size_t parallelizable_count,
+                                  const std::vector<std::string>& required_libraries) const;
         void write_summary_footer(std::ofstream& out) const;
         void write_partitions_block(std::ofstream& out,
                                     const std::vector<BinaryPartition>& partitions,
-                                    const std::vector<PartitionFiles>& artifacts) const;
+                                    const std::vector<PartitionFiles>& artifacts,
+                                    const std::unordered_map<std::string, std::string>& symbol_index) const;
         void write_memory_block(std::ofstream& out,
                                 const std::vector<MemorySegment>& memory_segments) const;
 

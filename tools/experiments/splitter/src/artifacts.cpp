@@ -6,7 +6,10 @@
 #include <iostream>
 #include <iomanip>
 #include <optional>
+#include <regex>
+#include <set>
 #include <sstream>
+#include <unordered_map>
 
 #include "splitter/util.hpp"
 
@@ -16,6 +19,11 @@ namespace splitter {
 
     namespace {
 
+        struct LibraryEntry {
+            std::string name;
+            std::string path;
+        };
+
         size_t count_parallelizable(const std::vector<BinaryPartition>& partitions) {
             size_t count = 0;
 
@@ -23,6 +31,139 @@ namespace splitter {
                 if (partition.is_parallelizable)
                     ++count;
             return count;
+        }
+
+        std::string shell_quote(const std::string& path) {
+            std::string quoted = "'";
+            for (char ch : path) {
+                if (ch == '\'')
+                    quoted += "'\\''";
+                else
+                    quoted.push_back(ch);
+            }
+            quoted += "'";
+            return quoted;
+        }
+
+        std::vector<std::string> detect_needed_via_readelf(const std::string& binary_path) {
+            std::set<std::string> unique;
+            const std::string command = "readelf -d " + shell_quote(binary_path) + " 2>/dev/null";
+
+            try {
+                const std::string output = exec_command(command);
+                std::regex needed_regex(R"(\(NEEDED\).*\[(.+?)\])");
+                std::smatch match;
+                std::istringstream stream(output);
+                std::string line;
+                while (std::getline(stream, line))
+                    if (std::regex_search(line, match, needed_regex) && match.size() > 1)
+                        unique.insert(match[1].str());
+            } catch (const std::exception&) {
+                return {};
+            }
+
+            return std::vector<std::string>(unique.begin(), unique.end());
+        }
+
+        std::vector<LibraryEntry> detect_libraries_with_ldd(const std::string& binary_path) {
+            std::vector<LibraryEntry> libraries;
+            const std::string command = "ldd " + shell_quote(binary_path) + " 2>/dev/null";
+
+            try {
+                const std::string output = exec_command(command);
+                std::istringstream stream(output);
+                std::string line;
+                std::regex mapping_regex(R"(^\s*([^\s]+)\s+=>\s+([^\s]+))");
+                std::regex direct_regex(R"(^\s*([^\s]+)\s+\((0x[0-9a-fA-F]+)\))");
+                std::smatch match;
+
+                while (std::getline(stream, line)) {
+                    if (std::regex_search(line, match, mapping_regex) && match.size() > 2) {
+                        const std::string name = match[1].str();
+                        const std::string path = match[2].str();
+                        if (path == "not" || path == "found")
+                            continue;
+                        if (!path.empty() && path[0] == '/')
+                            libraries.push_back({name, path});
+                    } else if (std::regex_search(line, match, direct_regex) && match.size() > 1) {
+                        // Entries such as linux-vdso; no filesystem path to load.
+                        continue;
+                    }
+                }
+            } catch (const std::exception&) {
+                return {};
+            }
+
+            return libraries;
+        }
+
+        std::set<std::string> list_exported_symbols(const std::string& path) {
+            if (path.empty())
+                return {};
+
+            std::set<std::string> symbols;
+            const std::string command =
+                "nm -D --defined-only " + shell_quote(path) + " 2>/dev/null";
+
+            try {
+                const std::string output = exec_command(command);
+                std::istringstream stream(output);
+                std::string line;
+
+                while (std::getline(stream, line)) {
+                    std::istringstream parser(trim(line));
+                    std::string address, type, name;
+                    if (!(parser >> address >> type >> name))
+                        continue;
+                    if (!name.empty()) {
+                        auto at = name.find('@');
+                        if (at != std::string::npos)
+                            name = name.substr(0, at);
+                        symbols.insert(name);
+                    }
+                }
+            } catch (const std::exception&) {
+                return {};
+            }
+
+            return symbols;
+        }
+
+        std::vector<LibraryEntry> detect_required_libraries(const std::string& binary_path) {
+            auto libraries = detect_libraries_with_ldd(binary_path);
+            if (!libraries.empty())
+                return libraries;
+
+            auto names = detect_needed_via_readelf(binary_path);
+            libraries.reserve(names.size());
+            for (const auto& name : names)
+                libraries.push_back({name, ""});
+            return libraries;
+        }
+
+        std::unordered_map<std::string, std::string> build_symbol_index(
+                const std::vector<LibraryEntry>& libraries) {
+            std::unordered_map<std::string, std::string> index;
+            for (const auto& entry : libraries) {
+                if (entry.path.empty())
+                    continue;
+                auto symbols = list_exported_symbols(entry.path);
+                for (const auto& symbol : symbols)
+                    index.emplace(symbol, entry.name);
+            }
+            return index;
+        }
+
+        std::set<std::string> resolve_partition_libraries(
+                const BinaryPartition& partition,
+                const std::unordered_map<std::string, std::string>& symbol_index) {
+            std::set<std::string> names;
+            for (const auto& symbol : partition.external_calls) {
+                auto it = symbol_index.find(symbol);
+                if (it != symbol_index.end())
+                    names.insert(it->second);
+            }
+            return names;
         }
 
         std::string hex_string(uint64_t value) {
@@ -43,6 +184,7 @@ namespace splitter {
         void write_partition_entry(std::ofstream& out,
                 const BinaryPartition& partition,
                 const std::optional<std::reference_wrapper<const PartitionFiles>>& files,
+                const std::unordered_map<std::string, std::string>& symbol_index,
                 bool is_last) {
 
             out << "    {\n";
@@ -55,11 +197,15 @@ namespace splitter {
             out << "      \"inputs\": " << set_to_json(partition.inputs) << ",\n";
             out << "      \"external_inputs\": "
                 << set_to_json(partition.external_inputs) << ",\n";
+            out << "      \"external_calls\": "
+                << set_to_json(partition.external_calls) << ",\n";
             out << "      \"outputs\": " << set_to_json(partition.outputs) << ",\n";
             out << "      \"parents\": " << vector_to_json(partition.parents) << ",\n";
             out << "      \"dependencies\": " << vector_to_json(partition.dependencies) << ",\n";
             out << "      \"unresolved_calls\": "
                 << vector_to_json(partition.unresolved_dependencies) << ",\n";
+            out << "      \"required_libraries\": "
+                << set_to_json(resolve_partition_libraries(partition, symbol_index)) << ",\n";
 
             if (files.has_value()) {
                 const auto& part_files = files->get();
@@ -112,9 +258,19 @@ namespace splitter {
         if (!open_summary_file(summary_path, summary))
             return;
 
+        auto libraries = detect_required_libraries(binary_path);
+        std::vector<std::string> library_names;
+        {
+            std::set<std::string> unique;
+            for (const auto& entry : libraries)
+                unique.insert(entry.name);
+            library_names.assign(unique.begin(), unique.end());
+        }
+        auto symbol_index = build_symbol_index(libraries);
+
         write_summary_header(summary, binary_path, partitions.size(),
-                             count_parallelizable(partitions));
-        write_partitions_block(summary, partitions, artifacts);
+                             count_parallelizable(partitions), library_names);
+        write_partitions_block(summary, partitions, artifacts, symbol_index);
         summary << "  ],\n";
         write_memory_block(summary, memory_segments);
         write_summary_footer(summary);
@@ -157,11 +313,13 @@ namespace splitter {
     void ArtifactBuilder::write_summary_header(std::ofstream& out,
                                                const std::string& binary_path,
                                                size_t partition_count,
-                                               size_t parallelizable_count) const {
+                                               size_t parallelizable_count,
+                                               const std::vector<std::string>& required_libraries) const {
         out << "{\n";
         out << "  \"binary\": \"" << json_escape(binary_path) << "\",\n";
         out << "  \"partitions_count\": " << partition_count << ",\n";
         out << "  \"parallelizable_count\": " << parallelizable_count << ",\n";
+        out << "  \"required_libraries\": " << vector_to_json(required_libraries) << ",\n";
         out << "  \"partitions\": [\n";
     }
 
@@ -171,10 +329,11 @@ namespace splitter {
 
     void ArtifactBuilder::write_partitions_block(std::ofstream& out,
                                                  const std::vector<BinaryPartition>& partitions,
-                                                 const std::vector<PartitionFiles>& artifacts) const {
+                                                 const std::vector<PartitionFiles>& artifacts,
+                                                 const std::unordered_map<std::string, std::string>& symbol_index) const {
         for (size_t idx = 0; idx < partitions.size(); ++idx) {
             const bool is_last = (idx + 1 == partitions.size());
-            write_partition_entry(out, partitions[idx], artifact_for(idx, artifacts), is_last);
+            write_partition_entry(out, partitions[idx], artifact_for(idx, artifacts), symbol_index, is_last);
         }
     }
 

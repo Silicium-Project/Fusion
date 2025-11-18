@@ -401,6 +401,19 @@ Les devices téléchargent le manifest correspondant au job pour sélectionner l
 
 Chaque manifest de calcul référence au moins une opération de vérification (`catalog/workloads/verification/...`). Lors du scheduling, seuls des noeuds n'ayant pas participé au calcul peuvent exécuter la vérification correspondante, garantissant une séparation stricte entre production et audit.
 
+### Bibliothèques dynamiques requises
+
+Le `summary.json` contient deux niveaux d'information :
+
+- `required_libraries` (racine) : l'équivalent de `DT_NEEDED`, détecté via `ldd`.
+- Pour chaque partition, les champs `external_calls` et `required_libraries`
+  listent respectivement les symboles externes détectés pendant le partitionnement
+  et les bibliothèques minimales associées (résolution via `nm -D` sur chaque lib).
+
+Le backend peut donc charger uniquement les bibliothèques réellement nécessaires
+à un fragment donné (libm pour `sqrt`, libc pour `printf`, etc.), sans multiplieur
+tout le binaire complet.
+
 ---
 
 ## Architecture on-chain Silicium (briques prévues)

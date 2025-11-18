@@ -1,6 +1,7 @@
 #include "splitter/partitioner.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -42,6 +43,63 @@ namespace splitter {
             oss << "0x" << std::hex << call.first.value();
             return oss.str();
         }
+ 
+        std::string normalize_external_symbol(const CallRef& call) {
+            std::string operand = splitter::trim(call.second);
+            if (!operand.empty()) {
+                auto comment_pos = operand.find('#');
+                if (comment_pos != std::string::npos)
+                    operand = splitter::trim(operand.substr(comment_pos + 1));
+            }
+
+            std::string candidate;
+            const size_t lt = operand.find('<');
+            size_t gt = std::string::npos;
+            if (lt != std::string::npos)
+                gt = operand.find('>', lt + 1);
+            if (lt != std::string::npos && gt != std::string::npos && gt > lt + 1)
+                candidate = operand.substr(lt + 1, gt - lt - 1);
+            else
+                candidate = operand;
+
+            const auto plus_pos = candidate.find('+');
+            if (plus_pos != std::string::npos)
+                candidate = candidate.substr(0, plus_pos);
+
+            const auto at_pos = candidate.find('@');
+            if (at_pos != std::string::npos)
+                candidate = candidate.substr(0, at_pos);
+
+            candidate = splitter::trim(candidate);
+
+            auto is_allowed = [](char ch) {
+                unsigned char uch = static_cast<unsigned char>(ch);
+                return std::isalnum(uch) || ch == '_' || ch == '.' || ch == '-';
+            };
+
+            size_t start = 0;
+            while (start < candidate.size() && !is_allowed(candidate[start]))
+                ++start;
+            size_t end = candidate.size();
+            while (end > start && !is_allowed(candidate[end - 1]))
+                --end;
+
+            if (start >= end)
+                candidate.clear();
+            else
+                candidate = candidate.substr(start, end - start);
+
+            if (!candidate.empty())
+                return candidate;
+
+            if (call.first.has_value()) {
+                std::ostringstream oss;
+                oss << "0x" << std::hex << call.first.value();
+                return oss.str();
+            }
+
+            return {};
+        }
 
     }  // namespace
 
@@ -74,6 +132,7 @@ namespace splitter {
             build_indices();
             resolve_dependencies();
             attach_parents();
+            collect_external_calls();
             compute_external_inputs();
 
             auto output = std::move(partitions_);
@@ -174,6 +233,30 @@ namespace splitter {
         void attach_parents() {
             for (size_t idx = 0; idx < partitions_.size(); ++idx)
                 partitions_[idx].parents.assign(parent_sets_[idx].begin(), parent_sets_[idx].end());
+        }
+
+        bool resolves_to_partition(size_t idx, const CallRef& call) const {
+            if (!call.first.has_value())
+                return false;
+            auto it = addr_index_.find(call.first.value());
+            if (it == addr_index_.end())
+                return false;
+            const auto& child_id = partitions_[it->second].id;
+            return child_id != partitions_[idx].id;
+        }
+
+        void collect_external_calls() {
+            for (size_t idx = 0; idx < partitions_.size(); ++idx) {
+                std::set<std::string> names;
+                for (const auto& call : call_refs_[idx]) {
+                    if (resolves_to_partition(idx, call))
+                        continue;
+                    auto symbol = normalize_external_symbol(call);
+                    if (!symbol.empty())
+                        names.insert(symbol);
+                }
+                partitions_[idx].external_calls = std::move(names);
+            }
         }
 
         void compute_external_inputs() {

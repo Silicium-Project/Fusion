@@ -23,6 +23,7 @@ RUN_BIN := $(RUN_BUILD_DIR)/$(RUN_NAME)
 RUN_OUT := $(if $(OUT),$(OUT),run_output/$(RUN_NAME))
 RUN_LOG := $(if $(LOG),$(LOG),fragment_executor.log)
 ARGS ?=
+PROGRAM_LIBS ?= -lm -lcsfml-graphics -lcsfml-window -lcsfml-system
 
 .PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test build-cpp-test-image
 
@@ -117,8 +118,8 @@ prep-program:
 	@rm -f $(RUN_BIN)
 	@ext="$(suffix $(PROGRAM))"; \
 	case "$$ext" in \
-	  .c) echo "==> Compilation (C) de $(PROGRAM)"; $(CC) $(CFLAGS) $(PROGRAM) -o $(RUN_BIN) ;; \
-	  .cpp|.cc|.cxx|.C|.c++) echo "==> Compilation (C++) de $(PROGRAM)"; $(CXX) $(CXXFLAGS) $(PROGRAM) -o $(RUN_BIN) ;; \
+	  .c) echo "==> Compilation (C) de $(PROGRAM)"; $(CC) $(CFLAGS) $(PROGRAM) -o $(RUN_BIN) $(PROGRAM_LIBS) ;; \
+	  .cpp|.cc|.cxx|.C|.c++) echo "==> Compilation (C++) de $(PROGRAM)"; $(CXX) $(CXXFLAGS) $(PROGRAM) -o $(RUN_BIN) $(PROGRAM_LIBS) ;; \
 	  *) echo "Extension source non supportée: $$ext (attendu .c, .cc, .cxx, .cpp)"; exit 1 ;; \
 	esac
 

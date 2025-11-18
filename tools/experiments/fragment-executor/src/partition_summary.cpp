@@ -96,6 +96,8 @@ static PartitionInfo parse_partition_object(const std::string& object_text) {
 
     auto external_inputs = extract_json_array(object_text, "external_inputs");
     info.external_inputs.insert(external_inputs.begin(), external_inputs.end());
+    auto external_calls = extract_json_array(object_text, "external_calls");
+    info.external_calls.insert(external_calls.begin(), external_calls.end());
 
     auto outputs_vec = extract_json_array(object_text, "outputs");
     info.outputs.insert(outputs_vec.begin(), outputs_vec.end());
@@ -195,6 +197,11 @@ static void parse_binary_path(const std::string& content, PartitionSummary& summ
     summary.binary_path = content.substr(quote1 + 1, quote2 - quote1 - 1);
 }
 
+static void parse_required_libraries(const std::string& content, PartitionSummary& summary) {
+    auto libs = extract_json_array(content, "required_libraries");
+    summary.required_libraries.assign(libs.begin(), libs.end());
+}
+
 static Graph build_adjacency(const std::vector<PartitionInfo>& partitions,
                              std::unordered_map<std::string, size_t>& indegree) {
     Graph adjacency;
@@ -257,6 +264,7 @@ PartitionSummary load_partition_summary(const std::string& summary_path) {
     parse_partitions(content, summary);
     parse_binary_path(content, summary);
     parse_initial_memory(content, summary);
+    parse_required_libraries(content, summary);
     return summary;
 }
 

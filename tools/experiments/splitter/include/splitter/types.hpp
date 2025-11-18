@@ -55,6 +55,7 @@ namespace splitter {
         std::vector<std::string> parents;
         std::set<std::string> external_inputs;
         std::vector<std::string> unresolved_dependencies;
+        std::set<std::string> external_calls;
     };
 
 struct PartitionFiles {

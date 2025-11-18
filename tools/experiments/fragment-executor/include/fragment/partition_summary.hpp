@@ -23,6 +23,7 @@ struct PartitionInfo {
     std::set<std::string> inputs;
     std::set<std::string> external_inputs;
     std::set<std::string> outputs;
+    std::set<std::string> external_calls;
     std::vector<std::string> parents;
     std::vector<std::string> dependencies;
     std::vector<std::string> unresolved_calls;
@@ -38,6 +39,7 @@ struct MemoryRegion {
 
 struct PartitionSummary {
     std::string binary_path;
+    std::vector<std::string> required_libraries;
     std::vector<PartitionInfo> partitions;
     std::vector<MemoryRegion> initial_memory;
 };

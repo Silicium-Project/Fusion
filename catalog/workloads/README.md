@@ -46,6 +46,8 @@ Les devices téléchargent le manifest correspondant au job pour savoir quel bin
 - `ml-inference/` : embeddings, classification de lots.
 - `rendering/` : frames Blender/3D.
 - `data-compression/` : archivage et hashing segmenté.
+- `libm/` : micro-profils mathématiques (`sin/`, `exp/`, ... ) utilisés pour
+  résoudre les dépendances externes des fragments ASM.
 
 ### verification/
 
