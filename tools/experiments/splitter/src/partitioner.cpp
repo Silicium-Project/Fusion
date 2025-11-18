@@ -1,8 +1,8 @@
 #include "splitter/partitioner.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <fstream>
+#include <cctype>
 #include <iomanip>
 #include <iostream>
 #include <iterator>
@@ -99,6 +99,18 @@ namespace splitter {
             }
 
             return {};
+        }
+
+        bool is_gui_symbol(const std::string& symbol) {
+            static const std::vector<std::string> prefixes = {
+                "sfRenderWindow_", "sfRenderTexture_", "sfWindow_",
+                "sfView_",        "sfSprite_",        "sfKeyboard_",
+                "sfMouse_",       "glX",              "SDL_"
+            };
+            for (const auto& prefix : prefixes)
+                if (symbol.rfind(prefix, 0) == 0)
+                    return true;
+            return false;
         }
 
     }  // namespace
@@ -248,14 +260,19 @@ namespace splitter {
         void collect_external_calls() {
             for (size_t idx = 0; idx < partitions_.size(); ++idx) {
                 std::set<std::string> names;
+                bool needs_display = false;
                 for (const auto& call : call_refs_[idx]) {
                     if (resolves_to_partition(idx, call))
                         continue;
                     auto symbol = normalize_external_symbol(call);
-                    if (!symbol.empty())
+                    if (!symbol.empty()) {
                         names.insert(symbol);
+                        if (!needs_display && is_gui_symbol(symbol))
+                            needs_display = true;
+                    }
                 }
                 partitions_[idx].external_calls = std::move(names);
+                partitions_[idx].requires_display = needs_display;
             }
         }
 

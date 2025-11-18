@@ -199,6 +199,8 @@ namespace splitter {
                 << set_to_json(partition.external_inputs) << ",\n";
             out << "      \"external_calls\": "
                 << set_to_json(partition.external_calls) << ",\n";
+            out << "      \"requires_display\": "
+                << (partition.requires_display ? "true" : "false") << ",\n";
             out << "      \"outputs\": " << set_to_json(partition.outputs) << ",\n";
             out << "      \"parents\": " << vector_to_json(partition.parents) << ",\n";
             out << "      \"dependencies\": " << vector_to_json(partition.dependencies) << ",\n";

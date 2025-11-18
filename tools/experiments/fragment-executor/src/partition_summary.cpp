@@ -104,6 +104,7 @@ static PartitionInfo parse_partition_object(const std::string& object_text) {
 
     auto libs_vec = extract_json_array(object_text, "required_libraries");
     info.required_libraries.insert(libs_vec.begin(), libs_vec.end());
+    info.requires_display = extract_json_bool(object_text, "requires_display", false);
 
     if (info.id.empty() || info.asm_path.empty())
         throw std::runtime_error("Résumé invalide: partition sans identifiant ou fichier ASM");

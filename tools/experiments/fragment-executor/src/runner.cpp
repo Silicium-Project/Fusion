@@ -2,7 +2,9 @@
 #include "fragment/logging.hpp"
 #include "fragment/runner.hpp"
 
+#include <algorithm>
 #include <set>
+#include <unistd.h>
 
 #ifdef __linux__
 #include <dlfcn.h>
@@ -44,7 +46,34 @@ void ensure_required_libraries(const PartitionSummary&) {}
 
 }  // namespace
 
-int run_cli(const std::vector<std::string_view>& args) {
+bool partitions_require_gui(const std::vector<PartitionInfo>& partitions) {
+    return std::any_of(partitions.begin(), partitions.end(),
+                       [](const PartitionInfo& info) { return info.requires_display; });
+}
+
+bool running_in_gui_wrapper() {
+    const char* flag = std::getenv("RUNNING_IN_GUI_CONTAINER");
+    return flag && *flag;
+}
+
+bool reexec_in_gui_wrapper(const std::vector<std::string>& raw_args, const char* wrapper) {
+    std::vector<char*> argv;
+    argv.reserve(raw_args.size() + 2);
+    argv.push_back(const_cast<char*>(wrapper));
+    for (const auto& arg : raw_args)
+        argv.push_back(const_cast<char*>(arg.c_str()));
+    argv.push_back(nullptr);
+
+    log::info("Exécution des fragments GUI via " + std::string(wrapper));
+    execvp(wrapper, argv.data());
+    log::error("execvp(" + std::string(wrapper) + ") a échoué");
+    return true;
+}
+
+}  // namespace
+
+int run_cli(const std::vector<std::string_view>& args,
+            const std::vector<std::string>& raw_args) {
     if (args.size() < 2) {
         std::string_view prog = args.empty() ? "fragment_executor" : args.front();
         print_usage(prog);
@@ -90,6 +119,15 @@ int run_cli(const std::vector<std::string_view>& args) {
             return 1;
         }
         partition_infos = summary.partitions;
+        if (opts.native_mode && partitions_require_gui(partition_infos) && !running_in_gui_wrapper()) {
+            const char* wrapper = std::getenv("FRAGMENT_GUI_WRAPPER");
+            if (wrapper && *wrapper) {
+                if (reexec_in_gui_wrapper(raw_args, wrapper))
+                    return 1;
+            } else {
+                log::warning("Fragments GUI détectés mais FRAGMENT_GUI_WRAPPER n'est pas défini.");
+            }
+        }
         set_partition_registry(&partition_infos);
         try {
             execution_plan = plan_from_summary(partition_infos, expected_external_inputs);

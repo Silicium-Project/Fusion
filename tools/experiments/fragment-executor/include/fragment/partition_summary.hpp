@@ -25,6 +25,7 @@ struct PartitionInfo {
     std::set<std::string> outputs;
     std::set<std::string> external_calls;
     std::set<std::string> required_libraries;
+    bool requires_display = false;
     std::vector<std::string> parents;
     std::vector<std::string> dependencies;
     std::vector<std::string> unresolved_calls;

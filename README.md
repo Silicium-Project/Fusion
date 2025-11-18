@@ -414,6 +414,33 @@ Le backend peut donc charger uniquement les bibliothèques réellement nécessai
 à un fragment donné (libm pour `sqrt`, libc pour `printf`, etc.), sans multiplieur
 tout le binaire complet.
 
+### Fragments nécessitant une GUI (CSFML, SDL, …)
+
+Lorsque `splitter` détecte des appels `sfRenderWindow_*` (ou assimilés), le
+`summary.json` marque le fragment comme `requires_display`. Si vous lancez ces
+fragments en mode `--native`, configurez un wrapper Docker headless :
+
+1. Construire l'image VNC/Xvfb fournie :
+   ```bash
+   docker build -t silicium/gui-runner tools/docker/gui-runner
+   ```
+2. Exporter le wrapper (montre le repo courant dans le conteneur et démarre un
+   serveur VNC/Xvfb) :
+   ```bash
+   export FRAGMENT_GUI_WRAPPER=tools/worker/scripts/gui_wrapper.sh
+   export FRAGMENT_GUI_DOCKER_IMAGE=silicium/gui-runner
+   # Optionnel : exposer le serveur VNC local sur 5901
+   export FRAGMENT_GUI_VNC_PORT=5901
+   ```
+3. Lancer `fragment_executor --native` (ou `make run-native …`). Les fragments
+   marqués `requires_display` seront automatiquement ré-exécutés via Docker et
+   disposeront d’un `DISPLAY` headless + VNC (`RUNNING_IN_GUI_CONTAINER=1` assure
+   que le wrapper n’est invoqué qu’une fois).
+
+Vous pouvez vous connecter au serveur VNC (`localhost:${FRAGMENT_GUI_VNC_PORT}`)
+pour observer la fenêtre si nécessaire. Les workers dépourvus de GUI continueront
+à repasser en mode émulation.
+
 ---
 
 ## Architecture on-chain Silicium (briques prévues)
