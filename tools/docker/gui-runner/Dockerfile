@@ -1,18 +1,25 @@
-FROM fedora:40
+FROM registry.fedoraproject.org/fedora:42 AS builder
 
-ENV LANG=C.UTF-8
+RUN dnf -y install make gcc gcc-c++ git \
+    && dnf clean all
 
-RUN dnf -y update && \
-    dnf -y install \
+WORKDIR /workspace
+COPY . .
+RUN make -C tools/experiments/fragment-executor
+
+FROM registry.fedoraproject.org/fedora:42
+
+RUN dnf -y install \
         xorg-x11-server-Xvfb \
         x11vnc \
-        csfml-devel \
+        CSFML-devel \
         mesa-dri-drivers \
         libXrender \
-        glibc-langpack-en && \
-    dnf clean all
+        which \
+        && dnf clean all
 
-COPY entrypoint.sh /opt/gui-runner/entrypoint.sh
+COPY --from=builder /workspace/tools/experiments/fragment-executor/fragment_executor /usr/local/bin/fragment_executor
+COPY tools/docker/gui-runner/entrypoint.sh /opt/gui-runner/entrypoint.sh
 RUN chmod +x /opt/gui-runner/entrypoint.sh
 
 EXPOSE 5900

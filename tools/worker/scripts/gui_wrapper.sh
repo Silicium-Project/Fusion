@@ -14,7 +14,7 @@ else
 fi
 WORKDIR="$(pwd)"
 DOCKERFILE="${FRAGMENT_GUI_DOCKERFILE:-${REPO_ROOT}/tools/docker/gui-runner/Dockerfile}"
-DOCKER_CONTEXT="$(dirname "${DOCKERFILE}")"
+DOCKER_CONTEXT="${FRAGMENT_GUI_DOCKER_CONTEXT:-${REPO_ROOT}}"
 
 if ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
     echo "[gui-wrapper] Building image ${IMAGE}..."
