@@ -7,7 +7,11 @@ if [[ $# -lt 1 ]]; then
 fi
 
 IMAGE="${FRAGMENT_GUI_DOCKER_IMAGE:-silicium/gui-runner:latest}"
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+if git rev-parse --show-toplevel >/dev/null 2>&1; then
+    REPO_ROOT="$(git rev-parse --show-toplevel)"
+else
+    REPO_ROOT="$(pwd)"
+fi
 WORKDIR="$(pwd)"
 DOCKERFILE="${FRAGMENT_GUI_DOCKERFILE:-${REPO_ROOT}/tools/docker/gui-runner/Dockerfile}"
 DOCKER_CONTEXT="$(dirname "${DOCKERFILE}")"
