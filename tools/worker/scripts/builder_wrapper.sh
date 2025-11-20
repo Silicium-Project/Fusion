@@ -18,7 +18,7 @@ else
     REPO_ROOT="${INVOCATION_DIR}"
 fi
 
-IMAGE="${FRAGMENT_GUI_BUILDER_IMAGE:-luis1454/worker:1.0}"
+IMAGE="${FRAGMENT_GUI_BUILDER_IMAGE:-luis1454/gui-runner:builder}"
 
 # Align UID/GID so que les artefacts générés restent supprimables depuis l'hôte.
 HOST_UID=$(id -u)
@@ -34,10 +34,9 @@ RUN_CMD="$*"
 
 exec docker run --rm \
     -e RUNNING_IN_GUI_CONTAINER=1 \
-    -e RUN_CMD="${RUN_CMD}" \
     -e HOST_UID="${HOST_UID}" \
     -e HOST_GID="${HOST_GID}" \
     -v "${REPO_ROOT}:${REPO_ROOT}${VOLUME_SUFFIX}" \
     -w "${INVOCATION_DIR}" \
     --entrypoint /bin/bash \
-    "${IMAGE}" -lc "apt-get update && apt-get install -y --no-install-recommends build-essential libjansson-dev pkg-config >/dev/null && bash -lc \"\$RUN_CMD\" && chown -R \${HOST_UID}:\${HOST_GID} ${INVOCATION_DIR}"
+    "${IMAGE}" -lc "bash -lc \"${RUN_CMD}\" && chown -R \${HOST_UID}:\${HOST_GID} ${INVOCATION_DIR}"

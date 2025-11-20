@@ -3,7 +3,7 @@ CXX := g++
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic -fPIE
 CPPFLAGS := -Iinclude -I../fragment/executor/include -MMD -MP
 BUILDER_WRAPPER ?= $(REPO_ROOT)/tools/worker/scripts/builder_wrapper.sh
-FRAGMENT_GUI_BUILDER_IMAGE ?= luis1454/worker:1.0
+FRAGMENT_GUI_BUILDER_IMAGE ?= luis1454/gui-runner:builder
 
 JANSSON_HEADER := $(firstword $(wildcard /usr/include/jansson.h /usr/local/include/jansson.h))
 NEED_DOCKER_BUILD := $(if $(JANSSON_HEADER),,yes)
