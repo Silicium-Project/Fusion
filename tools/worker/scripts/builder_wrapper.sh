@@ -18,7 +18,7 @@ else
     REPO_ROOT="${INVOCATION_DIR}"
 fi
 
-IMAGE="${FRAGMENT_GUI_BUILDER_IMAGE:-luis1454/gui-runner:builder}"
+IMAGE="${FRAGMENT_GUI_BUILDER_IMAGE:-luis1454/worker-builder:1.0}"
 
 # Align UID/GID so que les artefacts générés restent supprimables depuis l'hôte.
 HOST_UID=$(id -u)
@@ -33,10 +33,9 @@ fi
 RUN_CMD="$*"
 
 exec docker run --rm \
+    --user "${HOST_UID}:${HOST_GID}" \
     -e RUNNING_IN_GUI_CONTAINER=1 \
-    -e HOST_UID="${HOST_UID}" \
-    -e HOST_GID="${HOST_GID}" \
     -v "${REPO_ROOT}:${REPO_ROOT}${VOLUME_SUFFIX}" \
     -w "${INVOCATION_DIR}" \
     --entrypoint /bin/bash \
-    "${IMAGE}" -lc "bash -lc \"${RUN_CMD}\" && chown -R \${HOST_UID}:\${HOST_GID} ${INVOCATION_DIR}"
+    "${IMAGE}" -lc "${RUN_CMD}"
