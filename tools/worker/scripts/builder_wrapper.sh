@@ -18,14 +18,7 @@ else
     REPO_ROOT="${INVOCATION_DIR}"
 fi
 
-DOCKERFILE="${FRAGMENT_GUI_DOCKERFILE:-${REPO_ROOT}/tools/docker/gui-runner/Dockerfile}"
-DOCKER_CONTEXT="${FRAGMENT_GUI_DOCKER_CONTEXT:-${REPO_ROOT}}"
 IMAGE="${FRAGMENT_GUI_BUILDER_IMAGE:-luis1454/worker:1.0}"
-TARGET="${FRAGMENT_GUI_DOCKER_TARGET:-builder}"
-
-if ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
-    docker build -t "${IMAGE}" -f "${DOCKERFILE}" --target "${TARGET}" "${DOCKER_CONTEXT}"
-fi
 
 # Align UID/GID so que les artefacts générés restent supprimables depuis l'hôte.
 HOST_UID=$(id -u)
