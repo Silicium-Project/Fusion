@@ -75,7 +75,15 @@ fclean:
 	$(MAKE) -C tools/fragment/executor clean
 	$(MAKE) -C tools/worker clean
 	@if command -v docker >/dev/null 2>&1; then \
-		docker rmi -f luis1454/worker-runtime:1.0 luis1454/worker-builder:1.0 luis1454/gui-runner:1.0 luis1454/gui-runner:builder >/dev/null 2>&1 || true; \
+		docker rmi -f \
+			luis1454/worker-runtime:1.0 \
+			luis1454/worker-builder:1.0 \
+			luis1454/gui-runner:1.0 \
+			luis1454/gui-runner:builder \
+			silicium/gui-runner:latest \
+			silicium/gui-runner:builder \
+			dynamorio-runner:latest \
+			>/dev/null 2>&1 || true; \
 	fi
 
 re:
