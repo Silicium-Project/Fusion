@@ -9,6 +9,7 @@
 #include "worker/job_runner.hpp"
 #include "worker/queue_loader.hpp"
 #include "worker/reporter.hpp"
+#include "fragment/partition_summary.hpp"
 
 namespace {
 
@@ -150,12 +151,8 @@ CliOptions parse_cli(int argc, char** argv) {
             throw std::runtime_error("Option inconnue: " + arg);
     }
 
-    if (opts.dynamo_binary.empty()) {
-        if (opts.summary_path.empty())
-            throw std::runtime_error("--summary est obligatoire");
-        if (opts.queue_file.empty() && opts.task_ids.empty())
-            throw std::runtime_error("Aucune tâche fournie (utiliser --task ou --queue)");
-    }
+    if (opts.dynamo_binary.empty() && opts.summary_path.empty())
+        throw std::runtime_error("--summary est obligatoire");
 
     return opts;
 }
@@ -191,6 +188,16 @@ int main(int argc, char** argv) {
             t.partition_id = id;
             t.inputs = opts.default_inputs;
             tasks.push_back(std::move(t));
+        }
+        if (tasks.empty()) {
+            fragment::PartitionSummary summary = fragment::load_partition_summary(opts.summary_path);
+            auto ordered = fragment::order_partitions(summary.partitions);
+            for (const auto& id : ordered) {
+                worker::Task t;
+                t.partition_id = id;
+                t.inputs = opts.default_inputs;
+                tasks.push_back(std::move(t));
+            }
         }
 
         worker::WorkerConfig config;

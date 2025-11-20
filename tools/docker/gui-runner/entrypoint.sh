@@ -14,6 +14,17 @@ x11vnc -display "${DISPLAY}" \
        -rfbport "${VNC_PORT}" \
        -forever -shared -nopw -quiet -bg
 
+if command -v xset >/dev/null 2>&1; then
+    for _ in $(seq 1 50); do
+        if xset -display "${DISPLAY}" q >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+else
+    sleep 0.5
+fi
+
 cleanup() {
     kill "${XVFB_PID}" >/dev/null 2>&1 || true
     pkill -P "${XVFB_PID}" >/dev/null 2>&1 || true
@@ -21,7 +32,8 @@ cleanup() {
 trap cleanup EXIT
 
 if [[ $# -eq 0 ]]; then
-    tail -f /dev/null
+    exec tail -f /dev/null
 else
+    # Propagate env to child process
     exec "$@"
 fi

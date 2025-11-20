@@ -16,7 +16,7 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 | `infra/bin/run-with-proxy.sh` | Lance un service Silicium + le proxy TLS, génère un certificat auto-signé et attend `/healthz`. |
 | `infra/secure-stack/` | Docker Compose + scripts pour un RPC Solana confiné derrière un VPN WireGuard. |
 | `catalog/workloads/` | Catalogue des manifests calcul/vérification. |
-| `tools/experiments/` | Prototypes non supportés (`splitter/`, `fragment-executor/`, anciens tests). |
+| `tools/fragment/` | Outils de partitionnement/exécution des fragments (splitter, fragment-executor). |
 | `tools/worker/` | Prototype de worker local qui consomme des partitions générées par `splitter`. |
 | Volumes Docker (`silicium-*-ledger`) | Persistences des ledgers/clépairs, gérées automatiquement via Compose. |
 | `README.md` | Ce document. |

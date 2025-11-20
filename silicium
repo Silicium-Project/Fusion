@@ -28,8 +28,8 @@ except ImportError:  # pragma: no cover
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-SPLITTER_DIR = REPO_ROOT / "tools" / "experiments" / "splitter"
-EXECUTOR_DIR = REPO_ROOT / "tools" / "experiments" / "fragment-executor"
+SPLITTER_DIR = REPO_ROOT / "tools" / "fragment" / "splitter"
+EXECUTOR_DIR = REPO_ROOT / "tools" / "fragment" / "executor"
 WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
 DOCKER_BIN = os.environ.get("DOCKER", "docker")
 LEDGER_PREFIX = os.environ.get("SILICIUM_LEDGER_PREFIX", "silicium")

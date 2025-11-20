@@ -17,14 +17,16 @@ suivantes :
 
 ```
 worker --summary <summary.json> --task <partition_id> [--input reg=val ...] [--native]
-worker --summary <summary.json> --queue queue.txt [--output json]
+worker --summary <summary.json> [--queue queue.txt] [--output json]
        [--backend emulator|dynamo] [--connector direct|http]
 ```
 
 - `--summary` : chemin vers le `summary.json` produit par `splitter`.
 - `--task` : identifier d’un fragment à exécuter (répétable).
 - `--queue` : fichier texte contenant une tâche par ligne
-  (`partition reg=val ...`), commentaires via `#`.
+  (`partition reg=val ...`), commentaires via `#`. Si omis et aucun `--task`
+  n'est fourni, le worker dérive automatiquement un ordre topologique à partir
+  du `summary`.
 - `--input` : valeurs par défaut pour les tâches ajoutées via `--task`.
 - `--native` : active le mode natif (dangereux, mappe les `.bin` en mémoire).
 - `--backend` : sélectionne le backend d'exécution (`emulator` par défaut,
@@ -44,13 +46,8 @@ worker --summary <summary.json> --queue queue.txt [--output json]
   liste ces patchs mémoire (adresse + octets avant/après) pour faciliter le
   débogage.
 
-Exemple de file :
-
-```
-# partition  registre=valeur
-func_0_deregister_tm_clones
-func_3_main rax=0x1337
-```
+Si aucune file ni tâche n'est fournie, l'ordre d'exécution est dérivé du
+`summary` (topo-sort des dépendances).
 
 ## Tests unitaires
 
@@ -97,8 +94,8 @@ désormais déléguer **chaque fragment** à DynamoRIO. Le flux est le suivant 
 
    ```bash
    ./tools/worker/worker \
-     --summary tools/experiments/splitter/partitions/summary.json \
-     --queue tools/worker/demo/queue.txt \
+     --summary tools/demo/worker/summary.json \
+     --queue tools/demo/worker/queue.txt \
      --backend dynamo
    ```
 
@@ -144,11 +141,11 @@ changer la logique du worker (sérialisation JSON des registres/mémoires).
 
 Pour vérifier que le mode `--drrun` relaie bien l'entrée standard à travers
 Docker/DynamoRIO, un petit programme d'exemple est fourni
-(`tools/worker/demo/stdin_demo.c`). Compile-le puis pipe du texte :
+(`tools/demo/worker/stdin_demo.c`). Compile-le puis pipe du texte :
 
 ```bash
-gcc -O0 -g tools/worker/demo/stdin_demo.c -o tools/worker/demo/stdin_demo
-echo "salut réseau" | ./tools/worker/worker --drrun tools/worker/demo/stdin_demo
+gcc -O0 -g tools/demo/worker/stdin_demo.c -o tools/demo/worker/stdin_demo
+echo "salut réseau" | ./tools/worker/worker --drrun tools/demo/worker/stdin_demo
 ```
 
 La sortie attendue ressemble à :
@@ -162,7 +159,7 @@ redirigée vers le conteneur et jusqu'au binaire instrumenté par DynamoRIO.
 
 ## Démo mémoire
 
-Le dossier `tools/worker/demo/` contient deux fragments factices :
+Le dossier `tools/demo/worker/` contient deux fragments factices :
 
 - `writer.asm` pousse une valeur sur la pile,
 - `reader.asm` la dépile.
@@ -172,8 +169,8 @@ transfert d'état (mémoire + registres) :
 
 ```bash
 ./tools/worker/worker \
-  --summary tools/worker/demo/summary.json \
-  --queue tools/worker/demo/queue.txt
+  --summary tools/demo/worker/summary.json \
+  --queue tools/demo/worker/queue.txt
 ```
 
 La sortie montre que `reader` récupère bien la valeur écrite par `writer`

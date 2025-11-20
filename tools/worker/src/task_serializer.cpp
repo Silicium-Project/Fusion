@@ -1,6 +1,7 @@
 #include "worker/task_serializer.hpp"
 
 #include <cctype>
+#include <jansson.h>
 #include <sstream>
 #include <stdexcept>
 
@@ -110,44 +111,62 @@ std::vector<MemorySnapshot> parse_memory(const std::vector<std::string>& entries
     return pages;
 }
 
-std::map<std::string, uint64_t> parse_register_map(const std::string& content,
-                                                    const std::string& key) {
-    auto array = fragment::extract_json_array(content, key);
-    return parse_kv_pairs(array);
-}
-
-std::vector<MemorySnapshot> parse_memory_array(const std::string& content,
-                                               const std::string& key) {
-    auto array = fragment::extract_json_array(content, key);
-    return parse_memory(array);
-}
-
-uint64_t extract_json_uint64(const std::string& content,
-                             const std::string& key,
-                             uint64_t default_value = 0) {
-    const std::string pattern = '\"' + key + '\"';
-    size_t pos = content.find(pattern);
-    if (pos == std::string::npos)
-        return default_value;
-    pos = content.find(':', pos);
-    if (pos == std::string::npos)
-        return default_value;
-    ++pos;
-    while (pos < content.size() && std::isspace(static_cast<unsigned char>(content[pos])))
-        ++pos;
-    size_t end = pos;
-    while (end < content.size() && std::isdigit(static_cast<unsigned char>(content[end])))
-        ++end;
-    if (end == pos)
-        return default_value;
-    return std::stoull(content.substr(pos, end - pos));
-}
-
 std::string build_kv_array(const std::map<std::string, uint64_t>& values,
                            const std::string& name) {
     std::ostringstream oss;
     oss << "  \"" << name << "\":[" << join_kv_pairs(values) << "]";
     return oss.str();
+}
+
+json_t* load_json_root(const std::string& content) {
+    json_error_t err;
+    json_t* root = json_loads(content.c_str(), 0, &err);
+    if (!root)
+        throw std::runtime_error(std::string("JSON invalide: ") + err.text);
+    if (!json_is_object(root)) {
+        json_decref(root);
+        throw std::runtime_error("JSON inattendu (objet attendu)");
+    }
+    return root;
+}
+
+std::string get_json_string(json_t* root, const char* key) {
+    if (json_t* v = json_object_get(root, key); json_is_string(v))
+        return json_string_value(v);
+    return {};
+}
+
+bool get_json_bool(json_t* root, const char* key, bool default_value = false) {
+    if (json_t* v = json_object_get(root, key); json_is_boolean(v))
+        return json_is_true(v);
+    return default_value;
+}
+
+uint64_t get_json_uint64(json_t* root, const char* key, uint64_t default_value = 0) {
+    if (json_t* v = json_object_get(root, key); json_is_integer(v))
+        return static_cast<uint64_t>(json_integer_value(v));
+    return default_value;
+}
+
+std::vector<std::string> get_json_string_array(json_t* root, const char* key) {
+    std::vector<std::string> out;
+    if (json_t* arr = json_object_get(root, key); json_is_array(arr)) {
+        size_t idx = 0;
+        json_t* item = nullptr;
+        json_array_foreach(arr, idx, item) {
+            if (json_is_string(item))
+                out.emplace_back(json_string_value(item));
+        }
+    }
+    return out;
+}
+
+std::map<std::string, uint64_t> parse_register_map(json_t* root, const char* key) {
+    return parse_kv_pairs(get_json_string_array(root, key));
+}
+
+std::vector<MemorySnapshot> parse_memory_array(json_t* root, const char* key) {
+    return parse_memory(get_json_string_array(root, key));
 }
 
 }  // namespace
@@ -167,14 +186,16 @@ std::string serialize_task_payload(const TaskPayload& payload) {
 }
 
 TaskPayload deserialize_task_payload(const std::string& content) {
+    json_t* root = load_json_root(content);
     TaskPayload payload;
-    payload.partition_id = fragment::extract_json_string(content, "partition_id");
-    payload.asm_path = fragment::extract_json_string(content, "asm_path");
-    payload.binary_path = fragment::extract_json_string(content, "binary_path");
-    payload.native_mode = fragment::extract_json_bool(content, "native", false);
-    payload.inputs = parse_register_map(content, "inputs");
-    payload.register_state = parse_register_map(content, "register_state");
-    payload.memory_state = parse_memory_array(content, "memory");
+    payload.partition_id = get_json_string(root, "partition_id");
+    payload.asm_path = get_json_string(root, "asm_path");
+    payload.binary_path = get_json_string(root, "binary_path");
+    payload.native_mode = get_json_bool(root, "native", false);
+    payload.inputs = parse_register_map(root, "inputs");
+    payload.register_state = parse_register_map(root, "register_state");
+    payload.memory_state = parse_memory_array(root, "memory");
+    json_decref(root);
     return payload;
 }
 
@@ -222,15 +243,16 @@ static std::vector<fragment::MemoryPatch> parse_patches(const std::vector<std::s
 }
 
 fragment::ExecutionResult deserialize_execution_result(const std::string& content) {
+    json_t* root = load_json_root(content);
     fragment::ExecutionResult result;
-    result.success = fragment::extract_json_bool(content, "success", false);
-    result.error_message = fragment::extract_json_string(content, "error");
-    result.program_stdout = fragment::extract_json_string(content, "stdout");
-    result.initial_regs = parse_register_map(content, "initial_regs");
-    result.final_regs = parse_register_map(content, "final_regs");
-    result.memory_patches = parse_patches(fragment::extract_json_array(content, "memory_patches"));
-    result.instructions_executed = extract_json_uint64(content, "instructions", 0);
-    result.memory_accesses = extract_json_uint64(content, "memory_accesses", 0);
+    result.success = get_json_bool(root, "success", false);
+    result.error_message = get_json_string(root, "error");
+    result.program_stdout = get_json_string(root, "stdout");
+    result.initial_regs = parse_register_map(root, "initial_regs");
+    result.final_regs = parse_register_map(root, "final_regs");
+    result.memory_patches = parse_patches(get_json_string_array(root, "memory_patches"));
+    result.instructions_executed = get_json_uint64(root, "instructions", 0);
+    result.memory_accesses = get_json_uint64(root, "memory_accesses", 0);
     // changed_regs is derived from initial/final at reporting time if needed.
     if (!result.initial_regs.empty() && !result.final_regs.empty()) {
         for (const auto& [reg, final_value] : result.final_regs) {
@@ -240,6 +262,7 @@ fragment::ExecutionResult deserialize_execution_result(const std::string& conten
                 result.changed_regs[reg] = {initial_value, final_value};
         }
     }
+    json_decref(root);
     return result;
 }
 

@@ -6,7 +6,7 @@ if [[ $# -lt 1 ]]; then
     exit 1
 fi
 
-IMAGE="${FRAGMENT_GUI_DOCKER_IMAGE:-silicium/gui-runner:latest}"
+IMAGE="${FRAGMENT_GUI_DOCKER_IMAGE:-luis1454/worker:1.0}"
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT="$(git rev-parse --show-toplevel)"
 else
@@ -15,6 +15,10 @@ fi
 WORKDIR="$(pwd)"
 DOCKERFILE="${FRAGMENT_GUI_DOCKERFILE:-${REPO_ROOT}/tools/docker/gui-runner/Dockerfile}"
 DOCKER_CONTEXT="${FRAGMENT_GUI_DOCKER_CONTEXT:-${REPO_ROOT}}"
+VOLUME_SUFFIX=""
+if [[ -d /sys/fs/selinux ]]; then
+    VOLUME_SUFFIX=":z"
+fi
 
 if ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
     echo "[gui-wrapper] Building image ${IMAGE}..."
@@ -27,6 +31,6 @@ if [[ -n "${FRAGMENT_GUI_VNC_PORT:-}" ]]; then
     docker_args+=(-e "VNC_PORT=${FRAGMENT_GUI_VNC_PORT}" "-p" "${FRAGMENT_GUI_VNC_PORT}:5900")
 fi
 
-docker_args+=(-v "${REPO_ROOT}:${REPO_ROOT}" -w "${WORKDIR}")
+docker_args+=(-v "${REPO_ROOT}:${REPO_ROOT}${VOLUME_SUFFIX}" -w "${WORKDIR}")
 
 exec docker run "${docker_args[@]}" "${IMAGE}" "$@"

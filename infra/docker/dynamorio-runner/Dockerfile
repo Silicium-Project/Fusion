@@ -3,15 +3,17 @@ FROM debian:bookworm-slim AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential make \
+ && apt-get install -y --no-install-recommends build-essential make libjansson-dev \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 
-COPY tools/experiments/fragment-executor /src/tools/experiments/fragment-executor
+COPY tools/fragment/executor /src/tools/fragment/executor
 COPY tools/worker /src/tools/worker
 
-RUN cd tools/worker && make clean && make dynamo_fragment_runner
+RUN cd tools/worker \
+ && make clean \
+ && make dynamo_fragment_runner
 
 FROM debian:bookworm-slim
 
@@ -21,7 +23,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DYNAMO_RUNNER_HOME=/opt/dynamo-runner
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates wget tar libstdc++6 libgcc-s1 \
+ && apt-get install -y --no-install-recommends ca-certificates wget tar libstdc++6 libgcc-s1 libjansson4 \
  && wget -q https://github.com/DynamoRIO/dynamorio/releases/download/release_${DYNAMORIO_VERSION}/DynamoRIO-Linux-${DYNAMORIO_VERSION}.tar.gz -O /tmp/dynamorio.tar.gz \
  && mkdir -p /opt \
  && tar -C /opt -xf /tmp/dynamorio.tar.gz \

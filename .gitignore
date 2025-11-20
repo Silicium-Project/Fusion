@@ -4,12 +4,15 @@
 tests/__pycache__/
 .cache/
 tools/**/build/
-tools/experiments/splitter/splitter
-tools/experiments/fragment-executor/fragment_executor
+tools/fragment/splitter/splitter
+tools/fragment/splitter/run_output/
+tools/fragment/splitter/run_build/
+tools/fragment/splitter/demo/output/
+tools/fragment/executor/fragment_executor
 tools/worker/worker
 
 # Experimental leftovers
-tools/experiments/old_tests/
+# Legacy experiments cleaned up
 
 # Secrets generated for the reverse proxy (certificates/private keys)
 infra/docker/reverse-proxy/certs/*.crt

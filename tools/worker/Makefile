@@ -1,8 +1,17 @@
+REPO_ROOT := $(abspath ../..)
 CXX := g++
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic -fPIE
-CPPFLAGS := -Iinclude -I../experiments/fragment-executor/include -MMD -MP
+CPPFLAGS := -Iinclude -I../fragment/executor/include -MMD -MP
+BUILDER_WRAPPER ?= $(REPO_ROOT)/tools/worker/scripts/builder_wrapper.sh
+FRAGMENT_GUI_BUILDER_IMAGE ?= luis1454/worker:1.0
 
-REPO_ROOT := $(abspath ../..)
+JANSSON_HEADER := $(firstword $(wildcard /usr/include/jansson.h /usr/local/include/jansson.h))
+NEED_DOCKER_BUILD := $(if $(JANSSON_HEADER),,yes)
+
+JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+MAKEFLAGS += -j$(JOBS)
+
+LDLIBS := -ljansson
 CPP_TEST_IMAGE ?= silicium/cpp-tests:latest
 CPP_TEST_DOCKERFILE := $(REPO_ROOT)/infra/docker/cpp-tests/Dockerfile
 CPP_TEST_CONTEXT := $(dir $(CPP_TEST_DOCKERFILE))
@@ -23,7 +32,7 @@ WORKER_MAIN_OBJ := $(WORKER_OBJ_DIR)/main.o
 WORKER_LIB_OBJS := $(filter-out $(WORKER_MAIN_OBJ), $(WORKER_OBJS))
 DYNAMO_RUNNER_OBJ := $(WORKER_OBJ_DIR)/$(notdir $(RUNNER_MAIN_SRC:.cpp=.o))
 
-FRAGMENT_SRC_DIR := ../experiments/fragment-executor/src
+FRAGMENT_SRC_DIR := ../fragment/executor/src
 FRAGMENT_SOURCES := fragment_executor.cpp register_emulator.cpp instruction_emulator.cpp \
 	segment_loader.cpp execution_result.cpp logging.cpp utils.cpp cli.cpp partition_summary.cpp
 FRAGMENT_OBJS := $(patsubst %.cpp,$(FRAGMENT_OBJ_DIR)/%.o,$(FRAGMENT_SOURCES))
@@ -44,7 +53,18 @@ HOST_GID := $(shell id -g)
 
 .PHONY: all clean test build-cpp-test-image
 
+ifeq ($(NEED_DOCKER_BUILD),yes)
+ifndef IN_DOCKER_BUILD
+all:
+	@echo "[worker] libjansson-devel introuvable, compilation via conteneur..."
+	@$(BUILDER_WRAPPER) env IN_DOCKER_BUILD=1 $(MAKE) -C $(CURDIR)
+	@exit 0
+else
 all: $(BIN) $(DYNAMO_RUNNER_BIN)
+endif
+else
+all: $(BIN) $(DYNAMO_RUNNER_BIN)
+endif
 
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
@@ -74,10 +94,10 @@ $(FRAGMENT_OBJ_DIR)/%.o: $(FRAGMENT_SRC_DIR)/%.cpp | $(FRAGMENT_OBJ_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(BIN): $(WORKER_OBJS) $(FRAGMENT_OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
 
 $(DYNAMO_RUNNER_BIN): $(DYNAMO_RUNNER_OBJ) $(WORKER_LIB_OBJS) $(FRAGMENT_OBJS)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDLIBS)
 
 $(TEST_OBJ_DIR)/tests/%.o: tests/%.cpp | $(TEST_OBJ_DIR)/tests
 	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
@@ -89,7 +109,7 @@ $(TEST_OBJ_DIR)/fragment/%.o: $(FRAGMENT_SRC_DIR)/%.cpp | $(TEST_OBJ_DIR)/fragme
 	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
 
 $(TEST_BIN): $(TEST_OBJS) $(TEST_WORKER_OBJS) $(TEST_FRAGMENT_OBJS) | $(TEST_BUILD_DIR)
-	$(TEST_CXX) $^ -o $@ $(TEST_LDFLAGS)
+	$(TEST_CXX) $^ -o $@ $(TEST_LDFLAGS) $(LDLIBS)
 
 clean:
 	rm -f $(BIN) $(DYNAMO_RUNNER_BIN)
