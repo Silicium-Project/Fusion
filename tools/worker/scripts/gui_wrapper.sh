@@ -6,7 +6,7 @@ if [[ $# -lt 1 ]]; then
     exit 1
 fi
 
-IMAGE="${FRAGMENT_GUI_DOCKER_IMAGE:-luis1454/gui-runner:1.0}"
+IMAGE="${FRAGMENT_GUI_DOCKER_IMAGE:-luis1454/gui-runner:runtime}"
 if git rev-parse --show-toplevel >/dev/null 2>&1; then
     REPO_ROOT="$(git rev-parse --show-toplevel)"
 else

@@ -18,7 +18,7 @@ else
     REPO_ROOT="${INVOCATION_DIR}"
 fi
 
-IMAGE="${FRAGMENT_GUI_BUILDER_IMAGE:-luis1454/worker-builder:1.0}"
+IMAGE="${FRAGMENT_GUI_BUILDER_IMAGE:-luis1454/worker:builder}"
 
 # Align UID/GID so que les artefacts générés restent supprimables depuis l'hôte.
 HOST_UID=$(id -u)

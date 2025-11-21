@@ -4,7 +4,7 @@ CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic -fPIE
 LDFLAGS := -pie
 CPPFLAGS := -Iinclude
 BUILDER_WRAPPER ?= $(REPO_ROOT)/tools/worker/scripts/builder_wrapper.sh
-FRAGMENT_GUI_BUILDER_IMAGE ?= luis1454/worker-builder:1.0
+FRAGMENT_GUI_BUILDER_IMAGE ?= luis1454/worker:builder
 
 JANSSON_HEADER := $(firstword $(wildcard /usr/include/jansson.h /usr/local/include/jansson.h))
 NEED_DOCKER_BUILD := $(if $(JANSSON_HEADER),,yes)

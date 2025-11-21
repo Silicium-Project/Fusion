@@ -1,4 +1,4 @@
-FROM luis1454/worker-builder:1.0 AS builder
+FROM luis1454/worker:builder AS builder
 
 WORKDIR /workspace
 COPY . .
