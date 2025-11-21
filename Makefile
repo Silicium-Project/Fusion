@@ -80,7 +80,7 @@ fclean:
 			luis1454/worker:builder \
 			luis1454/gui-runner:runtime \
 			luis1454/gui-runner:builder \
-			luis1454/gui-headless:runtime \
+			luis1454/gui-runner:headless \
 			silicium/gui-runner:latest \
 			silicium/gui-runner:builder \
 			dynamorio-runner:latest \
