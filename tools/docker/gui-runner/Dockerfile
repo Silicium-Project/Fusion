@@ -1,10 +1,28 @@
+FROM debian:bookworm-slim AS runtime-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        xvfb \
+        x11vnc \
+        libcsfml-graphics2.5 \
+        libcsfml-window2.5 \
+        libcsfml-system2.5 \
+        libjansson4 \
+        libgl1-mesa-glx \
+        libglu1-mesa \
+        libxrender1 \
+        ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 FROM luis1454/worker:builder AS builder
 
 WORKDIR /workspace
 COPY . .
 RUN make -C tools/fragment/executor
 
-FROM luis1454/gui-runner:runtime
+FROM runtime-base AS runtime
 COPY --from=builder /workspace/tools/fragment/executor/fragment_executor /usr/local/bin/fragment_executor
 COPY tools/docker/gui-runner/entrypoint.sh /opt/gui-runner/entrypoint.sh
 RUN chmod +x /opt/gui-runner/entrypoint.sh

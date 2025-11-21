@@ -41,7 +41,7 @@ demo-dynamo: splitter executor worker
 	python3 -c 'from pathlib import Path; import json; summary = Path("$(DEMO_SUMMARY)"); queue = Path("$(DEMO_QUEUE)"); queue.parent.mkdir(parents=True, exist_ok=True); data = json.loads(summary.read_text()); ids = [part["id"] for part in data.get("partitions", [])]; queue.write_text("\n".join(ids) + ("\n" if ids else "")); print(f"Écrit {len(ids)} entrées dans {queue}")'
 	@if command -v docker >/dev/null 2>&1; then \
 		if docker info >/dev/null 2>&1; then \
-			if docker build -t dynamorio-runner -f infra/docker/dynamorio-runner/Dockerfile .; then \
+		if docker build -t dynamorio-runner -f infra/docker/dynamorio-runner/Dockerfile .; then \
 				:; \
 			else \
 				echo "Échec de docker build (ignoré)."; \
