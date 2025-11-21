@@ -8,8 +8,18 @@ jobs:
   tests:
     uses: ./.github/workflows/tests.yml
 
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android || true
+      - name: Build and smoke test Docker images
+        run: bash tools/ci/test_images.sh
+
   call:
-    needs: tests
+    needs: [tests, docker-smoke]
     uses: Silicium-Project/epitech-mirror/.github/workflows/subtree-reusable.yml@main
     with:
       epitech_repo: git@github.com:EpitechPromo2027/G-EIP-600-lil-6-1-eip-luis.fernandes.git
