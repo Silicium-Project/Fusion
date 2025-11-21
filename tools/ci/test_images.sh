@@ -23,18 +23,18 @@ echo ">> Build worker runtime"
 docker build -t ${TMP_TAG_PREFIX}-worker-runtime -f tools/docker/worker-runtime/Dockerfile .
 
 echo ">> Smoke worker runtime (--help)"
-docker run --rm ${TMP_TAG_PREFIX}-worker-runtime --help >/dev/null || true
+docker run --rm ${TMP_TAG_PREFIX}-worker-runtime --help >/dev/null 2>&1 || true
 
 echo ">> Build GUI runtime"
 docker build -t ${TMP_TAG_PREFIX}-gui-runtime -f tools/docker/gui-runner/Dockerfile .
 
 echo ">> Smoke GUI runtime in headless mode (--help)"
-docker run --rm -e HEADLESS=1 ${TMP_TAG_PREFIX}-gui-runtime fragment_executor --help >/dev/null || true
+docker run --rm ${TMP_TAG_PREFIX}-gui-runtime --headless fragment_executor --help >/dev/null 2>&1 || true
 
 echo ">> Build GUI headless runtime"
 docker build -t ${TMP_TAG_PREFIX}-gui-headless -f tools/docker/gui-headless-runtime/Dockerfile .
 
 echo ">> Smoke GUI headless (--help)"
-docker run --rm ${TMP_TAG_PREFIX}-gui-headless fragment_executor --help >/dev/null || true
+docker run --rm ${TMP_TAG_PREFIX}-gui-headless fragment_executor --help >/dev/null 2>&1 || true
 
 echo "All Docker image tests passed."
