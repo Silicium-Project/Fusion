@@ -18,6 +18,7 @@ struct PartitionInfo {
     std::string bin_path;
     std::string wrapper_path;
     std::string bin_hash;
+    std::string partition_hash;
     std::optional<uint64_t> start_address;
     std::optional<uint64_t> end_address;
     size_t binary_size = 0;
@@ -51,6 +52,8 @@ struct PartitionSummary {
     std::string binary_path;
     std::string binary_hash;
     bool can_split = true;
+    std::string memory_hash;
+    std::string summary_hash;
     std::vector<std::string> required_libraries;
     std::vector<LibraryInfo> libraries;
     std::vector<PartitionInfo> partitions;

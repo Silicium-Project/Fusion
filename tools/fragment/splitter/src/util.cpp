@@ -104,4 +104,12 @@ namespace splitter {
         return hash_bytes(buffer);
     }
 
+    std::string hash_string(const std::string& data) {
+        std::hash<std::string_view> hasher;
+        auto value = hasher(std::string_view(data));
+        std::ostringstream oss;
+        oss << std::hex << std::setw(16) << std::setfill('0') << value;
+        return oss.str();
+    }
+
 }  // namespace splitter

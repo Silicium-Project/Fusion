@@ -78,6 +78,7 @@ PartitionInfo parse_partition(json_t* obj) {
     info.bin_path = to_string_safe(json_object_get(obj, "bin"));
     info.wrapper_path = to_string_safe(json_object_get(obj, "wrapper"));
     info.bin_hash = to_string_safe(json_object_get(obj, "bin_hash"));
+    info.partition_hash = to_string_safe(json_object_get(obj, "partition_hash"));
     info.start_address = parse_hex_address(json_object_get(obj, "start"));
     info.end_address = parse_hex_address(json_object_get(obj, "end"));
     if (json_t* size = json_object_get(obj, "size"); json_is_integer(size))
@@ -141,6 +142,8 @@ PartitionSummary parse_summary(json_t* root) {
     PartitionSummary summary;
     summary.binary_path = to_string_safe(json_object_get(root, "binary"));
     summary.binary_hash = to_string_safe(json_object_get(root, "binary_hash"));
+    summary.memory_hash = to_string_safe(json_object_get(root, "memory_hash"));
+    summary.summary_hash = to_string_safe(json_object_get(root, "summary_hash"));
     if (json_t* can_split = json_object_get(root, "can_split"); json_is_boolean(can_split))
         summary.can_split = json_is_true(can_split);
 

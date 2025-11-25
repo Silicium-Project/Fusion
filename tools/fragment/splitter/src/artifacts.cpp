@@ -217,6 +217,7 @@ namespace splitter {
                 << vector_to_json(partition.unresolved_dependencies) << ",\n";
             out << "      \"required_libraries\": "
                 << set_to_json(resolve_partition_libraries(partition, symbol_index)) << ",\n";
+            out << "      \"partition_hash\": \"" << json_escape(partition.partition_hash) << "\",\n";
 
             if (files.has_value()) {
                 const auto& part_files = files->get();
@@ -278,14 +279,56 @@ namespace splitter {
             library_names.assign(unique.begin(), unique.end());
         }
         auto symbol_index = build_symbol_index(libraries);
-        std::string binary_hash = hash_file(binary_path);
+        const std::string binary_hash = hash_file(binary_path);
         bool can_split = true;
         if (const char* env = std::getenv("SPLITTER_CAN_SPLIT"))
             can_split = std::string(env) != "0" && std::string(env) != "false";
 
+        // Hash mémoire initiale
+        std::string memory_hash;
+        {
+            std::string acc;
+            acc.reserve(memory_segments.size() * 16);
+            for (const auto& seg : memory_segments) {
+                acc.append(seg.name);
+                acc.push_back('|');
+                acc.append(hash_bytes(seg.bytes));
+                acc.push_back(';');
+            }
+            memory_hash = hash_string(acc);
+        }
+
+        // Hash partitions (métadonnées)
+        std::vector<std::string> partition_hashes;
+        partition_hashes.reserve(partitions.size());
+        for (auto& p : const_cast<std::vector<BinaryPartition>&>(partitions)) {
+            std::ostringstream meta;
+            meta << p.id << "|" << p.start_addr << "|" << p.end_addr << "|"
+                 << p.bin_hash << "|";
+            for (const auto& s : p.inputs) meta << s << ",";
+            meta << "|";
+            for (const auto& s : p.outputs) meta << s << ",";
+            meta << "|";
+            for (const auto& s : p.external_calls) meta << s << ",";
+            meta << "|";
+            p.partition_hash = hash_string(meta.str());
+            partition_hashes.push_back(p.partition_hash);
+        }
+        std::sort(partition_hashes.begin(), partition_hashes.end());
+        std::string summary_hash;
+        {
+            std::string acc;
+            acc.reserve(partition_hashes.size() * 16);
+            for (const auto& h : partition_hashes)
+                acc.append(h);
+            acc.append(binary_hash);
+            acc.append(memory_hash);
+            summary_hash = hash_string(acc);
+        }
+
         write_summary_header(summary, binary_path, partitions.size(),
                              count_parallelizable(partitions), library_names, libraries,
-                             binary_hash, can_split);
+                             binary_hash, can_split, memory_hash, summary_hash);
         write_partitions_block(summary, partitions, artifacts, symbol_index);
         summary << "  ],\n";
         write_memory_block(summary, memory_segments);
@@ -333,11 +376,15 @@ namespace splitter {
                                                const std::vector<std::string>& required_libraries,
                                                const std::vector<LibraryEntry>& libraries,
                                                const std::string& binary_hash,
-                                               bool can_split) const {
+                                               bool can_split,
+                                               const std::string& memory_hash,
+                                               const std::string& summary_hash) const {
         out << "{\n";
         out << "  \"binary\": \"" << json_escape(binary_path) << "\",\n";
         out << "  \"binary_hash\": \"" << json_escape(binary_hash) << "\",\n";
         out << "  \"can_split\": " << (can_split ? "true" : "false") << ",\n";
+        out << "  \"memory_hash\": \"" << json_escape(memory_hash) << "\",\n";
+        out << "  \"summary_hash\": \"" << json_escape(summary_hash) << "\",\n";
         out << "  \"partitions_count\": " << partition_count << ",\n";
         out << "  \"parallelizable_count\": " << parallelizable_count << ",\n";
         out << "  \"required_libraries\": " << vector_to_json(required_libraries) << ",\n";

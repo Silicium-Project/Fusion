@@ -16,5 +16,6 @@ namespace splitter {
     std::string set_to_json(const std::set<std::string>& values);
     std::string hash_bytes(const std::vector<uint8_t>& data);
     std::string hash_file(const std::string& path);
+    std::string hash_string(const std::string& data);
 
 }  // namespace splitter
