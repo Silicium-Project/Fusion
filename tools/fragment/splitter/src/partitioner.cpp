@@ -12,6 +12,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <utility>
+#include <cstdlib>
 
 #include "splitter/instruction_analysis.hpp"
 #include "splitter/util.hpp"
@@ -101,12 +102,36 @@ namespace splitter {
             return {};
         }
 
+        std::vector<std::string> gui_prefixes() {
+            static std::vector<std::string> cached;
+            static bool initialized = false;
+
+            if (!initialized) {
+                initialized = true;
+                if (const char* env = std::getenv("SPLITTER_GUI_PREFIXES")) {
+                    std::string raw(env);
+                    std::stringstream ss(raw);
+                    std::string item;
+                    while (std::getline(ss, item, ',')) {
+                        const auto start = item.find_first_not_of(" \t");
+                        const auto end = item.find_last_not_of(" \t");
+                        if (start != std::string::npos && end != std::string::npos && end >= start)
+                            cached.emplace_back(item.substr(start, end - start + 1));
+                    }
+                }
+                if (cached.empty()) {
+                    cached = {
+                        "sfRenderWindow_", "sfRenderTexture_", "sfWindow_",
+                        "sfView_",        "sfSprite_",        "sfKeyboard_",
+                        "sfMouse_",       "glX",              "SDL_"
+                    };
+                }
+            }
+            return cached;
+        }
+
         bool is_gui_symbol(const std::string& symbol) {
-            static const std::vector<std::string> prefixes = {
-                "sfRenderWindow_", "sfRenderTexture_", "sfWindow_",
-                "sfView_",        "sfSprite_",        "sfKeyboard_",
-                "sfMouse_",       "glX",              "SDL_"
-            };
+            const auto& prefixes = gui_prefixes();
             for (const auto& prefix : prefixes)
                 if (symbol.rfind(prefix, 0) == 0)
                     return true;

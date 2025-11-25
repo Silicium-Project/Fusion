@@ -7,6 +7,11 @@ RUN apt-get update \
         build-essential \
         git \
         pkg-config \
+        libavcodec-dev \
+        libavformat-dev \
+        libavutil-dev \
+        libswscale-dev \
+        libcsfml-dev \
         libjansson-dev \
         ca-certificates \
  && rm -rf /var/lib/apt/lists/*

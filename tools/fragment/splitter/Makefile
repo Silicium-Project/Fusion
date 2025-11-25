@@ -21,13 +21,18 @@ DEMO_OUT := run_output/demo
 LOG_FILE := fragment_executor.log
 
 PROGRAM ?=
-RUN_NAME := $(basename $(notdir $(PROGRAM)))
+define resolve_prog
+$(if $(wildcard $(abspath $(1))),$(abspath $(1)),$(if $(wildcard $(REPO_ROOT)/$(1)),$(REPO_ROOT)/$(1),))
+endef
+
+PROGRAM_RESOLVED := $(call resolve_prog,$(PROGRAM))
+RUN_NAME := $(basename $(notdir $(if $(PROGRAM_RESOLVED),$(PROGRAM_RESOLVED),$(PROGRAM))))
 RUN_BUILD_DIR := run_build
 RUN_BIN := $(RUN_BUILD_DIR)/$(RUN_NAME)
 RUN_OUT := $(if $(OUT),$(OUT),run_output/$(RUN_NAME))
 RUN_LOG := $(if $(LOG),$(LOG),fragment_executor.log)
 ARGS ?=
-PROGRAM_LIBS ?= -lm -lcsfml-graphics -lcsfml-window -lcsfml-system
+PROGRAM_LIBS ?= -lavformat -lavcodec -lavutil -lswscale -lm -lcsfml-graphics -lcsfml-window -lcsfml-system
 BUILDER_WRAPPER ?= $(REPO_ROOT)/tools/worker/scripts/builder_wrapper.sh
 BUILD_WITH_DOCKER ?= $(BUILDER_WRAPPER)
 
@@ -120,15 +125,18 @@ run-native: run-internal
 
 prep-program:
 	@test -n "$(PROGRAM)" || { echo "Usage: make $@ PROGRAM=./source.c [OUT=dir] [LOG=logfile]"; exit 1; }
-	@test -f "$(PROGRAM)" || { echo "Fichier source introuvable: $(PROGRAM)"; exit 1; }
-	@mkdir -p $(RUN_BUILD_DIR)
-	@rm -f $(RUN_BIN)
-	@ext="$(suffix $(PROGRAM))"; \
+	@prog="$(PROGRAM_RESOLVED)"; \
+	if [ -z "$$prog" ] || [ ! -f "$$prog" ]; then \
+		echo "Fichier source introuvable: $(PROGRAM)"; exit 1; \
+	fi; \
+	mkdir -p $(RUN_BUILD_DIR); \
+	rm -f $(RUN_BIN); \
+	ext="$${prog##*.}"; \
 	case "$$ext" in \
-  .c) echo "==> Compilation (C) de $(PROGRAM)"; $(BUILD_WITH_DOCKER) gcc -O0 -g -no-pie $(PROGRAM) -o $(RUN_BIN) $(PROGRAM_LIBS) ;; \
-  .cpp|.cc|.cxx|.C|.c++) echo "==> Compilation (C++) de $(PROGRAM)"; $(BUILD_WITH_DOCKER) g++ $(CXXFLAGS) $(PROGRAM) -o $(RUN_BIN) $(PROGRAM_LIBS) ;; \
-  *) echo "Extension source non supportée: $$ext (attendu .c, .cc, .cxx, .cpp)"; exit 1 ;; \
-esac
+  c) echo "==> Compilation (C) de $$prog"; $(BUILD_WITH_DOCKER) gcc -O0 -g -no-pie "$$prog" -o $(RUN_BIN) $(PROGRAM_LIBS) ;; \
+  cpp|cc|cxx|C|c++) echo "==> Compilation (C++) de $$prog"; $(BUILD_WITH_DOCKER) g++ $(CXXFLAGS) "$$prog" -o $(RUN_BIN) $(PROGRAM_LIBS) ;; \
+  *) echo "Extension source non supportée: $$ext (attendu c, cc, cxx, cpp)"; exit 1 ;; \
+ esac
 
 run-internal: all executor prep-program
 	@rm -f $(RUN_LOG)

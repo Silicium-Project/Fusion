@@ -6,6 +6,10 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         xvfb \
         x11vnc \
+        libavcodec59 \
+        libavformat59 \
+        libavutil57 \
+        libswscale6 \
         libcsfml-graphics2.5 \
         libcsfml-window2.5 \
         libcsfml-system2.5 \
@@ -23,6 +27,10 @@ COPY . .
 RUN make -C tools/fragment/executor
 
 FROM runtime-base AS runtime
+ENV DISPLAY=:99 \
+    VNC_DISPLAY=99 \
+    VNC_PORT=5900 \
+    VNC_SCREEN=1280x720x24
 COPY --from=builder /workspace/tools/fragment/executor/fragment_executor /usr/local/bin/fragment_executor
 COPY tools/docker/gui-runner/entrypoint.sh /opt/gui-runner/entrypoint.sh
 RUN chmod +x /opt/gui-runner/entrypoint.sh

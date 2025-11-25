@@ -7,7 +7,8 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # When already inside the GUI container (e.g. running in CI), run the command directly.
-if [[ "${RUNNING_IN_GUI_CONTAINER:-}" == "1" ]]; then
+# Déjà dans un conteneur (ou docker indisponible) : exécute directement.
+if [[ "${RUNNING_IN_GUI_CONTAINER:-}" == "1" ]] || ! command -v docker >/dev/null 2>&1; then
     exec "$@"
 fi
 
