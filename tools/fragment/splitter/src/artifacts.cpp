@@ -209,6 +209,7 @@ namespace splitter {
                 << set_to_json(partition.external_calls) << ",\n";
             out << "      \"requires_display\": "
                 << (partition.requires_display ? "true" : "false") << ",\n";
+            out << "      \"bin_hash\": \"" << json_escape(partition.bin_hash) << "\",\n";
             out << "      \"outputs\": " << set_to_json(partition.outputs) << ",\n";
             out << "      \"parents\": " << vector_to_json(partition.parents) << ",\n";
             out << "      \"dependencies\": " << vector_to_json(partition.dependencies) << ",\n";
@@ -277,9 +278,14 @@ namespace splitter {
             library_names.assign(unique.begin(), unique.end());
         }
         auto symbol_index = build_symbol_index(libraries);
+        std::string binary_hash = hash_file(binary_path);
+        bool can_split = true;
+        if (const char* env = std::getenv("SPLITTER_CAN_SPLIT"))
+            can_split = std::string(env) != "0" && std::string(env) != "false";
 
         write_summary_header(summary, binary_path, partitions.size(),
-                             count_parallelizable(partitions), library_names, libraries);
+                             count_parallelizable(partitions), library_names, libraries,
+                             binary_hash, can_split);
         write_partitions_block(summary, partitions, artifacts, symbol_index);
         summary << "  ],\n";
         write_memory_block(summary, memory_segments);
@@ -325,9 +331,13 @@ namespace splitter {
                                                size_t partition_count,
                                                size_t parallelizable_count,
                                                const std::vector<std::string>& required_libraries,
-                                               const std::vector<LibraryEntry>& libraries) const {
+                                               const std::vector<LibraryEntry>& libraries,
+                                               const std::string& binary_hash,
+                                               bool can_split) const {
         out << "{\n";
         out << "  \"binary\": \"" << json_escape(binary_path) << "\",\n";
+        out << "  \"binary_hash\": \"" << json_escape(binary_hash) << "\",\n";
+        out << "  \"can_split\": " << (can_split ? "true" : "false") << ",\n";
         out << "  \"partitions_count\": " << partition_count << ",\n";
         out << "  \"parallelizable_count\": " << parallelizable_count << ",\n";
         out << "  \"required_libraries\": " << vector_to_json(required_libraries) << ",\n";

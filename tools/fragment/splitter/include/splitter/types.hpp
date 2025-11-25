@@ -48,6 +48,7 @@ namespace splitter {
         uint64_t end_addr = 0;
         std::string asm_code;
         std::vector<uint8_t> raw_bytes;
+        std::string bin_hash;
         std::set<std::string> inputs;
         std::set<std::string> outputs;
         bool is_parallelizable = false;
@@ -69,6 +70,23 @@ struct MemorySegment {
     std::string name;
     uint64_t address = 0;
     std::vector<uint8_t> bytes;
+};
+
+struct LibraryInfo {
+    std::string name;
+    std::string path;
+    std::string soname;
+    std::string build_id;
+};
+
+struct PartitionSummary {
+    std::string binary_path;
+    std::string binary_hash;
+    bool can_split = true;
+    std::vector<std::string> required_libraries;
+    std::vector<LibraryInfo> libraries;
+    std::vector<BinaryPartition> partitions;
+    std::vector<MemorySegment> initial_memory;
 };
 
 }  // namespace splitter

@@ -3,6 +3,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <cstdint>
 
 namespace splitter {
 
@@ -13,5 +14,7 @@ namespace splitter {
 
     std::string vector_to_json(const std::vector<std::string>& values);
     std::string set_to_json(const std::set<std::string>& values);
+    std::string hash_bytes(const std::vector<uint8_t>& data);
+    std::string hash_file(const std::string& path);
 
 }  // namespace splitter

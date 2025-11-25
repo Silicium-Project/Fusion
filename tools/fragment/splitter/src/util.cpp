@@ -6,6 +6,10 @@
 #include <memory>
 #include <set>
 #include <sstream>
+#include <fstream>
+#include <functional>
+#include <iomanip>
+#include <cstdint>
 
 namespace splitter {
 
@@ -79,6 +83,25 @@ namespace splitter {
         std::vector<std::string> vectorized(values.begin(), values.end());
 
         return vector_to_json(vectorized);
+    }
+
+    std::string hash_bytes(const std::vector<uint8_t>& data) {
+        // Fallback hash (non cryptographique) pour éviter d'ajouter une dépendance.
+        std::hash<std::string_view> hasher;
+        std::string_view view(reinterpret_cast<const char*>(data.data()), data.size());
+        auto value = hasher(view);
+        std::ostringstream oss;
+        oss << std::hex << std::setw(16) << std::setfill('0') << value;
+        return oss.str();
+    }
+
+    std::string hash_file(const std::string& path) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open())
+            return {};
+        std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)),
+                                    std::istreambuf_iterator<char>());
+        return hash_bytes(buffer);
     }
 
 }  // namespace splitter

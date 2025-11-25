@@ -298,6 +298,7 @@ namespace splitter {
                 }
                 partitions_[idx].external_calls = std::move(names);
                 partitions_[idx].requires_display = needs_display;
+                partitions_[idx].bin_hash = hash_bytes(partitions_[idx].raw_bytes);
             }
         }
 

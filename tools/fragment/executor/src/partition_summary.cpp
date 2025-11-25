@@ -77,6 +77,7 @@ PartitionInfo parse_partition(json_t* obj) {
     info.asm_path = to_string_safe(json_object_get(obj, "asm"));
     info.bin_path = to_string_safe(json_object_get(obj, "bin"));
     info.wrapper_path = to_string_safe(json_object_get(obj, "wrapper"));
+    info.bin_hash = to_string_safe(json_object_get(obj, "bin_hash"));
     info.start_address = parse_hex_address(json_object_get(obj, "start"));
     info.end_address = parse_hex_address(json_object_get(obj, "end"));
     if (json_t* size = json_object_get(obj, "size"); json_is_integer(size))
@@ -139,6 +140,9 @@ PartitionSummary parse_summary(json_t* root) {
 
     PartitionSummary summary;
     summary.binary_path = to_string_safe(json_object_get(root, "binary"));
+    summary.binary_hash = to_string_safe(json_object_get(root, "binary_hash"));
+    if (json_t* can_split = json_object_get(root, "can_split"); json_is_boolean(can_split))
+        summary.can_split = json_is_true(can_split);
 
     for (auto& v : string_array(json_object_get(root, "required_libraries")))
         summary.required_libraries.push_back(std::move(v));
@@ -164,9 +168,9 @@ PartitionSummary parse_summary(json_t* root) {
         throw std::runtime_error("Résumé invalide: champ \"partitions\" manquant");
     size_t idx = 0;
     json_t* item = nullptr;
-    json_array_foreach(parts, idx, item) {
-        summary.partitions.push_back(parse_partition(item));
-    }
+        json_array_foreach(parts, idx, item) {
+            summary.partitions.push_back(parse_partition(item));
+        }
     if (summary.partitions.empty())
         throw std::runtime_error("Résumé valide mais aucune partition trouvée");
 

@@ -41,7 +41,9 @@ namespace splitter {
                                   size_t partition_count,
                                   size_t parallelizable_count,
                                   const std::vector<std::string>& required_libraries,
-                                  const std::vector<struct LibraryEntry>& libraries) const;
+                                  const std::vector<struct LibraryEntry>& libraries,
+                                  const std::string& binary_hash,
+                                  bool can_split) const;
         void write_summary_footer(std::ofstream& out) const;
         void write_partitions_block(std::ofstream& out,
                                     const std::vector<BinaryPartition>& partitions,
