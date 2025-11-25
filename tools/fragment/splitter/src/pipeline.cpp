@@ -79,6 +79,18 @@ namespace splitter {
         std::cout << "\n=== Partitionnement du binaire ===\n\n";
         auto partitions = partitioner_->run(functions);
         std::cout << "Partitions créées: " << partitions.size() << "\n";
+        const std::size_t max_partitions =
+            []() {
+                if (const char* env = std::getenv("SPLITTER_MAX_PARTITIONS"))
+                    return static_cast<std::size_t>(std::stoull(env));
+                return static_cast<std::size_t>(100000);
+            }();
+        const std::size_t ratio_limit = 10;
+        if (partitions.size() > max_partitions || partitions.size() > functions.size() * ratio_limit) {
+            std::cerr << "Erreur: nombre de partitions incohérent ("
+                      << partitions.size() << "), abandon.\n";
+            return 1;
+        }
 
         std::vector<PartitionFiles> generated_files;
         generated_files.reserve(partitions.size());
