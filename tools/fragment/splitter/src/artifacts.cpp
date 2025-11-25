@@ -13,6 +13,7 @@
 #include <unordered_map>
 
 #include "splitter/util.hpp"
+#include "splitter/hash.hpp"
 
 namespace splitter {
 
@@ -151,15 +152,87 @@ namespace splitter {
 
         std::unordered_map<std::string, std::string> build_symbol_index(
                 const std::vector<LibraryEntry>& libraries) {
-            std::unordered_map<std::string, std::string> index;
-            for (const auto& entry : libraries) {
-                if (entry.path.empty())
-                    continue;
-                auto symbols = list_exported_symbols(entry.path);
-                for (const auto& symbol : symbols)
-                    index.emplace(symbol, entry.name);
+        std::unordered_map<std::string, std::string> index;
+        for (const auto& entry : libraries) {
+            if (entry.path.empty())
+                continue;
+            auto symbols = list_exported_symbols(entry.path);
+            for (const auto& symbol : symbols)
+                index.emplace(symbol, entry.name);
+        }
+        return index;
+    }
+
+        template <typename Container>
+        void hash_strings(FnvHasher& h, const Container& c) {
+            for (const auto& s : c)
+                h.add_string(s);
+            h.add_byte(0x7f);
+        }
+
+        std::string compute_partition_hash(const BinaryPartition& p,
+                                           const std::set<std::string>& resolved_libs) {
+            FnvHasher h;
+            h.add_string(p.id);
+            h.add_uint64(p.start_addr);
+            h.add_uint64(p.end_addr);
+            h.add_string(p.bin_hash);
+            h.add_uint64(p.raw_bytes.size());
+            h.add_bool(p.is_parallelizable);
+            h.add_bool(p.requires_display);
+            hash_strings(h, p.inputs);
+            hash_strings(h, p.external_inputs);
+            hash_strings(h, p.outputs);
+            hash_strings(h, p.external_calls);
+            hash_strings(h, resolved_libs);
+            hash_strings(h, p.parents);
+            hash_strings(h, p.dependencies);
+            hash_strings(h, p.unresolved_dependencies);
+            return h.hex();
+        }
+
+        std::string compute_memory_hash(const std::vector<MemorySegment>& segments) {
+            FnvHasher h;
+            for (const auto& seg : segments) {
+                h.add_string(seg.name);
+                h.add_uint64(seg.address);
+                h.add_string(hash_bytes(seg.bytes));
             }
-            return index;
+            return h.hex();
+        }
+
+        std::string compute_summary_hash(const std::string& binary_hash,
+                                         const std::string& memory_hash,
+                                         bool can_split,
+                                         const std::vector<std::string>& required_libraries,
+                                         const std::vector<LibraryEntry>& libraries,
+                                         const std::vector<std::pair<std::string, std::string>>& partition_hashes) {
+            FnvHasher h;
+            h.add_string(binary_hash);
+            h.add_string(memory_hash);
+            h.add_bool(can_split);
+
+            auto libs_sorted = required_libraries;
+            std::sort(libs_sorted.begin(), libs_sorted.end());
+            hash_strings(h, libs_sorted);
+
+            std::vector<LibraryEntry> libs = libraries;
+            std::sort(libs.begin(), libs.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
+            for (const auto& lib : libs) {
+                h.add_string(lib.name);
+                h.add_string(lib.path);
+                h.add_string(lib.soname.empty() ? lib.name : lib.soname);
+                h.add_string(lib.build_id);
+            }
+
+            std::vector<std::pair<std::string, std::string>> parts = partition_hashes;
+            std::sort(parts.begin(), parts.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            for (const auto& ph : parts) {
+                h.add_string(ph.first);   // id
+                h.add_string(ph.second);  // hash
+            }
+
+            return h.hex();
         }
 
         std::set<std::string> resolve_partition_libraries(
@@ -285,46 +358,17 @@ namespace splitter {
             can_split = std::string(env) != "0" && std::string(env) != "false";
 
         // Hash mémoire initiale
-        std::string memory_hash;
-        {
-            std::string acc;
-            acc.reserve(memory_segments.size() * 16);
-            for (const auto& seg : memory_segments) {
-                acc.append(seg.name);
-                acc.push_back('|');
-                acc.append(hash_bytes(seg.bytes));
-                acc.push_back(';');
-            }
-            memory_hash = hash_string(acc);
-        }
+        std::string memory_hash = compute_memory_hash(memory_segments);
 
-        // Hash partitions (métadonnées)
-        std::vector<std::string> partition_hashes;
+        std::vector<std::pair<std::string, std::string>> partition_hashes;
         partition_hashes.reserve(partitions.size());
         for (auto& p : const_cast<std::vector<BinaryPartition>&>(partitions)) {
-            std::ostringstream meta;
-            meta << p.id << "|" << p.start_addr << "|" << p.end_addr << "|"
-                 << p.bin_hash << "|";
-            for (const auto& s : p.inputs) meta << s << ",";
-            meta << "|";
-            for (const auto& s : p.outputs) meta << s << ",";
-            meta << "|";
-            for (const auto& s : p.external_calls) meta << s << ",";
-            meta << "|";
-            p.partition_hash = hash_string(meta.str());
-            partition_hashes.push_back(p.partition_hash);
+            auto resolved_libs = resolve_partition_libraries(p, symbol_index);
+            p.partition_hash = compute_partition_hash(p, resolved_libs);
+            partition_hashes.emplace_back(p.id, p.partition_hash);
         }
-        std::sort(partition_hashes.begin(), partition_hashes.end());
-        std::string summary_hash;
-        {
-            std::string acc;
-            acc.reserve(partition_hashes.size() * 16);
-            for (const auto& h : partition_hashes)
-                acc.append(h);
-            acc.append(binary_hash);
-            acc.append(memory_hash);
-            summary_hash = hash_string(acc);
-        }
+        const std::string summary_hash = compute_summary_hash(binary_hash, memory_hash, can_split,
+                                                              library_names, libraries, partition_hashes);
 
         write_summary_header(summary, binary_path, partitions.size(),
                              count_parallelizable(partitions), library_names, libraries,

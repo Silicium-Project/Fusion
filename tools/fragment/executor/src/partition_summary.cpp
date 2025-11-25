@@ -4,8 +4,15 @@
 
 #include <queue>
 #include <unordered_map>
+#include <fstream>
+#include <functional>
+#include <cstdint>
+#include <sstream>
+#include <algorithm>
+#include <filesystem>
 
 #include "fragment/utils.hpp"
+#include "fragment/hash.hpp"
 
 namespace fragment {
 
@@ -66,6 +73,97 @@ MemoryRegion parse_memory_region(json_t* obj) {
         }
     }
     return region;
+}
+
+std::string hash_bytes(const std::vector<uint8_t>& data) {
+    FnvHasher h;
+    for (auto b : data)
+        h.add_byte(b);
+    return h.hex();
+}
+
+std::string hash_file(const std::string& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+        return {};
+    std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+    return hash_bytes(buffer);
+}
+
+template <typename Container>
+void hash_strings(FnvHasher& h, const Container& c) {
+    for (const auto& s : c)
+        h.add_string(s);
+    h.add_byte(0x7f);
+}
+
+std::string compute_partition_hash(const PartitionInfo& p) {
+    FnvHasher h;
+    h.add_string(p.id);
+    h.add_uint64(p.start_address.value_or(0));
+    h.add_uint64(p.end_address.value_or(0));
+    h.add_string(p.bin_hash);
+    h.add_uint64(p.binary_size);
+    h.add_bool(p.parallelizable);
+    h.add_bool(p.requires_display);
+    hash_strings(h, p.inputs);
+    hash_strings(h, p.external_inputs);
+    hash_strings(h, p.outputs);
+    hash_strings(h, p.external_calls);
+    hash_strings(h, p.required_libraries);
+    hash_strings(h, p.parents);
+    hash_strings(h, p.dependencies);
+    hash_strings(h, p.unresolved_calls);
+    return h.hex();
+}
+
+std::string compute_memory_hash(const std::vector<MemoryRegion>& segments) {
+    FnvHasher h;
+    for (const auto& seg : segments) {
+        h.add_string(seg.name);
+        h.add_uint64(seg.address);
+        for (auto b : seg.bytes)
+            h.add_byte(b);
+        h.add_byte(0x7e);
+    }
+    return h.hex();
+}
+
+std::string compute_summary_hash(const PartitionSummary& summary) {
+    FnvHasher h;
+    h.add_string(summary.binary_hash);
+    h.add_string(summary.memory_hash);
+    h.add_bool(summary.can_split);
+    auto libs = summary.required_libraries;
+    std::sort(libs.begin(), libs.end());
+    hash_strings(h, libs);
+    auto libinfo = summary.libraries;
+    std::sort(libinfo.begin(), libinfo.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
+    for (const auto& lib : libinfo) {
+        h.add_string(lib.name);
+        h.add_string(lib.path);
+        h.add_string(lib.soname);
+        h.add_string(lib.build_id);
+    }
+    std::vector<std::pair<std::string, std::string>> parts;
+    parts.reserve(summary.partitions.size());
+    for (const auto& p : summary.partitions)
+        parts.emplace_back(p.id, p.partition_hash);
+    std::sort(parts.begin(), parts.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& ph : parts) {
+        h.add_string(ph.first);
+        h.add_string(ph.second);
+    }
+    return h.hex();
+}
+
+std::string resolve_path(const std::string& base, const std::string& path) {
+    if (path.empty() || path.front() == '/')
+        return path;
+    if (base.empty())
+        return path;
+    return (std::filesystem::path(base) / path).string();
 }
 
 PartitionInfo parse_partition(json_t* obj) {
@@ -132,6 +230,39 @@ void resolve_dependencies(std::vector<PartitionInfo>& partitions) {
             dep_info.binary_size = dep->binary_size;
             partition.resolved_dependencies.push_back(std::move(dep_info));
         }
+    }
+}
+
+void verify_hashes(const std::string& base_dir, PartitionSummary& summary) {
+    if (!summary.binary_hash.empty()) {
+        const auto computed = hash_file(resolve_path(base_dir, summary.binary_path));
+        if (computed.empty() || computed != summary.binary_hash)
+            throw std::runtime_error("Hash binaire invalide");
+    }
+
+    if (!summary.memory_hash.empty()) {
+        const auto computed_mem = compute_memory_hash(summary.initial_memory);
+        if (computed_mem != summary.memory_hash)
+            throw std::runtime_error("Hash mémoire invalide");
+        summary.memory_hash = computed_mem;
+    }
+
+    for (auto& p : summary.partitions) {
+        if (!p.bin_hash.empty()) {
+            const auto computed_bin = hash_file(resolve_path(base_dir, p.bin_path));
+            if (computed_bin.empty() || computed_bin != p.bin_hash)
+                throw std::runtime_error("Hash binaire partition invalide pour " + p.id);
+        }
+        auto computed_part = compute_partition_hash(p);
+        if (!p.partition_hash.empty() && p.partition_hash != computed_part)
+            throw std::runtime_error("Hash partition invalide pour " + p.id);
+        p.partition_hash = std::move(computed_part);
+    }
+
+    if (!summary.summary_hash.empty()) {
+        const auto computed_summary = compute_summary_hash(summary);
+        if (computed_summary != summary.summary_hash)
+            throw std::runtime_error("Hash summary invalide");
     }
 }
 
@@ -232,6 +363,8 @@ PartitionSummary load_partition_summary(const std::string& summary_path) {
     PartitionSummary summary;
     try {
         summary = parse_summary(root);
+        const std::string base_dir = std::filesystem::path(summary_path).parent_path().string();
+        verify_hashes(base_dir, summary);
     } catch (...) {
         json_decref(root);
         throw;
