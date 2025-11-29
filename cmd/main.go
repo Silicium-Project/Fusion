@@ -8,6 +8,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/silicium/internal/db"
 	"github.com/silicium/internal/handler"
+	"github.com/silicium/internal/routes" // Import the routes package
 	"github.com/silicium/internal/utils"
 )
 
@@ -25,7 +26,7 @@ func main() {
 
 	// Router creation
 	router := mux.NewRouter()
-	registerRoutes(router, h)
+	routes.RegisterUserRoutes(router, h) // Register user routes
 	han := c.Handler(router)
 
 	// Listen & Serve
@@ -33,8 +34,4 @@ func main() {
 	err := http.ListenAndServe(":8080", han)
 	utils.LogFatal(err, "Error starting server")
 
-}
-
-func registerRoutes(router *mux.Router, h handler.Handler) {
-	// Will define later routes here
 }

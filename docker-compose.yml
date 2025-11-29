@@ -27,6 +27,7 @@ services:
     container_name: silicium_backend
     environment:
       DATABASE_URL: host=${HOST} user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
 
     ports:
       - "8080:8080"

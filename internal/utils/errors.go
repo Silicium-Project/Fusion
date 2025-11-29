@@ -1,9 +1,9 @@
 package utils
 
-import "log"
+import "fmt"
 
 func LogFatal(err error, message string) {
 	if err != nil {
-		log.Fatalf("%s: %v", message, err)
+		panic(fmt.Sprintf("%s: %v", message, err))
 	}
 }
