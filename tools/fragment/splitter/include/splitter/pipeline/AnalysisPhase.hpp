@@ -10,7 +10,7 @@ namespace splitter {
 class AnalysisPhase : public IPipelinePhase {
 public:
     explicit AnalysisPhase(const IInstructionAnalyzer& analyzer);
-    const char* Name() const override { return "Analysis"; }
+    std::string Name() const override { return "Analysis"; }
     void Execute(PipelineContext& context) override;
 
 private:

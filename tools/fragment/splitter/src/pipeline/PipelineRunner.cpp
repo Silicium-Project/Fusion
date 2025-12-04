@@ -22,6 +22,7 @@
 #include "splitter/pipeline/PipelineFactory.hpp"
 #include "splitter/partitioning/Partitioner.hpp"
 #include "splitter/support/HashUtil.hpp"
+#include "splitter/support/Env.hpp"
 #include "splitter/artifacts/FnvHashAlgorithm.hpp"
 #include "splitter/artifacts/StdHashAlgorithm.hpp"
 
@@ -105,8 +106,8 @@ int PipelineRunner::Run() {
     std::cout << "Partitions créées: " << context_.partitions.size() << "\n";
     const std::size_t max_partitions =
         []() {
-            if (const char* env = std::getenv("SPLITTER_MAX_PARTITIONS"))
-                return static_cast<std::size_t>(std::stoull(env));
+            if (auto env = GetEnv("SPLITTER_MAX_PARTITIONS"))
+                return static_cast<std::size_t>(std::stoull(*env));
             return static_cast<std::size_t>(100000);
         }();
     const std::size_t ratio_limit = 10;
@@ -160,10 +161,10 @@ void PipelineRunner::ReportLoops(std::vector<Function>& functions) const {
     std::cout << "Fonctions avec boucles: " << loop_functions.size() << "\n\n";
     const size_t preview = std::min(context_.config.loop_preview, loop_functions.size());
     for (size_t i = 0; i < preview; ++i) {
-            const auto& func = loop_functions[i].get();
-            auto loop_info = X86InstructionAnalyzer::Instance().DetectLoopPatterns(func);
-            std::string status = loop_info.parallelizable ? "PARALLÉLISABLE" : "SÉQUENTIELLE";
-            std::cout << "  " << std::left << std::setw(30) << func.Name() << " - " << status << "\n";
+        const Function& func = loop_functions[i];
+        auto loop_info = X86InstructionAnalyzer::Instance().DetectLoopPatterns(func);
+        std::string status = loop_info.parallelizable ? "PARALLÉLISABLE" : "SÉQUENTIELLE";
+        std::cout << "  " << std::left << std::setw(30) << func.Name() << " - " << status << "\n";
         if (!loop_info.reason.empty())
             std::cout << "    Raison: " << loop_info.reason << "\n";
     }

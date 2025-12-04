@@ -1,9 +1,10 @@
 #include "splitter/partitioning/CallNormalizer.hpp"
 
 #include <cctype>
-#include <cstdlib>
 #include <regex>
 #include <sstream>
+
+#include "splitter/support/Env.hpp"
 
 namespace splitter {
 
@@ -13,8 +14,8 @@ std::vector<std::string> DefaultCallNormalizer::GuiPrefixes() const {
 
     if (!initialized) {
         initialized = true;
-        if (const char* env = std::getenv("SPLITTER_GUI_PREFIXES")) {
-            std::string raw(env);
+        if (auto env = GetEnv("SPLITTER_GUI_PREFIXES")) {
+            std::string raw(*env);
             std::stringstream ss(raw);
             std::string item;
             while (std::getline(ss, item, ',')) {

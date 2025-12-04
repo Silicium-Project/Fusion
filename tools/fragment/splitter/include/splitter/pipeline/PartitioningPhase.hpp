@@ -13,7 +13,7 @@ namespace splitter {
 class PartitioningPhase : public IPipelinePhase {
 public:
     PartitioningPhase(std::unique_ptr<IPartitioner> partitioner, const BinaryExtractor& extractor);
-    const char* Name() const override { return "Partitioning"; }
+    std::string Name() const override { return "Partitioning"; }
     void Execute(PipelineContext& context) override;
 
 private:

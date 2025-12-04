@@ -10,7 +10,7 @@ namespace splitter {
 class DisassemblyPhase : public IPipelinePhase {
 public:
     explicit DisassemblyPhase(std::unique_ptr<IDisassembler> disassembler);
-    const char* Name() const override { return "Disassembly"; }
+    std::string Name() const override { return "Disassembly"; }
     void Execute(PipelineContext& context) override;
 
 private:

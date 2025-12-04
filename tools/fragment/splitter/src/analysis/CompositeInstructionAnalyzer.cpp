@@ -20,21 +20,26 @@ void CompositeInstructionAnalyzer::AddAnalyzer(const IInstructionAnalyzer& analy
 }
 
 void CompositeInstructionAnalyzer::AnalyzeInstruction(Instruction& inst) const {
-    for (const auto& analyzer : analyzers_)
-        analyzer.get().AnalyzeInstruction(inst);
+    for (const auto& analyzer_ref : analyzers_) {
+        const IInstructionAnalyzer& analyzer = analyzer_ref;
+        analyzer.AnalyzeInstruction(inst);
+    }
 }
 
 bool CompositeInstructionAnalyzer::AnalyzeFunctionLoops(Function& func) const {
     bool modified = false;
-    for (const auto& analyzer : analyzers_)
-        modified = analyzer.get().AnalyzeFunctionLoops(func) || modified;
+    for (const auto& analyzer_ref : analyzers_) {
+        const IInstructionAnalyzer& analyzer = analyzer_ref;
+        modified = analyzer.AnalyzeFunctionLoops(func) || modified;
+    }
     return modified;
 }
 
 LoopAnalysis CompositeInstructionAnalyzer::DetectLoopPatterns(const Function& func) const {
     LoopAnalysis result{false, {}};
-    for (const auto& analyzer : analyzers_) {
-        auto current = analyzer.get().DetectLoopPatterns(func);
+    for (const auto& analyzer_ref : analyzers_) {
+        const IInstructionAnalyzer& analyzer = analyzer_ref;
+        auto current = analyzer.DetectLoopPatterns(func);
         // Conserver la première réponse positive, sinon garder le dernier motif explicatif.
         if (current.parallelizable)
             return current;

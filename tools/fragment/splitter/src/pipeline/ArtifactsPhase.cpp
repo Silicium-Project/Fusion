@@ -1,6 +1,7 @@
 #include "splitter/pipeline/ArtifactsPhase.hpp"
 
-#include <future>
+#include <thread>
+#include <vector>
 
 namespace splitter {
 
@@ -16,15 +17,17 @@ void ArtifactsPhase::Execute(PipelineContext& context) {
     context.artifacts.reserve(context.partitions.size());
 
     if (parallel_) {
-        std::vector<std::future<PartitionFiles>> futures;
-        futures.reserve(context.partitions.size());
-        for (const auto& partition : context.partitions) {
-            futures.emplace_back(std::async(std::launch::async, [&builder = *builder_, &partition]() {
-                return builder.CreatePartition(partition);
-            }));
+        std::vector<PartitionFiles> artifacts(context.partitions.size());
+        std::vector<std::thread> workers;
+        workers.reserve(context.partitions.size());
+        for (std::size_t idx = 0; idx < context.partitions.size(); ++idx) {
+            workers.emplace_back([this, &context, idx, &artifacts]() {
+                artifacts[idx] = builder_->CreatePartition(context.partitions[idx]);
+            });
         }
-        for (auto& future : futures)
-            context.artifacts.push_back(future.get());
+        for (auto& worker : workers)
+            worker.join();
+        context.artifacts = std::move(artifacts);
     } else {
         for (const auto& partition : context.partitions)
             context.artifacts.push_back(builder_->CreatePartition(partition));

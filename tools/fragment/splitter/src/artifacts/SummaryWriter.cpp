@@ -1,7 +1,6 @@
 #include "splitter/artifacts/SummaryWriter.hpp"
 
 #include <algorithm>
-#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -15,6 +14,7 @@
 #include "splitter/support/HashUtil.hpp"
 #include "splitter/support/StringUtil.hpp"
 #include "splitter/support/FlatMap.hpp"
+#include "splitter/support/Env.hpp"
 
 namespace splitter {
 
@@ -144,8 +144,8 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
         symbol_index.insert(kv.first, kv.second);
     const std::string binary_hash = HashFile(binary_path);
     bool can_split = true;
-    if (const char* env = std::getenv("SPLITTER_CAN_SPLIT"))
-        can_split = std::string(env) != "0" && std::string(env) != "false";
+    if (auto env = GetEnv("SPLITTER_CAN_SPLIT"))
+        can_split = *env != "0" && *env != "false";
 
     std::vector<Partition> partitions_copy = partitions;
     std::vector<std::pair<std::string, std::string>> partition_hashes;

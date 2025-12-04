@@ -5,19 +5,17 @@
 #include <sstream>
 
 #include "splitter/artifacts/ReadelfLibraryResolver.hpp"
+#include "splitter/support/Env.hpp"
 #include "splitter/support/ShellCommand.hpp"
 
 namespace splitter {
 
 namespace {
 
-std::string EnvWrapper() {
-    const char* wrapper = std::getenv("SILICIUM_LIB_DETECT_WRAPPER");
-    return (wrapper && *wrapper) ? std::string(wrapper) : std::string();
-}
-
 std::string WrapCommand(const std::string& command) {
-    std::string wrapper = EnvWrapper();
+    std::string wrapper;
+    if (auto env = GetEnv("SILICIUM_LIB_DETECT_WRAPPER"))
+        wrapper = *env;
     if (wrapper.empty())
         return command;
     return wrapper + " " + command;

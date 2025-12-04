@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include "splitter/pipeline/PipelineContext.hpp"
 
 namespace splitter {
@@ -7,7 +9,7 @@ namespace splitter {
 class IPipelinePhase {
 public:
     virtual ~IPipelinePhase() = default;
-    virtual const char* Name() const = 0;
+    virtual std::string Name() const = 0;
     virtual void Execute(PipelineContext& context) = 0;
 };
 

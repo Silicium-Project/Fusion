@@ -14,7 +14,7 @@ public:
                    std::unique_ptr<SummaryWriter> summary_writer,
                    bool parallel = false);
 
-    const char* Name() const override { return "Artifacts"; }
+    std::string Name() const override { return "Artifacts"; }
     void Execute(PipelineContext& context) override;
 
 private:

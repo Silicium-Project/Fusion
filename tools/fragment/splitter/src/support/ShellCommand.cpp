@@ -8,19 +8,44 @@
 
 namespace splitter {
 
+namespace {
+
+using PipeHandle = std::unique_ptr<std::FILE, decltype(&pclose)>;
+
+class PipeReader {
+public:
+    explicit PipeReader(const std::string& cmd) {
+        PipeHandle opened(popen(cmd.c_str(), "r"), &pclose);
+        if (!opened)
+            throw std::runtime_error("popen() failed");
+        handle_ = std::move(opened);
+    }
+
+    PipeReader(const PipeReader&) = delete;
+    PipeReader& operator=(const PipeReader&) = delete;
+
+    bool ReadLine(std::array<char, 128>& buffer, std::string& out) {
+        if (!handle_)
+            return false;
+        if (fgets(buffer.data(), static_cast<int>(buffer.size()), handle_.get()) == nullptr)
+            return false;
+        out.append(buffer.data());
+        return true;
+    }
+
+private:
+    PipeHandle handle_{nullptr, &pclose};
+};
+
+}  // namespace
+
 std::string ExecCommand(const std::string& cmd) {
     std::array<char, 128> buffer;
     std::string result;
-    auto closer = [](FILE* fp) {
-        if (fp)
-            pclose(fp);
-    };
-    std::unique_ptr<FILE, decltype(closer)> pipe(popen(cmd.c_str(), "r"), closer);
-    if (!pipe)
-        throw std::runtime_error("popen() failed");
 
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe.get()) != nullptr)
-        result += buffer.data();
+    PipeReader pipe(cmd);
+    while (pipe.ReadLine(buffer, result)) {
+    }
     return result;
 }
 

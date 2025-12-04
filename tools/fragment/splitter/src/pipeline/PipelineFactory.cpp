@@ -16,6 +16,7 @@
 #include "splitter/pipeline/DisassemblyPhase.hpp"
 #include "splitter/pipeline/PartitioningPhase.hpp"
 #include "splitter/support/HashService.hpp"
+#include "splitter/support/Env.hpp"
 #include "splitter/artifacts/DefaultSymbolIndexer.hpp"
 #include "splitter/artifacts/DefaultLibraryResolver.hpp"
 #include "splitter/artifacts/ReadelfLibraryResolver.hpp"
@@ -26,27 +27,34 @@ namespace splitter {
 
 namespace {
 
-std::string EnvOrEmpty(const char* var) {
-    const char* v = std::getenv(var);
-    return (v && *v) ? std::string(v) : std::string();
-}
-
 HashService ChooseHashService(const PipelineConfig& config) {
-    std::string choice = config.hash_algo.empty() ? EnvOrEmpty("SPLITTER_HASH_ALGO") : config.hash_algo;
+    std::string choice = config.hash_algo;
+    if (choice.empty()) {
+        if (auto env = GetEnv("SPLITTER_HASH_ALGO"))
+            choice = *env;
+    }
     if (choice == "std")
         return HashService(std::make_shared<StdHashAlgorithm>());
     return MakeHashServiceFromEnv();
 }
 
 std::unique_ptr<ILibraryResolver> ChooseResolver(const PipelineConfig& config) {
-    std::string choice = config.resolver.empty() ? EnvOrEmpty("SPLITTER_LIB_RESOLVER") : config.resolver;
+    std::string choice = config.resolver;
+    if (choice.empty()) {
+        if (auto env = GetEnv("SPLITTER_LIB_RESOLVER"))
+            choice = *env;
+    }
     if (choice == "readelf")
         return std::make_unique<ReadelfLibraryResolver>();
     return std::make_unique<DefaultLibraryResolver>();
 }
 
 std::unique_ptr<ISymbolIndexer> ChooseIndexer(const PipelineConfig& config) {
-    std::string choice = config.symbol_indexer.empty() ? EnvOrEmpty("SPLITTER_SYMBOL_INDEXER") : config.symbol_indexer;
+    std::string choice = config.symbol_indexer;
+    if (choice.empty()) {
+        if (auto env = GetEnv("SPLITTER_SYMBOL_INDEXER"))
+            choice = *env;
+    }
     if (choice == "objdump")
         return std::make_unique<ObjdumpSymbolIndexer>();
     return std::make_unique<DefaultSymbolIndexer>();
