@@ -18,7 +18,7 @@ class Partitioner : public IPartitioner {
 public:
     Partitioner(BinaryPath binary_path,
                 const IInstructionAnalyzer& analyzer,
-                const BinaryExtractor& extractor,
+                std::shared_ptr<BinaryExtractor> extractor,
                 HashService hash_service = HashService());
 
     std::vector<Partition> Run(std::vector<Function>& functions) override;
@@ -26,7 +26,7 @@ public:
 private:
     BinaryPath binary_path_;
     const IInstructionAnalyzer& analyzer_;
-    const BinaryExtractor& extractor_;
+    std::shared_ptr<BinaryExtractor> extractor_;
     DefaultPartitionGraphBuilder graph_builder_;
 };
 

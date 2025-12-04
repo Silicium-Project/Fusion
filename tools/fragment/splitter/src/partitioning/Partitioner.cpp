@@ -41,11 +41,11 @@ std::string FunctionToAsm(const Function& func) {
 
 Partitioner::Partitioner(BinaryPath binary_path,
                          const IInstructionAnalyzer& analyzer,
-                         const BinaryExtractor& extractor,
+                         std::shared_ptr<BinaryExtractor> extractor,
                          HashService hash_service)
     : binary_path_(std::move(binary_path)),
       analyzer_(analyzer),
-      extractor_(extractor),
+      extractor_(std::move(extractor)),
       graph_builder_(std::move(hash_service)) {}
 
 std::vector<Partition> Partitioner::Run(std::vector<Function>& functions) {
@@ -66,7 +66,10 @@ std::vector<Partition> Partitioner::Run(std::vector<Function>& functions) {
         partition.SetStartAddr(func.StartAddr());
         partition.SetEndAddr(func.EndAddr());
         partition.SetAsmCode(FunctionToAsm(func));
-        partition.RawBytes() = extractor_.ExtractSegment(binary_path_.Value(), func.StartAddr(), func.EndAddr());
+        if (func.EndAddr() > func.StartAddr() && extractor_) {
+            partition.RawBytes() =
+                extractor_->ExtractSegment(binary_path_.Value(), func.StartAddr(), func.EndAddr());
+        }
         partition.SetIsParallelizable(loop_info.parallelizable);
 
         FlatStringSet outputs;

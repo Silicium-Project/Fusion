@@ -4,12 +4,14 @@
 
 namespace splitter {
 
-PartitioningPhase::PartitioningPhase(std::unique_ptr<IPartitioner> partitioner, const BinaryExtractor& extractor)
-    : partitioner_(std::move(partitioner)), extractor_(extractor) {}
+PartitioningPhase::PartitioningPhase(std::unique_ptr<IPartitioner> partitioner,
+                                     std::shared_ptr<BinaryExtractor> extractor)
+    : partitioner_(std::move(partitioner)), extractor_(std::move(extractor)) {}
 
 void PartitioningPhase::Execute(PipelineContext& context) {
     context.partitions = partitioner_->Run(context.functions);
-    context.memory_segments = extractor_.ExtractDataSections(context.config.binary_path.Value());
+    if (extractor_)
+        context.memory_segments = extractor_->ExtractDataSections(context.config.binary_path.Value());
 }
 
 }  // namespace splitter

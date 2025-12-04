@@ -54,7 +54,7 @@ Function MakeFunc(std::string name, uint64_t start, uint64_t end,
 
 TEST(Partitioner, BuildsPartitionsAndDeps) {
     FakeAnalyzer analyzer;
-    FakeExtractor extractor;
+    auto extractor = std::make_shared<FakeExtractor>();
     Partitioner partitioner(BinaryPath("dummy.bin"), analyzer, extractor);
 
     std::vector<Function> funcs;

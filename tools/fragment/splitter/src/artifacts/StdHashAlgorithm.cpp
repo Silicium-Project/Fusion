@@ -1,5 +1,6 @@
 #include "splitter/artifacts/StdHashAlgorithm.hpp"
 
+#include <cstdint>
 #include <iomanip>
 #include <sstream>
 

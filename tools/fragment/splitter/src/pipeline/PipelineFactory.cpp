@@ -72,8 +72,8 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
     auto extractor = std::make_shared<BinaryExtractor>();
     auto hash_service = ChooseHashService(config);
     std::unique_ptr<IPartitioner> partitioner =
-        std::make_unique<Partitioner>(config.binary_path, analyzer, *extractor, hash_service);
-    auto partitioning = std::make_unique<PartitioningPhase>(std::move(partitioner), *extractor);
+        std::make_unique<Partitioner>(config.binary_path, analyzer, extractor, hash_service);
+    auto partitioning = std::make_unique<PartitioningPhase>(std::move(partitioner), extractor);
 
     auto scanner = std::make_shared<LibraryScanner>(ChooseResolver(config), ChooseIndexer(config));
     auto hash_calc = std::make_shared<SummaryHashCalculator>(nullptr, hash_service);

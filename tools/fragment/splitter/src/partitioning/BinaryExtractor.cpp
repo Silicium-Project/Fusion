@@ -27,6 +27,7 @@ std::vector<uint8_t> BinaryExtractor::ExtractSegment(const std::string& binary_p
 
         uint64_t text_offset = 0;
         uint64_t text_vaddr = 0;
+        bool found_text = false;
 
         std::istringstream stream(output);
         std::string line;
@@ -35,9 +36,13 @@ std::vector<uint8_t> BinaryExtractor::ExtractSegment(const std::string& binary_p
                 && match[1].str().find(".text") != std::string::npos) {
                 text_vaddr = std::stoull(match[3].str(), nullptr, 16);
                 text_offset = std::stoull(match[4].str(), nullptr, 16);
+                found_text = true;
                 break;
             }
         }
+
+        if (!found_text || end_addr <= start_addr || start_addr < text_vaddr)
+            return result;
 
         std::ifstream file(binary_path, std::ios::binary);
         if (!file)
@@ -45,9 +50,14 @@ std::vector<uint8_t> BinaryExtractor::ExtractSegment(const std::string& binary_p
 
         uint64_t file_start = text_offset + (start_addr - text_vaddr);
         uint64_t file_end = text_offset + (end_addr - text_vaddr);
+        if (file_end <= file_start)
+            return result;
 
         file.seekg(file_start);
         const size_t segment_size = static_cast<size_t>(file_end - file_start);
+        const size_t kMaxSegment = 16 * 1024 * 1024;  // 16 Mo max pour éviter les dépassements.
+        if (segment_size == 0 || segment_size > kMaxSegment)
+            return result;
         std::vector<char> buffer(segment_size);
         file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         result.assign(buffer.begin(), buffer.end());
