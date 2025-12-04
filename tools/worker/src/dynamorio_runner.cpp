@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdio>
 #include <filesystem>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 
@@ -76,12 +77,13 @@ bool DynamoRunner::run_binary(const std::string& binary_path,
     if (!args.empty())
         cmd << ' ' << args_str;
 
-    FILE* pipe = popen(cmd.str().c_str(), "r");
+    using PipeHandle = std::unique_ptr<FILE, decltype(&pclose)>;
+    PipeHandle pipe(popen(cmd.str().c_str(), "r"), &pclose);
     if (!pipe)
         throw std::runtime_error("Impossible d'exécuter le lanceur DynamoRIO: " + cmd.str());
 
-    stdout_buffer = read_pipe(pipe);
-    const int rc = pclose(pipe);
+    stdout_buffer = read_pipe(pipe.get());
+    const int rc = pclose(pipe.release());
     if (rc)
         stderr_buffer = "drrun a retourné " + std::to_string(rc);
     return !rc;
