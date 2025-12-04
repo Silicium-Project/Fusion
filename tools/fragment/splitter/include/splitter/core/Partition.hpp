@@ -1,12 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <set>
 #include <string>
 #include <vector>
 
 #include "splitter/core/Function.hpp"
-#include "splitter/support/FlatStringSet.hpp"
+#include "splitter/support/FlatSet.hpp"
 
 namespace splitter {
 
@@ -36,11 +35,11 @@ public:
     const std::string& PartitionHash() const noexcept { return partition_hash_; }
     void SetPartitionHash(std::string hash) noexcept { partition_hash_ = std::move(hash); }
 
-    const std::set<std::string>& Inputs() const noexcept { return inputs_; }
-    std::set<std::string>& Inputs() noexcept { return inputs_; }
+    const FlatStringSet& Inputs() const noexcept { return inputs_; }
+    FlatStringSet& Inputs() noexcept { return inputs_; }
 
-    const std::set<std::string>& Outputs() const noexcept { return outputs_; }
-    std::set<std::string>& Outputs() noexcept { return outputs_; }
+    const FlatStringSet& Outputs() const noexcept { return outputs_; }
+    FlatStringSet& Outputs() noexcept { return outputs_; }
 
     bool IsParallelizable() const noexcept { return is_parallelizable_; }
     void SetIsParallelizable(bool value) noexcept { is_parallelizable_ = value; }
@@ -51,8 +50,8 @@ public:
     const std::vector<std::string>& Parents() const noexcept { return parents_; }
     std::vector<std::string>& Parents() noexcept { return parents_; }
 
-    const std::set<std::string>& ExternalInputs() const noexcept { return external_inputs_; }
-    std::set<std::string>& ExternalInputs() noexcept { return external_inputs_; }
+    const FlatStringSet& ExternalInputs() const noexcept { return external_inputs_; }
+    FlatStringSet& ExternalInputs() noexcept { return external_inputs_; }
 
     const std::vector<std::string>& UnresolvedDependencies() const noexcept { return unresolved_dependencies_; }
     std::vector<std::string>& UnresolvedDependencies() noexcept { return unresolved_dependencies_; }
@@ -60,8 +59,8 @@ public:
     bool RequiresDisplay() const noexcept { return requires_display_; }
     void SetRequiresDisplay(bool value) noexcept { requires_display_ = value; }
 
-    const std::set<std::string>& ExternalCalls() const noexcept { return external_calls_; }
-    std::set<std::string>& ExternalCalls() noexcept { return external_calls_; }
+    const FlatStringSet& ExternalCalls() const noexcept { return external_calls_; }
+    FlatStringSet& ExternalCalls() noexcept { return external_calls_; }
 
 private:
     std::string id_;
@@ -72,15 +71,15 @@ private:
     std::vector<uint8_t> raw_bytes_;
     std::string bin_hash_;
     std::string partition_hash_;
-    std::set<std::string> inputs_;
-    std::set<std::string> outputs_;
+    FlatStringSet inputs_;
+    FlatStringSet outputs_;
     bool is_parallelizable_ = false;
     std::vector<std::string> dependencies_;
     std::vector<std::string> parents_;
-    std::set<std::string> external_inputs_;
+    FlatStringSet external_inputs_;
     std::vector<std::string> unresolved_dependencies_;
     bool requires_display_ = false;
-    std::set<std::string> external_calls_;
+    FlatStringSet external_calls_;
 };
 
 }  // namespace splitter

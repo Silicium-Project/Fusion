@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "splitter/support/FlatStringSet.hpp"
+#include "splitter/support/FlatSet.hpp"
 
 namespace splitter {
 

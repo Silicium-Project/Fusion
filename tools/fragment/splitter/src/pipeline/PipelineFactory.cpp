@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "splitter/analysis/ObjdumpDisassembler.hpp"
+#include "splitter/analysis/CompositeInstructionAnalyzer.hpp"
 #include "splitter/analysis/X86InstructionAnalyzer.hpp"
 #include "splitter/artifacts/ArtifactBuilder.hpp"
 #include "splitter/artifacts/LibraryScanner.hpp"
@@ -13,6 +14,7 @@
 #include "splitter/pipeline/ArtifactsPhase.hpp"
 #include "splitter/pipeline/DisassemblyPhase.hpp"
 #include "splitter/pipeline/PartitioningPhase.hpp"
+#include "splitter/support/HashService.hpp"
 
 namespace splitter {
 
@@ -20,18 +22,19 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
     auto disassembly = std::make_unique<DisassemblyPhase>(
         std::make_unique<ObjdumpDisassembler>(config.binary_path.Value()));
 
-    const auto& analyzer = X86InstructionAnalyzer::Instance();
+    const auto& analyzer = CompositeInstructionAnalyzer::Default();
     auto analysis = std::make_unique<AnalysisPhase>(analyzer);
 
     auto extractor = std::make_shared<BinaryExtractor>();
     std::unique_ptr<IPartitioner> partitioner =
-        std::make_unique<Partitioner>(config.binary_path, analyzer, *extractor);
+        std::make_unique<Partitioner>(config.binary_path, analyzer, *extractor, HashService());
     auto partitioning = std::make_unique<PartitioningPhase>(std::move(partitioner), *extractor);
 
     auto scanner = std::make_shared<LibraryScanner>();
+    auto hash_calc = std::make_shared<SummaryHashCalculator>(nullptr, HashService());
     auto artifacts = std::make_unique<ArtifactsPhase>(
         std::make_unique<ArtifactBuilder>(config.output_dir.Value()),
-        std::make_unique<SummaryWriter>(config.output_dir.Value(), scanner),
+        std::make_unique<SummaryWriter>(config.output_dir.Value(), scanner, hash_calc),
         config.parallel_artifacts);
 
     return std::make_unique<PipelineRunner>(std::move(config), std::move(disassembly),

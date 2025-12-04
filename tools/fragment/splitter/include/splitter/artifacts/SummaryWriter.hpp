@@ -7,15 +7,23 @@
 #include <vector>
 
 #include "splitter/artifacts/LibraryScanner.hpp"
+#include "splitter/artifacts/SummaryHashCalculator.hpp"
 #include "splitter/core/MemorySegment.hpp"
 #include "splitter/core/Partition.hpp"
 #include "splitter/core/PartitionFiles.hpp"
+#include "splitter/support/FlatMap.hpp"
+#include "splitter/support/HashService.hpp"
 
 namespace splitter {
 
 class SummaryWriter {
 public:
-    SummaryWriter(std::string output_dir, std::shared_ptr<const ILibraryScanner> scanner);
+    SummaryWriter(std::string output_dir,
+                  std::shared_ptr<const ILibraryScanner> scanner,
+                  std::shared_ptr<const SummaryHashCalculator> hash_calculator = nullptr);
+    SummaryWriter(std::string output_dir,
+                  std::shared_ptr<const ILibraryScanner> scanner,
+                  HashService hash_service);
 
     void Write(const std::vector<Partition>& partitions,
                const std::vector<PartitionFiles>& artifacts,
@@ -38,11 +46,12 @@ private:
     void WritePartitions(std::ofstream& out,
                          const std::vector<Partition>& partitions,
                          const std::vector<PartitionFiles>& artifacts,
-                         const std::unordered_map<std::string, std::string>& symbol_index) const;
+                         const FlatStringMap& symbol_index) const;
     void WriteMemory(std::ofstream& out, const std::vector<MemorySegment>& memory_segments) const;
 
     std::string output_dir_;
     std::shared_ptr<const ILibraryScanner> scanner_;
+    std::shared_ptr<const SummaryHashCalculator> hash_calculator_;
 };
 
 }  // namespace splitter

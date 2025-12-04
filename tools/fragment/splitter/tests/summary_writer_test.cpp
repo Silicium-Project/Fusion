@@ -58,7 +58,8 @@ PartitionFiles MakeFiles(const std::string& base) {
 
 TEST(SummaryWriter, WritesSummaryAndHashes) {
     auto scanner = std::make_shared<FakeScanner>();
-    SummaryWriter writer("/tmp/splitter_test_out", scanner);
+    auto hash_calc = std::make_shared<SummaryHashCalculator>();
+    SummaryWriter writer("/tmp/splitter_test_out", scanner, hash_calc);
 
     std::vector<Partition> parts;
     parts.push_back(MakePartition("p0"));

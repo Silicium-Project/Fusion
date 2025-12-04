@@ -1,0 +1,37 @@
+#pragma once
+
+#include <functional>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "splitter/artifacts/HashAlgorithm.hpp"
+#include "splitter/artifacts/FnvHashAlgorithm.hpp"
+
+namespace splitter {
+
+// Service objet qui centralise la stratégie de hashage (algorithme injecté).
+class HashService {
+public:
+    HashService() : HashService(std::make_shared<FnvHashAlgorithm>()) {}
+    explicit HashService(std::shared_ptr<IHashAlgorithm> prototype)
+        : prototype_(std::move(prototype)) {}
+
+    void SetAlgorithm(std::shared_ptr<IHashAlgorithm> prototype) { prototype_ = std::move(prototype); }
+
+    std::string HashBytes(const std::vector<uint8_t>& data) const;
+    std::string HashString(std::string_view data) const;
+    std::string HashFile(const std::string& path) const;
+
+private:
+    std::unique_ptr<IHashAlgorithm> MakeHasher() const {
+        if (prototype_)
+            return prototype_->Clone();
+        return std::make_unique<FnvHashAlgorithm>();
+    }
+
+    std::shared_ptr<IHashAlgorithm> prototype_;
+};
+
+}  // namespace splitter

@@ -11,9 +11,10 @@
 #include <sstream>
 #include <unordered_map>
 
-#include "splitter/support/FnvHasher.hpp"
+#include "splitter/artifacts/SummaryHashCalculator.hpp"
 #include "splitter/support/HashUtil.hpp"
 #include "splitter/support/StringUtil.hpp"
+#include "splitter/support/FlatMap.hpp"
 
 namespace splitter {
 
@@ -29,80 +30,7 @@ size_t CountParallelizable(const std::vector<Partition>& partitions) {
     return count;
 }
 
-template <typename Container>
-void HashStrings(FnvHasher& h, const Container& c) {
-    for (const auto& s : c)
-        h.AddString(s);
-    h.AddByte(0x7f);
-}
-
-std::string ComputePartitionHash(const Partition& p, const std::set<std::string>& resolved_libs) {
-    FnvHasher h;
-    h.AddString(p.Id());
-    h.AddUint64(p.StartAddr());
-    h.AddUint64(p.EndAddr());
-    h.AddString(p.BinHash());
-    h.AddUint64(p.RawBytes().size());
-    h.AddBool(p.IsParallelizable());
-    h.AddBool(p.RequiresDisplay());
-    HashStrings(h, p.Inputs());
-    HashStrings(h, p.ExternalInputs());
-    HashStrings(h, p.Outputs());
-    HashStrings(h, p.ExternalCalls());
-    HashStrings(h, resolved_libs);
-    HashStrings(h, p.Parents());
-    HashStrings(h, p.Dependencies());
-    HashStrings(h, p.UnresolvedDependencies());
-    return h.Hex();
-}
-
-std::string ComputeMemoryHash(const std::vector<MemorySegment>& segments) {
-    FnvHasher h;
-    for (const auto& seg : segments) {
-        h.AddString(seg.Name());
-        h.AddUint64(seg.Address());
-        h.AddString(HashBytes(seg.Bytes()));
-    }
-    return h.Hex();
-}
-
-std::string ComputeSummaryHash(const std::string& binary_hash,
-                               const std::string& memory_hash,
-                               bool can_split,
-                               const std::vector<std::string>& required_libraries,
-                               const std::vector<LibraryInfo>& libraries,
-                               const std::vector<std::pair<std::string, std::string>>& partition_hashes) {
-    FnvHasher h;
-    h.AddString(binary_hash);
-    h.AddString(memory_hash);
-    h.AddBool(can_split);
-
-    auto libs_sorted = required_libraries;
-    std::sort(libs_sorted.begin(), libs_sorted.end());
-    HashStrings(h, libs_sorted);
-
-    std::vector<LibraryInfo> libs = libraries;
-    std::sort(libs.begin(), libs.end(), [](const auto& a, const auto& b) { return a.Name() < b.Name(); });
-    for (const auto& lib : libs) {
-        h.AddString(lib.Name());
-        h.AddString(lib.Path());
-        h.AddString(lib.Soname().empty() ? lib.Name() : lib.Soname());
-        h.AddString(lib.BuildId());
-    }
-
-    std::vector<std::pair<std::string, std::string>> parts = partition_hashes;
-    std::sort(parts.begin(), parts.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-    for (const auto& ph : parts) {
-        h.AddString(ph.first);   // id
-        h.AddString(ph.second);  // hash
-    }
-
-    return h.Hex();
-}
-
-std::set<std::string> ResolvePartitionLibraries(
-    const Partition& partition,
-    const std::unordered_map<std::string, std::string>& symbol_index) {
+std::set<std::string> ResolvePartitionLibraries(const Partition& partition, const FlatStringMap& symbol_index) {
     std::set<std::string> names;
     for (const auto& symbol : partition.ExternalCalls()) {
         auto it = symbol_index.find(symbol);
@@ -128,7 +56,7 @@ std::optional<std::reference_wrapper<const PartitionFiles>> ArtifactFor(
 void WritePartitionEntry(std::ofstream& out,
                          const Partition& partition,
                          const std::optional<std::reference_wrapper<const PartitionFiles>>& files,
-                         const std::unordered_map<std::string, std::string>& symbol_index,
+                         const FlatStringMap& symbol_index,
                          bool is_last) {
     out << "    {\n";
     out << "      \"id\": \"" << JsonEscape(partition.Id()) << "\",\n";
@@ -136,17 +64,17 @@ void WritePartitionEntry(std::ofstream& out,
     out << "      \"end\": \"" << HexString(partition.EndAddr()) << "\",\n";
     out << "      \"size\": " << partition.RawBytes().size() << ",\n";
     out << "      \"parallelizable\": " << (partition.IsParallelizable() ? "true" : "false") << ",\n";
-    out << "      \"inputs\": " << SetToJson(partition.Inputs()) << ",\n";
-    out << "      \"external_inputs\": " << SetToJson(partition.ExternalInputs()) << ",\n";
-    out << "      \"external_calls\": " << SetToJson(partition.ExternalCalls()) << ",\n";
+    out << "      \"inputs\": " << RangeToJson(partition.Inputs()) << ",\n";
+    out << "      \"external_inputs\": " << RangeToJson(partition.ExternalInputs()) << ",\n";
+    out << "      \"external_calls\": " << RangeToJson(partition.ExternalCalls()) << ",\n";
     out << "      \"requires_display\": " << (partition.RequiresDisplay() ? "true" : "false") << ",\n";
     out << "      \"bin_hash\": \"" << JsonEscape(partition.BinHash()) << "\",\n";
-    out << "      \"outputs\": " << SetToJson(partition.Outputs()) << ",\n";
+    out << "      \"outputs\": " << RangeToJson(partition.Outputs()) << ",\n";
     out << "      \"parents\": " << VectorToJson(partition.Parents()) << ",\n";
     out << "      \"dependencies\": " << VectorToJson(partition.Dependencies()) << ",\n";
     out << "      \"unresolved_calls\": " << VectorToJson(partition.UnresolvedDependencies()) << ",\n";
     out << "      \"required_libraries\": "
-                << SetToJson(ResolvePartitionLibraries(partition, symbol_index)) << ",\n";
+                << RangeToJson(ResolvePartitionLibraries(partition, symbol_index)) << ",\n";
     out << "      \"partition_hash\": \"" << JsonEscape(partition.PartitionHash()) << "\",\n";
 
     if (files.has_value()) {
@@ -176,10 +104,21 @@ static std::string BytesToHex(const std::vector<uint8_t>& bytes) {
 
 }  // namespace
 
-SummaryWriter::SummaryWriter(std::string output_dir, std::shared_ptr<const ILibraryScanner> scanner)
-    : output_dir_(std::move(output_dir)), scanner_(std::move(scanner)) {
+SummaryWriter::SummaryWriter(std::string output_dir,
+                             std::shared_ptr<const ILibraryScanner> scanner,
+                             std::shared_ptr<const SummaryHashCalculator> hash_calculator)
+    : output_dir_(std::move(output_dir)),
+      scanner_(std::move(scanner)),
+      hash_calculator_(hash_calculator ? std::move(hash_calculator)
+                                       : std::make_shared<SummaryHashCalculator>()) {
     fs::create_directories(output_dir_);
 }
+
+SummaryWriter::SummaryWriter(std::string output_dir,
+                             std::shared_ptr<const ILibraryScanner> scanner,
+                             HashService hash_service)
+    : SummaryWriter(std::move(output_dir), std::move(scanner),
+                    std::make_shared<SummaryHashCalculator>(nullptr, std::move(hash_service))) {}
 
 void SummaryWriter::Write(const std::vector<Partition>& partitions,
                           const std::vector<PartitionFiles>& artifacts,
@@ -200,7 +139,9 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
             unique.insert(entry.Name());
         library_names.assign(unique.begin(), unique.end());
     }
-    auto symbol_index = scanner_->BuildSymbolIndex(libraries);
+    FlatStringMap symbol_index;
+    for (const auto& kv : scanner_->BuildSymbolIndex(libraries))
+        symbol_index.insert(kv.first, kv.second);
     const std::string binary_hash = HashFile(binary_path);
     bool can_split = true;
     if (const char* env = std::getenv("SPLITTER_CAN_SPLIT"))
@@ -211,13 +152,14 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
     partition_hashes.reserve(partitions_copy.size());
     for (auto& p : partitions_copy) {
         auto resolved_libs = ResolvePartitionLibraries(p, symbol_index);
-        p.SetPartitionHash(ComputePartitionHash(p, resolved_libs));
+        p.SetPartitionHash(hash_calculator_->ComputePartitionHash(p, resolved_libs));
         partition_hashes.emplace_back(p.Id(), p.PartitionHash());
     }
 
-    const std::string memory_hash = ComputeMemoryHash(memory_segments);
+    const std::string memory_hash = hash_calculator_->ComputeMemoryHash(memory_segments);
     const std::string summary_hash =
-        ComputeSummaryHash(binary_hash, memory_hash, can_split, library_names, libraries, partition_hashes);
+        hash_calculator_->ComputeSummaryHash(binary_hash, memory_hash, can_split, library_names, libraries,
+                                             partition_hashes);
 
     WriteHeader(summary, binary_path, partitions_copy.size(), CountParallelizable(partitions_copy),
                 library_names, libraries, binary_hash, can_split, memory_hash, summary_hash);
@@ -278,7 +220,7 @@ void SummaryWriter::WriteFooter(std::ofstream& out) const {
 void SummaryWriter::WritePartitions(std::ofstream& out,
                                     const std::vector<Partition>& partitions,
                                     const std::vector<PartitionFiles>& artifacts,
-                                    const std::unordered_map<std::string, std::string>& symbol_index) const {
+                                    const FlatStringMap& symbol_index) const {
     for (size_t idx = 0; idx < partitions.size(); ++idx) {
         const bool is_last = (idx + 1 == partitions.size());
         WritePartitionEntry(out, partitions[idx], ArtifactFor(idx, artifacts), symbol_index, is_last);

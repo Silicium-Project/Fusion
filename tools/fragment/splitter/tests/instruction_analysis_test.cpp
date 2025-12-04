@@ -3,6 +3,7 @@
 #include <string>
 
 #include "splitter/analysis/X86InstructionAnalyzer.hpp"
+#include "splitter/analysis/GuiInstructionAnalyzer.hpp"
 #include "splitter/core/Function.hpp"
 #include "splitter/core/Instruction.hpp"
 
@@ -55,4 +56,12 @@ TEST(InstructionAnalysis, LoopDetectionAndPatterns) {
     auto result = analyzer.DetectLoopPatterns(func);
     EXPECT_TRUE(result.parallelizable);
     EXPECT_FALSE(result.reason.empty());
+}
+
+TEST(InstructionAnalysis, GuiAnalyzerDetectsGuiBoundFunctions) {
+    Function func;
+    func.SetName("RenderUI");
+    auto result = GuiInstructionAnalyzer::Instance().DetectLoopPatterns(func);
+    EXPECT_FALSE(result.parallelizable);
+    EXPECT_EQ(result.reason, "gui-bound");
 }

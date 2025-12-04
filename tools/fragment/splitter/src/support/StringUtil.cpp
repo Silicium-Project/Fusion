@@ -50,9 +50,4 @@ std::string VectorToJson(const std::vector<std::string>& values) {
     return oss.str();
 }
 
-std::string SetToJson(const std::set<std::string>& values) {
-    std::vector<std::string> vectorized(values.begin(), values.end());
-    return VectorToJson(vectorized);
-}
-
 }  // namespace splitter
