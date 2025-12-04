@@ -1,12 +1,11 @@
 #include "splitter/artifacts/DefaultLibraryResolver.hpp"
 
-#include <optional>
+#include <cstdlib>
 #include <regex>
-#include <set>
 #include <sstream>
 
+#include "splitter/artifacts/ReadelfLibraryResolver.hpp"
 #include "splitter/support/ShellCommand.hpp"
-#include "splitter/support/StringUtil.hpp"
 
 namespace splitter {
 
@@ -17,42 +16,11 @@ std::string EnvWrapper() {
     return (wrapper && *wrapper) ? std::string(wrapper) : std::string();
 }
 
-std::string ShellQuote(const std::string& path) {
-    std::string quoted = "'";
-    for (char ch : path) {
-        if (ch == '\'')
-            quoted += "'\\''";
-        else
-            quoted.push_back(ch);
-    }
-    quoted += "'";
-    return quoted;
-}
-
 std::string WrapCommand(const std::string& command) {
     std::string wrapper = EnvWrapper();
     if (wrapper.empty())
         return command;
     return wrapper + " " + command;
-}
-
-std::vector<std::string> DetectNeededViaReadelf(const std::string& binary_path) {
-    std::set<std::string> unique;
-    const std::string command = WrapCommand("readelf -d " + ShellQuote(binary_path) + " 2>/dev/null");
-
-    try {
-        const std::string output = ExecCommand(command);
-        std::regex needed_regex(R"(\(NEEDED\).*\[(.+?)\])");
-        std::smatch match;
-        std::istringstream stream(output);
-        std::string line;
-        while (std::getline(stream, line))
-            if (std::regex_search(line, match, needed_regex) && match.size() > 1)
-                unique.insert(match[1].str());
-    } catch (const std::exception&) {
-        return {};
-    }
-    return std::vector<std::string>(unique.begin(), unique.end());
 }
 
 std::vector<LibraryInfo> DetectLibrariesWithLdd(const std::string& binary_path) {
@@ -97,16 +65,8 @@ std::vector<LibraryInfo> DefaultLibraryResolver::DetectLibraries(const std::stri
     if (!libraries.empty())
         return libraries;
 
-    auto names = DetectNeededViaReadelf(binary_path);
-    libraries.reserve(names.size());
-    for (const auto& name : names) {
-        LibraryInfo info;
-        info.SetName(name);
-        info.SetPath("");
-        info.SetSoname(name);
-        libraries.push_back(std::move(info));
-    }
-    return libraries;
+    ReadelfLibraryResolver fallback;
+    return fallback.DetectLibraries(binary_path);
 }
 
 }  // namespace splitter

@@ -8,6 +8,7 @@
 
 #include "splitter/artifacts/HashAlgorithm.hpp"
 #include "splitter/artifacts/FnvHashAlgorithm.hpp"
+#include "splitter/artifacts/StdHashAlgorithm.hpp"
 
 namespace splitter {
 
@@ -33,5 +34,8 @@ private:
 
     std::shared_ptr<IHashAlgorithm> prototype_;
 };
+
+// Fabrique utilitaire pour lire la config depuis l'environnement (SPLITTER_HASH_ALGO).
+HashService MakeHashServiceFromEnv();
 
 }  // namespace splitter

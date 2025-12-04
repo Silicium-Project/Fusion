@@ -89,7 +89,7 @@ Ensuite, utilisez les redirections shell habituelles (`< input.txt`, pipes…) p
 ### 1. Découper un binaire
 
 ```bash
-./splitter ./chemin/vers/binaire --output-dir partitions
+./splitter ./chemin/vers/binaire --output-dir partitions [--hash fnv|std] [--resolver ldd|readelf] [--indexer nm|objdump]
 ```
 
 Résultats générés par défaut :
@@ -99,6 +99,11 @@ Résultats générés par défaut :
 - `partitions/<id>.bin` : code machine brut (pour le mode natif).
 - `partitions/<id>_wrapper.c` : squelette C pour intégrer le fragment.
 - `partitions/summary.json` : métadonnées (dépendances, registres, parallélisabilité, chemins de fichiers).
+
+Options de hachage et de scan :
+- `--hash fnv|std` ou `SPLITTER_HASH_ALGO` pour choisir l'algorithme (par défaut FNV).
+- `--resolver ldd|readelf` ou `SPLITTER_LIB_RESOLVER` pour sélectionner le détecteur de bibliothèques.
+- `--indexer nm|objdump` ou `SPLITTER_SYMBOL_INDEXER` pour sélectionner l'indexeur de symboles.
 
 ### 2. Exécuter des fragments
 

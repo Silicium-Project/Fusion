@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 
-#include "splitter/pipeline/Paths.hpp"
+#include "splitter/pipeline/BinaryPath.hpp"
+#include "splitter/pipeline/OutputDir.hpp"
 
 namespace splitter {
 
@@ -15,6 +17,9 @@ public:
     std::size_t sample_preview = 5;
     bool dump_full_disassembly = true;
     bool parallel_artifacts = false;
+    std::string hash_algo;      // "fnv", "std" ou vide pour auto/env
+    std::string resolver;       // "ldd", "readelf" ou vide pour auto/env
+    std::string symbol_indexer; // "nm", "objdump" ou vide pour auto/env
 };
 
 }  // namespace splitter

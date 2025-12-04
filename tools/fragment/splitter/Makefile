@@ -43,7 +43,7 @@ OBJ_DIR := build
 OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
 CPPFLAGS := -Iinclude
 
-TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp tests/hash_test.cpp tests/partitioner_test.cpp tests/summary_writer_test.cpp tests/pipeline_custom_test.cpp
+TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp tests/hash_test.cpp tests/partitioner_test.cpp tests/summary_writer_test.cpp tests/flat_map_test.cpp
 TEST_EXTRA_SRCS := $(filter-out $(SRC_DIR)/main.cpp,$(SRC_FILES))
 TEST_BUILD_DIR := build/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj

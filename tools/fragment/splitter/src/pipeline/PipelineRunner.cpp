@@ -21,6 +21,9 @@
 #include "splitter/pipeline/PartitioningPhase.hpp"
 #include "splitter/pipeline/PipelineFactory.hpp"
 #include "splitter/partitioning/Partitioner.hpp"
+#include "splitter/support/HashUtil.hpp"
+#include "splitter/artifacts/FnvHashAlgorithm.hpp"
+#include "splitter/artifacts/StdHashAlgorithm.hpp"
 
 namespace splitter {
 
@@ -43,11 +46,15 @@ void PrintSample(const std::string& label, const Container& container, std::size
 }
 
 void PrintUsage(std::string_view prog) {
-    std::cout << "Usage: " << prog << " <binary_file> [--output-dir <dir>]\n\n"
+    std::cout << "Usage: " << prog << " <binary_file> [--output-dir <dir>] [--hash <fnv|std>] "
+              << "[--resolver <ldd|readelf>] [--indexer <nm|objdump>]\n\n"
               << "Exemples:\n"
               << "  " << prog << " ./a.out\n"
-              << "  " << prog << " program.exe --output-dir ./partitions\n\n"
-              << "Nécessite: objdump, readelf (binutils)\n";
+              << "  " << prog << " program.exe --output-dir ./partitions --hash std\n\n"
+              << "Nécessite: objdump, readelf (binutils)\n"
+              << "Hash: variable d'environnement SPLITTER_HASH_ALGO ou option --hash.\n"
+              << "Résolveur de bibliothèques: env SPLITTER_LIB_RESOLVER ou --resolver (ldd/readelf).\n"
+              << "Indexation des symboles: env SPLITTER_SYMBOL_INDEXER ou --indexer (nm/objdump).\n";
 }
 
 }  // namespace
@@ -199,6 +206,18 @@ int RunCli(const std::vector<std::string_view>& args) {
             config.dump_full_disassembly = false;
         else if (current == "--parallel-artifacts")
             config.parallel_artifacts = true;
+        else if (current == "--hash" && i + 1 < args.size()) {
+            std::string algo(args[++i]);
+            if (algo == "std")
+                SetGlobalHashService(HashService(std::make_shared<StdHashAlgorithm>()));
+            else
+                SetGlobalHashService(HashService(std::make_shared<FnvHashAlgorithm>()));
+            config.hash_algo = algo;
+        } else if (current == "--resolver" && i + 1 < args.size()) {
+            config.resolver = std::string(args[++i]);  // ldd/readelf/auto
+        } else if (current == "--indexer" && i + 1 < args.size()) {
+            config.symbol_indexer = std::string(args[++i]);  // nm/objdump/auto
+        }
     }
 
     auto runner = PipelineFactory::BuildDefault(std::move(config));

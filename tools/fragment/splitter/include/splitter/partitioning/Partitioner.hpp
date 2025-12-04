@@ -8,7 +8,7 @@
 #include "splitter/partitioning/BinaryExtractor.hpp"
 #include "splitter/partitioning/IPartitioner.hpp"
 #include "splitter/partitioning/PartitionGraphBuilder.hpp"
-#include "splitter/pipeline/Paths.hpp"
+#include "splitter/pipeline/BinaryPath.hpp"
 #include "splitter/core/Partition.hpp"
 #include "splitter/support/HashService.hpp"
 

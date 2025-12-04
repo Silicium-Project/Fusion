@@ -2,6 +2,8 @@
 #include <fstream>
 
 #include "splitter/support/HashUtil.hpp"
+#include "splitter/support/HashService.hpp"
+#include "splitter/artifacts/StdHashAlgorithm.hpp"
 
 using namespace splitter;
 
@@ -26,4 +28,15 @@ TEST(HashUtil, FileHashMatchesBytes) {
     EXPECT_FALSE(hf.empty());
     EXPECT_EQ(hb, hf);
     std::remove(path.c_str());
+}
+
+TEST(HashUtil, GlobalHashServiceOverride) {
+    auto prev = GetGlobalHashService();
+    HashService custom(std::make_shared<StdHashAlgorithm>());
+    SetGlobalHashService(custom);
+    std::vector<uint8_t> data = {1, 2, 3};
+    auto h1 = HashBytes(data);
+    SetGlobalHashService(prev);  // restore
+    auto h2 = HashBytes(data);
+    EXPECT_NE(h1, h2);  // Les deux services diffèrent
 }

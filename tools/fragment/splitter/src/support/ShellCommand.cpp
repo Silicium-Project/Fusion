@@ -24,4 +24,16 @@ std::string ExecCommand(const std::string& cmd) {
     return result;
 }
 
+std::string ShellQuote(const std::string& path) {
+    std::string quoted = "'";
+    for (char ch : path) {
+        if (ch == '\'')
+            quoted += "'\\''";
+        else
+            quoted.push_back(ch);
+    }
+    quoted += "'";
+    return quoted;
+}
+
 }  // namespace splitter

@@ -54,6 +54,23 @@ PartitionFiles MakeFiles(const std::string& base) {
     return f;
 }
 
+class FakeHash : public IHashAlgorithm {
+public:
+    void Reset() override { state_ = 0; }
+    void AddByte(uint8_t b) override { state_ = (state_ * 1315423911u) ^ b; }
+    void AddString(std::string_view s) override {
+        for (unsigned char c : s)
+            AddByte(c);
+    }
+    void AddUint64(uint64_t v) override { AddByte(static_cast<uint8_t>(v & 0xff)); }
+    void AddBool(bool v) override { AddByte(v ? 1 : 0); }
+    std::string Hex() const override { return "fake_" + std::to_string(state_); }
+    std::unique_ptr<IHashAlgorithm> Clone() const override { return std::make_unique<FakeHash>(); }
+
+private:
+    uint64_t state_ = 0;
+};
+
 }  // namespace
 
 TEST(SummaryWriter, WritesSummaryAndHashes) {
@@ -83,4 +100,29 @@ TEST(SummaryWriter, WritesSummaryAndHashes) {
     EXPECT_NE(content.find("\"binary\""), std::string::npos);
     EXPECT_NE(content.find("\"partitions\""), std::string::npos);
     EXPECT_NE(content.find("libfake.so"), std::string::npos);
+}
+
+TEST(SummaryWriter, AcceptsCustomHashService) {
+    auto scanner = std::make_shared<FakeScanner>();
+    auto algo = std::make_shared<FakeHash>();
+    auto hash_calc = std::make_shared<SummaryHashCalculator>(algo, HashService(algo));
+    SummaryWriter writer("/tmp/splitter_test_out_custom", scanner, hash_calc);
+
+    std::vector<Partition> parts;
+    parts.push_back(MakePartition("p0"));
+
+    std::vector<PartitionFiles> files;
+    files.push_back(MakeFiles("p0"));
+
+    MemorySegment seg;
+    seg.SetName(".data");
+    seg.SetAddress(0x2000);
+    seg.Bytes() = {0xaa, 0xbb};
+    std::vector<MemorySegment> mem = {seg};
+
+    writer.Write(parts, files, mem, "/bin/ls");
+    std::ifstream in("/tmp/splitter_test_out_custom/summary.json");
+    ASSERT_TRUE(in.is_open());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("fake_"), std::string::npos);  // hash issu du FakeHash
 }

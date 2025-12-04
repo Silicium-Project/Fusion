@@ -1,6 +1,7 @@
 #include "splitter/support/HashService.hpp"
 
 #include <fstream>
+#include <cstdlib>
 
 namespace splitter {
 
@@ -27,6 +28,16 @@ std::string HashService::HashFile(const std::string& path) const {
     std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)),
                                 std::istreambuf_iterator<char>());
     return HashBytes(buffer);
+}
+
+HashService MakeHashServiceFromEnv() {
+    const char* algo = std::getenv("SPLITTER_HASH_ALGO");
+    if (!algo)
+        return HashService(std::make_shared<FnvHashAlgorithm>());
+    std::string name(algo);
+    if (name == "std")
+        return HashService(std::make_shared<StdHashAlgorithm>());
+    return HashService(std::make_shared<FnvHashAlgorithm>());
 }
 
 }  // namespace splitter

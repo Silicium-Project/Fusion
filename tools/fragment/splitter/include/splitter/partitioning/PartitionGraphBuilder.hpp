@@ -6,12 +6,12 @@
 #include <set>
 #include <sstream>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "splitter/core/Partition.hpp"
 #include "splitter/partitioning/CallNormalizer.hpp"
 #include "splitter/support/HashService.hpp"
+#include "splitter/support/FlatMap.hpp"
 
 namespace splitter {
 
@@ -28,19 +28,19 @@ public:
 
 private:
     void BuildIndices(const std::vector<Partition>& partitions,
-                      std::unordered_map<uint64_t, size_t>& addr_index,
-                      std::unordered_map<std::string, size_t>& id_index,
+                      FlatMap<uint64_t, size_t>& addr_index,
+                      FlatMap<std::string, size_t>& id_index,
                       std::vector<std::set<std::string>>& parent_sets) const;
     void ResolveDependencies(std::vector<Partition>& partitions, const CallMatrix& call_refs,
-                             const std::unordered_map<uint64_t, size_t>& addr_index,
+                             const FlatMap<uint64_t, size_t>& addr_index,
                              std::vector<std::set<std::string>>& parent_sets) const;
     void AttachParents(std::vector<Partition>& partitions,
                        const std::vector<std::set<std::string>>& parent_sets) const;
     void CollectExternalCalls(std::vector<Partition>& partitions,
                               const CallMatrix& call_refs,
-                              const std::unordered_map<uint64_t, size_t>& addr_index) const;
+                              const FlatMap<uint64_t, size_t>& addr_index) const;
     void ComputeExternalInputs(std::vector<Partition>& partitions,
-                               const std::unordered_map<std::string, size_t>& id_index) const;
+                               const FlatMap<std::string, size_t>& id_index) const;
 
     Normalizer normalizer_;
     HashService hash_service_;
@@ -67,8 +67,8 @@ inline std::string UnresolvedLabel(const CallRef& call) {
 
 template <typename Normalizer>
 void PartitionGraphBuilder<Normalizer>::BuildIndices(const std::vector<Partition>& partitions,
-                                                     std::unordered_map<uint64_t, size_t>& addr_index,
-                                                     std::unordered_map<std::string, size_t>& id_index,
+                                                     FlatMap<uint64_t, size_t>& addr_index,
+                                                     FlatMap<std::string, size_t>& id_index,
                                                      std::vector<std::set<std::string>>& parent_sets) const {
     parent_sets.clear();
     parent_sets.resize(partitions.size());
@@ -84,7 +84,7 @@ void PartitionGraphBuilder<Normalizer>::BuildIndices(const std::vector<Partition
 template <typename Normalizer>
 void PartitionGraphBuilder<Normalizer>::ResolveDependencies(
     std::vector<Partition>& partitions, const CallMatrix& call_refs,
-    const std::unordered_map<uint64_t, size_t>& addr_index,
+    const FlatMap<uint64_t, size_t>& addr_index,
     std::vector<std::set<std::string>>& parent_sets) const {
     for (size_t idx = 0; idx < partitions.size(); ++idx) {
         std::set<std::string> dependency_set;
@@ -121,7 +121,7 @@ void PartitionGraphBuilder<Normalizer>::AttachParents(
 template <typename Normalizer>
 void PartitionGraphBuilder<Normalizer>::CollectExternalCalls(
     std::vector<Partition>& partitions, const CallMatrix& call_refs,
-    const std::unordered_map<uint64_t, size_t>& addr_index) const {
+    const FlatMap<uint64_t, size_t>& addr_index) const {
     auto resolves_to_partition = [&](size_t idx, const CallRef& call) {
         if (!call.first.has_value())
             return false;
@@ -153,7 +153,7 @@ void PartitionGraphBuilder<Normalizer>::CollectExternalCalls(
 
 template <typename Normalizer>
 void PartitionGraphBuilder<Normalizer>::ComputeExternalInputs(
-    std::vector<Partition>& partitions, const std::unordered_map<std::string, size_t>& id_index) const {
+    std::vector<Partition>& partitions, const FlatMap<std::string, size_t>& id_index) const {
     for (auto& partition : partitions) {
         FlatStringSet provided;
         for (const auto& parent_id : partition.Parents()) {
@@ -174,8 +174,8 @@ void PartitionGraphBuilder<Normalizer>::ComputeExternalInputs(
 template <typename Normalizer>
 void PartitionGraphBuilder<Normalizer>::BuildGraph(std::vector<Partition>& partitions,
                                                    const CallMatrix& call_refs) const {
-    std::unordered_map<uint64_t, size_t> addr_index;
-    std::unordered_map<std::string, size_t> id_index;
+    FlatMap<uint64_t, size_t> addr_index;
+    FlatMap<std::string, size_t> id_index;
     std::vector<std::set<std::string>> parent_sets;
 
     BuildIndices(partitions, addr_index, id_index, parent_sets);

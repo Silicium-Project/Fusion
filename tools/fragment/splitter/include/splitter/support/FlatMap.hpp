@@ -74,6 +74,7 @@ public:
     bool empty() const noexcept { return data_.empty(); }
 
     const container_type& values() const noexcept { return data_; }
+    void clear() noexcept { data_.clear(); }
 
 private:
     iterator lower_bound(const K& key) {
