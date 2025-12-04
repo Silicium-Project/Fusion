@@ -24,22 +24,24 @@ RegisterCatalog::RegisterCatalog()
           Register("xmm2"),       Register("xmm3"),       Register("xmm4"),
           Register("xmm5"),       Register("xmm6"),       Register("xmm7")}} {
     lookup_.reserve(registers_.size());
-    for (const auto& reg : registers_)
-        lookup_.emplace(reg.Name(), &reg);
+    for (std::size_t idx = 0; idx < registers_.size(); ++idx)
+        lookup_.emplace(registers_[idx].Name(), idx);
 }
 
-const Register* RegisterCatalog::Find(std::string_view name) const {
+std::optional<std::reference_wrapper<const Register>> RegisterCatalog::Find(std::string_view name) const {
     auto it = lookup_.find(name);
-    return (it == lookup_.end()) ? nullptr : it->second;
+    if (it == lookup_.end())
+        return std::nullopt;
+    return std::cref(registers_[it->second]);
 }
 
 bool RegisterCatalog::Contains(std::string_view candidate) const {
-    return Find(candidate) != nullptr;
+    return Find(candidate).has_value();
 }
 
 bool RegisterCatalog::IsCallClobbered(std::string_view candidate) const {
     auto reg = Find(candidate);
-    return reg != nullptr && reg->IsCallClobbered();
+    return reg.has_value() && reg->get().IsCallClobbered();
 }
 
 const std::array<Register, Register::kCount>& Register::All() noexcept {

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <functional>
+#include <optional>
 #include <string_view>
 #include <unordered_map>
 
@@ -15,13 +18,13 @@ public:
     [[nodiscard]] const std::array<Register, Register::kCount>& All() const noexcept { return registers_; }
     [[nodiscard]] bool Contains(std::string_view candidate) const;
     [[nodiscard]] bool IsCallClobbered(std::string_view candidate) const;
-    [[nodiscard]] const Register* Find(std::string_view name) const;
+    [[nodiscard]] std::optional<std::reference_wrapper<const Register>> Find(std::string_view name) const;
 
 private:
     RegisterCatalog();
 
     std::array<Register, Register::kCount> registers_;
-    std::unordered_map<std::string_view, const Register*, std::hash<std::string_view>, std::equal_to<>> lookup_;
+    std::unordered_map<std::string_view, std::size_t, std::hash<std::string_view>, std::equal_to<>> lookup_;
 };
 
 }  // namespace splitter
