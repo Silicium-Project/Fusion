@@ -8,22 +8,6 @@
 
 namespace splitter {
 
-namespace {
-
-static std::string ShellQuote(const std::string& path) {
-    std::string quoted = "'";
-    for (char ch : path) {
-        if (ch == '\'')
-            quoted += "'\\''";
-        else
-            quoted.push_back(ch);
-    }
-    quoted += "'";
-    return quoted;
-}
-
-}  // namespace
-
 std::set<std::string> DefaultSymbolIndexer::ListExportedSymbols(const std::string& path) const {
     if (path.empty())
         return {};
