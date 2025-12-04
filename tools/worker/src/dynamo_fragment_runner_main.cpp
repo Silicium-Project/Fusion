@@ -4,6 +4,7 @@
 
 #include "fragment/cli.hpp"
 #include "worker/task_serializer.hpp"
+#include "worker/task_types.hpp"
 
 namespace {
 
@@ -56,8 +57,8 @@ void apply_memory(fragment::FragmentExecutor& executor,
 }
 
 void apply_registers(fragment::FragmentExecutor& executor,
-                     const std::map<std::string, uint64_t>& register_state,
-                     const std::map<std::string, uint64_t>& overrides) {
+                     const worker::RegisterState& register_state,
+                     const worker::RegisterState& overrides) {
     for (const auto& [reg, value] : register_state) {
         if (overrides.count(reg))
             continue;

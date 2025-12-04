@@ -1,6 +1,5 @@
 #include <fstream>
 #include <iostream>
-#include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -17,7 +16,7 @@ struct CliOptions {
     std::string summary_path;
     std::vector<std::string> task_ids;
     std::string queue_file;
-    std::map<std::string, uint64_t> default_inputs;
+    worker::RegisterState default_inputs;
     std::string dynamo_binary;
     std::vector<std::string> dynamo_args;
     std::string runner_binary;

@@ -41,8 +41,8 @@ private:
     }
 
     static void apply_register_state(fragment::FragmentExecutor& executor,
-                                     const std::map<std::string, uint64_t>& register_state,
-                                     const std::map<std::string, uint64_t>& overrides) {
+                                     const RegisterState& register_state,
+                                     const RegisterState& overrides) {
         for (const auto& [reg, value] : register_state) {
             if (overrides.count(reg))
                 continue;

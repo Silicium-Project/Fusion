@@ -2,7 +2,7 @@
 
 #include <iosfwd>
 
-#include "worker/types.hpp"
+#include "worker/worker_report.hpp"
 
 namespace worker {
 

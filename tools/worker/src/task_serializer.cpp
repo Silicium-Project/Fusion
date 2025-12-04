@@ -58,7 +58,7 @@ std::string encode_hex(const std::vector<uint8_t>& bytes) {
     return out;
 }
 
-std::string join_kv_pairs(const std::map<std::string, uint64_t>& values) {
+std::string join_kv_pairs(const RegisterState& values) {
     std::ostringstream oss;
     bool first = true;
     for (const auto& [reg, value] : values) {
@@ -70,8 +70,8 @@ std::string join_kv_pairs(const std::map<std::string, uint64_t>& values) {
     return oss.str();
 }
 
-std::map<std::string, uint64_t> parse_kv_pairs(const std::vector<std::string>& entries) {
-    std::map<std::string, uint64_t> values;
+RegisterState parse_kv_pairs(const std::vector<std::string>& entries) {
+    RegisterState values;
     for (const auto& entry : entries) {
         const auto pos = entry.find('=');
         if (pos == std::string::npos)
@@ -111,8 +111,7 @@ std::vector<MemorySnapshot> parse_memory(const std::vector<std::string>& entries
     return pages;
 }
 
-std::string build_kv_array(const std::map<std::string, uint64_t>& values,
-                           const std::string& name) {
+std::string build_kv_array(const RegisterState& values, const std::string& name) {
     std::ostringstream oss;
     oss << "  \"" << name << "\":[" << join_kv_pairs(values) << "]";
     return oss.str();
@@ -161,7 +160,7 @@ std::vector<std::string> get_json_string_array(json_t* root, const char* key) {
     return out;
 }
 
-std::map<std::string, uint64_t> parse_register_map(json_t* root, const char* key) {
+RegisterState parse_register_map(json_t* root, const char* key) {
     return parse_kv_pairs(get_json_string_array(root, key));
 }
 

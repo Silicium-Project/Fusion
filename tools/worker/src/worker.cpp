@@ -25,7 +25,7 @@ void Worker::record_memory_patches(const std::vector<fragment::MemoryPatch>& pat
         memory_lut_.apply_patch(patch);
 }
 
-void Worker::record_register_state(const std::map<std::string, uint64_t>& regs) {
+void Worker::record_register_state(const RegisterState& regs) {
     register_state_ = regs;
 }
 

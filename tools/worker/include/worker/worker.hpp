@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,7 +10,10 @@
 
 #include "worker/backend_connector.hpp"
 #include "worker/memory_lut.hpp"
-#include "worker/types.hpp"
+#include "worker/task.hpp"
+#include "worker/task_report.hpp"
+#include "worker/task_types.hpp"
+#include "worker/worker_config.hpp"
 
 namespace worker {
 
@@ -30,14 +32,14 @@ public:
 private:
     WorkerConfig config_;
     MemoryLut memory_lut_;
-    std::map<std::string, uint64_t> register_state_;
+    RegisterState register_state_;
     std::unique_ptr<BackendConnector> connector_;
     std::vector<MemorySnapshot> initial_memory_;
 
     void apply_memory_state(fragment::FragmentExecutor& executor);
     void apply_register_state(fragment::FragmentExecutor& executor, const Task& task);
     void record_memory_patches(const std::vector<fragment::MemoryPatch>& patches);
-    void record_register_state(const std::map<std::string, uint64_t>& regs);
+    void record_register_state(const RegisterState& regs);
 
     TaskReport build_report(const fragment::PartitionInfo& partition,
                             const Task& task,

@@ -8,7 +8,7 @@
 
 namespace worker {
 
-uint64_t parse_register_value(const std::string& token) {
+RegisterValue parse_register_value(const std::string& token) {
     if (token.empty())
         throw std::runtime_error("Valeur vide");
 

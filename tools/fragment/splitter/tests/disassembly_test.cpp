@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "splitter/disassembly.hpp"
+#include "splitter/analysis/ObjdumpDisassembler.hpp"
 
 using namespace splitter;
 
@@ -10,13 +10,12 @@ TEST(Disassembly, ParseObjdumpOutput) {
         "   1000:\t48 89 d8\tmov    rax,rbx\n"
         "   1003:\tc3      \tret\n";
 
-    auto functions = parse_objdump_output(sample);
+    auto functions = ObjdumpDisassembler::ParseOutput(sample);
 
     ASSERT_EQ(functions.size(), 1u);
     const Function& func = functions.front();
-    EXPECT_EQ(func.name, "demo");
-    ASSERT_EQ(func.instructions.size(), 2u);
-    EXPECT_EQ(func.instructions[0].opcode, "mov");
-    EXPECT_EQ(func.instructions[1].opcode, "ret");
+    EXPECT_EQ(func.Name(), "demo");
+    ASSERT_EQ(func.Instructions().size(), 2u);
+    EXPECT_EQ(func.Instructions()[0].Opcode(), "mov");
+    EXPECT_EQ(func.Instructions()[1].Opcode(), "ret");
 }
-

@@ -1,5 +1,5 @@
 CXX := g++
-CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic
+CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic -fPIE
 CC := gcc
 CFLAGS := -O0 -g -no-pie
 
@@ -38,18 +38,18 @@ BUILD_WITH_DOCKER ?= $(BUILDER_WRAPPER)
 
 .PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test build-cpp-test-image
 
-SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
+SRC_FILES := $(shell find $(SRC_DIR) -name '*.cpp')
 OBJ_DIR := build
 OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
 CPPFLAGS := -Iinclude
 
-TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp tests/hash_test.cpp
-TEST_EXTRA_SRCS := src/instruction_analysis.cpp src/disassembly.cpp src/util.cpp
+TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp tests/hash_test.cpp tests/partitioner_test.cpp tests/summary_writer_test.cpp
+TEST_EXTRA_SRCS := $(filter-out $(SRC_DIR)/main.cpp,$(SRC_FILES))
 TEST_BUILD_DIR := build/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
 TEST_BIN := $(TEST_BUILD_DIR)/splitter_tests
 TEST_TEST_OBJS := $(patsubst tests/%.cpp,$(TEST_OBJ_DIR)/tests/%.o,$(TEST_SRCS))
-TEST_EXTRA_OBJS := $(patsubst src/%.cpp,$(TEST_OBJ_DIR)/src/%.o,$(TEST_EXTRA_SRCS))
+TEST_EXTRA_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/src/%.o,$(TEST_EXTRA_SRCS))
 TEST_OBJS := $(TEST_TEST_OBJS) $(TEST_EXTRA_OBJS)
 TEST_CXX ?= $(CXX)
 TEST_CXXFLAGS ?= $(CXXFLAGS) --coverage
@@ -61,6 +61,7 @@ $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
+	@mkdir -p $(dir $@)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
 $(SPLITTER_BIN): $(OBJS)
@@ -78,7 +79,8 @@ $(TEST_OBJ_DIR)/src:
 $(TEST_OBJ_DIR)/tests/%.o: tests/%.cpp | $(TEST_OBJ_DIR)/tests
 	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
 
-$(TEST_OBJ_DIR)/src/%.o: src/%.cpp | $(TEST_OBJ_DIR)/src
+$(TEST_OBJ_DIR)/src/%.o: $(SRC_DIR)/%.cpp | $(TEST_OBJ_DIR)/src
+	@mkdir -p $(dir $@)
 	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
 
 $(TEST_BIN): $(TEST_OBJS) | $(TEST_BUILD_DIR)

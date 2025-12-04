@@ -1,8 +1,10 @@
 #include "fragment/cli.hpp"
 
+#include "fragment/execution_router.hpp"
 #include "fragment/logging.hpp"
-#include "fragment/utils.hpp"
+#include "fragment/partition_registry.hpp"
 #include "fragment/partition_summary.hpp"
+#include "fragment/utils.hpp"
 
 #include <fstream>
 #include <functional>
@@ -10,33 +12,13 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
-#ifdef __linux__
-#include <dlfcn.h>
-#endif
 
 namespace fragment {
 
 namespace {
 
-const std::vector<PartitionInfo>* g_partition_registry = nullptr;
-std::unordered_map<std::string, const PartitionInfo*> g_partition_lookup;
-std::unordered_set<std::string> g_preloaded_dependencies;
-
-const PartitionInfo* lookup_partition(const std::string& id) {
-    auto it = g_partition_lookup.find(id);
-    if (it == g_partition_lookup.end())
-        return nullptr;
-    return it->second;
-}
-
-std::vector<uint8_t> read_binary_file(const std::string& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) {
-        log::warning("Impossible d'ouvrir " + path
-                     + " pour initialiser les dépendances natives.");
-        return {};
-    }
-    return std::vector<uint8_t>(std::istreambuf_iterator<char>(file), {});
+PartitionRegistry& registry() {
+    return global_partition_registry();
 }
 
 std::string derive_binary_path(const PartitionInfo& info) {
@@ -49,117 +31,8 @@ std::string derive_binary_path(const PartitionInfo& info) {
     return path + ".bin";
 }
 
-struct UnresolvedHook {
-    uint64_t address = 0;
-    std::string symbol;
-};
-
-std::optional<UnresolvedHook> parse_unresolved_descriptor(const std::string& desc) {
-    size_t lt = desc.find('<');
-    size_t gt = desc.find('>', lt == std::string::npos ? 0 : lt + 1);
-    if (lt == std::string::npos || gt == std::string::npos)
-        return std::nullopt;
-    std::string addr_text = fragment::trim(desc.substr(0, lt));
-    if (addr_text.empty())
-        return std::nullopt;
-    uint64_t addr = 0;
-    try {
-        addr = std::stoull(addr_text, nullptr, 16);
-    } catch (...) {
-        return std::nullopt;
-    }
-    std::string symbol = desc.substr(lt + 1, gt - lt - 1);
-    auto at_pos = symbol.find('@');
-    if (at_pos != std::string::npos)
-        symbol = symbol.substr(0, at_pos);
-    return UnresolvedHook{addr, symbol};
-}
-
-void preload_dependency_code(const PartitionInfo& meta, FragmentExecutor& executor) {
-    if (!g_partition_registry)
-        return;
-
-    std::function<void(const PartitionInfo&)> loader = [&](const PartitionInfo& part) {
-        for (const auto& dep_id : part.dependencies) {
-            if (!g_preloaded_dependencies.insert(dep_id).second)
-                continue;
-            const PartitionInfo* dep = lookup_partition(dep_id);
-            if (!dep) {
-                log::warning("Partition dépendante inconnue: " + dep_id);
-                continue;
-            }
-            if (!dep->start_address.has_value()) {
-                log::warning("Adresse de départ manquante pour la partition dépendante: " + dep_id);
-                continue;
-            }
-            const std::string bin_path = derive_binary_path(*dep);
-            auto bytes = read_binary_file(bin_path);
-            if (bytes.empty())
-                continue;
-            executor.preload_native_chunk(*dep->start_address, bytes);
-            loader(*dep);
-        }
-    };
-
-    loader(meta);
-}
-
-void install_unresolved_hooks(const PartitionInfo& meta, FragmentExecutor& executor) {
-#ifdef __linux__
-    for (const auto& call : meta.unresolved_calls) {
-        auto info = parse_unresolved_descriptor(call);
-        if (!info)
-            continue;
-        void* target = dlsym(RTLD_DEFAULT, info->symbol.c_str());
-        if (!target)
-            continue;
-        uint64_t fn_addr = reinterpret_cast<uint64_t>(target);
-        std::vector<uint8_t> stub;
-        stub.reserve(12);
-        stub.push_back(0x48);
-        stub.push_back(0xB8);
-        for (size_t idx = 0; idx < 8; ++idx)
-            stub.push_back(static_cast<uint8_t>((fn_addr >> (idx * 8)) & 0xFF));
-        stub.push_back(0xFF);
-        stub.push_back(0xE0);
-        executor.preload_native_chunk(info->address, stub);
-    }
-#else
-    (void)meta;
-    (void)executor;
-#endif
-}
-
-}  // namespace
-
-void set_partition_registry(const std::vector<PartitionInfo>* partitions) {
-    g_partition_registry = partitions;
-    g_partition_lookup.clear();
-    g_preloaded_dependencies.clear();
-    if (!g_partition_registry)
-        return;
-    for (const auto& partition : *g_partition_registry)
-        g_partition_lookup.emplace(partition.id, &partition);
-}
-
-static uint64_t parse_input_value(const std::string& token) {
-    if (token.size() > 2 && (token.substr(0, 2) == "0x" || token.substr(0, 2) == "0X"))
-        return std::stoull(token, nullptr, 16);
-    return std::stoull(token);
-}
-
-static void add_input_argument(const std::string& arg, std::map<std::string, uint64_t>& inputs) {
-    size_t eq_pos = arg.find('=');
-    if (eq_pos == std::string::npos)
-        throw std::runtime_error("Argument --input invalide: " + arg);
-    std::string reg = arg.substr(0, eq_pos);
-    std::string value_token = arg.substr(eq_pos + 1);
-    inputs[reg] = parse_input_value(value_token);
-}
-
-static std::vector<std::reference_wrapper<const PartitionInfo>> order_plan(
+std::vector<std::reference_wrapper<const PartitionInfo>> order_plan(
         const std::vector<PartitionInfo>& partitions) {
-
     std::vector<std::reference_wrapper<const PartitionInfo>> ordered;
     auto ids = order_partitions(partitions);
     std::unordered_map<std::string, std::reference_wrapper<const PartitionInfo>> lookup;
@@ -175,6 +48,12 @@ static std::vector<std::reference_wrapper<const PartitionInfo>> order_plan(
     return ordered;
 }
 
+}  // namespace
+
+void set_partition_registry(const std::vector<PartitionInfo>* partitions) {
+    registry().set(partitions);
+}
+
 void print_usage(std::string_view prog) {
     std::cout << "Usage: " << prog
               << " <asm_file> [<asm_file> ...] [--input reg=value ...] [--native] [--log fichier]\n"
@@ -188,39 +67,6 @@ void print_usage(std::string_view prog) {
               << "  --native          : Active l'exécution native (risquée)\n"
               << "  --native-force   : Ignore les garde-fous natifs (extrêmement risqué)\n"
               << "  --log fichier     : Capture uniquement la sortie stdout des fragments dans un fichier\n";
-}
-
-CliOptions parse_arguments(const std::vector<std::string_view>& args) {
-    CliOptions opts;
-
-    for (size_t i = 1; i < args.size(); ++i) {
-        std::string arg(args[i]);
-
-        if (arg == "--native")
-            opts.native_mode = true;
-        else if (arg == "--native-force") {
-            opts.native_mode = true;
-            opts.force_native = true;
-        }
-        else if (arg == "--summary") {
-            if (i + 1 >= args.size())
-                throw std::runtime_error("Option --summary requiert un fichier (summary.json)");
-            opts.summary_file = std::string(args[++i]);
-        } else if (arg == "--input") {
-            if (i + 1 >= args.size())
-                throw std::runtime_error("Option --input requiert un argument de la forme reg=val");
-            add_input_argument(std::string(args[++i]), opts.inputs);
-        } else if (arg == "--log") {
-            if (i + 1 >= args.size())
-                throw std::runtime_error("Option --log requiert un fichier (ex: --log exec.log)");
-            opts.log_path = std::string(args[++i]);
-        } else if (arg == "--help")
-            throw std::runtime_error("Option --help demandée");
-        else
-            opts.asm_files.push_back(arg);
-    }
-
-    return opts;
 }
 
 bool open_log_file(const std::string& path, std::ofstream& stream) {
@@ -345,53 +191,8 @@ bool execute_entry(const ExecutionEntry& entry,
                    bool force_native,
                    FragmentExecutor& executor,
                    ExecutionResult& result) {
-    if (native_mode && entry.meta.has_value()) {
-        const auto& meta = entry.meta->get();
-        const bool has_calls = !meta.unresolved_calls.empty();
-        const bool has_deps = !meta.dependencies.empty();
-
-        if ((has_calls || has_deps) && force_native) {
-            log::warning("Fragment " + entry.name
-                         + " contient des appels externes ou dépendances, exécution native forcée.");
-        } else if (has_calls) {
-            log::warning("Fragment " + entry.name
-                         + " contient des appels externes ("
-                         + std::to_string(meta.unresolved_calls.size())
-                         + "), repli sur l'émulation sécurisée.");
-            native_mode = false;
-        } else if (has_deps) {
-            log::warning("Fragment " + entry.name
-                         + " dépend d'autres partitions ("
-                         + std::to_string(meta.dependencies.size())
-                         + "), repli sur l'émulation sécurisée.");
-            native_mode = false;
-        }
-    }
-
-    if (native_mode && entry.meta.has_value()) {
-        preload_dependency_code(entry.meta->get(), executor);
-        install_unresolved_hooks(entry.meta->get(), executor);
-    }
-
-    if (!native_mode) {
-        result = executor.execute_safe(entry.asm_path);
-        return true;
-    }
-
-    const std::string bin_file = derive_binary_path(entry);
-    std::ifstream file(bin_file, std::ios::binary);
-    if (!file) {
-        log::error("Impossible d'ouvrir " + bin_file);
-        return false;
-    }
-
-    std::vector<uint8_t> binary_code((std::istreambuf_iterator<char>(file)),
-                                     std::istreambuf_iterator<char>());
-    std::optional<uint64_t> original_address;
-    if (entry.meta.has_value())
-        original_address = entry.meta->get().start_address;
-    result = executor.execute_native(binary_code, original_address);
-    return true;
+    ExecutionRouter router(native_mode, force_native);
+    return router.run(entry, executor, result);
 }
 
 void log_program_output(std::ofstream& log_stream, const ExecutionResult& result) {

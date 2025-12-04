@@ -1,4 +1,4 @@
-#include "splitter/pipeline.hpp"
+#include "splitter/cli/SplitterCli.hpp"
 
 #include <string_view>
 #include <vector>
@@ -9,5 +9,5 @@ int main(int argc, char** argv) {
     for (int i = 0; i < argc; ++i)
         args.emplace_back(argv[i]);
 
-    return splitter::run_cli(args);
+    return splitter::SplitterCli::Run(args);
 }

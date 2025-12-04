@@ -34,7 +34,9 @@ DYNAMO_RUNNER_OBJ := $(WORKER_OBJ_DIR)/$(notdir $(RUNNER_MAIN_SRC:.cpp=.o))
 
 FRAGMENT_SRC_DIR := ../fragment/executor/src
 FRAGMENT_SOURCES := fragment_executor.cpp register_emulator.cpp instruction_emulator.cpp \
-	segment_loader.cpp execution_result.cpp logging.cpp utils.cpp cli.cpp partition_summary.cpp
+	segment_loader.cpp execution_result.cpp logging.cpp utils.cpp cli.cpp partition_summary.cpp \
+	hash.cpp json_hasher.cpp execution_router.cpp option_parser.cpp arg_parser.cpp \
+	partition_registry.cpp emulated_runner.cpp native_runner.cpp runner.cpp
 FRAGMENT_OBJS := $(patsubst %.cpp,$(FRAGMENT_OBJ_DIR)/%.o,$(FRAGMENT_SOURCES))
 
 TEST_SRCS := tests/queue_loader_test.cpp tests/worker_runner_test.cpp tests/stateful_worker_test.cpp

@@ -1,21 +1,21 @@
 #pragma once
 
-#include <map>
 #include <string>
 #include <vector>
 
 #include "fragment/execution_result.hpp"
 #include "worker/memory_snapshot.hpp"
+#include "worker/task_types.hpp"
 
 namespace worker {
 
 struct TaskPayload {
-    std::string partition_id;
+    PartitionId partition_id;
     std::string asm_path;
     std::string binary_path;
     bool native_mode = false;
-    std::map<std::string, uint64_t> inputs;
-    std::map<std::string, uint64_t> register_state;
+    RegisterState inputs;
+    RegisterState register_state;
     std::vector<MemorySnapshot> memory_state;
 };
 

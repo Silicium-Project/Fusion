@@ -6,8 +6,10 @@
 
 #include "fragment/partition_summary.hpp"
 
-#include "worker/types.hpp"
 #include "worker/worker.hpp"
+#include "worker/worker_config.hpp"
+#include "worker/task.hpp"
+#include "worker/task_report.hpp"
 
 namespace worker {
 
