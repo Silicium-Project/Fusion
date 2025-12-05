@@ -3,6 +3,8 @@ CXXFLAGS := -std=c++17 -O2 -g -Wall -Wextra -pedantic -fPIE
 CC := gcc
 CFLAGS := -O0 -g -no-pie
 
+HOST_UID := $(shell id -u)
+HOST_GID := $(shell id -g)
 JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 MAKEFLAGS += -j$(JOBS)
 
@@ -156,9 +158,6 @@ run-internal: all executor prep-program
 run-binary: all prep-program
 	@echo "==> Exécution du binaire original: $(RUN_BIN) $(ARGS)"
 	@$(RUN_BIN) $(ARGS)
-
-HOST_UID := $(shell id -u)
-HOST_GID := $(shell id -g)
 
 test: build-cpp-test-image
 	@mkdir -p $(CCACHE_DIR)

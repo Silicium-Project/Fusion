@@ -95,7 +95,7 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
 
     return std::make_unique<PipelineRunner>(std::move(config), std::move(phases[0]),
                                             std::move(phases[1]), std::move(phases[2]),
-                                            std::move(phases[3]));
+                                            std::move(phases[3]), nullptr);
 }
 
 }  // namespace splitter

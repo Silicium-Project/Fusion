@@ -18,6 +18,7 @@
 #include "splitter/pipeline/AnalysisPhase.hpp"
 #include "splitter/pipeline/ArtifactsPhase.hpp"
 #include "splitter/pipeline/DisassemblyPhase.hpp"
+#include "splitter/pipeline/ConsoleReporter.hpp"
 #include "splitter/pipeline/PartitioningPhase.hpp"
 #include "splitter/pipeline/PipelineFactory.hpp"
 #include "splitter/partitioning/Partitioner.hpp"
@@ -64,15 +65,20 @@ PipelineRunner::PipelineRunner(PipelineConfig config,
                                std::unique_ptr<IPipelinePhase> disassembly,
                                std::unique_ptr<IPipelinePhase> analysis,
                                std::unique_ptr<IPipelinePhase> partitioning,
-                               std::unique_ptr<IPipelinePhase> artifacts)
+                               std::unique_ptr<IPipelinePhase> artifacts,
+                               std::unique_ptr<IReporter> reporter)
     : context_(std::move(config)),
       disassembly_(std::move(disassembly)),
       analysis_(std::move(analysis)),
       partitioning_(std::move(partitioning)),
-      artifacts_(std::move(artifacts)) {}
+      artifacts_(std::move(artifacts)),
+      reporter_(std::move(reporter)) {
+    if (!reporter_)
+        reporter_ = std::make_unique<ConsoleReporter>();
+}
 
 int PipelineRunner::Run() {
-    std::cout << "=== Désassemblage de " << context_.config.binary_path.Value() << " ===\n\n";
+    reporter_->Banner("=== Désassemblage de " + context_.config.binary_path.Value() + " ===");
     auto run_phase = [&](std::unique_ptr<IPipelinePhase>& phase) -> bool {
         try {
             phase->Execute(context_);
@@ -86,7 +92,7 @@ int PipelineRunner::Run() {
     if (!run_phase(disassembly_))
         return 1;
 
-    std::cout << "Fonctions trouvées: " << context_.functions.size() << "\n\n";
+    reporter_->Info("Fonctions trouvées: " + std::to_string(context_.functions.size()));
     PrintFunctionOverview(context_.functions);
     if (context_.config.dump_full_disassembly)
         DumpDisassembly(context_.disassembly);
@@ -95,10 +101,10 @@ int PipelineRunner::Run() {
         return 1;
     ReportLoops(context_.functions);
 
-    std::cout << "\n=== Partitionnement du binaire ===\n\n";
+    reporter_->Banner("=== Partitionnement du binaire ===");
     if (!run_phase(partitioning_))
         return 1;
-    std::cout << "Partitions créées: " << context_.partitions.size() << "\n";
+    reporter_->Info("Partitions créées: " + std::to_string(context_.partitions.size()));
     const std::size_t max_partitions =
         []() {
             if (auto env = GetEnv("SPLITTER_MAX_PARTITIONS"))
@@ -118,24 +124,14 @@ int PipelineRunner::Run() {
 
     if (!run_phase(artifacts_))
         return 1;
-    std::cout << "\n=== Terminé ===\n";
-    std::cout << "\nPartitions: " << context_.config.output_dir.Value() << "/\n";
+    reporter_->Banner("=== Terminé ===");
+    reporter_->Info("Partitions: " + context_.config.output_dir.Value() + "/");
     return 0;
 }
 
 void PipelineRunner::PrintFunctionOverview(const std::vector<Function>& functions) const {
-    std::cout << "=== Fonctions désassemblées ===\n\n";
-    const size_t preview = std::min(context_.config.function_preview, functions.size());
-    for (size_t i = 0; i < preview; ++i) {
-        const auto& func = functions[i];
-        uint64_t size = func.EndAddr() - func.StartAddr();
-        std::cout << "  " << std::left << std::setw(30) << func.Name()
-                  << " @ 0x" << std::hex << std::setw(10) << func.StartAddr()
-                  << std::dec << " (" << std::setw(4) << func.Instructions().size()
-                  << " insts, " << std::setw(5) << size << " bytes)\n";
-    }
-    if (functions.size() > preview)
-        std::cout << "  ... (" << (functions.size() - preview) << " autres fonctions)\n";
+    reporter_->Banner("=== Fonctions désassemblées ===");
+    reporter_->ReportFunctions(functions, context_.config.function_preview);
 }
 
 void PipelineRunner::DumpDisassembly(const std::string& disasm) const {
@@ -143,39 +139,16 @@ void PipelineRunner::DumpDisassembly(const std::string& disasm) const {
     const std::string path = context_.config.output_dir.Value() + "/disassembly_full.asm";
     std::ofstream full_asm(path);
     full_asm << disasm;
-    std::cout << "\nDésassemblage complet: " << path << "\n";
+    reporter_->Info("Désassemblage complet: " + path);
 }
 
 void PipelineRunner::ReportLoops(std::vector<Function>& functions) const {
-    std::cout << "\n=== Analyse des boucles ===\n\n";
-    std::vector<std::reference_wrapper<Function>> loop_functions;
-    for (auto& func : functions)
-        if (func.IsLoop())
-            loop_functions.push_back(func);
-
-    std::cout << "Fonctions avec boucles: " << loop_functions.size() << "\n\n";
-    const size_t preview = std::min(context_.config.loop_preview, loop_functions.size());
-    for (size_t i = 0; i < preview; ++i) {
-        const Function& func = loop_functions[i];
-        auto loop_info = X86InstructionAnalyzer::Instance().DetectLoopPatterns(func);
-        std::string status = loop_info.parallelizable ? "PARALLÉLISABLE" : "SÉQUENTIELLE";
-        std::cout << "  " << std::left << std::setw(30) << func.Name() << " - " << status << "\n";
-        if (!loop_info.reason.empty())
-            std::cout << "    Raison: " << loop_info.reason << "\n";
-    }
+    reporter_->Banner("=== Analyse des boucles ===");
+    reporter_->ReportLoops(functions, context_.config.loop_preview);
 }
 
 void PipelineRunner::ReportPartition(const Partition& partition) const {
-    std::string status = partition.IsParallelizable() ? "PARALLÈLE" : "SÉQUENTIEL";
-    std::cout << "\nPartition: " << partition.Id() << " (" << status << ")\n";
-    std::cout << "  Adresse: 0x" << std::hex << partition.StartAddr()
-              << " - 0x" << partition.EndAddr() << std::dec << "\n";
-    std::cout << "  Taille: " << partition.RawBytes().size() << " bytes\n";
-
-    const auto limit = context_.config.sample_preview;
-    PrintSample("Inputs", partition.Inputs(), limit);
-    PrintSample("Inputs externes", partition.ExternalInputs(), limit);
-    PrintSample("Outputs", partition.Outputs(), limit);
+    reporter_->ReportPartition(partition, context_.config.sample_preview);
 }
 
 int RunCli(const std::vector<std::string_view>& args) {

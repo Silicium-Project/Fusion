@@ -95,7 +95,7 @@ TEST(PipelineIntegration, RunsPipelineWithStubs) {
         });
 
     PipelineRunner runner(std::move(config), std::move(disassembly), std::move(analysis),
-                          std::move(partitioning), std::move(artifacts));
+                          std::move(partitioning), std::move(artifacts), nullptr);
 
     EXPECT_EQ(runner.Run(), 0);
     const std::vector<std::string> expected = {"Disassembly", "Analysis", "Partitioning", "Artifacts"};
