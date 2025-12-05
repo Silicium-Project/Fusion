@@ -2,10 +2,10 @@
 
 #include <string>
 
-#include "splitter/analysis/X86InstructionAnalyzer.hpp"
-#include "splitter/analysis/GuiInstructionAnalyzer.hpp"
-#include "splitter/core/Function.hpp"
-#include "splitter/core/Instruction.hpp"
+#include "analysis/X86_64InstructionAnalyzer.hpp"
+#include "analysis/GuiInstructionAnalyzer.hpp"
+#include "core/Function.hpp"
+#include "core/Instruction.hpp"
 
 using namespace splitter;
 

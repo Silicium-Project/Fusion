@@ -1,8 +1,8 @@
-#include "splitter/support/HashService.hpp"
+#include "support/HashService.hpp"
 
 #include <fstream>
 
-#include "splitter/support/Env.hpp"
+#include "support/Env.hpp"
 
 namespace splitter {
 

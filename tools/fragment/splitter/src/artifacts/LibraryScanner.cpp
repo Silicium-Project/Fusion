@@ -1,9 +1,9 @@
-#include "splitter/artifacts/LibraryScanner.hpp"
+#include "artifacts/LibraryScanner.hpp"
 
 #include <utility>
 
-#include "splitter/artifacts/DefaultLibraryResolver.hpp"
-#include "splitter/artifacts/DefaultSymbolIndexer.hpp"
+#include "artifacts/DefaultLibraryResolver.hpp"
+#include "artifacts/DefaultSymbolIndexer.hpp"
 
 namespace splitter {
 

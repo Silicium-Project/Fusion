@@ -1,7 +1,7 @@
-#include "splitter/artifacts/HashAlgorithmFactory.hpp"
+#include "artifacts/HashAlgorithmFactory.hpp"
 
-#include "splitter/artifacts/FnvHashAlgorithm.hpp"
-#include "splitter/artifacts/StdHashAlgorithm.hpp"
+#include "artifacts/FnvHashAlgorithm.hpp"
+#include "artifacts/StdHashAlgorithm.hpp"
 
 namespace splitter {
 

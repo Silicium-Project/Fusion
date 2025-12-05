@@ -1,9 +1,9 @@
-#include "splitter/artifacts/SummaryHashCalculator.hpp"
-#include "splitter/artifacts/FnvHashAlgorithm.hpp"
+#include "artifacts/SummaryHashCalculator.hpp"
+#include "artifacts/FnvHashAlgorithm.hpp"
 
 #include <algorithm>
 
-#include "splitter/support/HashUtil.hpp"
+#include "support/HashUtil.hpp"
 
 namespace splitter {
 

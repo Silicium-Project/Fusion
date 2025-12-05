@@ -1,4 +1,4 @@
-#include "splitter/arch/RegisterCatalog.hpp"
+#include "arch/RegisterCatalog.hpp"
 
 namespace splitter {
 

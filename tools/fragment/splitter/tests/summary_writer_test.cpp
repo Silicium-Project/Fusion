@@ -6,11 +6,11 @@
 #include <unordered_map>
 #include <vector>
 
-#include "splitter/artifacts/ILibraryScanner.hpp"
-#include "splitter/artifacts/SummaryWriter.hpp"
-#include "splitter/core/MemorySegment.hpp"
-#include "splitter/core/Partition.hpp"
-#include "splitter/core/PartitionFiles.hpp"
+#include "artifacts/ILibraryScanner.hpp"
+#include "artifacts/SummaryWriter.hpp"
+#include "core/MemorySegment.hpp"
+#include "core/Partition.hpp"
+#include "core/PartitionFiles.hpp"
 
 using namespace splitter;
 

@@ -1,6 +1,6 @@
-#include "splitter/pipeline/PartitioningPhase.hpp"
+#include "pipeline/PartitioningPhase.hpp"
 
-#include "splitter/partitioning/BinaryExtractor.hpp"
+#include "partitioning/BinaryExtractor.hpp"
 
 namespace splitter {
 

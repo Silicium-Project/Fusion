@@ -1,4 +1,4 @@
-#include "splitter/pipeline/ArtifactsPhase.hpp"
+#include "pipeline/ArtifactsPhase.hpp"
 
 #include <thread>
 #include <vector>

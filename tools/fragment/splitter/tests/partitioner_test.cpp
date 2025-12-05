@@ -3,10 +3,10 @@
 #include <string>
 #include <vector>
 
-#include "splitter/analysis/IInstructionAnalyzer.hpp"
-#include "splitter/core/Function.hpp"
-#include "splitter/partitioning/BinaryExtractor.hpp"
-#include "splitter/partitioning/Partitioner.hpp"
+#include "analysis/IInstructionAnalyzer.hpp"
+#include "core/Function.hpp"
+#include "partitioning/BinaryExtractor.hpp"
+#include "partitioning/Partitioner.hpp"
 
 using namespace splitter;
 

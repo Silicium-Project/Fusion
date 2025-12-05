@@ -1,11 +1,11 @@
-#include "splitter/artifacts/SummaryBuilder.hpp"
+#include "artifacts/SummaryBuilder.hpp"
 
 #include <algorithm>
 #include <iomanip>
 #include <optional>
 #include <sstream>
 
-#include "splitter/support/StringUtil.hpp"
+#include "support/StringUtil.hpp"
 
 namespace splitter {
 

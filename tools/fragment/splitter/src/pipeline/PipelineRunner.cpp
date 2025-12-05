@@ -1,4 +1,4 @@
-#include "splitter/pipeline/PipelineRunner.hpp"
+#include "pipeline/PipelineRunner.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -11,21 +11,21 @@
 #include <string_view>
 #include <vector>
 
-#include "splitter/analysis/X86InstructionAnalyzer.hpp"
-#include "splitter/analysis/ObjdumpDisassembler.hpp"
-#include "splitter/artifacts/ArtifactBuilder.hpp"
-#include "splitter/artifacts/SummaryWriter.hpp"
-#include "splitter/pipeline/AnalysisPhase.hpp"
-#include "splitter/pipeline/ArtifactsPhase.hpp"
-#include "splitter/pipeline/DisassemblyPhase.hpp"
-#include "splitter/pipeline/ConsoleReporter.hpp"
-#include "splitter/pipeline/PartitioningPhase.hpp"
-#include "splitter/pipeline/PipelineFactory.hpp"
-#include "splitter/partitioning/Partitioner.hpp"
-#include "splitter/support/HashUtil.hpp"
-#include "splitter/support/Env.hpp"
-#include "splitter/artifacts/FnvHashAlgorithm.hpp"
-#include "splitter/artifacts/StdHashAlgorithm.hpp"
+#include "analysis/X86_64InstructionAnalyzer.hpp"
+#include "analysis/ObjdumpDisassembler.hpp"
+#include "artifacts/ArtifactBuilder.hpp"
+#include "artifacts/SummaryWriter.hpp"
+#include "pipeline/AnalysisPhase.hpp"
+#include "pipeline/ArtifactsPhase.hpp"
+#include "pipeline/DisassemblyPhase.hpp"
+#include "pipeline/ConsoleReporter.hpp"
+#include "pipeline/PartitioningPhase.hpp"
+#include "pipeline/PipelineFactory.hpp"
+#include "partitioning/Partitioner.hpp"
+#include "support/HashUtil.hpp"
+#include "support/Env.hpp"
+#include "artifacts/FnvHashAlgorithm.hpp"
+#include "artifacts/StdHashAlgorithm.hpp"
 
 namespace splitter {
 

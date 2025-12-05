@@ -1,6 +1,6 @@
-#include "splitter/analysis/CompositeInstructionAnalyzer.hpp"
+#include "analysis/CompositeInstructionAnalyzer.hpp"
 
-#include "splitter/analysis/X86InstructionAnalyzer.hpp"
+#include "analysis/X86_64InstructionAnalyzer.hpp"
 
 namespace splitter {
 

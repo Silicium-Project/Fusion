@@ -1,4 +1,4 @@
-#include "splitter/support/FnvHasher.hpp"
+#include "support/FnvHasher.hpp"
 
 #include <iomanip>
 #include <sstream>

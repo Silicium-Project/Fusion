@@ -1,4 +1,4 @@
-#include "splitter/partitioning/Partitioner.hpp"
+#include "partitioning/Partitioner.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -11,8 +11,8 @@
 #include <string>
 #include <utility>
 
-#include "splitter/partitioning/PartitionGraphBuilder.hpp"
-#include "splitter/support/FlatSet.hpp"
+#include "partitioning/PartitionGraphBuilder.hpp"
+#include "support/FlatSet.hpp"
 
 namespace splitter {
 

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "splitter/pipeline/PipelineConfig.hpp"
+#include "pipeline/PipelineConfig.hpp"
 
 TEST(PipelineConfig, Defaults) {
     splitter::PipelineConfig config;

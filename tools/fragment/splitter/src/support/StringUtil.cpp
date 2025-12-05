@@ -1,4 +1,4 @@
-#include "splitter/support/StringUtil.hpp"
+#include "support/StringUtil.hpp"
 
 #include <algorithm>
 #include <sstream>

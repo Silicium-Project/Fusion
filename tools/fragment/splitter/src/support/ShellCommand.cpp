@@ -1,4 +1,4 @@
-#include "splitter/support/ShellCommand.hpp"
+#include "support/ShellCommand.hpp"
 
 #include <array>
 #include <cstdio>

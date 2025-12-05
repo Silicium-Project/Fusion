@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 #include <fstream>
 
-#include "splitter/support/HashUtil.hpp"
-#include "splitter/support/HashService.hpp"
-#include "splitter/artifacts/StdHashAlgorithm.hpp"
+#include "support/HashUtil.hpp"
+#include "support/HashService.hpp"
+#include "artifacts/StdHashAlgorithm.hpp"
 
 using namespace splitter;
 

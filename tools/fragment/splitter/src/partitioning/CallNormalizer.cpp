@@ -1,10 +1,10 @@
-#include "splitter/partitioning/CallNormalizer.hpp"
+#include "partitioning/CallNormalizer.hpp"
 
 #include <cctype>
 #include <regex>
 #include <sstream>
 
-#include "splitter/support/Env.hpp"
+#include "support/Env.hpp"
 
 namespace splitter {
 

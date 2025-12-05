@@ -1,4 +1,4 @@
-#include "splitter/pipeline/PhaseRegistry.hpp"
+#include "pipeline/PhaseRegistry.hpp"
 
 #include <stdexcept>
 

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "splitter/analysis/ObjdumpDisassembler.hpp"
+#include "analysis/ObjdumpDisassembler.hpp"
 
 using namespace splitter;
 

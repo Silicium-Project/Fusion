@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "splitter/support/FlatMap.hpp"
+#include "support/FlatMap.hpp"
 
 using namespace splitter;
 

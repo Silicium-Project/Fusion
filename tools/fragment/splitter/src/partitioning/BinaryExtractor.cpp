@@ -1,4 +1,4 @@
-#include "splitter/partitioning/BinaryExtractor.hpp"
+#include "partitioning/BinaryExtractor.hpp"
 
 #include <fstream>
 #include <iomanip>
@@ -8,7 +8,7 @@
 #include <sstream>
 #include <string>
 
-#include "splitter/support/ShellCommand.hpp"
+#include "support/ShellCommand.hpp"
 
 namespace splitter {
 

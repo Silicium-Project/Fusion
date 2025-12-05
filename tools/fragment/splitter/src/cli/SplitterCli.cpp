@@ -1,7 +1,7 @@
-#include "splitter/cli/SplitterCli.hpp"
+#include "cli/SplitterCli.hpp"
 
-#include "splitter/pipeline/PipelineRunner.hpp"
-#include "splitter/support/HashUtil.hpp"
+#include "pipeline/PipelineRunner.hpp"
+#include "support/HashUtil.hpp"
 
 namespace splitter {
 

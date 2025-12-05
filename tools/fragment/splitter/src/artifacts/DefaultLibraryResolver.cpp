@@ -1,12 +1,12 @@
-#include "splitter/artifacts/DefaultLibraryResolver.hpp"
+#include "artifacts/DefaultLibraryResolver.hpp"
 
 #include <cstdlib>
 #include <regex>
 #include <sstream>
 
-#include "splitter/artifacts/ReadelfLibraryResolver.hpp"
-#include "splitter/support/Env.hpp"
-#include "splitter/support/ShellCommand.hpp"
+#include "artifacts/ReadelfLibraryResolver.hpp"
+#include "support/Env.hpp"
+#include "support/ShellCommand.hpp"
 
 namespace splitter {
 

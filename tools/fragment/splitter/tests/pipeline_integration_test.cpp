@@ -5,12 +5,12 @@
 
 #include <gtest/gtest.h>
 
-#include "splitter/pipeline/PipelineRunner.hpp"
-#include "splitter/pipeline/IPipelinePhase.hpp"
-#include "splitter/pipeline/PipelineConfig.hpp"
-#include "splitter/core/Function.hpp"
-#include "splitter/core/Partition.hpp"
-#include "splitter/core/PartitionFiles.hpp"
+#include "pipeline/PipelineRunner.hpp"
+#include "pipeline/IPipelinePhase.hpp"
+#include "pipeline/PipelineConfig.hpp"
+#include "core/Function.hpp"
+#include "core/Partition.hpp"
+#include "core/PartitionFiles.hpp"
 
 namespace fs = std::filesystem;
 using namespace splitter;

@@ -1,4 +1,4 @@
-#include "splitter/arch/ArchitectureProfile.hpp"
+#include "arch/ArchitectureProfile.hpp"
 
 namespace splitter {
 

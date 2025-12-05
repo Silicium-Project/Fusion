@@ -1,4 +1,4 @@
-#include "splitter/artifacts/SummaryWriter.hpp"
+#include "artifacts/SummaryWriter.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -10,12 +10,12 @@
 #include <sstream>
 #include <unordered_map>
 
-#include "splitter/artifacts/SummaryHashCalculator.hpp"
-#include "splitter/support/HashUtil.hpp"
-#include "splitter/support/StringUtil.hpp"
-#include "splitter/support/FlatMap.hpp"
-#include "splitter/support/Env.hpp"
-#include "splitter/artifacts/SummaryBuilder.hpp"
+#include "artifacts/SummaryHashCalculator.hpp"
+#include "support/HashUtil.hpp"
+#include "support/StringUtil.hpp"
+#include "support/FlatMap.hpp"
+#include "support/Env.hpp"
+#include "artifacts/SummaryBuilder.hpp"
 
 namespace splitter {
 

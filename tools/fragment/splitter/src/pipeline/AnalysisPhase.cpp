@@ -1,4 +1,4 @@
-#include "splitter/pipeline/AnalysisPhase.hpp"
+#include "pipeline/AnalysisPhase.hpp"
 
 namespace splitter {
 

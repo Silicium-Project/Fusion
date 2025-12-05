@@ -1,4 +1,4 @@
-#include "splitter/cli/SplitterCli.hpp"
+#include "cli/SplitterCli.hpp"
 
 #include <string_view>
 #include <vector>

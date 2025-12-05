@@ -1,10 +1,10 @@
-#include "splitter/artifacts/LibraryScannerFactory.hpp"
+#include "artifacts/LibraryScannerFactory.hpp"
 
-#include "splitter/artifacts/DefaultLibraryResolver.hpp"
-#include "splitter/artifacts/DefaultSymbolIndexer.hpp"
-#include "splitter/artifacts/LibraryScanner.hpp"
-#include "splitter/artifacts/ObjdumpSymbolIndexer.hpp"
-#include "splitter/artifacts/ReadelfLibraryResolver.hpp"
+#include "artifacts/DefaultLibraryResolver.hpp"
+#include "artifacts/DefaultSymbolIndexer.hpp"
+#include "artifacts/LibraryScanner.hpp"
+#include "artifacts/ObjdumpSymbolIndexer.hpp"
+#include "artifacts/ReadelfLibraryResolver.hpp"
 
 namespace splitter {
 

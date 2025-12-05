@@ -1,4 +1,4 @@
-#include "splitter/analysis/GuiInstructionAnalyzer.hpp"
+#include "analysis/GuiInstructionAnalyzer.hpp"
 
 #include <algorithm>
 #include <string_view>

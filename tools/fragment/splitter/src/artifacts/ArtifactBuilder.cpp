@@ -1,4 +1,4 @@
-#include "splitter/artifacts/ArtifactBuilder.hpp"
+#include "artifacts/ArtifactBuilder.hpp"
 
 #include <filesystem>
 #include <fstream>

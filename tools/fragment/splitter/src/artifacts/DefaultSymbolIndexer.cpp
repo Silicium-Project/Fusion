@@ -1,10 +1,10 @@
-#include "splitter/artifacts/DefaultSymbolIndexer.hpp"
+#include "artifacts/DefaultSymbolIndexer.hpp"
 
 #include <set>
 #include <sstream>
 
-#include "splitter/support/ShellCommand.hpp"
-#include "splitter/support/StringUtil.hpp"
+#include "support/ShellCommand.hpp"
+#include "support/StringUtil.hpp"
 
 namespace splitter {
 

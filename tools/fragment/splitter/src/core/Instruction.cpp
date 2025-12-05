@@ -1,4 +1,4 @@
-#include "splitter/core/Instruction.hpp"
+#include "core/Instruction.hpp"
 
 #include <iomanip>
 #include <sstream>

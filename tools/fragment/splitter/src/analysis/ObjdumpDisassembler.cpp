@@ -1,4 +1,4 @@
-#include "splitter/analysis/ObjdumpDisassembler.hpp"
+#include "analysis/ObjdumpDisassembler.hpp"
 
 #include <cctype>
 #include <filesystem>
@@ -7,9 +7,9 @@
 #include <sstream>
 #include <string>
 
-#include "splitter/analysis/X86InstructionAnalyzer.hpp"
-#include "splitter/support/ShellCommand.hpp"
-#include "splitter/support/StringUtil.hpp"
+#include "analysis/X86_64InstructionAnalyzer.hpp"
+#include "support/ShellCommand.hpp"
+#include "support/StringUtil.hpp"
 
 namespace splitter {
 

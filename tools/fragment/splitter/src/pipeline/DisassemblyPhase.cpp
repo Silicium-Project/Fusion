@@ -1,4 +1,4 @@
-#include "splitter/pipeline/DisassemblyPhase.hpp"
+#include "pipeline/DisassemblyPhase.hpp"
 
 namespace splitter {
 
