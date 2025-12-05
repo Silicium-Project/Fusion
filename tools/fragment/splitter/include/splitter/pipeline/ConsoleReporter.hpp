@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "splitter/analysis/X86InstructionAnalyzer.hpp"
 #include "splitter/pipeline/IReporter.hpp"
 #include "splitter/core/Function.hpp"
 #include "splitter/core/Partition.hpp"
@@ -53,7 +54,7 @@ public:
         const size_t count = std::min(preview, loop_functions.size());
         for (size_t i = 0; i < count; ++i) {
             const Function& func = loop_functions[i];
-            auto loop_info = X86InstructionAnalyzer::Instance().DetectLoopPatterns(func);
+            auto loop_info = X86_64InstructionAnalyzer::Instance().DetectLoopPatterns(func);
             std::string status = loop_info.parallelizable ? "PARALLÉLISABLE" : "SÉQUENTIELLE";
             std::ostringstream line;
             line << "  " << std::left << std::setw(30) << func.Name() << " - " << status;

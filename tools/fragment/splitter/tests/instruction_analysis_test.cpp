@@ -10,7 +10,7 @@
 using namespace splitter;
 
 TEST(InstructionAnalysis, MovReadsAndWrites) {
-    const auto& analyzer = X86InstructionAnalyzer::Instance();
+    const auto& analyzer = X86_64InstructionAnalyzer::Instance();
 
     Instruction inst;
     inst.SetOpcode("mov");
@@ -23,7 +23,7 @@ TEST(InstructionAnalysis, MovReadsAndWrites) {
 }
 
 TEST(InstructionAnalysis, CallSetsTargetAndClobbers) {
-    const auto& analyzer = X86InstructionAnalyzer::Instance();
+    const auto& analyzer = X86_64InstructionAnalyzer::Instance();
 
     Instruction inst;
     inst.SetOpcode("call");
@@ -39,7 +39,7 @@ TEST(InstructionAnalysis, CallSetsTargetAndClobbers) {
 }
 
 TEST(InstructionAnalysis, LoopDetectionAndPatterns) {
-    const auto& analyzer = X86InstructionAnalyzer::Instance();
+    const auto& analyzer = X86_64InstructionAnalyzer::Instance();
 
     Instruction loop_inst;
     loop_inst.SetAddress(0x1000);

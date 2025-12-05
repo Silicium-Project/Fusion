@@ -166,21 +166,21 @@ const std::regex& JumpTargetRegex() {
 
 }  // namespace
 
-const X86InstructionAnalyzer& X86InstructionAnalyzer::Instance() {
-    static const X86InstructionAnalyzer analyzer;
+const X86_64InstructionAnalyzer& X86_64InstructionAnalyzer::Instance() {
+    static const X86_64InstructionAnalyzer analyzer;
     return analyzer;
 }
 
-bool X86InstructionAnalyzer::IsJumpOpcode(std::string_view opcode) {
+bool X86_64InstructionAnalyzer::IsJumpOpcode(std::string_view opcode) {
     return ClassifyOpcode(opcode) == OpcodeId::Jump;
 }
 
-bool X86InstructionAnalyzer::IsCallOpcode(std::string_view opcode) {
+bool X86_64InstructionAnalyzer::IsCallOpcode(std::string_view opcode) {
     auto id = ClassifyOpcode(opcode);
     return id == OpcodeId::Call || id == OpcodeId::Callq;
 }
 
-bool X86InstructionAnalyzer::IsStackOpcode(std::string_view opcode) {
+bool X86_64InstructionAnalyzer::IsStackOpcode(std::string_view opcode) {
     auto id = ClassifyOpcode(opcode);
     switch (id) {
         case OpcodeId::Push:
@@ -194,11 +194,11 @@ bool X86InstructionAnalyzer::IsStackOpcode(std::string_view opcode) {
     }
 }
 
-bool X86InstructionAnalyzer::IsCallClobberedReg(std::string_view reg) {
+bool X86_64InstructionAnalyzer::IsCallClobberedReg(std::string_view reg) {
     return Register::IsCallClobbered(reg);
 }
 
-void X86InstructionAnalyzer::AnalyzeInstruction(Instruction& inst) const {
+void X86_64InstructionAnalyzer::AnalyzeInstruction(Instruction& inst) const {
     const OpcodeId opcode_id = ClassifyOpcode(inst.Opcode());
 
     if (IsJumpOpcode(inst.Opcode())) {
@@ -267,7 +267,7 @@ void X86InstructionAnalyzer::AnalyzeInstruction(Instruction& inst) const {
     }
 }
 
-bool X86InstructionAnalyzer::AnalyzeFunctionLoops(Function& func) const {
+bool X86_64InstructionAnalyzer::AnalyzeFunctionLoops(Function& func) const {
     func.SetIsLoop(false);
     func.Loops().clear();
 
@@ -287,7 +287,7 @@ bool X86InstructionAnalyzer::AnalyzeFunctionLoops(Function& func) const {
     return func.IsLoop();
 }
 
-LoopAnalysis X86InstructionAnalyzer::DetectLoopPatterns(const Function& func) const {
+LoopAnalysis X86_64InstructionAnalyzer::DetectLoopPatterns(const Function& func) const {
     if (!func.IsLoop())
         return {false, "pas de boucle"};
 

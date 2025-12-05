@@ -8,7 +8,7 @@ const CompositeInstructionAnalyzer& CompositeInstructionAnalyzer::Default() {
     static CompositeInstructionAnalyzer instance;
     static bool initialized = false;
     if (!initialized) {
-        instance.AddAnalyzer(X86InstructionAnalyzer::Instance());
+        instance.AddAnalyzer(X86_64InstructionAnalyzer::Instance());
         instance.AddAnalyzer(GuiInstructionAnalyzer::Instance());
         initialized = true;
     }

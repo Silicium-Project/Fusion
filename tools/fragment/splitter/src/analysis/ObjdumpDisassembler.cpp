@@ -44,7 +44,7 @@ Instruction MakeInstruction(const std::smatch& match) {
     inst.SetBytes(match[2].str());
     inst.SetOpcode(match[3].str());
     inst.SetOperands(Trim(match[4].str()));
-    X86InstructionAnalyzer::Instance().AnalyzeInstruction(inst);
+    X86_64InstructionAnalyzer::Instance().AnalyzeInstruction(inst);
     return inst;
 }
 

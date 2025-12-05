@@ -7,9 +7,9 @@
 
 namespace splitter {
 
-class X86InstructionAnalyzer : public IInstructionAnalyzer {
+class X86_64InstructionAnalyzer : public IInstructionAnalyzer {
 public:
-    static const X86InstructionAnalyzer& Instance();
+    static const X86_64InstructionAnalyzer& Instance();
 
     void AnalyzeInstruction(Instruction& inst) const override;
     bool AnalyzeFunctionLoops(Function& func) const override;
@@ -21,7 +21,7 @@ public:
     static bool IsCallClobberedReg(std::string_view reg);
 
 private:
-    X86InstructionAnalyzer() = default;
+    X86_64InstructionAnalyzer() = default;
 };
 
 }  // namespace splitter
