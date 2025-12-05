@@ -27,6 +27,12 @@ public:
         std::cout << message << "\n";
     }
 
+    void ReportTiming(const std::string& phase, long long milliseconds) override {
+        std::ostringstream line;
+        line << "[" << phase << "] " << milliseconds << " ms";
+        std::cout << line.str() << "\n";
+    }
+
     void ReportFunctions(const std::vector<Function>& functions, std::size_t preview) override {
         const size_t count = std::min(preview, functions.size());
         for (size_t i = 0; i < count; ++i) {

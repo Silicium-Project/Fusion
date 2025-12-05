@@ -14,6 +14,7 @@ public:
 
     virtual void Banner(const std::string& title) = 0;
     virtual void Info(const std::string& message) = 0;
+    virtual void ReportTiming(const std::string& phase, long long milliseconds) = 0;
 
     virtual void ReportFunctions(const std::vector<Function>& functions, std::size_t preview) = 0;
     virtual void ReportLoops(std::vector<Function>& functions, std::size_t preview) = 0;

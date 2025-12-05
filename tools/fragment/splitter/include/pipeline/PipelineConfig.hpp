@@ -20,7 +20,8 @@ public:
     std::string hash_algo;      // "fnv", "std" ou vide pour auto/env
     std::string resolver;       // "ldd", "readelf" ou vide pour auto/env
     std::string symbol_indexer; // "nm", "objdump" ou vide pour auto/env
-    std::string reporter = "console";  // "console" ou "json"
+    std::string reporter = "console";  // "console", "json", "ndjson"
+    std::string report_file;           // optionnel: chemin de log des reports
 };
 
 }  // namespace splitter

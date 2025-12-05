@@ -53,7 +53,7 @@ Function MakeFunc(std::string name, uint64_t start, uint64_t end,
 }  // namespace
 
 TEST(Partitioner, BuildsPartitionsAndDeps) {
-    FakeAnalyzer analyzer;
+    auto analyzer = std::make_shared<FakeAnalyzer>();
     auto extractor = std::make_shared<FakeExtractor>();
     Partitioner partitioner(BinaryPath("dummy.bin"), analyzer, extractor);
 

@@ -51,7 +51,8 @@ void PrintSample(const std::string& label, const Container& container, std::size
 
 void PrintUsage(std::string_view prog) {
     std::cout << "Usage: " << prog << " <binary_file> [--output-dir <dir>] [--hash <fnv|std>] "
-              << "[--resolver <ldd|readelf>] [--indexer <nm|objdump>] [--reporter <console|json>]\n\n"
+              << "[--resolver <ldd|readelf>] [--indexer <nm|objdump>] [--reporter <console|json|ndjson>] "
+              << "[--report-file <path>]\n\n"
               << "Exemples:\n"
               << "  " << prog << " ./a.out\n"
               << "  " << prog << " program.exe --output-dir ./partitions --hash std\n\n"
@@ -198,6 +199,8 @@ int RunCli(const std::vector<std::string_view>& args) {
             config.symbol_indexer = std::string(args[++i]);  // nm/objdump/auto
         } else if (current == "--reporter" && i + 1 < args.size()) {
             config.reporter = std::string(args[++i]);  // console/json
+        } else if (current == "--report-file" && i + 1 < args.size()) {
+            config.report_file = std::string(args[++i]);
         }
     }
 

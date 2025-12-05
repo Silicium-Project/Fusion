@@ -2,12 +2,12 @@
 
 namespace splitter {
 
-AnalysisPhase::AnalysisPhase(const IInstructionAnalyzer& analyzer)
-    : analyzer_(analyzer) {}
+AnalysisPhase::AnalysisPhase(std::shared_ptr<const IInstructionAnalyzer> analyzer)
+    : analyzer_(std::move(analyzer)) {}
 
 void AnalysisPhase::Execute(PipelineContext& context) {
     for (auto& func : context.functions)
-        analyzer_.AnalyzeFunctionLoops(func);
+        analyzer_->AnalyzeFunctionLoops(func);
 }
 
 }  // namespace splitter

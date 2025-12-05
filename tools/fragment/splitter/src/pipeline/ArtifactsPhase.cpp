@@ -2,6 +2,7 @@
 
 #include <thread>
 #include <vector>
+#include <filesystem>
 
 namespace splitter {
 
@@ -34,7 +35,7 @@ void ArtifactsPhase::Execute(PipelineContext& context) {
     }
 
     summary_writer_->Write(context.partitions, context.artifacts, context.memory_segments,
-                           context.config.binary_path.Value());
+                           std::filesystem::path(context.config.binary_path.Value()));
 }
 
 }  // namespace splitter

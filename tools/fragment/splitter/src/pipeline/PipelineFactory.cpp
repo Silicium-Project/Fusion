@@ -3,11 +3,11 @@
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
+#include <filesystem>
 
 #include "analysis/ObjdumpDisassembler.hpp"
 #include "analysis/CompositeInstructionAnalyzer.hpp"
 #include "analysis/InstructionAnalyzerFactory.hpp"
-#include "analysis/X86_64InstructionAnalyzer.hpp"
 #include "artifacts/ArtifactBuilder.hpp"
 #include "artifacts/LibraryScanner.hpp"
 #include "artifacts/SummaryWriter.hpp"
@@ -16,8 +16,7 @@
 #include "pipeline/AnalysisPhase.hpp"
 #include "pipeline/ArtifactsPhase.hpp"
 #include "pipeline/DisassemblyPhase.hpp"
-#include "pipeline/ConsoleReporter.hpp"
-#include "pipeline/JsonReporter.hpp"
+#include "pipeline/ReporterFactory.hpp"
 #include "pipeline/PartitioningPhase.hpp"
 #include "pipeline/PhaseRegistry.hpp"
 #include "pipeline/TimingPhase.hpp"
@@ -25,10 +24,13 @@
 #include "support/Env.hpp"
 #include "artifacts/LibraryScannerFactory.hpp"
 #include "artifacts/HashAlgorithmFactory.hpp"
+#include "support/ShellCommand.hpp"
 
 namespace splitter {
 
 namespace {
+
+bool CommandExists(const std::string& cmd);
 
 HashService ChooseHashService(const PipelineConfig& config) {
     std::string choice = config.hash_algo;
@@ -51,30 +53,55 @@ std::shared_ptr<ILibraryScanner> BuildScanner(const PipelineConfig& config) {
         if (auto env = GetEnv("SPLITTER_SYMBOL_INDEXER"))
             indexer = *env;
 
+    if (resolver == "readelf" && !CommandExists("readelf"))
+        throw std::runtime_error("readelf requis mais introuvable (installez binutils)");
+    if (resolver == "ldd" && !CommandExists("ldd"))
+        throw std::runtime_error("ldd requis mais introuvable");
+    if (indexer == "nm" && !CommandExists("nm"))
+        throw std::runtime_error("nm requis mais introuvable (installez binutils)");
+
     return LibraryScannerFactory::Create(resolver, indexer);
 }
 
-std::unique_ptr<IReporter> BuildReporter(const PipelineConfig& config) {
-    std::string reporter = config.reporter;
-    if (reporter.empty())
-        if (auto env = GetEnv("SPLITTER_REPORTER"))
-            reporter = *env;
+bool CommandExists(const std::string& cmd) {
+    std::string check = "command -v " + cmd + " >/dev/null 2>&1";
+    return std::system(check.c_str()) == 0;
+}
 
-    std::transform(reporter.begin(), reporter.end(), reporter.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-    if (reporter == "json")
-        return std::make_unique<JsonReporter>();
-    return std::make_unique<ConsoleReporter>();
+std::string DetectArchFromBinary(const PipelineConfig& config) {
+    const std::string path = config.binary_path.Value();
+    if (path.empty())
+        return "";
+    try {
+        std::string output = ExecCommand("objdump -f " + path);
+        auto pos = output.find("architecture:");
+        if (pos != std::string::npos) {
+            auto rest = output.substr(pos + std::string("architecture:").size());
+            auto end = rest.find(',');
+            std::string arch = rest.substr(0, end);
+            arch.erase(arch.find_last_not_of(" \t\r\n") + 1);
+            arch.erase(0, arch.find_first_not_of(" \t\r\n"));
+            return arch;
+        }
+    } catch (const std::exception&) {
+    }
+    return "";
 }
 
 }  // namespace
 
 std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig config) {
+    if (!CommandExists("objdump"))
+        throw std::runtime_error("objdump requis mais introuvable (installez binutils)");
+
+    auto reporter = ReporterFactory::Create(config);
     auto disassembly = std::make_unique<DisassemblyPhase>(
         std::make_unique<ObjdumpDisassembler>(config.binary_path.Value()));
 
-    const auto& analyzer = CompositeInstructionAnalyzer::Default();
+    std::string arch = DetectArchFromBinary(config);
+    auto analyzer = std::make_shared<CompositeInstructionAnalyzer>(
+        arch.empty() ? InstructionAnalyzerFactory::CreateDefault()
+                     : InstructionAnalyzerFactory::Create(arch));
     auto analysis = std::make_unique<AnalysisPhase>(analyzer);
 
     auto extractor = std::make_shared<BinaryExtractor>();
@@ -87,27 +114,26 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
     auto hash_calc = std::make_shared<SummaryHashCalculator>(nullptr, hash_service);
     auto artifacts_builder = std::make_unique<ArtifactBuilder>(config.output_dir.Value());
     auto summary_writer =
-        std::make_unique<SummaryWriter>(config.output_dir.Value(), scanner, hash_calc);
-    auto reporter = BuildReporter(config);
+        std::make_unique<SummaryWriter>(std::filesystem::path(config.output_dir.Value()), scanner, hash_calc);
 
     PhaseRegistry registry;
     registry.Register("disassembly", [&]() {
         return std::make_unique<TimingPhase>(std::make_unique<DisassemblyPhase>(
-            std::make_unique<ObjdumpDisassembler>(config.binary_path.Value())));
+            std::make_unique<ObjdumpDisassembler>(config.binary_path.Value())), reporter.get());
     });
     registry.Register("analysis", [&]() {
-        return std::make_unique<TimingPhase>(std::make_unique<AnalysisPhase>(analyzer));
+        return std::make_unique<TimingPhase>(std::make_unique<AnalysisPhase>(analyzer), reporter.get());
     });
     registry.Register("partitioning", [&]() {
         return std::make_unique<TimingPhase>(std::make_unique<PartitioningPhase>(
             std::make_unique<Partitioner>(config.binary_path, analyzer, extractor, hash_service),
-            extractor));
+            extractor), reporter.get());
     });
     registry.Register("artifacts", [&]() {
         return std::make_unique<TimingPhase>(std::make_unique<ArtifactsPhase>(
             std::make_unique<ArtifactBuilder>(config.output_dir.Value()),
-            std::make_unique<SummaryWriter>(config.output_dir.Value(), scanner, hash_calc),
-            config.parallel_artifacts));
+            std::make_unique<SummaryWriter>(std::filesystem::path(config.output_dir.Value()), scanner, hash_calc),
+            config.parallel_artifacts), reporter.get());
     });
 
     auto phases = registry.CreateSequence({"disassembly", "analysis", "partitioning", "artifacts"});

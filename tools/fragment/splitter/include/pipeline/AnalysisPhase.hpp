@@ -9,12 +9,12 @@ namespace splitter {
 
 class AnalysisPhase : public IPipelinePhase {
 public:
-    explicit AnalysisPhase(const IInstructionAnalyzer& analyzer);
+    explicit AnalysisPhase(std::shared_ptr<const IInstructionAnalyzer> analyzer);
     std::string Name() const override { return "Analysis"; }
     void Execute(PipelineContext& context) override;
 
 private:
-    const IInstructionAnalyzer& analyzer_;
+    std::shared_ptr<const IInstructionAnalyzer> analyzer_;
 };
 
 }  // namespace splitter

@@ -112,10 +112,19 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
     builder.SetMemorySegments(memory_segments);
 
     const fs::path summary_path = output_dir_ / "summary.json";
+    const fs::path tmp_path = summary_path.string() + ".tmp";
     std::ofstream summary;
-    if (!OpenSummaryFile(summary_path, summary))
+    if (!OpenSummaryFile(tmp_path, summary))
         return;
     summary << builder.Build();
+    summary.flush();
+    summary.close();
+    std::error_code ec;
+    fs::rename(tmp_path, summary_path, ec);
+    if (ec) {
+        std::cerr << "Avertissement: remplacement atomique échoué pour " << summary_path << ": " << ec.message()
+                  << "\n";
+    }
 
     std::cout << "\nRésumé: " << summary_path.string() << "\n";
 }

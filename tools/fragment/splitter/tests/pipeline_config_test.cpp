@@ -12,4 +12,6 @@ TEST(PipelineConfig, Defaults) {
     EXPECT_EQ(config.sample_preview, 5u);
     EXPECT_TRUE(config.dump_full_disassembly);
     EXPECT_FALSE(config.parallel_artifacts);
+    EXPECT_EQ(config.reporter, "console");
+    EXPECT_TRUE(config.report_file.empty());
 }

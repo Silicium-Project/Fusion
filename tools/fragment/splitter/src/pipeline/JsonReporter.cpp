@@ -24,7 +24,16 @@ std::string Escape(const std::string& text) {
 
 }  // namespace
 
-JsonReporter::JsonReporter(std::ostream& out) : out_(&out) {}
+namespace {
+
+std::shared_ptr<std::ostream> StdOutPtr() {
+    return std::shared_ptr<std::ostream>(&std::cout, [](std::ostream*) {});
+}
+
+}  // namespace
+
+JsonReporter::JsonReporter(std::shared_ptr<std::ostream> out)
+    : out_(out ? std::move(out) : StdOutPtr()) {}
 
 void JsonReporter::Banner(const std::string& title) {
     *out_ << R"({"type":"banner","title":")" << Escape(title) << "\"}\n";
@@ -32,6 +41,10 @@ void JsonReporter::Banner(const std::string& title) {
 
 void JsonReporter::Info(const std::string& message) {
     *out_ << R"({"type":"info","message":")" << Escape(message) << "\"}\n";
+}
+
+void JsonReporter::ReportTiming(const std::string& phase, long long milliseconds) {
+    *out_ << R"({"type":"timing","phase":")" << Escape(phase) << R"(","ms":)" << milliseconds << "}\n";
 }
 
 void JsonReporter::ReportFunctions(const std::vector<Function>& functions, std::size_t preview) {

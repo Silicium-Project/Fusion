@@ -17,7 +17,7 @@ namespace splitter {
 class Partitioner : public IPartitioner {
 public:
     Partitioner(BinaryPath binary_path,
-                const IInstructionAnalyzer& analyzer,
+                std::shared_ptr<const IInstructionAnalyzer> analyzer,
                 std::shared_ptr<BinaryExtractor> extractor,
                 HashService hash_service = HashService());
 
@@ -25,7 +25,7 @@ public:
 
 private:
     BinaryPath binary_path_;
-    const IInstructionAnalyzer& analyzer_;
+    std::shared_ptr<const IInstructionAnalyzer> analyzer_;
     std::shared_ptr<BinaryExtractor> extractor_;
     DefaultPartitionGraphBuilder graph_builder_;
 };

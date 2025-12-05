@@ -40,11 +40,11 @@ std::string FunctionToAsm(const Function& func) {
 }  // namespace
 
 Partitioner::Partitioner(BinaryPath binary_path,
-                         const IInstructionAnalyzer& analyzer,
+                         std::shared_ptr<const IInstructionAnalyzer> analyzer,
                          std::shared_ptr<BinaryExtractor> extractor,
                          HashService hash_service)
     : binary_path_(std::move(binary_path)),
-      analyzer_(analyzer),
+      analyzer_(std::move(analyzer)),
       extractor_(std::move(extractor)),
       graph_builder_(std::move(hash_service)) {}
 
@@ -57,8 +57,8 @@ std::vector<Partition> Partitioner::Run(std::vector<Function>& functions) {
         if (ShouldSkipFunction(func))
             continue;
 
-        analyzer_.AnalyzeFunctionLoops(func);
-        auto loop_info = analyzer_.DetectLoopPatterns(func);
+        analyzer_->AnalyzeFunctionLoops(func);
+        auto loop_info = analyzer_->DetectLoopPatterns(func);
 
         Partition partition;
         partition.SetId("func_" + std::to_string(partition_id) + "_" + func.Name());
