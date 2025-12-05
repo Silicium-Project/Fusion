@@ -15,6 +15,7 @@
 #include "splitter/support/StringUtil.hpp"
 #include "splitter/support/FlatMap.hpp"
 #include "splitter/support/Env.hpp"
+#include "splitter/artifacts/SummaryBuilder.hpp"
 
 namespace splitter {
 
@@ -53,55 +54,6 @@ std::optional<std::reference_wrapper<const PartitionFiles>> ArtifactFor(
     return std::cref(artifacts[idx]);
 }
 
-void WritePartitionEntry(std::ofstream& out,
-                         const Partition& partition,
-                         const std::optional<std::reference_wrapper<const PartitionFiles>>& files,
-                         const FlatStringMap& symbol_index,
-                         bool is_last) {
-    out << "    {\n";
-    out << "      \"id\": \"" << JsonEscape(partition.Id()) << "\",\n";
-    out << "      \"start\": \"" << HexString(partition.StartAddr()) << "\",\n";
-    out << "      \"end\": \"" << HexString(partition.EndAddr()) << "\",\n";
-    out << "      \"size\": " << partition.RawBytes().size() << ",\n";
-    out << "      \"parallelizable\": " << (partition.IsParallelizable() ? "true" : "false") << ",\n";
-    out << "      \"inputs\": " << RangeToJson(partition.Inputs()) << ",\n";
-    out << "      \"external_inputs\": " << RangeToJson(partition.ExternalInputs()) << ",\n";
-    out << "      \"external_calls\": " << RangeToJson(partition.ExternalCalls()) << ",\n";
-    out << "      \"requires_display\": " << (partition.RequiresDisplay() ? "true" : "false") << ",\n";
-    out << "      \"bin_hash\": \"" << JsonEscape(partition.BinHash()) << "\",\n";
-    out << "      \"outputs\": " << RangeToJson(partition.Outputs()) << ",\n";
-    out << "      \"parents\": " << VectorToJson(partition.Parents()) << ",\n";
-    out << "      \"dependencies\": " << VectorToJson(partition.Dependencies()) << ",\n";
-    out << "      \"unresolved_calls\": " << VectorToJson(partition.UnresolvedDependencies()) << ",\n";
-    out << "      \"required_libraries\": "
-                << RangeToJson(ResolvePartitionLibraries(partition, symbol_index)) << ",\n";
-    out << "      \"partition_hash\": \"" << JsonEscape(partition.PartitionHash()) << "\",\n";
-
-    if (files.has_value()) {
-        const auto& part_files = files->get();
-        out << "      \"asm\": \"" << JsonEscape(part_files.AsmFile()) << "\",\n";
-        out << "      \"bin\": \"" << JsonEscape(part_files.BinFile()) << "\",\n";
-        out << "      \"wrapper\": \"" << JsonEscape(part_files.WrapperFile()) << "\"\n";
-    } else {
-        out << "      \"asm\": \"\",\n";
-        out << "      \"bin\": \"\",\n";
-        out << "      \"wrapper\": \"\"\n";
-    }
-
-    out << "    }";
-    if (!is_last)
-        out << ",";
-    out << "\n";
-}
-
-static std::string BytesToHex(const std::vector<uint8_t>& bytes) {
-    std::ostringstream oss;
-    oss << std::hex << std::setfill('0');
-    for (uint8_t byte : bytes)
-        oss << std::setw(2) << static_cast<int>(byte);
-    return oss.str();
-}
-
 }  // namespace
 
 SummaryWriter::SummaryWriter(std::string output_dir,
@@ -125,11 +77,6 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
                           const std::vector<MemorySegment>& memory_segments,
                           const std::string& binary_path) const {
     fs::create_directories(output_dir_);
-
-    std::string summary_path = output_dir_ + "/summary.json";
-    std::ofstream summary;
-    if (!OpenSummaryFile(summary_path, summary))
-        return;
 
     auto libraries = scanner_->DetectLibraries(binary_path);
     std::vector<std::string> library_names;
@@ -161,12 +108,26 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
         hash_calculator_->ComputeSummaryHash(binary_hash, memory_hash, can_split, library_names, libraries,
                                              partition_hashes);
 
-    WriteHeader(summary, binary_path, partitions_copy.size(), CountParallelizable(partitions_copy),
-                library_names, libraries, binary_hash, can_split, memory_hash, summary_hash);
-    WritePartitions(summary, partitions_copy, artifacts, symbol_index);
-    summary << "  ],\n";
-    WriteMemory(summary, memory_segments);
-    WriteFooter(summary);
+    SummaryBuilder builder;
+    builder.SetBinaryInfo(binary_path, binary_hash, memory_hash, can_split, summary_hash);
+    builder.SetCounts(partitions_copy.size(), CountParallelizable(partitions_copy));
+    builder.SetRequiredLibraries(library_names);
+    builder.SetLibraries(libraries);
+    for (size_t idx = 0; idx < partitions_copy.size(); ++idx) {
+        std::optional<PartitionFiles> files_opt;
+        if (idx < artifacts.size())
+            files_opt = artifacts[idx];
+        auto req = ResolvePartitionLibraries(partitions_copy[idx], symbol_index);
+        builder.AddPartition(partitions_copy[idx], files_opt, req);
+    }
+    builder.SetPartitionHashes(partition_hashes);
+    builder.SetMemorySegments(memory_segments);
+
+    std::string summary_path = output_dir_ + "/summary.json";
+    std::ofstream summary;
+    if (!OpenSummaryFile(summary_path, summary))
+        return;
+    summary << builder.Build();
 
     std::cout << "\nRésumé: " << summary_path << "\n";
 }
@@ -177,69 +138,6 @@ bool SummaryWriter::OpenSummaryFile(const std::string& path, std::ofstream& out)
         return true;
     std::cerr << "Avertissement: impossible d'écrire " << path << "\n";
     return false;
-}
-
-void SummaryWriter::WriteHeader(std::ofstream& out,
-                                const std::string& binary_path,
-                                size_t partition_count,
-                                size_t parallelizable_count,
-                                const std::vector<std::string>& required_libraries,
-                                const std::vector<LibraryInfo>& libraries,
-                                const std::string& binary_hash,
-                                bool can_split,
-                                const std::string& memory_hash,
-                                const std::string& summary_hash) const {
-    out << "{\n";
-    out << "  \"binary\": \"" << JsonEscape(binary_path) << "\",\n";
-    out << "  \"binary_hash\": \"" << JsonEscape(binary_hash) << "\",\n";
-    out << "  \"can_split\": " << (can_split ? "true" : "false") << ",\n";
-    out << "  \"memory_hash\": \"" << JsonEscape(memory_hash) << "\",\n";
-    out << "  \"summary_hash\": \"" << JsonEscape(summary_hash) << "\",\n";
-    out << "  \"partitions_count\": " << partition_count << ",\n";
-    out << "  \"parallelizable_count\": " << parallelizable_count << ",\n";
-    out << "  \"required_libraries\": " << VectorToJson(required_libraries) << ",\n";
-    out << "  \"libraries\": [\n";
-    for (size_t i = 0; i < libraries.size(); ++i) {
-        const auto& lib = libraries[i];
-        const bool is_last = (i + 1 == libraries.size());
-        out << "    {\n";
-        out << "      \"name\": \"" << JsonEscape(lib.Name()) << "\",\n";
-        out << "      \"path\": \"" << JsonEscape(lib.Path()) << "\",\n";
-        out << "      \"soname\": \"" << JsonEscape(lib.Soname().empty() ? lib.Name() : lib.Soname()) << "\",\n";
-        out << "      \"build_id\": \"" << JsonEscape(lib.BuildId()) << "\"\n";
-        out << "    }" << (is_last ? "" : ",") << "\n";
-    }
-    out << "  ],\n";
-    out << "  \"partitions\": [\n";
-}
-
-void SummaryWriter::WriteFooter(std::ofstream& out) const {
-    out << "}\n";
-}
-
-void SummaryWriter::WritePartitions(std::ofstream& out,
-                                    const std::vector<Partition>& partitions,
-                                    const std::vector<PartitionFiles>& artifacts,
-                                    const FlatStringMap& symbol_index) const {
-    for (size_t idx = 0; idx < partitions.size(); ++idx) {
-        const bool is_last = (idx + 1 == partitions.size());
-        WritePartitionEntry(out, partitions[idx], ArtifactFor(idx, artifacts), symbol_index, is_last);
-    }
-}
-
-void SummaryWriter::WriteMemory(std::ofstream& out, const std::vector<MemorySegment>& memory_segments) const {
-    out << "  \"initial_memory\": [\n";
-    for (size_t idx = 0; idx < memory_segments.size(); ++idx) {
-        const auto& segment = memory_segments[idx];
-        bool is_last = (idx + 1 == memory_segments.size());
-        out << "    {\n";
-        out << "      \"name\": \"" << JsonEscape(segment.Name()) << "\",\n";
-        out << "      \"address\": \"0x" << std::hex << segment.Address() << "\",\n";
-        out << std::dec;
-        out << "      \"bytes\": \"" << BytesToHex(segment.Bytes()) << "\"\n";
-        out << "    }" << (is_last ? "\n" : ",\n");
-    }
-    out << "  ]\n";
 }
 
 }  // namespace splitter

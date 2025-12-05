@@ -5,18 +5,19 @@
 #include <vector>
 
 #include "splitter/core/MemorySegment.hpp"
+#include "splitter/partitioning/IBinaryExtractor.hpp"
 
 namespace splitter {
 
-class BinaryExtractor {
+class BinaryExtractor : public IBinaryExtractor {
 public:
     virtual ~BinaryExtractor();
 
-    virtual std::vector<uint8_t> ExtractSegment(const std::string& binary_path,
-                                                uint64_t start_addr,
-                                                uint64_t end_addr) const;
+    std::vector<uint8_t> ExtractSegment(const std::string& binary_path,
+                                        uint64_t start_addr,
+                                        uint64_t end_addr) const override;
 
-    virtual std::vector<MemorySegment> ExtractDataSections(const std::string& binary_path) const;
+    std::vector<MemorySegment> ExtractDataSections(const std::string& binary_path) const override;
 };
 
 }  // namespace splitter

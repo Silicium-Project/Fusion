@@ -74,17 +74,12 @@ PipelineRunner::PipelineRunner(PipelineConfig config,
 int PipelineRunner::Run() {
     std::cout << "=== Désassemblage de " << context_.config.binary_path.Value() << " ===\n\n";
     auto run_phase = [&](std::unique_ptr<IPipelinePhase>& phase) -> bool {
-        using clock = std::chrono::steady_clock;
-        auto start = clock::now();
         try {
             phase->Execute(context_);
         } catch (const std::exception& e) {
             std::cerr << "Erreur pendant " << phase->Name() << ": " << e.what() << "\n";
             return false;
         }
-        auto end = clock::now();
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-        std::cout << "[" << phase->Name() << "] " << ms << " ms\n";
         return true;
     };
 

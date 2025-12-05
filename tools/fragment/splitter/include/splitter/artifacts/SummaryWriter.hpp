@@ -32,22 +32,6 @@ public:
 
 private:
     bool OpenSummaryFile(const std::string& path, std::ofstream& out) const;
-    void WriteHeader(std::ofstream& out,
-                     const std::string& binary_path,
-                     size_t partition_count,
-                     size_t parallelizable_count,
-                     const std::vector<std::string>& required_libraries,
-                     const std::vector<LibraryInfo>& libraries,
-                     const std::string& binary_hash,
-                     bool can_split,
-                     const std::string& memory_hash,
-                     const std::string& summary_hash) const;
-    void WriteFooter(std::ofstream& out) const;
-    void WritePartitions(std::ofstream& out,
-                         const std::vector<Partition>& partitions,
-                         const std::vector<PartitionFiles>& artifacts,
-                         const FlatStringMap& symbol_index) const;
-    void WriteMemory(std::ofstream& out, const std::vector<MemorySegment>& memory_segments) const;
 
     std::string output_dir_;
     std::shared_ptr<const ILibraryScanner> scanner_;

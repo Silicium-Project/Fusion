@@ -15,13 +15,12 @@
 #include "splitter/pipeline/ArtifactsPhase.hpp"
 #include "splitter/pipeline/DisassemblyPhase.hpp"
 #include "splitter/pipeline/PartitioningPhase.hpp"
+#include "splitter/pipeline/PhaseRegistry.hpp"
+#include "splitter/pipeline/TimingPhase.hpp"
 #include "splitter/support/HashService.hpp"
 #include "splitter/support/Env.hpp"
-#include "splitter/artifacts/DefaultSymbolIndexer.hpp"
-#include "splitter/artifacts/DefaultLibraryResolver.hpp"
-#include "splitter/artifacts/ReadelfLibraryResolver.hpp"
-#include "splitter/artifacts/ObjdumpSymbolIndexer.hpp"
-#include "splitter/artifacts/StdHashAlgorithm.hpp"
+#include "splitter/artifacts/LibraryScannerFactory.hpp"
+#include "splitter/artifacts/HashAlgorithmFactory.hpp"
 
 namespace splitter {
 
@@ -33,31 +32,22 @@ HashService ChooseHashService(const PipelineConfig& config) {
         if (auto env = GetEnv("SPLITTER_HASH_ALGO"))
             choice = *env;
     }
-    if (choice == "std")
-        return HashService(std::make_shared<StdHashAlgorithm>());
-    return MakeHashServiceFromEnv();
+    auto algo = HashAlgorithmFactory::Create(choice);
+    return HashService(algo);
 }
 
-std::unique_ptr<ILibraryResolver> ChooseResolver(const PipelineConfig& config) {
-    std::string choice = config.resolver;
-    if (choice.empty()) {
+std::shared_ptr<ILibraryScanner> BuildScanner(const PipelineConfig& config) {
+    std::string resolver = config.resolver;
+    if (resolver.empty())
         if (auto env = GetEnv("SPLITTER_LIB_RESOLVER"))
-            choice = *env;
-    }
-    if (choice == "readelf")
-        return std::make_unique<ReadelfLibraryResolver>();
-    return std::make_unique<DefaultLibraryResolver>();
-}
+            resolver = *env;
 
-std::unique_ptr<ISymbolIndexer> ChooseIndexer(const PipelineConfig& config) {
-    std::string choice = config.symbol_indexer;
-    if (choice.empty()) {
+    std::string indexer = config.symbol_indexer;
+    if (indexer.empty())
         if (auto env = GetEnv("SPLITTER_SYMBOL_INDEXER"))
-            choice = *env;
-    }
-    if (choice == "objdump")
-        return std::make_unique<ObjdumpSymbolIndexer>();
-    return std::make_unique<DefaultSymbolIndexer>();
+            indexer = *env;
+
+    return LibraryScannerFactory::Create(resolver, indexer);
 }
 
 }  // namespace
@@ -75,16 +65,37 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
         std::make_unique<Partitioner>(config.binary_path, analyzer, extractor, hash_service);
     auto partitioning = std::make_unique<PartitioningPhase>(std::move(partitioner), extractor);
 
-    auto scanner = std::make_shared<LibraryScanner>(ChooseResolver(config), ChooseIndexer(config));
+    auto scanner = BuildScanner(config);
     auto hash_calc = std::make_shared<SummaryHashCalculator>(nullptr, hash_service);
-    auto artifacts = std::make_unique<ArtifactsPhase>(
-        std::make_unique<ArtifactBuilder>(config.output_dir.Value()),
-        std::make_unique<SummaryWriter>(config.output_dir.Value(), scanner, hash_calc),
-        config.parallel_artifacts);
+    auto artifacts_builder = std::make_unique<ArtifactBuilder>(config.output_dir.Value());
+    auto summary_writer =
+        std::make_unique<SummaryWriter>(config.output_dir.Value(), scanner, hash_calc);
 
-    return std::make_unique<PipelineRunner>(std::move(config), std::move(disassembly),
-                                            std::move(analysis), std::move(partitioning),
-                                            std::move(artifacts));
+    PhaseRegistry registry;
+    registry.Register("disassembly", [&]() {
+        return std::make_unique<TimingPhase>(std::make_unique<DisassemblyPhase>(
+            std::make_unique<ObjdumpDisassembler>(config.binary_path.Value())));
+    });
+    registry.Register("analysis", [&]() {
+        return std::make_unique<TimingPhase>(std::make_unique<AnalysisPhase>(analyzer));
+    });
+    registry.Register("partitioning", [&]() {
+        return std::make_unique<TimingPhase>(std::make_unique<PartitioningPhase>(
+            std::make_unique<Partitioner>(config.binary_path, analyzer, extractor, hash_service),
+            extractor));
+    });
+    registry.Register("artifacts", [&]() {
+        return std::make_unique<TimingPhase>(std::make_unique<ArtifactsPhase>(
+            std::make_unique<ArtifactBuilder>(config.output_dir.Value()),
+            std::make_unique<SummaryWriter>(config.output_dir.Value(), scanner, hash_calc),
+            config.parallel_artifacts));
+    });
+
+    auto phases = registry.CreateSequence({"disassembly", "analysis", "partitioning", "artifacts"});
+
+    return std::make_unique<PipelineRunner>(std::move(config), std::move(phases[0]),
+                                            std::move(phases[1]), std::move(phases[2]),
+                                            std::move(phases[3]));
 }
 
 }  // namespace splitter
