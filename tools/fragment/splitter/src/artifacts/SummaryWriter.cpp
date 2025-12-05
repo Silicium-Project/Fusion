@@ -43,7 +43,7 @@ std::set<std::string> ResolvePartitionLibraries(const Partition& partition, cons
 
 }  // namespace
 
-SummaryWriter::SummaryWriter(std::string output_dir,
+SummaryWriter::SummaryWriter(std::filesystem::path output_dir,
                              std::shared_ptr<const ILibraryScanner> scanner,
                              std::shared_ptr<const SummaryHashCalculator> hash_calculator)
     : output_dir_(std::move(output_dir)),
@@ -53,7 +53,7 @@ SummaryWriter::SummaryWriter(std::string output_dir,
     fs::create_directories(output_dir_);
 }
 
-SummaryWriter::SummaryWriter(std::string output_dir,
+SummaryWriter::SummaryWriter(std::filesystem::path output_dir,
                              std::shared_ptr<const ILibraryScanner> scanner,
                              HashService hash_service)
     : SummaryWriter(std::move(output_dir), std::move(scanner),
@@ -62,7 +62,7 @@ SummaryWriter::SummaryWriter(std::string output_dir,
 void SummaryWriter::Write(const std::vector<Partition>& partitions,
                           const std::vector<PartitionFiles>& artifacts,
                           const std::vector<MemorySegment>& memory_segments,
-                          const std::string& binary_path) const {
+                          const std::filesystem::path& binary_path) const {
     fs::create_directories(output_dir_);
 
     const std::string abs_binary = fs::absolute(binary_path).string();
@@ -111,16 +111,16 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
     builder.SetPartitionHashes(partition_hashes);
     builder.SetMemorySegments(memory_segments);
 
-    std::string summary_path = output_dir_ + "/summary.json";
+    const fs::path summary_path = output_dir_ / "summary.json";
     std::ofstream summary;
     if (!OpenSummaryFile(summary_path, summary))
         return;
     summary << builder.Build();
 
-    std::cout << "\nRésumé: " << summary_path << "\n";
+    std::cout << "\nRésumé: " << summary_path.string() << "\n";
 }
 
-bool SummaryWriter::OpenSummaryFile(const std::string& path, std::ofstream& out) const {
+bool SummaryWriter::OpenSummaryFile(const std::filesystem::path& path, std::ofstream& out) const {
     out.open(path);
     if (out)
         return true;

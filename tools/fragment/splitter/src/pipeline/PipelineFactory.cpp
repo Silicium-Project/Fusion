@@ -1,10 +1,12 @@
 #include "pipeline/PipelineFactory.hpp"
 
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
 
 #include "analysis/ObjdumpDisassembler.hpp"
 #include "analysis/CompositeInstructionAnalyzer.hpp"
+#include "analysis/InstructionAnalyzerFactory.hpp"
 #include "analysis/X86_64InstructionAnalyzer.hpp"
 #include "artifacts/ArtifactBuilder.hpp"
 #include "artifacts/LibraryScanner.hpp"
@@ -14,6 +16,8 @@
 #include "pipeline/AnalysisPhase.hpp"
 #include "pipeline/ArtifactsPhase.hpp"
 #include "pipeline/DisassemblyPhase.hpp"
+#include "pipeline/ConsoleReporter.hpp"
+#include "pipeline/JsonReporter.hpp"
 #include "pipeline/PartitioningPhase.hpp"
 #include "pipeline/PhaseRegistry.hpp"
 #include "pipeline/TimingPhase.hpp"
@@ -50,6 +54,20 @@ std::shared_ptr<ILibraryScanner> BuildScanner(const PipelineConfig& config) {
     return LibraryScannerFactory::Create(resolver, indexer);
 }
 
+std::unique_ptr<IReporter> BuildReporter(const PipelineConfig& config) {
+    std::string reporter = config.reporter;
+    if (reporter.empty())
+        if (auto env = GetEnv("SPLITTER_REPORTER"))
+            reporter = *env;
+
+    std::transform(reporter.begin(), reporter.end(), reporter.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (reporter == "json")
+        return std::make_unique<JsonReporter>();
+    return std::make_unique<ConsoleReporter>();
+}
+
 }  // namespace
 
 std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig config) {
@@ -70,6 +88,7 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
     auto artifacts_builder = std::make_unique<ArtifactBuilder>(config.output_dir.Value());
     auto summary_writer =
         std::make_unique<SummaryWriter>(config.output_dir.Value(), scanner, hash_calc);
+    auto reporter = BuildReporter(config);
 
     PhaseRegistry registry;
     registry.Register("disassembly", [&]() {
@@ -95,7 +114,7 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
 
     return std::make_unique<PipelineRunner>(std::move(config), std::move(phases[0]),
                                             std::move(phases[1]), std::move(phases[2]),
-                                            std::move(phases[3]), nullptr);
+                                            std::move(phases[3]), std::move(reporter));
 }
 
 }  // namespace splitter

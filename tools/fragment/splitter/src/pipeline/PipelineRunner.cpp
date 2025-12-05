@@ -19,7 +19,9 @@
 #include "pipeline/ArtifactsPhase.hpp"
 #include "pipeline/DisassemblyPhase.hpp"
 #include "pipeline/ConsoleReporter.hpp"
+#include "pipeline/JsonReporter.hpp"
 #include "pipeline/PartitioningPhase.hpp"
+#include "pipeline/PipelineError.hpp"
 #include "pipeline/PipelineFactory.hpp"
 #include "partitioning/Partitioner.hpp"
 #include "support/HashUtil.hpp"
@@ -49,14 +51,15 @@ void PrintSample(const std::string& label, const Container& container, std::size
 
 void PrintUsage(std::string_view prog) {
     std::cout << "Usage: " << prog << " <binary_file> [--output-dir <dir>] [--hash <fnv|std>] "
-              << "[--resolver <ldd|readelf>] [--indexer <nm|objdump>]\n\n"
+              << "[--resolver <ldd|readelf>] [--indexer <nm|objdump>] [--reporter <console|json>]\n\n"
               << "Exemples:\n"
               << "  " << prog << " ./a.out\n"
               << "  " << prog << " program.exe --output-dir ./partitions --hash std\n\n"
               << "Nécessite: objdump, readelf (binutils)\n"
               << "Hash: variable d'environnement SPLITTER_HASH_ALGO ou option --hash.\n"
               << "Résolveur de bibliothèques: env SPLITTER_LIB_RESOLVER ou --resolver (ldd/readelf).\n"
-              << "Indexation des symboles: env SPLITTER_SYMBOL_INDEXER ou --indexer (nm/objdump).\n";
+              << "Indexation des symboles: env SPLITTER_SYMBOL_INDEXER ou --indexer (nm/objdump).\n"
+              << "Reporter: env SPLITTER_REPORTER ou --reporter (console/json).\n";
 }
 
 }  // namespace
@@ -79,31 +82,37 @@ PipelineRunner::PipelineRunner(PipelineConfig config,
 
 int PipelineRunner::Run() {
     reporter_->Banner("=== Désassemblage de " + context_.config.binary_path.Value() + " ===");
-    auto run_phase = [&](std::unique_ptr<IPipelinePhase>& phase) -> bool {
+    int exit_code = 0;
+    auto run_phase = [&](std::unique_ptr<IPipelinePhase>& phase, PipelineExit code) -> bool {
         try {
             phase->Execute(context_);
+        } catch (const PipelineError& e) {
+            std::cerr << "Erreur pendant " << phase->Name() << ": " << e.what() << "\n";
+            exit_code = static_cast<int>(e.Code());
+            return false;
         } catch (const std::exception& e) {
             std::cerr << "Erreur pendant " << phase->Name() << ": " << e.what() << "\n";
+            exit_code = static_cast<int>(code);
             return false;
         }
         return true;
     };
 
-    if (!run_phase(disassembly_))
-        return 1;
+    if (!run_phase(disassembly_, PipelineExit::DisassemblyError))
+        return exit_code ? exit_code : static_cast<int>(PipelineExit::DisassemblyError);
 
     reporter_->Info("Fonctions trouvées: " + std::to_string(context_.functions.size()));
     PrintFunctionOverview(context_.functions);
     if (context_.config.dump_full_disassembly)
         DumpDisassembly(context_.disassembly);
 
-    if (!run_phase(analysis_))
-        return 1;
+    if (!run_phase(analysis_, PipelineExit::AnalysisError))
+        return exit_code ? exit_code : static_cast<int>(PipelineExit::AnalysisError);
     ReportLoops(context_.functions);
 
     reporter_->Banner("=== Partitionnement du binaire ===");
-    if (!run_phase(partitioning_))
-        return 1;
+    if (!run_phase(partitioning_, PipelineExit::PartitioningError))
+        return exit_code ? exit_code : static_cast<int>(PipelineExit::PartitioningError);
     reporter_->Info("Partitions créées: " + std::to_string(context_.partitions.size()));
     const std::size_t max_partitions =
         []() {
@@ -116,14 +125,14 @@ int PipelineRunner::Run() {
         || context_.partitions.size() > context_.functions.size() * ratio_limit) {
         std::cerr << "Erreur: nombre de partitions incohérent (" << context_.partitions.size()
                   << "), abandon.\n";
-        return 1;
+        return static_cast<int>(PipelineExit::PartitioningError);
     }
 
     for (const auto& partition : context_.partitions)
         ReportPartition(partition);
 
-    if (!run_phase(artifacts_))
-        return 1;
+    if (!run_phase(artifacts_, PipelineExit::ArtifactsError))
+        return exit_code ? exit_code : static_cast<int>(PipelineExit::ArtifactsError);
     reporter_->Banner("=== Terminé ===");
     reporter_->Info("Partitions: " + context_.config.output_dir.Value() + "/");
     return 0;
@@ -135,11 +144,12 @@ void PipelineRunner::PrintFunctionOverview(const std::vector<Function>& function
 }
 
 void PipelineRunner::DumpDisassembly(const std::string& disasm) const {
-    fs::create_directories(context_.config.output_dir.Value());
-    const std::string path = context_.config.output_dir.Value() + "/disassembly_full.asm";
+    fs::path out_dir(context_.config.output_dir.Value());
+    fs::create_directories(out_dir);
+    const fs::path path = out_dir / "disassembly_full.asm";
     std::ofstream full_asm(path);
     full_asm << disasm;
-    reporter_->Info("Désassemblage complet: " + path);
+    reporter_->Info("Désassemblage complet: " + path.string());
 }
 
 void PipelineRunner::ReportLoops(std::vector<Function>& functions) const {
@@ -186,6 +196,8 @@ int RunCli(const std::vector<std::string_view>& args) {
             config.resolver = std::string(args[++i]);  // ldd/readelf/auto
         } else if (current == "--indexer" && i + 1 < args.size()) {
             config.symbol_indexer = std::string(args[++i]);  // nm/objdump/auto
+        } else if (current == "--reporter" && i + 1 < args.size()) {
+            config.reporter = std::string(args[++i]);  // console/json
         }
     }
 

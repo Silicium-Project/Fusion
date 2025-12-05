@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -18,22 +19,22 @@ namespace splitter {
 
 class SummaryWriter {
 public:
-    SummaryWriter(std::string output_dir,
+    SummaryWriter(std::filesystem::path output_dir,
                   std::shared_ptr<const ILibraryScanner> scanner,
                   std::shared_ptr<const SummaryHashCalculator> hash_calculator = nullptr);
-    SummaryWriter(std::string output_dir,
+    SummaryWriter(std::filesystem::path output_dir,
                   std::shared_ptr<const ILibraryScanner> scanner,
                   HashService hash_service);
 
     void Write(const std::vector<Partition>& partitions,
                const std::vector<PartitionFiles>& artifacts,
                const std::vector<MemorySegment>& memory_segments,
-               const std::string& binary_path) const;
+               const std::filesystem::path& binary_path) const;
 
 private:
-    bool OpenSummaryFile(const std::string& path, std::ofstream& out) const;
+    bool OpenSummaryFile(const std::filesystem::path& path, std::ofstream& out) const;
 
-    std::string output_dir_;
+    std::filesystem::path output_dir_;
     std::shared_ptr<const ILibraryScanner> scanner_;
     std::shared_ptr<const SummaryHashCalculator> hash_calculator_;
 };

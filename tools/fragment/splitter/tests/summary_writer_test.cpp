@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -76,7 +77,8 @@ private:
 TEST(SummaryWriter, WritesSummaryAndHashes) {
     auto scanner = std::make_shared<FakeScanner>();
     auto hash_calc = std::make_shared<SummaryHashCalculator>();
-    SummaryWriter writer("/tmp/splitter_test_out", scanner, hash_calc);
+    const std::filesystem::path out_dir = std::filesystem::temp_directory_path() / "splitter_test_out";
+    SummaryWriter writer(out_dir, scanner, hash_calc);
 
     std::vector<Partition> parts;
     parts.push_back(MakePartition("p0"));
@@ -91,9 +93,9 @@ TEST(SummaryWriter, WritesSummaryAndHashes) {
 
     std::vector<MemorySegment> mem = {seg};
 
-    writer.Write(parts, files, mem, "/bin/ls");
+    writer.Write(parts, files, mem, std::filesystem::path("/bin/ls"));
 
-    std::ifstream in("/tmp/splitter_test_out/summary.json");
+    std::ifstream in(out_dir / "summary.json");
     ASSERT_TRUE(in.is_open());
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     // Basic presence checks
@@ -106,7 +108,9 @@ TEST(SummaryWriter, AcceptsCustomHashService) {
     auto scanner = std::make_shared<FakeScanner>();
     auto algo = std::make_shared<FakeHash>();
     auto hash_calc = std::make_shared<SummaryHashCalculator>(algo, HashService(algo));
-    SummaryWriter writer("/tmp/splitter_test_out_custom", scanner, hash_calc);
+    const std::filesystem::path out_dir =
+        std::filesystem::temp_directory_path() / "splitter_test_out_custom";
+    SummaryWriter writer(out_dir, scanner, hash_calc);
 
     std::vector<Partition> parts;
     parts.push_back(MakePartition("p0"));
@@ -120,8 +124,8 @@ TEST(SummaryWriter, AcceptsCustomHashService) {
     seg.Bytes() = {0xaa, 0xbb};
     std::vector<MemorySegment> mem = {seg};
 
-    writer.Write(parts, files, mem, "/bin/ls");
-    std::ifstream in("/tmp/splitter_test_out_custom/summary.json");
+    writer.Write(parts, files, mem, std::filesystem::path("/bin/ls"));
+    std::ifstream in(out_dir / "summary.json");
     ASSERT_TRUE(in.is_open());
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     EXPECT_NE(content.find("fake_"), std::string::npos);  // hash issu du FakeHash

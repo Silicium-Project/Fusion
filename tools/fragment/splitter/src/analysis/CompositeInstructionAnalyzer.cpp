@@ -1,17 +1,12 @@
 #include "analysis/CompositeInstructionAnalyzer.hpp"
 
+#include "analysis/InstructionAnalyzerFactory.hpp"
 #include "analysis/X86_64InstructionAnalyzer.hpp"
 
 namespace splitter {
 
 const CompositeInstructionAnalyzer& CompositeInstructionAnalyzer::Default() {
-    static CompositeInstructionAnalyzer instance;
-    static bool initialized = false;
-    if (!initialized) {
-        instance.AddAnalyzer(X86_64InstructionAnalyzer::Instance());
-        instance.AddAnalyzer(GuiInstructionAnalyzer::Instance());
-        initialized = true;
-    }
+    static CompositeInstructionAnalyzer instance = InstructionAnalyzerFactory::CreateDefault();
     return instance;
 }
 
