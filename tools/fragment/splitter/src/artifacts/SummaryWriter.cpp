@@ -41,19 +41,6 @@ std::set<std::string> ResolvePartitionLibraries(const Partition& partition, cons
     return names;
 }
 
-std::string HexString(uint64_t value) {
-    std::ostringstream oss;
-    oss << "0x" << std::hex << value;
-    return oss.str();
-}
-
-std::optional<std::reference_wrapper<const PartitionFiles>> ArtifactFor(
-    size_t idx, const std::vector<PartitionFiles>& artifacts) {
-    if (idx >= artifacts.size())
-        return std::nullopt;
-    return std::cref(artifacts[idx]);
-}
-
 }  // namespace
 
 SummaryWriter::SummaryWriter(std::string output_dir,
@@ -78,7 +65,8 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
                           const std::string& binary_path) const {
     fs::create_directories(output_dir_);
 
-    auto libraries = scanner_->DetectLibraries(binary_path);
+    const std::string abs_binary = fs::absolute(binary_path).string();
+    auto libraries = scanner_->DetectLibraries(abs_binary);
     std::vector<std::string> library_names;
     {
         std::set<std::string> unique;
@@ -89,14 +77,14 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
     FlatStringMap symbol_index;
     for (const auto& kv : scanner_->BuildSymbolIndex(libraries))
         symbol_index.insert(kv.first, kv.second);
-    const std::string binary_hash = HashFile(binary_path);
+    const std::string binary_hash = HashFile(abs_binary);
     bool can_split = true;
     if (auto env = GetEnv("SPLITTER_CAN_SPLIT"))
         can_split = *env != "0" && *env != "false";
 
     std::vector<Partition> partitions_copy = partitions;
     std::vector<std::pair<std::string, std::string>> partition_hashes;
-    partition_hashes.reserve(partitions_copy.size());
+    partition_hashes.clear();
     for (auto& p : partitions_copy) {
         auto resolved_libs = ResolvePartitionLibraries(p, symbol_index);
         p.SetPartitionHash(hash_calculator_->ComputePartitionHash(p, resolved_libs));
@@ -109,7 +97,7 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
                                              partition_hashes);
 
     SummaryBuilder builder;
-    builder.SetBinaryInfo(binary_path, binary_hash, memory_hash, can_split, summary_hash);
+    builder.SetBinaryInfo(abs_binary, binary_hash, memory_hash, can_split, summary_hash);
     builder.SetCounts(partitions_copy.size(), CountParallelizable(partitions_copy));
     builder.SetRequiredLibraries(library_names);
     builder.SetLibraries(libraries);
