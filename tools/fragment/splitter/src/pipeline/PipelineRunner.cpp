@@ -70,7 +70,7 @@ PipelineRunner::PipelineRunner(PipelineConfig config,
                                std::unique_ptr<IPipelinePhase> analysis,
                                std::unique_ptr<IPipelinePhase> partitioning,
                                std::unique_ptr<IPipelinePhase> artifacts,
-                               std::unique_ptr<IReporter> reporter)
+                               std::shared_ptr<IReporter> reporter)
     : context_(std::move(config)),
       disassembly_(std::move(disassembly)),
       analysis_(std::move(analysis)),
@@ -78,7 +78,7 @@ PipelineRunner::PipelineRunner(PipelineConfig config,
       artifacts_(std::move(artifacts)),
       reporter_(std::move(reporter)) {
     if (!reporter_)
-        reporter_ = std::make_unique<ConsoleReporter>();
+        reporter_ = std::make_shared<ConsoleReporter>();
 }
 
 int PipelineRunner::Run() {

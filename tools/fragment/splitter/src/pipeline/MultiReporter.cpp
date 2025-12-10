@@ -2,7 +2,7 @@
 
 namespace splitter {
 
-MultiReporter::MultiReporter(std::vector<std::unique_ptr<IReporter>> reporters)
+MultiReporter::MultiReporter(std::vector<std::shared_ptr<IReporter>> reporters)
     : reporters_(std::move(reporters)) {}
 
 void MultiReporter::Banner(const std::string& title) {

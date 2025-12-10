@@ -21,3 +21,12 @@ TEST(InstructionAnalyzerFactory, GenericAnalyzerDoesNotMarkJump) {
     composite.AnalyzeInstruction(inst);
     EXPECT_FALSE(inst.IsJump());
 }
+
+TEST(InstructionAnalyzerFactory, MatchesObjdumpArchString) {
+    auto composite = InstructionAnalyzerFactory::Create("i386:x86-64");
+    Instruction inst;
+    inst.SetOpcode("jmp");
+    inst.SetOperands("0x10");
+    composite.AnalyzeInstruction(inst);
+    EXPECT_TRUE(inst.IsJump());
+}

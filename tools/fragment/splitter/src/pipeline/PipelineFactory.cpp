@@ -119,21 +119,21 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
     PhaseRegistry registry;
     registry.Register("disassembly", [&]() {
         return std::make_unique<TimingPhase>(std::make_unique<DisassemblyPhase>(
-            std::make_unique<ObjdumpDisassembler>(config.binary_path.Value())), reporter.get());
+            std::make_unique<ObjdumpDisassembler>(config.binary_path.Value())), reporter);
     });
     registry.Register("analysis", [&]() {
-        return std::make_unique<TimingPhase>(std::make_unique<AnalysisPhase>(analyzer), reporter.get());
+        return std::make_unique<TimingPhase>(std::make_unique<AnalysisPhase>(analyzer), reporter);
     });
     registry.Register("partitioning", [&]() {
         return std::make_unique<TimingPhase>(std::make_unique<PartitioningPhase>(
             std::make_unique<Partitioner>(config.binary_path, analyzer, extractor, hash_service),
-            extractor), reporter.get());
+            extractor), reporter);
     });
     registry.Register("artifacts", [&]() {
         return std::make_unique<TimingPhase>(std::make_unique<ArtifactsPhase>(
             std::make_unique<ArtifactBuilder>(config.output_dir.Value()),
             std::make_unique<SummaryWriter>(std::filesystem::path(config.output_dir.Value()), scanner, hash_calc),
-            config.parallel_artifacts), reporter.get());
+            config.parallel_artifacts), reporter);
     });
 
     auto phases = registry.CreateSequence({"disassembly", "analysis", "partitioning", "artifacts"});

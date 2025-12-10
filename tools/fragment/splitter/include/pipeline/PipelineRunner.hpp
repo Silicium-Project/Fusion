@@ -17,7 +17,7 @@ public:
                    std::unique_ptr<IPipelinePhase> analysis,
                    std::unique_ptr<IPipelinePhase> partitioning,
                    std::unique_ptr<IPipelinePhase> artifacts,
-                   std::unique_ptr<IReporter> reporter = nullptr);
+                   std::shared_ptr<IReporter> reporter = {});
 
     int Run();
 
@@ -32,7 +32,7 @@ private:
     std::unique_ptr<IPipelinePhase> analysis_;
     std::unique_ptr<IPipelinePhase> partitioning_;
     std::unique_ptr<IPipelinePhase> artifacts_;
-    std::unique_ptr<IReporter> reporter_;
+    std::shared_ptr<IReporter> reporter_;
 };
 
 int RunCli(const std::vector<std::string_view>& args);

@@ -9,7 +9,7 @@ namespace splitter {
 
 class ReporterFactory {
 public:
-    static std::unique_ptr<IReporter> Create(const PipelineConfig& config);
+    static std::shared_ptr<IReporter> Create(const PipelineConfig& config);
 };
 
 }  // namespace splitter

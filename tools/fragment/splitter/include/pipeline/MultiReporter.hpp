@@ -9,7 +9,7 @@ namespace splitter {
 
 class MultiReporter : public IReporter {
 public:
-    explicit MultiReporter(std::vector<std::unique_ptr<IReporter>> reporters);
+    explicit MultiReporter(std::vector<std::shared_ptr<IReporter>> reporters);
 
     void Banner(const std::string& title) override;
     void Info(const std::string& message) override;
@@ -19,7 +19,7 @@ public:
     void ReportPartition(const Partition& partition, std::size_t sample_preview) override;
 
 private:
-    std::vector<std::unique_ptr<IReporter>> reporters_;
+    std::vector<std::shared_ptr<IReporter>> reporters_;
 };
 
 }  // namespace splitter

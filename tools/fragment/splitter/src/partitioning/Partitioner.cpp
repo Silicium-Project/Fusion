@@ -21,8 +21,8 @@ namespace {
 bool ShouldSkipFunction(const Function& func) {
     if (func.Name().empty())
         return true;
-    if (func.Name().front() == '_')
-        return true;
+    if (func.Name() == "_start" || func.Name().find("_start") != std::string::npos)
+        return true;  // bootstrap incompatible avec exécution native hors process complet
     return func.Name().find("@plt") != std::string::npos;
 }
 

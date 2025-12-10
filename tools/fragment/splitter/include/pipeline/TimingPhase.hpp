@@ -13,8 +13,8 @@ namespace splitter {
 // Décorateur simple qui mesure la durée d'exécution d'une phase et logge le résultat.
 class TimingPhase : public IPipelinePhase {
 public:
-    explicit TimingPhase(std::unique_ptr<IPipelinePhase> inner, IReporter* reporter = nullptr)
-        : inner_(std::move(inner)), reporter_(reporter) {}
+    explicit TimingPhase(std::unique_ptr<IPipelinePhase> inner, std::shared_ptr<IReporter> reporter = {})
+        : inner_(std::move(inner)), reporter_(std::move(reporter)) {}
 
     std::string Name() const override { return inner_->Name(); }
 
@@ -32,7 +32,7 @@ public:
 
 private:
     std::unique_ptr<IPipelinePhase> inner_;
-    IReporter* reporter_;
+    std::shared_ptr<IReporter> reporter_;
 };
 
 }  // namespace splitter
