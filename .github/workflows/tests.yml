@@ -54,15 +54,10 @@ jobs:
       - name: Run worker tests (coverage)
         run: make -C worker test
 
-      - name: Install gcovr
+      - name: Generate coverage report (worker inside build image)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcovr
-
-      - name: Generate coverage report (worker)
-        run: |
-          cd worker
-          gcovr -r . --filter src --filter include --xml coverage.xml --html-details coverage.html --json-summary coverage-summary.json --print-summary
+          docker run --rm -v "$PWD":/workspace -w /workspace/worker silicium/cpp-tests:latest \
+            bash -lc 'apt-get update && apt-get install -y gcovr && gcovr -r . --filter src --filter include --xml coverage.xml --html-details coverage.html --json-summary coverage-summary.json --print-summary'
 
       - name: Publish coverage summary
         run: |
