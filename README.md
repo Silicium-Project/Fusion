@@ -29,6 +29,8 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
+![Badge couverture worker](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Silicium-Project/Network/gh-pages/worker/badge.json)
+
 Snapshot (dernière publication `gh-pages/worker/coverage-summary.json`) :
 
 | Metric     | Covered | Total | %     |
