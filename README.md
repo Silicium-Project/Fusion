@@ -27,6 +27,13 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ---
 
+## Couverture (worker)
+
+Le rapport HTML est publié sur GitHub Pages après chaque build `main` :  
+https://silicium-project.github.io/Network/worker/
+
+---
+
 ## Prérequis
 
 - [Docker Engine](https://docs.docker.com/get-docker/)
