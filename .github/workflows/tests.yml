@@ -90,3 +90,32 @@ jobs:
             worker/coverage.html
             worker/coverage.xml
             worker/coverage-summary.json
+
+  coverage-pages:
+    runs-on: ubuntu-latest
+    needs: worker-cpp
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download worker coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: worker-coverage
+          path: /tmp/worker-coverage
+
+      - name: Prepare Pages content
+        run: |
+          mkdir -p public/worker
+          cp /tmp/worker-coverage/coverage.html public/worker/index.html
+          cp /tmp/worker-coverage/coverage-summary.json public/worker/
+
+      - name: Publish coverage to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          keep_history: false
