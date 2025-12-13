@@ -29,10 +29,9 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-![Badge couverture worker](https://codecov.io/gh/Silicium-Project/Network/branch/main/graph/badge.svg?flag=worker)
-![Badge local](docs/coverage/worker/badge.svg)
+Badges : ![Badge couverture worker](https://codecov.io/gh/Silicium-Project/Network/branch/main/graph/badge.svg?flag=worker) ![Badge local](docs/coverage/worker/badge.svg)
 
-Snapshot (dernière publication `gh-pages/worker/coverage-summary.json`) :
+Snapshot auto-commité (docs/coverage/worker/coverage-summary.json) :
 
 | Metric     | Covered | Total | %     |
 | ---------- | ------- | ----- | ----- |
@@ -40,7 +39,7 @@ Snapshot (dernière publication `gh-pages/worker/coverage-summary.json`) :
 | Functions  | 74      | 82    | 90.2% |
 | Branches   | 765     | 1623  | 47.1% |
 
-Le rapport HTML reste publié sur `gh-pages/worker/index.html`. Lorsque l’on veut rafraîchir ces chiffres, il suffit de relancer le job `coverage-pages` (workflow `tests` sur `main`).
+Le rapport HTML est également publié dans le dépôt (`docs/coverage/worker/index.html`). Chaque run `tests` sur `main` régénère ces fichiers et les commite automatiquement si le coverage change.
 
 ---
 
