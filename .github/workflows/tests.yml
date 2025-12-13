@@ -187,3 +187,88 @@ PY
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  commit-coverage:
+    runs-on: ubuntu-latest
+    needs: worker-cpp
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download worker coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: worker-coverage
+          path: /tmp/worker-coverage
+
+      - name: Update coverage assets in repo
+        run: |
+          mkdir -p docs/coverage/worker
+          cp /tmp/worker-coverage/coverage.html docs/coverage/worker/index.html
+          cp /tmp/worker-coverage/coverage-summary.json docs/coverage/worker/coverage-summary.json
+          python - <<'PY'
+import json, pathlib
+summary_path = pathlib.Path("docs/coverage/worker/coverage-summary.json")
+summary = json.loads(summary_path.read_text())
+covered = summary.get("line_covered", 0)
+total = summary.get("line_total", 0)
+ratio = 0 if total == 0 else covered / total * 100
+color = "red"
+if ratio >= 90:
+    color = "brightgreen"
+elif ratio >= 80:
+    color = "green"
+elif ratio >= 70:
+    color = "yellowgreen"
+elif ratio >= 60:
+    color = "yellow"
+elif ratio >= 50:
+    color = "orange"
+color_hex = {
+    "brightgreen": "#4c1",
+    "green": "#97CA00",
+    "yellowgreen": "#a4a61d",
+    "yellow": "#dfb317",
+    "orange": "#fe7d37",
+    "red": "#e05d44",
+}.get(color, "#e05d44")
+badge = {
+    "schemaVersion": 1,
+    "label": "worker coverage",
+    "message": f"{ratio:.1f}%",
+    "color": color,
+}
+(summary_path.parent / "badge.json").write_text(json.dumps(badge))
+svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="162" height="20" role="img" aria-label="worker coverage: {ratio:.1f}%">
+  <title>worker coverage: {ratio:.1f}%</title>
+  <linearGradient id="smooth" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <rect rx="3" width="162" height="20" fill="#555"/>
+  <rect rx="3" x="100" width="62" height="20" fill="{color_hex}"/>
+  <rect rx="3" width="162" height="20" fill="url(#smooth)"/>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+    <text x="50" y="15">worker coverage</text>
+    <text x="130" y="15">{ratio:.1f}%</text>
+  </g>
+</svg>'''
+(summary_path.parent / "badge.svg").write_text(svg)
+PY
+
+      - name: Commit coverage badge and report
+        run: |
+          if git diff --quiet -- docs/coverage/worker; then
+            echo "No coverage changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/coverage/worker/index.html docs/coverage/worker/coverage-summary.json docs/coverage/worker/badge.json docs/coverage/worker/badge.svg
+          git commit -m "chore: update worker coverage [skip ci]" || true
+          git push origin HEAD:main
