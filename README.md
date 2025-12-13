@@ -29,7 +29,8 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-![Badge couverture worker](docs/coverage/worker/badge.svg)
+![Badge couverture worker](https://codecov.io/gh/Silicium-Project/Network/branch/main/graph/badge.svg?flag=worker)
+![Badge local](docs/coverage/worker/badge.svg)
 
 Snapshot (dernière publication `gh-pages/worker/coverage-summary.json`) :
 

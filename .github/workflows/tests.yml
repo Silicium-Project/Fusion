@@ -82,6 +82,16 @@ jobs:
           pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(report))
           PY
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: worker/coverage.xml
+          flags: worker
+          name: worker
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
         with:
