@@ -19,6 +19,7 @@ CPP_TEST_IMAGE ?= silicium/cpp-tests:latest
 CPP_TEST_DOCKERFILE := $(REPO_ROOT)/infra/docker/cpp-tests/Dockerfile
 CPP_TEST_CONTEXT := $(dir $(CPP_TEST_DOCKERFILE))
 CCACHE_DIR := $(REPO_ROOT)/.cache/cpp-tests/ccache
+CPP_TEST_CONTAINER ?= worker-test
 
 SRC_DIR := src
 OBJ_DIR := build
@@ -105,17 +106,22 @@ clean:
 
 test: build-cpp-test-image
 	@mkdir -p $(CCACHE_DIR)
-	docker run --rm \
-		-e HOST_UID=$(HOST_UID) -e HOST_GID=$(HOST_GID) \
-		-e CCACHE_DIR=/ccache \
-		-v $(abspath ..):/workspace:Z -w /workspace \
-		-v $(CCACHE_DIR):/ccache \
-		$(CPP_TEST_IMAGE) bash -lc '\
+	@if ! docker ps --format '{{.Names}}' | grep -qx $(CPP_TEST_CONTAINER); then \
+		echo ">> Starting test container $(CPP_TEST_CONTAINER)"; \
+		docker run -d --name $(CPP_TEST_CONTAINER) \
+			-e HOST_UID=$(HOST_UID) -e HOST_GID=$(HOST_GID) \
+			-e CCACHE_DIR=/ccache \
+			-v $(abspath ..):/workspace:Z -w /workspace \
+			-v $(CCACHE_DIR):/ccache \
+			$(CPP_TEST_IMAGE) tail -f /dev/null >/dev/null; \
+	fi
+	docker exec $(CPP_TEST_CONTAINER) bash -lc '\
 		set -euo pipefail; \
 		ccache -M 2G >/dev/null; \
+		cd /workspace && make -C executor; \
 		cd worker; \
-	env TEST_CXX="ccache g++" make $(TEST_BIN); \
-	LD_LIBRARY_PATH=/workspace/executor $(TEST_BIN); \
+		env TEST_CXX="ccache g++" make $(TEST_BIN); \
+		LD_LIBRARY_PATH=/workspace/executor $(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID worker/build'
 
 build-cpp-test-image:
