@@ -39,3 +39,59 @@ jobs:
 
       - name: Smoke test proxy + TLS
         run: ./silicium smoke
+
+  worker-cpp:
+    runs-on: ubuntu-latest
+    needs: pytest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build executor (libs for worker)
+        run: make -C executor
+
+      - name: Run worker tests (coverage)
+        run: make -C worker test
+
+      - name: Install gcovr
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcovr
+
+      - name: Generate coverage report (worker)
+        run: |
+          cd worker
+          gcovr -r . --filter src --filter include --xml coverage.xml --html-details coverage.html --json-summary coverage-summary.json --print-summary
+
+      - name: Publish coverage summary
+        run: |
+          python - <<'PY'
+          import json, pathlib, os
+          summary = json.loads(pathlib.Path("worker/coverage-summary.json").read_text())
+          line_cov = summary["line_covered"], summary["line_total"]
+          branch_cov = summary.get("branch_covered", 0), summary.get("branch_total", 0)
+          func_cov = summary.get("function_covered", 0), summary.get("function_total", 0)
+          def rate(cov):
+              covered, total = cov
+              return 0.0 if total == 0 else covered / total * 100.0
+          lines = rate(line_cov)
+          branches = rate(branch_cov)
+          funcs = rate(func_cov)
+          report = [
+              "## Couverture worker",
+              f"- Lignes   : {lines:.1f}% ({line_cov[0]}/{line_cov[1]})",
+              f"- Fonctions: {funcs:.1f}% ({func_cov[0]}/{func_cov[1]})",
+              f"- Branches : {branches:.1f}% ({branch_cov[0]}/{branch_cov[1]})",
+          ]
+          pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(report))
+          PY
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-coverage
+          path: |
+            worker/coverage.html
+            worker/coverage.xml
+            worker/coverage-summary.json
