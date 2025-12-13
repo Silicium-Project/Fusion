@@ -8,11 +8,4 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android || true
-      - name: Build and smoke test Docker images
-        run: bash ci/test_images.sh
+    uses: ./.github/workflows/docker-smoke-reusable.yml
