@@ -29,8 +29,15 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-![Worker coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Silicium-Project/Network/gh-pages/worker/badge.json)
-_(rapport HTML auto-publié sur `gh-pages` à chaque build `main`)_
+Snapshot (dernière publication `gh-pages/worker/coverage-summary.json`) :
+
+| Metric     | Covered | Total | %     |
+| ---------- | ------- | ----- | ----- |
+| Lines      | 687     | 817   | 84.1% |
+| Functions  | 74      | 82    | 90.2% |
+| Branches   | 765     | 1623  | 47.1% |
+
+Le rapport HTML reste publié sur `gh-pages/worker/index.html`. Lorsque l’on veut rafraîchir ces chiffres, il suffit de relancer le job `coverage-pages` (workflow `tests` sur `main`).
 
 ---
 
