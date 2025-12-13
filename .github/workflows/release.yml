@@ -20,7 +20,7 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android || true
       - name: Build and smoke test Docker images
-        run: bash tools/ci/test_images.sh
+        run: bash ci/test_images.sh
 
   release:
     runs-on: ubuntu-latest
