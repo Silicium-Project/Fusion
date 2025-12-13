@@ -31,7 +31,9 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 Badge : ![Badge local](docs/coverage/worker/badge.svg)
 
-- Snapshot (fixe) : lignes 84.1 %, fonctions 90.2 %, branches 47.1 %
+<!-- worker-coverage:start -->
+- Snapshot (auto) : lignes XX.X %, fonctions YY.Y %, branches ZZ.Z %
+<!-- worker-coverage:end -->
 - Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html`
 - Résumé JSON : `docs/coverage/worker/coverage-summary.json`
 - La CI (`tests` sur `main`) regénère et commite automatiquement ces artefacts si la couverture change.

@@ -249,6 +249,24 @@ svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="162" height="20" role="
   </g>
 </svg>'''
 (summary_path.parent / "badge.svg").write_text(svg)
+# Update README snapshot section between markers
+readme = pathlib.Path("README.md")
+text = readme.read_text()
+line_cov = summary.get("line_covered", 0), summary.get("line_total", 0)
+branch_cov = summary.get("branch_covered", 0), summary.get("branch_total", 0)
+func_cov = summary.get("function_covered", 0), summary.get("function_total", 0)
+def pct(cov):
+    c, t = cov
+    return 0.0 if t == 0 else c / t * 100.0
+snippet = f"- Snapshot (auto) : lignes {pct(line_cov):.1f} %, fonctions {pct(func_cov):.1f} %, branches {pct(branch_cov):.1f} %"
+start = "<!-- worker-coverage:start -->"
+end = "<!-- worker-coverage:end -->"
+if start in text and end in text:
+    before, rest = text.split(start, 1)
+    mid, after = rest.split(end, 1)
+    new_mid = f"\n{snippet}\n"
+    readme.write_text(before + start + new_mid + end + after)
+PY
 PY
 
       - name: Commit coverage badge and report
@@ -259,6 +277,6 @@ PY
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/coverage/worker/index.html docs/coverage/worker/coverage-summary.json docs/coverage/worker/badge.json docs/coverage/worker/badge.svg
+          git add docs/coverage/worker/index.html docs/coverage/worker/coverage-summary.json docs/coverage/worker/badge.json docs/coverage/worker/badge.svg README.md
           git commit -m "chore: update worker coverage [skip ci]" || true
           git push origin HEAD:main
