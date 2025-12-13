@@ -29,11 +29,11 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-Badges : ![Badge couverture worker](https://codecov.io/gh/Silicium-Project/Network/branch/main/graph/badge.svg?flag=worker) ![Badge local](docs/coverage/worker/badge.svg)
+Badge : ![Badge local](docs/coverage/worker/badge.svg)
 
 - Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html`
 - Résumé JSON : `docs/coverage/worker/coverage-summary.json`
-- La CI (`tests` sur `main`) regénère et commite automatiquement ces artefacts si la couverture change, et pousse aussi le rapport vers Codecov (flag `worker`).
+- La CI (`tests` sur `main`) regénère et commite automatiquement ces artefacts si la couverture change.
 
 ---
 
