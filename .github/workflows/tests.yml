@@ -113,6 +113,32 @@ jobs:
           mkdir -p public/worker
           cp /tmp/worker-coverage/coverage.html public/worker/index.html
           cp /tmp/worker-coverage/coverage-summary.json public/worker/
+          python - <<'PY'
+import json, pathlib
+summary_path = pathlib.Path("public/worker/coverage-summary.json")
+summary = json.loads(summary_path.read_text())
+covered = summary.get("line_covered", 0)
+total = summary.get("line_total", 0)
+ratio = 0 if total == 0 else covered / total * 100
+color = "red"
+if ratio >= 90:
+    color = "brightgreen"
+elif ratio >= 80:
+    color = "green"
+elif ratio >= 70:
+    color = "yellowgreen"
+elif ratio >= 60:
+    color = "yellow"
+elif ratio >= 50:
+    color = "orange"
+badge = {
+    "schemaVersion": 1,
+    "label": "worker coverage",
+    "message": f"{ratio:.1f}%",
+    "color": color,
+}
+(summary_path.parent / "badge.json").write_text(json.dumps(badge))
+PY
 
       - name: Publish coverage to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

@@ -29,8 +29,8 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-Le rapport HTML est publié sur GitHub Pages après chaque build `main` :  
-https://silicium-project.github.io/Network/worker/
+![Worker coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Silicium-Project/Network/gh-pages/worker/badge.json)
+_(rapport HTML auto-publié sur `gh-pages` à chaque build `main`)_
 
 ---
 
