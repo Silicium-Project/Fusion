@@ -143,6 +143,30 @@ badge = {
     "color": color,
 }
 (summary_path.parent / "badge.json").write_text(json.dumps(badge))
+# Also emit a static SVG badge to avoid raw endpoint issues
+color_hex = {
+    "brightgreen": "#4c1",
+    "green": "#97CA00",
+    "yellowgreen": "#a4a61d",
+    "yellow": "#dfb317",
+    "orange": "#fe7d37",
+    "red": "#e05d44",
+}.get(color, "#e05d44")
+svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="162" height="20" role="img" aria-label="worker coverage: {ratio:.1f}%">
+  <title>worker coverage: {ratio:.1f}%</title>
+  <linearGradient id="smooth" x2="0" y2="100%">
+    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+    <stop offset="1" stop-opacity=".1"/>
+  </linearGradient>
+  <rect rx="3" width="162" height="20" fill="#555"/>
+  <rect rx="3" x="100" width="62" height="20" fill="{color_hex}"/>
+  <rect rx="3" width="162" height="20" fill="url(#smooth)"/>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+    <text x="50" y="15">worker coverage</text>
+    <text x="130" y="15">{ratio:.1f}%</text>
+  </g>
+</svg>'''
+(summary_path.parent / "badge.svg").write_text(svg)
 PY
 
       - name: Upload artifact for Pages
