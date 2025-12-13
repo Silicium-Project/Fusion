@@ -3,15 +3,18 @@
 .pytest_cache/
 tests/__pycache__/
 .cache/
-tools/**/build/
-tools/fragment/splitter/splitter
-tools/fragment/splitter/run_output/
-tools/fragment/splitter/run_build/
-tools/fragment/splitter/demo/output/
-tools/fragment/executor/fragment_executor
-tools/worker/worker
-tools/worker/dynamo_fragment_runner
-tools/fragment/splitter/fragment_executor.log
+splitter/build/
+splitter/run_output/
+splitter/run_build/
+splitter/demo/output/
+splitter/partitions/
+splitter/fragment_executor.log
+splitter/splitter
+executor/build/
+executor/fragment_executor
+worker/build/
+worker/worker
+worker/dynamo_fragment_runner
 tmp/
 video.mp4
 

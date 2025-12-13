@@ -16,8 +16,12 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 | `infra/bin/run-with-proxy.sh` | Lance un service Silicium + le proxy TLS, génère un certificat auto-signé et attend `/healthz`. |
 | `infra/secure-stack/` | Docker Compose + scripts pour un RPC Solana confiné derrière un VPN WireGuard. |
 | `catalog/workloads/` | Catalogue des manifests calcul/vérification. |
-| `tools/fragment/` | Outils de partitionnement/exécution des fragments (splitter, fragment-executor). |
-| `tools/worker/` | Prototype de worker local qui consomme des partitions générées par `splitter`. |
+| `splitter/` | Partitionneur de fragments (pipeline C++). |
+| `executor/` | Exécuteur de fragments (émulation/natif). |
+| `viewer/` | Visualiseur Qt des fragments/partitions. |
+| `worker/` | Prototype de worker local qui consomme des partitions générées par `splitter`. |
+| `demo/` | Programmes de démonstration consommés par `splitter`/`worker`. |
+| `docker/` | Dockerfiles annexes (GUI runner, worker, etc.). |
 | Volumes Docker (`silicium-*-ledger`) | Persistences des ledgers/clépairs, gérées automatiquement via Compose. |
 | `README.md` | Ce document. |
 
@@ -422,19 +426,19 @@ fragments en mode `--native`, configurez un wrapper Docker headless :
 
 1. Construire l'image VNC/Xvfb fournie :
    ```bash
-   docker build -t silicium/gui-runner tools/docker/gui-runner
+   docker build -t silicium/gui-runner docker/gui-runner
    ```
 2. Exporter le wrapper (montre le repo courant dans le conteneur et démarre un
    serveur VNC/Xvfb) :
    ```bash
-   export FRAGMENT_GUI_WRAPPER=tools/worker/scripts/gui_wrapper.sh
+   export FRAGMENT_GUI_WRAPPER=worker/scripts/gui_wrapper.sh
    export FRAGMENT_GUI_DOCKER_IMAGE=silicium/gui-runner
    # Optionnel : exposer le serveur VNC local sur 5901
    export FRAGMENT_GUI_VNC_PORT=5901
    ```
 3. Lancer `fragment_executor --native` (ou `make run-native …`). Sans variable
    particulière, l’outil utilise automatiquement
-   `tools/worker/scripts/gui_wrapper.sh` si Docker est disponible dans le dépôt ;
+   `worker/scripts/gui_wrapper.sh` si Docker est disponible dans le dépôt ;
    configurez `FRAGMENT_GUI_WRAPPER` / `FRAGMENT_GUI_DOCKER_IMAGE` pour
    personnaliser l’image. Les fragments `requires_display` sont rejoués dans ce
    conteneur headless + VNC (`RUNNING_IN_GUI_CONTAINER=1` évite toute récursion).

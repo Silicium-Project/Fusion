@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import json
 import os
 import shlex
 import shutil
@@ -28,8 +29,8 @@ except ImportError:  # pragma: no cover
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-SPLITTER_DIR = REPO_ROOT / "tools" / "fragment" / "splitter"
-EXECUTOR_DIR = REPO_ROOT / "tools" / "fragment" / "executor"
+SPLITTER_DIR = REPO_ROOT / "splitter"
+EXECUTOR_DIR = REPO_ROOT / "executor"
 WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
 DOCKER_BIN = os.environ.get("DOCKER", "docker")
 LEDGER_PREFIX = os.environ.get("SILICIUM_LEDGER_PREFIX", "silicium")
@@ -58,6 +59,7 @@ SERVICE_MAP["proxy-smoke-target"] = START_TARGETS["proxy-smoke"]
 LOG_CHOICES = sorted(SERVICE_MAP.keys())
 HISTORY_FILE = Path.home() / ".silicium_history"
 COMPOSE_FILE = REPO_ROOT / "infra" / "docker-compose.yml"
+COMPOSE_ENV_FILE = REPO_ROOT / "infra" / ".env"
 SERVICE_CHOICES = sorted(
     {
         "silicium-localnet",
@@ -92,7 +94,7 @@ SUBCOMMANDS = {
     "ledger": ["list", "wipe", "export", "import"],
     "history": ["show", "clear"],
     "clean": ["cache", "ledgers", "all"],
-    "workload": ["list", "show"],
+    "workload": ["list", "show", "queue"],
 }
 
 COLOR_ENABLED = False
@@ -147,7 +149,11 @@ def resolve_service(name: str) -> tuple[str, str | None]:
 
 
 def compose_base() -> list[str]:
-    return [DOCKER_BIN, "compose", "-f", str(COMPOSE_FILE)]
+    base = [DOCKER_BIN, "compose"]
+    if COMPOSE_ENV_FILE.exists():
+        base += ["--env-file", str(COMPOSE_ENV_FILE)]
+    base += ["-f", str(COMPOSE_FILE)]
+    return base
 
 
 def compose_up(service: str, profile: str | None = None) -> None:
@@ -430,6 +436,29 @@ def cmd_workload_show(args: argparse.Namespace) -> None:
             print("No README.md for this workload.")
 
 
+def cmd_workload_queue(args: argparse.Namespace) -> None:
+    summary = Path(args.summary)
+    if not summary.exists():
+        print(f"Summary not found: {summary}")
+        sys.exit(1)
+    try:
+        data = json.loads(summary.read_text(encoding="utf-8"))
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"Failed to parse summary JSON: {exc}")
+        sys.exit(1)
+
+    partitions = data.get("partitions", [])
+    ids = [p.get("id") for p in partitions if isinstance(p, dict) and p.get("id")]
+    if not ids:
+        print("No partitions found in summary.")
+        sys.exit(1)
+
+    dest = Path(args.output or summary.parent / "queue.txt")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("\n".join(ids) + "\n", encoding="utf-8")
+    print(colorize(f"Wrote {len(ids)} entries to {dest}", COLOR_YELLOW))
+
+
 def cmd_history_show(args: argparse.Namespace) -> None:
     if not HISTORY_FILE.exists():
         print("No history entries yet.")
@@ -705,6 +734,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     workload_show.set_defaults(func=cmd_workload_show)
 
+    workload_queue = workload_sub.add_parser("queue", help="Generate a queue file from a summary.json")
+    workload_queue.add_argument(
+        "--summary",
+        required=True,
+        help="Path to summary.json produced by splitter.",
+    )
+    workload_queue.add_argument(
+        "--output",
+        help="Destination queue file (default: <summary_dir>/queue.txt).",
+    )
+    workload_queue.set_defaults(func=cmd_workload_queue)
+
     history_p = sub.add_parser("history", help="Inspect Silicium shell history")
     history_sub = history_p.add_subparsers(dest="history_cmd", required=True)
 
@@ -913,6 +954,11 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
         if sub == "show":
             paths = workload_paths()
             return [p for p in paths if p.startswith(text)]
+        if sub == "queue":
+            opts = ["--summary", "--output"]
+            if text.startswith("-"):
+                return [opt for opt in opts if opt.startswith(text)]
+            return []
         return []
     if first == "logs":
         if len(tokens) == 1:

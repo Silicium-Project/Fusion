@@ -8,10 +8,10 @@ RUN apt-get update \
 
 WORKDIR /src
 
-COPY tools/fragment/executor /src/tools/fragment/executor
-COPY tools/worker /src/tools/worker
+COPY executor /src/executor
+COPY worker /src/worker
 
-RUN cd tools/worker \
+RUN cd worker \
  && make clean \
  && make dynamo_fragment_runner
 
@@ -32,7 +32,7 @@ RUN apt-get update \
 
 RUN mkdir -p ${DYNAMO_RUNNER_HOME}
 
-COPY --from=builder /src/tools/worker/dynamo_fragment_runner ${DYNAMO_RUNNER_HOME}/dynamo_fragment_runner
+COPY --from=builder /src/worker/dynamo_fragment_runner ${DYNAMO_RUNNER_HOME}/dynamo_fragment_runner
 
 ENV PATH="${DYNAMORIO_HOME}/bin64:${PATH}"
 
