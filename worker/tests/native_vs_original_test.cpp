@@ -65,16 +65,23 @@ std::string find_splitter_binary() {
 }
 
 std::string build_splitter_if_needed() {
-    run_command("rm -rf ../splitter/build ../splitter/splitter >/dev/null 2>&1");
-    const auto build = run_command("cd ../splitter && make splitter");
-    if (build.code != 0)
-        throw std::runtime_error("Failed to build splitter: " + build.output);
+    static std::string cached;
+    if (!cached.empty())
+        return cached;
+
     auto path = find_splitter_binary();
     if (path.empty()) {
-        auto debug_ls = run_command("ls -l ../splitter || true");
-        throw std::runtime_error("splitter binary not found after build. ls: " + debug_ls.output);
+        const auto build = run_command("cd ../splitter && make splitter -j$(nproc)");
+        if (build.code != 0)
+            throw std::runtime_error("Failed to build splitter: " + build.output);
+        path = find_splitter_binary();
+        if (path.empty()) {
+            auto debug_ls = run_command("ls -l ../splitter || true");
+            throw std::runtime_error("splitter binary not found after build. ls: " + debug_ls.output);
+        }
     }
-    return path;
+    cached = path;
+    return cached;
 }
 
 struct RunOutputs {
