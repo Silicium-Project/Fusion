@@ -29,7 +29,7 @@ LIB_EMU := libfragment_emulator.so
 COMMON_SRC := ArgParser.cpp Cli.cpp ExecutionResult.cpp FragmentExecutor.cpp \
 	Hash.cpp InstructionEmulator.cpp JsonHasher.cpp Logging.cpp OptionParser.cpp \
 	PartitionRegistry.cpp PartitionSummary.cpp RegisterEmulator.cpp Runner.cpp \
-	SegmentLoader.cpp Utils.cpp
+	SegmentLoader.cpp Utils.cpp Opcodes.cpp
 
 EMU_LIB_SRC := $(COMMON_SRC) backend/ExecutionBackendEmu.cpp backend/EmulatedExecutionBackend.cpp \
 	EmulatedRunner.cpp api/FragmentApi.cpp
@@ -45,7 +45,7 @@ OBJS_EMU_LIB := $(addprefix $(OBJ_DIR)/emu_lib/,$(EMU_LIB_SRC:.cpp=.o))
 OBJS_NATIVE_LIB := $(addprefix $(OBJ_DIR)/native_lib/,$(NATIVE_LIB_SRC:.cpp=.o))
 
 TEST_SRCS := tests/config_test.cpp tests/opcode_test.cpp tests/executor_test.cpp tests/instruction_emulator_test.cpp
-TEST_EXTRA_SRCS := src/FragmentExecutor.cpp src/RegisterEmulator.cpp src/Utils.cpp src/Logging.cpp src/ExecutionResult.cpp src/InstructionEmulator.cpp src/SegmentLoader.cpp
+TEST_EXTRA_SRCS := src/FragmentExecutor.cpp src/RegisterEmulator.cpp src/Utils.cpp src/Logging.cpp src/ExecutionResult.cpp src/InstructionEmulator.cpp src/SegmentLoader.cpp src/Opcodes.cpp
 TEST_BUILD_DIR := $(OBJ_DIR)/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
 TEST_BIN := $(TEST_BUILD_DIR)/fragment_tests
