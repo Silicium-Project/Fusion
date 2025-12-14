@@ -29,18 +29,11 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-Badge :
-<picture>
-  <source srcset="https://silicium-project.github.io/Network/worker/badge.svg">
-  <img src="docs/coverage/worker/badge.svg" alt="worker coverage badge">
-</picture>
+Badge : ![Badge Pages](https://silicium-project.github.io/Network/worker/badge.svg)
+(fallback : `docs/coverage/worker/badge.svg`)
 
 <!-- worker-coverage:start -->
-- Aperçu :
-  [<picture>
-    <source srcset="https://silicium-project.github.io/Network/worker/snapshot.svg">
-    <img src="docs/coverage/worker/snapshot.svg" alt="worker coverage preview">
-  </picture>](https://silicium-project.github.io/Network/worker/)
+- Aperçu : [![worker coverage](https://silicium-project.github.io/Network/worker/snapshot.svg)](https://silicium-project.github.io/Network/worker/) (fallback : `docs/coverage/worker/snapshot.svg`)
 <!-- worker-coverage:end -->
 - Rapport HTML (dernière exécution CI) : `https://silicium-project.github.io/Network/worker/` (fallback : `docs/coverage/worker/index.html`)
 - Résumé JSON : `https://silicium-project.github.io/Network/worker/coverage-summary.json` (fallback : `docs/coverage/worker/coverage-summary.json`)
