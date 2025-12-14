@@ -13,7 +13,7 @@ jobs:
   tests:
     uses: ./.github/workflows/tests.yml
     with:
-      publish_pages: false
+      publish_pages: true
       commit_coverage: false
 
   call:
