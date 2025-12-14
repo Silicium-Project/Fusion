@@ -3,8 +3,12 @@
 namespace worker {
 
 Worker::Worker(WorkerConfig config)
-: config_(std::move(config)) {
-    connector_ = make_backend_connector(config_);
+: Worker(std::move(config), {}) {}
+
+Worker::Worker(WorkerConfig config, std::unique_ptr<BackendConnector> connector)
+: config_(std::move(config)), connector_(std::move(connector)) {
+    if (!connector_)
+        connector_ = make_backend_connector(config_);
 }
 
 void Worker::reset_state() {

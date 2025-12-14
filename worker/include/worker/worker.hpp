@@ -18,6 +18,7 @@ namespace worker {
 class Worker {
 public:
     explicit Worker(WorkerConfig config = {});
+    Worker(WorkerConfig config, std::unique_ptr<BackendConnector> connector);
 
     TaskReport run_task(const fragment::PartitionInfo& partition,
                         const std::string& asm_path,
