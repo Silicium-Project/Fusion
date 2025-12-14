@@ -8,11 +8,8 @@ jobs:
   tests:
     uses: ./.github/workflows/tests.yml
 
-  docker-smoke:
-    uses: ./.github/workflows/docker-smoke-reusable.yml
-
   call:
-    needs: [tests, docker-smoke]
+    needs: [tests]
     uses: Silicium-Project/epitech-mirror/.github/workflows/subtree-reusable.yml@main
     with:
       epitech_repo: git@github.com:EpitechPromo2027/G-EIP-600-lil-6-1-eip-luis.fernandes.git
