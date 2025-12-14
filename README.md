@@ -33,6 +33,7 @@ Badge : ![Badge local](docs/coverage/worker/badge.svg)
 
 <!-- worker-coverage:start -->
 - Snapshot (auto) : lignes 85.6 %, fonctions 90.2 %, branches 49.0 %
+- Aperçu : [![worker coverage](docs/coverage/worker/snapshot.svg)](docs/coverage/worker/index.html)
 <!-- worker-coverage:end -->
 - Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html`
 - Résumé JSON : `docs/coverage/worker/coverage-summary.json`

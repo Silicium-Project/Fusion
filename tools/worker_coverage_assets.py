@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+from typing import Optional
 
 
 COLOR_HEX = {
@@ -271,6 +272,49 @@ def write_summary_html(destination: Path, title: str, line_pct: float, func_pct:
     destination.write_text(summary_html(title, line_pct, func_pct, branch_pct, full_report, accent), encoding="utf-8")
 
 
+def snapshot_svg(line_pct: float, func_pct: float, branch_pct: float) -> str:
+    line_color = COLOR_HEX["green"]
+    func_color = "#06b6d4"  # cyan accent
+    branch_color = "#f59e0b"  # amber
+    def donut(cx: int, cy: int, pct: float, color: str) -> str:
+        r = 32
+        circ = 2 * math.pi * r
+        filled = clamp_pct(pct) / 100 * circ
+        return (
+            f'<circle class="track" cx="{cx}" cy="{cy}" r="{r}" />'
+            f'<circle class="arc" cx="{cx}" cy="{cy}" r="{r}" '
+            f'stroke="{color}" stroke-dasharray="{filled:.2f} {circ - filled:.2f}" />'
+        )
+
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" role="img" aria-label="Worker coverage snapshot">
+  <style>
+    .bg {{ fill: #0f172a; }}
+    .card {{ fill: #111827; stroke: #1f2937; stroke-width: 1; }}
+    .track {{ fill: none; stroke: #1f2937; stroke-width: 12; }}
+    .arc {{ fill: none; stroke-width: 12; stroke-linecap: round; transform-origin: center; transform: rotate(-90deg); }}
+    .label {{ fill: #cbd5e1; font-family: "Inter", "Segoe UI", sans-serif; font-size: 13px; text-anchor: middle; }}
+    .value {{ fill: #e2e8f0; font-family: "Inter", "Segoe UI", sans-serif; font-size: 16px; font-weight: 700; text-anchor: middle; }}
+  </style>
+  <rect class="bg" x="0" y="0" width="320" height="150" rx="14" />
+  <rect class="card" x="6" y="6" width="308" height="138" rx="12" />
+  {donut(60, 70, line_pct, line_color)}
+  <text class="value" x="60" y="74">{line_pct:.1f}%</text>
+  <text class="label" x="60" y="118">Lignes</text>
+
+  {donut(160, 70, func_pct, func_color)}
+  <text class="value" x="160" y="74">{func_pct:.1f}%</text>
+  <text class="label" x="160" y="118">Fonctions</text>
+
+  {donut(260, 70, branch_pct, branch_color)}
+  <text class="value" x="260" y="74">{branch_pct:.1f}%</text>
+  <text class="label" x="260" y="118">Branches</text>
+</svg>"""
+
+
+def write_snapshot(destination: Path, line_pct: float, func_pct: float, branch_pct: float) -> None:
+    destination.write_text(snapshot_svg(line_pct, func_pct, branch_pct), encoding="utf-8")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary", required=True, type=Path, help="Path to coverage-summary.json")
@@ -279,6 +323,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--readme", type=Path, help="Optional README path to update snapshot markers")
     parser.add_argument("--summary-html", type=Path, help="Optional HTML summary output path")
     parser.add_argument("--full-report", default="coverage-full.html", help="Relative link to the full coverage report")
+    parser.add_argument("--snapshot", type=Path, help="Optional snapshot SVG output path (donut charts)")
+    parser.add_argument("--readme-snapshot", help="Path to snapshot SVG as referenced from README (relative or absolute)")
+    parser.add_argument("--readme-report", help="Path to report HTML as referenced from README")
     parser.add_argument(
         "--start-marker",
         default="<!-- worker-coverage:start -->",
@@ -317,12 +364,30 @@ def main() -> None:
             color,
         )
 
+    if args.snapshot:
+        write_snapshot(args.snapshot, line_pct, func_pct, branch_pct)
+
     if args.readme:
-        snippet = (
-            f"- Snapshot (auto) : lignes {line_pct:.1f} %, "
-            f"fonctions {func_pct:.1f} %, branches {branch_pct:.1f} %"
-        )
-        update_readme(args.readme, args.start_marker, args.end_marker, snippet)
+        readme_snapshot: Optional[str] = None
+        if args.readme_snapshot:
+            readme_snapshot = args.readme_snapshot
+        elif args.snapshot:
+            try:
+                readme_snapshot = str(args.snapshot.relative_to(args.readme.parent))
+            except ValueError:
+                readme_snapshot = str(args.snapshot)
+
+        snippet_parts = [
+            f"- Snapshot (auto) : lignes {line_pct:.1f} %, fonctions {func_pct:.1f} %, branches {branch_pct:.1f} %",
+        ]
+        if readme_snapshot and args.readme_report:
+            snippet_parts.append(f"- Aperçu : [![worker coverage]({readme_snapshot})]({args.readme_report})")
+        elif readme_snapshot:
+            snippet_parts.append(f"- Aperçu : ![worker coverage]({readme_snapshot})")
+        elif args.readme_report:
+            snippet_parts.append(f"- Aperçu : {args.readme_report}")
+
+        update_readme(args.readme, args.start_marker, args.end_marker, "\n".join(snippet_parts))
 
 
 if __name__ == "__main__":

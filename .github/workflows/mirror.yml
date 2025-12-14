@@ -12,6 +12,9 @@ permissions:
 jobs:
   tests:
     uses: ./.github/workflows/tests.yml
+    with:
+      publish_pages: false
+      commit_coverage: false
 
   call:
     needs: [tests]
