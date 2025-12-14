@@ -119,56 +119,9 @@ jobs:
           mkdir -p public/worker
           cp /tmp/worker-coverage/coverage.html public/worker/index.html
           cp /tmp/worker-coverage/coverage-summary.json public/worker/
-          python - <<'PY'
-import json, pathlib
-summary_path = pathlib.Path("public/worker/coverage-summary.json")
-summary = json.loads(summary_path.read_text())
-covered = summary.get("line_covered", 0)
-total = summary.get("line_total", 0)
-ratio = 0 if total == 0 else covered / total * 100
-color = "red"
-if ratio >= 90:
-    color = "brightgreen"
-elif ratio >= 80:
-    color = "green"
-elif ratio >= 70:
-    color = "yellowgreen"
-elif ratio >= 60:
-    color = "yellow"
-elif ratio >= 50:
-    color = "orange"
-badge = {
-    "schemaVersion": 1,
-    "label": "worker coverage",
-    "message": f"{ratio:.1f}%",
-    "color": color,
-}
-(summary_path.parent / "badge.json").write_text(json.dumps(badge))
-# Also emit a static SVG badge to avoid raw endpoint issues
-color_hex = {
-    "brightgreen": "#4c1",
-    "green": "#97CA00",
-    "yellowgreen": "#a4a61d",
-    "yellow": "#dfb317",
-    "orange": "#fe7d37",
-    "red": "#e05d44",
-}.get(color, "#e05d44")
-svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="162" height="20" role="img" aria-label="worker coverage: {ratio:.1f}%">
-  <title>worker coverage: {ratio:.1f}%</title>
-  <linearGradient id="smooth" x2="0" y2="100%">
-    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
-    <stop offset="1" stop-opacity=".1"/>
-  </linearGradient>
-  <rect rx="3" width="162" height="20" fill="#555"/>
-  <rect rx="3" x="100" width="62" height="20" fill="{color_hex}"/>
-  <rect rx="3" width="162" height="20" fill="url(#smooth)"/>
-  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
-    <text x="50" y="15">worker coverage</text>
-    <text x="130" y="15">{ratio:.1f}%</text>
-  </g>
-</svg>'''
-(summary_path.parent / "badge.svg").write_text(svg)
-PY
+          python tools/worker_coverage_assets.py \
+            --summary public/worker/coverage-summary.json \
+            --output public/worker
 
       - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3
@@ -202,73 +155,10 @@ PY
           mkdir -p docs/coverage/worker
           cp /tmp/worker-coverage/coverage.html docs/coverage/worker/index.html
           cp /tmp/worker-coverage/coverage-summary.json docs/coverage/worker/coverage-summary.json
-          python - <<'PY'
-import json, pathlib
-summary_path = pathlib.Path("docs/coverage/worker/coverage-summary.json")
-summary = json.loads(summary_path.read_text())
-covered = summary.get("line_covered", 0)
-total = summary.get("line_total", 0)
-ratio = 0 if total == 0 else covered / total * 100
-color = "red"
-if ratio >= 90:
-    color = "brightgreen"
-elif ratio >= 80:
-    color = "green"
-elif ratio >= 70:
-    color = "yellowgreen"
-elif ratio >= 60:
-    color = "yellow"
-elif ratio >= 50:
-    color = "orange"
-color_hex = {
-    "brightgreen": "#4c1",
-    "green": "#97CA00",
-    "yellowgreen": "#a4a61d",
-    "yellow": "#dfb317",
-    "orange": "#fe7d37",
-    "red": "#e05d44",
-}.get(color, "#e05d44")
-badge = {
-    "schemaVersion": 1,
-    "label": "worker coverage",
-    "message": f"{ratio:.1f}%",
-    "color": color,
-}
-(summary_path.parent / "badge.json").write_text(json.dumps(badge))
-svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="162" height="20" role="img" aria-label="worker coverage: {ratio:.1f}%">
-  <title>worker coverage: {ratio:.1f}%</title>
-  <linearGradient id="smooth" x2="0" y2="100%">
-    <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
-    <stop offset="1" stop-opacity=".1"/>
-  </linearGradient>
-  <rect rx="3" width="162" height="20" fill="#555"/>
-  <rect rx="3" x="100" width="62" height="20" fill="{color_hex}"/>
-  <rect rx="3" width="162" height="20" fill="url(#smooth)"/>
-  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
-    <text x="50" y="15">worker coverage</text>
-    <text x="130" y="15">{ratio:.1f}%</text>
-  </g>
-</svg>'''
-(summary_path.parent / "badge.svg").write_text(svg)
-# Update README snapshot section between markers
-readme = pathlib.Path("README.md")
-text = readme.read_text()
-line_cov = summary.get("line_covered", 0), summary.get("line_total", 0)
-branch_cov = summary.get("branch_covered", 0), summary.get("branch_total", 0)
-func_cov = summary.get("function_covered", 0), summary.get("function_total", 0)
-def pct(cov):
-    c, t = cov
-    return 0.0 if t == 0 else c / t * 100.0
-snippet = f"- Snapshot (auto) : lignes {pct(line_cov):.1f} %, fonctions {pct(func_cov):.1f} %, branches {pct(branch_cov):.1f} %"
-start = "<!-- worker-coverage:start -->"
-end = "<!-- worker-coverage:end -->"
-if start in text and end in text:
-    before, rest = text.split(start, 1)
-    mid, after = rest.split(end, 1)
-    new_mid = f"\n{snippet}\n"
-    readme.write_text(before + start + new_mid + end + after)
-PY
-PY
+          python tools/worker_coverage_assets.py \
+            --summary docs/coverage/worker/coverage-summary.json \
+            --output docs/coverage/worker \
+            --readme README.md
 
       - name: Commit coverage badge and report
         run: |
