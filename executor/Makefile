@@ -125,7 +125,15 @@ $(TEST_BIN): $(TEST_OBJS) | $(TEST_BUILD_DIR)
 
 clean:
 	rm -f $(BIN) $(BIN_EMU) $(LIB_NATIVE) $(LIB_EMU)
-	rm -rf $(OBJ_DIR)
+	@if [ -d $(OBJ_DIR) ]; then \
+		chmod -R u+rwX $(OBJ_DIR) >/dev/null 2>&1 || true; \
+		rm -rf $(OBJ_DIR) 2>/dev/null || { \
+			if command -v sudo >/dev/null 2>&1 && sudo -n rm -rf $(OBJ_DIR) 2>/dev/null; then :; \
+			elif command -v docker >/dev/null 2>&1 && docker run --rm -v $(abspath .):/workspace busybox sh -c 'rm -rf /workspace/$(OBJ_DIR)'; then :; \
+			else \
+				echo "Échec du nettoyage $(OBJ_DIR) (droits manquants)"; exit 1; \
+			fi; }; \
+	fi
 
 test: build-cpp-test-image
 	@mkdir -p $(CCACHE_DIR)

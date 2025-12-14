@@ -184,11 +184,29 @@ demo-clean:
 
 clean: demo-clean
 	rm -f $(SPLITTER_BIN) $(LOG_FILE)
-	rm -rf $(OBJ_DIR)
+	@# Certains artefacts peuvent appartenir à root après des builds en conteneur : on force le nettoyage en douceur.
+	@if [ -d $(OBJ_DIR) ]; then \
+		chmod -R u+rwX $(OBJ_DIR) >/dev/null 2>&1 || true; \
+		rm -rf $(OBJ_DIR) 2>/dev/null || { \
+			if command -v sudo >/dev/null 2>&1 && sudo -n rm -rf $(OBJ_DIR) 2>/dev/null; then :; \
+			elif command -v docker >/dev/null 2>&1 && docker run --rm -v $(abspath .):/workspace busybox sh -c 'rm -rf /workspace/$(OBJ_DIR)'; then :; \
+			else \
+				echo "Échec du nettoyage $(OBJ_DIR) (droits manquants)"; exit 1; \
+			fi; }; \
+	fi
 	@# Nettoyage des traces gcov pour éviter les warnings lors des tests.
 	@test ! -d build || find build -name '*.gcda' -o -name '*.gcno' -delete
 
 fclean: clean
-	rm -rf $(RUN_BUILD_DIR) run_output
+	@if [ -d $(RUN_BUILD_DIR) ]; then \
+		chmod -R u+rwX $(RUN_BUILD_DIR) >/dev/null 2>&1 || true; \
+		rm -rf $(RUN_BUILD_DIR) 2>/dev/null || { \
+			if command -v sudo >/dev/null 2>&1 && sudo -n rm -rf $(RUN_BUILD_DIR) 2>/dev/null; then :; \
+			elif command -v docker >/dev/null 2>&1 && docker run --rm -v $(abspath .):/workspace busybox sh -c 'rm -rf /workspace/$(RUN_BUILD_DIR)'; then :; \
+			else \
+				echo "Échec du nettoyage $(RUN_BUILD_DIR) (droits manquants)"; exit 1; \
+			fi; }; \
+	fi
+	@rm -rf run_output
 
 re: fclean all
