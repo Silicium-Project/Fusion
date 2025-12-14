@@ -36,7 +36,7 @@ Badge : ![Badge local](docs/coverage/worker/badge.svg)
 <!-- worker-coverage:end -->
 - Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html`
 - Résumé JSON : `docs/coverage/worker/coverage-summary.json`
-- La CI (`tests` sur `main`) regénère et commite automatiquement ces artefacts si la couverture change ; déclenchez le workflow `EntryPoint Tests` (job `worker-cpp`) pour recalculer la couverture.
+- La CI (`tests` sur `main`) regénère et commite automatiquement ces artefacts si la couverture change ; poussez vos modifications et déclenchez le workflow `EntryPoint Tests` (job `worker-cpp`) pour recalculer la couverture.
 
 ---
 

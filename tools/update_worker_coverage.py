@@ -16,9 +16,10 @@ SUMMARY_PATH = ROOT / "docs" / "coverage" / "worker" / "coverage-summary.json"
 def load_summary(path: Path) -> dict:
     if not path.is_file():
         raise FileNotFoundError(
-            "Coverage summary not found. Run the CI worker coverage pipeline "
-            "(GitHub Actions `tests` workflow, job `worker-cpp`) to regenerate "
-            "docs/coverage/worker/coverage-summary.json before refreshing the README."
+            "Coverage summary not found. Push your branch and trigger the CI "
+            "worker coverage pipeline (GitHub Actions `tests` workflow, job "
+            "`worker-cpp`) to regenerate docs/coverage/worker/coverage-summary.json "
+            "before refreshing the README."
         )
 
     with path.open("r", encoding="utf-8") as f:
