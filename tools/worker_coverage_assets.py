@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Generate worker coverage badges and optionally refresh the README snapshot."""
+"""Generate worker coverage badges, summary HTML, and optionally refresh README."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 
@@ -94,12 +95,190 @@ def update_readme(readme_path: Path, start_marker: str, end_marker: str, snippet
     readme_path.write_text(new_content, encoding="utf-8")
 
 
+def clamp_pct(value: float) -> float:
+    return max(0.0, min(100.0, value))
+
+
+def chart_card(label: str, pct: float) -> str:
+    pct = clamp_pct(pct)
+    radius = 42
+    circumference = 2 * math.pi * radius
+    filled = pct / 100 * circumference
+    return f"""<div class="chart-card">
+  <svg viewBox="0 0 120 120" role="img" aria-label="{label}: {pct:.1f}%">
+    <circle class="track" cx="60" cy="60" r="{radius}" />
+    <circle class="progress" cx="60" cy="60" r="{radius}" stroke-dasharray="{filled:.2f} {circumference - filled:.2f}" />
+    <text x="60" y="64" class="value">{pct:.1f}%</text>
+  </svg>
+  <div class="chart-label">{label}</div>
+</div>"""
+
+
+def summary_html(title: str, line_pct: float, func_pct: float, branch_pct: float, full_report: str, accent: str) -> str:
+    accent_hex = COLOR_HEX.get(accent, COLOR_HEX["red"])
+    return f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{title}</title>
+  <style>
+    :root {{
+      --accent: {accent_hex};
+      --bg: #0f172a;
+      --card: #111827;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --border: #1f2937;
+      --chart-track: #1f2937;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(37,99,235,0.1), transparent 30%), radial-gradient(circle at 80% 0%, rgba(16,185,129,0.12), transparent 35%), var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+    }}
+    .shell {{
+      width: min(1100px, 100%);
+      background: linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 60px rgba(0,0,0,0.35);
+      border-radius: 18px;
+      padding: 28px;
+      backdrop-filter: blur(10px);
+    }}
+    header {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }}
+    h1 {{
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.01em;
+    }}
+    .pill {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .pill::before {{
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+    }}
+    a {{
+      color: var(--text);
+    }}
+    .charts {{
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }}
+    .chart-card {{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      text-align: center;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    }}
+    svg {{
+      width: 160px;
+      height: 160px;
+    }}
+    .track {{
+      fill: none;
+      stroke: var(--chart-track);
+      stroke-width: 14;
+    }}
+    .progress {{
+      fill: none;
+      stroke: var(--accent);
+      stroke-width: 14;
+      stroke-linecap: round;
+      transform-origin: 50% 50%;
+      transform: rotate(-90deg);
+      filter: drop-shadow(0 0 8px var(--accent));
+    }}
+    .value {{
+      font-size: 22px;
+      fill: var(--text);
+      font-weight: 700;
+      text-anchor: middle;
+    }}
+    .chart-label {{
+      margin-top: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }}
+    .links {{
+      margin-top: 16px;
+      font-size: 14px;
+      color: var(--muted);
+    }}
+    .links a {{
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }}
+    .links a:hover {{
+      text-decoration: underline;
+    }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <h1>{title}</h1>
+        <div class="pill">Dernière exécution · couverture</div>
+      </div>
+    </header>
+    <section class="charts">
+      {chart_card("Lignes", line_pct)}
+      {chart_card("Fonctions", func_pct)}
+      {chart_card("Branches", branch_pct)}
+    </section>
+    <div class="links">
+      Rapport complet : <a href="{full_report}">coverage-full.html</a>
+    </div>
+  </div>
+</body>
+</html>"""
+
+
+def write_summary_html(destination: Path, title: str, line_pct: float, func_pct: float, branch_pct: float, full_report: str, accent: str) -> None:
+    destination.write_text(summary_html(title, line_pct, func_pct, branch_pct, full_report, accent), encoding="utf-8")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary", required=True, type=Path, help="Path to coverage-summary.json")
     parser.add_argument("--output", required=True, type=Path, help="Directory where badge files are written")
     parser.add_argument("--label", default="worker coverage", help="Label used in badge files")
     parser.add_argument("--readme", type=Path, help="Optional README path to update snapshot markers")
+    parser.add_argument("--summary-html", type=Path, help="Optional HTML summary output path")
+    parser.add_argument("--full-report", default="coverage-full.html", help="Relative link to the full coverage report")
     parser.add_argument(
         "--start-marker",
         default="<!-- worker-coverage:start -->",
@@ -126,6 +305,17 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     color = pick_color(line_pct)
     write_badge_files(output_dir, args.label, line_pct, color)
+
+    if args.summary_html:
+        write_summary_html(
+            args.summary_html,
+            args.label.title(),
+            line_pct,
+            func_pct,
+            branch_pct,
+            args.full_report,
+            color,
+        )
 
     if args.readme:
         snippet = (
