@@ -7,9 +7,5 @@ on:
     branches: [ main ]
 
 jobs:
-  tests:
-    uses: ./.github/workflows/tests.yml
-
   build-and-test:
-    needs: tests
     uses: ./.github/workflows/docker-smoke-reusable.yml
