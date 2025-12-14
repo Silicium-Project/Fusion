@@ -43,6 +43,7 @@ TEST_SRCS := tests/queue_loader_test.cpp \
              tests/serializer_reporter_test.cpp \
              tests/backend_connector_test.cpp \
              tests/executor_client_test.cpp \
+             tests/dynamorio_runner_test.cpp \
              tests/memory_lut_test.cpp \
              tests/worker_state_reset_test.cpp
 TEST_BUILD_DIR := $(OBJ_DIR)/tests

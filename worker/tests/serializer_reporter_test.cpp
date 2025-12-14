@@ -139,4 +139,34 @@ TEST(Reporter, EmitsJsonAndText) {
     EXPECT_NE(std::string::npos, text_out.find("après"));
 }
 
+TEST(TaskSerializer, DeserializeTaskPayloadRejectsBadMemoryHex) {
+    const std::string bad_json = R"({
+      "partition_id":"p",
+      "asm_path":"/tmp/a",
+      "binary_path":"",
+      "mode":"emu",
+      "fd_redirections":[],
+      "inputs":[],
+      "register_state":[],
+      "memory":["0x10:abc"]
+    })";
+    EXPECT_THROW(deserialize_task_payload(bad_json), std::runtime_error);
+}
+
+TEST(TaskSerializer, DeserializeResultRejectsBadPatch) {
+    const std::string bad_json = R"({
+      "success":true,
+      "error":"",
+      "stdout":"",
+      "stderr":"",
+      "fd_outputs":{},
+      "initial_regs":[],
+      "final_regs":[],
+      "memory_patches":["0x1"],
+      "instructions":1,
+      "memory_accesses":1
+    })";
+    EXPECT_THROW(deserialize_execution_result(bad_json), std::runtime_error);
+}
+
 }  // namespace worker

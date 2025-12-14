@@ -45,3 +45,19 @@ TEST(QueueLoader, InvalidTokensThrow) {
     const auto path = write_queue_file("func_1 rax-\n");
     EXPECT_THROW(worker::load_queue_file(path.string()), std::runtime_error);
 }
+
+TEST(QueueLoader, SkipsBlankAndComments) {
+    const auto path = write_queue_file(R"(
+# comment
+
+task1 rax=1
+)");
+    auto tasks = worker::load_queue_file(path.string());
+    ASSERT_EQ(1u, tasks.size());
+    EXPECT_EQ("task1", tasks[0].partition_id);
+    EXPECT_EQ(1u, tasks[0].inputs.at("rax"));
+}
+
+TEST(QueueLoader, MissingFileThrows) {
+    EXPECT_THROW(worker::load_queue_file("/tmp/definitely_missing_queue.txt"), std::runtime_error);
+}
