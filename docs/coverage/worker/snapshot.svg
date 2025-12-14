@@ -7,34 +7,17 @@
     .label { fill: #cbd5e1; font-family: "Inter", "Segoe UI", sans-serif; font-size: 13px; text-anchor: middle; }
     .value { fill: #e2e8f0; font-family: "Inter", "Segoe UI", sans-serif; font-size: 16px; font-weight: 700; text-anchor: middle; }
   </style>
-  <defs>
-    <linearGradient id="grad-line" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#22c55e"/>
-      <stop offset="50%" stop-color="#eab308"/>
-      <stop offset="100%" stop-color="#ef4444"/>
-    </linearGradient>
-    <linearGradient id="grad-func" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#22c55e"/>
-      <stop offset="50%" stop-color="#eab308"/>
-      <stop offset="100%" stop-color="#ef4444"/>
-    </linearGradient>
-    <linearGradient id="grad-branch" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#22c55e"/>
-      <stop offset="50%" stop-color="#eab308"/>
-      <stop offset="100%" stop-color="#ef4444"/>
-    </linearGradient>
-  </defs>
   <rect class="bg" x="0" y="0" width="320" height="150" rx="14" />
   <rect class="card" x="6" y="6" width="308" height="138" rx="12" />
-  <circle class="track" cx="60" cy="70" r="32" /><circle class="arc" cx="60" cy="70" r="32" stroke="url(#grad-line)" stroke-dasharray="201.06" stroke-dashoffset="29.00" transform="rotate(-90 60 70)" />
+  <circle class="track" cx="60" cy="70" r="32" /><circle class="arc" cx="60" cy="70" r="32" stroke="#97CA00" stroke-dasharray="201.06" stroke-dashoffset="29.00" transform="rotate(-90 60 70)" />
   <text class="value" x="60" y="74">85.6%</text>
   <text class="label" x="60" y="118">Lignes</text>
 
-  <circle class="track" cx="160" cy="70" r="32" /><circle class="arc" cx="160" cy="70" r="32" stroke="url(#grad-func)" stroke-dasharray="201.06" stroke-dashoffset="19.62" transform="rotate(-90 160 70)" />
+  <circle class="track" cx="160" cy="70" r="32" /><circle class="arc" cx="160" cy="70" r="32" stroke="#4c1" stroke-dasharray="201.06" stroke-dashoffset="19.62" transform="rotate(-90 160 70)" />
   <text class="value" x="160" y="74">90.2%</text>
   <text class="label" x="160" y="118">Fonctions</text>
 
-  <circle class="track" cx="260" cy="70" r="32" /><circle class="arc" cx="260" cy="70" r="32" stroke="url(#grad-branch)" stroke-dasharray="201.06" stroke-dashoffset="102.58" transform="rotate(-90 260 70)" />
+  <circle class="track" cx="260" cy="70" r="32" /><circle class="arc" cx="260" cy="70" r="32" stroke="#e05d44" stroke-dasharray="201.06" stroke-dashoffset="102.58" transform="rotate(-90 260 70)" />
   <text class="value" x="260" y="74">49.0%</text>
   <text class="label" x="260" y="118">Branches</text>
 </svg>
