@@ -155,7 +155,9 @@ jobs:
     steps:
       - name: Pages disabled on repository
         if: github.event.repository.has_pages != true
-        run: echo "GitHub Pages is not enabled on this repository. Enable it in Settings > Pages with source 'GitHub Actions' to deploy coverage." && exit 1
+        run: |
+          echo "GitHub Pages is not enabled on this repository. Enable it in Settings > Pages with source 'GitHub Actions' to deploy coverage."
+          exit 1
 
       - name: Checkout
         uses: actions/checkout@v4

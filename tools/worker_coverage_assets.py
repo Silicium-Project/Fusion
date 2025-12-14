@@ -105,10 +105,18 @@ def chart_card(label: str, pct: float) -> str:
     radius = 42
     circumference = 2 * math.pi * radius
     offset = circumference * (1 - pct / 100)
+    grad_id = f"grad-{label.lower().replace(' ', '-')}"
     return f"""<div class="chart-card">
   <svg viewBox="0 0 120 120" role="img" aria-label="{label}: {pct:.1f}%">
+    <defs>
+      <linearGradient id="{grad_id}" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#22c55e"/>
+        <stop offset="50%" stop-color="#eab308"/>
+        <stop offset="100%" stop-color="#ef4444"/>
+      </linearGradient>
+    </defs>
     <circle class="track" cx="60" cy="60" r="{radius}" />
-    <circle class="progress" cx="60" cy="60" r="{radius}" stroke-dasharray="{circumference:.2f}" stroke-dashoffset="{offset:.2f}" transform="rotate(-90 60 60)" />
+    <circle class="progress" cx="60" cy="60" r="{radius}" stroke="url(#{grad_id})" stroke-dasharray="{circumference:.2f}" stroke-dashoffset="{offset:.2f}" transform="rotate(-90 60 60)" />
     <text x="60" y="64" class="value">{pct:.1f}%</text>
   </svg>
   <div class="chart-label">{label}</div>
@@ -213,10 +221,9 @@ def summary_html(title: str, line_pct: float, func_pct: float, branch_pct: float
     }}
     .progress {{
       fill: none;
-      stroke: var(--accent);
       stroke-width: 14;
       stroke-linecap: round;
-      filter: drop-shadow(0 0 8px var(--accent));
+      filter: drop-shadow(0 0 8px rgba(34,197,94,0.35));
     }}
     .value {{
       font-size: 22px;
@@ -271,10 +278,7 @@ def write_summary_html(destination: Path, title: str, line_pct: float, func_pct:
 
 
 def snapshot_svg(line_pct: float, func_pct: float, branch_pct: float) -> str:
-    line_color = COLOR_HEX["green"]
-    func_color = "#06b6d4"  # cyan accent
-    branch_color = "#f59e0b"  # amber
-    def donut(cx: int, cy: int, pct: float, color: str) -> str:
+    def donut(cx: int, cy: int, pct: float, grad_id: str) -> str:
         r = 32
         circ = 2 * math.pi * r
         pct = clamp_pct(pct)
@@ -282,7 +286,7 @@ def snapshot_svg(line_pct: float, func_pct: float, branch_pct: float) -> str:
         return (
             f'<circle class="track" cx="{cx}" cy="{cy}" r="{r}" />'
             f'<circle class="arc" cx="{cx}" cy="{cy}" r="{r}" '
-            f'stroke="{color}" stroke-dasharray="{circ:.2f}" stroke-dashoffset="{offset:.2f}" transform="rotate(-90 {cx} {cy})" />'
+            f'stroke="url(#{grad_id})" stroke-dasharray="{circ:.2f}" stroke-dashoffset="{offset:.2f}" transform="rotate(-90 {cx} {cy})" />'
         )
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" role="img" aria-label="Worker coverage snapshot">
@@ -294,17 +298,34 @@ def snapshot_svg(line_pct: float, func_pct: float, branch_pct: float) -> str:
     .label {{ fill: #cbd5e1; font-family: "Inter", "Segoe UI", sans-serif; font-size: 13px; text-anchor: middle; }}
     .value {{ fill: #e2e8f0; font-family: "Inter", "Segoe UI", sans-serif; font-size: 16px; font-weight: 700; text-anchor: middle; }}
   </style>
+  <defs>
+    <linearGradient id="grad-line" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="50%" stop-color="#eab308"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="grad-func" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="50%" stop-color="#eab308"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="grad-branch" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e"/>
+      <stop offset="50%" stop-color="#eab308"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+  </defs>
   <rect class="bg" x="0" y="0" width="320" height="150" rx="14" />
   <rect class="card" x="6" y="6" width="308" height="138" rx="12" />
-  {donut(60, 70, line_pct, line_color)}
+  {donut(60, 70, line_pct, "grad-line")}
   <text class="value" x="60" y="74">{line_pct:.1f}%</text>
   <text class="label" x="60" y="118">Lignes</text>
 
-  {donut(160, 70, func_pct, func_color)}
+  {donut(160, 70, func_pct, "grad-func")}
   <text class="value" x="160" y="74">{func_pct:.1f}%</text>
   <text class="label" x="160" y="118">Fonctions</text>
 
-  {donut(260, 70, branch_pct, branch_color)}
+  {donut(260, 70, branch_pct, "grad-branch")}
   <text class="value" x="260" y="74">{branch_pct:.1f}%</text>
   <text class="label" x="260" y="118">Branches</text>
 </svg>"""
