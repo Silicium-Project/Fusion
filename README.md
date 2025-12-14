@@ -29,13 +29,21 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-Badge : ![Badge Pages](https://silicium-project.github.io/Network/worker/badge.svg)
+Badge :
+<picture>
+  <source srcset="https://silicium-project.github.io/Network/worker/badge.svg">
+  <img src="docs/coverage/worker/badge.svg" alt="worker coverage badge">
+</picture>
 
 <!-- worker-coverage:start -->
-- Aperçu : [![worker coverage](https://silicium-project.github.io/Network/worker/snapshot.svg)](https://silicium-project.github.io/Network/worker/)
+- Aperçu :
+  [<picture>
+    <source srcset="https://silicium-project.github.io/Network/worker/snapshot.svg">
+    <img src="docs/coverage/worker/snapshot.svg" alt="worker coverage preview">
+  </picture>](https://silicium-project.github.io/Network/worker/)
 <!-- worker-coverage:end -->
-- Rapport HTML (dernière exécution CI) : `https://silicium-project.github.io/Network/worker/`
-- Résumé JSON : `https://silicium-project.github.io/Network/worker/coverage-summary.json`
+- Rapport HTML (dernière exécution CI) : `https://silicium-project.github.io/Network/worker/` (fallback : `docs/coverage/worker/index.html`)
+- Résumé JSON : `https://silicium-project.github.io/Network/worker/coverage-summary.json` (fallback : `docs/coverage/worker/coverage-summary.json`)
 - La CI (`tests` sur `main`) regénère l’aperçu via GitHub Pages (job `coverage-pages`), sans commit de couverture.
 
 ---
