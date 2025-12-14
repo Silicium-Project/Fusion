@@ -138,4 +138,92 @@ TEST(BackendConnector, HttpConnectorMessages) {
     EXPECT_NE(std::string::npos, res.error_message.find("non implémenté"));
 }
 
+TEST(BackendConnector, DynamoBackendMissingBinaryThrows) {
+    WorkerConfig config;
+    config.mode = ExecutionMode::Dynamo;
+    config.dynamo_launcher = "/bin/sh";
+    config.dynamo_runner_binary = "/tmp/definitely_missing_runner.sh";
+    EXPECT_THROW(make_backend_connector(config), std::runtime_error);
+}
+
+TEST(BackendConnector, DynamoBackendBadJsonSetsError) {
+    auto tmp = make_tmp_dir("backend_bad_json");
+    auto runner_bin = write_script(tmp, "runner.sh",
+                                   "#!/bin/sh\n"
+                                   "out=\"\"\n"
+                                   "while [ \"$#\" -gt 0 ]; do\n"
+                                   "  if [ \"$1\" = \"--output\" ]; then out=\"$2\"; shift 2; continue; fi\n"
+                                   "  shift\n"
+                                   "done\n"
+                                   "echo \"dyn_stdout\"\n"
+                                   "echo \"not json\" >\"$out\"\n"
+                                   "exit 0\n");
+
+    WorkerConfig config;
+    config.mode = ExecutionMode::Dynamo;
+    config.dynamo_launcher = "/bin/sh";
+    config.dynamo_runner_binary = runner_bin.string();
+    fragment::PartitionInfo part;
+    part.id = "p1";
+    BackendRequest request{part,
+                           tmp.string(),
+                           (tmp / "prog.asm").string(),
+                           (tmp / "prog.bin").string(),
+                           {{"rax", 0}},
+                           {{"rax", 0}},
+                           {},
+                           {}};
+
+    auto connector = make_backend_connector(config);
+    fragment::ExecutionResult result = connector->execute(request);
+    EXPECT_FALSE(result.success);
+    EXPECT_FALSE(result.error_message.empty());
+}
+
+TEST(BackendConnector, DynamoBackendExitCodeSetsErrorMessage) {
+    auto tmp = make_tmp_dir("backend_exit_code");
+    auto runner_bin = write_script(tmp, "runner.sh",
+                                   "#!/bin/sh\n"
+                                   "out=\"\"\n"
+                                   "while [ \"$#\" -gt 0 ]; do\n"
+                                   "  if [ \"$1\" = \"--output\" ]; then out=\"$2\"; shift 2; continue; fi\n"
+                                   "  shift\n"
+                                   "done\n"
+                                   "cat >\"$out\" <<'EOF'\n"
+                                   "{\n"
+                                   "  \"success\":true,\n"
+                                   "  \"error\":\"\",\n"
+                                   "  \"stdout\":\"\",\n"
+                                   "  \"stderr\":\"\",\n"
+                                   "  \"fd_outputs\":{},\n"
+                                   "  \"initial_regs\":[],\n"
+                                   "  \"final_regs\":[],\n"
+                                   "  \"memory_patches\":[],\n"
+                                   "  \"instructions\":1,\n"
+                                   "  \"memory_accesses\":1\n"
+                                   "}\n"
+                                   "EOF\n"
+                                   "exit 9\n");
+
+    WorkerConfig config;
+    config.mode = ExecutionMode::Dynamo;
+    config.dynamo_launcher = "/bin/sh";
+    config.dynamo_runner_binary = runner_bin.string();
+    fragment::PartitionInfo part;
+    part.id = "p1";
+    BackendRequest request{part,
+                           tmp.string(),
+                           (tmp / "prog.asm").string(),
+                           (tmp / "prog.bin").string(),
+                           {{"rax", 0}},
+                           {{"rax", 0}},
+                           {},
+                           {}};
+
+    auto connector = make_backend_connector(config);
+    fragment::ExecutionResult result = connector->execute(request);
+    EXPECT_TRUE(result.success);
+    EXPECT_NE(std::string::npos, result.error_message.find("DynamoRIO en erreur"));
+}
+
 }  // namespace worker

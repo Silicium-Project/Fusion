@@ -32,3 +32,16 @@ func_3_main rax=0x10 rbx=42
     EXPECT_EQ(tasks[1].inputs.at("rax"), 0x10u);
     EXPECT_EQ(tasks[1].inputs.at("rbx"), 42u);
 }
+
+TEST(QueueLoader, ParsesHexAndDecimal) {
+    EXPECT_EQ(worker::parse_register_value("0x10"), 16u);
+    EXPECT_EQ(worker::parse_register_value("123"), 123u);
+}
+
+TEST(QueueLoader, InvalidTokensThrow) {
+    EXPECT_THROW(worker::parse_register_value(""), std::runtime_error);
+    EXPECT_THROW(worker::parse_register_value("abc"), std::exception);
+
+    const auto path = write_queue_file("func_1 rax-\n");
+    EXPECT_THROW(worker::load_queue_file(path.string()), std::runtime_error);
+}

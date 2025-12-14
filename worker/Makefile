@@ -35,7 +35,7 @@ WORKER_MAIN_OBJ := $(WORKER_OBJ_DIR)/main.o
 WORKER_LIB_OBJS := $(filter-out $(WORKER_MAIN_OBJ), $(WORKER_OBJS))
 DYNAMO_RUNNER_OBJ := $(WORKER_OBJ_DIR)/$(notdir $(RUNNER_MAIN_SRC:.cpp=.o))
 
-TEST_SRCS := tests/queue_loader_test.cpp tests/worker_runner_test.cpp tests/stateful_worker_test.cpp tests/mode_equivalence_test.cpp tests/native_vs_original_test.cpp tests/serializer_reporter_test.cpp tests/backend_connector_test.cpp
+TEST_SRCS := tests/queue_loader_test.cpp tests/worker_runner_test.cpp tests/stateful_worker_test.cpp tests/mode_equivalence_test.cpp tests/native_vs_original_test.cpp tests/serializer_reporter_test.cpp tests/backend_connector_test.cpp tests/executor_client_test.cpp
 TEST_BUILD_DIR := $(OBJ_DIR)/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
 TEST_BIN := $(TEST_BUILD_DIR)/worker_tests
