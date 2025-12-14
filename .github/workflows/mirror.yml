@@ -4,6 +4,11 @@ on:
     branches: ["main"]
   workflow_dispatch: {}
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
 jobs:
   tests:
     uses: ./.github/workflows/tests.yml
