@@ -29,14 +29,14 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-Badge : ![Badge Pages](https://silicium-project.github.io/Network/worker/badge.svg)
+Badge : ![Badge local](docs/coverage/worker/badge.svg)
 
 <!-- worker-coverage:start -->
-- Aperçu : [![worker coverage](https://silicium-project.github.io/Network/worker/snapshot.svg)](https://silicium-project.github.io/Network/worker/)
+- Aperçu : [![worker coverage](docs/coverage/worker/snapshot.svg "Lignes 85.6 %, fonctions 90.2 %, branches 49.0 %")](docs/coverage/worker/index.html)
 <!-- worker-coverage:end -->
-- Rapport HTML (dernière exécution CI) : `https://silicium-project.github.io/Network/worker/`
-- Résumé JSON : `https://silicium-project.github.io/Network/worker/coverage-summary.json`
-- La CI (`tests` sur `main`) regénère l’aperçu via GitHub Pages (job `coverage-pages`), sans commit de couverture.
+- Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html`
+- Résumé JSON : `docs/coverage/worker/coverage-summary.json`
+- La CI (`tests` sur `main`) regénère et commite automatiquement ces artefacts si la couverture change ; poussez vos modifications et déclenchez le workflow `EntryPoint Tests` (job `worker-cpp`) pour recalculer la couverture.
 
 ---
 
