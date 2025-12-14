@@ -29,14 +29,15 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-Badge : ![Badge Pages](https://silicium-project.github.io/Network/worker/badge.svg)
-(fallback : `docs/coverage/worker/badge.svg`)
+Badge : ![Badge](docs/coverage/worker/badge.svg)
+(aperçu live via Pages : `https://silicium-project.github.io/Network/worker/badge.svg`)
 
 <!-- worker-coverage:start -->
-- Aperçu : [![worker coverage](https://silicium-project.github.io/Network/worker/snapshot.svg)](https://silicium-project.github.io/Network/worker/) (fallback : `docs/coverage/worker/snapshot.svg`)
+- Aperçu local : [![worker coverage](docs/coverage/worker/snapshot.svg)](docs/coverage/worker/index.html)
+- Aperçu live (Pages) : [snapshot](https://silicium-project.github.io/Network/worker/) — prioritaire si Pages est actif
 <!-- worker-coverage:end -->
-- Rapport HTML (dernière exécution CI) : `https://silicium-project.github.io/Network/worker/` (fallback : `docs/coverage/worker/index.html`)
-- Résumé JSON : `https://silicium-project.github.io/Network/worker/coverage-summary.json` (fallback : `docs/coverage/worker/coverage-summary.json`)
+- Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html` (ou `https://silicium-project.github.io/Network/worker/` si Pages)
+- Résumé JSON : `docs/coverage/worker/coverage-summary.json` (ou `https://silicium-project.github.io/Network/worker/coverage-summary.json` si Pages)
 - La CI (`tests` sur `main`) regénère l’aperçu via GitHub Pages (job `coverage-pages`), sans commit de couverture.
 
 ---
