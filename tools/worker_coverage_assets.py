@@ -104,11 +104,11 @@ def chart_card(label: str, pct: float) -> str:
     pct = clamp_pct(pct)
     radius = 42
     circumference = 2 * math.pi * radius
-    filled = pct / 100 * circumference
+    offset = circumference * (1 - pct / 100)
     return f"""<div class="chart-card">
   <svg viewBox="0 0 120 120" role="img" aria-label="{label}: {pct:.1f}%">
     <circle class="track" cx="60" cy="60" r="{radius}" />
-    <circle class="progress" cx="60" cy="60" r="{radius}" stroke-dasharray="{filled:.2f} {circumference - filled:.2f}" />
+    <circle class="progress" cx="60" cy="60" r="{radius}" stroke-dasharray="{circumference:.2f}" stroke-dashoffset="{offset:.2f}" transform="rotate(-90 60 60)" />
     <text x="60" y="64" class="value">{pct:.1f}%</text>
   </svg>
   <div class="chart-label">{label}</div>
@@ -216,8 +216,6 @@ def summary_html(title: str, line_pct: float, func_pct: float, branch_pct: float
       stroke: var(--accent);
       stroke-width: 14;
       stroke-linecap: round;
-      transform-origin: 50% 50%;
-      transform: rotate(-90deg);
       filter: drop-shadow(0 0 8px var(--accent));
     }}
     .value {{
@@ -279,11 +277,12 @@ def snapshot_svg(line_pct: float, func_pct: float, branch_pct: float) -> str:
     def donut(cx: int, cy: int, pct: float, color: str) -> str:
         r = 32
         circ = 2 * math.pi * r
-        filled = clamp_pct(pct) / 100 * circ
+        pct = clamp_pct(pct)
+        offset = circ * (1 - pct / 100)
         return (
             f'<circle class="track" cx="{cx}" cy="{cy}" r="{r}" />'
             f'<circle class="arc" cx="{cx}" cy="{cy}" r="{r}" '
-            f'stroke="{color}" stroke-dasharray="{filled:.2f} {circ - filled:.2f}" />'
+            f'stroke="{color}" stroke-dasharray="{circ:.2f}" stroke-dashoffset="{offset:.2f}" transform="rotate(-90 {cx} {cy})" />'
         )
 
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 150" role="img" aria-label="Worker coverage snapshot">
@@ -291,7 +290,7 @@ def snapshot_svg(line_pct: float, func_pct: float, branch_pct: float) -> str:
     .bg {{ fill: #0f172a; }}
     .card {{ fill: #111827; stroke: #1f2937; stroke-width: 1; }}
     .track {{ fill: none; stroke: #1f2937; stroke-width: 12; }}
-    .arc {{ fill: none; stroke-width: 12; stroke-linecap: round; transform-origin: center; transform: rotate(-90deg); }}
+    .arc {{ fill: none; stroke-width: 12; stroke-linecap: round; }}
     .label {{ fill: #cbd5e1; font-family: "Inter", "Segoe UI", sans-serif; font-size: 13px; text-anchor: middle; }}
     .value {{ fill: #e2e8f0; font-family: "Inter", "Segoe UI", sans-serif; font-size: 16px; font-weight: 700; text-anchor: middle; }}
   </style>
@@ -377,15 +376,17 @@ def main() -> None:
             except ValueError:
                 readme_snapshot = str(args.snapshot)
 
-        snippet_parts = [
-            f"- Snapshot (auto) : lignes {line_pct:.1f} %, fonctions {func_pct:.1f} %, branches {branch_pct:.1f} %",
-        ]
+        metrics_text = f"Lignes {line_pct:.1f} %, fonctions {func_pct:.1f} %, branches {branch_pct:.1f} %"
+        snippet_parts = []
         if readme_snapshot and args.readme_report:
-            snippet_parts.append(f"- Aperçu : [![worker coverage]({readme_snapshot})]({args.readme_report})")
+            snippet_parts.append(f"- Aperçu : [![worker coverage]({readme_snapshot} \"{metrics_text}\")]({args.readme_report})")
         elif readme_snapshot:
-            snippet_parts.append(f"- Aperçu : ![worker coverage]({readme_snapshot})")
+            snippet_parts.append(f"- Aperçu : ![worker coverage]({readme_snapshot} \"{metrics_text}\")")
         elif args.readme_report:
+            snippet_parts.append(f"- Snapshot (auto) : {metrics_text}")
             snippet_parts.append(f"- Aperçu : {args.readme_report}")
+        else:
+            snippet_parts.append(f"- Snapshot (auto) : {metrics_text}")
 
         update_readme(args.readme, args.start_marker, args.end_marker, "\n".join(snippet_parts))
 
