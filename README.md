@@ -29,14 +29,16 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ## Couverture (worker)
 
-Badge : ![Badge Pages](https://silicium-project.github.io/Network/worker/badge.svg)
+Badge (local) : ![Badge](docs/coverage/worker/badge.svg)  
+Badge (Pages si public) : `https://silicium-project.github.io/Network/worker/badge.svg`
 
 <!-- worker-coverage:start -->
-- Aperçu : [![worker coverage](https://silicium-project.github.io/Network/worker/snapshot.svg)](https://silicium-project.github.io/Network/worker/)
+- Aperçu local : [![worker coverage](docs/coverage/worker/snapshot.svg)](docs/coverage/worker/index.html)
+- Aperçu Pages (si public) : `https://silicium-project.github.io/Network/worker/`
 <!-- worker-coverage:end -->
-- Rapport HTML (dernière exécution CI) : `https://silicium-project.github.io/Network/worker/`
-- Résumé JSON : `https://silicium-project.github.io/Network/worker/coverage-summary.json`
-- La CI (`tests` sur `main`) regénère l’aperçu via GitHub Pages (job `coverage-pages`), sans commit de couverture.
+- Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html` (ou Pages si accessible)
+- Résumé JSON : `docs/coverage/worker/coverage-summary.json` (ou Pages si accessible)
+- La CI (`tests` sur `main`) regénère l’aperçu via GitHub Pages (job `coverage-pages`) sans commit de couverture ; si le dépôt est privé, servez l’aperçu local.
 
 ---
 
