@@ -145,7 +145,7 @@ jobs:
     needs: worker-cpp
     if: github.ref == 'refs/heads/main' && inputs.publish_pages != false
     permissions:
-      contents: read
+      contents: write
       pages: write
       id-token: write
     environment:
