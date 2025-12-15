@@ -182,16 +182,14 @@ jobs:
             --full-report coverage-full.html \
             --snapshot public/worker/snapshot.svg
 
-      - name: Upload artifact for Pages
-        if: github.event.repository.has_pages == true
-        uses: actions/upload-pages-artifact@v3
+      - name: Publish to gh-pages
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          path: ./public
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        if: github.event.repository.has_pages == true
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./public
+          force_orphan: true
 
   commit-coverage:
     runs-on: ubuntu-latest
