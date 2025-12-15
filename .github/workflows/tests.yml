@@ -150,27 +150,18 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Pages disabled on repository
-        if: github.event.repository.has_pages != true
-        run: |
-          echo "GitHub Pages is not enabled on this repository. Enable it in Settings > Pages with source 'GitHub Actions' to deploy coverage. Skipping deploy."
-
       - name: Checkout
-        if: github.event.repository.has_pages == true
         uses: actions/checkout@v4
 
       - name: Download worker coverage artifact
-        if: github.event.repository.has_pages == true
         uses: actions/download-artifact@v4
         with:
           name: worker-coverage
           path: /tmp/worker-coverage
 
       - name: Prepare Pages content
-        if: github.event.repository.has_pages == true
         run: |
           mkdir -p public/worker
           cp /tmp/worker-coverage/coverage.html public/worker/coverage-full.html
