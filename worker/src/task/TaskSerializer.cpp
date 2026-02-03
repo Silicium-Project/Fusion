@@ -276,6 +276,7 @@ static ExecutionMode parse_mode(const std::string& value) {
 std::string serialize_task_payload(const TaskPayload& payload) {
     std::ostringstream oss;
     oss << "{\n"
+        << "  \"type\":\"" << json_escape(task_type_to_string(payload.type)) << "\",\n"
         << "  \"partition_id\":\"" << json_escape(payload.partition_id) << "\",\n"
         << "  \"asm_path\":\"" << json_escape(payload.asm_path) << "\",\n"
         << "  \"binary_path\":\"" << json_escape(payload.binary_path) << "\",\n"
@@ -291,6 +292,11 @@ std::string serialize_task_payload(const TaskPayload& payload) {
 TaskPayload deserialize_task_payload(const std::string& content) {
     json_t* root = load_json_root(content);
     TaskPayload payload;
+    const std::string type = get_json_string(root, "type");
+    if (type.empty())
+        payload.type = TaskType::Binary;
+    else
+        payload.type = parse_task_type(type);
     payload.partition_id = get_json_string(root, "partition_id");
     payload.asm_path = get_json_string(root, "asm_path");
     payload.binary_path = get_json_string(root, "binary_path");

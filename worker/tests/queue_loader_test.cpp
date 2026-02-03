@@ -31,6 +31,7 @@ func_3_main rax=0x10 rbx=42
     ASSERT_EQ(tasks[1].inputs.size(), 2u);
     EXPECT_EQ(tasks[1].inputs.at("rax"), 0x10u);
     EXPECT_EQ(tasks[1].inputs.at("rbx"), 42u);
+    EXPECT_EQ(tasks[1].type, worker::TaskType::Binary);
 }
 
 TEST(QueueLoader, ParsesHexAndDecimal) {
@@ -44,18 +45,22 @@ TEST(QueueLoader, InvalidTokensThrow) {
 
     const auto path = write_queue_file("func_1 rax-\n");
     EXPECT_THROW(worker::load_queue_file(path.string()), std::runtime_error);
+
+    const auto bad_type = write_queue_file("func_2 type=unknown\n");
+    EXPECT_THROW(worker::load_queue_file(bad_type.string()), std::runtime_error);
 }
 
 TEST(QueueLoader, SkipsBlankAndComments) {
     const auto path = write_queue_file(R"(
 # comment
 
-task1 rax=1
+task1 type=binary rax=1
 )");
     auto tasks = worker::load_queue_file(path.string());
     ASSERT_EQ(1u, tasks.size());
     EXPECT_EQ("task1", tasks[0].partition_id);
     EXPECT_EQ(1u, tasks[0].inputs.at("rax"));
+    EXPECT_EQ(tasks[0].type, worker::TaskType::Binary);
 }
 
 TEST(QueueLoader, MissingFileThrows) {

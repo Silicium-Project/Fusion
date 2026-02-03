@@ -10,6 +10,7 @@ namespace worker {
 
 TEST(TaskSerializer, RoundTripPayload) {
     TaskPayload payload;
+    payload.type = TaskType::Binary;
     payload.partition_id = "p1";
     payload.asm_path = "/tmp/a.asm";
     payload.binary_path = "/tmp/bin";
@@ -30,6 +31,7 @@ TEST(TaskSerializer, RoundTripPayload) {
     const std::string serialized = serialize_task_payload(payload);
     const TaskPayload deserialized = deserialize_task_payload(serialized);
 
+    EXPECT_EQ(payload.type, deserialized.type);
     EXPECT_EQ(payload.partition_id, deserialized.partition_id);
     EXPECT_EQ(payload.asm_path, deserialized.asm_path);
     EXPECT_EQ(payload.binary_path, deserialized.binary_path);
@@ -44,6 +46,36 @@ TEST(TaskSerializer, RoundTripPayload) {
     EXPECT_EQ(payload.fd_rules[0].capture, deserialized.fd_rules[0].capture);
     EXPECT_EQ(payload.fd_rules[0].alias, deserialized.fd_rules[0].alias);
     EXPECT_EQ(payload.fd_rules[0].input_data, deserialized.fd_rules[0].input_data);
+}
+
+TEST(TaskSerializer, DefaultTypeWhenMissing) {
+    const std::string json = R"({
+      "partition_id":"p",
+      "asm_path":"/tmp/a",
+      "binary_path":"",
+      "mode":"emu",
+      "fd_redirections":[],
+      "inputs":[],
+      "register_state":[],
+      "memory":[]
+    })";
+    TaskPayload payload = deserialize_task_payload(json);
+    EXPECT_EQ(payload.type, TaskType::Binary);
+}
+
+TEST(TaskSerializer, RejectsUnknownType) {
+    const std::string json = R"({
+      "type":"mystery",
+      "partition_id":"p",
+      "asm_path":"/tmp/a",
+      "binary_path":"",
+      "mode":"emu",
+      "fd_redirections":[],
+      "inputs":[],
+      "register_state":[],
+      "memory":[]
+    })";
+    EXPECT_THROW(deserialize_task_payload(json), std::runtime_error);
 }
 
 TEST(TaskSerializer, RoundTripExecutionResult) {

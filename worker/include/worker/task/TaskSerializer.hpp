@@ -12,6 +12,7 @@
 namespace worker {
 
 struct TaskPayload {
+    TaskType type = TaskType::Binary;
     PartitionId partition_id;
     std::string asm_path;
     std::string binary_path;

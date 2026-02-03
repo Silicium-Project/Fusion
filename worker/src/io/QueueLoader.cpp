@@ -57,7 +57,11 @@ std::vector<Task> load_queue_file(const std::string& path) {
             std::string reg = token.substr(0, eq);
             std::string value = token.substr(eq + 1);
             try {
-                task.inputs[reg] = parse_register_value(value);
+                if (reg == "type" || reg == "task_type") {
+                    task.type = parse_task_type(value);
+                } else {
+                    task.inputs[reg] = parse_register_value(value);
+                }
             } catch (const std::exception& e) {
                 throw std::runtime_error("Ligne " + std::to_string(line_no) + ": " + e.what());
             }
