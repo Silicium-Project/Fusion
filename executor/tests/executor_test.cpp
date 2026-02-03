@@ -101,7 +101,7 @@ TEST(FragmentExecutor, InjectStdinAndCaptureOutput) {
     EXPECT_EQ(pipes.fds[STDERR_FILENO].data, "hello-in");
 }
 
-TEST(FragmentExecutor, DISABLED_CaptureAndFeedExtraFd) {
+TEST(FragmentExecutor, CaptureAndFeedExtraFd) {
     ExecutorConfig cfg;
     fragment::FdRule cap{};
     cap.fd = 3;
