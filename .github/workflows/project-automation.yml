@@ -15,12 +15,12 @@ jobs:
       repository-projects: write
       contents: read
     env:
-      PROJECT_ID: PVT_kwDODDrr6M4BOPAC
-      STAGE_FIELD_ID: PVTSSF_lADODDrr6M4BOPACzg8_wRc
-      STAGE_BACKLOG: 8df5badd
-      STAGE_IN_PROGRESS: cb37c0db
-      STAGE_REVIEW: 4db4bd08
-      STAGE_DONE: c612c7f4
+      PROJECT_ID: PVT_kwDODDrr6M4BC9lO
+      STATUS_FIELD_ID: PVTSSF_lADODDrr6M4BC9lOzg1BVF8
+      STATUS_BACKLOG: f75ad846
+      STATUS_IN_PROGRESS: 47fc9ee4
+      STATUS_REVIEW: df73e18b
+      STATUS_DONE: 98236657
     steps:
       - name: Update project stage
         uses: actions/github-script@v7
@@ -28,12 +28,12 @@ jobs:
           github-token: ${{ secrets.PROJECTS_TOKEN || github.token }}
           script: |
             const projectId = process.env.PROJECT_ID;
-            const fieldId = process.env.STAGE_FIELD_ID;
+            const fieldId = process.env.STATUS_FIELD_ID;
             const stages = {
-              backlog: process.env.STAGE_BACKLOG,
-              in_progress: process.env.STAGE_IN_PROGRESS,
-              review: process.env.STAGE_REVIEW,
-              done: process.env.STAGE_DONE,
+              backlog: process.env.STATUS_BACKLOG,
+              in_progress: process.env.STATUS_IN_PROGRESS,
+              review: process.env.STATUS_REVIEW,
+              done: process.env.STATUS_DONE,
             };
 
             const event = context.eventName;
