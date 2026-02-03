@@ -62,7 +62,7 @@ CPP_TEST_LOCAL ?= 0
 HOST_UID := $(shell id -u)
 HOST_GID := $(shell id -g)
 
-.PHONY: all clean test build-cpp-test-image
+.PHONY: all clean test test-clean build-cpp-test-image
 
 ifeq ($(NEED_DOCKER_BUILD),yes)
 ifndef IN_DOCKER_BUILD
@@ -139,8 +139,13 @@ clean:
 			fi; }; \
 	fi
 
+test-clean:
+	@# Nettoyage des traces gcov pour éviter les warnings lors des tests.
+	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f \( -name '*.gcda' -o -name '*.gcno' \) -delete
+
 ifeq ($(CPP_TEST_LOCAL),1)
 test:
+	$(MAKE) test-clean
 	$(MAKE) $(TEST_BIN)
 	$(TEST_BIN)
 else
@@ -155,6 +160,7 @@ test: build-cpp-test-image
 		set -euo pipefail; \
 		ccache -M 2G >/dev/null; \
 		cd executor; \
+		$(MAKE) test-clean; \
 		env TEST_CXX="ccache g++" $(MAKE) $(TEST_BIN); \
 		$(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID executor/$(OBJ_DIR)'
