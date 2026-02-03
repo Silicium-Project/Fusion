@@ -27,7 +27,7 @@ LIB_EMU := libfragment_emulator.so
 
 # Sources partagées
 COMMON_SRC := cli/ArgParser.cpp cli/Cli.cpp core/ExecutionResult.cpp core/FragmentExecutor.cpp \
-	support/Hash.cpp core/InstructionEmulator.cpp support/JsonHasher.cpp support/Logging.cpp \
+	support/Hash.cpp core/InstructionEmulator.cpp core/PrintfEmulator.cpp support/JsonHasher.cpp support/Logging.cpp \
 	cli/OptionParser.cpp partition/PartitionRegistry.cpp partition/PartitionSummary.cpp \
 	core/RegisterEmulator.cpp runtime/Runner.cpp core/SegmentLoader.cpp support/Utils.cpp \
 	core/Opcodes.cpp
@@ -45,8 +45,9 @@ OBJS_NATIVE_BIN := $(addprefix $(OBJ_DIR)/native_bin/,$(NATIVE_BIN_SRC:.cpp=.o))
 OBJS_EMU_LIB := $(addprefix $(OBJ_DIR)/emu_lib/,$(EMU_LIB_SRC:.cpp=.o))
 OBJS_NATIVE_LIB := $(addprefix $(OBJ_DIR)/native_lib/,$(NATIVE_LIB_SRC:.cpp=.o))
 
-TEST_SRCS := tests/config_test.cpp tests/opcode_test.cpp tests/executor_test.cpp tests/instruction_emulator_test.cpp
-TEST_EXTRA_SRCS := src/core/FragmentExecutor.cpp src/core/RegisterEmulator.cpp src/support/Utils.cpp src/support/Logging.cpp \
+TEST_SRCS := tests/config_test.cpp tests/opcode_test.cpp tests/executor_test.cpp tests/instruction_emulator_test.cpp \
+	tests/printf_emulation_test.cpp
+TEST_EXTRA_SRCS := src/core/FragmentExecutor.cpp src/core/RegisterEmulator.cpp src/core/PrintfEmulator.cpp src/support/Utils.cpp src/support/Logging.cpp \
 	src/core/ExecutionResult.cpp src/core/InstructionEmulator.cpp src/core/SegmentLoader.cpp src/core/Opcodes.cpp
 TEST_BUILD_DIR := $(OBJ_DIR)/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj

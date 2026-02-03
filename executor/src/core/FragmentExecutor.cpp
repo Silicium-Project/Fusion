@@ -18,6 +18,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "core/PrintfEmulator.hpp"
 #include "support/Logging.hpp"
 #include "support/Utils.hpp"
 
@@ -541,100 +542,34 @@ std::string FragmentExecutor::capture_program_stdout(const std::function<void()>
     return {};
 }
 
+namespace {
+
+std::optional<std::string> read_string_from_emulator(const RegisterEmulator& emulator,
+                                                     uint64_t address,
+                                                     std::size_t max_len = 512) {
+    auto bytes = emulator.read_bytes(address, max_len);
+    if (bytes.empty())
+        return std::nullopt;
+
+    std::string out;
+    out.reserve(bytes.size());
+    for (uint8_t byte : bytes) {
+        if (byte == 0)
+            break;
+        out.push_back(static_cast<char>(byte));
+    }
+    return out;
+}
+
+}  // namespace
+
 std::optional<std::string> FragmentExecutor::read_string_from_binary(uint64_t address) const {
+    if (auto from_mem = read_string_from_emulator(emulator, address))
+        return from_mem;
     return segment_loader_.read_string(address);
 }
 
 namespace {
-
-struct CallArgs {
-    uint64_t fmt = 0;
-    std::array<uint64_t, 5> regs{};  // rsi, rdx, rcx, r8, r9 (printf ordre SysV)
-};
-
-CallArgs gather_call_args(const RegisterEmulator& emulator) {
-    CallArgs args{};
-    args.fmt = emulator.get("rdi");
-    args.regs[0] = emulator.get("rsi");
-    args.regs[1] = emulator.get("rdx");
-    args.regs[2] = emulator.get("rcx");
-    args.regs[3] = emulator.get("r8");
-    args.regs[4] = emulator.get("r9");
-    return args;
-}
-
-std::string format_printf_like(const std::string& fmt, const CallArgs& args) {
-    std::ostringstream out;
-    size_t arg_idx = 0;
-    for (size_t i = 0; i < fmt.size(); ++i) {
-        char c = fmt[i];
-        if (c != '%') {
-            out << c;
-            continue;
-        }
-        if (i + 1 < fmt.size() && fmt[i + 1] == '%') {
-            out << '%';
-            ++i;
-            continue;
-        }
-
-        // Parse flags/width (minimal subset)
-        size_t j = i + 1;
-        int width = 0;
-        while (j < fmt.size() && std::isdigit(static_cast<unsigned char>(fmt[j]))) {
-            width = width * 10 + (fmt[j] - '0');
-            ++j;
-        }
-        bool is_long = false;
-        bool is_long_long = false;
-        if (j + 1 < fmt.size() && fmt[j] == 'l' && fmt[j + 1] == 'l') {
-            is_long_long = true;
-            j += 2;
-        } else if (j < fmt.size() && fmt[j] == 'l') {
-            is_long = true;
-            ++j;
-        }
-        if (j >= fmt.size())
-            break;
-
-        char spec = fmt[j];
-        if (arg_idx >= args.regs.size()) {
-            out << '%' << spec;
-            i = j;
-            continue;
-        }
-        uint64_t val = args.regs[arg_idx++];
-        std::ostringstream val_ss;
-        if (spec == 'x' || spec == 'X') {
-            val_ss << std::hex << std::nouppercase;
-            if (width > 0)
-                val_ss << std::setw(width) << std::setfill('0');
-            val_ss << val;
-        } else if (spec == 'u' || spec == 'd') {
-            if (width > 0)
-                val_ss << std::setw(width) << std::setfill('0');
-            if (spec == 'd')
-                val_ss << static_cast<long long>(val);
-            else
-                val_ss << static_cast<unsigned long long>(val);
-        } else if (spec == 'p') {
-            val_ss << "0x" << std::hex << val;
-        } else if (spec == 's') {
-            // For %s assume rsi (first arg) is a pointer; best effort.
-            (void)is_long;
-            (void)is_long_long;
-            // Not implemented fully; fallback to raw pointer.
-            val_ss << "0x" << std::hex << val;
-        } else {
-            out << '%' << spec;
-            i = j;
-            continue;
-        }
-        out << val_ss.str();
-        i = j;
-    }
-    return out.str();
-}
 
 bool is_printf_symbol(const std::string& target) {
     return target.find("printf") != std::string::npos || target.find("__printf_chk") != std::string::npos;
@@ -690,10 +625,20 @@ bool FragmentExecutor::emulate_call(std::istringstream& iss, ExecutionResult& re
     }
 
     if (is_printf_symbol(target)) {
-        const auto args = gather_call_args(emulator);
+        const auto args = gather_printf_args(emulator);
         auto format = read_string_from_binary(args.fmt);
-        if (format)
-            result.program_stdout += format_printf_like(*format, args);
+        if (format) {
+            auto read_string = [this](uint64_t addr) {
+                if (auto text = read_string_from_binary(addr))
+                    return text;
+                if (auto buf = segment_loader_.read_bytes(addr, 256); !buf.empty()) {
+                    emulator.write_bytes(addr, buf);
+                    return read_string_from_binary(addr);
+                }
+                return std::optional<std::string>{};
+            };
+            result.program_stdout += format_printf_like(*format, args, read_string);
+        }
         return true;
     }
 
