@@ -18,6 +18,7 @@ jobs:
       PROJECT_ID: PVT_kwDODDrr6M4BC9lO
       STATUS_FIELD_ID: PVTSSF_lADODDrr6M4BC9lOzg1BVF8
       STATUS_BACKLOG: f75ad846
+      STATUS_READY: 61e4505c
       STATUS_IN_PROGRESS: 47fc9ee4
       STATUS_REVIEW: df73e18b
       STATUS_DONE: 98236657
@@ -31,6 +32,7 @@ jobs:
             const fieldId = process.env.STATUS_FIELD_ID;
             const stages = {
               backlog: process.env.STATUS_BACKLOG,
+              ready: process.env.STATUS_READY,
               in_progress: process.env.STATUS_IN_PROGRESS,
               review: process.env.STATUS_REVIEW,
               done: process.env.STATUS_DONE,
@@ -41,7 +43,7 @@ jobs:
             let stage = null;
 
             if (event === 'issues') {
-              if (['opened', 'reopened'].includes(action)) stage = stages.backlog;
+              if (['opened', 'reopened'].includes(action)) stage = stages.ready;
               if (action === 'assigned') stage = stages.in_progress;
               if (action === 'closed') stage = stages.done;
             }
