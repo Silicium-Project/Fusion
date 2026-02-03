@@ -2,9 +2,9 @@
 
 #include <memory>
 
-#include "Cli.hpp"
-#include "FragmentExecutor.hpp"
-#include "ExecutionResult.hpp"
+#include "cli/Cli.hpp"
+#include "core/FragmentExecutor.hpp"
+#include "core/ExecutionResult.hpp"
 
 namespace fragment {
 

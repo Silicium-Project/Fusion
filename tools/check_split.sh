@@ -65,7 +65,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "==> Étape 1 : build & split ($PROGRAM_PATH)"
+echo "==> Ãƒâ€°tape 1 : build & split ($PROGRAM_PATH)"
 (
     cd "$SPLITTER_DIR"
     make clean >/dev/null
@@ -86,30 +86,30 @@ fi
 REAL_OUT="$(mktemp /tmp/check_split_real.XXXXXX)"
 SPLIT_OUT="$(mktemp /tmp/check_split_split.XXXXXX)"
 
-echo "==> Étape 2 : exécution binaire réel"
+echo "==> Ãƒâ€°tape 2 : exÃƒÂ©cution binaire rÃƒÂ©el"
 set +e
 "$real_bin" >"$REAL_OUT"
 real_rc=$?
 set -e
 
-echo "==> Étape 3 : exécution summary (fragment_executor)"
+echo "==> Ãƒâ€°tape 3 : exÃƒÂ©cution summary (fragment_executor)"
 set +e
 env ${EXTRA_ENV[*]:-} "$EXECUTOR" --summary "$summary" ${EXECUTOR_FLAGS:-} >"$SPLIT_OUT"
 split_rc=$?
 set -e
 
-echo "==> Étape 4 : comparaison"
+echo "==> Ãƒâ€°tape 4 : comparaison"
 diff -u "$REAL_OUT" "$SPLIT_OUT" || diff_rc=$? || true
 
 status=0
 if [[ ${diff_rc:-0} -ne 0 || $real_rc -ne $split_rc ]]; then
     status=1
-    echo "ÉCHEC : sorties différentes ou codes de retour divergents."
+    echo "Ãƒâ€°CHEC : sorties diffÃƒÂ©rentes ou codes de retour divergents."
     echo "  real rc=$real_rc, split rc=$split_rc"
-    echo "  stdout réel : $REAL_OUT"
+    echo "  stdout rÃƒÂ©el : $REAL_OUT"
     echo "  stdout split: $SPLIT_OUT"
 else
-    echo "OK : mêmes sorties et même code de retour."
+    echo "OK : mÃƒÂªmes sorties et mÃƒÂªme code de retour."
 fi
 
 exit $status

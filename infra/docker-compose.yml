@@ -95,8 +95,8 @@ services:
       PROXY_TLS_CERT_PATH: /etc/caddy/certs/tls.crt
       PROXY_TLS_KEY_PATH: /etc/caddy/certs/tls.key
     volumes:
-      - ./docker/reverse-proxy/caddy-entrypoint.sh:/silicium/caddy-entrypoint.sh:ro
-      - ./docker/reverse-proxy/certs:/etc/caddy/certs:ro
+      - ${WORKSPACE_ROOT:-..}/infra/docker/reverse-proxy/caddy-entrypoint.sh:/silicium/caddy-entrypoint.sh:ro
+      - ${WORKSPACE_ROOT:-..}/infra/docker/reverse-proxy/certs:/etc/caddy/certs:ro
       - caddy-data:/data
       - caddy-config:/config
     security_opt:

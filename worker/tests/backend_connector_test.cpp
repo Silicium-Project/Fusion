@@ -5,9 +5,9 @@
 #include <string>
 #include <vector>
 
-#include "PartitionSummary.hpp"
-#include "worker/backend_connector.hpp"
-#include "worker/dynamorio_runner.hpp"
+#include "partition/PartitionSummary.hpp"
+#include "worker/backend/BackendConnector.hpp"
+#include "worker/runtime/DynamoRunner.hpp"
 
 namespace worker {
 namespace {

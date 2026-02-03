@@ -6,12 +6,12 @@
 #include <string>
 #include <vector>
 
-#include "Config.hpp"
-#include "worker/dynamorio_runner.hpp"
-#include "worker/job_runner.hpp"
-#include "worker/queue_loader.hpp"
-#include "worker/reporter.hpp"
-#include "PartitionSummary.hpp"
+#include "core/Config.hpp"
+#include "worker/runtime/DynamoRunner.hpp"
+#include "worker/runtime/JobRunner.hpp"
+#include "worker/io/QueueLoader.hpp"
+#include "worker/io/Reporter.hpp"
+#include "partition/PartitionSummary.hpp"
 
 namespace {
 

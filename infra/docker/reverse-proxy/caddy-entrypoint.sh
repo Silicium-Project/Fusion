@@ -38,12 +38,17 @@ mkdir -p /etc/caddy
 {
   echo "{"
   if [ "$PROXY_TLS_MODE" = "acme" ]; then
-    printf '    email %s\n' "$PROXY_TLS_EMAIL"
+    printf '    email %s
+' "$PROXY_TLS_EMAIL"
   fi
   echo "}"
 
-  printf '\n%s {\n' "$PROXY_SITE_ADDRESS"
-  printf '%s\n\n' "$TLS_BLOCK"
+  printf '
+%s {
+' "$PROXY_SITE_ADDRESS"
+  printf '%s
+
+' "$TLS_BLOCK"
   cat <<EOF
     @healthz path /healthz
     handle @healthz {

@@ -27,7 +27,7 @@ WORKER_OBJ_DIR := $(OBJ_DIR)/worker
 BIN := worker
 DYNAMO_RUNNER_BIN := dynamo_fragment_runner
 
-SRC_FILES := $(wildcard $(SRC_DIR)/*.cpp)
+SRC_FILES := $(shell find $(SRC_DIR) -type f -name '*.cpp')
 RUNNER_MAIN_SRC := $(SRC_DIR)/dynamo_fragment_runner_main.cpp
 WORKER_SRC := $(filter-out $(RUNNER_MAIN_SRC), $(SRC_FILES))
 WORKER_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(WORKER_OBJ_DIR)/%.o,$(WORKER_SRC))
@@ -45,6 +45,7 @@ TEST_WORKER_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/worker/%.o,$(TES
 TEST_CXX ?= $(CXX)
 TEST_CXXFLAGS ?= $(CXXFLAGS) --coverage
 TEST_LDFLAGS ?= --coverage -lgtest -lgtest_main -pthread -L$(EXECUTOR_LIB_DIR) -Wl,-rpath,'$$ORIGIN/../../executor' -lfragment_emulator
+CPP_TEST_LOCAL ?= 0
 
 HOST_UID := $(shell id -u)
 HOST_GID := $(shell id -g)
@@ -104,6 +105,12 @@ clean:
 	rm -f $(BIN) $(DYNAMO_RUNNER_BIN)
 	rm -rf $(OBJ_DIR)
 
+ifeq ($(CPP_TEST_LOCAL),1)
+test:
+	$(MAKE) -C $(EXECUTOR_LIB_DIR)
+	$(MAKE) $(TEST_BIN)
+	LD_LIBRARY_PATH=$(EXECUTOR_LIB_DIR) $(TEST_BIN)
+else
 test: build-cpp-test-image
 	@mkdir -p $(CCACHE_DIR)
 	@if ! docker ps --format '{{.Names}}' | grep -qx $(CPP_TEST_CONTAINER); then \
@@ -123,6 +130,7 @@ test: build-cpp-test-image
 		env TEST_CXX="ccache g++" make $(TEST_BIN); \
 		LD_LIBRARY_PATH=/workspace/executor $(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID worker/build'
+endif
 
 build-cpp-test-image:
 	@docker image inspect $(CPP_TEST_IMAGE) >/dev/null 2>&1 || \

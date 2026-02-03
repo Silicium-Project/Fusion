@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "worker/job_runner.hpp"
+#include "worker/runtime/JobRunner.hpp"
 
 TEST(WorkerRunner, ExecutesPartitionFromSummary) {
     const std::string summary = "../demo/worker/summary.json";

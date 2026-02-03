@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include "worker/queue_loader.hpp"
+#include "worker/io/QueueLoader.hpp"
 
 namespace {
 

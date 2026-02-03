@@ -33,12 +33,24 @@ Badge (local) : ![Badge](docs/coverage/worker/badge.svg)
 Badge (Pages si public) : `https://silicium-project.github.io/Network/worker/badge.svg`
 
 <!-- worker-coverage:start -->
-- Aperçu local : [![worker coverage](docs/coverage/worker/snapshot.svg)](docs/coverage/worker/index.html)
-- Aperçu Pages (si public) : `https://silicium-project.github.io/Network/worker/`
+- AperÃ§u : [![worker coverage](.\docs\coverage\worker\snapshot.svg "Lignes 86.7 %, fonctions 92.9 %, branches 50.2 %")](.\docs\coverage\worker\index.html)
 <!-- worker-coverage:end -->
 - Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html` (ou Pages si accessible)
 - Résumé JSON : `docs/coverage/worker/coverage-summary.json` (ou Pages si accessible)
 - La CI (`tests` sur `main`) regénère l’aperçu via GitHub Pages (job `coverage-pages`) sans commit de couverture ; si le dépôt est privé, servez l’aperçu local.
+
+---
+
+
+## Couverture (executor)
+
+Badge (local) : ![Badge](docs/coverage/executor/badge.svg)
+
+<!-- executor-coverage:start -->
+- Aper?u : [![executor coverage](.\docs\coverage\executor\snapshot.svg "Lignes 44.1 %, fonctions 48.0 %, branches 26.9 %")](.\docs\coverage\executor\index.html)
+<!-- executor-coverage:end -->
+- Rapport HTML (derni?re ex?cution CI) : `docs/coverage/executor/index.html`
+- R?sum? JSON : `docs/coverage/executor/coverage-summary.json`
 
 ---
 

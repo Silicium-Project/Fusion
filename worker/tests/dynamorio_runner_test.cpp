@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include "worker/dynamorio_runner.hpp"
+#include "worker/runtime/DynamoRunner.hpp"
 
 namespace {
 

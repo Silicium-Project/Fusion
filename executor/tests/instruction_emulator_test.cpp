@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "InstructionEmulator.hpp"
-#include "Memory.hpp"
+#include "core/InstructionEmulator.hpp"
+#include "core/Memory.hpp"
 
 using fragment::ExecutionResult;
 using fragment::InstructionEmulator;

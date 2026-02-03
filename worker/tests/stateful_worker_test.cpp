@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 
-#include "worker/worker.hpp"
+#include "worker/core/Worker.hpp"
 
 namespace {
 

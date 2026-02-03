@@ -7,8 +7,8 @@
 
 #include <gtest/gtest.h>
 
-#include "Config.hpp"
-#include "FragmentExecutor.hpp"
+#include "core/Config.hpp"
+#include "core/FragmentExecutor.hpp"
 
 using fragment::ExecutorConfig;
 using fragment::FragmentExecutor;

@@ -26,15 +26,16 @@ LIB_NATIVE := libfragment_executor.so
 LIB_EMU := libfragment_emulator.so
 
 # Sources partagées
-COMMON_SRC := ArgParser.cpp Cli.cpp ExecutionResult.cpp FragmentExecutor.cpp \
-	Hash.cpp InstructionEmulator.cpp JsonHasher.cpp Logging.cpp OptionParser.cpp \
-	PartitionRegistry.cpp PartitionSummary.cpp RegisterEmulator.cpp Runner.cpp \
-	SegmentLoader.cpp Utils.cpp Opcodes.cpp
+COMMON_SRC := cli/ArgParser.cpp cli/Cli.cpp core/ExecutionResult.cpp core/FragmentExecutor.cpp \
+	support/Hash.cpp core/InstructionEmulator.cpp support/JsonHasher.cpp support/Logging.cpp \
+	cli/OptionParser.cpp partition/PartitionRegistry.cpp partition/PartitionSummary.cpp \
+	core/RegisterEmulator.cpp runtime/Runner.cpp core/SegmentLoader.cpp support/Utils.cpp \
+	core/Opcodes.cpp
 
 EMU_LIB_SRC := $(COMMON_SRC) backend/ExecutionBackendEmu.cpp backend/EmulatedExecutionBackend.cpp \
-	EmulatedRunner.cpp api/FragmentApi.cpp
+	runtime/EmulatedRunner.cpp api/FragmentApi.cpp
 NATIVE_LIB_SRC := $(COMMON_SRC) backend/ExecutionBackendNative.cpp backend/NativeExecutionBackend.cpp \
-	NativeRunner.cpp api/FragmentApi.cpp
+	runtime/NativeRunner.cpp api/FragmentApi.cpp
 
 EMU_BIN_SRC := $(EMU_LIB_SRC) Main.cpp
 NATIVE_BIN_SRC := $(NATIVE_LIB_SRC) Main.cpp
@@ -45,7 +46,8 @@ OBJS_EMU_LIB := $(addprefix $(OBJ_DIR)/emu_lib/,$(EMU_LIB_SRC:.cpp=.o))
 OBJS_NATIVE_LIB := $(addprefix $(OBJ_DIR)/native_lib/,$(NATIVE_LIB_SRC:.cpp=.o))
 
 TEST_SRCS := tests/config_test.cpp tests/opcode_test.cpp tests/executor_test.cpp tests/instruction_emulator_test.cpp
-TEST_EXTRA_SRCS := src/FragmentExecutor.cpp src/RegisterEmulator.cpp src/Utils.cpp src/Logging.cpp src/ExecutionResult.cpp src/InstructionEmulator.cpp src/SegmentLoader.cpp src/Opcodes.cpp
+TEST_EXTRA_SRCS := src/core/FragmentExecutor.cpp src/core/RegisterEmulator.cpp src/support/Utils.cpp src/support/Logging.cpp \
+	src/core/ExecutionResult.cpp src/core/InstructionEmulator.cpp src/core/SegmentLoader.cpp src/core/Opcodes.cpp
 TEST_BUILD_DIR := $(OBJ_DIR)/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
 TEST_BIN := $(TEST_BUILD_DIR)/fragment_tests
@@ -55,6 +57,7 @@ TEST_OBJS := $(TEST_TEST_OBJS) $(TEST_EXTRA_OBJS)
 TEST_CXX ?= $(CXX)
 TEST_CXXFLAGS ?= $(CXXFLAGS) --coverage
 TEST_LDFLAGS ?= --coverage -lgtest -lgtest_main -pthread
+CPP_TEST_LOCAL ?= 0
 HOST_UID := $(shell id -u)
 HOST_GID := $(shell id -g)
 
@@ -135,6 +138,11 @@ clean:
 			fi; }; \
 	fi
 
+ifeq ($(CPP_TEST_LOCAL),1)
+test:
+	$(MAKE) $(TEST_BIN)
+	$(TEST_BIN)
+else
 test: build-cpp-test-image
 	@mkdir -p $(CCACHE_DIR)
 	docker run --rm \
@@ -149,6 +157,7 @@ test: build-cpp-test-image
 		env TEST_CXX="ccache g++" $(MAKE) $(TEST_BIN); \
 		$(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID executor/$(OBJ_DIR)'
+endif
 
 build-cpp-test-image:
 	@docker image inspect $(CPP_TEST_IMAGE) >/dev/null 2>&1 || \

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "Memory.hpp"
-#include "worker/memory_lut.hpp"
+#include "core/Memory.hpp"
+#include "worker/state/MemoryLut.hpp"
 
 using worker::MemoryLut;
 using worker::MemorySnapshot;

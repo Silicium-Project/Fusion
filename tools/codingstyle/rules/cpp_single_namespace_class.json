@@ -1,0 +1,11 @@
+﻿{
+  "id": "cpp.single_namespace_class",
+  "description": "Allow at most one namespace and one class/struct definition per src/include file.",
+  "scope": {
+    "path_contains": ["src", "include"]
+  },
+  "limits": {
+    "namespace": 1,
+    "class": 1
+  }
+}

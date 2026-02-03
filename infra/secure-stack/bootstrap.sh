@@ -23,7 +23,7 @@ echo "[secure-stack] Active services:"
 ${COMPOSE} ps
 
 echo
-echo "Peer configuration files (share securely with calculateurs/vérificateurs) :"
+echo "Peer configuration files (share securely with calculateurs/vÃƒÂ©rificateurs) :"
 find "${STACK_DIR}/wireguard/config" -maxdepth 1 -type d -name "peer-*" -print | while read -r dir; do
   conf="${dir}/peer.conf"
   [[ -f "$conf" ]] && echo "  - ${conf}"
@@ -31,10 +31,10 @@ done
 
 cat <<'EOF'
 
-Chaque fichier peer contient la clé privée/public et les routes WireGuard.
-Transmettez-le uniquement au nœud correspondant (calculator/verifier).
+Chaque fichier peer contient la clÃƒÂ© privÃƒÂ©e/public et les routes WireGuard.
+Transmettez-le uniquement au nÃ…â€œud correspondant (calculator/verifier).
 
-Une fois connecté via WireGuard, le worker peut joindre le RPC sécurisé sur
+Une fois connectÃƒÂ© via WireGuard, le worker peut joindre le RPC sÃƒÂ©curisÃƒÂ© sur
 l'adresse 10.42.0.2:8899. Exemple (depuis un worker) :
 
   export SOLANA_URL=http://10.42.0.2:8899

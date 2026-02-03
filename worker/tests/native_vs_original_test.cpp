@@ -11,10 +11,10 @@
 
 #include <gtest/gtest.h>
 
-#include "PartitionSummary.hpp"
-#include "worker/job_runner.hpp"
-#include "worker/task.hpp"
-#include "worker/worker_config.hpp"
+#include "partition/PartitionSummary.hpp"
+#include "worker/runtime/JobRunner.hpp"
+#include "worker/task/Task.hpp"
+#include "worker/core/WorkerConfig.hpp"
 
 namespace {
 

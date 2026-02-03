@@ -2,9 +2,9 @@
 
 #include <sstream>
 
-#include "worker/reporter.hpp"
-#include "worker/task_serializer.hpp"
-#include "worker/worker_report.hpp"
+#include "worker/io/Reporter.hpp"
+#include "worker/task/TaskSerializer.hpp"
+#include "worker/core/WorkerReport.hpp"
 
 namespace worker {
 
