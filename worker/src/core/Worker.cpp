@@ -4,6 +4,19 @@
 
 namespace worker {
 
+class BinaryTaskHandler : public TaskHandler {
+public:
+    explicit BinaryTaskHandler(Worker& worker)
+    : worker_(worker) {}
+
+    TaskReport handle(const TaskContext& context, const Task& task) override {
+        return worker_.run_binary_task(context, task);
+    }
+
+private:
+    Worker& worker_;
+};
+
 static std::uint64_t now_ms() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
@@ -16,6 +29,7 @@ Worker::Worker(WorkerConfig config, std::unique_ptr<BackendConnector> connector)
 : config_(std::move(config)), connector_(std::move(connector)) {
     if (!connector_)
         connector_ = make_backend_connector(config_);
+    router_.register_handler(TaskType::Binary, std::make_unique<BinaryTaskHandler>(*this));
 }
 
 void Worker::reset_state() {
@@ -49,6 +63,17 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
                             const std::string& binary_path,
                             const std::string& summary_path,
                             const Task& task) {
+    TaskContext context{
+        partition,
+        asm_path,
+        binary_path,
+        summary_path
+    };
+    return router_.execute(context, task);
+}
+
+TaskReport Worker::run_binary_task(const TaskContext& context,
+                                   const Task& task) {
     if (config_.reset_between_tasks)
         reset_state();
 
@@ -56,10 +81,10 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
     const auto steady_start = std::chrono::steady_clock::now();
 
     BackendRequest request{
-        partition,
-        summary_path,
-        asm_path,
-        binary_path,
+        context.partition,
+        context.summary_path,
+        context.asm_path,
+        context.binary_path,
         task.inputs,
         register_state_,
         snapshot_memory_state(),
@@ -67,7 +92,7 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
     };
 
     auto result = connector_->execute(request);
-    TaskReport report = build_report(partition, task, std::move(result));
+    TaskReport report = build_report(context.partition, task, std::move(result));
 
     const auto wall_end = now_ms();
     const auto steady_end = std::chrono::steady_clock::now();

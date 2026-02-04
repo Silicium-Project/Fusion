@@ -11,9 +11,12 @@
 #include "worker/task/Task.hpp"
 #include "worker/task/TaskReport.hpp"
 #include "worker/task/TaskTypes.hpp"
+#include "worker/core/TaskRouter.hpp"
 #include "worker/core/WorkerConfig.hpp"
 
 namespace worker {
+
+class BinaryTaskHandler;
 
 class Worker {
 public:
@@ -30,11 +33,14 @@ public:
     void load_initial_memory(const std::vector<MemorySnapshot>& snapshots);
 
 private:
+    friend class BinaryTaskHandler;
+
     WorkerConfig config_;
     MemoryLut memory_lut_;
     RegisterState register_state_;
     std::unique_ptr<BackendConnector> connector_;
     std::vector<MemorySnapshot> initial_memory_;
+    TaskRouter router_;
 
     void record_memory_patches(const std::vector<fragment::MemoryPatch>& patches);
     void record_register_state(const RegisterState& regs);
@@ -42,6 +48,8 @@ private:
     TaskReport build_report(const fragment::PartitionInfo& partition,
                             const Task& task,
                             fragment::ExecutionResult&& result);
+    TaskReport run_binary_task(const TaskContext& context,
+                               const Task& task);
 
     std::vector<MemorySnapshot> snapshot_memory_state() const;
 };
