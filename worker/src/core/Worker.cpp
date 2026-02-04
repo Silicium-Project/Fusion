@@ -28,6 +28,7 @@ static std::string connector_label(ConnectorMode mode) {
 
 static void fill_telemetry(TaskReport& report,
                            const Task& task,
+                           const WorkerConfig& config,
                            std::uint64_t wall_start,
                            std::uint64_t wall_end,
                            std::chrono::steady_clock::time_point steady_start,
@@ -43,6 +44,8 @@ static void fill_telemetry(TaskReport& report,
     report.telemetry.duration_ms =
         static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(steady_end - steady_start).count());
+    report.telemetry.linux_policy = fragment_os_action_to_string(config.fragment_os_policy.linux);
+    report.telemetry.windows_policy = fragment_os_action_to_string(config.fragment_os_policy.windows);
 }
 
 class BinaryTaskHandler : public TaskHandler {
@@ -88,7 +91,7 @@ public:
                 << "}";
         report.result.program_stdout = payload.str();
 
-        fill_telemetry(report, task, wall_start, wall_end, steady_start, steady_end);
+        fill_telemetry(report, task, worker_.config_, wall_start, wall_end, steady_start, steady_end);
         return report;
     }
 
@@ -171,7 +174,7 @@ TaskReport Worker::run_binary_task(const TaskContext& context,
 
     const auto wall_end = now_ms();
     const auto steady_end = std::chrono::steady_clock::now();
-    fill_telemetry(report, task, wall_start, wall_end, steady_start, steady_end);
+    fill_telemetry(report, task, config_, wall_start, wall_end, steady_start, steady_end);
 
     return report;
 }

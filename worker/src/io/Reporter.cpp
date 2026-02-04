@@ -97,12 +97,19 @@ void Reporter::emit_text(const WorkerReport& report) {
         const std::string task_id = telemetry.task_id.empty()
             ? task.partition_id
             : telemetry.task_id;
+        const std::string linux_policy = telemetry.linux_policy.empty()
+            ? "unknown"
+            : telemetry.linux_policy;
+        const std::string windows_policy = telemetry.windows_policy.empty()
+            ? "unknown"
+            : telemetry.windows_policy;
 
         *stream_ << "\n==============================\n";
         *stream_ << "Task ID: " << task_id << "\n";
         *stream_ << "Type: " << task_type_to_string(telemetry.type) << "\n";
         *stream_ << "Status: " << status << "\n";
         *stream_ << "Durée: " << telemetry.duration_ms << " ms\n";
+        *stream_ << "Policy: linux=" << linux_policy << " windows=" << windows_policy << "\n";
         *stream_ << "Partition: " << task.partition_id << "\n";
         *stream_ << "Entrées:";
         if (task.inputs.empty())
@@ -178,6 +185,12 @@ void Reporter::emit_json(const WorkerReport& report) {
         const std::string task_id = telemetry.task_id.empty()
             ? task.partition_id
             : telemetry.task_id;
+        const std::string linux_policy = telemetry.linux_policy.empty()
+            ? "unknown"
+            : telemetry.linux_policy;
+        const std::string windows_policy = telemetry.windows_policy.empty()
+            ? "unknown"
+            : telemetry.windows_policy;
         oss << "{";
         oss << "\"task_id\":\"" << escape_json(task_id) << "\",";
         oss << "\"type\":\"" << escape_json(task_type_to_string(telemetry.type)) << "\",";
@@ -185,6 +198,8 @@ void Reporter::emit_json(const WorkerReport& report) {
         oss << "\"started_at_ms\":" << telemetry.started_at_ms << ",";
         oss << "\"finished_at_ms\":" << telemetry.finished_at_ms << ",";
         oss << "\"duration_ms\":" << telemetry.duration_ms << ",";
+        oss << "\"linux_policy\":\"" << escape_json(linux_policy) << "\",";
+        oss << "\"windows_policy\":\"" << escape_json(windows_policy) << "\",";
         oss << "\"warnings\":[";
         for (size_t w = 0; w < telemetry.warnings.size(); ++w) {
             if (w)

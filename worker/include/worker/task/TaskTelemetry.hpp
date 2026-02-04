@@ -15,6 +15,8 @@ struct TaskTelemetry {
     std::uint64_t started_at_ms = 0;
     std::uint64_t finished_at_ms = 0;
     std::uint64_t duration_ms = 0;
+    std::string linux_policy;
+    std::string windows_policy;
     std::vector<std::string> warnings;
 };
 

@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -35,6 +36,10 @@ struct CliOptions {
     std::string stdin_text;
     std::string stdin_file;
     std::vector<fragment::FdRule> extra_fds;
+    std::string linux_fragments_policy;
+    std::string windows_fragments_policy;
+    bool linux_fragments_set = false;
+    bool windows_fragments_set = false;
 };
 
 void print_usage(const char* prog) {
@@ -60,6 +65,8 @@ void print_usage(const char* prog) {
               << "  --drrun-arg <arg>  Argument supplémentaire pour le binaire (répétable)\n"
               << "  --connector mode   Méthode de liaison backend (direct|http)\n"
               << "  --connector-endpoint <url>  Endpoint du connecteur (HTTP)\n"
+              << "  --linux-fragments native|wsl|skip|error|queue  Politique fragments Linux\n"
+              << "  --windows-fragments native|wsl|skip|error|queue  Politique fragments Windows\n"
               << "  --runner-binary <path> Binaire runner (backend Dynamo)\n"
               << "  --runner-launcher <path> Script/commande pour lancer le runner Dynamo\n"
               << "  --help             Affiche cette aide\n";
@@ -133,6 +140,16 @@ CliOptions parse_cli(int argc, char** argv) {
             if (++i >= argc)
                 throw std::runtime_error("--connector-endpoint requiert une valeur");
             opts.connector_endpoint = argv[i];
+        } else if (arg == "--linux-fragments") {
+            if (++i >= argc)
+                throw std::runtime_error("--linux-fragments requiert une valeur");
+            opts.linux_fragments_policy = argv[i];
+            opts.linux_fragments_set = true;
+        } else if (arg == "--windows-fragments") {
+            if (++i >= argc)
+                throw std::runtime_error("--windows-fragments requiert une valeur");
+            opts.windows_fragments_policy = argv[i];
+            opts.windows_fragments_set = true;
         } else if (arg == "--runner-binary") {
             if (++i >= argc)
                 throw std::runtime_error("--runner-binary requiert un chemin");
@@ -187,6 +204,19 @@ CliOptions parse_cli(int argc, char** argv) {
     if (!opts.stdin_text.empty() && !opts.stdin_file.empty())
         throw std::runtime_error("--stdin-text et --stdin-file sont exclusifs");
 
+    if (!opts.linux_fragments_set) {
+        if (const char* env = std::getenv("SILICIUM_LINUX_FRAGMENTS")) {
+            opts.linux_fragments_policy = env;
+            opts.linux_fragments_set = true;
+        }
+    }
+    if (!opts.windows_fragments_set) {
+        if (const char* env = std::getenv("SILICIUM_WINDOWS_FRAGMENTS")) {
+            opts.windows_fragments_policy = env;
+            opts.windows_fragments_set = true;
+        }
+    }
+
     return opts;
 }
 
@@ -238,6 +268,10 @@ int main(int argc, char** argv) {
         config.reset_between_tasks = opts.reset_state;
         config.connector = opts.connector;
         config.connector_endpoint = opts.connector_endpoint;
+        if (opts.linux_fragments_set)
+            config.fragment_os_policy.linux = worker::parse_fragment_os_action(opts.linux_fragments_policy);
+        if (opts.windows_fragments_set)
+            config.fragment_os_policy.windows = worker::parse_fragment_os_action(opts.windows_fragments_policy);
         if (!opts.runner_binary.empty())
             config.dynamo_runner_binary = opts.runner_binary;
         if (!opts.runner_launcher.empty())
@@ -302,6 +336,8 @@ int main(int argc, char** argv) {
                 failure.telemetry.task_id = task.partition_id;
                 failure.telemetry.type = task.type;
                 failure.telemetry.status = "failure";
+                failure.telemetry.linux_policy = worker::fragment_os_action_to_string(config.fragment_os_policy.linux);
+                failure.telemetry.windows_policy = worker::fragment_os_action_to_string(config.fragment_os_policy.windows);
                 report.tasks.push_back(std::move(failure));
             }
         }

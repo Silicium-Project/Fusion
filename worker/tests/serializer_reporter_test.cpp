@@ -137,6 +137,8 @@ TEST(Reporter, EmitsJsonAndText) {
     task.telemetry.type = TaskType::Binary;
     task.telemetry.status = "failure";
     task.telemetry.duration_ms = 12;
+    task.telemetry.linux_policy = "native";
+    task.telemetry.windows_policy = "skip";
     task.result.instructions_executed = 3;
     task.result.memory_accesses = 4;
     task.result.program_stdout = "hello\n";
@@ -161,6 +163,8 @@ TEST(Reporter, EmitsJsonAndText) {
     EXPECT_NE(std::string::npos, json_out.find("\"type\":\"binary\""));
     EXPECT_NE(std::string::npos, json_out.find("\"status\":\"failure\""));
     EXPECT_NE(std::string::npos, json_out.find("\"duration_ms\":12"));
+    EXPECT_NE(std::string::npos, json_out.find("\"linux_policy\":\"native\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"windows_policy\":\"skip\""));
     EXPECT_NE(std::string::npos, json_out.find("\"partition\":\"part-1\""));
     EXPECT_NE(std::string::npos, json_out.find("\"fd_outputs\":{\"5\""));
     EXPECT_NE(std::string::npos, json_out.find("\"alias\":\"out\""));
@@ -175,6 +179,7 @@ TEST(Reporter, EmitsJsonAndText) {
     EXPECT_NE(std::string::npos, text_out.find("Type: binary"));
     EXPECT_NE(std::string::npos, text_out.find("Status: failure"));
     EXPECT_NE(std::string::npos, text_out.find("Durée: 12 ms"));
+    EXPECT_NE(std::string::npos, text_out.find("Policy: linux=native windows=skip"));
     EXPECT_NE(std::string::npos, text_out.find("Partition: part-1"));
     EXPECT_NE(std::string::npos, text_out.find("ÉCHEC"));
     EXPECT_NE(std::string::npos, text_out.find("fd 5 (out)"));
@@ -201,6 +206,8 @@ TEST(Reporter, DefaultsTelemetryFields) {
     EXPECT_NE(std::string::npos, json_out.find("\"type\":\"binary\""));
     EXPECT_NE(std::string::npos, json_out.find("\"status\":\"success\""));
     EXPECT_NE(std::string::npos, json_out.find("\"duration_ms\":0"));
+    EXPECT_NE(std::string::npos, json_out.find("\"linux_policy\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"windows_policy\""));
 }
 
 TEST(TaskSerializer, DeserializeTaskPayloadRejectsBadMemoryHex) {
