@@ -55,12 +55,16 @@ TEST(QueueLoader, SkipsBlankAndComments) {
 # comment
 
 task1 type=binary rax=1
+task2 type=health
 )");
     auto tasks = worker::load_queue_file(path.string());
-    ASSERT_EQ(1u, tasks.size());
+    ASSERT_EQ(2u, tasks.size());
     EXPECT_EQ("task1", tasks[0].partition_id);
     EXPECT_EQ(1u, tasks[0].inputs.at("rax"));
     EXPECT_EQ(tasks[0].type, worker::TaskType::Binary);
+    EXPECT_EQ("task2", tasks[1].partition_id);
+    EXPECT_TRUE(tasks[1].inputs.empty());
+    EXPECT_EQ(tasks[1].type, worker::TaskType::Health);
 }
 
 TEST(QueueLoader, MissingFileThrows) {

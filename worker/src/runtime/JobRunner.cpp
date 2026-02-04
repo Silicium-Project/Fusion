@@ -64,6 +64,12 @@ JobRunner::JobRunner(std::string summary_path, WorkerConfig config)
 }
 
 TaskReport JobRunner::execute(const Task& task) {
+    if (task.type != TaskType::Binary) {
+        fragment::PartitionInfo placeholder;
+        placeholder.id = task.partition_id.empty() ? task_type_to_string(task.type) : task.partition_id;
+        return worker_.run_task(placeholder, "", "", summary_path_, task);
+    }
+
     auto it = partition_index_.find(task.partition_id);
     if (it == partition_index_.end())
         throw std::runtime_error("Partition inconnue: " + task.partition_id);

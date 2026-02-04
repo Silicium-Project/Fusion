@@ -17,6 +17,7 @@
 namespace worker {
 
 class BinaryTaskHandler;
+class HealthTaskHandler;
 
 class Worker {
 public:
@@ -34,6 +35,7 @@ public:
 
 private:
     friend class BinaryTaskHandler;
+    friend class HealthTaskHandler;
 
     WorkerConfig config_;
     MemoryLut memory_lut_;
