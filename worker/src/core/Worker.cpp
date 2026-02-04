@@ -46,6 +46,8 @@ static void fill_telemetry(TaskReport& report,
             std::chrono::duration_cast<std::chrono::milliseconds>(steady_end - steady_start).count());
     report.telemetry.linux_policy = fragment_os_action_to_string(config.fragment_os_policy.linux);
     report.telemetry.windows_policy = fragment_os_action_to_string(config.fragment_os_policy.windows);
+    report.telemetry.wsl_enabled = config.wsl_enabled;
+    report.telemetry.wsl_decision = config.wsl_decision;
 }
 
 class BinaryTaskHandler : public TaskHandler {
@@ -87,7 +89,9 @@ public:
                 << "\"timestamp_ms\":" << wall_end << ","
                 << "\"mode\":\"" << execution_mode_label(worker_.config_.mode) << "\","
                 << "\"connector\":\"" << connector_label(worker_.config_.connector) << "\","
-                << "\"reset_between_tasks\":" << (worker_.config_.reset_between_tasks ? "true" : "false")
+                << "\"reset_between_tasks\":" << (worker_.config_.reset_between_tasks ? "true" : "false") << ","
+                << "\"wsl_enabled\":" << (worker_.config_.wsl_enabled ? "true" : "false") << ","
+                << "\"wsl_decision\":\"" << worker_.config_.wsl_decision << "\""
                 << "}";
         report.result.program_stdout = payload.str();
 

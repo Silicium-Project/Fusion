@@ -1,5 +1,6 @@
 #pragma once
 
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -73,6 +74,35 @@ struct FragmentOsPolicy {
     FragmentOsAction windows = default_windows_fragment_action();
 };
 
+struct WslTriggerConfig {
+    bool enabled = false;
+    double min_reward = 0.0;
+    std::uint64_t min_jobs = 0;
+    double current_reward = 0.0;
+    std::uint64_t available_jobs = 0;
+};
+
+inline bool evaluate_wsl_triggers(const WslTriggerConfig& config, std::string* reason = nullptr) {
+    if (!config.enabled) {
+        if (reason)
+            *reason = "disabled";
+        return false;
+    }
+    if (config.current_reward < config.min_reward) {
+        if (reason)
+            *reason = "reward_below_threshold";
+        return false;
+    }
+    if (config.available_jobs < config.min_jobs) {
+        if (reason)
+            *reason = "jobs_below_threshold";
+        return false;
+    }
+    if (reason)
+        *reason = "enabled";
+    return true;
+}
+
 class WorkerConfig {
 public:
     WorkerConfig() = default;
@@ -87,6 +117,9 @@ public:
     std::string emulator_library = "../executor/libfragment_emulator.so";
     std::string native_library = "../executor/libfragment_executor.so";
     FragmentOsPolicy fragment_os_policy{};
+    WslTriggerConfig wsl_triggers{};
+    bool wsl_enabled = false;
+    std::string wsl_decision;
 };
 
 }  // namespace worker

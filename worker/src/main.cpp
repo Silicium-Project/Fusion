@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -40,6 +41,16 @@ struct CliOptions {
     std::string windows_fragments_policy;
     bool linux_fragments_set = false;
     bool windows_fragments_set = false;
+    bool wsl_enabled = false;
+    bool wsl_enabled_set = false;
+    double wsl_min_reward = 0.0;
+    bool wsl_min_reward_set = false;
+    std::uint64_t wsl_min_jobs = 0;
+    bool wsl_min_jobs_set = false;
+    double wsl_current_reward = 0.0;
+    bool wsl_current_reward_set = false;
+    std::uint64_t wsl_available_jobs = 0;
+    bool wsl_available_jobs_set = false;
 };
 
 void print_usage(const char* prog) {
@@ -67,6 +78,12 @@ void print_usage(const char* prog) {
               << "  --connector-endpoint <url>  Endpoint du connecteur (HTTP)\n"
               << "  --linux-fragments native|wsl|skip|error|queue  Politique fragments Linux\n"
               << "  --windows-fragments native|wsl|skip|error|queue  Politique fragments Windows\n"
+              << "  --wsl-enable        Active la délégation WSL (si conditions remplies)\n"
+              << "  --wsl-disable       Désactive la délégation WSL\n"
+              << "  --wsl-min-reward <v>  Seuil de récompense minimal\n"
+              << "  --wsl-min-jobs <n>  Seuil minimal de jobs disponibles\n"
+              << "  --wsl-reward <v>    Récompense actuelle (entrée trigger)\n"
+              << "  --wsl-available-jobs <n> Jobs disponibles (entrée trigger)\n"
               << "  --runner-binary <path> Binaire runner (backend Dynamo)\n"
               << "  --runner-launcher <path> Script/commande pour lancer le runner Dynamo\n"
               << "  --help             Affiche cette aide\n";
@@ -150,6 +167,32 @@ CliOptions parse_cli(int argc, char** argv) {
                 throw std::runtime_error("--windows-fragments requiert une valeur");
             opts.windows_fragments_policy = argv[i];
             opts.windows_fragments_set = true;
+        } else if (arg == "--wsl-enable") {
+            opts.wsl_enabled = true;
+            opts.wsl_enabled_set = true;
+        } else if (arg == "--wsl-disable") {
+            opts.wsl_enabled = false;
+            opts.wsl_enabled_set = true;
+        } else if (arg == "--wsl-min-reward") {
+            if (++i >= argc)
+                throw std::runtime_error("--wsl-min-reward requiert une valeur");
+            opts.wsl_min_reward = std::stod(argv[i]);
+            opts.wsl_min_reward_set = true;
+        } else if (arg == "--wsl-min-jobs") {
+            if (++i >= argc)
+                throw std::runtime_error("--wsl-min-jobs requiert une valeur");
+            opts.wsl_min_jobs = std::stoull(argv[i]);
+            opts.wsl_min_jobs_set = true;
+        } else if (arg == "--wsl-reward") {
+            if (++i >= argc)
+                throw std::runtime_error("--wsl-reward requiert une valeur");
+            opts.wsl_current_reward = std::stod(argv[i]);
+            opts.wsl_current_reward_set = true;
+        } else if (arg == "--wsl-available-jobs") {
+            if (++i >= argc)
+                throw std::runtime_error("--wsl-available-jobs requiert une valeur");
+            opts.wsl_available_jobs = std::stoull(argv[i]);
+            opts.wsl_available_jobs_set = true;
         } else if (arg == "--runner-binary") {
             if (++i >= argc)
                 throw std::runtime_error("--runner-binary requiert un chemin");
@@ -216,6 +259,42 @@ CliOptions parse_cli(int argc, char** argv) {
             opts.windows_fragments_set = true;
         }
     }
+    if (!opts.wsl_enabled_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_ENABLE")) {
+            std::string value(env);
+            if (value == "1" || value == "true" || value == "yes") {
+                opts.wsl_enabled = true;
+                opts.wsl_enabled_set = true;
+            } else if (value == "0" || value == "false" || value == "no") {
+                opts.wsl_enabled = false;
+                opts.wsl_enabled_set = true;
+            }
+        }
+    }
+    if (!opts.wsl_min_reward_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_MIN_REWARD")) {
+            opts.wsl_min_reward = std::stod(env);
+            opts.wsl_min_reward_set = true;
+        }
+    }
+    if (!opts.wsl_min_jobs_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_MIN_JOBS")) {
+            opts.wsl_min_jobs = std::stoull(env);
+            opts.wsl_min_jobs_set = true;
+        }
+    }
+    if (!opts.wsl_current_reward_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_REWARD")) {
+            opts.wsl_current_reward = std::stod(env);
+            opts.wsl_current_reward_set = true;
+        }
+    }
+    if (!opts.wsl_available_jobs_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_AVAILABLE_JOBS")) {
+            opts.wsl_available_jobs = std::stoull(env);
+            opts.wsl_available_jobs_set = true;
+        }
+    }
 
     return opts;
 }
@@ -272,6 +351,16 @@ int main(int argc, char** argv) {
             config.fragment_os_policy.linux = worker::parse_fragment_os_action(opts.linux_fragments_policy);
         if (opts.windows_fragments_set)
             config.fragment_os_policy.windows = worker::parse_fragment_os_action(opts.windows_fragments_policy);
+        config.wsl_triggers.enabled = opts.wsl_enabled_set ? opts.wsl_enabled : false;
+        if (opts.wsl_min_reward_set)
+            config.wsl_triggers.min_reward = opts.wsl_min_reward;
+        if (opts.wsl_min_jobs_set)
+            config.wsl_triggers.min_jobs = opts.wsl_min_jobs;
+        if (opts.wsl_current_reward_set)
+            config.wsl_triggers.current_reward = opts.wsl_current_reward;
+        if (opts.wsl_available_jobs_set)
+            config.wsl_triggers.available_jobs = opts.wsl_available_jobs;
+        config.wsl_enabled = worker::evaluate_wsl_triggers(config.wsl_triggers, &config.wsl_decision);
         if (!opts.runner_binary.empty())
             config.dynamo_runner_binary = opts.runner_binary;
         if (!opts.runner_launcher.empty())
@@ -338,6 +427,8 @@ int main(int argc, char** argv) {
                 failure.telemetry.status = "failure";
                 failure.telemetry.linux_policy = worker::fragment_os_action_to_string(config.fragment_os_policy.linux);
                 failure.telemetry.windows_policy = worker::fragment_os_action_to_string(config.fragment_os_policy.windows);
+                failure.telemetry.wsl_enabled = config.wsl_enabled;
+                failure.telemetry.wsl_decision = config.wsl_decision;
                 report.tasks.push_back(std::move(failure));
             }
         }
