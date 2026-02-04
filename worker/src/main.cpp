@@ -299,6 +299,9 @@ int main(int argc, char** argv) {
                 failure.inputs = task.inputs;
                 failure.result.success = false;
                 failure.result.error_message = e.what();
+                failure.telemetry.task_id = task.partition_id;
+                failure.telemetry.type = task.type;
+                failure.telemetry.status = "failure";
                 report.tasks.push_back(std::move(failure));
             }
         }

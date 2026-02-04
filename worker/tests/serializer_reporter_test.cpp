@@ -133,6 +133,10 @@ TEST(Reporter, EmitsJsonAndText) {
     task.inputs = {{"r1", 10}, {"r2", 20}};
     task.result.success = false;
     task.result.error_message = "boom";
+    task.telemetry.task_id = "task-1";
+    task.telemetry.type = TaskType::Binary;
+    task.telemetry.status = "failure";
+    task.telemetry.duration_ms = 12;
     task.result.instructions_executed = 3;
     task.result.memory_accesses = 4;
     task.result.program_stdout = "hello\n";
@@ -153,6 +157,10 @@ TEST(Reporter, EmitsJsonAndText) {
     Reporter json_reporter(OutputFormat::Json, json_stream);
     json_reporter.emit(report);
     const std::string json_out = json_stream.str();
+    EXPECT_NE(std::string::npos, json_out.find("\"task_id\":\"task-1\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"type\":\"binary\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"status\":\"failure\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"duration_ms\":12"));
     EXPECT_NE(std::string::npos, json_out.find("\"partition\":\"part-1\""));
     EXPECT_NE(std::string::npos, json_out.find("\"fd_outputs\":{\"5\""));
     EXPECT_NE(std::string::npos, json_out.find("\"alias\":\"out\""));
@@ -163,12 +171,36 @@ TEST(Reporter, EmitsJsonAndText) {
     Reporter text_reporter(OutputFormat::Text, text_stream);
     text_reporter.emit(report);
     const std::string text_out = text_stream.str();
+    EXPECT_NE(std::string::npos, text_out.find("Task ID: task-1"));
+    EXPECT_NE(std::string::npos, text_out.find("Type: binary"));
+    EXPECT_NE(std::string::npos, text_out.find("Status: failure"));
+    EXPECT_NE(std::string::npos, text_out.find("Durée: 12 ms"));
     EXPECT_NE(std::string::npos, text_out.find("Partition: part-1"));
     EXPECT_NE(std::string::npos, text_out.find("ÉCHEC"));
     EXPECT_NE(std::string::npos, text_out.find("fd 5 (out)"));
     EXPECT_NE(std::string::npos, text_out.find("Écritures mémoire"));
     EXPECT_NE(std::string::npos, text_out.find("avant"));
     EXPECT_NE(std::string::npos, text_out.find("après"));
+}
+
+TEST(Reporter, DefaultsTelemetryFields) {
+    WorkerReport report;
+    report.summary_path = "/tmp/summary.json";
+    report.mode = ExecutionMode::Emulator;
+
+    TaskReport task;
+    task.partition_id = "part-2";
+    task.result.success = true;
+    report.tasks.push_back(task);
+
+    std::ostringstream json_stream;
+    Reporter json_reporter(OutputFormat::Json, json_stream);
+    json_reporter.emit(report);
+    const std::string json_out = json_stream.str();
+    EXPECT_NE(std::string::npos, json_out.find("\"task_id\":\"part-2\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"type\":\"binary\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"status\":\"success\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"duration_ms\":0"));
 }
 
 TEST(TaskSerializer, DeserializeTaskPayloadRejectsBadMemoryHex) {

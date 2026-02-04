@@ -5,6 +5,7 @@
 #include <sstream>
 
 #include "worker/core/WorkerConfig.hpp"
+#include "worker/task/TaskTypes.hpp"
 
 namespace worker {
 
@@ -89,7 +90,19 @@ void Reporter::emit_text(const WorkerReport& report) {
     *stream_ << "Tâches: " << report.tasks.size() << "\n";
 
     for (const auto& task : report.tasks) {
+        const auto& telemetry = task.telemetry;
+        const std::string status = telemetry.status.empty()
+            ? (task.result.success ? "success" : "failure")
+            : telemetry.status;
+        const std::string task_id = telemetry.task_id.empty()
+            ? task.partition_id
+            : telemetry.task_id;
+
         *stream_ << "\n==============================\n";
+        *stream_ << "Task ID: " << task_id << "\n";
+        *stream_ << "Type: " << task_type_to_string(telemetry.type) << "\n";
+        *stream_ << "Status: " << status << "\n";
+        *stream_ << "Durée: " << telemetry.duration_ms << " ms\n";
         *stream_ << "Partition: " << task.partition_id << "\n";
         *stream_ << "Entrées:";
         if (task.inputs.empty())
@@ -158,7 +171,27 @@ void Reporter::emit_json(const WorkerReport& report) {
         const auto& task = report.tasks[i];
         if (i)
             oss << ",";
+        const auto& telemetry = task.telemetry;
+        const std::string status = telemetry.status.empty()
+            ? (task.result.success ? "success" : "failure")
+            : telemetry.status;
+        const std::string task_id = telemetry.task_id.empty()
+            ? task.partition_id
+            : telemetry.task_id;
         oss << "{";
+        oss << "\"task_id\":\"" << escape_json(task_id) << "\",";
+        oss << "\"type\":\"" << escape_json(task_type_to_string(telemetry.type)) << "\",";
+        oss << "\"status\":\"" << escape_json(status) << "\",";
+        oss << "\"started_at_ms\":" << telemetry.started_at_ms << ",";
+        oss << "\"finished_at_ms\":" << telemetry.finished_at_ms << ",";
+        oss << "\"duration_ms\":" << telemetry.duration_ms << ",";
+        oss << "\"warnings\":[";
+        for (size_t w = 0; w < telemetry.warnings.size(); ++w) {
+            if (w)
+                oss << ",";
+            oss << "\"" << escape_json(telemetry.warnings[w]) << "\"";
+        }
+        oss << "],";
         oss << "\"partition\":\"" << escape_json(task.partition_id) << "\",";
         oss << "\"success\":" << (task.result.success ? "true" : "false") << ",";
         oss << "\"error\":\"" << escape_json(task.result.error_message) << "\",";

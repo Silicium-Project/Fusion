@@ -1,6 +1,13 @@
 #include "worker/core/Worker.hpp"
 
+#include <chrono>
+
 namespace worker {
+
+static std::uint64_t now_ms() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
 
 Worker::Worker(WorkerConfig config)
 : Worker(std::move(config), {}) {}
@@ -45,6 +52,9 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
     if (config_.reset_between_tasks)
         reset_state();
 
+    const auto wall_start = now_ms();
+    const auto steady_start = std::chrono::steady_clock::now();
+
     BackendRequest request{
         partition,
         summary_path,
@@ -57,7 +67,20 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
     };
 
     auto result = connector_->execute(request);
-    return build_report(partition, task, std::move(result));
+    TaskReport report = build_report(partition, task, std::move(result));
+
+    const auto wall_end = now_ms();
+    const auto steady_end = std::chrono::steady_clock::now();
+    report.telemetry.task_id = task.partition_id;
+    report.telemetry.type = task.type;
+    report.telemetry.status = report.result.success ? "success" : "failure";
+    report.telemetry.started_at_ms = wall_start;
+    report.telemetry.finished_at_ms = wall_end;
+    report.telemetry.duration_ms =
+        static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(steady_end - steady_start).count());
+
+    return report;
 }
 
 TaskReport Worker::build_report(const fragment::PartitionInfo& partition,

@@ -69,6 +69,7 @@ fragment::ExecutionResult DynamoBackend::execute(const BackendRequest& request) 
         throw std::runtime_error("Chemin du binaire Dynamo runner non configurÃ©");
 
     TaskPayload payload;
+    payload.type = TaskType::Binary;
     payload.partition_id = request.partition.id;
     payload.asm_path = to_container_path(request.asm_path);
     payload.binary_path = request.binary_path.empty()
