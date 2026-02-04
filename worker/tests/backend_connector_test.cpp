@@ -131,11 +131,26 @@ TEST(BackendConnector, HttpConnectorMessages) {
     EXPECT_FALSE(res.success);
     EXPECT_NE(std::string::npos, res.error_message.find("endpoint manquant"));
 
-    config.connector_endpoint = "http://example";
+    auto tmp = make_tmp_dir("backend_http");
+    auto response_path = tmp / "response.json";
+    std::ofstream(response_path) << "{\n"
+                                 << "  \"success\":true,\n"
+                                 << "  \"error\":\"\",\n"
+                                 << "  \"stdout\":\"ok\",\n"
+                                 << "  \"stderr\":\"\",\n"
+                                 << "  \"fd_outputs\":{},\n"
+                                 << "  \"initial_regs\":[],\n"
+                                 << "  \"final_regs\":[],\n"
+                                 << "  \"memory_patches\":[],\n"
+                                 << "  \"instructions\":1,\n"
+                                 << "  \"memory_accesses\":0\n"
+                                 << "}\n";
+    config.connector_endpoint = "file://" + response_path.string();
     connector = make_backend_connector(config);
     res = connector->execute(req);
-    EXPECT_FALSE(res.success);
-    EXPECT_NE(std::string::npos, res.error_message.find("non implémenté"));
+    EXPECT_TRUE(res.success);
+    EXPECT_EQ("ok", res.program_stdout);
+    EXPECT_EQ(1u, res.instructions_executed);
 }
 
 TEST(BackendConnector, DynamoBackendMissingBinaryThrows) {
