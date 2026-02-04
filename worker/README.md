@@ -52,6 +52,54 @@ worker --drrun <binaire> [--drrun-arg <arg> ...]
 Si aucune file ni tâche n'est fournie, l'ordre d'exécution est dérivé du
 `summary` (topo-sort des dépendances).
 
+## Types de tâches
+
+Le worker supporte désormais plusieurs **types de tâches**. Le binaire reste la
+forme la plus générale, mais d'autres types existent pour des checks simples.
+
+Types supportés :
+- `binary` (par défaut) : exécute un fragment à partir du `summary.json`.
+- `health` (alias `check`) : tâche non-binaire qui renvoie un statut minimal.
+
+### Sélection via queue
+
+Dans un fichier `--queue`, ajoutez `type=...` :
+
+```
+func_3_main type=binary rax=0x10
+health_check type=health
+```
+
+Si `type` est absent, le worker assume `binary`.
+
+### Sélection via JSON
+
+Les payloads JSON (connecteur/runner) acceptent un champ `type` :
+
+```
+{
+  "type":"health",
+  "partition_id":"health_check",
+  "asm_path":"",
+  "binary_path":"",
+  "mode":"emu",
+  "fd_redirections":[],
+  "inputs":[],
+  "register_state":[],
+  "memory":[]
+}
+```
+
+### Télémétrie commune
+
+Tous les rapports incluent maintenant une base commune de télémétrie :
+- `task_id`, `type`, `status`
+- `started_at_ms`, `finished_at_ms`, `duration_ms`
+- `warnings` (liste)
+
+Ces champs sont ajoutés au JSON de sortie du `Reporter` en plus des informations
+spécifiques à l'exécution de fragments.
+
 ## Tests unitaires
 
 ```bash
