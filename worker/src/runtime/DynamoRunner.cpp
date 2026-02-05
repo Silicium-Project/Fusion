@@ -1,13 +1,74 @@
 #include "worker/runtime/DynamoRunner.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
 
 namespace worker {
+
+namespace {
+
+std::string shell_quote(const std::string& value) {
+    std::string out;
+    out.reserve(value.size() + 2);
+    out.push_back('\'');
+    for (char c : value) {
+        if (c == '\'')
+            out.append("'\\''");
+        else
+            out.push_back(c);
+    }
+    out.push_back('\'');
+    return out;
+}
+
+std::string join_quoted(const std::vector<std::string>& args) {
+    std::ostringstream oss;
+    bool first = true;
+    for (const auto& arg : args) {
+        if (!first)
+            oss << ' ';
+        first = false;
+        oss << shell_quote(arg);
+    }
+    return oss.str();
+}
+
+std::filesystem::path make_temp_stderr_path() {
+    static std::atomic<uint64_t> counter{0};
+    const auto base = std::filesystem::temp_directory_path();
+    for (int i = 0; i < 10; ++i) {
+        const auto id = counter.fetch_add(1, std::memory_order_relaxed);
+        auto path = base / ("dynamo_stderr_" + std::to_string(id) + ".log");
+        if (!std::filesystem::exists(path))
+            return path;
+    }
+    return base / "dynamo_stderr_fallback.log";
+}
+
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream file(path, std::ios::in | std::ios::binary);
+    if (!file)
+        return {};
+    return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+struct TempFileCleanup {
+    std::filesystem::path path;
+    ~TempFileCleanup() {
+        if (path.empty())
+            return;
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
+    }
+};
+
+}  // namespace
 
 static std::filesystem::path workspace_root() {
     auto cwd = std::filesystem::current_path();
@@ -29,16 +90,6 @@ static std::string default_launcher() {
         probe = probe.parent_path();
     }
     return relative.string();
-}
-
-static std::string join_arguments(const std::vector<std::string>& args) {
-    std::ostringstream oss;
-    for (const auto& arg : args) {
-        if (!oss.str().empty())
-            oss << ' ';
-        oss << '"' << arg << '"';
-    }
-    return oss.str();
 }
 
 static std::string read_pipe(FILE* pipe) {
@@ -73,13 +124,16 @@ bool DynamoRunner::run_binary(const std::string& binary_path,
         const auto rel = abs_binary.lexically_relative(workspace);
         container_binary = (fs::path("/workspace") / rel).string();
     }
-    const std::string args_str = join_arguments(args);
+    const std::string args_str = join_quoted(args);
+    const auto stderr_path = make_temp_stderr_path();
+    TempFileCleanup stderr_cleanup{stderr_path};
 
     std::ostringstream cmd;
-    cmd << '"' << launcher_path_ << '"'
-        << ' ' << '"' << container_binary << '"';
-    if (!args.empty())
+    cmd << shell_quote(launcher_path_)
+        << ' ' << shell_quote(container_binary);
+    if (!args.empty() && !args_str.empty())
         cmd << ' ' << args_str;
+    cmd << " 2> " << shell_quote(stderr_path.string());
 
     using PipeHandle = std::unique_ptr<FILE, decltype(&pclose)>;
     PipeHandle pipe(popen(cmd.str().c_str(), "r"), &pclose);
@@ -88,8 +142,10 @@ bool DynamoRunner::run_binary(const std::string& binary_path,
 
     stdout_buffer = read_pipe(pipe.get());
     const int rc = pclose(pipe.release());
+    stderr_buffer = read_text_file(stderr_path);
     if (rc)
-        stderr_buffer = "drrun a retourné " + std::to_string(rc);
+        if (stderr_buffer.empty())
+            stderr_buffer = "drrun a retourné " + std::to_string(rc);
     return !rc;
 }
 
