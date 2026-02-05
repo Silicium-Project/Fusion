@@ -143,6 +143,12 @@ def docker_available() -> bool:
     return True
 
 
+def wsl_available() -> bool:
+    if os.name != "nt":
+        return False
+    return bool(shutil.which("wsl.exe") or shutil.which("wsl"))
+
+
 def compose_command() -> list[str]:
     if DOCKER_COMPOSE_BIN:
         return shlex.split(DOCKER_COMPOSE_BIN)
@@ -323,7 +329,13 @@ def cmd_check(args: argparse.Namespace) -> None:
     if os.name == "nt":
         runner = args.runner
         if runner == "auto":
-            runner = "docker" if docker_available() else "wsl"
+            if docker_available():
+                runner = "docker"
+            elif wsl_available():
+                runner = "wsl"
+            else:
+                print("Neither Docker nor WSL is available. Install Docker Desktop or WSL, or run on Linux.")
+                sys.exit(1)
 
         if runner == "docker":
             if not docker_available():
@@ -332,16 +344,24 @@ def cmd_check(args: argparse.Namespace) -> None:
             run_core_check_in_docker(env_vars)
             return
 
+        if runner == "wsl" and not wsl_available():
+            print("WSL is not available. Install WSL or use --runner docker.")
+            sys.exit(1)
+
         bash = shutil.which("bash")
         if not bash:
             print("bash not found. Use Docker or install WSL to run core checks.")
             sys.exit(1)
 
         env_exports = " ".join(f"{k}={shlex.quote(v)}" for k, v in env_vars.items())
-        wsl_path = subprocess.check_output(
-            [bash, "-lc", f"wslpath -a {shlex.quote(str(script))}"],
-            text=True,
-        ).strip()
+        try:
+            wsl_path = subprocess.check_output(
+                [bash, "-lc", f"wslpath -a {shlex.quote(str(script))}"],
+                text=True,
+            ).strip()
+        except subprocess.CalledProcessError:
+            print("WSL tooling (wslpath) not available. Install WSL or use --runner docker.")
+            sys.exit(1)
         cmd = [bash, "-lc", f"{env_exports} {shlex.quote(wsl_path)}"]
         run(cmd)
         return
