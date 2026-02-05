@@ -18,6 +18,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <set>
 #include <thread>
 
 #include "core/PrintfEmulator.hpp"
@@ -436,6 +437,7 @@ FragmentExecutor::PipeCaptures FragmentExecutor::capture_program_pipes(const std
     }
 
     std::map<int, int> saved_fds;
+    std::set<int> opened_fds;
 
     auto safe_close = [](int fd) {
         if (fd != -1)
@@ -460,6 +462,8 @@ FragmentExecutor::PipeCaptures FragmentExecutor::capture_program_pipes(const std
         int old = dup(p.fd);
         if (old != -1)
             saved_fds[p.fd] = old;
+        else
+            opened_fds.insert(p.fd);
 
         fflush(stdout);
         fflush(stderr);
@@ -534,6 +538,8 @@ FragmentExecutor::PipeCaptures FragmentExecutor::capture_program_pipes(const std
             dup2(old, fd);
             safe_close(old);
         }
+        for (int fd : opened_fds)
+            safe_close(fd);
     };
 
     auto close_write_ends = [&]() {

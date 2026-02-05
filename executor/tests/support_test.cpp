@@ -76,6 +76,11 @@ TEST(Utils, AsciiFromUint64) {
     EXPECT_EQ(fragment::ascii_from_uint64(value), "ABCDEFGH");
 }
 
+TEST(Utils, AsciiFromUint64ReplacesNonPrintable) {
+    const uint64_t value = 0x0001020304050607ULL;
+    EXPECT_EQ(fragment::ascii_from_uint64(value), "........");
+}
+
 TEST(Logging, EmitsMessages) {
     std::ostringstream out;
     std::ostringstream err;
@@ -158,6 +163,34 @@ TEST(ExecutionResult, PrintSuccessAndError) {
     EXPECT_NE(std::string::npos, err_text.find("[ERROR]"));
 }
 
+TEST(ExecutionResult, PrintAddsNewlinesAndListsFdOutputs) {
+    ExecutionResult result;
+    result.success = true;
+    result.instructions_executed = 1;
+    result.memory_accesses = 1;
+    result.program_stdout = "OK";
+    result.program_stderr = "WARN";
+    FdCapture cap;
+    cap.data = "data";
+    cap.alias = "stdout";
+    result.fd_outputs.set(1, cap);
+
+    std::ostringstream out;
+    std::ostringstream err;
+    auto* cout_buf = std::cout.rdbuf(out.rdbuf());
+    auto* cerr_buf = std::cerr.rdbuf(err.rdbuf());
+
+    result.print();
+
+    std::cout.rdbuf(cout_buf);
+    std::cerr.rdbuf(cerr_buf);
+
+    const std::string out_text = out.str();
+    EXPECT_NE(std::string::npos, out_text.find("OK\n"));
+    EXPECT_NE(std::string::npos, out_text.find("WARN\n"));
+    EXPECT_NE(std::string::npos, out_text.find("FDs captur"));
+}
+
 TEST(SegmentLoader, ReadsStringsAndBytes) {
     const uint64_t vaddr = 0x400000;
     const std::string text = "hello";
@@ -174,6 +207,9 @@ TEST(SegmentLoader, ReadsStringsAndBytes) {
     ASSERT_EQ(bytes.size(), 5u);
     EXPECT_EQ(std::string(bytes.begin(), bytes.end()), "hello");
 
+    auto zero = loader.read_bytes(vaddr, 0);
+    EXPECT_TRUE(zero.empty());
+
     auto empty = loader.read_bytes(vaddr + 0x1000, 4);
     EXPECT_TRUE(empty.empty());
 }
@@ -183,4 +219,10 @@ TEST(SegmentLoader, RejectsInvalidBinary) {
     auto path = write_binary_file("segment_loader_bad.bin", data);
     SegmentLoader loader(path.string());
     EXPECT_FALSE(loader.read_string(0x1000).has_value());
+}
+
+TEST(SegmentLoader, RejectsEmptyPath) {
+    SegmentLoader loader("");
+    EXPECT_FALSE(loader.read_string(0x10).has_value());
+    EXPECT_TRUE(loader.read_bytes(0x10, 4).empty());
 }

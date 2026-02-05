@@ -1,9 +1,12 @@
+#include <elf.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <cstring>
 #include <unistd.h>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -18,6 +21,45 @@ static std::string write_temp_asm(const std::string& content, const std::string&
     std::ofstream out(path);
     out << content;
     return path.string();
+}
+
+static std::filesystem::path write_fake_elf(const std::string& name,
+                                            uint64_t vaddr,
+                                            const std::vector<uint8_t>& payload) {
+    Elf64_Ehdr header{};
+    std::memcpy(header.e_ident, ELFMAG, SELFMAG);
+    header.e_ident[EI_CLASS] = ELFCLASS64;
+    header.e_ident[EI_DATA] = ELFDATA2LSB;
+    header.e_ident[EI_VERSION] = EV_CURRENT;
+    header.e_ident[EI_OSABI] = ELFOSABI_SYSV;
+    header.e_type = ET_EXEC;
+    header.e_machine = EM_X86_64;
+    header.e_version = EV_CURRENT;
+    header.e_phoff = sizeof(Elf64_Ehdr);
+    header.e_ehsize = sizeof(Elf64_Ehdr);
+    header.e_phentsize = sizeof(Elf64_Phdr);
+    header.e_phnum = 1;
+
+    Elf64_Phdr phdr{};
+    phdr.p_type = PT_LOAD;
+    phdr.p_offset = 0x100;
+    phdr.p_vaddr = vaddr;
+    phdr.p_paddr = vaddr;
+    phdr.p_filesz = payload.size();
+    phdr.p_memsz = payload.size();
+    phdr.p_flags = PF_R;
+
+    std::vector<uint8_t> data;
+    const size_t total_size = static_cast<size_t>(phdr.p_offset + payload.size());
+    data.resize(total_size, 0);
+    std::memcpy(data.data(), &header, sizeof(header));
+    std::memcpy(data.data() + sizeof(header), &phdr, sizeof(phdr));
+    std::memcpy(data.data() + phdr.p_offset, payload.data(), payload.size());
+
+    auto path = std::filesystem::temp_directory_path() / name;
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+    return path;
 }
 
 TEST(FragmentExecutor, ExecuteSafeSimpleProgram) {
@@ -115,4 +157,69 @@ TEST(FragmentExecutor, CaptureAndFeedExtraFd) {
 
     ASSERT_TRUE(pipes.fds.count(3));
     EXPECT_EQ(pipes.fds[3].data, "hey there");
+}
+
+TEST(FragmentExecutor, EmulateCallPutsUsesEmulatorMemory) {
+    FragmentExecutor executor;
+    const uint64_t addr = 0x8000;
+    executor.apply_memory_bytes(addr, {'h', 'i', 0});
+    executor.set_input("rdi", addr);
+
+    const std::string asm_path = write_temp_asm(
+        "0000000000001000: call puts\n",
+        "fragment_executor_puts_mem.asm");
+
+    auto result = executor.execute_safe(asm_path);
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(result.program_stdout, "hi\n");
+    EXPECT_EQ(executor.get_register("rax"), 2u);
+}
+
+TEST(FragmentExecutor, EmulateCallPutsUsesBinaryString) {
+    const uint64_t vaddr = 0x600000;
+    std::vector<uint8_t> payload{'h','e','l','l','o','\0'};
+    auto bin = write_fake_elf("fragment_executor_puts.bin", vaddr, payload);
+
+    ExecutorConfig cfg;
+    cfg.binary_path = bin.string();
+    FragmentExecutor executor(cfg);
+    executor.set_input("rdi", vaddr);
+
+    const std::string asm_path = write_temp_asm(
+        "0000000000001000: call puts\n",
+        "fragment_executor_puts.asm");
+
+    auto result = executor.execute_safe(asm_path);
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(result.program_stdout, "hello\n");
+    EXPECT_EQ(executor.get_register("rax"), 5u);
+}
+
+TEST(FragmentExecutor, EmulateCallPrintfFormatsArgs) {
+    const uint64_t vaddr = 0x700000;
+    const std::string fmt = "value=%d";
+    std::vector<uint8_t> payload(fmt.begin(), fmt.end());
+    payload.push_back('\0');
+    auto bin = write_fake_elf("fragment_executor_printf.bin", vaddr, payload);
+
+    ExecutorConfig cfg;
+    cfg.binary_path = bin.string();
+    FragmentExecutor executor(cfg);
+    executor.set_input("rdi", vaddr);
+    executor.set_input("rsi", 42);
+
+    const std::string asm_path = write_temp_asm(
+        "0000000000002000: call printf\n",
+        "fragment_executor_printf.asm");
+
+    auto result = executor.execute_safe(asm_path);
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(result.program_stdout, "value=42");
+}
+
+TEST(FragmentExecutor, ExecuteNativeNoopReturnsSuccess) {
+    FragmentExecutor executor;
+    std::vector<uint8_t> empty;
+    auto result = executor.execute_native(empty, std::nullopt);
+    EXPECT_TRUE(result.success);
 }
