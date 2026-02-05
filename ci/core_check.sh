@@ -32,6 +32,12 @@ fail() {
   exit 1
 }
 
+CORE_CHECK_JOBS="${CORE_CHECK_JOBS:-}"
+if [[ -n "$CORE_CHECK_JOBS" ]]; then
+  export JOBS="$CORE_CHECK_JOBS"
+  log "Using JOBS=$JOBS"
+fi
+
 have_cmd() {
   command -v "$1" >/dev/null 2>&1
 }

@@ -297,10 +297,21 @@ def run_core_check_in_docker(env_vars: dict[str, str], ctx: Context) -> None:
     elif setup.strip() and setup.strip() != "./ci/core_check.sh":
         setup = f"{setup} && ./ci/core_check.sh"
     repo_mount = f"{REPO_ROOT}:/workspace"
+    docker_cpus = env_vars.pop("CORE_CHECK_DOCKER_CPUS", "")
+    docker_memory = env_vars.pop("CORE_CHECK_DOCKER_MEMORY", "")
+    docker_memory_swap = env_vars.pop("CORE_CHECK_DOCKER_MEMORY_SWAP", "")
     cmd = [
         ctx.config.docker_bin,
         "run",
         "--rm",
+    ]
+    if docker_cpus:
+        cmd += ["--cpus", docker_cpus]
+    if docker_memory:
+        cmd += ["--memory", docker_memory]
+    if docker_memory_swap:
+        cmd += ["--memory-swap", docker_memory_swap]
+    cmd += [
         "-v",
         repo_mount,
         "-w",
@@ -403,6 +414,23 @@ def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
         "CORE_CHECK_REQUIRE_DOCKER": "1" if args.require_docker else "0",
         "CORE_CHECK_SCOPE": scope,
     }
+    jobs = args.jobs
+    if jobs is None:
+        env_jobs = os.environ.get("SILICIUM_MAX_JOBS")
+        if env_jobs:
+            try:
+                jobs = int(env_jobs)
+            except ValueError:
+                print(f"Invalid SILICIUM_MAX_JOBS value: {env_jobs}")
+                sys.exit(1)
+    if jobs:
+        env_vars["CORE_CHECK_JOBS"] = str(jobs)
+    docker_cpus = args.docker_cpus or os.environ.get("SILICIUM_DOCKER_CPUS")
+    if docker_cpus:
+        env_vars["CORE_CHECK_DOCKER_CPUS"] = str(docker_cpus)
+    docker_memory = args.docker_memory or os.environ.get("SILICIUM_DOCKER_MEMORY")
+    if docker_memory:
+        env_vars["CORE_CHECK_DOCKER_MEMORY"] = str(docker_memory)
     if args.docker is not None:
         env_vars["CORE_CHECK_WITH_DOCKER"] = "1" if args.docker else "0"
 
@@ -946,6 +974,19 @@ def configure_check(parser: argparse.ArgumentParser) -> None:
         default="auto",
         help="Runner for core checks (Windows default: Docker when available).",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        help="Limit build parallelism (exported as JOBS for make).",
+    )
+    parser.add_argument(
+        "--docker-cpus",
+        help="Limit CPUs for docker-run core checks (e.g. 2, 2.5).",
+    )
+    parser.add_argument(
+        "--docker-memory",
+        help="Limit memory for docker-run core checks (e.g. 4g, 4096m).",
+    )
     parser.set_defaults(docker=None)
 
 
@@ -1356,6 +1397,9 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             "--docker",
             "--no-docker",
             "--require-docker",
+            "--jobs",
+            "--docker-cpus",
+            "--docker-memory",
             "--python",
         ]
         return [flag for flag in flags if flag.startswith(text)]

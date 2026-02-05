@@ -90,6 +90,7 @@ Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches couran
 ```bash
 ./silicium test                  # installe les deps et lance pytest
 ./silicium check --docker-strict # check complet (Docker requis)
+./silicium check --jobs 2 --runner docker --docker-cpus 2 --docker-memory 4g
 ./silicium smoke                 # proxy + healthcheck
 ./silicium tools demo            # démo splitter + fragment executor
 ./silicium clean all -y          # nettoie caches + volumes (mode "fclean")

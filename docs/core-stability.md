@@ -66,3 +66,9 @@ Environment flags:
 - `CORE_CHECK_REQUIRE_DOCKER=1` to fail if Docker is missing
 - `CORE_CHECK_RUN_DYNAMO=1` to run the DynamoRIO mode
 - `CORE_CHECK_CLEAN=1` to force a clean rebuild (default: enabled in Docker)
+- `CORE_CHECK_JOBS=<n>` to limit make parallelism (overrides default JOBS)
+
+Resource limiting tips:
+- `./silicium check --jobs 2` limits build parallelism to 2.
+- `SILICIUM_MAX_JOBS=2 ./silicium check` (same effect via env var).
+- `./silicium check --runner docker --docker-cpus 2 --docker-memory 4g` limits Docker CPU/memory.
