@@ -9,6 +9,10 @@
 #include <sstream>
 #include <stdexcept>
 
+#ifdef __unix__
+#include <sys/wait.h>
+#endif
+
 namespace worker {
 
 namespace {
@@ -146,12 +150,22 @@ bool DynamoRunner::run_binary(const std::string& binary_path,
         throw std::runtime_error("Impossible d'exécuter le lanceur DynamoRIO: " + cmd.str());
 
     stdout_buffer = read_pipe(pipe.get());
-    const int rc = pclose(pipe.release());
+    const int raw_status = pclose(pipe.release());
+    int exit_code = raw_status;
+#ifdef __unix__
+    if (raw_status != -1) {
+        if (WIFEXITED(raw_status)) {
+            exit_code = WEXITSTATUS(raw_status);
+        } else if (WIFSIGNALED(raw_status)) {
+            exit_code = 128 + WTERMSIG(raw_status);
+        }
+    }
+#endif
     stderr_buffer = read_text_file(stderr_path);
-    if (rc)
+    if (exit_code)
         if (stderr_buffer.empty())
-            stderr_buffer = "drrun a retourné " + std::to_string(rc);
-    return !rc;
+            stderr_buffer = "drrun a retourne " + std::to_string(exit_code);
+    return !exit_code;
 }
 
 }  // namespace worker

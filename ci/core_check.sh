@@ -142,6 +142,10 @@ else
   fi
 
   if [[ "$RUN_WORKER" == "1" ]]; then
+    if [[ "$RUN_EXECUTOR" != "1" ]]; then
+      log "Build executor (dependency for worker)"
+      make -C executor all
+    fi
     log "Build worker"
     make -C worker all
   fi
