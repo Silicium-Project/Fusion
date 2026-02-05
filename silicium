@@ -86,6 +86,7 @@ TOP_LEVEL_COMMANDS = [
     "logs",
     "exec",
     "alias",
+    "tui",
     "shell",
     "help",
     "exit",
@@ -873,6 +874,16 @@ alias sstop='silicium stop'
     print(f"Aliases appended to {target}")
 
 
+def cmd_tui(_: argparse.Namespace, ctx: Context) -> None:
+    try:
+        from tools.tui.app import run
+    except ImportError:
+        print("TUI dependencies missing. Install with:")
+        print("  python -m pip install -r requirements-tui.txt")
+        sys.exit(1)
+    run()
+
+
 def cmd_shell(_: argparse.Namespace, ctx: Context) -> None:
     launch_shell(ctx)
 
@@ -1163,6 +1174,10 @@ def configure_shell(parser: argparse.ArgumentParser) -> None:
     pass
 
 
+def configure_tui(parser: argparse.ArgumentParser) -> None:
+    pass
+
+
 def build_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.add(CommandSpec("test", "Install dev deps and run pytest", configure_test, cmd_test))
@@ -1175,6 +1190,7 @@ def build_registry() -> CommandRegistry:
     registry.add(CommandSpec("logs", "Tail service logs", configure_logs, cmd_logs))
     registry.add(CommandSpec("exec", "Run command in a service container", configure_exec, cmd_exec))
     registry.add(CommandSpec("alias", "Install helper function/aliases in shell rc", configure_alias, cmd_alias))
+    registry.add(CommandSpec("tui", "Launch terminal UI", configure_tui, cmd_tui))
     registry.add(CommandSpec("shell", "Start interactive shell", configure_shell, cmd_shell))
 
     registry.add_group(

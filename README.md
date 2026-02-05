@@ -105,6 +105,11 @@ Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches couran
 ./silicium exec silicium-localnet -- /bin/bash
 ./silicium history show --tail 20# affiche les dernières commandes
 ./silicium shell                 # démarre un shell REPL Silicium (help/exit)
+./silicium tui                   # lance l'UI terminale (TUI)
+
+TUI (UI terminale) :
+- Installation: `python -m pip install -r requirements-tui.txt`
+- Details + capture: `docs/tui.md`
 ```
 
 `SILICIUM_LEDGER_PREFIX` (dans `infra/.env`) contrôle le nommage des volumes (`<prefix>-local-ledger`, etc.). Utilisez `./silicium clean --ledgers -y` pour reproduire l'ancien “fclean” en une seule commande.
