@@ -27,7 +27,13 @@ jobs:
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.PROJECTS_TOKEN || github.token }}
+        env:
+          PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
           script: |
+            if (!process.env.PROJECTS_TOKEN) {
+              core.warning('PROJECTS_TOKEN not set; skipping project automation.');
+              return;
+            }
             const projectId = process.env.PROJECT_ID;
             const fieldId = process.env.STATUS_FIELD_ID;
             const stages = {
