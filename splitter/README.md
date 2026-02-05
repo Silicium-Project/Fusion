@@ -120,9 +120,16 @@ Résultats générés par défaut :
 - `partitions/summary.json` : métadonnées (dépendances, registres, parallélisabilité, chemins de fichiers).
 
 Options de hachage et de scan :
-- `--hash fnv|std` ou `SPLITTER_HASH_ALGO` pour choisir l'algorithme (par défaut FNV).
-- `--resolver ldd|readelf` ou `SPLITTER_LIB_RESOLVER` pour sélectionner le détecteur de bibliothèques.
-- `--indexer nm|objdump` ou `SPLITTER_SYMBOL_INDEXER` pour sélectionner l'indexeur de symboles.
+- `--hash fnv|std` ou `SPLITTER_HASH_ALGO` pour choisir l'algorithme (par d?faut FNV).
+- `--resolver ldd|readelf` ou `SPLITTER_LIB_RESOLVER` pour s?lectionner le d?tecteur de biblioth?ques.
+- `--indexer nm|objdump` ou `SPLITTER_SYMBOL_INDEXER` pour s?lectionner l'indexeur de symboles.
+
+Cas "no-bytes" : si aucun octet n'est extractible (binaire minimal/sections vides),
+les hashes sont calcul?s sur une entr?e vide et restent stables. Valeurs actuelles :
+- FNV : `0xcbf29ce484222325`
+- std : `0x9e3779b97f4a7c15`
+
+
 
 ### 2. Exécuter des fragments
 
