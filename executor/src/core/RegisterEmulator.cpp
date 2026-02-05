@@ -9,8 +9,9 @@
 namespace fragment {
 
 RegisterEmulator::RegisterEmulator() {
-    memory.resize(1024 * 1024, 0);
-    stack_base = memory.size() - 0x10000;
+    constexpr uint64_t kDefaultMemorySize = 1024 * 1024;
+    constexpr uint64_t kStackReserve = 0x10000;
+    stack_base = kDefaultMemorySize - kStackReserve;
     regs64["rsp"] = stack_base;
     regs64["rbp"] = stack_base;
 }
@@ -164,66 +165,71 @@ void RegisterEmulator::set(const std::string& reg, uint64_t value) {
 void RegisterEmulator::write_qword(uint64_t addr, uint64_t value) {
     constexpr size_t kWidth = sizeof(uint64_t);
 
-    if (addr + kWidth > memory.size())
-        return;
-
-    std::array<uint8_t, kWidth> before{};
-    std::memcpy(before.data(), &memory[addr], kWidth);
-
     std::array<uint8_t, kWidth> after{};
     std::memcpy(after.data(), &value, kWidth);
-
-    if (patch_log && before != after) {
-        MemoryPatch patch;
-
-        patch.address = addr;
-        patch.before.assign(before.begin(), before.end());
-        patch.after.assign(after.begin(), after.end());
-        patch_log->get().push_back(std::move(patch));
-    }
-
-    std::memcpy(&memory[addr], &value, kWidth);
+    write_bytes(addr, std::vector<uint8_t>(after.begin(), after.end()));
 }
 
 uint64_t RegisterEmulator::read_qword(uint64_t addr) const {
     constexpr size_t kWidth = sizeof(uint64_t);
 
-    if (addr + kWidth > memory.size())
+    auto bytes = read_bytes(addr, kWidth);
+    if (bytes.size() != kWidth)
         return 0;
 
     uint64_t value = 0;
-    std::memcpy(&value, &memory[addr], kWidth);
+    std::memcpy(&value, bytes.data(), kWidth);
     return value;
 }
 
 void RegisterEmulator::write_bytes(uint64_t addr, const std::vector<uint8_t>& bytes) {
-    if (bytes.empty() || addr >= memory.size())
+    if (bytes.empty())
         return;
 
-    size_t len = std::min(bytes.size(), memory.size() - addr);
-    if (!len)
-        return;
+    const size_t len = bytes.size();
+    std::vector<uint8_t> before;
+    before.reserve(len);
+    for (size_t i = 0; i < len; ++i) {
+        const uint64_t current = addr + i;
+        auto it = memory.find(current);
+        if (it != memory.end())
+            before.push_back(it->second);
+        else
+            before.push_back(0);
+    }
 
-    std::vector<uint8_t> before(memory.begin() + addr, memory.begin() + addr + len);
-
-    if (patch_log && before != std::vector<uint8_t>(bytes.begin(), bytes.begin() + len)) {
+    if (patch_log && before != bytes) {
         MemoryPatch patch;
         patch.address = addr;
         patch.before = before;
-        patch.after.assign(bytes.begin(), bytes.begin() + len);
+        patch.after = bytes;
         patch_log->get().push_back(std::move(patch));
     }
 
-    std::copy(bytes.begin(), bytes.begin() + len, memory.begin() + addr);
+    for (size_t i = 0; i < len; ++i)
+        memory[addr + i] = bytes[i];
 }
 
 std::vector<uint8_t> RegisterEmulator::read_bytes(uint64_t addr, std::size_t len) const {
     std::vector<uint8_t> out;
-    if (!len || addr >= memory.size())
+    if (!len)
         return out;
 
-    const std::size_t available = std::min<std::size_t>(len, memory.size() - addr);
-    out.insert(out.end(), memory.begin() + addr, memory.begin() + addr + available);
+    constexpr uint64_t kDefaultMemorySize = 1024 * 1024;
+    out.reserve(len);
+    for (size_t i = 0; i < len; ++i) {
+        const uint64_t current = addr + i;
+        auto it = memory.find(current);
+        if (it != memory.end()) {
+            out.push_back(it->second);
+            continue;
+        }
+        if (current < kDefaultMemorySize) {
+            out.push_back(0);
+            continue;
+        }
+        return {};
+    }
     return out;
 }
 

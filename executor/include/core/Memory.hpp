@@ -2,6 +2,8 @@
 
 #include "core/Common.hpp"
 
+#include <unordered_map>
+
 namespace fragment {
 
 struct MemoryPatch {
@@ -24,7 +26,7 @@ public:
     bool CF = false;
     bool OF = false;
 
-    std::vector<uint8_t> memory;
+    std::unordered_map<uint64_t, uint8_t> memory;
     uint64_t stack_base = 0;
 
     RegisterEmulator();
