@@ -50,59 +50,6 @@ static void fill_telemetry(TaskReport& report,
     report.telemetry.wsl_decision = config.wsl_decision;
 }
 
-class BinaryTaskHandler : public TaskHandler {
-public:
-    explicit BinaryTaskHandler(Worker& worker)
-    : worker_(worker) {}
-
-    TaskReport handle(const TaskContext& context, const Task& task) override {
-        return worker_.run_binary_task(context, task);
-    }
-
-private:
-    Worker& worker_;
-};
-
-class HealthTaskHandler : public TaskHandler {
-public:
-    explicit HealthTaskHandler(Worker& worker)
-    : worker_(worker) {}
-
-    TaskReport handle(const TaskContext& context, const Task& task) override {
-        const auto wall_start = now_ms();
-        const auto steady_start = std::chrono::steady_clock::now();
-
-        TaskReport report;
-        report.partition_id = context.partition.id.empty()
-            ? (task.partition_id.empty() ? "health" : task.partition_id)
-            : context.partition.id;
-        report.inputs = task.inputs;
-        report.result.success = true;
-
-        const auto wall_end = now_ms();
-        const auto steady_end = std::chrono::steady_clock::now();
-
-        std::ostringstream payload;
-        payload << "{"
-                << "\"status\":\"ok\","
-                << "\"version\":\"unknown\","
-                << "\"timestamp_ms\":" << wall_end << ","
-                << "\"mode\":\"" << execution_mode_label(worker_.config_.mode) << "\","
-                << "\"connector\":\"" << connector_label(worker_.config_.connector) << "\","
-                << "\"reset_between_tasks\":" << (worker_.config_.reset_between_tasks ? "true" : "false") << ","
-                << "\"wsl_enabled\":" << (worker_.config_.wsl_enabled ? "true" : "false") << ","
-                << "\"wsl_decision\":\"" << worker_.config_.wsl_decision << "\""
-                << "}";
-        report.result.program_stdout = payload.str();
-
-        fill_telemetry(report, task, worker_.config_, wall_start, wall_end, steady_start, steady_end);
-        return report;
-    }
-
-private:
-    Worker& worker_;
-};
-
 FragmentOsAction Worker::resolve_fragment_action(const fragment::PartitionInfo& partition) const {
     std::string os = partition.os;
     if (os.empty())
@@ -115,14 +62,26 @@ FragmentOsAction Worker::resolve_fragment_action(const fragment::PartitionInfo& 
 }
 
 Worker::Worker(WorkerConfig config)
-: Worker(std::move(config), {}) {}
+: Worker(std::move(config), WorkerDependencies{}) {}
 
 Worker::Worker(WorkerConfig config, std::unique_ptr<BackendConnector> connector)
-: config_(std::move(config)), connector_(std::move(connector)) {
+: Worker(std::move(config), WorkerDependencies{std::move(connector)}) {}
+
+Worker::Worker(WorkerConfig config, WorkerDependencies dependencies)
+: config_(std::move(config)),
+  connector_(std::move(dependencies.connector)),
+  observers_(std::move(dependencies.observers)) {
+    auto connector_factory = std::move(dependencies.connector_factory);
+    if (!connector_factory)
+        connector_factory = make_backend_connector_factory();
     if (!connector_)
-        connector_ = make_backend_connector(config_);
-    router_.register_handler(TaskType::Binary, std::make_unique<BinaryTaskHandler>(*this));
-    router_.register_handler(TaskType::Health, std::make_unique<HealthTaskHandler>(*this));
+        connector_ = connector_factory->create(config_);
+
+    auto handler_factory = std::move(dependencies.handler_factory);
+    if (!handler_factory)
+        handler_factory = make_task_handler_factory();
+    handler_factory->register_handlers(router_, *this);
+
     register_action_handlers();
 }
 
@@ -137,6 +96,11 @@ void Worker::load_initial_memory(const std::vector<MemorySnapshot>& snapshots) {
     initial_memory_ = snapshots;
     memory_lut_.clear();
     memory_lut_.seed(initial_memory_);
+}
+
+void Worker::add_observer(std::shared_ptr<TaskObserver> observer) {
+    if (observer)
+        observers_.push_back(std::move(observer));
 }
 
 void Worker::record_memory_patches(const std::vector<fragment::MemoryPatch>& patches) {
@@ -163,8 +127,11 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
         binary_path,
         summary_path
     };
+    notify_task_start(context, task);
     try {
-        return router_.execute(context, task);
+        TaskReport report = router_.execute(context, task);
+        notify_task_finish(context, task, report);
+        return report;
     } catch (const std::exception& ex) {
         const auto wall_start = now_ms();
         const auto steady_start = std::chrono::steady_clock::now();
@@ -178,8 +145,41 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
         const auto wall_end = now_ms();
         const auto steady_end = std::chrono::steady_clock::now();
         fill_telemetry(report, task, config_, wall_start, wall_end, steady_start, steady_end);
+        notify_task_finish(context, task, report);
         return report;
     }
+}
+
+TaskReport Worker::run_health_task(const TaskContext& context,
+                                   const Task& task) {
+    const auto wall_start = now_ms();
+    const auto steady_start = std::chrono::steady_clock::now();
+
+    TaskReport report;
+    report.partition_id = context.partition.id.empty()
+        ? (task.partition_id.empty() ? "health" : task.partition_id)
+        : context.partition.id;
+    report.inputs = task.inputs;
+    report.result.success = true;
+
+    const auto wall_end = now_ms();
+    const auto steady_end = std::chrono::steady_clock::now();
+
+    std::ostringstream payload;
+    payload << "{"
+            << "\"status\":\"ok\","
+            << "\"version\":\"unknown\","
+            << "\"timestamp_ms\":" << wall_end << ","
+            << "\"mode\":\"" << execution_mode_label(config_.mode) << "\","
+            << "\"connector\":\"" << connector_label(config_.connector) << "\","
+            << "\"reset_between_tasks\":" << (config_.reset_between_tasks ? "true" : "false") << ","
+            << "\"wsl_enabled\":" << (config_.wsl_enabled ? "true" : "false") << ","
+            << "\"wsl_decision\":\"" << config_.wsl_decision << "\""
+            << "}";
+    report.result.program_stdout = payload.str();
+
+    fill_telemetry(report, task, config_, wall_start, wall_end, steady_start, steady_end);
+    return report;
 }
 
 TaskReport Worker::run_binary_task(const TaskContext& context,
@@ -267,6 +267,30 @@ void Worker::register_action_handlers() {
                              [this](const TaskContext& context, const Task& task) {
                                  return run_backend(context, task);
                              });
+}
+
+void Worker::notify_task_start(const TaskContext& context, const Task& task) const {
+    for (const auto& observer : observers_) {
+        if (!observer)
+            continue;
+        try {
+            observer->on_task_start(context, task);
+        } catch (...) {
+        }
+    }
+}
+
+void Worker::notify_task_finish(const TaskContext& context,
+                                const Task& task,
+                                const TaskReport& report) const {
+    for (const auto& observer : observers_) {
+        if (!observer)
+            continue;
+        try {
+            observer->on_task_finish(context, task, report);
+        } catch (...) {
+        }
+    }
 }
 
 TaskReport Worker::build_report(const fragment::PartitionInfo& partition,

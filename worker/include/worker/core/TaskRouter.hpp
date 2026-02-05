@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -24,6 +25,21 @@ class TaskHandler {
 public:
     virtual ~TaskHandler() = default;
     virtual TaskReport handle(const TaskContext& context, const Task& task) = 0;
+};
+
+class FunctionTaskHandler : public TaskHandler {
+public:
+    using Handler = std::function<TaskReport(const TaskContext&, const Task&)>;
+
+    explicit FunctionTaskHandler(Handler handler)
+    : handler_(std::move(handler)) {}
+
+    TaskReport handle(const TaskContext& context, const Task& task) override {
+        return handler_(context, task);
+    }
+
+private:
+    Handler handler_;
 };
 
 class TaskRouter {
