@@ -72,6 +72,54 @@ health_check type=health
 
 Si `type` est absent, le worker assume `binary`.
 
+## Politique OS des fragments
+
+Le worker peut être configuré pour décider comment traiter les fragments Linux/Windows
+en fonction de la plateforme et des préférences d'exécution.
+
+Actions disponibles :
+- `native` : exécute localement (si supporté).
+- `wsl` : délègue au backend WSL (Windows).
+- `skip` : ignore la partition.
+- `error` : refuse la partition (échec explicite).
+- `queue` : marque la partition comme mise en file.
+
+### Configuration CLI / env
+
+```
+--linux-fragments native|wsl|skip|error|queue
+--windows-fragments native|wsl|skip|error|queue
+```
+
+Variables d’environnement :
+```
+SILICIUM_LINUX_FRAGMENTS
+SILICIUM_WINDOWS_FRAGMENTS
+```
+
+## Triggers WSL
+
+Pour activer dynamiquement la délégation WSL, des triggers peuvent être configurés :
+
+```
+--wsl-enable / --wsl-disable
+--wsl-min-reward <v>
+--wsl-min-jobs <n>
+--wsl-reward <v>
+--wsl-available-jobs <n>
+```
+
+Variables d’environnement :
+```
+SILICIUM_WSL_ENABLE
+SILICIUM_WSL_MIN_REWARD
+SILICIUM_WSL_MIN_JOBS
+SILICIUM_WSL_REWARD
+SILICIUM_WSL_AVAILABLE_JOBS
+```
+
+La décision (`wsl_enabled` + raison) est exposée dans la télémétrie et les rapports.
+
 ### Sélection via JSON
 
 Les payloads JSON (connecteur/runner) acceptent un champ `type` :
