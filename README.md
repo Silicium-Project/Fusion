@@ -75,6 +75,14 @@ Badge (local) : ![Badge](docs/coverage/executor/badge.svg)
 
 ---
 
+## CI / Project Automation
+
+Le workflow `Project automation` (fichier `.github/workflows/project-automation.yml`) met ? jour un Project v2 ? chaque issue/PR. Le token GitHub par d?faut n'a pas les droits suffisants?: **ajoutez un secret `PROJECTS_TOKEN`** avec le scope `project`.
+
+Si le secret n'est pas d?fini, le workflow saute l'?tape avec un avertissement.
+
+---
+
 ## Silicium CLI
 
 Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches courantes (tests, démos outils, nettoyage, gestion des volumes ledger) et fournit un shell interactif (`./silicium shell`). Les principales commandes :
