@@ -308,6 +308,12 @@ def cmd_test(_: argparse.Namespace) -> None:
 
 
 def cmd_check(args: argparse.Namespace) -> None:
+    if getattr(args, "docker_strict", False):
+        args.full = True
+        args.runner = "docker"
+        args.docker = True
+        args.require_docker = True
+
     script = REPO_ROOT / "ci" / "core_check.sh"
     if not script.exists():
         print(f"Core check script not found: {script}")
@@ -805,6 +811,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--full",
         action="store_true",
         help="Run full checks (includes C++ tests and Docker proxy smoke).",
+    )
+    check_p.add_argument(
+        "--docker-strict",
+        action="store_true",
+        help="Shortcut for --full --runner docker --docker --require-docker.",
     )
     check_p.add_argument(
         "--native",
