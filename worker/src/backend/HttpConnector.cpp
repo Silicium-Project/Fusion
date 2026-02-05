@@ -9,6 +9,12 @@
 #include <sstream>
 #include <stdexcept>
 
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+
 #include "worker/task/TaskSerializer.hpp"
 
 namespace worker {
@@ -36,6 +42,16 @@ std::filesystem::path make_temp_directory() {
     std::filesystem::create_directories(dir);
     return dir;
 }
+
+struct TempDirCleanup {
+    std::filesystem::path path;
+    ~TempDirCleanup() {
+        if (path.empty())
+            return;
+        std::error_code ec;
+        std::filesystem::remove_all(path, ec);
+    }
+};
 
 void write_text_file(const std::filesystem::path& path, const std::string& content) {
     std::ofstream file(path, std::ios::out | std::ios::trunc);
@@ -107,14 +123,7 @@ fragment::ExecutionResult HttpConnector::execute(const BackendRequest& request) 
     }
 
     const auto temp_dir = make_temp_directory();
-    auto cleanup = std::unique_ptr<void, void(*)(void*)>(
-        reinterpret_cast<void*>(1),
-        [temp_dir](void*) {
-            if (temp_dir.empty())
-                return;
-            std::error_code ec;
-            std::filesystem::remove_all(temp_dir, ec);
-        });
+    TempDirCleanup cleanup{temp_dir};
     const auto payload_path = temp_dir / "payload.json";
     write_text_file(payload_path, serialized);
 

@@ -308,7 +308,7 @@ bool NativeRunner::run(const ExecutionEntry& entry,
     }
     install_register_trampolines(meta, executor, parse_addr_token);
 
-    const std::string bin_file = derive_binary_path(entry);
+    const std::string bin_file = binary_path_from_info(meta);
     std::ifstream file(bin_file, std::ios::binary);
     if (!file) {
         log::error("Impossible d'ouvrir " + bin_file);
