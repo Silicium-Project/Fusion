@@ -71,3 +71,24 @@ TEST(InstructionEmulator, MovUsesDeclaredMemoryWidth) {
     ASSERT_EQ(result.memory_patches.size(), 2u);
     EXPECT_EQ(result.memory_patches.back().after.size(), 2u);
 }
+
+TEST(InstructionEmulator, HandlesSubRegisterAliases) {
+    RegisterEmulator regs;
+
+    regs.set("al", 0x12);
+    regs.set("ah", 0x34);
+    regs.set("ax", 0x5678);
+    EXPECT_EQ(regs.get("al"), 0x78u);
+    EXPECT_EQ(regs.get("ah"), 0x56u);
+    EXPECT_EQ(regs.get("ax"), 0x5678u);
+
+    regs.set("r8b", 0xAA);
+    regs.set("r8w", 0xBEEF);
+    EXPECT_EQ(regs.get("r8b"), 0xEFu);
+    EXPECT_EQ(regs.get("r8w"), 0xBEEFu);
+
+    regs.set("r10b", 0x11);
+    regs.set("r10w", 0x2233);
+    EXPECT_EQ(regs.get("r10b"), 0x33u);
+    EXPECT_EQ(regs.get("r10w"), 0x2233u);
+}

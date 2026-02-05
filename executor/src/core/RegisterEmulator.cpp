@@ -3,6 +3,9 @@
 #include "support/Logging.hpp"
 #include "support/Utils.hpp"
 
+#include <cctype>
+#include <optional>
+
 namespace fragment {
 
 RegisterEmulator::RegisterEmulator() {
@@ -33,6 +36,56 @@ uint64_t RegisterEmulator::get(const std::string& reg) const {
     if (it != regs64.end())
         return it->second;
 
+    auto reg_alias = [&](const std::string& base, size_t width, size_t shift) -> std::optional<uint64_t> {
+        auto it64 = regs64.find(base);
+        if (it64 == regs64.end())
+            return std::nullopt;
+        const uint64_t mask = (width >= 8) ? ~0ULL : ((1ULL << (width * 8)) - 1ULL);
+        return (it64->second >> shift) & mask;
+    };
+
+    const std::string r = reg;
+    if (r == "al") return reg_alias("rax", 1, 0).value_or(0);
+    if (r == "ah") return reg_alias("rax", 1, 8).value_or(0);
+    if (r == "ax") return reg_alias("rax", 2, 0).value_or(0);
+    if (r == "bl") return reg_alias("rbx", 1, 0).value_or(0);
+    if (r == "bh") return reg_alias("rbx", 1, 8).value_or(0);
+    if (r == "bx") return reg_alias("rbx", 2, 0).value_or(0);
+    if (r == "cl") return reg_alias("rcx", 1, 0).value_or(0);
+    if (r == "ch") return reg_alias("rcx", 1, 8).value_or(0);
+    if (r == "cx") return reg_alias("rcx", 2, 0).value_or(0);
+    if (r == "dl") return reg_alias("rdx", 1, 0).value_or(0);
+    if (r == "dh") return reg_alias("rdx", 1, 8).value_or(0);
+    if (r == "dx") return reg_alias("rdx", 2, 0).value_or(0);
+    if (r == "sil") return reg_alias("rsi", 1, 0).value_or(0);
+    if (r == "si") return reg_alias("rsi", 2, 0).value_or(0);
+    if (r == "dil") return reg_alias("rdi", 1, 0).value_or(0);
+    if (r == "di") return reg_alias("rdi", 2, 0).value_or(0);
+    if (r == "bpl") return reg_alias("rbp", 1, 0).value_or(0);
+    if (r == "bp") return reg_alias("rbp", 2, 0).value_or(0);
+    if (r == "spl") return reg_alias("rsp", 1, 0).value_or(0);
+    if (r == "sp") return reg_alias("rsp", 2, 0).value_or(0);
+
+    auto get_extended = [&](char suffix, size_t width) -> std::optional<uint64_t> {
+        if (r.size() < 3 || r[0] != 'r' || r.back() != suffix)
+            return std::nullopt;
+        const std::string num = r.substr(1, r.size() - 2);
+        if (num.empty() || num.size() > 2)
+            return std::nullopt;
+        for (char c : num) {
+            if (!std::isdigit(static_cast<unsigned char>(c)))
+                return std::nullopt;
+        }
+        const int idx = std::stoi(num);
+        if (idx < 8 || idx > 15)
+            return std::nullopt;
+        const std::string base = "r" + num;
+        return reg_alias(base, width, 0);
+    };
+
+    if (auto v = get_extended('b', 1)) return *v;
+    if (auto v = get_extended('w', 2)) return *v;
+
     if (reg.size() == 3 && reg[0] == 'e') {
         std::string r64 = "r" + reg.substr(1);
         auto it64 = regs64.find(r64);
@@ -49,6 +102,56 @@ void RegisterEmulator::set(const std::string& reg, uint64_t value) {
         it->second = value;
         return;
     }
+
+    auto set_alias = [&](const std::string& base, size_t width, size_t shift) {
+        uint64_t& base_val = regs64[base];
+        const uint64_t mask = (width >= 8) ? ~0ULL : ((1ULL << (width * 8)) - 1ULL);
+        const uint64_t cleared = base_val & ~(mask << shift);
+        base_val = cleared | ((value & mask) << shift);
+    };
+
+    const std::string r = reg;
+    if (r == "al") { set_alias("rax", 1, 0); return; }
+    if (r == "ah") { set_alias("rax", 1, 8); return; }
+    if (r == "ax") { set_alias("rax", 2, 0); return; }
+    if (r == "bl") { set_alias("rbx", 1, 0); return; }
+    if (r == "bh") { set_alias("rbx", 1, 8); return; }
+    if (r == "bx") { set_alias("rbx", 2, 0); return; }
+    if (r == "cl") { set_alias("rcx", 1, 0); return; }
+    if (r == "ch") { set_alias("rcx", 1, 8); return; }
+    if (r == "cx") { set_alias("rcx", 2, 0); return; }
+    if (r == "dl") { set_alias("rdx", 1, 0); return; }
+    if (r == "dh") { set_alias("rdx", 1, 8); return; }
+    if (r == "dx") { set_alias("rdx", 2, 0); return; }
+    if (r == "sil") { set_alias("rsi", 1, 0); return; }
+    if (r == "si") { set_alias("rsi", 2, 0); return; }
+    if (r == "dil") { set_alias("rdi", 1, 0); return; }
+    if (r == "di") { set_alias("rdi", 2, 0); return; }
+    if (r == "bpl") { set_alias("rbp", 1, 0); return; }
+    if (r == "bp") { set_alias("rbp", 2, 0); return; }
+    if (r == "spl") { set_alias("rsp", 1, 0); return; }
+    if (r == "sp") { set_alias("rsp", 2, 0); return; }
+
+    auto set_extended = [&](char suffix, size_t width) -> bool {
+        if (r.size() < 3 || r[0] != 'r' || r.back() != suffix)
+            return false;
+        const std::string num = r.substr(1, r.size() - 2);
+        if (num.empty() || num.size() > 2)
+            return false;
+        for (char c : num) {
+            if (!std::isdigit(static_cast<unsigned char>(c)))
+                return false;
+        }
+        const int idx = std::stoi(num);
+        if (idx < 8 || idx > 15)
+            return false;
+        const std::string base = "r" + num;
+        set_alias(base, width, 0);
+        return true;
+    };
+
+    if (set_extended('b', 1) || set_extended('w', 2))
+        return;
 
     if (reg.size() == 3 && reg[0] == 'e') {
         std::string r64 = "r" + reg.substr(1);
