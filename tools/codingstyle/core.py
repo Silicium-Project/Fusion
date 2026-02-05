@@ -198,6 +198,9 @@ def re_namespace() -> re.Pattern:
 def re_class_or_struct() -> re.Pattern:
     return re.compile(r"\b(?<!enum\s)(class|struct)\s+[A-Za-z_]\w*\s*(?:final\s*)?(?:[^;{]*)\{")
 
+def re_class_or_struct_name() -> re.Pattern:
+    return re.compile(r"\b(?<!enum\s)(?:class|struct)\s+([A-Za-z_]\w*)\s*(?:final\s*)?(?:[^;{]*)\{")
+
 
 def re_using_namespace() -> re.Pattern:
     return re.compile(r"\busing\s+namespace\s+[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*\s*;")
@@ -205,6 +208,15 @@ def re_using_namespace() -> re.Pattern:
 
 def re_pragma_once() -> re.Pattern:
     return re.compile(r"^\s*#\s*pragma\s+once\b", re.MULTILINE)
+
+def re_include_line() -> re.Pattern:
+    return re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
+
+def re_python_def() -> re.Pattern:
+    return re.compile(r"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(")
+
+def re_python_final() -> re.Pattern:
+    return re.compile(r"^\s*([A-Za-z_]\w*)\s*:\s*(?:typing\.)?Final\b")
 
 
 def _match_any(rel_path, patterns: Iterable[str]) -> bool:
@@ -254,6 +266,230 @@ def _internal_templates() -> dict[str, dict]:
             ],
         },
     }
+
+
+def _parse_scope(spec: dict) -> tuple[list[str], list[str], list[str]]:
+    scope = spec.get("scope", {})
+    include = list(scope.get("include", []))
+    exclude = list(scope.get("exclude", []))
+    path_contains = list(scope.get("path_contains", []))
+    return include, exclude, path_contains
+
+
+class ScopedRule(Rule):
+    def __init__(self, spec: dict, *, rule_id: str, description: str) -> None:
+        self.meta = RuleMeta(rule_id=rule_id, description=description)
+        self._severity = spec.get("severity", "error")
+        self._include, self._exclude, self._path_contains = _parse_scope(spec)
+
+    def applies_to(self, rel_path) -> bool:
+        if self._include and not _match_any(rel_path, self._include):
+            return False
+        if self._exclude and _match_any(rel_path, self._exclude):
+            return False
+        if self._path_contains:
+            parts = rel_path.parts
+            if not any(part in parts for part in self._path_contains):
+                return False
+        return True
+
+
+class CppPrimaryClassFilenameRule(ScopedRule):
+    def __init__(self, spec: dict) -> None:
+        super().__init__(
+            spec,
+            rule_id=spec.get("id", "cpp.primary_class_filename"),
+            description=spec.get("description", ""),
+        )
+
+    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
+        text = sanitize_cpp(content)
+        match = re_class_or_struct_name().search(text)
+        if not match:
+            return []
+        class_name = match.group(1)
+        stem = path.stem
+        if stem == class_name:
+            return []
+        line, col = line_col_from_index(text, match.start(1))
+        return [
+            Issue(
+                rule_id=self.meta.rule_id,
+                message=f"Primary class/struct '{class_name}' does not match file name '{stem}'.",
+                path=path,
+                line=line,
+                column=col,
+                severity=self._severity,
+            )
+        ]
+
+
+class CppHeaderSourcePairRule(ScopedRule):
+    def __init__(self, spec: dict) -> None:
+        super().__init__(
+            spec,
+            rule_id=spec.get("id", "cpp.header_source_pair"),
+            description=spec.get("description", ""),
+        )
+        pairing = spec.get("pairing", {})
+        self._include_root = pairing.get("include_root", "include")
+        self._src_root = pairing.get("src_root", "src")
+        self._extensions = pairing.get("extensions", [".cpp", ".cc", ".cxx"])
+
+    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
+        parts = list(rel_path.parts)
+        if self._include_root not in parts:
+            return []
+        idx = parts.index(self._include_root)
+        tail = parts[idx + 1 :]
+        if not tail:
+            return []
+        stem = Path(tail[-1]).stem
+        repo_root = path.parents[len(rel_path.parts) - 1]
+        base_parts = parts[:idx] + [self._src_root] + tail[:-1]
+        for ext in self._extensions:
+            candidate = repo_root.joinpath(*base_parts, stem + ext)
+            if candidate.exists():
+                return []
+        return [
+            Issue(
+                rule_id=self.meta.rule_id,
+                message=f"Missing source pair for header '{rel_path.as_posix()}'.",
+                path=path,
+                line=1,
+                column=1,
+                severity=self._severity,
+            )
+        ]
+
+
+class CppIncludeOrderRule(ScopedRule):
+    def __init__(self, spec: dict) -> None:
+        super().__init__(
+            spec,
+            rule_id=spec.get("id", "cpp.include_order"),
+            description=spec.get("description", ""),
+        )
+
+    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
+        issues: List[Issue] = []
+        include_re = re_include_line()
+        current_group = -1
+        for idx, line in enumerate(content.splitlines(), start=1):
+            match = include_re.match(line)
+            if not match:
+                continue
+            delimiter = match.group(1)
+            group = 0 if delimiter == "<" else 1
+            if group < current_group:
+                issues.append(
+                    Issue(
+                        rule_id=self.meta.rule_id,
+                        message="Include order should be: <system/third-party> before \"project\".",
+                        path=path,
+                        line=idx,
+                        column=1,
+                        severity=self._severity,
+                    )
+                )
+            else:
+                current_group = group
+        return issues
+
+
+class PyFileSnakeCaseRule(ScopedRule):
+    def __init__(self, spec: dict) -> None:
+        super().__init__(
+            spec,
+            rule_id=spec.get("id", "py.file_snake_case"),
+            description=spec.get("description", ""),
+        )
+
+    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
+        stem = path.stem
+        if stem in {"__init__", "__main__"}:
+            return []
+        if re.fullmatch(r"__\w+__", stem):
+            return []
+        if re.fullmatch(r"_*[a-z][a-z0-9_]*", stem):
+            return []
+        return [
+            Issue(
+                rule_id=self.meta.rule_id,
+                message=f"Python file name '{stem}' should be snake_case.",
+                path=path,
+                line=1,
+                column=1,
+                severity=self._severity,
+            )
+        ]
+
+
+class PyFunctionSnakeCaseRule(ScopedRule):
+    def __init__(self, spec: dict) -> None:
+        super().__init__(
+            spec,
+            rule_id=spec.get("id", "py.function_snake_case"),
+            description=spec.get("description", ""),
+        )
+
+    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
+        issues: List[Issue] = []
+        def_re = re_python_def()
+        for idx, line in enumerate(content.splitlines(), start=1):
+            match = def_re.match(line)
+            if not match:
+                continue
+            name = match.group(1)
+            if name.startswith("__") and name.endswith("__"):
+                continue
+            base = name.lstrip("_")
+            if not base:
+                continue
+            if re.fullmatch(r"[a-z][a-z0-9_]*", base):
+                continue
+            issues.append(
+                Issue(
+                    rule_id=self.meta.rule_id,
+                    message=f"Function '{name}' should be snake_case.",
+                    path=path,
+                    line=idx,
+                    column=1,
+                    severity=self._severity,
+                )
+            )
+        return issues
+
+
+class PyFinalConstantUpperRule(ScopedRule):
+    def __init__(self, spec: dict) -> None:
+        super().__init__(
+            spec,
+            rule_id=spec.get("id", "py.final_constant_upper_snake"),
+            description=spec.get("description", ""),
+        )
+
+    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
+        issues: List[Issue] = []
+        final_re = re_python_final()
+        for idx, line in enumerate(content.splitlines(), start=1):
+            match = final_re.match(line)
+            if not match:
+                continue
+            name = match.group(1)
+            if re.fullmatch(r"_?[A-Z][A-Z0-9_]*", name):
+                continue
+            issues.append(
+                Issue(
+                    rule_id=self.meta.rule_id,
+                    message=f"Constant '{name}' annotated with Final should be UPPER_SNAKE_CASE.",
+                    path=path,
+                    line=idx,
+                    column=1,
+                    severity=self._severity,
+                )
+            )
+        return issues
 
 
 class JsonRule(Rule):
@@ -367,7 +603,23 @@ def load_rules_from_json(path: Path) -> List[Rule]:
         raise ValueError(f"Unsupported rules JSON in {path}")
     if not isinstance(rules, list):
         raise ValueError("rules must be a list")
-    return [JsonRule(spec) for spec in rules]
+    return [_make_rule(spec) for spec in rules]
+
+
+def _make_rule(spec: dict) -> Rule:
+    rule_id = spec.get("id", "")
+    custom = {
+        "cpp.primary_class_filename": CppPrimaryClassFilenameRule,
+        "cpp.header_source_pair": CppHeaderSourcePairRule,
+        "cpp.include_order": CppIncludeOrderRule,
+        "py.file_snake_case": PyFileSnakeCaseRule,
+        "py.function_snake_case": PyFunctionSnakeCaseRule,
+        "py.final_constant_upper_snake": PyFinalConstantUpperRule,
+    }
+    rule_cls = custom.get(rule_id)
+    if rule_cls:
+        return rule_cls(spec)
+    return JsonRule(spec)
 
 
 def load_rules_from_dir(path: Path) -> List[Rule]:

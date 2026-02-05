@@ -21,6 +21,7 @@ DEFAULT_INCLUDE = [
     "**/*.h",
     "**/*.cc",
     "**/*.cxx",
+    "**/*.py",
 ]
 DEFAULT_EXCLUDE = [
     ".git/**",

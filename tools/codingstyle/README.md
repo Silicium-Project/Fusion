@@ -12,3 +12,9 @@ This folder contains JSON-driven rules used by the coding style checker.
 - `cpp.single_namespace_class`: Allow at most one namespace and one class/struct definition per file.
 - `cpp.no_using_namespace_header`: Disallow `using namespace` directives in headers.
 - `cpp.pragma_once_header`: Require exactly one `#pragma once` in headers.
+- `cpp.primary_class_filename`: Primary class/struct name should match the file name.
+- `cpp.header_source_pair`: Headers under include/ should have a matching source under src/.
+- `cpp.include_order`: Order includes with `<system/third-party>` before `"project"`.
+- `py.file_snake_case`: Python file names should be snake_case.
+- `py.function_snake_case`: Python function names should be snake_case.
+- `py.final_constant_upper_snake`: `Final`-annotated constants should be UPPER_SNAKE_CASE.
