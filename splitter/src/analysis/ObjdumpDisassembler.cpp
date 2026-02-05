@@ -100,7 +100,7 @@ std::pair<std::vector<Function>, std::string> ObjdumpDisassembler::Run() const {
     if (!fs::exists(binary_path_))
         throw std::runtime_error("Binaire introuvable: " + binary_path_);
 
-    std::string cmd = "objdump -d -M intel " + binary_path_;
+    std::string cmd = "objdump -d -M intel " + ShellQuote(binary_path_);
     std::string disasm_output;
 
     try {

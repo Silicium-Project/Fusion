@@ -23,7 +23,7 @@ std::vector<uint8_t> BinaryExtractor::ExtractSegment(const std::string& binary_p
         if (end_addr <= start_addr)
             return result;
 
-        std::string cmd = "readelf -W -S \"" + binary_path + "\"";
+        std::string cmd = "readelf -W -S " + ShellQuote(binary_path);
         std::string output = ExecCommand(cmd);
         std::regex section_pattern(
             "\\[\\s*\\d+\\]\\s+([^\\s]+)\\s+([^\\s]+)\\s+([0-9a-f]+)\\s+([0-9a-f]+)\\s+([0-9a-f]+)");
@@ -96,7 +96,7 @@ std::vector<MemorySegment> BinaryExtractor::ExtractDataSections(const std::strin
     std::vector<MemorySegment> segments;
 
     try {
-        std::string cmd = "readelf -W -S \"" + binary_path + "\"";
+        std::string cmd = "readelf -W -S " + ShellQuote(binary_path);
         std::string output = ExecCommand(cmd);
         std::regex section_pattern(
             "\\[\\s*\\d+\\]\\s+([^\\s]+)\\s+([^\\s]+)\\s+([0-9a-f]+)\\s+([0-9a-f]+)\\s+([0-9a-f]+)");

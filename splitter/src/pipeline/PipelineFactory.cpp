@@ -73,7 +73,7 @@ std::string DetectArchFromBinary(const PipelineConfig& config) {
     if (path.empty())
         return "";
     try {
-        std::string output = ExecCommand("objdump -f " + path);
+        std::string output = ExecCommand("objdump -f " + ShellQuote(path));
         auto pos = output.find("architecture:");
         if (pos != std::string::npos) {
             auto rest = output.substr(pos + std::string("architecture:").size());
