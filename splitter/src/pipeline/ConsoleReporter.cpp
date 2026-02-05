@@ -5,8 +5,6 @@
 #include <iostream>
 #include <sstream>
 
-#include "analysis/X86_64InstructionAnalyzer.hpp"
-
 namespace splitter {
 
 void ConsoleReporter::Banner(const std::string& title) {
@@ -50,18 +48,23 @@ void ConsoleReporter::ReportLoops(std::vector<Function>& functions, std::size_t 
     const size_t count = std::min(preview, loop_functions.size());
     for (size_t i = 0; i < count; ++i) {
         const Function& func = loop_functions[i];
-        auto loop_info = X86_64InstructionAnalyzer::Instance().DetectLoopPatterns(func);
-        std::string status = loop_info.parallelizable ? "PARALLÉLISABLE" : "SÉQUENTIELLE";
+        const auto& loop_info = func.LoopAnalysisInfo();
+        std::string status = "INCONNU";
+        if (loop_info.has_value())
+            status = loop_info->parallelizable ? "PARALL?LISABLE" : "S?QUENTIELLE";
         std::ostringstream line;
         line << "  " << std::left << std::setw(30) << func.Name() << " - " << status;
-        std::cout << Colorize(line.str(), loop_info.parallelizable ? Color::Green : Color::Yellow) << "\n";
-        if (!loop_info.reason.empty())
-            std::cout << "    Raison: " << loop_info.reason << "\n";
+        const Color color = loop_info.has_value()
+            ? (loop_info->parallelizable ? Color::Green : Color::Yellow)
+            : Color::Yellow;
+        std::cout << Colorize(line.str(), color) << "\n";
+        if (loop_info.has_value() && !loop_info->reason.empty())
+            std::cout << "    Raison: " << loop_info->reason << "\n";
     }
 }
 
 void ConsoleReporter::ReportPartition(const Partition& partition, std::size_t sample_preview) {
-    std::string status = partition.IsParallelizable() ? "PARALLÈLE" : "SÉQUENTIEL";
+    std::string status = partition.IsParallelizable() ? "PARALL?LE" : "S?QUENTIEL";
     std::ostringstream header;
     header << "\nPartition: " << partition.Id() << " (" << status << ")";
     std::cout << Colorize(header.str(), partition.IsParallelizable() ? Color::Green : Color::Yellow) << "\n";

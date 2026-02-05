@@ -13,6 +13,8 @@ Les scripts s'appuient sur `objdump`/`readelf` (binutils) pour la phase de désa
 - Pipeline compose de phases independantes (desassemblage, analyse, partitionnement, artefacts).
 - Chaque phase expose ses entrees/sorties via `IPipelinePhase::Inputs()` / `Outputs()`.
 - Les effets de bord (shell, env, systeme de fichiers) passent par `SystemContext` pour faciliter les tests.
+- Selection des strategies via factories (`DisassemblerFactory`, `InstructionAnalyzerFactory`).
+- L'analyse des instructions est centralisee dans la phase `Analysis` (disassembleur neutre, analyseur configurable).
 
 
 ## Contenu principal

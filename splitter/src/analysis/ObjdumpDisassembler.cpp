@@ -7,7 +7,6 @@
 #include <sstream>
 #include <string>
 
-#include "analysis/X86_64InstructionAnalyzer.hpp"
 #include "support/ShellCommand.hpp"
 #include "support/StringUtil.hpp"
 
@@ -44,7 +43,6 @@ Instruction MakeInstruction(const std::smatch& match) {
     inst.SetBytes(match[2].str());
     inst.SetOpcode(match[3].str());
     inst.SetOperands(Trim(match[4].str()));
-    X86_64InstructionAnalyzer::Instance().AnalyzeInstruction(inst);
     return inst;
 }
 

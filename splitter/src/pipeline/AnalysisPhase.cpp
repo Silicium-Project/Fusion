@@ -18,8 +18,12 @@ std::vector<std::string> AnalysisPhase::Outputs() const {
 }
 
 void AnalysisPhase::Execute(PipelineContext& context) {
-    for (auto& func : context.functions)
+    for (auto& func : context.functions) {
+        for (auto& inst : func.Instructions())
+            analyzer_->AnalyzeInstruction(inst);
         analyzer_->AnalyzeFunctionLoops(func);
+        func.SetLoopAnalysis(analyzer_->DetectLoopPatterns(func));
+    }
 }
 
 }  // namespace splitter
