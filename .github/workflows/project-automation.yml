@@ -119,8 +119,13 @@ jobs:
               await github.graphql(mutation, { projectId, itemId, fieldId, optionId });
             }
 
-            const itemId = await getOrAddProjectItemId(contentNodeId);
-            await updateStage(itemId, stage);
-            core.info(`Stage updated to ${stage} for item ${itemId}.`);
+            try {
+              const itemId = await getOrAddProjectItemId(contentNodeId);
+              await updateStage(itemId, stage);
+              core.info(`Stage updated to ${stage} for item ${itemId}.`);
+            } catch (error) {
+              core.warning(`Project automation skipped: ${error.message || error}`);
+              return;
+            }
         env:
           PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
