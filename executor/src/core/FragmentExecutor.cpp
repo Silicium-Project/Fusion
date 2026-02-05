@@ -251,6 +251,7 @@ ExecutionResult FragmentExecutor::execute_native(const std::vector<uint8_t>& bin
     uint8_t* entry_ptr = nullptr;
     void* mapping_addr = nullptr;
     size_t mapping_size = 0;
+    size_t layout_offset = 0;
 
     if (layout.has_value()) {
         const uint64_t page_base = layout->base & ~(static_cast<uint64_t>(kNativeAlignment) - 1);
@@ -267,6 +268,7 @@ ExecutionResult FragmentExecutor::execute_native(const std::vector<uint8_t>& bin
         if (fixed != MAP_FAILED) {
             mapping_addr = fixed;
             mapping_size = fixed_size;
+            layout_offset = offset;
             base_ptr = static_cast<uint8_t*>(fixed) + offset;
             entry_ptr = base_ptr;
         }
@@ -286,15 +288,18 @@ ExecutionResult FragmentExecutor::execute_native(const std::vector<uint8_t>& bin
         }
 
         mapping_size = allocation_size;
+        layout_offset = 0;
         base_ptr = static_cast<uint8_t*>(mapping_addr);
         entry_ptr = base_ptr;
     }
 
     if (layout.has_value()) {
+        const size_t layout_capacity =
+            mapping_size > layout_offset ? (mapping_size - layout_offset) : allocation_size;
         for (const auto& [addr, bytes] : native_memory_chunks_)
-            copy_into_layout(base_ptr, allocation_size, layout->base, addr, bytes);
+            copy_into_layout(base_ptr, layout_capacity, layout->base, addr, bytes);
         copy_into_layout(base_ptr,
-                         allocation_size,
+                         layout_capacity,
                          layout->base,
                          *original_address,
                          binary_code);
