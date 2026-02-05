@@ -7,7 +7,14 @@ COMPOSE="docker compose -f ${STACK_DIR}/docker-compose.yaml"
 echo "[secure-stack] Checking WireGuard kernel module..."
 if ! lsmod | grep -q "^wireguard"; then
   if command -v modprobe >/dev/null 2>&1; then
-    sudo modprobe wireguard
+    uid="${EUID:-$(id -u)}"
+    if [[ "$uid" -eq 0 ]]; then
+      modprobe wireguard
+    elif command -v sudo >/dev/null 2>&1; then
+      sudo modprobe wireguard
+    else
+      echo "Warning: sudo not available. Run this script as root to load WireGuard." >&2
+    fi
   else
     echo "Warning: modprobe not available. Ensure the WireGuard kernel module is loaded." >&2
   fi
