@@ -103,6 +103,17 @@ private:
     Worker& worker_;
 };
 
+FragmentOsAction Worker::resolve_fragment_action(const fragment::PartitionInfo& partition) const {
+    std::string os = partition.os;
+    if (os.empty())
+        os = partition.format == "pe" ? "windows" : "linux";
+    if (os == "linux")
+        return config_.fragment_os_policy.linux;
+    if (os == "windows")
+        return config_.fragment_os_policy.windows;
+    return FragmentOsAction::Skip;
+}
+
 Worker::Worker(WorkerConfig config)
 : Worker(std::move(config), {}) {}
 
@@ -162,19 +173,53 @@ TaskReport Worker::run_binary_task(const TaskContext& context,
     const auto wall_start = now_ms();
     const auto steady_start = std::chrono::steady_clock::now();
 
-    BackendRequest request{
-        context.partition,
-        context.summary_path,
-        context.asm_path,
-        context.binary_path,
-        task.inputs,
-        register_state_,
-        snapshot_memory_state(),
-        config_.executor.fd_rules
-    };
+    fragment::ExecutionResult result;
+    TaskReport report;
 
-    auto result = connector_->execute(request);
-    TaskReport report = build_report(context.partition, task, std::move(result));
+    const FragmentOsAction action = resolve_fragment_action(context.partition);
+    if (action == FragmentOsAction::Skip || action == FragmentOsAction::Queue) {
+        result.success = false;
+        result.error_message = (action == FragmentOsAction::Skip)
+            ? "Fragment ignoré par la policy OS"
+            : "Fragment mis en file par la policy OS";
+        report = build_report(context.partition, task, std::move(result));
+    } else if (action == FragmentOsAction::Error) {
+        result.success = false;
+        result.error_message = "Fragment refusé par la policy OS";
+        report = build_report(context.partition, task, std::move(result));
+    } else if (action == FragmentOsAction::Wsl) {
+        if (!config_.wsl_enabled) {
+            result.success = false;
+            result.error_message = "Policy WSL demandée mais triggers inactifs";
+            report = build_report(context.partition, task, std::move(result));
+        } else {
+            BackendRequest request{
+                context.partition,
+                context.summary_path,
+                context.asm_path,
+                context.binary_path,
+                task.inputs,
+                register_state_,
+                snapshot_memory_state(),
+                config_.executor.fd_rules
+            };
+            auto exec_result = connector_->execute(request);
+            report = build_report(context.partition, task, std::move(exec_result));
+        }
+    } else {
+        BackendRequest request{
+            context.partition,
+            context.summary_path,
+            context.asm_path,
+            context.binary_path,
+            task.inputs,
+            register_state_,
+            snapshot_memory_state(),
+            config_.executor.fd_rules
+        };
+        auto exec_result = connector_->execute(request);
+        report = build_report(context.partition, task, std::move(exec_result));
+    }
 
     const auto wall_end = now_ms();
     const auto steady_end = std::chrono::steady_clock::now();

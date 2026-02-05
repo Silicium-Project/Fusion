@@ -52,6 +52,7 @@ private:
                             fragment::ExecutionResult&& result);
     TaskReport run_binary_task(const TaskContext& context,
                                const Task& task);
+    FragmentOsAction resolve_fragment_action(const fragment::PartitionInfo& partition) const;
 
     std::vector<MemorySnapshot> snapshot_memory_state() const;
 };

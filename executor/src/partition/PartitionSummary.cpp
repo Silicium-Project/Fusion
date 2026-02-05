@@ -97,6 +97,10 @@ namespace fragment {
         DefaultHasher hasher;
         hasher.reset();
         hasher.add_string(p.id);
+        if (!p.os.empty())
+            hasher.add_string(p.os);
+        if (!p.format.empty())
+            hasher.add_string(p.format);
         hasher.add_uint64(p.start_address.value_or(0));
         hasher.add_uint64(p.end_address.value_or(0));
         hasher.add_string(p.bin_hash);
@@ -136,6 +140,10 @@ namespace fragment {
     std::string compute_summary_hash(const PartitionSummary& summary) {
         DefaultHasher hasher;
         hasher.reset();
+        if (!summary.binary_os.empty())
+            hasher.add_string(summary.binary_os);
+        if (!summary.binary_format.empty())
+            hasher.add_string(summary.binary_format);
         hasher.add_string(summary.binary_hash);
         hasher.add_string(summary.memory_hash);
         hasher.add_bool(summary.can_split);
@@ -207,6 +215,8 @@ namespace fragment {
         info.asm_path = to_string_safe(json_object_get(obj, "asm"));
         info.bin_path = to_string_safe(json_object_get(obj, "bin"));
         info.wrapper_path = to_string_safe(json_object_get(obj, "wrapper"));
+        info.os = to_string_safe(json_object_get(obj, "os"));
+        info.format = to_string_safe(json_object_get(obj, "format"));
         info.bin_hash = to_string_safe(json_object_get(obj, "bin_hash"));
         info.partition_hash = to_string_safe(json_object_get(obj, "partition_hash"));
         info.start_address = parse_hex_address(json_object_get(obj, "start"));
@@ -312,6 +322,8 @@ namespace fragment {
 
         PartitionSummary summary;
         summary.binary_path = to_string_safe(json_object_get(root, "binary"));
+        summary.binary_os = to_string_safe(json_object_get(root, "binary_os"));
+        summary.binary_format = to_string_safe(json_object_get(root, "binary_format"));
         summary.binary_hash = to_string_safe(json_object_get(root, "binary_hash"));
         summary.memory_hash = to_string_safe(json_object_get(root, "memory_hash"));
         summary.summary_hash = to_string_safe(json_object_get(root, "summary_hash"));

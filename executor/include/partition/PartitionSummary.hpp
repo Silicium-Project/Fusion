@@ -17,6 +17,8 @@ struct PartitionInfo {
     std::string asm_path;
     std::string bin_path;
     std::string wrapper_path;
+    std::string os;
+    std::string format;
     std::string bin_hash;
     std::string partition_hash;
     std::optional<uint64_t> start_address;
@@ -50,6 +52,8 @@ struct LibraryInfo {
 
 struct PartitionSummary {
     std::string binary_path;
+    std::string binary_os;
+    std::string binary_format;
     std::string binary_hash;
     bool can_split = true;
     std::string memory_hash;
