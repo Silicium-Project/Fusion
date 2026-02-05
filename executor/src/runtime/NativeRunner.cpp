@@ -7,6 +7,8 @@
 
 #include <fstream>
 #include <iterator>
+#include <sstream>
+#include <vector>
 #ifdef __linux__
 #include <dlfcn.h>
 #endif
@@ -75,6 +77,45 @@ std::optional<UnresolvedHook> parse_unresolved_descriptor(const std::string& des
     return UnresolvedHook{addr, symbol};
 }
 
+struct HookReport {
+    std::vector<std::string> missing_symbols;
+    std::vector<std::string> unsafe_calls;
+
+    bool ok() const {
+        return missing_symbols.empty() && unsafe_calls.empty();
+    }
+};
+
+std::vector<uint8_t> make_jmp_stub(uint64_t target_addr) {
+    std::vector<uint8_t> stub;
+    stub.reserve(12);
+    stub.push_back(0x48);
+    stub.push_back(0xB8);
+    for (size_t idx = 0; idx < 8; ++idx)
+        stub.push_back(static_cast<uint8_t>((target_addr >> (idx * 8)) & 0xFF));
+    stub.push_back(0xFF);
+    stub.push_back(0xE0);
+    return stub;
+}
+
+std::vector<uint8_t> make_ret_stub() {
+    return {0xC3};
+}
+
+std::optional<uint64_t> resolve_symbol_addr(const std::string& symbol) {
+#ifdef __linux__
+    if (symbol.empty())
+        return std::nullopt;
+    void* target = dlsym(RTLD_DEFAULT, symbol.c_str());
+    if (!target)
+        return std::nullopt;
+    return reinterpret_cast<uint64_t>(target);
+#else
+    (void)symbol;
+    return std::nullopt;
+#endif
+}
+
 void preload_dependency_code(const PartitionInfo& meta, FragmentExecutor& executor) {
     auto parts = registry().partitions();
     if (!parts.has_value())
@@ -120,39 +161,45 @@ std::optional<uint64_t> parse_addr_token(const std::string& text) {
     }
 }
 
-void install_unresolved_hooks(const PartitionInfo& meta, FragmentExecutor& executor) {
+HookReport install_unresolved_hooks(const PartitionInfo& meta,
+                                    FragmentExecutor& executor,
+                                    bool allow_stub) {
+    HookReport report;
 #ifdef __linux__
-
     for (const auto& call : meta.unresolved_calls) {
         auto info = parse_unresolved_descriptor(call);
-        if (!info)
-            continue;
-
-        void* target = dlsym(RTLD_DEFAULT, info->symbol.c_str());
-        if (!target) {
-            log::warning("dlsym a √©chou√© pour " + info->symbol + ", ex√©cution native risque de planter.");
+        if (!info) {
+            report.unsafe_calls.push_back(call);
             continue;
         }
-        uint64_t fn_addr = reinterpret_cast<uint64_t>(target);
-        std::vector<uint8_t> stub;
-        stub.reserve(12);
-        stub.push_back(0x48);
-        stub.push_back(0xB8);
-        for (size_t idx = 0; idx < 8; ++idx)
-            stub.push_back(static_cast<uint8_t>((fn_addr >> (idx * 8)) & 0xFF));
-        stub.push_back(0xFF);
-        stub.push_back(0xE0);
-        executor.preload_native_chunk(info->address, stub);
+
+        if (info->symbol.empty()) {
+            report.unsafe_calls.push_back(call);
+            if (allow_stub)
+                executor.preload_native_chunk(info->address, make_ret_stub());
+            continue;
+        }
+        auto resolved = resolve_symbol_addr(info->symbol);
+        if (!resolved) {
+            report.missing_symbols.push_back(info->symbol);
+            if (!allow_stub)
+                continue;
+            log::warning("dlsym a ÈchouÈ pour " + info->symbol + ", fallback ret");
+            executor.preload_native_chunk(info->address, make_ret_stub());
+            continue;
+        }
+        executor.preload_native_chunk(info->address, make_jmp_stub(*resolved));
     }
 
-    // External calls sans symbole (adresse uniquement) : injecter un stub "ret" pour √©viter les crashs.
     for (const auto& call : meta.external_calls) {
         auto addr_opt = parse_addr_token(call);
-        if (!addr_opt)
+        if (!addr_opt) {
+            report.unsafe_calls.push_back(call);
             continue;
+        }
         uint64_t addr = *addr_opt;
 
-        // Tenter de r√©cup√©rer le symbole √©ventuel entre <...>
+        // Tenter de rÈcupÈrer le symbole Èventuel entre <...>
         std::string symbol;
         auto lt = call.find('<');
         auto gt = call.find('>', lt == std::string::npos ? 0 : lt + 1);
@@ -166,34 +213,29 @@ void install_unresolved_hooks(const PartitionInfo& meta, FragmentExecutor& execu
         uint64_t target_addr = 0;
         bool has_target = false;
         if (!symbol.empty()) {
-            void* target = dlsym(RTLD_DEFAULT, symbol.c_str());
-            if (target) {
-                target_addr = reinterpret_cast<uint64_t>(target);
+            auto resolved = resolve_symbol_addr(symbol);
+            if (resolved) {
+                target_addr = *resolved;
                 has_target = true;
             } else {
-                log::warning("dlsym a √©chou√© pour " + symbol + ", fallback ret");
+                report.missing_symbols.push_back(symbol);
+                if (!allow_stub)
+                    continue;
+                log::warning("dlsym a ÈchouÈ pour " + symbol + ", fallback ret");
             }
         }
 
-        std::vector<uint8_t> stub;
-        if (has_target) {
-            // mov rax, target; jmp rax
-            stub.reserve(12);
-            stub.push_back(0x48);
-            stub.push_back(0xB8);
-            for (size_t idx = 0; idx < 8; ++idx)
-                stub.push_back(static_cast<uint8_t>((target_addr >> (idx * 8)) & 0xFF));
-            stub.push_back(0xFF);
-            stub.push_back(0xE0);
-        } else {
-            stub = {0xC3};  // ret de s√©curit√©
-        }
-        executor.preload_native_chunk(addr, stub);
+        if (has_target)
+            executor.preload_native_chunk(addr, make_jmp_stub(target_addr));
+        else if (allow_stub)
+            executor.preload_native_chunk(addr, make_ret_stub());
     }
 #else
     (void)meta;
     (void)executor;
+    (void)allow_stub;
 #endif
+    return report;
 }
 
 void install_register_trampolines(const PartitionInfo& meta,
@@ -238,7 +280,32 @@ bool NativeRunner::run(const ExecutionEntry& entry,
 
     const auto& meta = entry.meta->get();
     preload_dependency_code(meta, executor);
-    install_unresolved_hooks(meta, executor);
+    auto hooks = install_unresolved_hooks(meta, executor, force_native_);
+    if (!force_native_ && !hooks.ok()) {
+        std::ostringstream oss;
+        oss << "ExÈcution native bloquÈe: appels externes non rÈsolus.";
+        if (!hooks.missing_symbols.empty()) {
+            oss << " Symbols: ";
+            for (size_t i = 0; i < hooks.missing_symbols.size(); ++i) {
+                if (i)
+                    oss << ", ";
+                oss << hooks.missing_symbols[i];
+            }
+            oss << ".";
+        }
+        if (!hooks.unsafe_calls.empty()) {
+            oss << " Appels non rÈsolubles: ";
+            for (size_t i = 0; i < hooks.unsafe_calls.size(); ++i) {
+                if (i)
+                    oss << ", ";
+                oss << hooks.unsafe_calls[i];
+            }
+            oss << ".";
+        }
+        result.error_message = oss.str();
+        result.success = false;
+        return false;
+    }
     install_register_trampolines(meta, executor, parse_addr_token);
 
     const std::string bin_file = derive_binary_path(entry);

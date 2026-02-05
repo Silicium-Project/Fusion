@@ -207,16 +207,22 @@ int run_cli(const std::vector<std::string_view>& args,
 
         bool has_external_calls = entry.meta && (!entry.meta->get().external_calls.empty() ||
                                                  !entry.meta->get().unresolved_calls.empty());
-        if (opts.native_mode && (missing_inputs || has_external_calls)) {
-            const std::string risk = missing_inputs && has_external_calls
-                ? "entrÃ©es manquantes et appels externes/non rÃ©solus"
-                : (missing_inputs ? "entrÃ©es externes manquantes"
-                                  : "appels externes/non rÃ©solus");
-            log::warning("ExÃ©cution native malgrÃ© " + risk + " sur " + entry.name
-                         + " (pas de repli, risque de crash).");
+        if (opts.native_mode && missing_inputs && !opts.force_native) {
+            last_result.success = false;
+            last_result.error_message = "Exécution native bloquée: entrées externes manquantes pour " + entry.name;
+            log::error(last_result.error_message);
+            all_success = false;
+            break;
         }
 
-        if (!execute_entry(entry, opts.native_mode, opts.force_native, executor, last_result)) {
+        if (opts.native_mode && has_external_calls) {
+            const std::string risk = missing_inputs
+                ? "entrées externes manquantes et appels externes/non résolus"
+                : "appels externes/non résolus";
+            log::warning("Exécution native malgré " + risk + " sur " + entry.name
+                         + " (pas de repli, risque de crash)." );
+        }
+if (!execute_entry(entry, opts.native_mode, opts.force_native, executor, last_result)) {
             all_success = false;
             break;
         }

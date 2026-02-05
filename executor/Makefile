@@ -46,7 +46,7 @@ OBJS_EMU_LIB := $(addprefix $(OBJ_DIR)/emu_lib/,$(EMU_LIB_SRC:.cpp=.o))
 OBJS_NATIVE_LIB := $(addprefix $(OBJ_DIR)/native_lib/,$(NATIVE_LIB_SRC:.cpp=.o))
 
 TEST_SRCS := tests/config_test.cpp tests/opcode_test.cpp tests/executor_test.cpp tests/instruction_emulator_test.cpp \
-	tests/printf_emulation_test.cpp tests/support_test.cpp
+	tests/printf_emulation_test.cpp tests/support_test.cpp tests/native_runner_test.cpp
 TEST_EXTRA_SRCS := src/core/FragmentExecutor.cpp src/core/RegisterEmulator.cpp src/core/PrintfEmulator.cpp src/support/Utils.cpp src/support/Logging.cpp \
 	src/core/ExecutionResult.cpp src/core/InstructionEmulator.cpp src/core/SegmentLoader.cpp src/core/Opcodes.cpp
 TEST_BUILD_DIR := $(OBJ_DIR)/tests
