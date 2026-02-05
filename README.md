@@ -27,6 +27,12 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ---
 
+## Schema
+
+Voir docs/network-schema.md pour les diagrammes Mermaid (compute + network).
+
+---
+
 ## Couverture (worker)
 
 Badge (local) : ![Badge](docs/coverage/worker/badge.svg)  
