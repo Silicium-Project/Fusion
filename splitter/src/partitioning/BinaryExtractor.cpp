@@ -1,6 +1,7 @@
 #include "partitioning/BinaryExtractor.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -21,6 +22,11 @@ std::vector<uint8_t> BinaryExtractor::ExtractSegment(const std::string& binary_p
     std::vector<uint8_t> result;
     try {
         if (end_addr <= start_addr)
+            return result;
+
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(binary_path, ec);
+        if (!ec && size == 0)
             return result;
 
         std::string cmd = "readelf -W -S " + ShellQuote(binary_path);
@@ -96,6 +102,11 @@ std::vector<MemorySegment> BinaryExtractor::ExtractDataSections(const std::strin
     std::vector<MemorySegment> segments;
 
     try {
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(binary_path, ec);
+        if (!ec && size == 0)
+            return segments;
+
         std::string cmd = "readelf -W -S " + ShellQuote(binary_path);
         std::string output = ExecCommand(cmd);
         std::regex section_pattern(
