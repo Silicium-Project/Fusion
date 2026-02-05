@@ -92,3 +92,24 @@ TEST(InstructionEmulator, HandlesSubRegisterAliases) {
     EXPECT_EQ(regs.get("r10b"), 0x33u);
     EXPECT_EQ(regs.get("r10w"), 0x2233u);
 }
+
+TEST(InstructionEmulator, SupportsScaledIndexAddressing) {
+    RegisterEmulator regs;
+    ExecutionResult result;
+    PatchLogGuard guard(regs, result.memory_patches);
+    InstructionEmulator emu(regs);
+
+    regs.set("rax", 0x1000);
+    regs.set("rbx", 0x10);
+
+    const uint64_t expected_addr = 0x1000 + 0x10 * 4 + 0x20;
+    ASSERT_TRUE(emu.emulate_line(
+        "0000000000004000: mov qword ptr [rax+rbx*4+0x20], $0x1122334455667788",
+        result));
+    EXPECT_EQ(regs.read_qword(expected_addr), 0x1122334455667788ULL);
+
+    ASSERT_TRUE(emu.emulate_line(
+        "0000000000004008: mov rcx, qword ptr [rax+4*rbx+0x20]",
+        result));
+    EXPECT_EQ(regs.get("rcx"), 0x1122334455667788ULL);
+}

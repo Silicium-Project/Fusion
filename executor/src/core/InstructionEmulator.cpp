@@ -311,51 +311,106 @@ std::optional<uint64_t> InstructionEmulator::resolve_memory_address(const std::s
     if (expr.empty())
         return std::nullopt;
 
-    size_t op_pos = std::string::npos;
-    for (size_t idx = 1; idx < expr.size(); ++idx)
-        if (expr[idx] == '+' || expr[idx] == '-') {
-            op_pos = idx;
-            break;
-        }
-
-    std::string base_token = trim(expr.substr(0, op_pos));
-    std::string offset_token;
-    char op = '+';
-    if (op_pos != std::string::npos) {
-        op = expr[op_pos];
-        offset_token = trim(expr.substr(op_pos + 1));
+    std::string compact;
+    compact.reserve(expr.size());
+    for (char c : expr) {
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n')
+            compact.push_back(c);
     }
+    if (compact.empty())
+        return std::nullopt;
 
-    bool has_base = false;
-    uint64_t base_value = 0;
-    if (!base_token.empty()) {
-        if (base_token == "rip" || base_token == "%rip") {
-            if (next_insn_addr_.has_value()) {
-                base_value = *next_insn_addr_;
-                has_base = true;
-            } else if (current_insn_addr_.has_value()) {
-                base_value = *current_insn_addr_;
-                has_base = true;
+    auto strip_percent = [](const std::string& token) {
+        if (!token.empty() && token.front() == '%')
+            return token.substr(1);
+        return token;
+    };
+
+    auto is_immediate = [](const std::string& token) {
+        if (token.empty())
+            return false;
+        if (token.size() > 1 && token[0] == '0' && (token[1] == 'x' || token[1] == 'X'))
+            return true;
+        return std::isdigit(static_cast<unsigned char>(token.front())) != 0;
+    };
+
+    auto register_value = [&](const std::string& token) -> std::optional<uint64_t> {
+        std::string reg = strip_percent(token);
+        if (reg == "rip") {
+            if (next_insn_addr_.has_value())
+                return *next_insn_addr_;
+            if (current_insn_addr_.has_value())
+                return *current_insn_addr_;
+            return std::nullopt;
+        }
+        return emulator_.get(reg);
+    };
+
+    auto parse_term = [&](const std::string& term) -> std::optional<uint64_t> {
+        if (term.empty())
+            return std::nullopt;
+        auto star = term.find('*');
+        if (star != std::string::npos) {
+            std::string left = term.substr(0, star);
+            std::string right = term.substr(star + 1);
+            if (left.empty() || right.empty())
+                return std::nullopt;
+            const bool left_imm = is_immediate(left);
+            const bool right_imm = is_immediate(right);
+            if (left_imm && right_imm) {
+                return parse_immediate(left) * parse_immediate(right);
             }
-        } else if (std::isdigit(static_cast<unsigned char>(base_token.front())) || base_token.front() == '0') {
-            base_value = parse_immediate(base_token);
-            has_base = true;
-        } else {
-            base_value = emulator_.get(base_token);
-            has_base = true;
+            if (left_imm) {
+                auto base = register_value(right);
+                if (!base.has_value())
+                    return std::nullopt;
+                return (*base) * parse_immediate(left);
+            }
+            if (right_imm) {
+                auto base = register_value(left);
+                if (!base.has_value())
+                    return std::nullopt;
+                return (*base) * parse_immediate(right);
+            }
+            return std::nullopt;
         }
-    }
 
-    uint64_t address = base_value;
-    if (!offset_token.empty()) {
-        uint64_t offset = parse_immediate(offset_token);
-        if (op == '-')
-            address -= offset;
+        if (is_immediate(term))
+            return parse_immediate(term);
+        return register_value(term);
+    };
+
+    uint64_t address = 0;
+    bool has_any = false;
+    int sign = 1;
+    for (size_t i = 0; i < compact.size();) {
+        char c = compact[i];
+        if (c == '+') {
+            sign = 1;
+            ++i;
+            continue;
+        }
+        if (c == '-') {
+            sign = -1;
+            ++i;
+            continue;
+        }
+        size_t start = i;
+        while (i < compact.size() && compact[i] != '+' && compact[i] != '-')
+            ++i;
+        std::string term = compact.substr(start, i - start);
+        auto value = parse_term(term);
+        if (!value.has_value())
+            return std::nullopt;
+        if (sign < 0)
+            address -= *value;
         else
-            address += offset;
+            address += *value;
+        has_any = true;
+        sign = 1;
     }
 
-    if (!has_base && offset_token.empty())
+    if (!has_any)
         return std::nullopt;
     return address;
 }
