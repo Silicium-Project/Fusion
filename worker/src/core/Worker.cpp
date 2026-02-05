@@ -162,7 +162,23 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
         binary_path,
         summary_path
     };
-    return router_.execute(context, task);
+    try {
+        return router_.execute(context, task);
+    } catch (const std::exception& ex) {
+        const auto wall_start = now_ms();
+        const auto steady_start = std::chrono::steady_clock::now();
+
+        TaskReport report;
+        report.partition_id = context.partition.id.empty() ? task.partition_id : context.partition.id;
+        report.inputs = task.inputs;
+        report.result.success = false;
+        report.result.error_message = ex.what();
+
+        const auto wall_end = now_ms();
+        const auto steady_end = std::chrono::steady_clock::now();
+        fill_telemetry(report, task, config_, wall_start, wall_end, steady_start, steady_end);
+        return report;
+    }
 }
 
 TaskReport Worker::run_binary_task(const TaskContext& context,
