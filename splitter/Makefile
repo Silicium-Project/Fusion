@@ -21,6 +21,8 @@ EXECUTOR_NATIVE_BIN := $(EXECUTOR_DIR)/fragment_executor
 DEMO_SRC := $(REPO_ROOT)/demo/fragment/hello.c
 DEMO_BIN := run_build/hello_demo
 DEMO_OUT := run_output/demo
+DEMO_HASH ?=
+DEMO_HASH_ARG := $(if $(DEMO_HASH),--hash $(DEMO_HASH),)
 LOG_FILE := fragment_executor.log
 
 PROGRAM ?=
@@ -105,7 +107,7 @@ demo: all executor $(DEMO_BIN)
 	@rm -f $(LOG_FILE)
 	@echo "==> Génération des partitions de démonstration"
 	@rm -rf $(DEMO_OUT)
-	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
+	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT) $(DEMO_HASH_ARG)
 	@echo "==> Exécution via fragment_executor (mode émulation)"
 	$(EXECUTOR_BIN) --summary $(DEMO_OUT)/summary.json --log $(LOG_FILE)
 
@@ -113,7 +115,7 @@ demo-native: all executor $(DEMO_BIN)
 	@rm -f $(LOG_FILE)
 	@echo "==> Génération des partitions de démonstration"
 	@rm -rf $(DEMO_OUT)
-	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
+	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT) $(DEMO_HASH_ARG)
 	@echo "==> Exécution via fragment_executor (mode natif - DANGEREUX, peut planter)"
 	-$(EXECUTOR_NATIVE_BIN) --summary $(DEMO_OUT)/summary.json --native --log $(LOG_FILE)
 
@@ -121,7 +123,7 @@ demo-native-force: all executor $(DEMO_BIN)
 	@rm -f $(LOG_FILE)
 	@echo "==> Génération des partitions de démonstration"
 	@rm -rf $(DEMO_OUT)
-	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
+	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT) $(DEMO_HASH_ARG)
 	@echo "==> Exécution via fragment_executor (mode natif FORCÉ - très dangereux)"
 	-$(EXECUTOR_NATIVE_BIN) --summary $(DEMO_OUT)/summary.json --native --native-force --log $(LOG_FILE)
 

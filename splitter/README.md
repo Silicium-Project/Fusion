@@ -55,6 +55,12 @@ Une cible `make demo` prépare un binaire jouet (`demo/fragment/hello.c`), lance
 make demo
 ```
 
+Pour choisir l'algo de hash dans la demo :
+
+```bash
+DEMO_HASH=std make demo
+```
+
 La sortie console montre :
 
 - l’exécution de `splitter` sur `run_build/hello_demo`,

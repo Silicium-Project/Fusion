@@ -83,6 +83,8 @@ PipelineRunner::PipelineRunner(PipelineConfig config,
 
 int PipelineRunner::Run() {
     reporter_->Banner("=== Désassemblage de " + context_.config.binary_path.Value() + " ===");
+    if (!context_.config.hash_algo.empty())
+        reporter_->Info("Hash: " + context_.config.hash_algo);
     int exit_code = 0;
     auto run_phase = [&](std::unique_ptr<IPipelinePhase>& phase, PipelineExit code) -> bool {
         try {
