@@ -83,8 +83,8 @@ if [[ ! -f "$summary" ]]; then
     exit 1
 fi
 
-REAL_OUT="$(mktemp /tmp/check_split_real.XXXXXX)"
-SPLIT_OUT="$(mktemp /tmp/check_split_split.XXXXXX)"
+REAL_OUT="$(mktemp -t check_split_real.XXXXXX)"
+SPLIT_OUT="$(mktemp -t check_split_split.XXXXXX)"
 
 echo "==> Ãƒâ€°tape 2 : exÃƒÂ©cution binaire rÃƒÂ©el"
 set +e
@@ -94,7 +94,11 @@ set -e
 
 echo "==> Ãƒâ€°tape 3 : exÃƒÂ©cution summary (fragment_executor)"
 set +e
-env ${EXTRA_ENV[*]:-} "$EXECUTOR" --summary "$summary" ${EXECUTOR_FLAGS:-} >"$SPLIT_OUT"
+if [[ ${#EXTRA_ENV[@]} -gt 0 ]]; then
+    env "${EXTRA_ENV[@]}" "$EXECUTOR" --summary "$summary" ${EXECUTOR_FLAGS:-} >"$SPLIT_OUT"
+else
+    "$EXECUTOR" --summary "$summary" ${EXECUTOR_FLAGS:-} >"$SPLIT_OUT"
+fi
 split_rc=$?
 set -e
 
