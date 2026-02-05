@@ -12,11 +12,13 @@
 #include <array>
 #include <cctype>
 #include <cstdint>
+#include <cerrno>
 #include <iomanip>
 #include <limits>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 
 #include "core/PrintfEmulator.hpp"
 #include "support/Logging.hpp"
@@ -405,7 +407,17 @@ FragmentExecutor::PipeCaptures FragmentExecutor::capture_program_pipes(const std
         int write_end = -1;
         std::string input;
         bool capture = false;
+        bool drain = false;
         std::string alias;
+    };
+
+    struct PipeDrain {
+        int fd = -1;
+        int target_fd = -1;
+        bool capture = false;
+        std::string alias;
+        std::string data;
+        std::thread thread;
     };
 
     std::vector<PipeSet> pipes;
@@ -418,6 +430,7 @@ FragmentExecutor::PipeCaptures FragmentExecutor::capture_program_pipes(const std
         p.fd = rule.fd;
         p.input = rule.input_data;
         p.capture = rule.capture && rule.input_data.empty();
+        p.drain = rule.input_data.empty();
         p.alias = rule.alias;
         pipes.push_back(std::move(p));
     }
@@ -427,18 +440,6 @@ FragmentExecutor::PipeCaptures FragmentExecutor::capture_program_pipes(const std
     auto safe_close = [](int fd) {
         if (fd != -1)
             close(fd);
-    };
-
-    auto read_pipe = [](int fd, std::string& dest) {
-        if (fd == -1)
-            return;
-        int flags = fcntl(fd, F_GETFL, 0);
-        if (flags != -1)
-            fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-        char buffer[256];
-        ssize_t n;
-        while ((n = read(fd, buffer, sizeof(buffer))) > 0)
-            dest.append(buffer, n);
     };
 
     for (auto& p : pipes) {
@@ -494,44 +495,88 @@ FragmentExecutor::PipeCaptures FragmentExecutor::capture_program_pipes(const std
         p.write_end = -1;
     }
 
+    std::vector<PipeDrain> drains;
+    drains.reserve(pipes.size());
+    for (auto& p : pipes) {
+        if (!p.drain || p.read_end == -1)
+            continue;
+        PipeDrain drain;
+        drain.fd = p.read_end;
+        drain.target_fd = p.fd;
+        drain.capture = p.capture;
+        drain.alias = p.alias;
+        p.read_end = -1;
+        drains.push_back(std::move(drain));
+        PipeDrain& ref = drains.back();
+        ref.thread = std::thread([&ref]() {
+            char buffer[512];
+            while (true) {
+                ssize_t n = read(ref.fd, buffer, sizeof(buffer));
+                if (n > 0) {
+                    if (ref.capture)
+                        ref.data.append(buffer, static_cast<size_t>(n));
+                    continue;
+                }
+                if (n == 0)
+                    break;
+                if (errno == EINTR)
+                    continue;
+                break;
+            }
+            if (ref.fd != -1)
+                close(ref.fd);
+            ref.fd = -1;
+        });
+    }
+
+    auto restore_fds = [&]() {
+        for (const auto& [fd, old] : saved_fds) {
+            dup2(old, fd);
+            safe_close(old);
+        }
+    };
+
+    auto close_write_ends = [&]() {
+        for (auto& p : pipes) {
+            safe_close(p.write_end);
+            p.write_end = -1;
+        }
+    };
+
+    auto finalize_drains = [&]() {
+        for (auto& d : drains) {
+            if (d.thread.joinable())
+                d.thread.join();
+        }
+        for (auto& d : drains) {
+            if (d.capture) {
+                FdCapture cap;
+                cap.data = std::move(d.data);
+                cap.alias = std::move(d.alias);
+                captures.fds.set(d.target_fd, std::move(cap));
+            }
+        }
+        for (auto& p : pipes)
+            safe_close(p.read_end);
+    };
+
     try {
         func();
     } catch (...) {
         fflush(stdout);
         fflush(stderr);
-        for (const auto& [fd, old] : saved_fds) {
-            dup2(old, fd);
-            safe_close(old);
-        }
-        for (auto& p : pipes) {
-            safe_close(p.read_end);
-            safe_close(p.write_end);
-        }
+        restore_fds();
+        close_write_ends();
+        finalize_drains();
         throw;
     }
 
     fflush(stdout);
     fflush(stderr);
 
-    for (const auto& [fd, old] : saved_fds) {
-        dup2(old, fd);
-        safe_close(old);
-    }
-
-    for (auto& p : pipes)
-        safe_close(p.write_end);
-
-    for (auto& p : pipes) {
-        if (p.capture) {
-            std::string data;
-            read_pipe(p.read_end, data);
-            FdCapture cap;
-            cap.data = std::move(data);
-            cap.alias = p.alias;
-            captures.fds.set(p.fd, std::move(cap));
-        }
-        safe_close(p.read_end);
-    }
+    restore_fds();
+    close_write_ends();
+    finalize_drains();
 
     return captures;
 #else
