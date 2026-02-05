@@ -136,6 +136,10 @@ if [[ "$SCOPE" == "all" ]]; then
   if [[ ! -s "$SUMMARY_PATH" ]]; then
     fail "Missing or empty summary: $SUMMARY_PATH"
   fi
+  if [[ "$RUN_WORKER" == "1" ]]; then
+    log "Build worker"
+    make -C worker all
+  fi
 else
   if [[ "$RUN_SPLITTER" == "1" ]]; then
     log "Build splitter"
