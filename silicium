@@ -13,8 +13,9 @@ import shlex
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable, Mapping
 
 try:
     import readline
@@ -32,11 +33,8 @@ REPO_ROOT = Path(__file__).resolve().parent
 SPLITTER_DIR = REPO_ROOT / "splitter"
 EXECUTOR_DIR = REPO_ROOT / "executor"
 WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
-DOCKER_BIN = os.environ.get("DOCKER", "docker")
-DOCKER_COMPOSE_BIN = os.environ.get("DOCKER_COMPOSE_BIN")
 CORE_CHECK_IMAGE_DEFAULT = "silicium/core-check:lite"
 CORE_CHECK_DOCKERFILE = REPO_ROOT / "docker" / "core-check" / "Dockerfile"
-LEDGER_PREFIX = os.environ.get("SILICIUM_LEDGER_PREFIX", "silicium")
 LEDGER_SUFFIX = {
     "localnet": "local-ledger",
     "devnet": "devnet-ledger",
@@ -101,6 +99,83 @@ SUBCOMMANDS = {
     "workload": ["list", "show", "queue"],
 }
 
+
+@dataclass(frozen=True)
+class EnvConfig:
+    docker_bin: str
+    docker_compose_bin: str | None
+    ledger_prefix: str
+    core_check_image: str
+    core_check_setup: str | None
+
+
+@dataclass(frozen=True)
+class Context:
+    config: EnvConfig
+
+
+@dataclass(frozen=True)
+class CommandSpec:
+    name: str
+    help: str
+    configure: Callable[[argparse.ArgumentParser], None]
+    handler: Callable[[argparse.Namespace, Context], None]
+
+
+@dataclass(frozen=True)
+class CommandGroup:
+    name: str
+    help: str
+    commands: list[CommandSpec]
+    dest: str
+
+
+class CommandRegistry:
+    def __init__(self) -> None:
+        self._commands: list[CommandSpec] = []
+        self._groups: list[CommandGroup] = []
+
+    def add(self, command: CommandSpec) -> None:
+        self._commands.append(command)
+
+    def add_group(self, group: CommandGroup) -> None:
+        self._groups.append(group)
+
+    def register(self, parser: argparse.ArgumentParser, ctx: Context) -> None:
+        sub = parser.add_subparsers(dest="command", required=True)
+        for command in self._commands:
+            cmd_parser = sub.add_parser(command.name, help=command.help)
+            command.configure(cmd_parser)
+            cmd_parser.set_defaults(func=self._wrap(command.handler, ctx))
+        for group in self._groups:
+            group_parser = sub.add_parser(group.name, help=group.help)
+            group_sub = group_parser.add_subparsers(dest=group.dest, required=True)
+            for command in group.commands:
+                cmd_parser = group_sub.add_parser(command.name, help=command.help)
+                command.configure(cmd_parser)
+                cmd_parser.set_defaults(func=self._wrap(command.handler, ctx))
+
+    @staticmethod
+    def _wrap(handler: Callable[[argparse.Namespace, Context], None], ctx: Context) -> Callable[[argparse.Namespace], None]:
+        def _inner(args: argparse.Namespace) -> None:
+            handler(args, ctx)
+        return _inner
+
+
+def load_env_config(env: Mapping[str, str] | None = None) -> EnvConfig:
+    source = os.environ if env is None else env
+    return EnvConfig(
+        docker_bin=source.get("DOCKER", "docker"),
+        docker_compose_bin=source.get("DOCKER_COMPOSE_BIN"),
+        ledger_prefix=source.get("SILICIUM_LEDGER_PREFIX", "silicium"),
+        core_check_image=source.get("SILICIUM_CORE_CHECK_IMAGE", CORE_CHECK_IMAGE_DEFAULT),
+        core_check_setup=source.get("SILICIUM_CORE_CHECK_SETUP"),
+    )
+
+
+def build_context(env: Mapping[str, str] | None = None) -> Context:
+    return Context(config=load_env_config(env))
+
 COLOR_ENABLED = False
 if colorama_init:
     colorama_init()
@@ -128,12 +203,12 @@ def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None, all
     return result.returncode
 
 
-def docker_available() -> bool:
-    if not shutil.which(DOCKER_BIN):
+def docker_available(ctx: Context) -> bool:
+    if not shutil.which(ctx.config.docker_bin):
         return False
     try:
         subprocess.run(
-            [DOCKER_BIN, "info"],
+            [ctx.config.docker_bin, "info"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,
@@ -149,18 +224,18 @@ def wsl_available() -> bool:
     return bool(shutil.which("wsl.exe") or shutil.which("wsl"))
 
 
-def compose_command() -> list[str]:
-    if DOCKER_COMPOSE_BIN:
-        return shlex.split(DOCKER_COMPOSE_BIN)
-    if shutil.which(DOCKER_BIN):
+def compose_command(ctx: Context) -> list[str]:
+    if ctx.config.docker_compose_bin:
+        return shlex.split(ctx.config.docker_compose_bin)
+    if shutil.which(ctx.config.docker_bin):
         try:
             subprocess.run(
-                [DOCKER_BIN, "compose", "version"],
+                [ctx.config.docker_bin, "compose", "version"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=True,
             )
-            return [DOCKER_BIN, "compose"]
+            return [ctx.config.docker_bin, "compose"]
         except subprocess.SubprocessError:
             pass
     if shutil.which("docker-compose"):
@@ -169,12 +244,12 @@ def compose_command() -> list[str]:
     sys.exit(1)
 
 
-def ensure_core_check_image(image: str) -> None:
+def ensure_core_check_image(image: str, ctx: Context) -> None:
     if image != CORE_CHECK_IMAGE_DEFAULT or not CORE_CHECK_DOCKERFILE.exists():
         return
     try:
         subprocess.run(
-            [DOCKER_BIN, "image", "inspect", image],
+            [ctx.config.docker_bin, "image", "inspect", image],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,
@@ -185,7 +260,7 @@ def ensure_core_check_image(image: str) -> None:
     print(colorize(f">> Building {image} (core-check image)", COLOR_GREEN))
     run(
         [
-            DOCKER_BIN,
+            ctx.config.docker_bin,
             "build",
             "-t",
             image,
@@ -196,12 +271,12 @@ def ensure_core_check_image(image: str) -> None:
     )
 
 
-def run_core_check_in_docker(env_vars: dict[str, str]) -> None:
-    image = os.environ.get("SILICIUM_CORE_CHECK_IMAGE", CORE_CHECK_IMAGE_DEFAULT)
-    setup = os.environ.get("SILICIUM_CORE_CHECK_SETUP")
+def run_core_check_in_docker(env_vars: dict[str, str], ctx: Context) -> None:
+    image = ctx.config.core_check_image
+    setup = ctx.config.core_check_setup
     if not setup:
         if image == CORE_CHECK_IMAGE_DEFAULT and CORE_CHECK_DOCKERFILE.exists():
-            ensure_core_check_image(image)
+            ensure_core_check_image(image, ctx)
             env_vars = dict(env_vars)
             env_vars.setdefault("PYTHON_BIN", "/opt/venv/bin/python")
             env_vars.setdefault("CPP_TEST_LOCAL", "1")
@@ -222,7 +297,7 @@ def run_core_check_in_docker(env_vars: dict[str, str]) -> None:
         setup = f"{setup} && ./ci/core_check.sh"
     repo_mount = f"{REPO_ROOT}:/workspace"
     cmd = [
-        DOCKER_BIN,
+        ctx.config.docker_bin,
         "run",
         "--rm",
         "-v",
@@ -264,50 +339,50 @@ def resolve_service(name: str) -> tuple[str, str | None]:
     return SERVICE_MAP[name]
 
 
-def compose_base() -> list[str]:
-    base = compose_command()
+def compose_base(ctx: Context) -> list[str]:
+    base = compose_command(ctx)
     if COMPOSE_ENV_FILE.exists():
         base += ["--env-file", str(COMPOSE_ENV_FILE)]
     base += ["-f", str(COMPOSE_FILE)]
     return base
 
 
-def compose_up(service: str, profile: str | None = None) -> None:
-    cmd = compose_base()
+def compose_up(service: str, profile: str | None, ctx: Context) -> None:
+    cmd = compose_base(ctx)
     if profile:
         cmd += ["--profile", profile]
     cmd += ["up", "-d", service]
     run(cmd)
 
 
-def compose_stop(service: str, profile: str | None = None, remove: bool = False) -> None:
-    cmd = compose_base()
+def compose_stop(service: str, profile: str | None, ctx: Context, remove: bool = False) -> None:
+    cmd = compose_base(ctx)
     if profile:
         cmd += ["--profile", profile]
     cmd += ["stop", service]
     run(cmd)
     if remove:
-        rm_cmd = compose_base()
+        rm_cmd = compose_base(ctx)
         if profile:
             rm_cmd += ["--profile", profile]
         rm_cmd += ["rm", "-f", service]
         run(rm_cmd)
 
 
-def compose_down(volumes: bool = False) -> None:
-    cmd = compose_base() + ["down"]
+def compose_down(ctx: Context, volumes: bool = False) -> None:
+    cmd = compose_base(ctx) + ["down"]
     if volumes:
         cmd.append("-v")
     run(cmd)
 
 
-def cmd_test(_: argparse.Namespace) -> None:
+def cmd_test(_: argparse.Namespace, ctx: Context) -> None:
     run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], allow_failure=True)
     run([sys.executable, "-m", "pip", "install", "-r", "requirements-dev.txt"], allow_failure=True)
     run([sys.executable, "-m", "pytest"])
 
 
-def cmd_check(args: argparse.Namespace) -> None:
+def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
     if getattr(args, "docker_strict", False):
         args.full = True
         args.runner = "docker"
@@ -337,7 +412,7 @@ def cmd_check(args: argparse.Namespace) -> None:
     if os.name == "nt":
         runner = args.runner
         if runner == "auto":
-            if docker_available():
+            if docker_available(ctx):
                 runner = "docker"
             elif wsl_available():
                 runner = "wsl"
@@ -346,10 +421,10 @@ def cmd_check(args: argparse.Namespace) -> None:
                 sys.exit(1)
 
         if runner == "docker":
-            if not docker_available():
+            if not docker_available(ctx):
                 print("Docker not available; cannot run core check in Docker.")
                 sys.exit(1)
-            run_core_check_in_docker(env_vars)
+            run_core_check_in_docker(env_vars, ctx)
             return
 
         if runner == "wsl" and not wsl_available():
@@ -375,10 +450,10 @@ def cmd_check(args: argparse.Namespace) -> None:
         return
 
     if args.runner == "docker":
-        if not docker_available():
+        if not docker_available(ctx):
             print("Docker not available; cannot run core check in Docker.")
             sys.exit(1)
-        run_core_check_in_docker(env_vars)
+        run_core_check_in_docker(env_vars, ctx)
         return
 
     bash = shutil.which("bash")
@@ -391,15 +466,15 @@ def cmd_check(args: argparse.Namespace) -> None:
     run([bash, str(script)], env=env)
 
 
-def cmd_smoke(_: argparse.Namespace) -> None:
+def cmd_smoke(_: argparse.Namespace, ctx: Context) -> None:
     run(["tests/smoke/run_proxy_smoke.sh"])
 
 
-def cmd_tools_demo(_: argparse.Namespace) -> None:
+def cmd_tools_demo(_: argparse.Namespace, ctx: Context) -> None:
     run(["make", "demo"], cwd=SPLITTER_DIR)
 
 
-def cmd_tools_clean(_: argparse.Namespace) -> None:
+def cmd_tools_clean(_: argparse.Namespace, ctx: Context) -> None:
     run(["make", "clean"], cwd=SPLITTER_DIR)
     run(["make", "clean"], cwd=EXECUTOR_DIR)
 
@@ -419,23 +494,23 @@ def clean_artifacts() -> None:
     run(["make", "demo-clean"], cwd=SPLITTER_DIR)
 
 
-def cmd_clean(args: argparse.Namespace) -> None:
+def cmd_clean(args: argparse.Namespace, ctx: Context) -> None:
     mode = args.mode or "cache"
     if args.ledgers:
         mode = "all"
     if mode in {"cache", "all"}:
         clean_artifacts()
     if mode in {"ledgers", "all"}:
-        ledger_wipe(networks=list(LEDGER_SUFFIX.keys()), assume_yes=args.yes)
+        ledger_wipe(networks=list(LEDGER_SUFFIX.keys()), assume_yes=args.yes, ctx=ctx)
 
 
-def ledger_volume_name(network: str) -> str:
+def ledger_volume_name(network: str, ctx: Context) -> str:
     suffix = LEDGER_SUFFIX[network]
-    return f"{LEDGER_PREFIX}-{suffix}"
+    return f"{ctx.config.ledger_prefix}-{suffix}"
 
 
-def ledger_wipe(*, networks: Iterable[str], assume_yes: bool = False) -> None:
-    volumes = [ledger_volume_name(net) for net in networks]
+def ledger_wipe(*, networks: Iterable[str], assume_yes: bool = False, ctx: Context) -> None:
+    volumes = [ledger_volume_name(net, ctx) for net in networks]
     if not volumes:
         print("No ledger volumes selected.")
         return
@@ -445,28 +520,28 @@ def ledger_wipe(*, networks: Iterable[str], assume_yes: bool = False) -> None:
             print("Aborted.")
             return
     for volume in volumes:
-        cmd = [DOCKER_BIN, "volume", "rm", "-f", volume]
+        cmd = [ctx.config.docker_bin, "volume", "rm", "-f", volume]
         try:
             run(cmd)
         except subprocess.CalledProcessError as exc:
             print(f"Warning: failed to remove {volume} ({exc}).")
 
 
-def cmd_ledger_list(_: argparse.Namespace) -> None:
+def cmd_ledger_list(_: argparse.Namespace, ctx: Context) -> None:
     try:
         result = subprocess.run(
-            [DOCKER_BIN, "volume", "ls", "--format", "{{.Name}}"],
+            [ctx.config.docker_bin, "volume", "ls", "--format", "{{.Name}}"],
             check=True,
             capture_output=True,
             text=True,
         )
     except subprocess.CalledProcessError as exc:
-        print(f"Failed to list volumes via {DOCKER_BIN}: {exc}")
+        print(f"Failed to list volumes via {ctx.config.docker_bin}: {exc}")
         sys.exit(exc.returncode)
     names = [
         line.strip()
         for line in result.stdout.splitlines()
-        if line.startswith(f"{LEDGER_PREFIX}-")
+        if line.startswith(f"{ctx.config.ledger_prefix}-")
     ]
     if not names:
         print("No Silicium ledger volumes found.")
@@ -476,7 +551,7 @@ def cmd_ledger_list(_: argparse.Namespace) -> None:
         print(f"  - {name}")
 
 
-def cmd_ledger_wipe(args: argparse.Namespace) -> None:
+def cmd_ledger_wipe(args: argparse.Namespace, ctx: Context) -> None:
     if args.all:
         networks = list(LEDGER_SUFFIX.keys())
     else:
@@ -489,12 +564,12 @@ def cmd_ledger_wipe(args: argparse.Namespace) -> None:
     if not networks:
         print("Specify networks (positional or --network) or use --all.")
         sys.exit(1)
-    ledger_wipe(networks=networks, assume_yes=args.yes)
+    ledger_wipe(networks=networks, assume_yes=args.yes, ctx=ctx)
 
 
-def ledger_export(target: str, dest: Path) -> None:
+def ledger_export(target: str, dest: Path, ctx: Context) -> None:
     cmd = [
-        DOCKER_BIN,
+        ctx.config.docker_bin,
         "run",
         "--rm",
         "-v",
@@ -509,12 +584,12 @@ def ledger_export(target: str, dest: Path) -> None:
     run(cmd)
 
 
-def ledger_import(target: str, src: Path) -> None:
+def ledger_import(target: str, src: Path, ctx: Context) -> None:
     if not src.exists():
         print(f"Archive not found: {src}")
         sys.exit(1)
     cmd = [
-        DOCKER_BIN,
+        ctx.config.docker_bin,
         "run",
         "--rm",
         "-v",
@@ -531,15 +606,15 @@ def ledger_import(target: str, src: Path) -> None:
     run(cmd, env=env)
 
 
-def cmd_ledger_export(args: argparse.Namespace) -> None:
-    volume = ledger_volume_name(args.network)
+def cmd_ledger_export(args: argparse.Namespace, ctx: Context) -> None:
+    volume = ledger_volume_name(args.network, ctx)
     dest = Path(args.output or f"{volume}.tar.gz").resolve()
     if dest.exists() and not args.force:
         print(f"{dest} already exists. Use --force to overwrite.")
         sys.exit(1)
     print(colorize(f"Exporting {volume} -> {dest}", COLOR_YELLOW))
     cmd = [
-        DOCKER_BIN,
+        ctx.config.docker_bin,
         "run",
         "--rm",
         "-v",
@@ -554,8 +629,8 @@ def cmd_ledger_export(args: argparse.Namespace) -> None:
     run(cmd)
 
 
-def cmd_ledger_import(args: argparse.Namespace) -> None:
-    volume = ledger_volume_name(args.network)
+def cmd_ledger_import(args: argparse.Namespace, ctx: Context) -> None:
+    volume = ledger_volume_name(args.network, ctx)
     archive = Path(args.archive).resolve()
     if not archive.exists():
         print(f"Archive not found: {archive}")
@@ -564,7 +639,7 @@ def cmd_ledger_import(args: argparse.Namespace) -> None:
         print("Aborted.")
         return
     cmd = [
-        DOCKER_BIN,
+        ctx.config.docker_bin,
         "run",
         "--rm",
         "-v",
@@ -589,7 +664,7 @@ def workload_paths() -> list[str]:
     return sorted(paths)
 
 
-def cmd_workload_list(args: argparse.Namespace) -> None:
+def cmd_workload_list(args: argparse.Namespace, ctx: Context) -> None:
     paths = workload_paths()
     if not paths:
         print("No workloads found.")
@@ -620,7 +695,7 @@ def cmd_workload_list(args: argparse.Namespace) -> None:
     print_tree(tree)
 
 
-def cmd_workload_show(args: argparse.Namespace) -> None:
+def cmd_workload_show(args: argparse.Namespace, ctx: Context) -> None:
     manifest = WORKLOAD_ROOT / args.path / "manifest.yaml"
     if not manifest.exists():
         print(f"Manifest not found: {manifest}")
@@ -636,7 +711,7 @@ def cmd_workload_show(args: argparse.Namespace) -> None:
             print("No README.md for this workload.")
 
 
-def cmd_workload_queue(args: argparse.Namespace) -> None:
+def cmd_workload_queue(args: argparse.Namespace, ctx: Context) -> None:
     summary = Path(args.summary)
     if not summary.exists():
         print(f"Summary not found: {summary}")
@@ -659,7 +734,7 @@ def cmd_workload_queue(args: argparse.Namespace) -> None:
     print(colorize(f"Wrote {len(ids)} entries to {dest}", COLOR_YELLOW))
 
 
-def cmd_history_show(args: argparse.Namespace) -> None:
+def cmd_history_show(args: argparse.Namespace, ctx: Context) -> None:
     if not HISTORY_FILE.exists():
         print("No history entries yet.")
         return
@@ -671,7 +746,7 @@ def cmd_history_show(args: argparse.Namespace) -> None:
         print(line)
 
 
-def cmd_history_clear(_: argparse.Namespace) -> None:
+def cmd_history_clear(_: argparse.Namespace, ctx: Context) -> None:
     if HISTORY_FILE.exists():
         HISTORY_FILE.unlink()
     HISTORY_FILE.touch()
@@ -680,28 +755,28 @@ def cmd_history_clear(_: argparse.Namespace) -> None:
     print("History cleared.")
 
 
-def cmd_start(args: argparse.Namespace) -> None:
+def cmd_start(args: argparse.Namespace, ctx: Context) -> None:
     service, profile = START_TARGETS[args.target]
-    compose_up(service, profile)
+    compose_up(service, profile, ctx)
 
 
-def cmd_stop(args: argparse.Namespace) -> None:
+def cmd_stop(args: argparse.Namespace, ctx: Context) -> None:
     target = args.target or "all"
     if target == "all":
-        compose_down(volumes=args.volumes)
+        compose_down(ctx, volumes=args.volumes)
     else:
         service, profile = START_TARGETS[target]
-        compose_stop(service, profile, remove=args.remove)
+        compose_stop(service, profile, ctx, remove=args.remove)
 
 
-def cmd_status(args: argparse.Namespace) -> None:
-    cmd = compose_base() + ["ps"]
+def cmd_status(args: argparse.Namespace, ctx: Context) -> None:
+    cmd = compose_base(ctx) + ["ps"]
     run(cmd)
 
 
-def cmd_logs(args: argparse.Namespace) -> None:
+def cmd_logs(args: argparse.Namespace, ctx: Context) -> None:
     service, profile = resolve_service(args.target)
-    cmd = compose_base()
+    cmd = compose_base(ctx)
     if profile:
         cmd += ["--profile", profile]
     cmd += ["logs"]
@@ -711,9 +786,9 @@ def cmd_logs(args: argparse.Namespace) -> None:
     run(cmd)
 
 
-def cmd_exec(args: argparse.Namespace) -> None:
+def cmd_exec(args: argparse.Namespace, ctx: Context) -> None:
     service_name, profile = resolve_service(args.service)
-    cmd = compose_base() + ["exec"]
+    cmd = compose_base(ctx) + ["exec"]
     if profile:
         cmd += ["--profile", profile]
     if args.user:
@@ -728,7 +803,7 @@ def cmd_exec(args: argparse.Namespace) -> None:
     run(cmd)
 
 
-def cmd_alias(args: argparse.Namespace) -> None:
+def cmd_alias(args: argparse.Namespace, ctx: Context) -> None:
     shell = args.shell or "bash"
     function = '''silicium() {
     local cmd=$1
@@ -798,307 +873,378 @@ alias sstop='silicium stop'
     print(f"Aliases appended to {target}")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="silicium",
-        description="Silicium CLI and shell",
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
+def cmd_shell(_: argparse.Namespace, ctx: Context) -> None:
+    launch_shell(ctx)
 
-    test_p = sub.add_parser("test", help="Install dev deps and run pytest")
-    test_p.set_defaults(func=cmd_test)
 
-    check_p = sub.add_parser("check", help="Run core stability checks")
-    check_p.add_argument(
+def configure_test(parser: argparse.ArgumentParser) -> None:
+    pass
+
+
+def configure_check(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--full",
         action="store_true",
         help="Run full checks (includes C++ tests and Docker proxy smoke).",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--scope",
         choices=["all", "splitter", "executor", "worker"],
         default="all",
         help="Limit checks to a single component (default: all).",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--docker-strict",
         action="store_true",
         help="Shortcut for --full --runner docker --docker --require-docker.",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--native",
         action="store_true",
         help="Run worker native mode (may be unstable on some fragments).",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--dynamo",
         action="store_true",
         help="Run worker DynamoRIO mode (requires Docker).",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--docker",
         dest="docker",
         action="store_true",
         help="Force Docker checks on (fails if Docker is missing).",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--no-docker",
         dest="docker",
         action="store_false",
         help="Disable Docker checks.",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--require-docker",
         action="store_true",
         help="Fail if Docker is missing.",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--python",
         help="Path to Python executable used for tests.",
     )
-    check_p.add_argument(
+    parser.add_argument(
         "--runner",
         choices=["auto", "docker", "wsl"],
         default="auto",
         help="Runner for core checks (Windows default: Docker when available).",
     )
-    check_p.set_defaults(func=cmd_check, docker=None)
+    parser.set_defaults(docker=None)
 
-    smoke_p = sub.add_parser("smoke", help="Run the proxy smoke test")
-    smoke_p.set_defaults(func=cmd_smoke)
 
-    tools_p = sub.add_parser("tools", help="Toolbox helpers")
-    tools_sub = tools_p.add_subparsers(dest="tools_cmd", required=True)
+def configure_smoke(parser: argparse.ArgumentParser) -> None:
+    pass
 
-    tools_demo = tools_sub.add_parser("demo", help="Run splitter demo")
-    tools_demo.set_defaults(func=cmd_tools_demo)
 
-    tools_clean = tools_sub.add_parser("clean", help="Clean splitter + fragment executor artifacts")
-    tools_clean.set_defaults(func=cmd_tools_clean)
+def configure_tools_demo(parser: argparse.ArgumentParser) -> None:
+    pass
 
-    clean_p = sub.add_parser("clean", help="Clean caches/ledgers")
-    clean_p.add_argument(
+
+def configure_tools_clean(parser: argparse.ArgumentParser) -> None:
+    pass
+
+
+def configure_clean(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "mode",
         nargs="?",
         choices=["cache", "ledgers", "all"],
         help="What to clean (default cache).",
     )
-    clean_p.add_argument(
+    parser.add_argument(
         "--ledgers",
         action="store_true",
         help="Legacy flag: clean caches and ledgers (same as 'all').",
     )
-    clean_p.add_argument(
+    parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
         help="Skip confirmations when cleaning ledgers.",
     )
-    clean_p.set_defaults(func=cmd_clean)
 
-    ledger_p = sub.add_parser("ledger", help="Manage ledger volumes")
-    ledger_sub = ledger_p.add_subparsers(dest="ledger_cmd", required=True)
 
-    ledger_list = ledger_sub.add_parser("list", help="List managed ledger volumes")
-    ledger_list.set_defaults(func=cmd_ledger_list)
+def configure_ledger_list(parser: argparse.ArgumentParser) -> None:
+    pass
 
-    ledger_wipe_p = ledger_sub.add_parser("wipe", help="Delete ledger volumes")
-    ledger_wipe_p.add_argument(
+
+def configure_ledger_wipe(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "-n",
         "--network",
         choices=sorted(LEDGER_SUFFIX.keys()),
         action="append",
         help="Network to wipe (repeatable).",
     )
-    ledger_wipe_p.add_argument(
+    parser.add_argument(
         "--all",
         action="store_true",
         help="Wipe all known ledger volumes.",
     )
-    ledger_wipe_p.add_argument(
+    parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
         help="Skip confirmation prompt.",
     )
-    ledger_wipe_p.add_argument(
+    parser.add_argument(
         "networks",
         nargs="*",
         choices=LEDGER_NETWORKS,
         help="Network names to wipe (shortcut for repeated --network).",
     )
-    ledger_wipe_p.set_defaults(func=cmd_ledger_wipe)
 
-    ledger_export = ledger_sub.add_parser("export", help="Archive a ledger volume")
-    ledger_export.add_argument(
+
+def configure_ledger_export(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "network",
         choices=LEDGER_NETWORKS,
         help="Which ledger to export.",
     )
-    ledger_export.add_argument(
+    parser.add_argument(
         "-o",
         "--output",
         help="Output tar.gz path (default: <volume>.tar.gz).",
     )
-    ledger_export.add_argument(
+    parser.add_argument(
         "-f",
         "--force",
         action="store_true",
         help="Overwrite the output file if it exists.",
     )
-    ledger_export.set_defaults(func=cmd_ledger_export)
 
-    ledger_import = ledger_sub.add_parser("import", help="Restore a ledger volume")
-    ledger_import.add_argument(
+
+def configure_ledger_import(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "network",
         choices=LEDGER_NETWORKS,
         help="Which ledger to import into.",
     )
-    ledger_import.add_argument(
+    parser.add_argument(
         "--archive",
         required=True,
         help="Path to the tar.gz archive to restore.",
     )
-    ledger_import.add_argument(
+    parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
         help="Skip confirmation prompt.",
     )
-    ledger_import.set_defaults(func=cmd_ledger_import)
 
-    workload_p = sub.add_parser("workload", help="Inspect workload manifests")
-    workload_sub = workload_p.add_subparsers(dest="workload_cmd", required=True)
 
-    workload_list = workload_sub.add_parser("list", help="List workloads")
-    workload_list.add_argument(
+def configure_workload_list(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--tree",
         action="store_true",
         help="Display full tree instead of compact list.",
     )
-    workload_list.set_defaults(func=cmd_workload_list)
 
-    workload_show = workload_sub.add_parser("show", help="Show a workload manifest")
-    workload_show.add_argument(
+
+def configure_workload_show(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "path",
         help="Workload path (e.g., calcul/math-simulation).",
     )
-    workload_show.add_argument(
+    parser.add_argument(
         "--readme",
         action="store_true",
         help="Also display README.md if present.",
     )
-    workload_show.set_defaults(func=cmd_workload_show)
 
-    workload_queue = workload_sub.add_parser("queue", help="Generate a queue file from a summary.json")
-    workload_queue.add_argument(
+
+def configure_workload_queue(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--summary",
         required=True,
         help="Path to summary.json produced by splitter.",
     )
-    workload_queue.add_argument(
+    parser.add_argument(
         "--output",
         help="Destination queue file (default: <summary_dir>/queue.txt).",
     )
-    workload_queue.set_defaults(func=cmd_workload_queue)
 
-    history_p = sub.add_parser("history", help="Inspect Silicium shell history")
-    history_sub = history_p.add_subparsers(dest="history_cmd", required=True)
 
-    history_show = history_sub.add_parser("show", help="Display history entries")
-    history_show.add_argument(
+def configure_history_show(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--tail",
         type=int,
         help="Show only the last N entries.",
     )
-    history_show.set_defaults(func=cmd_history_show)
 
-    history_clear = history_sub.add_parser("clear", help="Purge history file")
-    history_clear.set_defaults(func=cmd_history_clear)
 
-    start_p = sub.add_parser("start", help="Start a Silicium service")
-    start_p.add_argument(
+def configure_history_clear(parser: argparse.ArgumentParser) -> None:
+    pass
+
+
+def configure_start(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "target",
         choices=START_CHOICES,
         help="Which service to start.",
     )
-    start_p.set_defaults(func=cmd_start)
 
-    stop_p = sub.add_parser("stop", help="Stop services")
-    stop_p.add_argument(
+
+def configure_stop(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "target",
         nargs="?",
         choices=START_CHOICES + ["all"],
         help="Service to stop (default all).",
     )
-    stop_p.add_argument(
+    parser.add_argument(
         "-v",
         "--volumes",
         action="store_true",
         help="When stopping all, also remove volumes (compose down -v).",
     )
-    stop_p.add_argument(
+    parser.add_argument(
         "--remove",
         action="store_true",
         help="When stopping a single service, also remove its container.",
     )
-    stop_p.set_defaults(func=cmd_stop)
 
-    status_p = sub.add_parser("status", help="Show docker compose ps")
-    status_p.set_defaults(func=cmd_status)
 
-    logs_p = sub.add_parser("logs", help="Tail service logs")
-    logs_p.add_argument(
+def configure_status(parser: argparse.ArgumentParser) -> None:
+    pass
+
+
+def configure_logs(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "target",
         nargs="?",
         default="localnet",
         help="Service alias or compose name (default localnet).",
     )
-    logs_p.add_argument(
+    parser.add_argument(
         "-f",
         "--follow",
         action="store_true",
         help="Follow logs (docker compose logs -f).",
     )
-    logs_p.set_defaults(func=cmd_logs)
 
-    exec_p = sub.add_parser("exec", help="Run command in a service container")
-    exec_p.add_argument(
+
+def configure_exec(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "service",
         help="Service alias or compose name.",
     )
-    exec_p.add_argument(
+    parser.add_argument(
         "-u",
         "--user",
         help="User to run as inside the container.",
     )
-    exec_p.add_argument(
+    parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
         help="Command to run (default /bin/bash).",
     )
-    exec_p.set_defaults(func=cmd_exec)
 
-    alias_p = sub.add_parser("alias", help="Install helper function/aliases in shell rc")
-    alias_p.add_argument(
+
+def configure_alias(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
         "--shell",
         choices=["bash", "zsh", "fish"],
         help="Shell type for auto-detection (default bash).",
     )
-    alias_p.add_argument(
+    parser.add_argument(
         "--path",
         help="Custom rc file to append aliases.",
     )
-    alias_p.set_defaults(func=cmd_alias)
 
-    shell_p = sub.add_parser("shell", help="Start interactive shell")
-    shell_p.set_defaults(func=lambda _: launch_shell())
 
+def configure_shell(parser: argparse.ArgumentParser) -> None:
+    pass
+
+
+def build_registry() -> CommandRegistry:
+    registry = CommandRegistry()
+    registry.add(CommandSpec("test", "Install dev deps and run pytest", configure_test, cmd_test))
+    registry.add(CommandSpec("check", "Run core stability checks", configure_check, cmd_check))
+    registry.add(CommandSpec("smoke", "Run the proxy smoke test", configure_smoke, cmd_smoke))
+    registry.add(CommandSpec("clean", "Clean caches/ledgers", configure_clean, cmd_clean))
+    registry.add(CommandSpec("start", "Start a Silicium service", configure_start, cmd_start))
+    registry.add(CommandSpec("stop", "Stop services", configure_stop, cmd_stop))
+    registry.add(CommandSpec("status", "Show docker compose ps", configure_status, cmd_status))
+    registry.add(CommandSpec("logs", "Tail service logs", configure_logs, cmd_logs))
+    registry.add(CommandSpec("exec", "Run command in a service container", configure_exec, cmd_exec))
+    registry.add(CommandSpec("alias", "Install helper function/aliases in shell rc", configure_alias, cmd_alias))
+    registry.add(CommandSpec("shell", "Start interactive shell", configure_shell, cmd_shell))
+
+    registry.add_group(
+        CommandGroup(
+            name="tools",
+            help="Toolbox helpers",
+            dest="tools_cmd",
+            commands=[
+                CommandSpec("demo", "Run splitter demo", configure_tools_demo, cmd_tools_demo),
+                CommandSpec(
+                    "clean",
+                    "Clean splitter + fragment executor artifacts",
+                    configure_tools_clean,
+                    cmd_tools_clean,
+                ),
+            ],
+        )
+    )
+    registry.add_group(
+        CommandGroup(
+            name="ledger",
+            help="Manage ledger volumes",
+            dest="ledger_cmd",
+            commands=[
+                CommandSpec("list", "List managed ledger volumes", configure_ledger_list, cmd_ledger_list),
+                CommandSpec("wipe", "Delete ledger volumes", configure_ledger_wipe, cmd_ledger_wipe),
+                CommandSpec("export", "Archive a ledger volume", configure_ledger_export, cmd_ledger_export),
+                CommandSpec("import", "Restore a ledger volume", configure_ledger_import, cmd_ledger_import),
+            ],
+        )
+    )
+    registry.add_group(
+        CommandGroup(
+            name="workload",
+            help="Inspect workload manifests",
+            dest="workload_cmd",
+            commands=[
+                CommandSpec("list", "List workloads", configure_workload_list, cmd_workload_list),
+                CommandSpec("show", "Show a workload manifest", configure_workload_show, cmd_workload_show),
+                CommandSpec("queue", "Generate a queue file from a summary.json", configure_workload_queue, cmd_workload_queue),
+            ],
+        )
+    )
+    registry.add_group(
+        CommandGroup(
+            name="history",
+            help="Inspect Silicium shell history",
+            dest="history_cmd",
+            commands=[
+                CommandSpec("show", "Display history entries", configure_history_show, cmd_history_show),
+                CommandSpec("clear", "Purge history file", configure_history_clear, cmd_history_clear),
+            ],
+        )
+    )
+
+    return registry
+
+
+def build_parser(ctx: Context) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="silicium",
+        description="Silicium CLI and shell",
+    )
+    registry = build_registry()
+    registry.register(parser, ctx)
     return parser
 
 
-def execute(argv: list[str]) -> None:
-    parser = build_parser()
+def execute(argv: list[str], ctx: Context) -> None:
+    parser = build_parser(ctx)
     args = parser.parse_args(argv)
     args.func(args)
 
@@ -1245,8 +1391,8 @@ def get_prompt() -> str:
     return f"{base}> "
 
 
-def launch_shell() -> None:
-    parser = build_parser()
+def launch_shell(ctx: Context) -> None:
+    parser = build_parser(ctx)
     setup_readline(parser)
     print(
         colorize(
@@ -1285,11 +1431,12 @@ def launch_shell() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
+    ctx = build_context()
     if not argv:
-        launch_shell()
+        launch_shell(ctx)
         return
     try:
-        execute(argv)
+        execute(argv, ctx)
     except KeyboardInterrupt:
         print()
         sys.exit(1)
