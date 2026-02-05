@@ -492,6 +492,47 @@ class PyFinalConstantUpperRule(ScopedRule):
         return issues
 
 
+class CppUnsafePatternsRule(ScopedRule):
+    def __init__(self, spec: dict) -> None:
+        super().__init__(
+            spec,
+            rule_id=spec.get("id", "cpp.no_unsafe_allocation"),
+            description=spec.get("description", ""),
+        )
+        self._patterns: list[dict[str, object]] = []
+        for entry in spec.get("patterns", []):
+            regex = entry.get("regex")
+            if not regex:
+                continue
+            self._patterns.append(
+                {
+                    "regex": re.compile(regex),
+                    "label": entry.get("label", regex),
+                    "message": entry.get("message", ""),
+                }
+            )
+
+    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
+        text = sanitize_cpp(content)
+        issues: List[Issue] = []
+        for entry in self._patterns:
+            regex = entry["regex"]
+            for match in regex.finditer(text):
+                line, col = line_col_from_index(text, match.start())
+                message = entry.get("message") or f"Unsafe pattern detected: {entry.get('label')}."
+                issues.append(
+                    Issue(
+                        rule_id=self.meta.rule_id,
+                        message=str(message),
+                        path=path,
+                        line=line,
+                        column=col,
+                        severity=self._severity,
+                    )
+                )
+        return issues
+
+
 class JsonRule(Rule):
     def __init__(self, spec: dict) -> None:
         rule_id = spec.get("id")
@@ -615,6 +656,7 @@ def _make_rule(spec: dict) -> Rule:
         "py.file_snake_case": PyFileSnakeCaseRule,
         "py.function_snake_case": PyFunctionSnakeCaseRule,
         "py.final_constant_upper_snake": PyFinalConstantUpperRule,
+        "cpp.no_unsafe_allocation": CppUnsafePatternsRule,
     }
     rule_cls = custom.get(rule_id)
     if rule_cls:
