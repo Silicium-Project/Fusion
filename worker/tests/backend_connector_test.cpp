@@ -1,8 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "partition/PartitionSummary.hpp"
@@ -29,6 +34,112 @@ std::filesystem::path write_script(const std::filesystem::path& dir, const std::
                                  std::filesystem::perm_options::add);
     return path;
 }
+
+std::string read_file(const std::filesystem::path& path) {
+    std::ifstream file(path);
+    return std::string(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+}
+
+bool wait_for_file(const std::filesystem::path& path, int retries = 50, int delay_ms = 20) {
+    for (int i = 0; i < retries; ++i) {
+        if (std::filesystem::exists(path))
+            return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    }
+    return false;
+}
+
+std::string resolve_python() {
+    if (const char* env = std::getenv("PYTHON"); env && *env)
+        return env;
+#if defined(_WIN32)
+    return "python";
+#else
+    return "python3";
+#endif
+}
+
+struct HttpStubServer {
+    std::filesystem::path dir;
+    std::filesystem::path script;
+    std::filesystem::path port_file;
+    std::filesystem::path payload_file;
+    std::filesystem::path response_file;
+    FILE* process = nullptr;
+    int port = 0;
+
+    explicit HttpStubServer(std::filesystem::path base) : dir(std::move(base)) {
+        port_file = dir / "port.txt";
+        payload_file = dir / "payload.json";
+        response_file = dir / "response.json";
+    }
+
+    void start() {
+        std::ofstream(response_file) << "{\n"
+                                     << "  \"success\":true,\n"
+                                     << "  \"error\":\"\",\n"
+                                     << "  \"stdout\":\"http_ok\",\n"
+                                     << "  \"stderr\":\"\",\n"
+                                     << "  \"fd_outputs\":{},\n"
+                                     << "  \"initial_regs\":[],\n"
+                                     << "  \"final_regs\":[],\n"
+                                     << "  \"memory_patches\":[],\n"
+                                     << "  \"instructions\":2,\n"
+                                     << "  \"memory_accesses\":1\n"
+                                     << "}\n";
+        script = write_script(dir, "stub_http.py",
+                              "import http.server\n"
+                              "import socketserver\n"
+                              "import threading\n"
+                              "import sys\n"
+                              "\n"
+                              "port_file = sys.argv[1]\n"
+                              "payload_file = sys.argv[2]\n"
+                              "response_file = sys.argv[3]\n"
+                              "\n"
+                              "class Handler(http.server.BaseHTTPRequestHandler):\n"
+                              "    def do_POST(self):\n"
+                              "        length = int(self.headers.get('Content-Length', '0'))\n"
+                              "        body = self.rfile.read(length)\n"
+                              "        with open(payload_file, 'wb') as f:\n"
+                              "            f.write(body)\n"
+                              "        with open(response_file, 'rb') as f:\n"
+                              "            payload = f.read()\n"
+                              "        self.send_response(200)\n"
+                              "        self.send_header('Content-Type', 'application/json')\n"
+                              "        self.end_headers()\n"
+                              "        self.wfile.write(payload)\n"
+                              "        threading.Thread(target=httpd.shutdown, daemon=True).start()\n"
+                              "    def log_message(self, *args):\n"
+                              "        return\n"
+                              "\n"
+                              "with socketserver.TCPServer(('127.0.0.1', 0), Handler) as httpd:\n"
+                              "    port = httpd.server_address[1]\n"
+                              "    with open(port_file, 'w') as f:\n"
+                              "        f.write(str(port))\n"
+                              "    httpd.serve_forever()\n");
+        std::ostringstream cmd;
+        cmd << resolve_python() << " \"" << script.string() << "\""
+            << " \"" << port_file.string() << "\""
+            << " \"" << payload_file.string() << "\""
+            << " \"" << response_file.string() << "\"";
+        process = popen(cmd.str().c_str(), "r");
+        if (!process)
+            throw std::runtime_error("Failed to start HTTP stub server");
+        if (!wait_for_file(port_file))
+            throw std::runtime_error("HTTP stub server did not start");
+        port = std::stoi(read_file(port_file));
+    }
+
+    void stop() {
+        if (process) {
+            pclose(process);
+            process = nullptr;
+        }
+    }
+
+    ~HttpStubServer() { stop(); }
+};
 
 }  // namespace
 
@@ -151,6 +262,38 @@ TEST(BackendConnector, HttpConnectorMessages) {
     EXPECT_TRUE(res.success);
     EXPECT_EQ("ok", res.program_stdout);
     EXPECT_EQ(1u, res.instructions_executed);
+}
+
+TEST(BackendConnector, HttpConnectorPostsPayloadToServer) {
+    auto tmp = make_tmp_dir("backend_http_integration");
+    HttpStubServer server(tmp);
+    server.start();
+
+    WorkerConfig config;
+    config.connector = ConnectorMode::Http;
+    config.connector_endpoint = "http://127.0.0.1:" + std::to_string(server.port) + "/execute";
+    fragment::PartitionInfo part;
+    part.id = "p1";
+    BackendRequest req{part,
+                       tmp.string(),
+                       (tmp / "prog.asm").string(),
+                       (tmp / "prog.bin").string(),
+                       {{"rax", 0x10}},
+                       {{"rbx", 0x20}},
+                       {},
+                       {}};
+
+    auto connector = make_backend_connector(config);
+    fragment::ExecutionResult res = connector->execute(req);
+    EXPECT_TRUE(res.success);
+    EXPECT_EQ("http_ok", res.program_stdout);
+    EXPECT_EQ(2u, res.instructions_executed);
+
+    const std::string payload = read_file(server.payload_file);
+    EXPECT_NE(std::string::npos, payload.find("\"type\":\"binary\""));
+    EXPECT_NE(std::string::npos, payload.find("\"partition_id\":\"p1\""));
+    EXPECT_NE(std::string::npos, payload.find("\"asm_path\""));
+    EXPECT_NE(std::string::npos, payload.find("\"binary_path\""));
 }
 
 TEST(BackendConnector, DynamoBackendMissingBinaryThrows) {

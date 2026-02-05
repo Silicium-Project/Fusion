@@ -229,12 +229,47 @@ backends d'exécution. Deux modes sont câblés :
 
 1. `--connector direct` (défaut) : exécute les fragments localement (émulateur) ou
    lance `drrun` via Docker pour le backend Dynamo.
-2. `--connector http` : préfigure un mode serveur. Pour l'instant, il renvoie une
-   erreur explicite tant qu'aucun point d'entrée HTTP n'est branché. Utilisez
+2. `--connector http` : délègue l'exécution à un endpoint HTTP qui reçoit un
+   payload JSON et renvoie un `ExecutionResult`. Utilisez
    `--connector-endpoint https://localhost:9000/run` pour définir la cible.
 
 Cette abstraction permet d'introduire ultérieurement un “runner” externe sans
 changer la logique du worker (sérialisation JSON des registres/mémoires).
+
+### Contrat HTTP (payload)
+
+Requête `POST` (JSON) :
+
+```
+{
+  "type":"binary",
+  "partition_id":"func_main",
+  "asm_path":"/path/func_main.asm",
+  "binary_path":"/path/func_main.bin",
+  "mode":"emu",
+  "fd_redirections":[{"fd":1,"capture":true,"input":"","alias":"stdout"}],
+  "inputs":["rax=0x1"],
+  "register_state":["rbx=0x2"],
+  "memory":["0x1000:deadbeef"]
+}
+```
+
+Réponse `ExecutionResult` :
+
+```
+{
+  "success":true,
+  "error":"",
+  "stdout":"ok",
+  "stderr":"",
+  "fd_outputs":{"1":{"data":"6f6b","alias":"stdout"}},
+  "initial_regs":["rax=0x1"],
+  "final_regs":["rax=0x2"],
+  "memory_patches":["0x1000:beef"],
+  "instructions":12,
+  "memory_accesses":4
+}
+```
 
 ### Test rapide : lecture sur `stdin`
 
