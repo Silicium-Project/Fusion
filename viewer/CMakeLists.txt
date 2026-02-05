@@ -15,6 +15,7 @@ endif()
 
 add_executable(fragment_viewer
     src/main.cpp
+    src/GraphModel.cpp
     src/GraphWindow.cpp
 )
 
