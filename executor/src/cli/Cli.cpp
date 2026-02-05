@@ -192,7 +192,8 @@ bool execute_entry(const ExecutionEntry& entry,
                    bool force_native,
                    FragmentExecutor& executor,
                    ExecutionResult& result) {
-    auto backend = make_backend(native_mode, force_native);
+    static std::unique_ptr<ExecutionBackendFactory> factory = make_backend_factory();
+    auto backend = factory->create(native_mode, force_native);
     return backend->run(entry, executor, result);
 }
 
