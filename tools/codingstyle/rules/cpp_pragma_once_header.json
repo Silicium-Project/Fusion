@@ -1,0 +1,13 @@
+{
+  "id": "cpp.pragma_once_header",
+  "description": "Require exactly one #pragma once in headers.",
+  "scope": {
+    "include": ["**/*.hpp", "**/*.h"]
+  },
+  "limits": {
+    "pragma_once": {
+      "min": 1,
+      "max": 1
+    }
+  }
+}

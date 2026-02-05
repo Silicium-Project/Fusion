@@ -199,6 +199,14 @@ def re_class_or_struct() -> re.Pattern:
     return re.compile(r"\b(?<!enum\s)(class|struct)\s+[A-Za-z_]\w*\s*(?:final\s*)?(?:[^;{]*)\{")
 
 
+def re_using_namespace() -> re.Pattern:
+    return re.compile(r"\busing\s+namespace\s+[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*\s*;")
+
+
+def re_pragma_once() -> re.Pattern:
+    return re.compile(r"^\s*#\s*pragma\s+once\b", re.MULTILINE)
+
+
 def _match_any(rel_path, patterns: Iterable[str]) -> bool:
     return any(rel_path.match(pat) for pat in patterns)
 
@@ -222,6 +230,29 @@ def _internal_templates() -> dict[str, dict]:
                 },
             ],
         },
+        "cpp.no_using_namespace_header": {
+            "sanitize": "cpp",
+            "patterns": [
+                {
+                    "name": "using_namespace",
+                    "label": "using namespace directive",
+                    "regex": re_using_namespace(),
+                    "default_max": 0,
+                }
+            ],
+        },
+        "cpp.pragma_once_header": {
+            "sanitize": "cpp",
+            "patterns": [
+                {
+                    "name": "pragma_once",
+                    "label": "#pragma once",
+                    "regex": re_pragma_once(),
+                    "default_min": 1,
+                    "default_max": 1,
+                }
+            ],
+        },
     }
 
 
@@ -238,6 +269,7 @@ class JsonRule(Rule):
             rule_id=rule_id,
             description=spec.get("description", ""),
         )
+        self._severity = spec.get("severity", "error")
         self._sanitize = template.get("sanitize", "none")
         scope = spec.get("scope", {})
         self._include = list(scope.get("include", []))
@@ -247,13 +279,25 @@ class JsonRule(Rule):
         limits = spec.get("limits", {})
         for entry in template.get("patterns", []):
             name = entry.get("name", "pattern")
-            max_count = int(limits.get(name, entry.get("default_max", 0)))
+            limit_spec = limits.get(name, None)
+            default_min = int(entry.get("default_min", 0))
+            default_max = int(entry.get("default_max", -1))
+            if isinstance(limit_spec, dict):
+                min_count = int(limit_spec.get("min", default_min))
+                max_count = int(limit_spec.get("max", default_max))
+            elif limit_spec is None:
+                min_count = default_min
+                max_count = default_max
+            else:
+                min_count = default_min
+                max_count = int(limit_spec)
             self._patterns.append(
                 {
                     "name": name,
                     "label": entry.get("label", name),
                     "regex": entry["regex"],
                     "max": max_count,
+                    "min": min_count,
                 }
             )
 
@@ -276,7 +320,24 @@ class JsonRule(Rule):
         issues: List[Issue] = []
         for pattern in self._patterns:
             matches = list(pattern["regex"].finditer(text))
+            min_count = pattern["min"]
             max_count = pattern["max"]
+            if min_count > 0 and len(matches) < min_count:
+                line = 1
+                col = 1
+                if text:
+                    line, col = line_col_from_index(text, 0)
+                label = pattern["label"]
+                issues.append(
+                    Issue(
+                        rule_id=self.meta.rule_id,
+                        message=f"Expected at least {min_count} {label}, found {len(matches)}.",
+                        path=path,
+                        line=line,
+                        column=col,
+                        severity=self._severity,
+                    )
+                )
             if max_count >= 0 and len(matches) > max_count:
                 match = matches[max_count]
                 line, col = line_col_from_index(text, match.start())
@@ -288,6 +349,7 @@ class JsonRule(Rule):
                         path=path,
                         line=line,
                         column=col,
+                        severity=self._severity,
                     )
                 )
         return issues

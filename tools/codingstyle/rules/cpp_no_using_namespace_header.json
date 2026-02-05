@@ -1,0 +1,10 @@
+{
+  "id": "cpp.no_using_namespace_header",
+  "description": "Disallow using-namespace directives in headers.",
+  "scope": {
+    "include": ["**/*.hpp", "**/*.h"]
+  },
+  "limits": {
+    "using_namespace": 0
+  }
+}

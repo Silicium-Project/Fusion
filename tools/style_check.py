@@ -73,6 +73,11 @@ def main(argv: List[str]) -> int:
     parser.add_argument("--exclude", action="append", default=[], help="Exclude glob (repeatable)")
     parser.add_argument("--rules", action="append", default=[], help="Rule IDs to enable (repeatable)")
     parser.add_argument("--list-rules", action="store_true", help="List available rules")
+    parser.add_argument(
+        "--warnings-as-errors",
+        action="store_true",
+        help="Treat warning severity as an error",
+    )
     parser.add_argument("--format", choices=["text", "json"], default="text")
 
     args = parser.parse_args(argv)
@@ -112,7 +117,7 @@ def main(argv: List[str]) -> int:
     for path in iter_files(root, include, exclude):
         rel = PurePosixPath(path.relative_to(root).as_posix())
         try:
-            content = path.read_text(encoding="utf-8", errors="replace")
+            content = path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError as exc:
             issues.append(
                 Issue(
@@ -148,7 +153,12 @@ def main(argv: List[str]) -> int:
             rel = issue.path.relative_to(root)
             print(f"{rel}:{issue.line}:{issue.column}: {issue.severity}: {issue.rule_id}: {issue.message}")
 
-    return 1 if issues else 0
+    if args.warnings_as_errors:
+        has_errors = bool(issues)
+    else:
+        has_errors = any(issue.severity != "warning" for issue in issues)
+
+    return 1 if has_errors else 0
 
 
 if __name__ == "__main__":
