@@ -63,9 +63,83 @@ std::shared_ptr<ILibraryScanner> BuildScanner(const PipelineConfig& config) {
     return LibraryScannerFactory::Create(resolver, indexer);
 }
 
+bool is_executable_file(const std::filesystem::path& path) {
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(path, ec))
+        return false;
+#ifdef _WIN32
+    (void)ec;
+    return true;
+#else
+    auto perms = std::filesystem::status(path, ec).permissions();
+    if (ec)
+        return false;
+    using perms = std::filesystem::perms;
+    return (perms & perms::owner_exec) != perms::none
+        || (perms & perms::group_exec) != perms::none
+        || (perms & perms::others_exec) != perms::none;
+#endif
+}
+
+std::vector<std::string> split_paths(const std::string& value, char sep) {
+    std::vector<std::string> out;
+    std::string current;
+    for (char c : value) {
+        if (c == sep) {
+            out.push_back(current);
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    out.push_back(current);
+    return out;
+}
+
+std::vector<std::string> pathext_list() {
+#ifdef _WIN32
+    if (auto env = GetEnv("PATHEXT")) {
+        auto exts = split_paths(*env, ';');
+        if (!exts.empty())
+            return exts;
+    }
+    return {".exe", ".bat", ".cmd"};
+#else
+    return {""};
+#endif
+}
+
 bool CommandExists(const std::string& cmd) {
-    std::string check = "command -v " + cmd + " >/dev/null 2>&1";
-    return std::system(check.c_str()) == 0;
+    if (cmd.empty())
+        return false;
+    std::filesystem::path candidate(cmd);
+    if (candidate.has_parent_path())
+        return is_executable_file(candidate);
+
+    std::string path_env;
+    if (auto env = GetEnv("PATH"))
+        path_env = *env;
+    if (path_env.empty())
+        return false;
+
+#ifdef _WIN32
+    const char sep = ';';
+#else
+    const char sep = ':';
+#endif
+
+    const auto paths = split_paths(path_env, sep);
+    const auto exts = pathext_list();
+    for (const auto& dir : paths) {
+        if (dir.empty())
+            continue;
+        for (const auto& ext : exts) {
+            std::filesystem::path probe = std::filesystem::path(dir) / (cmd + ext);
+            if (is_executable_file(probe))
+                return true;
+        }
+    }
+    return false;
 }
 
 std::string DetectArchFromBinary(const PipelineConfig& config) {
