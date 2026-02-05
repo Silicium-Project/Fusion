@@ -36,10 +36,17 @@ std::unique_ptr<IHashAlgorithm> SummaryHashCalculator::make_hash() const {
 }
 
 std::string SummaryHashCalculator::ComputePartitionHash(
-    const Partition& p, const std::set<std::string>& resolved_libs) const {
+    const Partition& p,
+    const std::set<std::string>& resolved_libs,
+    const std::string& partition_os,
+    const std::string& partition_format) const {
     auto hasher = make_hash();
     hasher->Reset();
     hasher->AddString(p.Id());
+    if (!partition_os.empty())
+        hasher->AddString(partition_os);
+    if (!partition_format.empty())
+        hasher->AddString(partition_format);
     hasher->AddUint64(p.StartAddr());
     hasher->AddUint64(p.EndAddr());
     hasher->AddString(p.BinHash());
@@ -72,9 +79,15 @@ std::string SummaryHashCalculator::ComputeSummaryHash(
     const std::string& binary_hash, const std::string& memory_hash, bool can_split,
     const std::vector<std::string>& required_libraries,
     const std::vector<LibraryInfo>& libraries,
-    const std::vector<std::pair<std::string, std::string>>& partition_hashes) const {
+    const std::vector<std::pair<std::string, std::string>>& partition_hashes,
+    const std::string& binary_os,
+    const std::string& binary_format) const {
     auto hasher = make_hash();
     hasher->Reset();
+    if (!binary_os.empty())
+        hasher->AddString(binary_os);
+    if (!binary_format.empty())
+        hasher->AddString(binary_format);
     hasher->AddString(binary_hash);
     hasher->AddString(memory_hash);
     hasher->AddBool(can_split);

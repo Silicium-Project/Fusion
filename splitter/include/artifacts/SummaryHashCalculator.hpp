@@ -23,14 +23,18 @@ public:
     explicit SummaryHashCalculator(HashService hash_service);
 
     std::string ComputePartitionHash(const Partition& partition,
-                                     const std::set<std::string>& resolved_libs) const;
+                                     const std::set<std::string>& resolved_libs,
+                                     const std::string& partition_os = {},
+                                     const std::string& partition_format = {}) const;
     std::string ComputeMemoryHash(const std::vector<MemorySegment>& segments) const;
     std::string ComputeSummaryHash(const std::string& binary_hash,
                                    const std::string& memory_hash,
                                    bool can_split,
                                    const std::vector<std::string>& required_libraries,
                                    const std::vector<LibraryInfo>& libraries,
-                                   const std::vector<std::pair<std::string, std::string>>& partition_hashes) const;
+                                   const std::vector<std::pair<std::string, std::string>>& partition_hashes,
+                                   const std::string& binary_os = {},
+                                   const std::string& binary_format = {}) const;
     std::unique_ptr<IHashAlgorithm> make_hash() const;
     std::string AlgorithmName() const;
 

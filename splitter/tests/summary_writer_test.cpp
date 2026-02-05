@@ -100,6 +100,10 @@ TEST(SummaryWriter, WritesSummaryAndHashes) {
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     // Basic presence checks
     EXPECT_NE(content.find("\"binary\""), std::string::npos);
+    EXPECT_NE(content.find("\"binary_os\""), std::string::npos);
+    EXPECT_NE(content.find("\"binary_format\""), std::string::npos);
+    EXPECT_NE(content.find("\"os\": "), std::string::npos);
+    EXPECT_NE(content.find("\"format\": "), std::string::npos);
     EXPECT_NE(content.find("\"partitions\""), std::string::npos);
     EXPECT_NE(content.find("libfake.so"), std::string::npos);
 }

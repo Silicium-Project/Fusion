@@ -19,6 +19,8 @@ namespace splitter {
 class SummaryBuilder {
 public:
     void SetBinaryInfo(const std::string& binary_path,
+                       const std::string& binary_os,
+                       const std::string& binary_format,
                        const std::string& binary_hash,
                        const std::string& hash_algo,
                        const std::string& memory_hash,
@@ -32,7 +34,9 @@ public:
 
     void AddPartition(const Partition& partition,
                       const std::optional<PartitionFiles>& files,
-                      const std::set<std::string>& required_libraries);
+                      const std::set<std::string>& required_libraries,
+                      const std::string& partition_os,
+                      const std::string& partition_format);
 
     void SetPartitionHashes(const std::vector<std::pair<std::string, std::string>>& hashes);
     void SetMemorySegments(const std::vector<MemorySegment>& segments);
