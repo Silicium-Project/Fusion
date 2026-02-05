@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -43,6 +45,7 @@ private:
     std::unique_ptr<BackendConnector> connector_;
     std::vector<MemorySnapshot> initial_memory_;
     TaskRouter router_;
+    std::map<FragmentOsAction, std::function<TaskReport(const TaskContext&, const Task&)>> action_handlers_;
 
     void record_memory_patches(const std::vector<fragment::MemoryPatch>& patches);
     void record_register_state(const RegisterState& regs);
@@ -52,7 +55,13 @@ private:
                             fragment::ExecutionResult&& result);
     TaskReport run_binary_task(const TaskContext& context,
                                const Task& task);
+    TaskReport run_backend(const TaskContext& context,
+                           const Task& task);
+    TaskReport build_policy_report(const fragment::PartitionInfo& partition,
+                                   const Task& task,
+                                   const std::string& message);
     FragmentOsAction resolve_fragment_action(const fragment::PartitionInfo& partition) const;
+    void register_action_handlers();
 
     std::vector<MemorySnapshot> snapshot_memory_state() const;
 };

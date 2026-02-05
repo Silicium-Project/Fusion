@@ -123,6 +123,7 @@ Worker::Worker(WorkerConfig config, std::unique_ptr<BackendConnector> connector)
         connector_ = make_backend_connector(config_);
     router_.register_handler(TaskType::Binary, std::make_unique<BinaryTaskHandler>(*this));
     router_.register_handler(TaskType::Health, std::make_unique<HealthTaskHandler>(*this));
+    register_action_handlers();
 }
 
 void Worker::reset_state() {
@@ -189,59 +190,83 @@ TaskReport Worker::run_binary_task(const TaskContext& context,
     const auto wall_start = now_ms();
     const auto steady_start = std::chrono::steady_clock::now();
 
-    fragment::ExecutionResult result;
     TaskReport report;
 
     const FragmentOsAction action = resolve_fragment_action(context.partition);
-    if (action == FragmentOsAction::Skip || action == FragmentOsAction::Queue) {
-        result.success = false;
-        result.error_message = (action == FragmentOsAction::Skip)
-            ? "Fragment ignoré par la policy OS"
-            : "Fragment mis en file par la policy OS";
-        report = build_report(context.partition, task, std::move(result));
-    } else if (action == FragmentOsAction::Error) {
-        result.success = false;
-        result.error_message = "Fragment refusé par la policy OS";
-        report = build_report(context.partition, task, std::move(result));
-    } else if (action == FragmentOsAction::Wsl) {
-        if (!config_.wsl_enabled) {
-            result.success = false;
-            result.error_message = "Policy WSL demandée mais triggers inactifs";
-            report = build_report(context.partition, task, std::move(result));
-        } else {
-            BackendRequest request{
-                context.partition,
-                context.summary_path,
-                context.asm_path,
-                context.binary_path,
-                task.inputs,
-                register_state_,
-                snapshot_memory_state(),
-                config_.executor.fd_rules
-            };
-            auto exec_result = connector_->execute(request);
-            report = build_report(context.partition, task, std::move(exec_result));
-        }
-    } else {
-        BackendRequest request{
-            context.partition,
-            context.summary_path,
-            context.asm_path,
-            context.binary_path,
-            task.inputs,
-            register_state_,
-            snapshot_memory_state(),
-            config_.executor.fd_rules
-        };
-        auto exec_result = connector_->execute(request);
-        report = build_report(context.partition, task, std::move(exec_result));
-    }
+    const auto it = action_handlers_.find(action);
+    if (it == action_handlers_.end())
+        throw std::runtime_error("Aucun handler pour la policy OS: " + fragment_os_action_to_string(action));
+    report = it->second(context, task);
 
     const auto wall_end = now_ms();
     const auto steady_end = std::chrono::steady_clock::now();
     fill_telemetry(report, task, config_, wall_start, wall_end, steady_start, steady_end);
 
     return report;
+}
+
+TaskReport Worker::run_backend(const TaskContext& context,
+                               const Task& task) {
+    BackendRequest request{
+        context.partition,
+        context.summary_path,
+        context.asm_path,
+        context.binary_path,
+        task.inputs,
+        register_state_,
+        snapshot_memory_state(),
+        config_.executor.fd_rules
+    };
+    auto exec_result = connector_->execute(request);
+    return build_report(context.partition, task, std::move(exec_result));
+}
+
+TaskReport Worker::build_policy_report(const fragment::PartitionInfo& partition,
+                                       const Task& task,
+                                       const std::string& message) {
+    fragment::ExecutionResult result;
+    result.success = false;
+    result.error_message = message;
+    return build_report(partition, task, std::move(result));
+}
+
+void Worker::register_action_handlers() {
+    action_handlers_.clear();
+    action_handlers_.emplace(FragmentOsAction::Skip,
+                             [this](const TaskContext& context, const Task& task) {
+                                 return build_policy_report(
+                                     context.partition,
+                                     task,
+                                     "Fragment ignore par la policy OS");
+                             });
+    action_handlers_.emplace(FragmentOsAction::Queue,
+                             [this](const TaskContext& context, const Task& task) {
+                                 return build_policy_report(
+                                     context.partition,
+                                     task,
+                                     "Fragment mis en file par la policy OS");
+                             });
+    action_handlers_.emplace(FragmentOsAction::Error,
+                             [this](const TaskContext& context, const Task& task) {
+                                 return build_policy_report(
+                                     context.partition,
+                                     task,
+                                     "Fragment refuse par la policy OS");
+                             });
+    action_handlers_.emplace(FragmentOsAction::Wsl,
+                             [this](const TaskContext& context, const Task& task) {
+                                 if (!config_.wsl_enabled) {
+                                     return build_policy_report(
+                                         context.partition,
+                                         task,
+                                         "Policy WSL demandee mais triggers inactifs");
+                                 }
+                                 return run_backend(context, task);
+                             });
+    action_handlers_.emplace(FragmentOsAction::Native,
+                             [this](const TaskContext& context, const Task& task) {
+                                 return run_backend(context, task);
+                             });
 }
 
 TaskReport Worker::build_report(const fragment::PartitionInfo& partition,
