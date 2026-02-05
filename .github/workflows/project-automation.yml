@@ -27,8 +27,6 @@ jobs:
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.PROJECTS_TOKEN || github.token }}
-        env:
-          PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
           script: |
             if (!process.env.PROJECTS_TOKEN) {
               core.warning('PROJECTS_TOKEN not set; skipping project automation.');
@@ -124,3 +122,5 @@ jobs:
             const itemId = await getOrAddProjectItemId(contentNodeId);
             await updateStage(itemId, stage);
             core.info(`Stage updated to ${stage} for item ${itemId}.`);
+        env:
+          PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
