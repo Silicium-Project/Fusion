@@ -314,6 +314,7 @@ def cmd_check(args: argparse.Namespace) -> None:
         args.docker = True
         args.require_docker = True
 
+    scope = (args.scope or "all").lower()
     script = REPO_ROOT / "ci" / "core_check.sh"
     if not script.exists():
         print(f"Core check script not found: {script}")
@@ -324,6 +325,7 @@ def cmd_check(args: argparse.Namespace) -> None:
         "CORE_CHECK_NATIVE": "1" if args.native else "0",
         "CORE_CHECK_RUN_DYNAMO": "1" if args.dynamo else "0",
         "CORE_CHECK_REQUIRE_DOCKER": "1" if args.require_docker else "0",
+        "CORE_CHECK_SCOPE": scope,
     }
     if args.docker is not None:
         env_vars["CORE_CHECK_WITH_DOCKER"] = "1" if args.docker else "0"
@@ -811,6 +813,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--full",
         action="store_true",
         help="Run full checks (includes C++ tests and Docker proxy smoke).",
+    )
+    check_p.add_argument(
+        "--scope",
+        choices=["all", "splitter", "executor", "worker"],
+        default="all",
+        help="Limit checks to a single component (default: all).",
     )
     check_p.add_argument(
         "--docker-strict",
