@@ -17,6 +17,14 @@ std::string ArtifactsPhase::Name() const {
     return "Artifacts";
 }
 
+std::vector<std::string> ArtifactsPhase::Inputs() const {
+    return {"partitions", "memory_segments"};
+}
+
+std::vector<std::string> ArtifactsPhase::Outputs() const {
+    return {"artifacts", "summary"};
+}
+
 void ArtifactsPhase::Execute(PipelineContext& context) {
     context.artifacts.clear();
     context.artifacts.reserve(context.partitions.size());

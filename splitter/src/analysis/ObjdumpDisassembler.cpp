@@ -79,8 +79,10 @@ void AppendInstruction(const std::string& line, std::optional<Function>& current
 
 }  // namespace
 
-ObjdumpDisassembler::ObjdumpDisassembler(std::string binary_path)
-    : binary_path_(std::move(binary_path)) {}
+ObjdumpDisassembler::ObjdumpDisassembler(std::string binary_path,
+                                         SystemContext system)
+    : binary_path_(std::move(binary_path)),
+      system_(std::move(system)) {}
 
 std::vector<Function> ObjdumpDisassembler::ParseOutput(const std::string& output) {
     std::vector<Function> functions;
@@ -97,14 +99,16 @@ std::vector<Function> ObjdumpDisassembler::ParseOutput(const std::string& output
 }
 
 std::pair<std::vector<Function>, std::string> ObjdumpDisassembler::Run() const {
-    if (!fs::exists(binary_path_))
+    if (!system_.fs || !system_.fs->Exists(binary_path_))
         throw std::runtime_error("Binaire introuvable: " + binary_path_);
 
     std::string cmd = "objdump -d -M intel " + ShellQuote(binary_path_);
     std::string disasm_output;
 
     try {
-        disasm_output = ExecCommand(cmd);
+        if (!system_.shell)
+            throw std::runtime_error("Shell runner indisponible");
+        disasm_output = system_.shell->Run(cmd);
     } catch (const std::exception&) {
         throw std::runtime_error("Désassemblage échoué. Installez binutils: apt-get install binutils");
     }

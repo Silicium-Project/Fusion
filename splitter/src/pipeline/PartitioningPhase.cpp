@@ -12,6 +12,14 @@ std::string PartitioningPhase::Name() const {
     return "Partitioning";
 }
 
+std::vector<std::string> PartitioningPhase::Inputs() const {
+    return {"functions"};
+}
+
+std::vector<std::string> PartitioningPhase::Outputs() const {
+    return {"partitions", "memory_segments"};
+}
+
 void PartitioningPhase::Execute(PipelineContext& context) {
     context.partitions = partitioner_->Run(context.functions);
     if (extractor_)

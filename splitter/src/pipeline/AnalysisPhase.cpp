@@ -9,6 +9,14 @@ std::string AnalysisPhase::Name() const {
     return "Analysis";
 }
 
+std::vector<std::string> AnalysisPhase::Inputs() const {
+    return {"functions", "disassembly"};
+}
+
+std::vector<std::string> AnalysisPhase::Outputs() const {
+    return {"functions"};
+}
+
 void AnalysisPhase::Execute(PipelineContext& context) {
     for (auto& func : context.functions)
         analyzer_->AnalyzeFunctionLoops(func);
