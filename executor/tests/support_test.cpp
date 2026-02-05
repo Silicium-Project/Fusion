@@ -55,7 +55,6 @@ std::filesystem::path write_fake_elf(const std::string& name,
     phdr.p_flags = PF_R;
 
     std::vector<uint8_t> data;
-    const size_t header_size = sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr);
     const size_t total_size = static_cast<size_t>(phdr.p_offset + payload.size());
     data.resize(total_size, 0);
     std::memcpy(data.data(), &header, sizeof(header));
