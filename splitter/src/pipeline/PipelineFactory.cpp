@@ -71,13 +71,13 @@ bool is_executable_file(const std::filesystem::path& path) {
     (void)ec;
     return true;
 #else
-    auto perms = std::filesystem::status(path, ec).permissions();
+    auto path_perms = std::filesystem::status(path, ec).permissions();
     if (ec)
         return false;
     using perms = std::filesystem::perms;
-    return (perms & perms::owner_exec) != perms::none
-        || (perms & perms::group_exec) != perms::none
-        || (perms & perms::others_exec) != perms::none;
+    return (path_perms & perms::owner_exec) != perms::none
+        || (path_perms & perms::group_exec) != perms::none
+        || (path_perms & perms::others_exec) != perms::none;
 #endif
 }
 
