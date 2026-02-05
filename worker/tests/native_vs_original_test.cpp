@@ -6,8 +6,10 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include <gtest/gtest.h>
 
@@ -19,27 +21,73 @@
 namespace {
 
 struct CmdResult {
-    int code{};
-    std::string output;
+    int code = 0;
+    std::string stdout_data;
+    std::string stderr_data;
 };
 
-CmdResult run_command(const std::string& cmd) {
-    std::array<char, 256> buffer{};
-    std::string result;
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe)
-        throw std::runtime_error("Failed to run command: " + cmd);
-    while (fgets(buffer.data(), buffer.size(), pipe))
-        result += buffer.data();
-    int status = pclose(pipe);
-    int code = status;
-    if (status != -1) {
-        if (WIFEXITED(status))
-            code = WEXITSTATUS(status);
-        else if (WIFSIGNALED(status))
-            code = 128 + WTERMSIG(status);
+CmdResult run_process(const std::vector<std::string>& args, const std::filesystem::path& cwd = {}) {
+    if (args.empty())
+        throw std::runtime_error("run_process: empty args");
+
+    int out_pipe[2]{-1, -1};
+    int err_pipe[2]{-1, -1};
+    if (pipe(out_pipe) != 0 || pipe(err_pipe) != 0)
+        throw std::runtime_error("run_process: pipe failed");
+
+    pid_t pid = fork();
+    if (pid < 0)
+        throw std::runtime_error("run_process: fork failed");
+
+    if (pid == 0) {
+        if (!cwd.empty())
+            chdir(cwd.c_str());
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(err_pipe[1], STDERR_FILENO);
+        close(out_pipe[0]);
+        close(out_pipe[1]);
+        close(err_pipe[0]);
+        close(err_pipe[1]);
+
+        std::vector<char*> argv;
+        argv.reserve(args.size() + 1);
+        for (const auto& arg : args)
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        argv.push_back(nullptr);
+        execvp(argv[0], argv.data());
+        _exit(127);
     }
-    return {code, result};
+
+    close(out_pipe[1]);
+    close(err_pipe[1]);
+
+    auto reader = [](int fd, std::string& out) {
+        char buffer[4096];
+        ssize_t n = 0;
+        while ((n = read(fd, buffer, sizeof(buffer))) > 0)
+            out.append(buffer, static_cast<size_t>(n));
+    };
+
+    CmdResult result;
+    std::thread out_thread(reader, out_pipe[0], std::ref(result.stdout_data));
+    std::thread err_thread(reader, err_pipe[0], std::ref(result.stderr_data));
+
+    int status = 0;
+    waitpid(pid, &status, 0);
+
+    out_thread.join();
+    err_thread.join();
+    close(out_pipe[0]);
+    close(err_pipe[0]);
+
+    if (WIFEXITED(status))
+        result.code = WEXITSTATUS(status);
+    else if (WIFSIGNALED(status))
+        result.code = 128 + WTERMSIG(status);
+    else
+        result.code = status;
+
+    return result;
 }
 
 std::string write_text(const std::filesystem::path& path, const std::string& content) {
@@ -71,13 +119,16 @@ std::string build_splitter_if_needed() {
 
     auto path = find_splitter_binary();
     if (path.empty()) {
-        const auto build = run_command("cd ../splitter && make splitter -j$(nproc)");
+        const long cpu_count = sysconf(_SC_NPROCESSORS_ONLN);
+        const auto build = run_process({"make", "splitter", "-j", std::to_string(cpu_count > 0 ? cpu_count : 4)},
+                                       std::filesystem::path("..") / "splitter");
         if (build.code != 0)
-            throw std::runtime_error("Failed to build splitter: " + build.output);
+            throw std::runtime_error("Failed to build splitter: " + build.stdout_data + build.stderr_data);
         path = find_splitter_binary();
         if (path.empty()) {
-            auto debug_ls = run_command("ls -l ../splitter || true");
-            throw std::runtime_error("splitter binary not found after build. ls: " + debug_ls.output);
+            auto debug_ls = run_process({"ls", "-l", "../splitter"});
+            throw std::runtime_error("splitter binary not found after build. ls: "
+                                     + debug_ls.stdout_data + debug_ls.stderr_data);
         }
     }
     cached = path;
@@ -158,13 +209,13 @@ TEST(WorkerEquivalence, OriginalVsEmulator) {
     write_text(src_path, source);
 
     const auto bin_path = tmp_root / "prog";
-    auto compile = run_command("gcc -O0 -g -no-pie \"" + src_path.string() + "\" -o \"" + bin_path.string() + "\"");
-    ASSERT_EQ(compile.code, 0) << compile.output;
+    auto compile = run_process({"gcc", "-O0", "-g", "-no-pie", src_path.string(), "-o", bin_path.string()});
+    ASSERT_EQ(compile.code, 0) << compile.stdout_data << compile.stderr_data;
 
-    auto run_prog = run_command("\"" + bin_path.string() + "\"");
+    auto run_prog = run_process({bin_path.string()});
     if (run_prog.code != 0)
         std::cerr << "[WARN] Original program exited with code " << run_prog.code << "\n";
-    const std::string expected_stdout = run_prog.output;
+    const std::string expected_stdout = run_prog.stdout_data;
 
     std::string splitter;
     try {
@@ -174,8 +225,8 @@ TEST(WorkerEquivalence, OriginalVsEmulator) {
     }
     const fs::path out_dir = tmp_root / "out";
     fs::create_directories(out_dir);
-    auto split = run_command(splitter + " \"" + bin_path.string() + "\" --output-dir \"" + out_dir.string() + "\"");
-    ASSERT_EQ(split.code, 0) << split.output;
+    auto split = run_process({splitter, bin_path.string(), "--output-dir", out_dir.string()});
+    ASSERT_EQ(split.code, 0) << split.stdout_data << split.stderr_data;
 
     const std::string summary_path = (out_dir / "summary.json").string();
     ASSERT_TRUE(fs::exists(summary_path));
@@ -243,13 +294,13 @@ TEST(WorkerEquivalence, OriginalVsNative) {
     write_text(src_path, source);
 
     const auto bin_path = tmp_root / "prog";
-    auto compile = run_command("gcc -O0 -g -no-pie \"" + src_path.string() + "\" -o \"" + bin_path.string() + "\"");
-    ASSERT_EQ(compile.code, 0) << compile.output;
+    auto compile = run_process({"gcc", "-O0", "-g", "-no-pie", src_path.string(), "-o", bin_path.string()});
+    ASSERT_EQ(compile.code, 0) << compile.stdout_data << compile.stderr_data;
 
-    auto run_prog = run_command("\"" + bin_path.string() + "\"");
+    auto run_prog = run_process({bin_path.string()});
     if (run_prog.code != 0)
         std::cerr << "[WARN] Original program exited with code " << run_prog.code << "\n";
-    const std::string expected_stdout = run_prog.output;
+    const std::string expected_stdout = run_prog.stdout_data;
 
     std::string splitter;
     try {
@@ -259,8 +310,8 @@ TEST(WorkerEquivalence, OriginalVsNative) {
     }
     const fs::path out_dir = tmp_root / "out";
     fs::create_directories(out_dir);
-    auto split = run_command(splitter + " \"" + bin_path.string() + "\" --output-dir \"" + out_dir.string() + "\"");
-    ASSERT_EQ(split.code, 0) << split.output;
+    auto split = run_process({splitter, bin_path.string(), "--output-dir", out_dir.string()});
+    ASSERT_EQ(split.code, 0) << split.stdout_data << split.stderr_data;
 
     const std::string summary_path = (out_dir / "summary.json").string();
     ASSERT_TRUE(fs::exists(summary_path));
