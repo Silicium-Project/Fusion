@@ -41,6 +41,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Validate UTF-8 files
+        run: python tools/check_utf8.py
+
       - name: Run test suite via silicium CLI
         run: ./silicium test
 
