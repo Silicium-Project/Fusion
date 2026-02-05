@@ -32,6 +32,7 @@ public:
                                    const std::vector<LibraryInfo>& libraries,
                                    const std::vector<std::pair<std::string, std::string>>& partition_hashes) const;
     std::unique_ptr<IHashAlgorithm> make_hash() const;
+    std::string AlgorithmName() const;
 
     std::shared_ptr<IHashAlgorithm> algorithm_;
     HashService hash_service_;

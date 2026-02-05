@@ -20,6 +20,7 @@ class SummaryBuilder {
 public:
     void SetBinaryInfo(const std::string& binary_path,
                        const std::string& binary_hash,
+                       const std::string& hash_algo,
                        const std::string& memory_hash,
                        bool can_split,
                        const std::string& summary_hash);

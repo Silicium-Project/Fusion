@@ -1,5 +1,6 @@
 #include "artifacts/SummaryHashCalculator.hpp"
 #include "artifacts/FnvHashAlgorithm.hpp"
+#include "artifacts/StdHashAlgorithm.hpp"
 
 #include <algorithm>
 
@@ -19,7 +20,7 @@ void HashStrings(IHashAlgorithm& h, const Container& c) {
 }  // namespace
 
 SummaryHashCalculator::SummaryHashCalculator(std::shared_ptr<IHashAlgorithm> algorithm, HashService hash_service)
-    : algorithm_(algorithm ? std::move(algorithm) : std::make_shared<FnvHashAlgorithm>()),
+    : algorithm_(std::move(algorithm)),
       hash_service_(std::move(hash_service)) {}
 
 SummaryHashCalculator::SummaryHashCalculator(std::shared_ptr<IHashAlgorithm> algorithm)
@@ -31,7 +32,7 @@ SummaryHashCalculator::SummaryHashCalculator(HashService hash_service)
 std::unique_ptr<IHashAlgorithm> SummaryHashCalculator::make_hash() const {
     if (algorithm_)
         return algorithm_->Clone();
-    return std::make_unique<FnvHashAlgorithm>();
+    return hash_service_.CreateHasher();
 }
 
 std::string SummaryHashCalculator::ComputePartitionHash(
@@ -99,6 +100,17 @@ std::string SummaryHashCalculator::ComputeSummaryHash(
     }
 
     return hasher->Hex();
+}
+
+std::string SummaryHashCalculator::AlgorithmName() const {
+    if (algorithm_) {
+        if (dynamic_cast<FnvHashAlgorithm*>(algorithm_.get()))
+            return "fnv";
+        if (dynamic_cast<StdHashAlgorithm*>(algorithm_.get()))
+            return "std";
+        return "custom";
+    }
+    return hash_service_.AlgorithmName();
 }
 
 }  // namespace splitter

@@ -34,6 +34,22 @@ class Fnv1aHasher : public Hasher {
         uint64_t state_;
 };
 
+// Implémentation "std" alignée sur le splitter.
+class StdHasher : public Hasher {
+    public:
+        StdHasher();
+        void reset() override;
+        void add_byte(uint8_t b) override;
+        void add_string(std::string_view s) override;
+        void add_uint64(uint64_t v) override;
+        void add_bool(bool v) override;
+        std::string hex() const override;
+
+    private:
+        uint64_t state_;
+        void mix(uint64_t value);
+};
+
 // Alias pour compatibilité et usage par défaut.
 using DefaultHasher = Fnv1aHasher;
 using FnvHasher = Fnv1aHasher;

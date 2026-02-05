@@ -97,7 +97,8 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
                                              partition_hashes);
 
     SummaryBuilder builder;
-    builder.SetBinaryInfo(abs_binary, binary_hash, memory_hash, can_split, summary_hash);
+    builder.SetBinaryInfo(abs_binary, binary_hash, hash_calculator_->AlgorithmName(), memory_hash, can_split,
+                          summary_hash);
     builder.SetCounts(partitions_copy.size(), CountParallelizable(partitions_copy));
     builder.SetRequiredLibraries(library_names);
     builder.SetLibraries(libraries);

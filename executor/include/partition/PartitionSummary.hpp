@@ -55,6 +55,7 @@ struct PartitionSummary {
     std::string binary_os;
     std::string binary_format;
     std::string binary_hash;
+    std::string hash_algo;
     bool can_split = true;
     std::string memory_hash;
     std::string summary_hash;

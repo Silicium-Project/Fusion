@@ -110,6 +110,7 @@ std::string SerializeMemory(const std::vector<MemorySegment>& segments) {
 
 void SummaryBuilder::SetBinaryInfo(const std::string& binary_path,
                                    const std::string& binary_hash,
+                                   const std::string& hash_algo,
                                    const std::string& memory_hash,
                                    bool can_split,
                                    const std::string& summary_hash) {
@@ -117,6 +118,7 @@ void SummaryBuilder::SetBinaryInfo(const std::string& binary_path,
     oss << "{\n";
     oss << "  \"binary\": \"" << JsonEscape(binary_path) << "\",\n";
     oss << "  \"binary_hash\": \"" << JsonEscape(binary_hash) << "\",\n";
+    oss << "  \"hash_algo\": \"" << JsonEscape(hash_algo) << "\",\n";
     oss << "  \"can_split\": " << (can_split ? "true" : "false") << ",\n";
     oss << "  \"memory_hash\": \"" << JsonEscape(memory_hash) << "\",\n";
     oss << "  \"summary_hash\": \"" << JsonEscape(summary_hash) << "\"\n";

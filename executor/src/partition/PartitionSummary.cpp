@@ -7,6 +7,7 @@
 #include <fstream>
 #include <functional>
 #include <cstdint>
+#include <cctype>
 #include <sstream>
 #include <algorithm>
 #include <iomanip>
@@ -77,41 +78,58 @@ namespace fragment {
         return region;
     }
 
-    std::string hash_bytes(const std::vector<uint8_t>& data) {
-        FnvHasher h;
-        for (auto b : data)
-            h.add_byte(b);
-        return h.hex();
+    std::string normalize_algo(std::string algo) {
+        if (algo.empty())
+            return "fnv";
+        std::transform(algo.begin(), algo.end(), algo.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (algo == "std" || algo == "fnv")
+            return algo;
+        return "fnv";
     }
 
-    std::string hash_file(const std::string& path) {
+    std::unique_ptr<Hasher> make_hasher(const std::string& algo) {
+        const auto normalized = normalize_algo(algo);
+        if (normalized == "std")
+            return std::make_unique<StdHasher>();
+        return std::make_unique<FnvHasher>();
+    }
+
+    std::string hash_bytes(const std::vector<uint8_t>& data, const std::string& algo) {
+        auto h = make_hasher(algo);
+        for (auto b : data)
+            h->add_byte(b);
+        return h->hex();
+    }
+
+    std::string hash_file(const std::string& path, const std::string& algo) {
         std::ifstream file(path, std::ios::binary);
         if (!file.is_open())
             return {};
         std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)),
                                     std::istreambuf_iterator<char>());
-        return hash_bytes(buffer);
+        return hash_bytes(buffer, algo);
     }
 
-    std::string compute_partition_hash(const PartitionInfo& p) {
-        DefaultHasher hasher;
-        hasher.reset();
-        hasher.add_string(p.id);
+    std::string compute_partition_hash(const PartitionInfo& p, const std::string& algo) {
+        auto hasher = make_hasher(algo);
+        hasher->reset();
+        hasher->add_string(p.id);
         if (!p.os.empty())
-            hasher.add_string(p.os);
+            hasher->add_string(p.os);
         if (!p.format.empty())
-            hasher.add_string(p.format);
-        hasher.add_uint64(p.start_address.value_or(0));
-        hasher.add_uint64(p.end_address.value_or(0));
-        hasher.add_string(p.bin_hash);
-        hasher.add_uint64(p.binary_size);
-        hasher.add_bool(p.parallelizable);
-        hasher.add_bool(p.requires_display);
+            hasher->add_string(p.format);
+        hasher->add_uint64(p.start_address.value_or(0));
+        hasher->add_uint64(p.end_address.value_or(0));
+        hasher->add_string(p.bin_hash);
+        hasher->add_uint64(p.binary_size);
+        hasher->add_bool(p.parallelizable);
+        hasher->add_bool(p.requires_display);
 
         auto hash_strings = [&](const auto& container) {
             for (const auto& s : container)
-                hasher.add_string(s);
-            hasher.add_byte(0x7f);
+                hasher->add_string(s);
+            hasher->add_byte(0x7f);
         };
 
         hash_strings(p.inputs);
@@ -123,44 +141,44 @@ namespace fragment {
         hash_strings(p.dependencies);
         hash_strings(p.unresolved_calls);
 
-        return hasher.hex();
+        return hasher->hex();
     }
 
-    std::string compute_memory_hash(const std::vector<MemoryRegion>& segments) {
-        DefaultHasher hasher;
-        hasher.reset();
+    std::string compute_memory_hash(const std::vector<MemoryRegion>& segments, const std::string& algo) {
+        auto hasher = make_hasher(algo);
+        hasher->reset();
         for (const auto& seg : segments) {
-            hasher.add_string(seg.name);
-            hasher.add_uint64(seg.address);
-            hasher.add_string(hash_bytes(seg.bytes));
+            hasher->add_string(seg.name);
+            hasher->add_uint64(seg.address);
+            hasher->add_string(hash_bytes(seg.bytes, algo));
         }
-        return hasher.hex();
+        return hasher->hex();
     }
 
     std::string compute_summary_hash(const PartitionSummary& summary) {
-        DefaultHasher hasher;
-        hasher.reset();
+        auto hasher = make_hasher(summary.hash_algo);
+        hasher->reset();
         if (!summary.binary_os.empty())
-            hasher.add_string(summary.binary_os);
+            hasher->add_string(summary.binary_os);
         if (!summary.binary_format.empty())
-            hasher.add_string(summary.binary_format);
-        hasher.add_string(summary.binary_hash);
-        hasher.add_string(summary.memory_hash);
-        hasher.add_bool(summary.can_split);
+            hasher->add_string(summary.binary_format);
+        hasher->add_string(summary.binary_hash);
+        hasher->add_string(summary.memory_hash);
+        hasher->add_bool(summary.can_split);
 
         auto required = summary.required_libraries;
         std::sort(required.begin(), required.end());
         for (const auto& r : required)
-            hasher.add_string(r);
-        hasher.add_byte(0x7f);
+            hasher->add_string(r);
+        hasher->add_byte(0x7f);
 
         auto libs = summary.libraries;
         std::sort(libs.begin(), libs.end(), [](const auto& a, const auto& b) { return a.name < b.name; });
         for (const auto& lib : libs) {
-            hasher.add_string(lib.name);
-            hasher.add_string(lib.path);
-            hasher.add_string(lib.soname.empty() ? lib.name : lib.soname);
-            hasher.add_string(lib.build_id);
+            hasher->add_string(lib.name);
+            hasher->add_string(lib.path);
+            hasher->add_string(lib.soname.empty() ? lib.name : lib.soname);
+            hasher->add_string(lib.build_id);
         }
 
         std::vector<std::pair<std::string, std::string>> parts;
@@ -169,11 +187,11 @@ namespace fragment {
             parts.emplace_back(p.id, p.partition_hash);
         std::sort(parts.begin(), parts.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
         for (const auto& ph : parts) {
-            hasher.add_string(ph.first);
-            hasher.add_string(ph.second);
+            hasher->add_string(ph.first);
+            hasher->add_string(ph.second);
         }
 
-        return hasher.hex();
+        return hasher->hex();
     }
 
     std::string resolve_path(const std::string& base, const std::string& path) {
@@ -280,16 +298,16 @@ namespace fragment {
 
         if (skip_memory_check || skip_all_hash) {
             if (!summary.memory_hash.empty())
-                summary.memory_hash = compute_memory_hash(summary.initial_memory);
+                summary.memory_hash = compute_memory_hash(summary.initial_memory, summary.hash_algo);
         } else {
             if (!summary.binary_hash.empty()) {
-                const auto computed = hash_file(resolve_path(base_dir, summary.binary_path));
+                const auto computed = hash_file(resolve_path(base_dir, summary.binary_path), summary.hash_algo);
                 if (computed.empty() || computed != summary.binary_hash)
                     throw std::runtime_error("Hash binaire invalide");
             }
 
             if (!summary.memory_hash.empty()) {
-                const auto computed_mem = compute_memory_hash(summary.initial_memory);
+                const auto computed_mem = compute_memory_hash(summary.initial_memory, summary.hash_algo);
                 if (computed_mem != summary.memory_hash)
                     throw std::runtime_error("Hash mémoire invalide");
                 summary.memory_hash = computed_mem;
@@ -297,12 +315,12 @@ namespace fragment {
         }
 
         for (auto& p : summary.partitions) {
-            auto computed_part = compute_partition_hash(p);
+            auto computed_part = compute_partition_hash(p, summary.hash_algo);
             if (p.partition_hash.empty())
                 p.partition_hash = computed_part;
             const bool skip_bin_check = skip_memory_check || skip_all_hash || p.binary_size == 0;
             if (!skip_bin_check && p.bin_hash.size() > 0) {
-                const auto computed_bin = hash_file(resolve_path(base_dir, p.bin_path));
+                const auto computed_bin = hash_file(resolve_path(base_dir, p.bin_path), summary.hash_algo);
                 if (computed_bin.empty() || computed_bin != p.bin_hash)
                     throw std::runtime_error("Hash binaire partition invalide pour " + p.id);
             }
@@ -325,6 +343,7 @@ namespace fragment {
         summary.binary_os = to_string_safe(json_object_get(root, "binary_os"));
         summary.binary_format = to_string_safe(json_object_get(root, "binary_format"));
         summary.binary_hash = to_string_safe(json_object_get(root, "binary_hash"));
+        summary.hash_algo = normalize_algo(to_string_safe(json_object_get(root, "hash_algo")));
         summary.memory_hash = to_string_safe(json_object_get(root, "memory_hash"));
         summary.summary_hash = to_string_safe(json_object_get(root, "summary_hash"));
         if (json_t* can_split = json_object_get(root, "can_split"); json_is_boolean(can_split))

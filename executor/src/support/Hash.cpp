@@ -37,6 +37,45 @@ std::string Fnv1aHasher::hex() const {
     return oss.str();
 }
 
+namespace {
+constexpr uint64_t kStdSeed = 0x9e3779b97f4a7c15ULL;
+}
+
+StdHasher::StdHasher() : state_(kStdSeed) {}
+
+void StdHasher::reset() { state_ = kStdSeed; }
+
+void StdHasher::mix(uint64_t value) {
+    state_ ^= value + kStdSeed + (state_ << 6) + (state_ >> 2);
+    state_ = (state_ << 13) | (state_ >> (64 - 13));
+}
+
+void StdHasher::add_byte(uint8_t b) {
+    mix(static_cast<uint64_t>(b));
+}
+
+void StdHasher::add_string(std::string_view s) {
+    for (unsigned char c : s)
+        add_byte(c);
+    add_byte(0xfe);
+}
+
+void StdHasher::add_uint64(uint64_t v) {
+    mix(v);
+    add_byte(0xfd);
+}
+
+void StdHasher::add_bool(bool v) {
+    add_byte(v ? 1 : 0);
+    add_byte(0xfc);
+}
+
+std::string StdHasher::hex() const {
+    std::ostringstream oss;
+    oss << std::hex << std::setw(16) << std::setfill('0') << state_;
+    return oss.str();
+}
+
 DomainHasher::DomainHasher(std::string_view domain, std::unique_ptr<Hasher> algo)
     : domain_(domain), algo_(std::move(algo)) {
     if (!algo_)
