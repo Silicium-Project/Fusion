@@ -120,9 +120,14 @@ bool DynamoRunner::run_binary(const std::string& binary_path,
     const fs::path workspace = workspace_root();
     const fs::path abs_binary = fs::absolute(binary_path);
     std::string container_binary = abs_binary.string();
-    if (!abs_binary.string().rfind(workspace.string(), 0)) {
-        const auto rel = abs_binary.lexically_relative(workspace);
-        container_binary = (fs::path("/workspace") / rel).string();
+    const auto rel = abs_binary.lexically_relative(workspace);
+    const std::string rel_str = rel.generic_string();
+    if (!rel.empty()
+        && !rel.is_absolute()
+        && !rel_str.empty()
+        && rel_str.rfind("..", 0) != 0
+        && rel_str.find("../") == std::string::npos) {
+        container_binary = (fs::path("/workspace") / rel).generic_string();
     }
     const std::string args_str = join_quoted(args);
     const auto stderr_path = make_temp_stderr_path();
