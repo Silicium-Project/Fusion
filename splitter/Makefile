@@ -41,7 +41,7 @@ PROGRAM_LIBS ?= -lavformat -lavcodec -lavutil -lswscale -lm -lcsfml-graphics -lc
 BUILDER_WRAPPER ?= $(REPO_ROOT)/worker/scripts/builder_wrapper.sh
 BUILD_WITH_DOCKER ?= $(BUILDER_WRAPPER)
 
-.PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test build-cpp-test-image
+.PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test test-clean build-cpp-test-image
 
 SRC_FILES := $(shell find $(SRC_DIR) -name '*.cpp')
 OBJ_DIR := build
@@ -167,6 +167,7 @@ run-binary: all prep-program
 
 ifeq ($(CPP_TEST_LOCAL),1)
 test:
+	$(MAKE) test-clean
 	$(MAKE) $(TEST_BIN)
 	$(TEST_BIN)
 else
@@ -181,6 +182,7 @@ test: build-cpp-test-image
 		set -euo pipefail; \
 		ccache -M 2G >/dev/null; \
 		cd splitter; \
+		make test-clean; \
 		env TEST_CXX="ccache g++" $(MAKE) $(TEST_BIN); \
 		$(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID splitter/build && rm -f splitter/*.gcov'
@@ -208,6 +210,11 @@ clean: demo-clean
 	fi
 	@# Nettoyage des traces gcov pour éviter les warnings lors des tests.
 	@test ! -d build || find build -name '*.gcda' -o -name '*.gcno' -delete
+
+test-clean:
+	@# Nettoyage des traces gcov pour Ã©viter les warnings lors des tests.
+	@test ! -d $(TEST_BUILD_DIR) || rm -rf $(TEST_BUILD_DIR)
+	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f \( -name '*.gcda' -o -name '*.gcno' \) -delete
 
 fclean: clean
 	@if [ -d $(RUN_BUILD_DIR) ]; then \

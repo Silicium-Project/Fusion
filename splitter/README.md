@@ -8,6 +8,13 @@ L'exécuteur vit désormais dans `../executor` et est invoqué automatiquement p
 
 Les scripts s'appuient sur `objdump`/`readelf` (binutils) pour la phase de désassemblage et ciblent principalement Linux x86_64.
 
+## Architecture rapide
+
+- Pipeline compose de phases independantes (desassemblage, analyse, partitionnement, artefacts).
+- Chaque phase expose ses entrees/sorties via `IPipelinePhase::Inputs()` / `Outputs()`.
+- Les effets de bord (shell, env, systeme de fichiers) passent par `SystemContext` pour faciliter les tests.
+
+
 ## Contenu principal
 
 - `splitter.cpp` : découpeur/désassembleur de binaires, génère `.asm`, `.bin`, wrappers C et `summary.json`.
@@ -37,6 +44,12 @@ cd ../executor && g++ -std=c++17 -O2 fragment_executor.cpp -o fragment_executor
 
 ```bash
 make test
+```
+
+Nettoyage des artefacts de couverture avant relance :
+
+```bash
+make test-clean
 ```
 
 Comme pour `executor`, la première exécution construit automatiquement
