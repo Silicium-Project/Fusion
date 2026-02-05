@@ -96,11 +96,15 @@ ensure_self_signed() {
   command -v openssl >/dev/null 2>&1 || { echo "openssl CLI not found (required for local TLS mode)." >&2; exit 1; }
   echo "Generating self-signed certificate for $SELF_SIGN_CN ($SELF_SIGN_DAYS days)"
   mkdir -p "$(dirname "$CERT_PATH_HOST")"
+  old_umask="$(umask)"
+  umask 077
   openssl req -x509 -nodes -newkey rsa:2048 \
     -days "$SELF_SIGN_DAYS" \
     -keyout "$KEY_PATH_HOST" \
     -out "$CERT_PATH_HOST" \
     -subj "/CN=$SELF_SIGN_CN"
+  umask "$old_umask"
+  chmod 600 "$KEY_PATH_HOST" 2>/dev/null || true
 }
 
 ensure_self_signed
