@@ -114,6 +114,8 @@ public:
     std::string dynamo_launcher = "worker/scripts/dynamo_runner.sh";
     ConnectorMode connector = ConnectorMode::Direct;
     std::string connector_endpoint;
+    double connector_connect_timeout_seconds = 5.0;
+    double connector_timeout_seconds = 30.0;
     std::string emulator_library = "../executor/libfragment_emulator.so";
     std::string native_library = "../executor/libfragment_executor.so";
     FragmentOsPolicy fragment_os_policy{};
