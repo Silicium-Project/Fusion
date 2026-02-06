@@ -120,14 +120,25 @@ class SiliciumTui(App):
         border: round $secondary;
     }
 
-    #toolbar {
+    #taskbar {
         height: 3;
         padding: 0 1;
         border: round $primary;
-        align: center middle;
+        align: left middle;
+        background: $panel;
     }
 
-    #toolbar Button {
+    #taskbar-left {
+        width: 1fr;
+        align: left middle;
+    }
+
+    #taskbar-right {
+        width: auto;
+        align: right middle;
+    }
+
+    #taskbar-buttons Button {
         margin: 0 1;
     }
 
@@ -137,6 +148,15 @@ class SiliciumTui(App):
         text-style: bold;
         color: $accent;
         padding: 0 1;
+    }
+
+    #taskbar-title {
+        text-style: bold;
+        margin-right: 1;
+    }
+
+    #taskbar-state {
+        color: $text-muted;
     }
 
     #details {
@@ -209,6 +229,7 @@ class SiliciumTui(App):
         ("q", "quit", "Quit"),
         ("r", "refresh", "Refresh"),
         ("l", "clear_log", "Clear log"),
+        ("i", "stop", "Interrupt"),
     ]
 
     def __init__(self) -> None:
@@ -228,17 +249,22 @@ class SiliciumTui(App):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
+        with Horizontal(id="taskbar"):
+            with Horizontal(id="taskbar-left"):
+                yield Static("Silicium TUI", id="taskbar-title")
+                yield Static("Idle", id="taskbar-state")
+            with Horizontal(id="taskbar-right"):
+                with Horizontal(id="taskbar-buttons"):
+                    yield Button("Run", id="run", variant="primary")
+                    yield Button("Interrupt", id="stop", variant="error")
+                    yield Button("Refresh", id="refresh", variant="default")
+                    yield Button("Clear log", id="clear", variant="default")
+                    yield Button("Copy log", id="copy_log", variant="default")
         with Horizontal(id="body"):
             with Vertical(id="left"):
                 yield Static("Actions", id="actions-title")
-                with Horizontal(id="toolbar"):
-                    yield Button("Run", id="run", variant="success")
-                    yield Button("Stop", id="stop", variant="error")
-                    yield Button("Refresh", id="refresh", variant="primary")
-                    yield Button("Clear log", id="clear", variant="default")
-                    yield Button("Copy log", id="copy_log", variant="default")
                 yield OptionList(id="actions")
-                yield Static("Enter: run | r: refresh | l: clear log | q: quit", id="hint")
+                yield Static("Enter: run | i: interrupt | r: refresh | l: clear log | q: quit", id="hint")
                 yield Static("Select an action and press Enter.", id="details")
             with Vertical(id="right"):
                 yield Static("Status", id="status-title")
@@ -419,6 +445,7 @@ class SiliciumTui(App):
         badge_exit.update(f"EXIT {exit_code}")
         badge_exit.set_class(self._exit_code not in (None, 0, "0"), "badge--error")
         badge_elapsed.update(f"ELAPSED {format_duration(elapsed)}")
+        self.query_one("#taskbar-state", Static).update(f"• {state}")
 
     def _sync_toolbar(self) -> None:
         run_button = self.query_one("#run", Button)

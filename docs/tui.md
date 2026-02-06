@@ -20,10 +20,11 @@ python -m pip install -r requirements-tui.txt
 - `q`: quit
 - `r`: refresh status
 - `l`: clear log
+- `i`: interrupt running action
 
 ## Mouse support
 
-- Click **Run**, **Stop**, **Refresh**, **Clear log**, **Copy log** in the toolbar.
+- Click **Run**, **Interrupt**, **Refresh**, **Clear log**, **Copy log** in the taskbar.
 - Click an action to select it, then **Run**.
 
 ## Logs and progress
