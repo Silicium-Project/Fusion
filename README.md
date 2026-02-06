@@ -37,6 +37,11 @@ queue + patches"]
     Coverage["coverage reports"]
   end
 
+  subgraph Workloads["Workloads"]
+    Manifests["catalog/workloads
+profiles + manifests"]
+  end
+
   subgraph Infra["Infra / Network"]
     Compose["docker compose
 profiles"]
@@ -46,11 +51,7 @@ profiles"]
     Mainnet["mainnet"]
     Proxy["Caddy TLS proxy"]
     Wireguard["WireGuard secure stack"]
-  end
-
-  subgraph Workloads["Workloads"]
-    Manifests["catalog/workloads
-profiles + manifests"]
+    Clients["Clients / RPC users"]
   end
 
   %% UI flow (left -> right)
@@ -86,7 +87,13 @@ profiles + manifests"]
   Compose --> Testnet
   Compose --> Mainnet
   Compose --> Proxy
-  Wireguard --> Mainnet
+  Wireguard --> Proxy
+  Clients --> Wireguard
+  Clients --> Proxy
+  Proxy --> Localnet
+  Proxy --> Devnet
+  Proxy --> Testnet
+  Proxy --> Mainnet
 ```
 
 
