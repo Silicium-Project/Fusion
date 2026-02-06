@@ -48,22 +48,66 @@ flowchart LR
   Cmds --> Programs
 ```
 
-## Zoom: Orchestration
+## Zoom: Orchestration (detailed)
 
 ```mermaid
 flowchart LR
   CLI["silicium CLI"] --> Cmds["Command Router"]
   TUI["TUI"] --> Scheduler["TUI State + Scheduler"] --> Cmds
+
   Cmds --> ConnFactory["Connector Factory"]
   ConnFactory --> InProc["InProcess"]
   ConnFactory --> StdIO["StdIO (future)"]
   ConnFactory --> HTTP["HTTP (future)"]
+
   InProc --> Cmds
   StdIO --> Cmds
   HTTP --> Cmds
+
+  subgraph Actions["Action Types"]
+    ActionRun["Run action"]
+    ActionQueue["Queue action"]
+    ActionInterrupt["Interrupt"]
+    ActionRunner["Runner mode"]
+  end
+  Scheduler --> ActionRun
+  Scheduler --> ActionQueue
+  Scheduler --> ActionInterrupt
+  Scheduler --> ActionRunner
 ```
 
-## Zoom: Compute Pipeline
+## Zoom: Connectors / HTTP (detailed)
+
+```mermaid
+flowchart LR
+  Worker["worker"] --> Direct["direct connector"]
+  Worker --> HttpBackend["HTTP backend connector"]
+
+  subgraph HttpFlow["HTTP flow"]
+    Req["POST /execute
+JSON payload"] --> Runner["External runner"]
+    Runner --> Res["ExecutionResult JSON"]
+  end
+
+  HttpBackend --> Req
+  Res --> HttpBackend
+
+  subgraph Payload["Payload fields (examples)"]
+    Type["type: binary/health"]
+    Part["partition_id"]
+    Paths["asm_path / binary_path"]
+    Mode["mode: emu/native"]
+    Inputs["register_state / memory / inputs"]
+  end
+
+  Req --> Type
+  Req --> Part
+  Req --> Paths
+  Req --> Mode
+  Req --> Inputs
+```
+
+## Zoom: Compute Pipeline (detailed)
 
 ```mermaid
 flowchart LR
@@ -77,9 +121,18 @@ queue + patches"]
   Worker --> Direct["direct connector"]
   Worker --> HttpBackend["HTTP backend connector"]
   Worker --> Dynamo["DynamoRIO runner"]
+
+  subgraph Artifacts["Artifacts"]
+    Frags["fragment .asm/.bin"]
+    Log["fragment_executor.log"]
+    Reports["TaskReport + telemetry"]
+  end
+  Splitter --> Frags
+  Executor --> Log
+  Worker --> Reports
 ```
 
-## Zoom: Infra / Network
+## Zoom: Infra / Network (detailed)
 
 ```mermaid
 flowchart LR
@@ -94,9 +147,16 @@ flowchart LR
   Mainnet --> Proxy
   Clients["RPC clients"] --> Proxy
   Clients --> Wireguard["WireGuard"] --> Proxy
+
+  subgraph TLS["TLS modes"]
+    Local["local"]
+    Acme["acme"]
+    Internal["internal"]
+  end
+  Proxy --> TLS
 ```
 
-## Zoom: Product / On-chain (future)
+## Zoom: Product / On-chain (future, detailed)
 
 ```mermaid
 flowchart LR
@@ -106,7 +166,9 @@ flowchart LR
   API --> Worker["worker / execution"]
   Worker --> Results["results + telemetry"]
   Results --> API
+  API --> Cache["cache / db"]
 ```
+
 
 
 
