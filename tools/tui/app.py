@@ -195,7 +195,7 @@ class SiliciumTui(App):
         self._elapsed_timer = None
         self._log_buffer: deque[str] = deque(maxlen=300)
         self._log_path: Path | None = None
-        self._start_time: float | None = None
+        self._action_start_time: float | None = None
         self._current_action: ActionSpec | None = None
         self._selected_action: ActionSpec | None = None
         self._exit_code: int | None = None
@@ -296,7 +296,7 @@ class SiliciumTui(App):
         self._running = True
         self._current_action = action
         self._exit_code = None
-        self._start_time = asyncio.get_running_loop().time()
+        self._action_start_time = asyncio.get_running_loop().time()
         self._progress_value = 0
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -374,7 +374,7 @@ class SiliciumTui(App):
         command = " ".join(self._current_action.command()) if self._current_action else "-"
         log_path = str(self._log_path) if self._log_path else "-"
         elapsed = None
-        start_time = self._start_time
+        start_time = self._action_start_time
         if isinstance(start_time, (int, float)):
             elapsed = asyncio.get_running_loop().time() - start_time
         exit_code = "-"
