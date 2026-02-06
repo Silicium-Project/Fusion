@@ -141,13 +141,13 @@ class SiliciumTui(App):
     }
 
     #left {
-        width: 38%;
+        width: 32%;
         min-width: 32;
         padding: 1 1;
     }
 
     #right {
-        width: 62%;
+        width: 68%;
         padding: 1 1;
     }
 
@@ -220,14 +220,14 @@ class SiliciumTui(App):
     }
 
     #details {
-        height: 6;
+        height: 7;
         border: round $primary;
         padding: 1 1;
         color: $text-muted;
     }
 
     #status-panel {
-        height: 9;
+        height: 10;
         border: round $secondary;
         padding: 1 1;
     }
@@ -280,7 +280,7 @@ class SiliciumTui(App):
     }
 
     #hint {
-        height: 3;
+        height: 2;
         color: $text-muted;
     }
     """
@@ -328,8 +328,8 @@ class SiliciumTui(App):
             with Vertical(id="left"):
                 yield Static("Actions", id="actions-title")
                 yield OptionList(id="actions")
-                yield Static("Click Run to start | i: interrupt | r: refresh | l: clear log | q: quit", id="hint")
                 yield Static("Select an action and press Enter.", id="details")
+                yield Static("Click Run to start | i: interrupt | r: refresh | l: clear log | q: quit", id="hint")
             with Vertical(id="right"):
                 yield Static("Status", id="status-title")
                 with Vertical(id="status-panel"):
