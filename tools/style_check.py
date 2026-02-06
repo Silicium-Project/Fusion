@@ -152,7 +152,14 @@ def main(argv: List[str]) -> int:
     else:
         for issue in issues:
             rel = issue.path.relative_to(root)
-            print(f"{rel}:{issue.line}:{issue.column}: {issue.severity}: {issue.rule_id}: {issue.message}")
+            color0 = "\033[36m"  # cyan for file path
+            colorCol = "\033[32;1m"  # bright green for column number
+            colorRow = "\033[35;1m"  # bright magenta for line number
+            color1 = "\033[31m" if issue.severity == "error" else "\033[33m"  # red for error, yellow for warning
+            color2 = "\033[34m"  # blue for rule ID
+            color3 = "\033[30m"  # default for message
+            clr = "\033[0m"
+            print(f"{color0}{rel}{clr}:{colorRow}{issue.line}{clr}:{colorCol}{issue.column}{clr}: [{color1}{issue.severity.upper()}{clr}] {color2}{issue.rule_id}{clr} -> {color3}{issue.message}{clr}")
 
     if args.warnings_as_errors:
         has_errors = bool(issues)
