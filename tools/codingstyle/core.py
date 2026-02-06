@@ -210,35 +210,35 @@ def line_col_from_index(text: str, index: int) -> tuple[int, int]:
 
 
 def re_namespace() -> re.Pattern:
-    return re.compile(r"\\bnamespace\\b\\s*(?:[A-Za-z_]\\w*(?:\\s*::\\s*[A-Za-z_]\\w*)*)?\\s*\\{")
+    return re.compile(r"\bnamespace\b\s*(?:[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*)?\s*\{")
 
 
 def re_class_or_struct() -> re.Pattern:
-    return re.compile(r"\\b(?<!enum\\s)(class|struct)\\s+[A-Za-z_]\\w*\\s*(?:final\\s*)?(?:[^;{]*)\\{")
+    return re.compile(r"\b(?<!enum\s)(class|struct)\s+[A-Za-z_]\w*\s*(?:final\s*)?(?:[^;{]*)\{")
 
 
 def re_class_or_struct_name() -> re.Pattern:
-    return re.compile(r"\\b(?<!enum\\s)(?:class|struct)\\s+([A-Za-z_]\\w*)\\s*(?:final\\s*)?(?:[^;{]*)\\{")
+    return re.compile(r"\b(?<!enum\s)(?:class|struct)\s+([A-Za-z_]\w*)\s*(?:final\s*)?(?:[^;{]*)\{")
 
 
 def re_using_namespace() -> re.Pattern:
-    return re.compile(r"\\busing\\s+namespace\\s+[A-Za-z_]\\w*(?:\\s*::\\s*[A-Za-z_]\\w*)*\\s*;")
+    return re.compile(r"\busing\s+namespace\s+[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)*\s*;")
 
 
 def re_pragma_once() -> re.Pattern:
-    return re.compile(r"^\\s*#\\s*pragma\\s+once\\b", re.MULTILINE)
+    return re.compile(r"^\s*#\s*pragma\s+once\b", re.MULTILINE)
 
 
 def re_include_line() -> re.Pattern:
-    return re.compile(r'^\\s*#\\s*include\\s*([<\"])([^>\"]+)[>\"]')
+    return re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 
 
 def re_python_def() -> re.Pattern:
-    return re.compile(r"^\\s*(?:async\\s+)?def\\s+([A-Za-z_]\\w*)\\s*\\(")
+    return re.compile(r"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(")
 
 
 def re_python_final() -> re.Pattern:
-    return re.compile(r"^\\s*([A-Za-z_]\\w*)\\s*:\\s*(?:typing\\.)?Final\\b")
+    return re.compile(r"^\s*([A-Za-z_]\w*)\s*:\s*(?:typing\.)?Final\b")
 
 
 def _match_any(rel_path, patterns: Iterable[str]) -> bool:
@@ -418,7 +418,7 @@ def _check_py_file_snake_case(rule: Rule, rel_path, path: Path, content: str) ->
     stem = path.stem
     if stem in {"__init__", "__main__"}:
         return []
-    if re.fullmatch(r"__\\w+__", stem):
+    if re.fullmatch(r"__\w+__", stem):
         return []
     if re.fullmatch(r"_*[a-z][a-z0-9_]*", stem):
         return []
