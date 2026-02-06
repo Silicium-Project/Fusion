@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import sys
-from typing import Iterable
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -221,7 +219,6 @@ class SiliciumTui(App):
         self._progress_value = 0
         self._progress_timer = None
         self._elapsed_timer = None
-        self._log_buffer: deque[str] = deque(maxlen=300)
         self._log_path: Path | None = None
         self._action_start_time: float | None = None
         self._current_action: ActionSpec | None = None
@@ -256,7 +253,7 @@ class SiliciumTui(App):
                         yield LoadingIndicator(id="spinner")
                         yield ProgressBar(total=100, id="progress")
                 yield Static("Logs (tail)", id="log-title")
-                yield RichLog(id="log")
+                yield RichLog(id="log", max_lines=300)
         yield Footer()
 
     def on_mount(self) -> None:
@@ -281,7 +278,6 @@ class SiliciumTui(App):
 
     def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
-        self._log_buffer.clear()
 
     def action_stop(self) -> None:
         if not self._running or not self._proc:
@@ -348,23 +344,32 @@ class SiliciumTui(App):
 
         log = self.query_one("#log", RichLog)
         log.clear()
-        self._log_buffer.clear()
         command = action.command()
         command_line = f"$ {' '.join(command)}"
-        log.write(command_line)
-        self._log_buffer.append(command_line)
+        log.write(command_line, scroll_end=True)
 
-        proc = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=REPO_ROOT,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                cwd=REPO_ROOT,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+        except Exception as exc:  # pragma: no cover - UI error path
+            log.write(f"[error] Failed to start command: {exc}", scroll_end=True)
+            self._exit_code = 1
+            self._running = False
+            progress.display = False
+            spinner.display = False
+            if self._progress_timer:
+                self._progress_timer.pause()
+            if self._elapsed_timer:
+                self._elapsed_timer.pause()
+            self._render_status()
+            self._sync_toolbar()
+            return
+
         self._proc = proc
-
-        loop = asyncio.get_running_loop()
-        last_flush = loop.time()
-        flush_interval = 0.3
 
         with self._log_path.open("w", encoding="utf-8") as handle:
             while True:
@@ -373,20 +378,9 @@ class SiliciumTui(App):
                     break
                 text_line = line.decode(errors="replace").rstrip()
                 handle.write(text_line + "\n")
-                self._log_buffer.append(text_line)
-                now = loop.time()
-                if now - last_flush >= flush_interval:
-                    log.clear()
-                    for entry in self._log_buffer:
-                        log.write(entry)
-                    last_flush = now
+                log.write(text_line, scroll_end=True)
 
             await proc.wait()
-
-        if self._log_buffer:
-            log.clear()
-            for entry in self._log_buffer:
-                log.write(entry)
 
         self._exit_code = proc.returncode
         self._running = False
