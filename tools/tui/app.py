@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-import subprocess
-import sys
+from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+import sys
 from typing import Iterable
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, OptionList, Static, TextLog
+from textual.widgets import Footer, Header, OptionList, ProgressBar, Static, TextLog
 from textual.widgets.option_list import Option
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLI = [sys.executable, str(REPO_ROOT / "silicium")]
+LOG_DIR = REPO_ROOT / ".silicium" / "logs"
 
 
 @dataclass(frozen=True)
@@ -114,6 +116,16 @@ class SiliciumTui(App):
     #status {
         height: 3;
         padding: 0 1;
+        align: left middle;
+    }
+
+    #status-text {
+        width: 1fr;
+    }
+
+    #progress {
+        width: 30;
+        margin-left: 2;
     }
     """
 
@@ -128,6 +140,10 @@ class SiliciumTui(App):
         self._actions: list[ActionSpec] = build_actions()
         self._action_by_key = {action.key: action for action in self._actions}
         self._running = False
+        self._progress_value = 0
+        self._progress_timer = None
+        self._log_buffer: deque[str] = deque(maxlen=200)
+        self._log_path: Path | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -139,7 +155,9 @@ class SiliciumTui(App):
             with Vertical(id="right"):
                 yield Static("Output", id="log-title")
                 yield TextLog(id="log", highlight=False, markup=False, wrap=True)
-        yield Static("Ready.", id="status")
+        with Horizontal(id="status"):
+            yield Static("Ready.", id="status-text")
+            yield ProgressBar(total=100, id="progress")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -148,14 +166,18 @@ class SiliciumTui(App):
             [Option(f"[{action.key}] {action.label}", id=action.key) for action in self._actions]
         )
         option_list.focus()
+        progress = self.query_one("#progress", ProgressBar)
+        progress.display = False
+        self._progress_timer = self.set_interval(0.2, self._pulse_progress, pause=True)
 
     def action_refresh(self) -> None:
         if self._running:
             return
-        self.query_one("#status", Static).update("Ready.")
+        self.query_one("#status-text", Static).update("Ready.")
 
     def action_clear_log(self) -> None:
         self.query_one("#log", TextLog).clear()
+        self._log_buffer.clear()
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         action = self._action_by_key.get(event.option.id or "")
@@ -173,24 +195,70 @@ class SiliciumTui(App):
         if self._running:
             return
         self._running = True
-        status = self.query_one("#status", Static)
+        status = self.query_one("#status-text", Static)
         log = self.query_one("#log", TextLog)
+        progress = self.query_one("#progress", ProgressBar)
         command = action.command()
-        status.update(f"Running: {action.label}")
-        log.write(f\"$ {' '.join(command)}\")
-        result = await asyncio.to_thread(
-            subprocess.run,
-            command,
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self._log_path = LOG_DIR / f"{timestamp}_{action.key}.log"
+        status.update(f"Running: {action.label} (log: {self._log_path})")
+        progress.display = True
+        progress.update(progress=0)
+        if self._progress_timer:
+            self._progress_timer.resume()
+
+        log.clear()
+        self._log_buffer.clear()
+        log.write(f"$ {' '.join(command)}")
+        self._log_buffer.append(f"$ {' '.join(command)}")
+
+        proc = await asyncio.create_subprocess_exec(
+            *command,
             cwd=REPO_ROOT,
-            text=True,
-            capture_output=True,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
         )
-        if result.stdout:
-            log.write(result.stdout.rstrip())
-        if result.stderr:
-            log.write(result.stderr.rstrip())
-        status.update(f"Done: {action.label} (exit {result.returncode})")
+
+        loop = asyncio.get_running_loop()
+        last_flush = loop.time()
+        flush_interval = 0.3
+
+        with self._log_path.open("w", encoding="utf-8") as handle:
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                text_line = line.decode(errors="replace").rstrip()
+                handle.write(text_line + "\n")
+                self._log_buffer.append(text_line)
+                now = loop.time()
+                if now - last_flush >= flush_interval:
+                    log.clear()
+                    for entry in self._log_buffer:
+                        log.write(entry)
+                    last_flush = now
+
+            await proc.wait()
+
+        if self._log_buffer:
+            log.clear()
+            for entry in self._log_buffer:
+                log.write(entry)
+
+        status.update(f"Done: {action.label} (exit {proc.returncode})")
+        progress.update(progress=100)
+        progress.display = False
+        if self._progress_timer:
+            self._progress_timer.pause()
         self._running = False
+
+    def _pulse_progress(self) -> None:
+        if not self._running:
+            return
+        progress = self.query_one("#progress", ProgressBar)
+        self._progress_value = (self._progress_value + 3) % 101
+        progress.update(progress=self._progress_value)
 
 
 def run() -> None:

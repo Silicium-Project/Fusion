@@ -21,6 +21,12 @@ python -m pip install -r requirements-tui.txt
 - `r`: refresh status
 - `l`: clear log
 
+## Logs and progress
+
+- The UI shows a progress bar while commands run.
+- Full command output is saved to `.silicium/logs/<timestamp>_<action>.log`.
+- The UI only shows the last ~200 lines to keep it responsive.
+
 ## Screenshot (text)
 
 ```text
