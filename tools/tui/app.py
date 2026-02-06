@@ -25,12 +25,22 @@ CLI = [sys.executable, str(REPO_ROOT / "silicium")]
 LOG_DIR = REPO_ROOT / ".silicium" / "logs"
 
 
+@dataclass
+class RunState:
+    action: "ActionSpec"
+    log_path: Path
+    start_time: float
+    proc: asyncio.subprocess.Process | None
+    exit_code: int | None = None
+
+
 @dataclass(frozen=True)
 class ActionSpec:
     key: str
     label: str
     args: list[str]
     description: str
+    resources: frozenset[str] = frozenset()
 
     def command(self) -> list[str]:
         return CLI + self.args
@@ -43,42 +53,49 @@ def build_actions() -> list[ActionSpec]:
             label="Status (docker compose)",
             args=["status"],
             description="Show compose services status for the current project.",
+            resources=frozenset({"docker"}),
         ),
         ActionSpec(
             key="start_localnet",
             label="Start localnet",
             args=["start", "localnet"],
             description="Start localnet validator with proxy if configured.",
+            resources=frozenset({"docker", "network"}),
         ),
         ActionSpec(
             key="stop_all",
             label="Stop all services",
             args=["stop", "all"],
             description="Stop all compose services for the project.",
+            resources=frozenset({"docker"}),
         ),
         ActionSpec(
             key="logs_proxy",
             label="Logs (proxy)",
             args=["logs", "silicium-proxy"],
             description="Fetch logs for the proxy service.",
+            resources=frozenset({"docker"}),
         ),
         ActionSpec(
             key="workloads",
             label="List workloads",
             args=["workload", "list"],
             description="List known workload manifests.",
+            resources=frozenset({"io"}),
         ),
         ActionSpec(
             key="check_quick",
             label="Core check (quick)",
             args=["check"],
             description="Run the quick core check flow (may use Docker/WSL).",
+            resources=frozenset({"docker", "cpu"}),
         ),
         ActionSpec(
             key="clean_cache",
             label="Clean cache",
             args=["clean", "cache"],
             description="Clean build caches and temporary artifacts.",
+            resources=frozenset({"io"}),
         ),
     ]
 
@@ -260,16 +277,15 @@ class SiliciumTui(App):
         super().__init__()
         self._actions: list[ActionSpec] = build_actions()
         self._action_by_key = {action.key: action for action in self._actions}
-        self._action_running = False
         self._progress_value = 0
         self._progress_timer = None
         self._elapsed_timer = None
-        self._log_path: Path | None = None
-        self._action_start_time: float | None = None
         self._current_action: ActionSpec | None = None
         self._selected_action: ActionSpec | None = None
-        self._exit_code: int | None = None
-        self._proc: asyncio.subprocess.Process | None = None
+        self._running_actions: dict[str, RunState] = {}
+        self._queued_actions: list[ActionSpec] = []
+        self._active_log_action: str | None = None
+        self._last_runs: dict[str, RunState] = {}
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -280,11 +296,11 @@ class SiliciumTui(App):
             with Horizontal(id="taskbar-right"):
                 with Horizontal(id="taskbar-buttons"):
                     yield Button("Run", id="run")
-                    yield Static("│", classes="taskbar-sep")
+                    yield Static("|", classes="taskbar-sep")
                     yield Button("Refresh", id="refresh")
-                    yield Static("│", classes="taskbar-sep")
+                    yield Static("|", classes="taskbar-sep")
                     yield Button("Clear log", id="clear")
-                    yield Static("│", classes="taskbar-sep")
+                    yield Static("|", classes="taskbar-sep")
                     yield Button("Copy log", id="copy_log")
         with Horizontal(id="body"):
             with Vertical(id="left"):
@@ -324,17 +340,19 @@ class SiliciumTui(App):
         self._sync_toolbar()
 
     def action_refresh(self) -> None:
-        if self._action_running:
-            return
         self._render_status()
 
     def action_clear_log(self) -> None:
         self.query_one("#log", RichLog).clear()
 
     def action_stop(self) -> None:
-        if not self._action_running or not self._proc:
+        action = self._selected_action
+        if not action:
             return
-        self._proc.terminate()
+        state = self._running_actions.get(action.key)
+        if not state or not state.proc:
+            return
+        state.proc.terminate()
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         action = self._action_by_key.get(event.option.id or "")
@@ -342,6 +360,8 @@ class SiliciumTui(App):
             return
         self._selected_action = action
         self.query_one("#details", Static).update(action.description)
+        self._set_active_log(action.key)
+        self._render_status()
         self._sync_toolbar()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -361,30 +381,104 @@ class SiliciumTui(App):
         elif button_id == "clear":
             self.action_clear_log()
         elif button_id == "copy_log":
-            if self._log_path:
-                self.set_clipboard(str(self._log_path))
+            action = self._selected_action
+            if not action:
+                return
+            log_path = self._log_path_for(action.key)
+            if log_path:
+                self.set_clipboard(str(log_path))
+
+    def _busy_resources(self) -> set[str]:
+        resources: set[str] = set()
+        for state in self._running_actions.values():
+            resources.update(state.action.resources)
+        return resources
+
+    def _conflicts_for(self, action: ActionSpec) -> set[str]:
+        return set(action.resources).intersection(self._busy_resources())
+
+    def _log_path_for(self, action_key: str) -> Path | None:
+        state = self._running_actions.get(action_key)
+        if state:
+            return state.log_path
+        last = self._last_runs.get(action_key)
+        if last:
+            return last.log_path
+        return None
+
+    def _set_active_log(self, action_key: str | None) -> None:
+        self._active_log_action = action_key
+        log = self.query_one("#log", RichLog)
+        log.clear()
+        if not action_key:
+            return
+        log_path = self._log_path_for(action_key)
+        if not log_path or not log_path.exists():
+            return
+        try:
+            content = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return
+        for line in content[-200:]:
+            log.write(line, scroll_end=True)
+
+    def _request_run(self, action: ActionSpec) -> None:
+        if action.key in self._running_actions:
+            return
+        if action in self._queued_actions:
+            return
+        conflicts = self._conflicts_for(action)
+        if conflicts:
+            self._queued_actions.append(action)
+            if self._active_log_action == action.key:
+                log = self.query_one("#log", RichLog)
+                log.write(
+                    f"[queued] waiting for resources: {', '.join(sorted(conflicts))}",
+                    scroll_end=True,
+                )
+            self._render_status()
+            self._sync_toolbar()
+            return
+        self.run_worker(self._execute_action(action), exclusive=False)
+
+    def _try_start_queued(self) -> None:
+        if not self._queued_actions:
+            return
+        pending: list[ActionSpec] = []
+        for action in self._queued_actions:
+            if self._conflicts_for(action):
+                pending.append(action)
+                continue
+            self.run_worker(self._execute_action(action), exclusive=False)
+        self._queued_actions = pending
+        self._render_status()
+        self._sync_toolbar()
 
     def _run_selected(self) -> None:
-        if self._action_running:
-            self.action_stop()
-            return
         if not self._selected_action:
             return
-        self.run_worker(self._execute_action(self._selected_action), exclusive=True)
+        if self._selected_action.key in self._running_actions:
+            self.action_stop()
+            return
+        self._request_run(self._selected_action)
 
     async def _execute_action(self, action: ActionSpec) -> None:
-        if self._action_running:
+        if action.key in self._running_actions:
             return
-        self._action_running = True
         self._current_action = action
-        self._exit_code = None
-        self._action_start_time = asyncio.get_running_loop().time()
         self._progress_value = 0
-        self._sync_toolbar()
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self._log_path = LOG_DIR / f"{timestamp}_{action.key}.log"
+        log_path = LOG_DIR / f"{timestamp}_{action.key}.log"
+        state = RunState(
+            action=action,
+            log_path=log_path,
+            start_time=asyncio.get_running_loop().time(),
+            proc=None,
+        )
+        self._running_actions[action.key] = state
+        self._sync_toolbar()
 
         progress = self.query_one("#progress", ProgressBar)
         spinner = self.query_one("#spinner", LoadingIndicator)
@@ -397,10 +491,11 @@ class SiliciumTui(App):
             self._elapsed_timer.resume()
 
         log = self.query_one("#log", RichLog)
-        log.clear()
         command = action.command()
         command_line = f"$ {' '.join(command)}"
-        log.write(command_line, scroll_end=True)
+        if self._active_log_action in (None, action.key):
+            self._set_active_log(action.key)
+            log.write(command_line, scroll_end=True)
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -410,44 +505,51 @@ class SiliciumTui(App):
                 stderr=asyncio.subprocess.STDOUT,
             )
         except Exception as exc:  # pragma: no cover - UI error path
-            log.write(f"[error] Failed to start command: {exc}", scroll_end=True)
-            self._exit_code = 1
-            self._action_running = False
-            progress.display = False
-            spinner.display = False
-            if self._progress_timer:
-                self._progress_timer.pause()
-            if self._elapsed_timer:
-                self._elapsed_timer.pause()
+            if self._active_log_action == action.key:
+                log.write(f"[error] Failed to start command: {exc}", scroll_end=True)
+            state.exit_code = 1
+            self._running_actions.pop(action.key, None)
+            self._last_runs[action.key] = state
+            if not self._running_actions:
+                progress.display = False
+                spinner.display = False
+                if self._progress_timer:
+                    self._progress_timer.pause()
+                if self._elapsed_timer:
+                    self._elapsed_timer.pause()
             self._render_status()
             self._sync_toolbar()
+            self._try_start_queued()
             return
 
-        self._proc = proc
+        state.proc = proc
 
-        with self._log_path.open("w", encoding="utf-8") as handle:
+        with log_path.open("w", encoding="utf-8") as handle:
             while True:
                 line = await proc.stdout.readline()
                 if not line:
                     break
                 text_line = line.decode(errors="replace").rstrip()
                 handle.write(text_line + "\n")
-                log.write(text_line, scroll_end=True)
+                if self._active_log_action == action.key:
+                    log.write(text_line, scroll_end=True)
 
             await proc.wait()
 
-        self._exit_code = proc.returncode
-        self._action_running = False
-        self._proc = None
-        progress.update(progress=100)
-        progress.display = False
-        spinner.display = False
-        if self._progress_timer:
-            self._progress_timer.pause()
-        if self._elapsed_timer:
-            self._elapsed_timer.pause()
+        state.exit_code = proc.returncode
+        self._running_actions.pop(action.key, None)
+        self._last_runs[action.key] = state
+        if not self._running_actions:
+            progress.update(progress=100)
+            progress.display = False
+            spinner.display = False
+            if self._progress_timer:
+                self._progress_timer.pause()
+            if self._elapsed_timer:
+                self._elapsed_timer.pause()
         self._render_status()
         self._sync_toolbar()
+        self._try_start_queued()
 
     def _render_status(self) -> None:
         status_head = self.query_one("#status-head", Static)
@@ -455,44 +557,71 @@ class SiliciumTui(App):
         badge_state = self.query_one("#badge-state", Static)
         badge_exit = self.query_one("#badge-exit", Static)
         badge_elapsed = self.query_one("#badge-elapsed", Static)
-        action_label = self._current_action.label if self._current_action else "-"
-        command = " ".join(self._current_action.command()) if self._current_action else "-"
-        log_path = str(self._log_path) if self._log_path else "-"
+        selected = self._selected_action or self._current_action
+        action_label = selected.label if selected else "-"
+        command = " ".join(selected.command()) if selected else "-"
+        running_state = self._running_actions.get(selected.key) if selected else None
+        queued = selected and any(a.key == selected.key for a in self._queued_actions)
+        last_state = self._last_runs.get(selected.key) if selected else None
+
+        log_path = "-"
         elapsed = None
-        start_time = self._action_start_time
-        if isinstance(start_time, (int, float)):
-            elapsed = asyncio.get_running_loop().time() - start_time
         exit_code = "-"
-        if self._exit_code is not None:
-            exit_code = str(self._exit_code)
-        state = "Running" if self._action_running else "Idle"
+        state = "Idle"
+        if running_state:
+            log_path = str(running_state.log_path)
+            elapsed = asyncio.get_running_loop().time() - running_state.start_time
+            state = "Running"
+        elif queued:
+            state = "Queued"
+            if last_state:
+                log_path = str(last_state.log_path)
+                exit_code = str(last_state.exit_code) if last_state.exit_code is not None else "-"
+        elif last_state:
+            log_path = str(last_state.log_path)
+            exit_code = str(last_state.exit_code) if last_state.exit_code is not None else "-"
+
+        busy = ", ".join(sorted(self._busy_resources())) or "-"
         status_head.update(action_label)
-        status_lines.update("\n".join([f"Command: {command}", f"Log    : {log_path}"]))
+        status_lines.update(
+            "\n".join(
+                [
+                    f"Command: {command}",
+                    f"Log    : {log_path}",
+                    f"Running: {len(self._running_actions)} | Queued: {len(self._queued_actions)} | Busy: {busy}",
+                ]
+            )
+        )
         badge_state.update(state.upper())
         badge_state.set_class(state == "Running", "badge--running")
         badge_exit.update(f"EXIT {exit_code}")
-        badge_exit.set_class(self._exit_code not in (None, 0, "0"), "badge--error")
+        badge_exit.set_class(exit_code not in ("-", "0"), "badge--error")
         badge_elapsed.update(f"ELAPSED {format_duration(elapsed)}")
-        self.query_one("#taskbar-state", Static).update(f"• {state}")
+        state_suffix = f"{state} ({len(self._running_actions)})" if self._running_actions else state
+        self.query_one("#taskbar-state", Static).update(f"* {state_suffix}")
 
     def _sync_toolbar(self) -> None:
         run_button = self.query_one("#run", Button)
         copy_button = self.query_one("#copy_log", Button)
-        run_button.label = "Interrupt" if self._action_running else "Run"
-        run_button.variant = "error" if self._action_running else "primary"
-        run_button.set_class(
-            bool(self._selected_action) and not self._action_running, "run-ready"
-        )
-        run_button.disabled = self._selected_action is None
-        copy_button.disabled = self._log_path is None
+        selected = self._selected_action
+        running = bool(selected and selected.key in self._running_actions)
+        queued = bool(selected and any(a.key == selected.key for a in self._queued_actions))
+        run_button.label = "Interrupt" if running else "Run"
+        run_button.variant = "error" if running else "primary"
+        if queued and not running:
+            run_button.label = "Queued"
+            run_button.variant = "default"
+        run_button.set_class(bool(selected) and not running and not queued, "run-ready")
+        run_button.disabled = selected is None or queued
+        copy_button.disabled = self._log_path_for(selected.key) is None if selected else True
 
     def _tick_elapsed(self) -> None:
-        if not self._action_running:
+        if not self._running_actions:
             return
         self._render_status()
 
     def _pulse_progress(self) -> None:
-        if not self._action_running:
+        if not self._running_actions:
             return
         progress = self.query_one("#progress", ProgressBar)
         self._progress_value = (self._progress_value + 3) % 101
