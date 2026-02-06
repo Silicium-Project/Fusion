@@ -149,9 +149,37 @@ class SiliciumTui(App):
     }
 
     #status-panel {
-        height: 8;
+        height: 9;
         border: round $secondary;
         padding: 1 1;
+    }
+
+    #status-head {
+        text-style: bold;
+        height: 1;
+    }
+
+    #status-badges {
+        height: 2;
+        align: left middle;
+    }
+
+    .badge {
+        padding: 0 1;
+        margin-right: 1;
+        background: $panel;
+        color: $text;
+        text-style: bold;
+    }
+
+    .badge--running {
+        background: $success;
+        color: $background;
+    }
+
+    .badge--error {
+        background: $error;
+        color: $background;
     }
 
     #status-row {
@@ -218,7 +246,12 @@ class SiliciumTui(App):
             with Vertical(id="right"):
                 yield Static("Status", id="status-title")
                 with Vertical(id="status-panel"):
-                    yield Static("Idle", id="status-lines")
+                    yield Static("Idle", id="status-head")
+                    with Horizontal(id="status-badges"):
+                        yield Static("IDLE", id="badge-state", classes="badge")
+                        yield Static("EXIT -", id="badge-exit", classes="badge")
+                        yield Static("ELAPSED -", id="badge-elapsed", classes="badge")
+                    yield Static("-", id="status-lines")
                     with Horizontal(id="status-row"):
                         yield LoadingIndicator(id="spinner")
                         yield ProgressBar(total=100, id="progress")
@@ -369,7 +402,11 @@ class SiliciumTui(App):
         self._sync_toolbar()
 
     def _render_status(self) -> None:
-        status = self.query_one("#status-lines", Static)
+        status_head = self.query_one("#status-head", Static)
+        status_lines = self.query_one("#status-lines", Static)
+        badge_state = self.query_one("#badge-state", Static)
+        badge_exit = self.query_one("#badge-exit", Static)
+        badge_elapsed = self.query_one("#badge-elapsed", Static)
         action_label = self._current_action.label if self._current_action else "-"
         command = " ".join(self._current_action.command()) if self._current_action else "-"
         log_path = str(self._log_path) if self._log_path else "-"
@@ -381,15 +418,13 @@ class SiliciumTui(App):
         if self._exit_code is not None:
             exit_code = str(self._exit_code)
         state = "Running" if self._running else "Idle"
-        lines = [
-            f"State  : {state}",
-            f"Action : {action_label}",
-            f"Command: {command}",
-            f"Log    : {log_path}",
-            f"Elapsed: {format_duration(elapsed)}",
-            f"Exit   : {exit_code}",
-        ]
-        status.update("\n".join(lines))
+        status_head.update(action_label)
+        status_lines.update("\n".join([f"Command: {command}", f"Log    : {log_path}"]))
+        badge_state.update(state.upper())
+        badge_state.set_class(state == "Running", "badge--running")
+        badge_exit.update(f"EXIT {exit_code}")
+        badge_exit.set_class(self._exit_code not in (None, 0, "0"), "badge--error")
+        badge_elapsed.update(f"ELAPSED {format_duration(elapsed)}")
 
     def _sync_toolbar(self) -> None:
         run_button = self.query_one("#run", Button)
