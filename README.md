@@ -1,8 +1,8 @@
 # Network
 
 ```mermaid
-flowchart TB
-  %% Left lane: UI + orchestration + compute
+flowchart LR
+  %% Columns: UI -> Orchestration -> Compute -> CI -> Infra
   subgraph UI["User Interfaces"]
     CLI["silicium CLI"]
     TUI["TUI (Textual)"]
@@ -27,19 +27,16 @@ emu/native"]
     Worker["worker
 queue + patches"]
     Dynamo["DynamoRIO runner"]
-  end
-
-  subgraph Workloads["Workloads"]
-    Manifests["catalog/workloads
-profiles + manifests"]
-  end
-
-  subgraph Connectors["Worker Connectors"]
     Direct["direct connector"]
     HttpBackend["HTTP backend connector"]
   end
 
-  %% Right lane: infra / network
+  subgraph CI["CI / Tests"]
+    PyTests["pytest"]
+    CppTests["C++ tests (docker image)"]
+    Coverage["coverage reports"]
+  end
+
   subgraph Infra["Infra / Network"]
     Compose["docker compose
 profiles"]
@@ -51,14 +48,12 @@ profiles"]
     Wireguard["WireGuard secure stack"]
   end
 
-  %% Bottom lane: CI
-  subgraph CI["CI / Tests"]
-    PyTests["pytest"]
-    CppTests["C++ tests (docker image)"]
-    Coverage["coverage reports"]
+  subgraph Workloads["Workloads"]
+    Manifests["catalog/workloads
+profiles + manifests"]
   end
 
-  %% UI flow
+  %% UI flow (left -> right)
   CLI --> Cmds
   TUI --> TUIState --> ConnFactory
   ConnFactory --> InProc
@@ -70,14 +65,21 @@ profiles"]
   APIUI --> Cmds
   Viewer --> Splitter
 
-  %% Compute flow
+  %% Compute flow (left -> right)
   Cmds --> Manifests
   Cmds --> Splitter --> Executor --> Worker
   Worker --> Dynamo
   Worker --> Direct
   Worker --> HttpBackend
 
-  %% Infra flow
+  %% CI flow (left -> right)
+  PyTests --> Cmds
+  CppTests --> Splitter
+  CppTests --> Executor
+  CppTests --> Worker
+  Worker --> Coverage
+
+  %% Infra flow (left -> right)
   Cmds --> Compose
   Compose --> Localnet
   Compose --> Devnet
@@ -85,13 +87,6 @@ profiles"]
   Compose --> Mainnet
   Compose --> Proxy
   Wireguard --> Mainnet
-
-  %% CI flow
-  PyTests --> Cmds
-  CppTests --> Splitter
-  CppTests --> Executor
-  CppTests --> Worker
-  Worker --> Coverage
 ```
 
 
