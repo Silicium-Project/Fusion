@@ -2,33 +2,51 @@
 
 ```mermaid
 flowchart LR
-  subgraph CLI["silicium CLI / TUI"]
-    CLI_TUI["TUI (Textual)"]
-    CLI_Core["CLI commands"]
+  subgraph UX["User Interfaces"]
+    CLI["silicium CLI"]
+    TUI["TUI (Textual)"]
+    Viewer["Viewer (Qt)"]
+    APIUI["API/UI (future)"]
   end
 
-  subgraph Compute["Compute pipeline"]
-    Splitter["splitter
-partitioner (C++)"]
+  subgraph Control["Orchestration"]
+    Cmds["Command Router"]
+    TUIState["TUI State + Scheduler"]
+    ConnFactory["Connector Factory"]
+    InProc["InProcess Connector"]
+    StdIO["StdIO Connector"]
+    HttpConn["HTTP Connector"]
+  end
+
+  subgraph Compute["Compute Pipeline"]
+    Splitter["splitter (C++)
+ELF analysis + partitions"]
     Executor["executor
-fragment execution (emu/native)"]
+emu/native"]
     Worker["worker
-orchestrator (queue/patches)"]
-    Viewer["viewer (Qt)
-fragment graph"]
+queue + patches"]
+    Dynamo["DynamoRIO runner"]
   end
 
   subgraph Catalog["Workloads"]
     Manifests["catalog/workloads
-manifests + profiles"]
+profiles + manifests"]
   end
 
   subgraph Infra["Infra / Network"]
-    Compose["docker-compose"]
-    Solana["Solana node
-local/dev/test/main"]
+    Compose["docker compose
+profiles"]
+    Localnet["localnet"]
+    Devnet["devnet"]
+    Testnet["testnet"]
+    Mainnet["mainnet"]
     Proxy["Caddy TLS proxy"]
     Wireguard["WireGuard secure stack"]
+  end
+
+  subgraph Connectors["Worker Connectors"]
+    Direct["direct connector"]
+    HttpBackend["HTTP backend connector"]
   end
 
   subgraph CI["CI / Tests"]
@@ -37,15 +55,35 @@ local/dev/test/main"]
     Coverage["coverage reports"]
   end
 
-  CLI_TUI --> CLI_Core
-  CLI_Core --> Splitter
+  CLI --> Cmds
+  TUI --> TUIState
+  TUIState --> ConnFactory
+  ConnFactory --> InProc
+  ConnFactory --> StdIO
+  ConnFactory --> HttpConn
+  InProc --> Cmds
+  StdIO --> Cmds
+  HttpConn --> Cmds
+
+  Cmds --> Manifests
+  Cmds --> Splitter
   Splitter --> Executor --> Worker
-  Splitter --> Viewer
-  Manifests --> CLI_Core
-  CLI_Core --> Compose --> Solana
+  Worker --> Dynamo
+  Worker --> Direct
+  Worker --> HttpBackend
+
+  Viewer --> Splitter
+  APIUI --> Cmds
+
+  Cmds --> Compose
+  Compose --> Localnet
+  Compose --> Devnet
+  Compose --> Testnet
+  Compose --> Mainnet
   Compose --> Proxy
-  Wireguard --> Solana
-  PyTests --> CLI_Core
+  Wireguard --> Mainnet
+
+  PyTests --> Cmds
   CppTests --> Splitter
   CppTests --> Executor
   CppTests --> Worker
