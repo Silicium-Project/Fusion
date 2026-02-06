@@ -16,7 +16,6 @@ python -m pip install -r requirements-tui.txt
 
 ## Key bindings
 
-- `Enter`: run selected action
 - `q`: quit
 - `r`: refresh status
 - `l`: clear log
@@ -24,8 +23,9 @@ python -m pip install -r requirements-tui.txt
 
 ## Mouse support
 
-- Click **Run**, **Interrupt**, **Refresh**, **Clear log**, **Copy log** in the taskbar.
-- Click an action to select it, then **Run**.
+- Click **Run** in the taskbar to start the highlighted action.
+- While running, **Run** becomes **Interrupt**.
+- Click an action to highlight it.
 
 ## Logs and progress
 

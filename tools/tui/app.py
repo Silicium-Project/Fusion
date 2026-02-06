@@ -275,8 +275,6 @@ class SiliciumTui(App):
                 with Horizontal(id="taskbar-buttons"):
                     yield Button("Run", id="run")
                     yield Static("│", classes="taskbar-sep")
-                    yield Button("Interrupt", id="stop")
-                    yield Static("│", classes="taskbar-sep")
                     yield Button("Refresh", id="refresh")
                     yield Static("│", classes="taskbar-sep")
                     yield Button("Clear log", id="clear")
@@ -286,7 +284,7 @@ class SiliciumTui(App):
             with Vertical(id="left"):
                 yield Static("Actions", id="actions-title")
                 yield OptionList(id="actions")
-                yield Static("Enter: run | i: interrupt | r: refresh | l: clear log | q: quit", id="hint")
+                yield Static("Click Run to start | i: interrupt | r: refresh | l: clear log | q: quit", id="hint")
                 yield Static("Select an action and press Enter.", id="details")
             with Vertical(id="right"):
                 yield Static("Status", id="status-title")
@@ -344,14 +342,14 @@ class SiliciumTui(App):
         action = self._action_by_key.get(event.option.id or "")
         if not action:
             return
-        self.run_worker(self._execute_action(action), exclusive=True)
+        self._selected_action = action
+        self.query_one("#details", Static).update(action.description)
+        self._sync_toolbar()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id
         if button_id == "run":
             self._run_selected()
-        elif button_id == "stop":
-            self.action_stop()
         elif button_id == "refresh":
             self.action_refresh()
         elif button_id == "clear":
@@ -362,6 +360,7 @@ class SiliciumTui(App):
 
     def _run_selected(self) -> None:
         if self._action_running:
+            self.action_stop()
             return
         if not self._selected_action:
             return
@@ -471,10 +470,10 @@ class SiliciumTui(App):
 
     def _sync_toolbar(self) -> None:
         run_button = self.query_one("#run", Button)
-        stop_button = self.query_one("#stop", Button)
         copy_button = self.query_one("#copy_log", Button)
-        run_button.disabled = self._action_running or self._selected_action is None
-        stop_button.disabled = not self._action_running
+        run_button.label = "Interrupt" if self._action_running else "Run"
+        run_button.variant = "error" if self._action_running else "primary"
+        run_button.disabled = self._selected_action is None
         copy_button.disabled = self._log_path is None
 
     def _tick_elapsed(self) -> None:
