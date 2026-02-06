@@ -1,15 +1,16 @@
 # Network
 
 ```mermaid
-flowchart LR
-  subgraph UX["User Interfaces"]
+flowchart TB
+  %% Left lane: UI + orchestration + compute
+  subgraph UI["User Interfaces"]
     CLI["silicium CLI"]
     TUI["TUI (Textual)"]
     Viewer["Viewer (Qt)"]
     APIUI["API/UI (future)"]
   end
 
-  subgraph Control["Orchestration"]
+  subgraph Orchestrator["Orchestration"]
     Cmds["Command Router"]
     TUIState["TUI State + Scheduler"]
     ConnFactory["Connector Factory"]
@@ -28,11 +29,17 @@ queue + patches"]
     Dynamo["DynamoRIO runner"]
   end
 
-  subgraph Catalog["Workloads"]
+  subgraph Workloads["Workloads"]
     Manifests["catalog/workloads
 profiles + manifests"]
   end
 
+  subgraph Connectors["Worker Connectors"]
+    Direct["direct connector"]
+    HttpBackend["HTTP backend connector"]
+  end
+
+  %% Right lane: infra / network
   subgraph Infra["Infra / Network"]
     Compose["docker compose
 profiles"]
@@ -44,37 +51,33 @@ profiles"]
     Wireguard["WireGuard secure stack"]
   end
 
-  subgraph Connectors["Worker Connectors"]
-    Direct["direct connector"]
-    HttpBackend["HTTP backend connector"]
-  end
-
+  %% Bottom lane: CI
   subgraph CI["CI / Tests"]
     PyTests["pytest"]
     CppTests["C++ tests (docker image)"]
     Coverage["coverage reports"]
   end
 
+  %% UI flow
   CLI --> Cmds
-  TUI --> TUIState
-  TUIState --> ConnFactory
+  TUI --> TUIState --> ConnFactory
   ConnFactory --> InProc
   ConnFactory --> StdIO
   ConnFactory --> HttpConn
   InProc --> Cmds
   StdIO --> Cmds
   HttpConn --> Cmds
+  APIUI --> Cmds
+  Viewer --> Splitter
 
+  %% Compute flow
   Cmds --> Manifests
-  Cmds --> Splitter
-  Splitter --> Executor --> Worker
+  Cmds --> Splitter --> Executor --> Worker
   Worker --> Dynamo
   Worker --> Direct
   Worker --> HttpBackend
 
-  Viewer --> Splitter
-  APIUI --> Cmds
-
+  %% Infra flow
   Cmds --> Compose
   Compose --> Localnet
   Compose --> Devnet
@@ -83,6 +86,7 @@ profiles"]
   Compose --> Proxy
   Wireguard --> Mainnet
 
+  %% CI flow
   PyTests --> Cmds
   CppTests --> Splitter
   CppTests --> Executor
