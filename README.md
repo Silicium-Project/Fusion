@@ -1,172 +1,207 @@
 # Network
 
-## Architecture (Macro)
+## Architecture Graph (Complete)
 
 ```mermaid
-flowchart LR
-  subgraph Frontends["Frontends"]
-    Web["Web UI (future)"]
+flowchart TB
+  subgraph Front["Frontends"]
+    direction LR
     CLI["silicium CLI"]
     TUI["TUI (Textual)"]
     Viewer["Viewer (Qt)"]
+    Web["Web UI (future)"]
   end
 
-  subgraph Orchestration["Orchestration"]
-    Cmds["Command Router"]
-    Connectors["Connector Layer"]
+  subgraph Orch["Orchestration"]
+    direction LR
+    Router["Command Router"]
+    Scheduler["TUI scheduler/state"]
+    Factory["BackendConnectorFactory"]
   end
 
-  subgraph Compute["Compute"]
-    Splitter["splitter"]
-    Executor["executor"]
-    Worker["worker"]
+  subgraph Compute["Compute Core"]
+    direction LR
+    Catalog["catalog/workloads"]
+
+    subgraph Splitter["splitter"]
+      direction TB
+      Pipe["PipelineRunner"]
+      Phases["Disassembly -> Analysis -> Partitioning -> Artifacts"]
+      SWriter["SummaryWriter"]
+      Pipe --> Phases --> SWriter
+    end
+
+    subgraph Worker["worker"]
+      direction TB
+      WJob["JobRunner"]
+      WCore["Worker"]
+      WRouter["TaskRouter"]
+      WPolicy["Fragment OS policy + WSL triggers"]
+      WObs["TaskObserver + Reporter"]
+      WJob --> WCore --> WRouter
+      WCore --> WPolicy
+      WCore --> WObs
+    end
+
+    subgraph Executor["executor"]
+      direction TB
+      EFactory["ExecutionBackendFactory"]
+      EBack["Emulated/Native backends"]
+      EExec["FragmentExecutor"]
+      EApi["FragmentApi (C ABI)"]
+      EFactory --> EBack --> EExec
+      EApi --> EExec
+    end
+  end
+
+  subgraph Conns["Connectors"]
+    direction TB
+    CDirect["DirectConnector"]
+    CHttp["HttpConnector"]
+    CDyn["DynamoBackend"]
+    CHttpRunner["External HTTP runner"]
+    CApi["Executor shared libs"]
+    CDirect --> CApi
+    CHttp --> CHttpRunner
+  end
+
+  subgraph Art["Artifacts/Contracts"]
+    direction TB
+    ASummary["summary.json"]
+    AFrags["fragments (.asm/.bin/wrapper)"]
+    APayload["TaskPayload JSON"]
+    AResult["ExecutionResult"]
+    AReport["TaskReport + telemetry"]
+    ALog["fragment_executor.log"]
   end
 
   subgraph Infra["Infra / Network"]
+    direction TB
     Compose["docker compose"]
-    Proxy["Caddy TLS proxy"]
-    Wireguard["WireGuard"]
-    Networks["localnet / devnet / testnet / mainnet"]
+    Profiles["profiles: localnet/devnet/testnet/mainnet/proxy"]
+    Entrypoint["solana-entrypoint.sh"]
+    NodeLocal["silicium-localnet"]
+    NodeDev["silicium-devnet"]
+    NodeTest["silicium-node (testnet)"]
+    NodeMain["silicium-mainnet"]
+    Caddy["Caddy TLS proxy"]
+    WG["WireGuard secure stack"]
+    RpcSecure["isolated solana-rpc"]
+    RpcDev["api.devnet.solana.com"]
+    RpcTest["api.testnet.solana.com"]
+    RpcMain["api.mainnet-beta.solana.com"]
+    Compose --> Profiles
+    Compose --> Entrypoint
+    Compose --> NodeLocal
+    Compose --> NodeDev
+    Compose --> NodeTest
+    Compose --> NodeMain
+    Compose --> Caddy
+    WG --> RpcSecure
+    NodeDev --> RpcDev
+    NodeTest --> RpcTest
+    NodeMain --> RpcMain
   end
 
-  subgraph Chain["On-chain (future)"]
+  subgraph CI["CI / QA"]
+    direction TB
+    Tests["tests.yml"]
+    Automation["project-automation.yml"]
+    CoreCheck["ci/core_check.sh"]
+    Tests --> CoreCheck
+  end
+
+  subgraph Future["Product (future)"]
+    direction LR
+    ApiSvc["API service"]
     Programs["Solana programs"]
-    Accounts["Program state / accounts"]
+    State["On-chain state"]
+    ApiSvc --> Programs --> State
   end
 
-  Web --> Cmds
-  CLI --> Cmds
-  TUI --> Cmds
-  Viewer --> Splitter
-  Cmds --> Connectors
-  Cmds --> Splitter --> Executor --> Worker
-  Worker --> Connectors
-  Cmds --> Compose --> Networks
-  Networks --> Proxy
-  Wireguard --> Proxy
-  Programs --> Accounts
-  Cmds --> Programs
+  TUI --> Scheduler --> Router
+  CLI --> Router
+  Router --> Catalog
+  Router --> Splitter
+  Router --> Worker
+  Router --> Compose
+
+  Worker --> Factory
+  Factory --> Conns
+  Worker --> Executor
+
+  SWriter --> ASummary
+  SWriter --> AFrags
+  WJob --> ASummary
+  WJob --> AFrags
+  CHttp --> APayload
+  Executor --> AResult
+  Executor --> ALog
+  Worker --> AReport
+  Worker --> AResult
+
+  Viewer --> ASummary
+  Viewer --> AReport
+  Tests --> CLI
+  Tests --> Compose
+  ApiSvc --> Worker
 ```
 
-## Zoom: Orchestration (detailed)
+## Zoom: Worker <-> Executor <-> Connectors
 
 ```mermaid
 flowchart LR
-  CLI["silicium CLI"] --> Cmds["Command Router"]
-  TUI["TUI"] --> Scheduler["TUI State + Scheduler"] --> Cmds
+  Task["Task (binary/health)"] --> Worker["Worker"]
+  Worker --> Router["TaskRouter"]
+  Worker --> Policy["OS policy + WSL triggers"]
+  Worker --> Obs["TaskObserver/Reporter"]
 
-  Cmds --> ConnFactory["Connector Factory"]
-  ConnFactory --> InProc["InProcess"]
-  ConnFactory --> StdIO["StdIO (future)"]
-  ConnFactory --> HTTP["HTTP (future)"]
+  Worker --> CFactory["BackendConnectorFactory"]
+  CFactory --> Direct["DirectConnector"]
+  CFactory --> Http["HttpConnector"]
+  CFactory --> Dynamo["DynamoBackend"]
 
-  InProc --> Cmds
-  StdIO --> Cmds
-  HTTP --> Cmds
+  Direct --> FFI["FragmentApi / shared libs"]
+  Http --> HttpExec["POST /execute (JSON)"]
+  Dynamo --> Drrun["DynamoRunner -> drrun"]
 
-  subgraph Actions["Action Types"]
-    ActionRun["Run action"]
-    ActionQueue["Queue action"]
-    ActionInterrupt["Interrupt"]
-    ActionRunner["Runner mode"]
-  end
-  Scheduler --> ActionRun
-  Scheduler --> ActionQueue
-  Scheduler --> ActionInterrupt
-  Scheduler --> ActionRunner
+  FFI --> Exec["FragmentExecutor"]
+  Exec --> Result["ExecutionResult"]
+  Worker --> Report["TaskReport + telemetry"]
 ```
 
-## Zoom: Connectors / HTTP (detailed)
+## Zoom: Splitter -> Artifacts -> Execution
 
 ```mermaid
 flowchart LR
-  Worker["worker"] --> Direct["direct connector"]
-  Worker --> HttpBackend["HTTP backend connector"]
-
-  subgraph HttpFlow["HTTP flow"]
-    Req["POST /execute
-JSON payload"] --> Runner["External runner"]
-    Runner --> Res["ExecutionResult JSON"]
-  end
-
-  HttpBackend --> Req
-  Res --> HttpBackend
-
-  subgraph Payload["Payload fields (examples)"]
-    Type["type: binary/health"]
-    Part["partition_id"]
-    Paths["asm_path / binary_path"]
-    Mode["mode: emu/native"]
-    Inputs["register_state / memory / inputs"]
-  end
-
-  Req --> Type
-  Req --> Part
-  Req --> Paths
-  Req --> Mode
-  Req --> Inputs
+  Input["Input binary"] --> Splitter["splitter pipeline"]
+  Splitter --> Summary["summary.json"]
+  Splitter --> Frags["fragment files (.asm/.bin/wrapper)"]
+  Summary --> Worker["worker JobRunner"]
+  Frags --> Worker
+  Worker --> Executor["executor backends"]
+  Executor --> Log["fragment_executor.log"]
+  Executor --> Result["ExecutionResult"]
 ```
 
-## Zoom: Compute Pipeline (detailed)
+## Zoom: Infra and Networks
 
 ```mermaid
-flowchart LR
-  Workload["Workload manifest"] --> Splitter["splitter
-ELF analysis + partitions"]
-  Splitter --> Summary["summary.json + fragments"]
-  Summary --> Executor["executor
-emu/native"]
-  Executor --> Worker["worker
-queue + patches"]
-  Worker --> Direct["direct connector"]
-  Worker --> HttpBackend["HTTP backend connector"]
-  Worker --> Dynamo["DynamoRIO runner"]
+flowchart TB
+  CLI["silicium CLI"] --> Compose["docker compose"]
+  Compose --> Local["localnet"]
+  Compose --> Dev["devnet"]
+  Compose --> Test["testnet"]
+  Compose --> Main["mainnet"]
+  Compose --> Proxy["Caddy TLS proxy"]
 
-  subgraph Artifacts["Artifacts"]
-    Frags["fragment .asm/.bin"]
-    Log["fragment_executor.log"]
-    Reports["TaskReport + telemetry"]
-  end
-  Splitter --> Frags
-  Executor --> Log
-  Worker --> Reports
-```
+  Dev --> DevRpc["api.devnet.solana.com"]
+  Test --> TestRpc["api.testnet.solana.com"]
+  Main --> MainRpc["api.mainnet-beta.solana.com"]
 
-## Zoom: Infra / Network (detailed)
-
-```mermaid
-flowchart LR
-  Cmds["Command Router"] --> Compose["docker compose profiles"]
-  Compose --> Localnet["localnet"]
-  Compose --> Devnet["devnet"]
-  Compose --> Testnet["testnet"]
-  Compose --> Mainnet["mainnet"]
-  Localnet --> Proxy["Caddy TLS proxy"]
-  Devnet --> Proxy
-  Testnet --> Proxy
-  Mainnet --> Proxy
-  Clients["RPC clients"] --> Proxy
-  Clients --> Wireguard["WireGuard"] --> Proxy
-
-  subgraph TLS["TLS modes"]
-    Local["local"]
-    Acme["acme"]
-    Internal["internal"]
-  end
-  Proxy --> TLS
-```
-
-## Zoom: Product / On-chain (future, detailed)
-
-```mermaid
-flowchart LR
-  Web["Web UI"] --> API["API service"]
-  API --> Programs["Solana programs"]
-  Programs --> Accounts["On-chain state"]
-  API --> Worker["worker / execution"]
-  Worker --> Results["results + telemetry"]
-  Results --> API
-  API --> Cache["cache / db"]
+  VPN["WireGuard"] --> SecureRpc["isolated solana-rpc"]
+  Proxy --> Clients["RPC clients"]
+  VPN --> Clients
 ```
 
 
