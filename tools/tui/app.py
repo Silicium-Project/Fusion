@@ -599,6 +599,7 @@ class SiliciumTui(App):
         badge_elapsed = self.query_one("#badge-elapsed", Static)
         selected = self._selected_action or self._current_action
         action_label = selected.label if selected else "-"
+        running_state = self._running_actions.get(selected.key) if selected else None
         if running_state:
             command = " ".join(running_state.action.command(running_state.runner_mode))
         else:
