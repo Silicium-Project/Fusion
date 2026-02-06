@@ -215,7 +215,7 @@ class SiliciumTui(App):
         super().__init__()
         self._actions: list[ActionSpec] = build_actions()
         self._action_by_key = {action.key: action for action in self._actions}
-        self._running = False
+        self._action_running = False
         self._progress_value = 0
         self._progress_timer = None
         self._elapsed_timer = None
@@ -272,7 +272,7 @@ class SiliciumTui(App):
         self._sync_toolbar()
 
     def action_refresh(self) -> None:
-        if self._running:
+        if self._action_running:
             return
         self._render_status()
 
@@ -280,7 +280,7 @@ class SiliciumTui(App):
         self.query_one("#log", RichLog).clear()
 
     def action_stop(self) -> None:
-        if not self._running or not self._proc:
+        if not self._action_running or not self._proc:
             return
         self._proc.terminate()
 
@@ -313,16 +313,16 @@ class SiliciumTui(App):
                 self.set_clipboard(str(self._log_path))
 
     def _run_selected(self) -> None:
-        if self._running:
+        if self._action_running:
             return
         if not self._selected_action:
             return
         self.run_worker(self._execute_action(self._selected_action), exclusive=True)
 
     async def _execute_action(self, action: ActionSpec) -> None:
-        if self._running:
+        if self._action_running:
             return
-        self._running = True
+        self._action_running = True
         self._current_action = action
         self._exit_code = None
         self._action_start_time = asyncio.get_running_loop().time()
@@ -358,7 +358,7 @@ class SiliciumTui(App):
         except Exception as exc:  # pragma: no cover - UI error path
             log.write(f"[error] Failed to start command: {exc}", scroll_end=True)
             self._exit_code = 1
-            self._running = False
+            self._action_running = False
             progress.display = False
             spinner.display = False
             if self._progress_timer:
@@ -383,7 +383,7 @@ class SiliciumTui(App):
             await proc.wait()
 
         self._exit_code = proc.returncode
-        self._running = False
+        self._action_running = False
         self._proc = None
         progress.update(progress=100)
         progress.display = False
@@ -411,7 +411,7 @@ class SiliciumTui(App):
         exit_code = "-"
         if self._exit_code is not None:
             exit_code = str(self._exit_code)
-        state = "Running" if self._running else "Idle"
+        state = "Running" if self._action_running else "Idle"
         status_head.update(action_label)
         status_lines.update("\n".join([f"Command: {command}", f"Log    : {log_path}"]))
         badge_state.update(state.upper())
@@ -424,17 +424,17 @@ class SiliciumTui(App):
         run_button = self.query_one("#run", Button)
         stop_button = self.query_one("#stop", Button)
         copy_button = self.query_one("#copy_log", Button)
-        run_button.disabled = self._running or self._selected_action is None
-        stop_button.disabled = not self._running
+        run_button.disabled = self._action_running or self._selected_action is None
+        stop_button.disabled = not self._action_running
         copy_button.disabled = self._log_path is None
 
     def _tick_elapsed(self) -> None:
-        if not self._running:
+        if not self._action_running:
             return
         self._render_status()
 
     def _pulse_progress(self) -> None:
-        if not self._running:
+        if not self._action_running:
             return
         progress = self.query_one("#progress", ProgressBar)
         self._progress_value = (self._progress_value + 3) % 101
