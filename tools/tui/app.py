@@ -158,7 +158,7 @@ class SiliciumTui(App):
 
     #run.run-ready {
         text-style: bold;
-        background: $primary;
+        background: $success;
         color: $background;
     }
 
@@ -380,6 +380,7 @@ class SiliciumTui(App):
         self._exit_code = None
         self._action_start_time = asyncio.get_running_loop().time()
         self._progress_value = 0
+        self._sync_toolbar()
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
