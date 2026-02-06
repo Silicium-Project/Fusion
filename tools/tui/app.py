@@ -374,8 +374,9 @@ class SiliciumTui(App):
         command = " ".join(self._current_action.command()) if self._current_action else "-"
         log_path = str(self._log_path) if self._log_path else "-"
         elapsed = None
-        if self._start_time is not None:
-            elapsed = asyncio.get_running_loop().time() - self._start_time
+        start_time = self._start_time
+        if isinstance(start_time, (int, float)):
+            elapsed = asyncio.get_running_loop().time() - start_time
         exit_code = "-"
         if self._exit_code is not None:
             exit_code = str(self._exit_code)
