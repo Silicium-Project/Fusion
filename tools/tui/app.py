@@ -10,7 +10,7 @@ from typing import Iterable
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, OptionList, ProgressBar, Static, TextLog
+from textual.widgets import Footer, Header, LoadingIndicator, OptionList, ProgressBar, Static, TextLog
 from textual.widgets.option_list import Option
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -76,6 +76,17 @@ def build_actions() -> list[ActionSpec]:
     ]
 
 
+def format_duration(seconds: float | None) -> str:
+    if seconds is None:
+        return "-"
+    seconds = int(seconds)
+    minutes, secs = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
 class SiliciumTui(App):
     CSS = """
     Screen {
@@ -87,13 +98,13 @@ class SiliciumTui(App):
     }
 
     #left {
-        width: 40%;
-        min-width: 30;
+        width: 38%;
+        min-width: 32;
         padding: 1 1;
     }
 
     #right {
-        width: 60%;
+        width: 62%;
         padding: 1 1;
     }
 
@@ -102,10 +113,39 @@ class SiliciumTui(App):
         border: round $secondary;
     }
 
+    #actions-title,
+    #status-title,
+    #log-title {
+        text-style: bold;
+        color: $accent;
+        padding: 0 1;
+    }
+
     #details {
         height: 6;
         border: round $primary;
         padding: 1 1;
+        color: $text-muted;
+    }
+
+    #status-panel {
+        height: 8;
+        border: round $secondary;
+        padding: 1 1;
+    }
+
+    #status-row {
+        height: 2;
+        align: left middle;
+    }
+
+    #status-lines {
+        height: 1fr;
+    }
+
+    #progress {
+        width: 28;
+        margin-left: 2;
     }
 
     #log {
@@ -113,19 +153,9 @@ class SiliciumTui(App):
         border: round $secondary;
     }
 
-    #status {
+    #hint {
         height: 3;
-        padding: 0 1;
-        align: left middle;
-    }
-
-    #status-text {
-        width: 1fr;
-    }
-
-    #progress {
-        width: 30;
-        margin-left: 2;
+        color: $text-muted;
     }
     """
 
@@ -142,8 +172,12 @@ class SiliciumTui(App):
         self._running = False
         self._progress_value = 0
         self._progress_timer = None
-        self._log_buffer: deque[str] = deque(maxlen=200)
+        self._elapsed_timer = None
+        self._log_buffer: deque[str] = deque(maxlen=300)
         self._log_path: Path | None = None
+        self._start_time: float | None = None
+        self._current_action: ActionSpec | None = None
+        self._exit_code: int | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -151,13 +185,17 @@ class SiliciumTui(App):
             with Vertical(id="left"):
                 yield Static("Actions", id="actions-title")
                 yield OptionList(id="actions")
+                yield Static("Enter: run | r: refresh | l: clear log | q: quit", id="hint")
                 yield Static("Select an action and press Enter.", id="details")
             with Vertical(id="right"):
-                yield Static("Output", id="log-title")
+                yield Static("Status", id="status-title")
+                with Vertical(id="status-panel"):
+                    yield Static("Idle", id="status-lines")
+                    with Horizontal(id="status-row"):
+                        yield LoadingIndicator(id="spinner")
+                        yield ProgressBar(total=100, id="progress")
+                yield Static("Logs (tail)", id="log-title")
                 yield TextLog(id="log", highlight=False, markup=False, wrap=True)
-        with Horizontal(id="status"):
-            yield Static("Ready.", id="status-text")
-            yield ProgressBar(total=100, id="progress")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -166,14 +204,16 @@ class SiliciumTui(App):
             [Option(f"[{action.key}] {action.label}", id=action.key) for action in self._actions]
         )
         option_list.focus()
-        progress = self.query_one("#progress", ProgressBar)
-        progress.display = False
+        self.query_one("#progress", ProgressBar).display = False
+        self.query_one("#spinner", LoadingIndicator).display = False
         self._progress_timer = self.set_interval(0.2, self._pulse_progress, pause=True)
+        self._elapsed_timer = self.set_interval(0.5, self._tick_elapsed, pause=True)
+        self._render_status()
 
     def action_refresh(self) -> None:
         if self._running:
             return
-        self.query_one("#status-text", Static).update("Ready.")
+        self._render_status()
 
     def action_clear_log(self) -> None:
         self.query_one("#log", TextLog).clear()
@@ -195,23 +235,32 @@ class SiliciumTui(App):
         if self._running:
             return
         self._running = True
-        status = self.query_one("#status-text", Static)
-        log = self.query_one("#log", TextLog)
-        progress = self.query_one("#progress", ProgressBar)
-        command = action.command()
+        self._current_action = action
+        self._exit_code = None
+        self._start_time = asyncio.get_running_loop().time()
+        self._progress_value = 0
+
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self._log_path = LOG_DIR / f"{timestamp}_{action.key}.log"
-        status.update(f"Running: {action.label} (log: {self._log_path})")
+
+        progress = self.query_one("#progress", ProgressBar)
+        spinner = self.query_one("#spinner", LoadingIndicator)
         progress.display = True
+        spinner.display = True
         progress.update(progress=0)
         if self._progress_timer:
             self._progress_timer.resume()
+        if self._elapsed_timer:
+            self._elapsed_timer.resume()
 
+        log = self.query_one("#log", TextLog)
         log.clear()
         self._log_buffer.clear()
-        log.write(f"$ {' '.join(command)}")
-        self._log_buffer.append(f"$ {' '.join(command)}")
+        command = action.command()
+        command_line = f"$ {' '.join(command)}"
+        log.write(command_line)
+        self._log_buffer.append(command_line)
 
         proc = await asyncio.create_subprocess_exec(
             *command,
@@ -246,12 +295,43 @@ class SiliciumTui(App):
             for entry in self._log_buffer:
                 log.write(entry)
 
-        status.update(f"Done: {action.label} (exit {proc.returncode})")
+        self._exit_code = proc.returncode
+        self._running = False
         progress.update(progress=100)
         progress.display = False
+        spinner.display = False
         if self._progress_timer:
             self._progress_timer.pause()
-        self._running = False
+        if self._elapsed_timer:
+            self._elapsed_timer.pause()
+        self._render_status()
+
+    def _render_status(self) -> None:
+        status = self.query_one("#status-lines", Static)
+        action_label = self._current_action.label if self._current_action else "-"
+        command = " ".join(self._current_action.command()) if self._current_action else "-"
+        log_path = str(self._log_path) if self._log_path else "-"
+        elapsed = None
+        if self._start_time is not None:
+            elapsed = asyncio.get_running_loop().time() - self._start_time
+        exit_code = "-"
+        if self._exit_code is not None:
+            exit_code = str(self._exit_code)
+        state = "Running" if self._running else "Idle"
+        lines = [
+            f"State  : {state}",
+            f"Action : {action_label}",
+            f"Command: {command}",
+            f"Log    : {log_path}",
+            f"Elapsed: {format_duration(elapsed)}",
+            f"Exit   : {exit_code}",
+        ]
+        status.update("\n".join(lines))
+
+    def _tick_elapsed(self) -> None:
+        if not self._running:
+            return
+        self._render_status()
 
     def _pulse_progress(self) -> None:
         if not self._running:
