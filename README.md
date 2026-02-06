@@ -1,100 +1,113 @@
 # Network
 
+## Architecture (Macro)
+
 ```mermaid
 flowchart LR
-  %% Columns: UI -> Orchestration -> Compute -> CI -> Infra
-  subgraph UI["User Interfaces"]
+  subgraph Frontends["Frontends"]
+    Web["Web UI (future)"]
     CLI["silicium CLI"]
     TUI["TUI (Textual)"]
     Viewer["Viewer (Qt)"]
-    APIUI["API/UI (future)"]
   end
 
-  subgraph Orchestrator["Orchestration"]
+  subgraph Orchestration["Orchestration"]
     Cmds["Command Router"]
-    TUIState["TUI State + Scheduler"]
-    ConnFactory["Connector Factory"]
-    InProc["InProcess Connector"]
-    StdIO["StdIO Connector"]
-    HttpConn["HTTP Connector"]
+    Connectors["Connector Layer"]
   end
 
-  subgraph Compute["Compute Pipeline"]
-    Splitter["splitter (C++)
-ELF analysis + partitions"]
-    Executor["executor
-emu/native"]
-    Worker["worker
-queue + patches"]
-    Dynamo["DynamoRIO runner"]
-    Direct["direct connector"]
-    HttpBackend["HTTP backend connector"]
-  end
-
-  subgraph CI["CI / Tests"]
-    PyTests["pytest"]
-    CppTests["C++ tests (docker image)"]
-    Coverage["coverage reports"]
-  end
-
-  subgraph Workloads["Workloads"]
-    Manifests["catalog/workloads
-profiles + manifests"]
+  subgraph Compute["Compute"]
+    Splitter["splitter"]
+    Executor["executor"]
+    Worker["worker"]
   end
 
   subgraph Infra["Infra / Network"]
-    Compose["docker compose
-profiles"]
-    Localnet["localnet"]
-    Devnet["devnet"]
-    Testnet["testnet"]
-    Mainnet["mainnet"]
+    Compose["docker compose"]
     Proxy["Caddy TLS proxy"]
-    Wireguard["WireGuard secure stack"]
-    Clients["Clients / RPC users"]
+    Wireguard["WireGuard"]
+    Networks["localnet / devnet / testnet / mainnet"]
   end
 
-  %% UI flow (left -> right)
+  subgraph Chain["On-chain (future)"]
+    Programs["Solana programs"]
+    Accounts["Program state / accounts"]
+  end
+
+  Web --> Cmds
   CLI --> Cmds
-  TUI --> TUIState --> ConnFactory
-  ConnFactory --> InProc
-  ConnFactory --> StdIO
-  ConnFactory --> HttpConn
+  TUI --> Cmds
+  Viewer --> Splitter
+  Cmds --> Connectors
+  Cmds --> Splitter --> Executor --> Worker
+  Worker --> Connectors
+  Cmds --> Compose --> Networks
+  Networks --> Proxy
+  Wireguard --> Proxy
+  Programs --> Accounts
+  Cmds --> Programs
+```
+
+## Zoom: Orchestration
+
+```mermaid
+flowchart LR
+  CLI["silicium CLI"] --> Cmds["Command Router"]
+  TUI["TUI"] --> Scheduler["TUI State + Scheduler"] --> Cmds
+  Cmds --> ConnFactory["Connector Factory"]
+  ConnFactory --> InProc["InProcess"]
+  ConnFactory --> StdIO["StdIO (future)"]
+  ConnFactory --> HTTP["HTTP (future)"]
   InProc --> Cmds
   StdIO --> Cmds
-  HttpConn --> Cmds
-  APIUI --> Cmds
-  Viewer --> Splitter
-
-  %% Compute flow (left -> right)
-  Cmds --> Manifests
-  Cmds --> Splitter --> Executor --> Worker
-  Worker --> Dynamo
-  Worker --> Direct
-  Worker --> HttpBackend
-
-  %% CI flow (left -> right)
-  PyTests --> Cmds
-  CppTests --> Splitter
-  CppTests --> Executor
-  CppTests --> Worker
-  Worker --> Coverage
-
-  %% Infra flow (left -> right)
-  Cmds --> Compose
-  Compose --> Localnet
-  Compose --> Devnet
-  Compose --> Testnet
-  Compose --> Mainnet
-  Compose --> Proxy
-  Wireguard --> Proxy
-  Clients --> Wireguard
-  Clients --> Proxy
-  Proxy --> Localnet
-  Proxy --> Devnet
-  Proxy --> Testnet
-  Proxy --> Mainnet
+  HTTP --> Cmds
 ```
+
+## Zoom: Compute Pipeline
+
+```mermaid
+flowchart LR
+  Workload["Workload manifest"] --> Splitter["splitter
+ELF analysis + partitions"]
+  Splitter --> Summary["summary.json + fragments"]
+  Summary --> Executor["executor
+emu/native"]
+  Executor --> Worker["worker
+queue + patches"]
+  Worker --> Direct["direct connector"]
+  Worker --> HttpBackend["HTTP backend connector"]
+  Worker --> Dynamo["DynamoRIO runner"]
+```
+
+## Zoom: Infra / Network
+
+```mermaid
+flowchart LR
+  Cmds["Command Router"] --> Compose["docker compose profiles"]
+  Compose --> Localnet["localnet"]
+  Compose --> Devnet["devnet"]
+  Compose --> Testnet["testnet"]
+  Compose --> Mainnet["mainnet"]
+  Localnet --> Proxy["Caddy TLS proxy"]
+  Devnet --> Proxy
+  Testnet --> Proxy
+  Mainnet --> Proxy
+  Clients["RPC clients"] --> Proxy
+  Clients --> Wireguard["WireGuard"] --> Proxy
+```
+
+## Zoom: Product / On-chain (future)
+
+```mermaid
+flowchart LR
+  Web["Web UI"] --> API["API service"]
+  API --> Programs["Solana programs"]
+  Programs --> Accounts["On-chain state"]
+  API --> Worker["worker / execution"]
+  Worker --> Results["results + telemetry"]
+  Results --> API
+```
+
 
 
 Cette base de code fournit une image Docker unique permettant de lancer un nœud **Silicium** (surcouche Solana) dans plusieurs contextes : localnet isolé, Devnet, Testnet ou Mainnet. Tout est orchestré via Docker Compose et un script d'entrée (`infra/docker/solana-entrypoint.sh`) qui gère les clés, la configuration Solana et le lancement du validateur ou du test validator.
