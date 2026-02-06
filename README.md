@@ -1,5 +1,58 @@
 # Network
 
+```mermaid
+flowchart LR
+  subgraph CLI["silicium CLI / TUI"]
+    CLI_TUI["TUI (Textual)"]
+    CLI_Core["CLI commands"]
+  end
+
+  subgraph Compute["Compute pipeline"]
+    Splitter["splitter
+partitioner (C++)"]
+    Executor["executor
+fragment execution (emu/native)"]
+    Worker["worker
+orchestrator (queue/patches)"]
+    Viewer["viewer (Qt)
+fragment graph"]
+  end
+
+  subgraph Catalog["Workloads"]
+    Manifests["catalog/workloads
+manifests + profiles"]
+  end
+
+  subgraph Infra["Infra / Network"]
+    Compose["docker-compose"]
+    Solana["Solana node
+local/dev/test/main"]
+    Proxy["Caddy TLS proxy"]
+    Wireguard["WireGuard secure stack"]
+  end
+
+  subgraph CI["CI / Tests"]
+    PyTests["pytest"]
+    CppTests["C++ tests (docker image)"]
+    Coverage["coverage reports"]
+  end
+
+  CLI_TUI --> CLI_Core
+  CLI_Core --> Splitter
+  Splitter --> Executor --> Worker
+  Splitter --> Viewer
+  Manifests --> CLI_Core
+  CLI_Core --> Compose --> Solana
+  Compose --> Proxy
+  Wireguard --> Solana
+  PyTests --> CLI_Core
+  CppTests --> Splitter
+  CppTests --> Executor
+  CppTests --> Worker
+  Worker --> Coverage
+```
+
+
 Cette base de code fournit une image Docker unique permettant de lancer un nœud **Silicium** (surcouche Solana) dans plusieurs contextes : localnet isolé, Devnet, Testnet ou Mainnet. Tout est orchestré via Docker Compose et un script d'entrée (`infra/docker/solana-entrypoint.sh`) qui gère les clés, la configuration Solana et le lancement du validateur ou du test validator.
 
 ---
