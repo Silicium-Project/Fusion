@@ -294,245 +294,6 @@ class ScopedRule(Rule):
         return True
 
 
-class CppPrimaryClassFilenameRule(ScopedRule):
-    def __init__(self, spec: dict) -> None:
-        super().__init__(
-            spec,
-            rule_id=spec.get("id", "cpp.primary_class_filename"),
-            description=spec.get("description", ""),
-        )
-
-    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
-        text = sanitize_cpp(content)
-        match = re_class_or_struct_name().search(text)
-        if not match:
-            return []
-        class_name = match.group(1)
-        stem = path.stem
-        if stem == class_name:
-            return []
-        line, col = line_col_from_index(text, match.start(1))
-        return [
-            Issue(
-                rule_id=self.meta.rule_id,
-                message=f"Primary class/struct '{class_name}' does not match file name '{stem}'.",
-                path=path,
-                line=line,
-                column=col,
-                severity=self._severity,
-            )
-        ]
-
-
-class CppHeaderSourcePairRule(ScopedRule):
-    def __init__(self, spec: dict) -> None:
-        super().__init__(
-            spec,
-            rule_id=spec.get("id", "cpp.header_source_pair"),
-            description=spec.get("description", ""),
-        )
-        pairing = spec.get("pairing", {})
-        self._include_root = pairing.get("include_root", "include")
-        self._src_root = pairing.get("src_root", "src")
-        self._extensions = pairing.get("extensions", [".cpp", ".cc", ".cxx"])
-
-    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
-        parts = list(rel_path.parts)
-        if self._include_root not in parts:
-            return []
-        idx = parts.index(self._include_root)
-        tail = parts[idx + 1 :]
-        if not tail:
-            return []
-        stem = Path(tail[-1]).stem
-        repo_root = path.parents[len(rel_path.parts) - 1]
-        base_parts = parts[:idx] + [self._src_root] + tail[:-1]
-        for ext in self._extensions:
-            candidate = repo_root.joinpath(*base_parts, stem + ext)
-            if candidate.exists():
-                return []
-        return [
-            Issue(
-                rule_id=self.meta.rule_id,
-                message=f"Missing source pair for header '{rel_path.as_posix()}'.",
-                path=path,
-                line=1,
-                column=1,
-                severity=self._severity,
-            )
-        ]
-
-
-class CppIncludeOrderRule(ScopedRule):
-    def __init__(self, spec: dict) -> None:
-        super().__init__(
-            spec,
-            rule_id=spec.get("id", "cpp.include_order"),
-            description=spec.get("description", ""),
-        )
-
-    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
-        issues: List[Issue] = []
-        include_re = re_include_line()
-        current_group = -1
-        for idx, line in enumerate(content.splitlines(), start=1):
-            match = include_re.match(line)
-            if not match:
-                continue
-            delimiter = match.group(1)
-            group = 0 if delimiter == "<" else 1
-            if group < current_group:
-                issues.append(
-                    Issue(
-                        rule_id=self.meta.rule_id,
-                        message="Include order should be: <system/third-party> before \"project\".",
-                        path=path,
-                        line=idx,
-                        column=1,
-                        severity=self._severity,
-                    )
-                )
-            else:
-                current_group = group
-        return issues
-
-
-class PyFileSnakeCaseRule(ScopedRule):
-    def __init__(self, spec: dict) -> None:
-        super().__init__(
-            spec,
-            rule_id=spec.get("id", "py.file_snake_case"),
-            description=spec.get("description", ""),
-        )
-
-    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
-        stem = path.stem
-        if stem in {"__init__", "__main__"}:
-            return []
-        if re.fullmatch(r"__\w+__", stem):
-            return []
-        if re.fullmatch(r"_*[a-z][a-z0-9_]*", stem):
-            return []
-        return [
-            Issue(
-                rule_id=self.meta.rule_id,
-                message=f"Python file name '{stem}' should be snake_case.",
-                path=path,
-                line=1,
-                column=1,
-                severity=self._severity,
-            )
-        ]
-
-
-class PyFunctionSnakeCaseRule(ScopedRule):
-    def __init__(self, spec: dict) -> None:
-        super().__init__(
-            spec,
-            rule_id=spec.get("id", "py.function_snake_case"),
-            description=spec.get("description", ""),
-        )
-
-    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
-        issues: List[Issue] = []
-        def_re = re_python_def()
-        for idx, line in enumerate(content.splitlines(), start=1):
-            match = def_re.match(line)
-            if not match:
-                continue
-            name = match.group(1)
-            if name.startswith("__") and name.endswith("__"):
-                continue
-            base = name.lstrip("_")
-            if not base:
-                continue
-            if re.fullmatch(r"[a-z][a-z0-9_]*", base):
-                continue
-            issues.append(
-                Issue(
-                    rule_id=self.meta.rule_id,
-                    message=f"Function '{name}' should be snake_case.",
-                    path=path,
-                    line=idx,
-                    column=1,
-                    severity=self._severity,
-                )
-            )
-        return issues
-
-
-class PyFinalConstantUpperRule(ScopedRule):
-    def __init__(self, spec: dict) -> None:
-        super().__init__(
-            spec,
-            rule_id=spec.get("id", "py.final_constant_upper_snake"),
-            description=spec.get("description", ""),
-        )
-
-    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
-        issues: List[Issue] = []
-        final_re = re_python_final()
-        for idx, line in enumerate(content.splitlines(), start=1):
-            match = final_re.match(line)
-            if not match:
-                continue
-            name = match.group(1)
-            if re.fullmatch(r"_?[A-Z][A-Z0-9_]*", name):
-                continue
-            issues.append(
-                Issue(
-                    rule_id=self.meta.rule_id,
-                    message=f"Constant '{name}' annotated with Final should be UPPER_SNAKE_CASE.",
-                    path=path,
-                    line=idx,
-                    column=1,
-                    severity=self._severity,
-                )
-            )
-        return issues
-
-
-class CppUnsafePatternsRule(ScopedRule):
-    def __init__(self, spec: dict) -> None:
-        super().__init__(
-            spec,
-            rule_id=spec.get("id", "cpp.no_unsafe_allocation"),
-            description=spec.get("description", ""),
-        )
-        self._patterns: list[dict[str, object]] = []
-        for entry in spec.get("patterns", []):
-            regex = entry.get("regex")
-            if not regex:
-                continue
-            self._patterns.append(
-                {
-                    "regex": re.compile(regex),
-                    "label": entry.get("label", regex),
-                    "message": entry.get("message", ""),
-                }
-            )
-
-    def check(self, rel_path, path: Path, content: str) -> List[Issue]:
-        text = sanitize_cpp(content)
-        issues: List[Issue] = []
-        for entry in self._patterns:
-            regex = entry["regex"]
-            for match in regex.finditer(text):
-                line, col = line_col_from_index(text, match.start())
-                message = entry.get("message") or f"Unsafe pattern detected: {entry.get('label')}."
-                issues.append(
-                    Issue(
-                        rule_id=self.meta.rule_id,
-                        message=str(message),
-                        path=path,
-                        line=line,
-                        column=col,
-                        severity=self._severity,
-                    )
-                )
-        return issues
-
-
 class JsonRule(Rule):
     def __init__(self, spec: dict) -> None:
         rule_id = spec.get("id")
@@ -649,18 +410,34 @@ def load_rules_from_json(path: Path) -> List[Rule]:
 
 def _make_rule(spec: dict) -> Rule:
     rule_id = spec.get("id", "")
-    custom = {
-        "cpp.primary_class_filename": CppPrimaryClassFilenameRule,
-        "cpp.header_source_pair": CppHeaderSourcePairRule,
-        "cpp.include_order": CppIncludeOrderRule,
-        "py.file_snake_case": PyFileSnakeCaseRule,
-        "py.function_snake_case": PyFunctionSnakeCaseRule,
-        "py.final_constant_upper_snake": PyFinalConstantUpperRule,
-        "cpp.no_unsafe_allocation": CppUnsafePatternsRule,
-    }
-    rule_cls = custom.get(rule_id)
-    if rule_cls:
-        return rule_cls(spec)
+    if rule_id == "cpp.primary_class_filename":
+        from tools.codingstyle.rules_impl.cpp_primary_class_filename import CppPrimaryClassFilenameRule
+
+        return CppPrimaryClassFilenameRule(spec)
+    if rule_id == "cpp.header_source_pair":
+        from tools.codingstyle.rules_impl.cpp_header_source_pair import CppHeaderSourcePairRule
+
+        return CppHeaderSourcePairRule(spec)
+    if rule_id == "cpp.include_order":
+        from tools.codingstyle.rules_impl.cpp_include_order import CppIncludeOrderRule
+
+        return CppIncludeOrderRule(spec)
+    if rule_id == "py.file_snake_case":
+        from tools.codingstyle.rules_impl.py_file_snake_case import PyFileSnakeCaseRule
+
+        return PyFileSnakeCaseRule(spec)
+    if rule_id == "py.function_snake_case":
+        from tools.codingstyle.rules_impl.py_function_snake_case import PyFunctionSnakeCaseRule
+
+        return PyFunctionSnakeCaseRule(spec)
+    if rule_id == "py.final_constant_upper_snake":
+        from tools.codingstyle.rules_impl.py_final_constant_upper_snake import PyFinalConstantUpperRule
+
+        return PyFinalConstantUpperRule(spec)
+    if rule_id == "cpp.no_unsafe_allocation":
+        from tools.codingstyle.rules_impl.cpp_unsafe_patterns import CppUnsafePatternsRule
+
+        return CppUnsafePatternsRule(spec)
     return JsonRule(spec)
 
 

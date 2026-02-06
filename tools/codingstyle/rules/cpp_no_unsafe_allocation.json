@@ -35,6 +35,11 @@
       "label": "free",
       "regex": "\\bfree\\s*\\(",
       "message": "Avoid free; use RAII containers or smart pointers."
+    },
+    {
+      "label": "raw pointer declaration",
+      "regex": "(?m)^\\s*(?!return\\b)(?!if\\b)(?!for\\b)(?!while\\b)(?!switch\\b)(?!case\\b)(?:const\\s+)?(?:[A-Za-z_]\\w*::)*[A-Za-z_]\\w*\\s*\\*+\\s*[A-Za-z_]\\w*\\s*(?:[=,;\\[])",
+      "message": "Avoid raw pointers; use references or smart pointers to encapsulate ownership."
     }
   ]
 }
