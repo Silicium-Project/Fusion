@@ -140,6 +140,24 @@ class SiliciumTui(App):
 
     #taskbar-buttons Button {
         margin: 0 1;
+        background: transparent;
+        border: none;
+        color: $accent;
+        padding: 0 0;
+    }
+
+    #taskbar-buttons Button:hover {
+        color: $text;
+        text-style: bold;
+    }
+
+    #taskbar-buttons Button:focus {
+        color: $text;
+        text-style: bold;
+    }
+
+    #taskbar-sep {
+        color: $text-muted;
     }
 
     #actions-title,
@@ -255,11 +273,15 @@ class SiliciumTui(App):
                 yield Static("Idle", id="taskbar-state")
             with Horizontal(id="taskbar-right"):
                 with Horizontal(id="taskbar-buttons"):
-                    yield Button("Run", id="run", variant="primary")
-                    yield Button("Interrupt", id="stop", variant="error")
-                    yield Button("Refresh", id="refresh", variant="default")
-                    yield Button("Clear log", id="clear", variant="default")
-                    yield Button("Copy log", id="copy_log", variant="default")
+                    yield Button("Run", id="run")
+                    yield Static("│", id="taskbar-sep")
+                    yield Button("Interrupt", id="stop")
+                    yield Static("│", id="taskbar-sep")
+                    yield Button("Refresh", id="refresh")
+                    yield Static("│", id="taskbar-sep")
+                    yield Button("Clear log", id="clear")
+                    yield Static("│", id="taskbar-sep")
+                    yield Button("Copy log", id="copy_log")
         with Horizontal(id="body"):
             with Vertical(id="left"):
                 yield Static("Actions", id="actions-title")
