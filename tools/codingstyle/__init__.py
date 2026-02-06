@@ -3,7 +3,6 @@
     "RuleMeta",
     "Rule",
     "RuleRegistry",
-    "JsonRule",
     "load_rules_from_json",
     "load_rules_from_dir",
     "sanitize_cpp",
@@ -12,7 +11,6 @@
 
 from tools.codingstyle.core import (
     Issue,
-    JsonRule,
     Rule,
     RuleMeta,
     RuleRegistry,

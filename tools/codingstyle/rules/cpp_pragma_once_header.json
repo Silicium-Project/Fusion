@@ -1,13 +1,21 @@
 {
   "id": "cpp.pragma_once_header",
   "description": "Require exactly one #pragma once in headers.",
+  "severity": "error",
+  "kind": "pattern_count",
+  "sanitize": "cpp",
   "scope": {
-    "include": ["**/*.hpp", "**/*.h"]
+    "include": [
+      "**/*.hpp",
+      "**/*.h"
+    ]
   },
-  "limits": {
-    "pragma_once": {
+  "patterns": [
+    {
+      "label": "#pragma once",
+      "regex": "(?m)^\\s*#\\s*pragma\\s+once\\b",
       "min": 1,
       "max": 1
     }
-  }
+  ]
 }
