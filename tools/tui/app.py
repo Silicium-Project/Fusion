@@ -158,7 +158,8 @@ class SiliciumTui(App):
 
     #run.run-ready {
         text-style: bold;
-        color: $text;
+        background: $primary;
+        color: $background;
     }
 
     .taskbar-sep {
