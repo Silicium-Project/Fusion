@@ -3,24 +3,28 @@
 ## Architecture Graph (Complete)
 
 ```mermaid
-flowchart TB
-  subgraph Front["Frontends"]
-    direction LR
+flowchart LR
+  subgraph Entry["Entry Points"]
+    direction TB
     CLI["silicium CLI"]
     TUI["TUI (Textual)"]
     Viewer["Viewer (Qt)"]
     Web["Web UI (future)"]
+    Tests["CI tests.yml"]
+    AutoWF["CI project-automation.yml"]
+    CoreCheck["ci/core_check.sh"]
+    Tests --> CoreCheck
   end
 
   subgraph Orch["Orchestration"]
-    direction LR
-    Router["Command Router"]
+    direction TB
     Scheduler["TUI scheduler/state"]
-    Factory["BackendConnectorFactory"]
+    Router["Command Router"]
+    ConnFactory["BackendConnectorFactory"]
   end
 
   subgraph Compute["Compute Core"]
-    direction LR
+    direction TB
     Catalog["catalog/workloads"]
 
     subgraph Splitter["splitter"]
@@ -54,97 +58,99 @@ flowchart TB
     end
   end
 
-  subgraph Conns["Connectors"]
+  subgraph Conn["Connectors"]
     direction TB
-    CDirect["DirectConnector"]
-    CHttp["HttpConnector"]
-    CDyn["DynamoBackend"]
-    CHttpRunner["External HTTP runner"]
-    CApi["Executor shared libs"]
-    CDirect --> CApi
-    CHttp --> CHttpRunner
+    Direct["DirectConnector"]
+    Http["HttpConnector"]
+    Dynamo["DynamoBackend"]
+    HttpRunner["External HTTP runner"]
+    DynRun["DynamoRunner -> docker -> drrun"]
+    FragLib["Executor shared libs"]
+    Direct --> FragLib
+    Http --> HttpRunner
+    Dynamo --> DynRun
   end
 
-  subgraph Art["Artifacts/Contracts"]
+  subgraph Out["Artifacts + Infra + Future"]
     direction TB
-    ASummary["summary.json"]
-    AFrags["fragments (.asm/.bin/wrapper)"]
-    APayload["TaskPayload JSON"]
-    AResult["ExecutionResult"]
-    AReport["TaskReport + telemetry"]
-    ALog["fragment_executor.log"]
-  end
 
-  subgraph Infra["Infra / Network"]
-    direction TB
-    Compose["docker compose"]
-    Profiles["profiles: localnet/devnet/testnet/mainnet/proxy"]
-    Entrypoint["solana-entrypoint.sh"]
-    NodeLocal["silicium-localnet"]
-    NodeDev["silicium-devnet"]
-    NodeTest["silicium-node (testnet)"]
-    NodeMain["silicium-mainnet"]
-    Caddy["Caddy TLS proxy"]
-    WG["WireGuard secure stack"]
-    RpcSecure["isolated solana-rpc"]
-    RpcDev["api.devnet.solana.com"]
-    RpcTest["api.testnet.solana.com"]
-    RpcMain["api.mainnet-beta.solana.com"]
-    Compose --> Profiles
-    Compose --> Entrypoint
-    Compose --> NodeLocal
-    Compose --> NodeDev
-    Compose --> NodeTest
-    Compose --> NodeMain
-    Compose --> Caddy
-    WG --> RpcSecure
-    NodeDev --> RpcDev
-    NodeTest --> RpcTest
-    NodeMain --> RpcMain
-  end
+    subgraph Art["Artifacts/Contracts"]
+      direction TB
+      Summary["summary.json"]
+      Frags["fragments (.asm/.bin/wrapper)"]
+      Payload["TaskPayload JSON"]
+      Result["ExecutionResult"]
+      Report["TaskReport + telemetry"]
+      ExecLog["fragment_executor.log"]
+    end
 
-  subgraph CI["CI / QA"]
-    direction TB
-    Tests["tests.yml"]
-    Automation["project-automation.yml"]
-    CoreCheck["ci/core_check.sh"]
-    Tests --> CoreCheck
-  end
+    subgraph Infra["Infra / Network"]
+      direction TB
+      Compose["docker compose"]
+      Profiles["profiles: localnet/devnet/testnet/mainnet/proxy"]
+      Entrypoint["solana-entrypoint.sh"]
+      NodeLocal["silicium-localnet"]
+      NodeDev["silicium-devnet"]
+      NodeTest["silicium-node (testnet)"]
+      NodeMain["silicium-mainnet"]
+      Caddy["Caddy TLS proxy"]
+      WG["WireGuard secure stack"]
+      RpcSecure["isolated solana-rpc"]
+      RpcDev["api.devnet.solana.com"]
+      RpcTest["api.testnet.solana.com"]
+      RpcMain["api.mainnet-beta.solana.com"]
+      Compose --> Profiles
+      Compose --> Entrypoint
+      Compose --> NodeLocal
+      Compose --> NodeDev
+      Compose --> NodeTest
+      Compose --> NodeMain
+      Compose --> Caddy
+      WG --> RpcSecure
+      NodeDev --> RpcDev
+      NodeTest --> RpcTest
+      NodeMain --> RpcMain
+    end
 
-  subgraph Future["Product (future)"]
-    direction LR
-    ApiSvc["API service"]
-    Programs["Solana programs"]
-    State["On-chain state"]
-    ApiSvc --> Programs --> State
+    subgraph Future["Product (future)"]
+      direction TB
+      ApiSvc["API service"]
+      Programs["Solana programs"]
+      State["On-chain state"]
+      ApiSvc --> Programs --> State
+    end
   end
 
   TUI --> Scheduler --> Router
   CLI --> Router
+  Tests --> CLI
+
   Router --> Catalog
-  Router --> Splitter
-  Router --> Worker
+  Router --> Pipe
+  Router --> WJob
   Router --> Compose
 
-  Worker --> Factory
-  Factory --> Conns
-  Worker --> Executor
+  WCore --> ConnFactory
+  ConnFactory --> Direct
+  ConnFactory --> Http
+  ConnFactory --> Dynamo
 
-  SWriter --> ASummary
-  SWriter --> AFrags
-  WJob --> ASummary
-  WJob --> AFrags
-  CHttp --> APayload
-  Executor --> AResult
-  Executor --> ALog
-  Worker --> AReport
-  Worker --> AResult
+  WCore --> EFactory
+  Direct --> EApi
 
-  Viewer --> ASummary
-  Viewer --> AReport
-  Tests --> CLI
-  Tests --> Compose
-  ApiSvc --> Worker
+  SWriter --> Summary
+  SWriter --> Frags
+  WJob --> Summary
+  WJob --> Frags
+  Http --> Payload
+  EExec --> Result
+  EExec --> ExecLog
+  WCore --> Report
+  WCore --> Result
+
+  Viewer --> Summary
+  Viewer --> Report
+  ApiSvc --> WCore
 ```
 
 ## Zoom: Worker <-> Executor <-> Connectors
