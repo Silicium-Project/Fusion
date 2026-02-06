@@ -156,6 +156,11 @@ class SiliciumTui(App):
         text-style: bold;
     }
 
+    #run.run-ready {
+        text-style: bold;
+        color: $text;
+    }
+
     .taskbar-sep {
         color: $text-muted;
     }
@@ -473,6 +478,9 @@ class SiliciumTui(App):
         copy_button = self.query_one("#copy_log", Button)
         run_button.label = "Interrupt" if self._action_running else "Run"
         run_button.variant = "error" if self._action_running else "primary"
+        run_button.set_class(
+            bool(self._selected_action) and not self._action_running, "run-ready"
+        )
         run_button.disabled = self._selected_action is None
         copy_button.disabled = self._log_path is None
 
