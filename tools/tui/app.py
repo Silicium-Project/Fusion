@@ -156,7 +156,7 @@ class SiliciumTui(App):
         text-style: bold;
     }
 
-    #taskbar-sep {
+    .taskbar-sep {
         color: $text-muted;
     }
 
@@ -274,13 +274,13 @@ class SiliciumTui(App):
             with Horizontal(id="taskbar-right"):
                 with Horizontal(id="taskbar-buttons"):
                     yield Button("Run", id="run")
-                    yield Static("│", id="taskbar-sep")
+                    yield Static("│", classes="taskbar-sep")
                     yield Button("Interrupt", id="stop")
-                    yield Static("│", id="taskbar-sep")
+                    yield Static("│", classes="taskbar-sep")
                     yield Button("Refresh", id="refresh")
-                    yield Static("│", id="taskbar-sep")
+                    yield Static("│", classes="taskbar-sep")
                     yield Button("Clear log", id="clear")
-                    yield Static("│", id="taskbar-sep")
+                    yield Static("│", classes="taskbar-sep")
                     yield Button("Copy log", id="copy_log")
         with Horizontal(id="body"):
             with Vertical(id="left"):
