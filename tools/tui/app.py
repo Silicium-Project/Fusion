@@ -10,7 +10,16 @@ from typing import Iterable
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, LoadingIndicator, OptionList, ProgressBar, Static, TextLog
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    LoadingIndicator,
+    OptionList,
+    ProgressBar,
+    Static,
+    TextLog,
+)
 from textual.widgets.option_list import Option
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -113,6 +122,17 @@ class SiliciumTui(App):
         border: round $secondary;
     }
 
+    #toolbar {
+        height: 3;
+        padding: 0 1;
+        border: round $primary;
+        align: center middle;
+    }
+
+    #toolbar Button {
+        margin: 0 1;
+    }
+
     #actions-title,
     #status-title,
     #log-title {
@@ -177,13 +197,21 @@ class SiliciumTui(App):
         self._log_path: Path | None = None
         self._start_time: float | None = None
         self._current_action: ActionSpec | None = None
+        self._selected_action: ActionSpec | None = None
         self._exit_code: int | None = None
+        self._proc: asyncio.subprocess.Process | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Horizontal(id="body"):
             with Vertical(id="left"):
                 yield Static("Actions", id="actions-title")
+                with Horizontal(id="toolbar"):
+                    yield Button("Run", id="run", variant="success")
+                    yield Button("Stop", id="stop", variant="error")
+                    yield Button("Refresh", id="refresh", variant="primary")
+                    yield Button("Clear log", id="clear", variant="default")
+                    yield Button("Copy log", id="copy_log", variant="default")
                 yield OptionList(id="actions")
                 yield Static("Enter: run | r: refresh | l: clear log | q: quit", id="hint")
                 yield Static("Select an action and press Enter.", id="details")
@@ -204,11 +232,14 @@ class SiliciumTui(App):
             [Option(f"[{action.key}] {action.label}", id=action.key) for action in self._actions]
         )
         option_list.focus()
+        if self._actions:
+            self._selected_action = self._actions[0]
         self.query_one("#progress", ProgressBar).display = False
         self.query_one("#spinner", LoadingIndicator).display = False
         self._progress_timer = self.set_interval(0.2, self._pulse_progress, pause=True)
         self._elapsed_timer = self.set_interval(0.5, self._tick_elapsed, pause=True)
         self._render_status()
+        self._sync_toolbar()
 
     def action_refresh(self) -> None:
         if self._running:
@@ -219,17 +250,45 @@ class SiliciumTui(App):
         self.query_one("#log", TextLog).clear()
         self._log_buffer.clear()
 
+    def action_stop(self) -> None:
+        if not self._running or not self._proc:
+            return
+        self._proc.terminate()
+
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         action = self._action_by_key.get(event.option.id or "")
         if not action:
             return
+        self._selected_action = action
         self.query_one("#details", Static).update(action.description)
+        self._sync_toolbar()
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         action = self._action_by_key.get(event.option.id or "")
         if not action:
             return
         self.run_worker(self._execute_action(action), exclusive=True)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if button_id == "run":
+            self._run_selected()
+        elif button_id == "stop":
+            self.action_stop()
+        elif button_id == "refresh":
+            self.action_refresh()
+        elif button_id == "clear":
+            self.action_clear_log()
+        elif button_id == "copy_log":
+            if self._log_path:
+                self.set_clipboard(str(self._log_path))
+
+    def _run_selected(self) -> None:
+        if self._running:
+            return
+        if not self._selected_action:
+            return
+        self.run_worker(self._execute_action(self._selected_action), exclusive=True)
 
     async def _execute_action(self, action: ActionSpec) -> None:
         if self._running:
@@ -268,6 +327,7 @@ class SiliciumTui(App):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
+        self._proc = proc
 
         loop = asyncio.get_running_loop()
         last_flush = loop.time()
@@ -297,6 +357,7 @@ class SiliciumTui(App):
 
         self._exit_code = proc.returncode
         self._running = False
+        self._proc = None
         progress.update(progress=100)
         progress.display = False
         spinner.display = False
@@ -305,6 +366,7 @@ class SiliciumTui(App):
         if self._elapsed_timer:
             self._elapsed_timer.pause()
         self._render_status()
+        self._sync_toolbar()
 
     def _render_status(self) -> None:
         status = self.query_one("#status-lines", Static)
@@ -327,6 +389,14 @@ class SiliciumTui(App):
             f"Exit   : {exit_code}",
         ]
         status.update("\n".join(lines))
+
+    def _sync_toolbar(self) -> None:
+        run_button = self.query_one("#run", Button)
+        stop_button = self.query_one("#stop", Button)
+        copy_button = self.query_one("#copy_log", Button)
+        run_button.disabled = self._running or self._selected_action is None
+        stop_button.disabled = not self._running
+        copy_button.disabled = self._log_path is None
 
     def _tick_elapsed(self) -> None:
         if not self._running:

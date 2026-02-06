@@ -21,6 +21,11 @@ python -m pip install -r requirements-tui.txt
 - `r`: refresh status
 - `l`: clear log
 
+## Mouse support
+
+- Click **Run**, **Stop**, **Refresh**, **Clear log**, **Copy log** in the toolbar.
+- Click an action to select it, then **Run**.
+
 ## Logs and progress
 
 - The UI shows a progress bar while commands run.
