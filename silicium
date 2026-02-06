@@ -1493,7 +1493,14 @@ def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
     ctx = build_context()
     if not argv:
-        launch_shell(ctx)
+        try:
+            from tools.tui.app import run
+        except ImportError:
+            print("TUI dependencies missing. Falling back to shell.")
+            print("Install with: python -m pip install -r requirements-tui.txt")
+            launch_shell(ctx)
+            return
+        run()
         return
     try:
         execute(argv, ctx)

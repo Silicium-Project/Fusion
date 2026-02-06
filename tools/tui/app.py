@@ -17,8 +17,8 @@ from textual.widgets import (
     LoadingIndicator,
     OptionList,
     ProgressBar,
+    RichLog,
     Static,
-    TextLog,
 )
 from textual.widgets.option_list import Option
 
@@ -223,7 +223,7 @@ class SiliciumTui(App):
                         yield LoadingIndicator(id="spinner")
                         yield ProgressBar(total=100, id="progress")
                 yield Static("Logs (tail)", id="log-title")
-                yield TextLog(id="log", highlight=False, markup=False, wrap=True)
+                yield RichLog(id="log")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -247,7 +247,7 @@ class SiliciumTui(App):
         self._render_status()
 
     def action_clear_log(self) -> None:
-        self.query_one("#log", TextLog).clear()
+        self.query_one("#log", RichLog).clear()
         self._log_buffer.clear()
 
     def action_stop(self) -> None:
@@ -313,7 +313,7 @@ class SiliciumTui(App):
         if self._elapsed_timer:
             self._elapsed_timer.resume()
 
-        log = self.query_one("#log", TextLog)
+        log = self.query_one("#log", RichLog)
         log.clear()
         self._log_buffer.clear()
         command = action.command()
