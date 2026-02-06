@@ -237,7 +237,7 @@ void Worker::register_action_handlers() {
                                  return build_policy_report(
                                      context.partition,
                                      task,
-                                     "Fragment ignore par la policy OS");
+                                     "Fragment ignoré par la policy OS");
                              });
     action_handlers_.emplace(FragmentOsAction::Queue,
                              [this](const TaskContext& context, const Task& task) {
@@ -251,7 +251,7 @@ void Worker::register_action_handlers() {
                                  return build_policy_report(
                                      context.partition,
                                      task,
-                                     "Fragment refuse par la policy OS");
+                                     "Fragment refusé par la policy OS");
                              });
     action_handlers_.emplace(FragmentOsAction::Wsl,
                              [this](const TaskContext& context, const Task& task) {
@@ -259,7 +259,7 @@ void Worker::register_action_handlers() {
                                      return build_policy_report(
                                          context.partition,
                                          task,
-                                         "Policy WSL demandee mais triggers inactifs");
+                                         "Policy WSL demandée mais triggers inactifs");
                                  }
                                  return run_backend(context, task);
                              });
