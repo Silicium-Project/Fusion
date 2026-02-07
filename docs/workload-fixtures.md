@@ -2,6 +2,8 @@
 
 This document defines how workload datasets and fixtures are stored, versioned, and verified.
 
+Alignment rules are defined in `docs/workload-alignment-policy.md`.
+
 ## Goals
 
 - Deterministic inputs for testing and reproducibility.

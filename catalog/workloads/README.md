@@ -62,6 +62,7 @@ Schéma de référence versionné:
 - `resources.budget` fournit l'enveloppe attendue (wall/cpu/memory) pour planifier.
 - `presets` fournit des variables d'exemple pour `workload show --dry-run`.
 - `catalog/workloads/fixtures/fixtures.json` référence les fixtures versionnées.
+- Politique d'alignement workloads/golden corpus: `docs/workload-alignment-policy.md`
 
 Les devices téléchargent le manifest correspondant au job pour savoir quel binaire lancer et comment reporter la preuve (hash, logs, temps).
 
@@ -103,3 +104,5 @@ CLI selection filters:
 - `./silicium workload list --category calcul --domain rendering`
 - `./silicium workload list --determinism stochastic --tag monte_carlo`
 - `./silicium workload show calcul/libm/sin --domain math --tag libm`
+- `./silicium workload fixtures --json`
+- `./silicium workload alignment --json`

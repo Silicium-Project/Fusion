@@ -38,6 +38,7 @@ WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
 WORKLOAD_SCHEMA_FILE = WORKLOAD_ROOT / "schema" / "workload-manifest-v1.schema.json"
 WORKLOAD_FIXTURES_DIR = WORKLOAD_ROOT / "fixtures"
 WORKLOAD_FIXTURES_INDEX = WORKLOAD_FIXTURES_DIR / "fixtures.json"
+WORKLOAD_ALIGNMENT_POLICY = WORKLOAD_FIXTURES_DIR / "alignment-policy.json"
 PERF_BUDGET_FILE = REPO_ROOT / "docs" / "performance-budgets.json"
 CORE_CHECK_IMAGE_DEFAULT = "silicium/core-check:lite"
 CORE_CHECK_DOCKERFILE = REPO_ROOT / "docker" / "core-check" / "Dockerfile"
@@ -104,7 +105,7 @@ SUBCOMMANDS = {
     "ledger": ["list", "wipe", "export", "import"],
     "history": ["show", "clear"],
     "clean": ["cache", "ledgers", "all"],
-    "workload": ["list", "show", "queue", "lint", "fixtures"],
+    "workload": ["list", "show", "queue", "lint", "fixtures", "alignment"],
 }
 WORKLOAD_TAXONOMY_CATEGORIES = ["calcul", "verification"]
 WORKLOAD_TAXONOMY_DOMAINS = [
@@ -1159,6 +1160,89 @@ def cmd_workload_fixtures(args: argparse.Namespace, ctx: Context) -> None:
         sys.exit(1)
 
 
+def _workload_family_from_id(workload_id: str) -> str:
+    parts = workload_id.split("/")
+    if len(parts) < 2:
+        return workload_id
+    return "/".join(parts[:2])
+
+
+def _alignment_policy() -> dict[str, Any]:
+    if not WORKLOAD_ALIGNMENT_POLICY.exists():
+        return {"schema_version": 1, "critical_families": []}
+    try:
+        raw = json.loads(WORKLOAD_ALIGNMENT_POLICY.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Failed to parse alignment policy: {exc}")
+        sys.exit(1)
+    if not isinstance(raw, dict):
+        print("Alignment policy must be a JSON object.")
+        sys.exit(1)
+    return raw
+
+
+def workload_alignment_report() -> dict[str, Any]:
+    entries = _workload_entries()
+    manifest_ids: list[str] = []
+    for _, data in entries:
+        workload_id = data.get("id")
+        if isinstance(workload_id, str) and workload_id:
+            manifest_ids.append(workload_id)
+    families = sorted({_workload_family_from_id(workload_id) for workload_id in manifest_ids})
+
+    fixture_index = _fixture_index()
+    fixture_entries = fixture_index.get("entries", [])
+    fixture_ids: list[str] = []
+    if isinstance(fixture_entries, list):
+        for entry in fixture_entries:
+            if isinstance(entry, dict):
+                fixture_id = entry.get("id")
+                if isinstance(fixture_id, str) and fixture_id:
+                    fixture_ids.append(fixture_id)
+
+    covered_families = sorted({_workload_family_from_id(fixture_id) for fixture_id in fixture_ids})
+    missing_families = sorted(set(families) - set(covered_families))
+
+    policy = _alignment_policy()
+    critical = policy.get("critical_families", [])
+    critical_families = [value for value in critical if isinstance(value, str) and value]
+    critical_missing = sorted(set(critical_families).intersection(set(missing_families)))
+
+    return {
+        "total_workloads": len(manifest_ids),
+        "total_families": len(families),
+        "families": families,
+        "families_with_fixtures": covered_families,
+        "missing_families": missing_families,
+        "critical_families": sorted(critical_families),
+        "critical_missing_families": critical_missing,
+        "fixture_entries": len(fixture_ids),
+    }
+
+
+def cmd_workload_alignment(args: argparse.Namespace, ctx: Context) -> None:
+    report = workload_alignment_report()
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print(
+            f"Workload alignment: {report['total_families'] - len(report['missing_families'])}/"
+            f"{report['total_families']} families covered by fixtures."
+        )
+        if report["missing_families"]:
+            print("Missing families:")
+            for family in report["missing_families"]:
+                print(f"  - {family}")
+        else:
+            print("No missing families.")
+        if report["critical_missing_families"]:
+            print("Critical missing families:")
+            for family in report["critical_missing_families"]:
+                print(f"  - {family}")
+    if args.strict and report["critical_missing_families"]:
+        sys.exit(1)
+
+
 def workload_paths() -> list[str]:
     if not WORKLOAD_ROOT.exists():
         return []
@@ -1837,6 +1921,19 @@ def configure_workload_fixtures(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def configure_workload_alignment(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output alignment report as JSON.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail when critical families are missing fixture coverage.",
+    )
+
+
 def configure_history_show(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--tail",
@@ -1993,6 +2090,12 @@ def build_registry() -> CommandRegistry:
                     "Validate workload fixture integrity",
                     configure_workload_fixtures,
                     cmd_workload_fixtures,
+                ),
+                CommandSpec(
+                    "alignment",
+                    "Report workload to fixture alignment",
+                    configure_workload_alignment,
+                    cmd_workload_alignment,
                 ),
             ],
         )
@@ -2225,6 +2328,11 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             return []
         if sub == "fixtures":
             opts = ["--json"]
+            if text.startswith("-"):
+                return [opt for opt in opts if opt.startswith(text)]
+            return []
+        if sub == "alignment":
+            opts = ["--json", "--strict"]
             if text.startswith("-"):
                 return [opt for opt in opts if opt.startswith(text)]
             return []
