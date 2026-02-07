@@ -36,6 +36,10 @@ flowchart TD
     Results --> RPC
 ```
 
+## MCP bridge extension
+
+See `docs/mcp-connector-spec.md` for the MCP connector architecture, contracts, and rollout plan.
+
 ## Execution flow (compute)
 
 ```mermaid

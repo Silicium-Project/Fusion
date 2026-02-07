@@ -243,6 +243,7 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 ## Schema
 
 Voir docs/network-schema.md pour les diagrammes Mermaid (compute + network).
+Spec MCP (connecteur LLM) : `docs/mcp-connector-spec.md`.
 
 ---
 
