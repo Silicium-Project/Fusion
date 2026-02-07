@@ -1,10 +1,10 @@
-# Silicium Chain – On-chain Job & Reward Layer
+# Silicium Chain – On-chain Job, Worker & Reward Layer
 
-Silicium Chain is the **on-chain layer** of the Silicium project.  
-It is responsible for **coordination, fund security, and rewards distribution** for distributed computation executed off-chain by the network.
+Silicium Chain is the **on-chain coordination and payment layer** of the Silicium project.  
+It secures funds, tracks computation progress, manages worker participation, and enforces verifiable rewards for distributed computation executed off-chain.
 
 Computation, task splitting, and execution are **off-chain**.  
-The blockchain acts as a **source of truth, escrow, and verifiable payment layer**.
+The blockchain acts as a **source of truth, escrow, worker registry, and verifiable payment layer**.
 
 ---
 
@@ -13,13 +13,14 @@ The blockchain acts as a **source of truth, escrow, and verifiable payment layer
 This Solana program (built with Anchor) enables:
 
 - Registration of **distributed computation jobs**
-- Securing client funds via a **SPL Token escrow**
+- Secure escrow of client funds using **SPL Tokens**
+- Registration and tracking of **workers**
 - Management of **computation fragments**
 - **Per-fragment rewards** for workers
-- Verification of fragment results
+- **Multi-verifier fragment validation (quorum-based)**
 - Secure job **finalization or cancellation**
 
-This layer is **functional**, ready to be deployed on **devnet**.
+This layer is **functional** and ready to be deployed on **devnet**.
 
 ---
 
@@ -38,8 +39,30 @@ Main fields:
 - `reward_per_fragment`: reward per fragment
 - `deadline_unix`: job deadline
 - `status`: `Open | Cancelled | Finalized`
-- `verifier_authority`: verification authority (MVP = client)
-- `challenge_window_sec`: challenge window (MVP = 0)
+- `verifier_authority`: verifier authority (MVP fallback)
+- `challenge_window_sec`: challenge window (MVP = disabled)
+
+---
+
+### Worker
+Represents a registered computation or verification participant.
+
+Each wallet may own **exactly one Worker account**.
+
+Main fields:
+- `owner`: worker wallet
+- `stake_amount`: staked amount (MVP = informational, no slashing yet)
+- `reputation`: signed score based on verification outcomes
+- `total_submitted`: number of fragments submitted
+- `total_verified`: number of fragments accepted
+- `total_rejected`: number of fragments rejected
+- `status`: `Active | Banned`
+- `bump`
+
+Purpose:
+- Prevents disposable / spam workers
+- Tracks historical behavior
+- Prepares future slashing and reputation-based logic
 
 ---
 
@@ -50,6 +73,7 @@ Represents **one unique fragment** of a job
 Key guarantees:
 - Only one fragment per `(job, fragment_index)`
 - A fragment cannot be verified more than once
+- Voting state is initialized **once** on first submission
 
 Main fields:
 - `job`
@@ -58,6 +82,28 @@ Main fields:
 - `result_hash`
 - `proof_ref`
 - `status`: `Submitted | Verified | Rejected`
+
+Verification (MVP quorum):
+- `yes_votes`
+- `no_votes`
+- `required_quorum`
+- `voting_deadline_unix`
+
+---
+
+### FragmentVote
+Tracks **one verifier vote** on a fragment.
+
+Guarantees:
+- One vote per `(fragment, verifier)`
+- Prevents double voting
+- Enables quorum-based validation
+
+Main fields:
+- `fragment`
+- `verifier`
+- `choice` (accept / reject)
+- `bump`
 
 ---
 
@@ -80,6 +126,15 @@ Stores the final result of a completed job.
 
 ## Implemented Instructions
 
+### `register_worker`
+Registers a wallet as a worker.
+
+Actions:
+- Initializes the `Worker` account
+- Enables participation in fragment submission and verification
+
+---
+
 ### `create_job`
 Creates a job and:
 - Initializes the `Job` account
@@ -90,24 +145,34 @@ Creates a job and:
 ---
 
 ### `submit_fragment_result`
-Allows a worker to submit a result for a specific fragment.
+Allows a registered worker to submit a result for a specific fragment.
 
 Rules:
+- Worker must be registered and active
 - Fragments are uniquely identified by `(job, fragment_index)`
-- A verified fragment cannot be overwritten
-- A rejected fragment may be resubmitted
+- Verified fragments cannot be overwritten
+- Rejected fragments may be resubmitted by the same worker
+- Initializes voting state on first submission
+
+Side effects:
+- Increments worker `total_submitted`
 
 ---
 
-### `verify_fragment`
-Verifies a submitted fragment.
+### `vote_fragment`
+Allows a registered worker to verify a fragment.
 
-- Verification authority: `verifier_authority` (MVP = client)
-- If accepted:
-  - The worker is paid immediately
-  - Fragment status becomes `Verified`
-- If rejected:
-  - Fragment status becomes `Rejected`
+Rules:
+- Verifier must be a registered, active worker
+- One vote per `(fragment, verifier)`
+- Votes are tracked on-chain
+
+Logic:
+- Increments `yes_votes` or `no_votes`
+- When quorum is reached:
+  - Fragment becomes `Verified` or `Rejected`
+  - On `Verified`, worker is paid immediately
+  - Worker reputation and statistics are updated
 
 ---
 
@@ -119,10 +184,6 @@ Actions:
 - Refunds remaining escrow funds
 - Closes the escrow account
 - Sets the job status to `Finalized`
-
-Optional:
-- Supports a `challenge_window`  
-  (currently set to `0` for the MVP)
 
 ---
 
@@ -141,7 +202,8 @@ Actions:
 ## Architectural Choices
 
 - **Off-chain computation**, on-chain coordination
-- Explicit, auditable fragment tracking
+- Explicit worker registry
+- Quorum-based fragment verification
 - Immediate per-fragment payments
 - No implicit trust between participants
 - All financial flows are **fully auditable on-chain**
@@ -150,18 +212,22 @@ Actions:
 
 ## Current Limitations
 
-This logic **does not yet include**:
-- Worker registry (stake / reputation)
-- Decentralized verification (quorum)
-- Active challenges or slashing
+This version **does not yet include**:
+- Stake slashing or penalties
+- Decentralized verifier selection
 - Automatic fragment assignment
+- On-chain challenges or arbitration
+- Reputation-weighted voting
+
+These are planned for future iterations.
 
 ---
 
 ## Status
 
-- Core logic fully implemented
-- Basic security guarantees in place
+- Core logic implemented
+- Worker registry and quorum verification live
+- Test suite passing
 - Ready for **devnet deployment**
 - Designed for progressive decentralization
 
@@ -169,9 +235,9 @@ This logic **does not yet include**:
 
 ## Summary
 
-Silicium Chain is a **coordination and payment layer** for distributed computation, designed to be:
+Silicium Chain is a **secure coordination, worker, and payment layer** for distributed computation, designed to be:
 - minimal
-- secure
+- auditable
 - extensible
 - compatible with scalable off-chain execution
 
