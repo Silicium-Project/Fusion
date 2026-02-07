@@ -37,6 +37,12 @@ def test_manifest_schema(manifest_path: Path) -> None:
     )
 
     relative_parent = manifest_path.parent.relative_to(MANIFEST_ROOT)
-    assert str(relative_parent).replace("\\", "/") in data["id"], (
+    relative_parent_str = str(relative_parent).replace("\\", "/")
+    assert relative_parent_str in data["id"], (
         f"{manifest_path} id should contain its folder name ({relative_parent})"
+    )
+    taxonomy = data.get("taxonomy", {})
+    category = relative_parent_str.split("/", 1)[0]
+    assert taxonomy.get("category") == category, (
+        f"{manifest_path} taxonomy.category must match folder category '{category}'"
     )

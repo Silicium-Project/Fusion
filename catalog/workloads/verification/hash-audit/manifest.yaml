@@ -9,6 +9,17 @@ resources:
   cpu: 1
   gpu: none
   memory: 512Mi
+taxonomy:
+  category: verification
+  domain: integrity
+  complexity: low
+  resource_profile: cpu_light
+  determinism: deterministic
+  tags:
+    - verification
+    - audit
+    - hash
+    - deterministic
 artifacts:
   input:
     - name: artifact

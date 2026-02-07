@@ -27,6 +27,16 @@ resources:
   cpu: 4
   gpu: optional
   memory: 4Gi
+taxonomy:
+  category: calcul
+  domain: video
+  complexity: high
+  resource_profile: gpu_optional
+  determinism: deterministic
+  tags:
+    - transcoding
+    - cpu
+    - deterministic
 validation:
   hash: sha256
   redundancy: quorum
@@ -62,3 +72,20 @@ Les devices téléchargent le manifest correspondant au job pour savoir quel bin
 - `rendering-spotcheck/` : rerender de frames aléatoires et comparaison pixel/histogramme.
 
 Ajoutez un profil en créant un sous-dossier dans la famille adaptée, puis fournissez `manifest.yaml` + `README.md`. Les manifests texte servent de base à ce qui sera sérialisé/signé côté blockchain avant d’être envoyé dynamiquement aux devices.
+
+## Taxonomy vocabulary (v1)
+
+Required fields under `taxonomy`:
+
+- `category`: `calcul` | `verification`
+- `domain`: `compression` | `integrity` | `math` | `ml` | `rendering` | `simulation` | `statistics` | `video`
+- `complexity`: `low` | `medium` | `high`
+- `resource_profile`: `cpu_light` | `cpu_heavy` | `gpu_optional` | `gpu_required` | `memory_light` | `memory_heavy`
+- `determinism`: `deterministic` | `bounded_stochastic` | `stochastic`
+- `tags`: approved tag list from the v1 schema (`workload-manifest-v1.schema.json`)
+
+CLI selection filters:
+
+- `./silicium workload list --category calcul --domain rendering`
+- `./silicium workload list --determinism stochastic --tag monte_carlo`
+- `./silicium workload show calcul/libm/sin --domain math --tag libm`

@@ -9,6 +9,17 @@ resources:
   cpu: 4
   gpu: optional
   memory: 4Gi
+taxonomy:
+  category: verification
+  domain: rendering
+  complexity: medium
+  resource_profile: gpu_optional
+  determinism: deterministic
+  tags:
+    - verification
+    - rendering
+    - spotcheck
+    - deterministic
 artifacts:
   input:
     - name: scene

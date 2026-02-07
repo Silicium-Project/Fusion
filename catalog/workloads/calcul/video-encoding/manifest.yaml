@@ -8,6 +8,16 @@ resources:
   cpu: 4
   gpu: optional
   memory: 4Gi
+taxonomy:
+  category: calcul
+  domain: video
+  complexity: high
+  resource_profile: gpu_optional
+  determinism: deterministic
+  tags:
+    - transcoding
+    - cpu
+    - deterministic
 artifacts:
   input:
     - name: input

@@ -15,7 +15,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 try:
     import readline
@@ -101,6 +101,51 @@ SUBCOMMANDS = {
     "clean": ["cache", "ledgers", "all"],
     "workload": ["list", "show", "queue"],
 }
+WORKLOAD_TAXONOMY_CATEGORIES = ["calcul", "verification"]
+WORKLOAD_TAXONOMY_DOMAINS = [
+    "compression",
+    "integrity",
+    "math",
+    "ml",
+    "rendering",
+    "simulation",
+    "statistics",
+    "video",
+]
+WORKLOAD_TAXONOMY_COMPLEXITIES = ["low", "medium", "high"]
+WORKLOAD_TAXONOMY_RESOURCE_PROFILES = [
+    "cpu_light",
+    "cpu_heavy",
+    "gpu_optional",
+    "gpu_required",
+    "memory_light",
+    "memory_heavy",
+]
+WORKLOAD_TAXONOMY_DETERMINISM = [
+    "deterministic",
+    "bounded_stochastic",
+    "stochastic",
+]
+WORKLOAD_TAXONOMY_TAGS = [
+    "audit",
+    "compression",
+    "cpu",
+    "deterministic",
+    "embeddings",
+    "gpu",
+    "hash",
+    "libm",
+    "math",
+    "ml",
+    "monte_carlo",
+    "rendering",
+    "simulation",
+    "spotcheck",
+    "statistics",
+    "stochastic",
+    "transcoding",
+    "verification",
+]
 
 
 @dataclass(frozen=True)
@@ -691,6 +736,85 @@ def cmd_ledger_import(args: argparse.Namespace, ctx: Context) -> None:
     run(cmd)
 
 
+def _read_workload_manifest(manifest_path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+    except ImportError:
+        print("PyYAML is required for workload commands. Install with: python -m pip install pyyaml")
+        sys.exit(1)
+    try:
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"Failed to parse manifest {manifest_path}: {exc}")
+        sys.exit(1)
+    if not isinstance(data, dict):
+        print(f"Invalid manifest (expected mapping): {manifest_path}")
+        sys.exit(1)
+    return data
+
+
+def _workload_entries() -> list[tuple[str, dict[str, Any]]]:
+    entries: list[tuple[str, dict[str, Any]]] = []
+    for path in workload_paths():
+        manifest = WORKLOAD_ROOT / path / "manifest.yaml"
+        entries.append((path, _read_workload_manifest(manifest)))
+    return entries
+
+
+def _workload_has_filters(args: argparse.Namespace) -> bool:
+    return bool(
+        args.category
+        or args.domain
+        or args.complexity
+        or args.resource_profile
+        or args.determinism
+        or args.tag
+    )
+
+
+def _workload_filter_summary(args: argparse.Namespace) -> str:
+    parts: list[str] = []
+    if args.category:
+        parts.append(f"category={args.category}")
+    if args.domain:
+        parts.append(f"domain={args.domain}")
+    if args.complexity:
+        parts.append(f"complexity={args.complexity}")
+    if args.resource_profile:
+        parts.append(f"resource_profile={args.resource_profile}")
+    if args.determinism:
+        parts.append(f"determinism={args.determinism}")
+    if args.tag:
+        parts.append("tags=" + ",".join(args.tag))
+    return " ".join(parts)
+
+
+def _workload_matches_filters(data: dict[str, Any], args: argparse.Namespace) -> bool:
+    if not _workload_has_filters(args):
+        return True
+    taxonomy = data.get("taxonomy")
+    if not isinstance(taxonomy, dict):
+        return False
+    if args.category and taxonomy.get("category") != args.category:
+        return False
+    if args.domain and taxonomy.get("domain") != args.domain:
+        return False
+    if args.complexity and taxonomy.get("complexity") != args.complexity:
+        return False
+    if args.resource_profile and taxonomy.get("resource_profile") != args.resource_profile:
+        return False
+    if args.determinism and taxonomy.get("determinism") != args.determinism:
+        return False
+    if args.tag:
+        tags = taxonomy.get("tags", [])
+        if not isinstance(tags, list):
+            return False
+        tag_set = {str(item) for item in tags}
+        if not set(args.tag).issubset(tag_set):
+            return False
+    return True
+
+
 def workload_paths() -> list[str]:
     if not WORKLOAD_ROOT.exists():
         return []
@@ -702,9 +826,16 @@ def workload_paths() -> list[str]:
 
 
 def cmd_workload_list(args: argparse.Namespace, ctx: Context) -> None:
-    paths = workload_paths()
-    if not paths:
+    entries = _workload_entries()
+    if not entries:
         print("No workloads found.")
+        return
+    paths = [path for path, data in entries if _workload_matches_filters(data, args)]
+    if not paths:
+        if _workload_has_filters(args):
+            print(f"No workloads match filters: {_workload_filter_summary(args)}")
+        else:
+            print("No workloads found.")
         return
     if not args.tree:
         for path in paths:
@@ -736,6 +867,10 @@ def cmd_workload_show(args: argparse.Namespace, ctx: Context) -> None:
     manifest = WORKLOAD_ROOT / args.path / "manifest.yaml"
     if not manifest.exists():
         print(f"Manifest not found: {manifest}")
+        sys.exit(1)
+    data = _read_workload_manifest(manifest)
+    if not _workload_matches_filters(data, args):
+        print(f"Manifest does not match filters: {_workload_filter_summary(args)}")
         sys.exit(1)
     print(colorize(f"==> {manifest}", COLOR_YELLOW))
     print(manifest.read_text(encoding="utf-8"))
@@ -1160,12 +1295,49 @@ def configure_ledger_import(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_workload_filter_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--category",
+        choices=WORKLOAD_TAXONOMY_CATEGORIES,
+        help="Filter by workload category.",
+    )
+    parser.add_argument(
+        "--domain",
+        choices=WORKLOAD_TAXONOMY_DOMAINS,
+        help="Filter by workload domain.",
+    )
+    parser.add_argument(
+        "--complexity",
+        choices=WORKLOAD_TAXONOMY_COMPLEXITIES,
+        help="Filter by complexity level.",
+    )
+    parser.add_argument(
+        "--resource-profile",
+        dest="resource_profile",
+        choices=WORKLOAD_TAXONOMY_RESOURCE_PROFILES,
+        help="Filter by resource profile.",
+    )
+    parser.add_argument(
+        "--determinism",
+        choices=WORKLOAD_TAXONOMY_DETERMINISM,
+        help="Filter by determinism class.",
+    )
+    parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        choices=WORKLOAD_TAXONOMY_TAGS,
+        help="Require a taxonomy tag (repeatable).",
+    )
+
+
 def configure_workload_list(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--tree",
         action="store_true",
         help="Display full tree instead of compact list.",
     )
+    add_workload_filter_args(parser)
 
 
 def configure_workload_show(parser: argparse.ArgumentParser) -> None:
@@ -1173,6 +1345,7 @@ def configure_workload_show(parser: argparse.ArgumentParser) -> None:
         "path",
         help="Workload path (e.g., calcul/math-simulation).",
     )
+    add_workload_filter_args(parser)
     parser.add_argument(
         "--readme",
         action="store_true",
@@ -1512,9 +1685,45 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
         if len(tokens) == 1:
             return [cmd for cmd in SUBCOMMANDS["workload"] if cmd.startswith(text)]
         sub = tokens[1]
+        taxonomy_flags = [
+            "--category",
+            "--domain",
+            "--complexity",
+            "--resource-profile",
+            "--determinism",
+            "--tag",
+        ]
         if sub == "list":
-            return [flag for flag in ["--tree"] if flag.startswith(text)]
+            if text.startswith("-"):
+                return [flag for flag in (["--tree"] + taxonomy_flags) if flag.startswith(text)]
+            if tokens[-1] == "--category":
+                return [value for value in WORKLOAD_TAXONOMY_CATEGORIES if value.startswith(text)]
+            if tokens[-1] == "--domain":
+                return [value for value in WORKLOAD_TAXONOMY_DOMAINS if value.startswith(text)]
+            if tokens[-1] == "--complexity":
+                return [value for value in WORKLOAD_TAXONOMY_COMPLEXITIES if value.startswith(text)]
+            if tokens[-1] == "--resource-profile":
+                return [value for value in WORKLOAD_TAXONOMY_RESOURCE_PROFILES if value.startswith(text)]
+            if tokens[-1] == "--determinism":
+                return [value for value in WORKLOAD_TAXONOMY_DETERMINISM if value.startswith(text)]
+            if tokens[-1] == "--tag":
+                return [value for value in WORKLOAD_TAXONOMY_TAGS if value.startswith(text)]
+            return []
         if sub == "show":
+            if text.startswith("-"):
+                return [flag for flag in (["--readme"] + taxonomy_flags) if flag.startswith(text)]
+            if tokens[-1] == "--category":
+                return [value for value in WORKLOAD_TAXONOMY_CATEGORIES if value.startswith(text)]
+            if tokens[-1] == "--domain":
+                return [value for value in WORKLOAD_TAXONOMY_DOMAINS if value.startswith(text)]
+            if tokens[-1] == "--complexity":
+                return [value for value in WORKLOAD_TAXONOMY_COMPLEXITIES if value.startswith(text)]
+            if tokens[-1] == "--resource-profile":
+                return [value for value in WORKLOAD_TAXONOMY_RESOURCE_PROFILES if value.startswith(text)]
+            if tokens[-1] == "--determinism":
+                return [value for value in WORKLOAD_TAXONOMY_DETERMINISM if value.startswith(text)]
+            if tokens[-1] == "--tag":
+                return [value for value in WORKLOAD_TAXONOMY_TAGS if value.startswith(text)]
             paths = workload_paths()
             return [p for p in paths if p.startswith(text)]
         if sub == "queue":

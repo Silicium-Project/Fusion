@@ -7,6 +7,17 @@ resources:
   cpu: 2
   gpu: optional
   memory: 2Gi
+taxonomy:
+  category: verification
+  domain: statistics
+  complexity: medium
+  resource_profile: cpu_heavy
+  determinism: bounded_stochastic
+  tags:
+    - verification
+    - statistics
+    - simulation
+    - stochastic
 artifacts:
   input:
     - name: config

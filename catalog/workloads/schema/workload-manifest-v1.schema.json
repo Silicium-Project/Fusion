@@ -11,6 +11,7 @@
     "engine",
     "command",
     "resources",
+    "taxonomy",
     "artifacts",
     "validation",
     "payment"
@@ -60,6 +61,95 @@
         "memory": {
           "type": "string",
           "pattern": "^[0-9]+(Ki|Mi|Gi|Ti)$"
+        }
+      }
+    },
+    "taxonomy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "domain",
+        "complexity",
+        "resource_profile",
+        "determinism",
+        "tags"
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "calcul",
+            "verification"
+          ]
+        },
+        "domain": {
+          "type": "string",
+          "enum": [
+            "compression",
+            "integrity",
+            "math",
+            "ml",
+            "rendering",
+            "simulation",
+            "statistics",
+            "video"
+          ]
+        },
+        "complexity": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "resource_profile": {
+          "type": "string",
+          "enum": [
+            "cpu_light",
+            "cpu_heavy",
+            "gpu_optional",
+            "gpu_required",
+            "memory_light",
+            "memory_heavy"
+          ]
+        },
+        "determinism": {
+          "type": "string",
+          "enum": [
+            "deterministic",
+            "bounded_stochastic",
+            "stochastic"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "audit",
+              "compression",
+              "cpu",
+              "deterministic",
+              "embeddings",
+              "gpu",
+              "hash",
+              "libm",
+              "math",
+              "ml",
+              "monte_carlo",
+              "rendering",
+              "simulation",
+              "spotcheck",
+              "statistics",
+              "stochastic",
+              "transcoding",
+              "verification"
+            ]
+          }
         }
       }
     },

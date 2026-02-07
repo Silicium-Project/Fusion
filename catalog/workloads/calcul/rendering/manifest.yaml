@@ -7,6 +7,16 @@ resources:
   cpu: 8
   gpu: optional
   memory: 8Gi
+taxonomy:
+  category: calcul
+  domain: rendering
+  complexity: high
+  resource_profile: gpu_optional
+  determinism: deterministic
+  tags:
+    - rendering
+    - gpu
+    - deterministic
 artifacts:
   input:
     - name: scene

@@ -7,6 +7,17 @@ resources:
   cpu: 4
   gpu: optional
   memory: 4Gi
+taxonomy:
+  category: calcul
+  domain: simulation
+  complexity: high
+  resource_profile: gpu_optional
+  determinism: stochastic
+  tags:
+    - simulation
+    - monte_carlo
+    - cpu
+    - stochastic
 artifacts:
   input:
     - name: config

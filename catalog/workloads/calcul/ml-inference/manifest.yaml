@@ -7,6 +7,17 @@ resources:
   cpu: 4
   gpu: optional
   memory: 6Gi
+taxonomy:
+  category: calcul
+  domain: ml
+  complexity: medium
+  resource_profile: gpu_optional
+  determinism: deterministic
+  tags:
+    - ml
+    - embeddings
+    - gpu
+    - deterministic
 artifacts:
   input:
     - name: model
