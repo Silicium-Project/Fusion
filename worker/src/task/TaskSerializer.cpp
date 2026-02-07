@@ -232,6 +232,23 @@ static uint64_t get_json_uint64(json_t* root, const char* key, uint64_t default_
     return default_value;
 }
 
+static uint32_t parse_schema_version(json_t* root,
+                                     const char* key,
+                                     uint32_t current_version,
+                                     const char* schema_name) {
+    json_t* value = json_object_get(root, key);
+    if (!value)
+        return current_version;
+    if (!json_is_integer(value))
+        throw std::runtime_error(std::string(schema_name) + " schema_version invalide");
+    const auto parsed = static_cast<long long>(json_integer_value(value));
+    if (parsed <= 0)
+        throw std::runtime_error(std::string(schema_name) + " schema_version invalide");
+    if (static_cast<uint32_t>(parsed) > current_version)
+        throw std::runtime_error(std::string(schema_name) + " schema_version non supporte");
+    return static_cast<uint32_t>(parsed);
+}
+
 static std::vector<std::string> get_json_string_array(json_t* root, const char* key) {
     std::vector<std::string> out;
     if (json_t* arr = json_object_get(root, key); json_is_array(arr)) {
@@ -276,6 +293,7 @@ static ExecutionMode parse_mode(const std::string& value) {
 std::string serialize_task_payload(const TaskPayload& payload) {
     std::ostringstream oss;
     oss << "{\n"
+        << "  \"schema_version\":" << payload.schema_version << ",\n"
         << "  \"type\":\"" << json_escape(task_type_to_string(payload.type)) << "\",\n"
         << "  \"partition_id\":\"" << json_escape(payload.partition_id) << "\",\n"
         << "  \"asm_path\":\"" << json_escape(payload.asm_path) << "\",\n"
@@ -292,6 +310,8 @@ std::string serialize_task_payload(const TaskPayload& payload) {
 TaskPayload deserialize_task_payload(const std::string& content) {
     json_t* root = load_json_root(content);
     TaskPayload payload;
+    payload.schema_version = parse_schema_version(
+        root, "schema_version", kTaskPayloadSchemaVersion, "TaskPayload");
     const std::string type = get_json_string(root, "type");
     if (type.empty())
         payload.type = TaskType::Binary;
@@ -325,6 +345,7 @@ static std::string join_patches(const std::vector<fragment::MemoryPatch>& patche
 std::string serialize_execution_result(const fragment::ExecutionResult& result) {
     std::ostringstream oss;
     oss << "{\n"
+        << "  \"schema_version\":" << kExecutionResultSchemaVersion << ",\n"
         << "  \"success\":" << (result.success ? "true" : "false") << ",\n"
         << "  \"error\":\"" << json_escape(result.error_message) << "\",\n"
         << "  \"stdout\":\"" << json_escape(result.program_stdout) << "\",\n"
@@ -356,6 +377,10 @@ static std::vector<fragment::MemoryPatch> parse_patches(const std::vector<std::s
 
 fragment::ExecutionResult deserialize_execution_result(const std::string& content) {
     json_t* root = load_json_root(content);
+    parse_schema_version(root,
+                         "schema_version",
+                         kExecutionResultSchemaVersion,
+                         "ExecutionResult");
     fragment::ExecutionResult result;
     result.success = get_json_bool(root, "success", false);
     result.error_message = get_json_string(root, "error");

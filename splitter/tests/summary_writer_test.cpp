@@ -99,6 +99,7 @@ TEST(SummaryWriter, WritesSummaryAndHashes) {
     ASSERT_TRUE(in.is_open());
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     // Basic presence checks
+    EXPECT_NE(content.find("\"schema_version\""), std::string::npos);
     EXPECT_NE(content.find("\"binary\""), std::string::npos);
     EXPECT_NE(content.find("\"binary_os\""), std::string::npos);
     EXPECT_NE(content.find("\"binary_format\""), std::string::npos);

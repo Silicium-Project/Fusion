@@ -4,6 +4,8 @@
 
 namespace fragment {
 
+inline constexpr uint32_t kPartitionSummarySchemaVersion = 1;
+
 struct PartitionDependency {
     std::string id;
     std::string asm_path;
@@ -51,6 +53,7 @@ struct LibraryInfo {
 };
 
 struct PartitionSummary {
+    uint32_t schema_version = kPartitionSummarySchemaVersion;
     std::string binary_path;
     std::string binary_os;
     std::string binary_format;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -11,7 +12,11 @@
 
 namespace worker {
 
+inline constexpr uint32_t kTaskPayloadSchemaVersion = 1;
+inline constexpr uint32_t kExecutionResultSchemaVersion = 1;
+
 struct TaskPayload {
+    uint32_t schema_version = kTaskPayloadSchemaVersion;
     TaskType type = TaskType::Binary;
     PartitionId partition_id;
     std::string asm_path;

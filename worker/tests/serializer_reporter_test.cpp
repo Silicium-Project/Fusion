@@ -29,8 +29,10 @@ TEST(TaskSerializer, RoundTripPayload) {
     payload.fd_rules.push_back(rule);
 
     const std::string serialized = serialize_task_payload(payload);
+    EXPECT_NE(std::string::npos, serialized.find("\"schema_version\":1"));
     const TaskPayload deserialized = deserialize_task_payload(serialized);
 
+    EXPECT_EQ(1u, deserialized.schema_version);
     EXPECT_EQ(payload.type, deserialized.type);
     EXPECT_EQ(payload.partition_id, deserialized.partition_id);
     EXPECT_EQ(payload.asm_path, deserialized.asm_path);
@@ -101,6 +103,7 @@ TEST(TaskSerializer, RoundTripExecutionResult) {
     result.fd_outputs.set(2, cap2);
 
     const std::string serialized = serialize_execution_result(result);
+    EXPECT_NE(std::string::npos, serialized.find("\"schema_version\":1"));
     const fragment::ExecutionResult deserialized = deserialize_execution_result(serialized);
 
     EXPECT_TRUE(deserialized.success);
@@ -191,6 +194,38 @@ TEST(Reporter, EmitsJsonAndText) {
     EXPECT_NE(std::string::npos, text_out.find("Écritures mémoire"));
     EXPECT_NE(std::string::npos, text_out.find("avant"));
     EXPECT_NE(std::string::npos, text_out.find("après"));
+}
+
+TEST(TaskSerializer, RejectsUnsupportedPayloadSchemaVersion) {
+    const std::string json = R"({
+      "schema_version":99,
+      "partition_id":"p",
+      "asm_path":"/tmp/a",
+      "binary_path":"",
+      "mode":"emu",
+      "fd_redirections":[],
+      "inputs":[],
+      "register_state":[],
+      "memory":[]
+    })";
+    EXPECT_THROW(deserialize_task_payload(json), std::runtime_error);
+}
+
+TEST(TaskSerializer, RejectsUnsupportedExecutionResultSchemaVersion) {
+    const std::string json = R"({
+      "schema_version":99,
+      "success":true,
+      "error":"",
+      "stdout":"",
+      "stderr":"",
+      "fd_outputs":{},
+      "initial_regs":[],
+      "final_regs":[],
+      "memory_patches":[],
+      "instructions":1,
+      "memory_accesses":1
+    })";
+    EXPECT_THROW(deserialize_execution_result(json), std::runtime_error);
 }
 
 TEST(Reporter, DefaultsTelemetryFields) {

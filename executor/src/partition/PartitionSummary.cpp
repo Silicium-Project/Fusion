@@ -21,6 +21,23 @@ namespace fragment {
 
     namespace {
 
+    uint32_t parse_schema_version(json_t* root,
+                                  const char* key,
+                                  uint32_t current_version,
+                                  const char* schema_name) {
+        json_t* value = json_object_get(root, key);
+        if (!value)
+            return current_version;
+        if (!json_is_integer(value))
+            throw std::runtime_error(std::string(schema_name) + " schema_version invalide");
+        const auto parsed = static_cast<long long>(json_integer_value(value));
+        if (parsed <= 0)
+            throw std::runtime_error(std::string(schema_name) + " schema_version invalide");
+        if (static_cast<uint32_t>(parsed) > current_version)
+            throw std::runtime_error(std::string(schema_name) + " schema_version non supporte");
+        return static_cast<uint32_t>(parsed);
+    }
+
     std::string to_string_safe(json_t* value) {
         if (json_is_string(value))
             return json_string_value(value);
@@ -214,7 +231,10 @@ namespace fragment {
                 return candidate.string();
             if (!probe.has_parent_path())
                 break;
-            probe = probe.parent_path();
+            const std::filesystem::path parent = probe.parent_path();
+            if (parent == probe)
+                break;
+            probe = parent;
         }
 
         if (std::filesystem::exists(rel))
@@ -339,6 +359,8 @@ namespace fragment {
             throw std::runtime_error("Résumé invalide (racine)");
 
         PartitionSummary summary;
+        summary.schema_version = parse_schema_version(
+            root, "schema_version", kPartitionSummarySchemaVersion, "summary");
         summary.binary_path = to_string_safe(json_object_get(root, "binary"));
         summary.binary_os = to_string_safe(json_object_get(root, "binary_os"));
         summary.binary_format = to_string_safe(json_object_get(root, "binary_format"));

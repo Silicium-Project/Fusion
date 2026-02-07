@@ -11,6 +11,8 @@ namespace splitter {
 
 namespace {
 
+constexpr unsigned kSummarySchemaVersion = 1;
+
 std::string HexString(uint64_t value) {
     std::ostringstream oss;
     oss << "0x" << std::hex << value;
@@ -122,6 +124,7 @@ void SummaryBuilder::SetBinaryInfo(const std::string& binary_path,
                                    const std::string& summary_hash) {
     std::ostringstream oss;
     oss << "{\n";
+    oss << "  \"schema_version\": " << kSummarySchemaVersion << ",\n";
     oss << "  \"binary\": \"" << JsonEscape(binary_path) << "\",\n";
     oss << "  \"binary_os\": \"" << JsonEscape(binary_os) << "\",\n";
     oss << "  \"binary_format\": \"" << JsonEscape(binary_format) << "\",\n";
