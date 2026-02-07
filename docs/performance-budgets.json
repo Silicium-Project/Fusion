@@ -33,6 +33,35 @@
         "max_rss_kib": 1500000.0
       }
     },
+    "pytest_core_windows": {
+      "description": "Windows-friendly Python tests subset (no bash entrypoint dependency).",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_manifests.py"
+      ],
+      "budgets": {
+        "wall_sec": 180.0,
+        "cpu_sec": 400.0,
+        "max_rss_kib": 1500000.0
+      }
+    },
+    "pytest_core_linux": {
+      "description": "Linux/CI Python tests subset including entrypoint scenarios.",
+      "command": [
+        "python3",
+        "-m",
+        "pytest",
+        "tests/test_entrypoint.py",
+        "tests/test_manifests.py"
+      ],
+      "budgets": {
+        "wall_sec": 240.0,
+        "cpu_sec": 500.0,
+        "max_rss_kib": 1800000.0
+      }
+    },
     "splitter_demo": {
       "description": "Representative local compute flow (splitter demo + executor).",
       "command": [

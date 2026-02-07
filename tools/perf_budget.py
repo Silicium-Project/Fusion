@@ -114,32 +114,46 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
     cpu_sec: float | None = None
     max_rss_kib: float | None = None
 
-    if time_bin:
-        fmt = f"{TIME_MARKER} elapsed=%e user=%U sys=%S rss_kib=%M exit=%x"
-        cmd = [time_bin, "-f", fmt, *profile.command]
-        result = subprocess.run(cmd, cwd=repo_root, text=True, capture_output=True, check=False)
-        marker = parse_time_marker(result.stderr)
-        if marker is not None:
-            wall_sec = marker.get("elapsed")
-            user_sec = marker.get("user")
-            sys_sec = marker.get("sys")
-            if user_sec is not None and sys_sec is not None:
-                cpu_sec = user_sec + sys_sec
-            max_rss_kib = marker.get("rss_kib")
-        if result.stdout:
-            print(result.stdout, end="")
-        if result.stderr:
-            filtered = "\n".join(
-                line for line in result.stderr.splitlines() if not line.startswith(TIME_MARKER)
-            )
-            if filtered:
-                print(filtered, file=sys.stderr)
-        return_code = result.returncode
-    else:
-        start = time.perf_counter()
-        result = subprocess.run(profile.command, cwd=repo_root, text=True, check=False)
-        wall_sec = time.perf_counter() - start
-        return_code = result.returncode
+    try:
+        if time_bin:
+            fmt = f"{TIME_MARKER} elapsed=%e user=%U sys=%S rss_kib=%M exit=%x"
+            cmd = [time_bin, "-f", fmt, *profile.command]
+            result = subprocess.run(cmd, cwd=repo_root, text=True, capture_output=True, check=False)
+            marker = parse_time_marker(result.stderr)
+            if marker is not None:
+                wall_sec = marker.get("elapsed")
+                user_sec = marker.get("user")
+                sys_sec = marker.get("sys")
+                if user_sec is not None and sys_sec is not None:
+                    cpu_sec = user_sec + sys_sec
+                max_rss_kib = marker.get("rss_kib")
+            if result.stdout:
+                print(result.stdout, end="")
+            if result.stderr:
+                filtered = "\n".join(
+                    line for line in result.stderr.splitlines() if not line.startswith(TIME_MARKER)
+                )
+                if filtered:
+                    print(filtered, file=sys.stderr)
+            return_code = result.returncode
+        else:
+            start = time.perf_counter()
+            result = subprocess.run(profile.command, cwd=repo_root, text=True, check=False)
+            wall_sec = time.perf_counter() - start
+            return_code = result.returncode
+    except FileNotFoundError as exc:
+        return ProfileResult(
+            key=profile.key,
+            command=profile.command,
+            description=profile.description,
+            return_code=127,
+            wall_sec=None,
+            cpu_sec=None,
+            max_rss_kib=None,
+            budgets=profile.budgets,
+            violations=[f"command_not_found: {exc.filename}"],
+            metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
+        )
 
     metrics = {
         "wall_sec": wall_sec,

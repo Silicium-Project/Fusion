@@ -15,7 +15,9 @@ Budget file: `docs/performance-budgets.json`
 ## Profiles
 
 - `check_worker_quick`: quick worker-focused core check.
-- `pytest_core`: core Python tests subset.
+- `pytest_core`: cross-platform Python tests subset.
+- `pytest_core_windows`: same intent, explicit Windows-safe profile.
+- `pytest_core_linux`: Linux/CI profile including `test_entrypoint`.
 - `splitter_demo`: representative splitter/executor run.
 
 ## Local Usage
@@ -36,6 +38,12 @@ Run all profiles with strict thresholds:
 
 ```bash
 ./silicium budget --all --strict --output /tmp/perf-budget-report.json
+```
+
+Run a platform-specific profile:
+
+```bash
+./silicium budget --profile pytest_core_windows --strict
 ```
 
 ## CI Usage

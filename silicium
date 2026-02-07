@@ -939,7 +939,10 @@ def cmd_budget(args: argparse.Namespace, ctx: Context) -> None:
         cmd.append("--strict")
     if args.output:
         cmd += ["--output", args.output]
-    run(cmd)
+    code = run(cmd, allow_failure=True)
+    if code != 0:
+        print(f"Budget check failed with exit code {code}.")
+        sys.exit(code)
 
 
 def configure_test(parser: argparse.ArgumentParser) -> None:

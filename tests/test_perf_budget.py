@@ -61,3 +61,16 @@ def test_load_profiles(tmp_path: Path) -> None:
     profile = profiles["quick"]
     assert profile.command == ["echo", "ok"]
     assert profile.budgets["wall_sec"] == 1.0
+
+
+def test_run_profile_command_not_found() -> None:
+    profile = perf_budget.Profile(
+        key="missing",
+        description="missing command",
+        command=["__this_command_does_not_exist__"],
+        budgets={"wall_sec": 1.0},
+    )
+    result = perf_budget.run_profile(profile, Path.cwd())
+    assert result.return_code == 127
+    assert result.violations
+    assert result.violations[0].startswith("command_not_found:")
