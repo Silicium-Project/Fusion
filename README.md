@@ -668,6 +668,9 @@ Les devices téléchargent le manifest correspondant au job pour sélectionner l
 
 Chaque manifest de calcul référence au moins une opération de vérification (`catalog/workloads/verification/...`). Lors du scheduling, seuls des noeuds n'ayant pas participé au calcul peuvent exécuter la vérification correspondante, garantissant une séparation stricte entre production et audit.
 
+Voir aussi la matrice de couverture workloads/features:
+`docs/workloads-coverage-matrix.md`
+
 ### Bibliothèques dynamiques requises
 
 Le `summary.json` contient deux niveaux d'information :
