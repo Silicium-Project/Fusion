@@ -10,6 +10,7 @@ WITH_DOCKER="${CORE_CHECK_WITH_DOCKER:-auto}" # auto|1|0
 REQUIRE_DOCKER="${CORE_CHECK_REQUIRE_DOCKER:-0}"
 RUN_DYNAMO="${CORE_CHECK_RUN_DYNAMO:-0}"    # 1 to run worker dynamo mode
 SCOPE="${CORE_CHECK_SCOPE:-all}"            # all|splitter|executor|worker
+FORCE_EXECUTOR_REBUILD="${CORE_CHECK_FORCE_EXECUTOR_REBUILD:-1}" # 1 to clean+rebuild executor for worker path
 CLEAN="${CORE_CHECK_CLEAN:-}"
 IN_DOCKER=0
 if [[ -f "/.dockerenv" ]]; then
@@ -153,8 +154,14 @@ else
 
   if [[ "$RUN_WORKER" == "1" ]]; then
     if [[ "$RUN_EXECUTOR" != "1" ]]; then
-      log "Build executor (dependency for worker)"
-      make -C executor all
+      if [[ "$FORCE_EXECUTOR_REBUILD" == "1" ]]; then
+        log "Rebuild executor (clean dependency for worker)"
+        make -C executor clean
+        make -C executor all
+      else
+        log "Build executor (dependency for worker)"
+        make -C executor all
+      fi
     fi
     log "Build worker"
     make -C worker all

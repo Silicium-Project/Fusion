@@ -326,7 +326,10 @@ def run_core_check_in_docker(env_vars: dict[str, str], ctx: Context) -> None:
     for key, value in env_vars.items():
         cmd += ["-e", f"{key}={value}"]
     cmd += [image, "bash", "-lc", setup]
-    run(cmd)
+    code = run(cmd, allow_failure=True)
+    if code != 0:
+        print(f"Core check failed in Docker with exit code {code}.")
+        sys.exit(code)
 
 
 def remove_path(path: Path) -> None:
