@@ -19,7 +19,7 @@ This Solana program (built with Anchor) enables:
 - Verification of fragment results
 - Secure job **finalization or cancellation**
 
-This layer is a **functional MVP**, ready to be deployed on **devnet**.
+This layer is **functional**, ready to be deployed on **devnet**.
 
 ---
 
@@ -78,7 +78,7 @@ Stores the final result of a completed job.
 
 ---
 
-## ⚙️ Implemented Instructions
+## Implemented Instructions
 
 ### `create_job`
 Creates a job and:
@@ -148,15 +148,13 @@ Actions:
 
 ---
 
-## Current Limitations (Expected for MVP)
+## Current Limitations
 
-This MVP **does not yet include**:
+This logic **does not yet include**:
 - Worker registry (stake / reputation)
 - Decentralized verification (quorum)
 - Active challenges or slashing
 - Automatic fragment assignment
-
-These features are planned for future versions.
 
 ---
 
