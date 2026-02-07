@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "locale": "fr-FR",
+    "fallback": "fr",
+    "version": 1
+  },
+  "messages": {
+    "core.ok": "OK",
+    "core.error": "Erreur",
+    "cli.shell.prompt": "silicium> ",
+    "cli.workload.list.none": "Aucun workload trouve.",
+    "cli.workload.lint.success": "Tous les manifests sont valides.",
+    "tui.status.idle": "Inactif",
+    "tui.status.running": "En cours",
+    "worker.error.summary_not_found": "Resume introuvable.",
+    "executor.error.partition_not_found": "Partition introuvable.",
+    "splitter.phase.analysis": "Phase d'analyse",
+    "viewer.menu.open_file": "Ouvrir un fichier",
+    "infra.compose.service_unavailable": "Service indisponible.",
+    "workload.catalog.loaded": "Catalogue de workloads charge."
+  }
+}

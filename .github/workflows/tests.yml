@@ -47,6 +47,9 @@ jobs:
       - name: Validate UTF-8 files
         run: python tools/check_utf8.py
 
+      - name: Validate i18n locale packs
+        run: python tools/check_i18n_locales.py --strict
+
       - name: Lint workload manifests
         run: ./silicium workload lint
 

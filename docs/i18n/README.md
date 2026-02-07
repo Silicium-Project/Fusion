@@ -69,12 +69,13 @@ Run from repository root:
 ```bash
 python tools/check_utf8.py
 python -m pytest tests/test_i18n_contract.py
+python tools/check_i18n_locales.py --strict
 ```
 
 Optional pre-check:
 
 ```bash
-python -m pytest tests/test_i18n_contract.py tests/test_workload_cli.py
+python -m pytest tests/test_i18n_contract.py tests/test_i18n_locales.py tests/test_workload_cli.py
 ```
 
 ## Common failure modes

@@ -16,6 +16,7 @@
     "executor.error.partition_not_found": "Partition not found.",
     "splitter.phase.analysis": "Analysis phase",
     "viewer.menu.open_file": "Open File",
-    "infra.compose.service_unavailable": "Service unavailable."
+    "infra.compose.service_unavailable": "Service unavailable.",
+    "workload.catalog.loaded": "Workload catalog loaded."
   }
 }
