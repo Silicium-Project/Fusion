@@ -33,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 SPLITTER_DIR = REPO_ROOT / "splitter"
 EXECUTOR_DIR = REPO_ROOT / "executor"
 WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
+WORKLOAD_SCHEMA_FILE = WORKLOAD_ROOT / "schema" / "workload-manifest-v1.schema.json"
 PERF_BUDGET_FILE = REPO_ROOT / "docs" / "performance-budgets.json"
 CORE_CHECK_IMAGE_DEFAULT = "silicium/core-check:lite"
 CORE_CHECK_DOCKERFILE = REPO_ROOT / "docker" / "core-check" / "Dockerfile"
@@ -99,7 +100,7 @@ SUBCOMMANDS = {
     "ledger": ["list", "wipe", "export", "import"],
     "history": ["show", "clear"],
     "clean": ["cache", "ledgers", "all"],
-    "workload": ["list", "show", "queue"],
+    "workload": ["list", "show", "queue", "lint"],
 }
 WORKLOAD_TAXONOMY_CATEGORIES = ["calcul", "verification"]
 WORKLOAD_TAXONOMY_DOMAINS = [
@@ -444,6 +445,14 @@ def compose_down(ctx: Context, volumes: bool = False) -> None:
 def cmd_test(_: argparse.Namespace, ctx: Context) -> None:
     run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], allow_failure=True)
     run([sys.executable, "-m", "pip", "install", "-r", "requirements-dev.txt"], allow_failure=True)
+    cmd_workload_lint(
+        argparse.Namespace(
+            root=str(WORKLOAD_ROOT),
+            schema=str(WORKLOAD_SCHEMA_FILE),
+            json=False,
+        ),
+        ctx,
+    )
     run([sys.executable, "-m", "pytest"])
 
 
@@ -813,6 +822,119 @@ def _workload_matches_filters(data: dict[str, Any], args: argparse.Namespace) ->
         if not set(args.tag).issubset(tag_set):
             return False
     return True
+
+
+def _schema_error_path(error: Any) -> str:
+    path = getattr(error, "absolute_path", [])
+    return "/".join(str(part) for part in path) or "<root>"
+
+
+def lint_workload_manifests(root: Path, schema_path: Path) -> tuple[int, list[dict[str, str]]]:
+    try:
+        import yaml
+    except ImportError:
+        print("PyYAML is required for workload lint. Install with: python -m pip install pyyaml")
+        sys.exit(1)
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError:
+        print("jsonschema is required for workload lint. Install with: python -m pip install jsonschema")
+        sys.exit(1)
+    if not root.exists():
+        print(f"Workload root not found: {root}")
+        sys.exit(1)
+    if not schema_path.exists():
+        print(f"Workload schema not found: {schema_path}")
+        sys.exit(1)
+
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    validator = Draft202012Validator(schema)
+    manifests = sorted(root.rglob("manifest.yaml"))
+    errors: list[dict[str, str]] = []
+
+    for manifest_path in manifests:
+        try:
+            data = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            errors.append(
+                {
+                    "file": str(manifest_path),
+                    "field": "<root>",
+                    "rule": "yaml_parse",
+                    "message": str(exc),
+                }
+            )
+            continue
+
+        if not isinstance(data, dict):
+            errors.append(
+                {
+                    "file": str(manifest_path),
+                    "field": "<root>",
+                    "rule": "type",
+                    "message": "manifest must be a YAML mapping",
+                }
+            )
+            continue
+
+        schema_errors = sorted(validator.iter_errors(data), key=lambda err: list(err.absolute_path))
+        for error in schema_errors:
+            errors.append(
+                {
+                    "file": str(manifest_path),
+                    "field": _schema_error_path(error),
+                    "rule": "schema_v1",
+                    "message": error.message,
+                }
+            )
+
+        relative = manifest_path.parent.relative_to(root)
+        category = str(relative).replace("\\", "/").split("/", 1)[0]
+        taxonomy = data.get("taxonomy", {})
+        if isinstance(taxonomy, dict):
+            taxonomy_category = taxonomy.get("category")
+            if taxonomy_category is not None and taxonomy_category != category:
+                errors.append(
+                    {
+                        "file": str(manifest_path),
+                        "field": "taxonomy/category",
+                        "rule": "taxonomy_category_match",
+                        "message": f"expected '{category}', got '{taxonomy_category}'",
+                    }
+                )
+
+    return len(manifests), errors
+
+
+def cmd_workload_lint(args: argparse.Namespace, ctx: Context) -> None:
+    root = Path(args.root).resolve()
+    schema_path = Path(args.schema).resolve()
+    checked, errors = lint_workload_manifests(root, schema_path)
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "checked": checked,
+                    "errors": errors,
+                },
+                indent=2,
+            )
+        )
+    else:
+        for error in errors:
+            print(
+                "[ERROR] "
+                f"{error['file']} "
+                f"field={error['field']} "
+                f"rule={error['rule']} "
+                f"message={error['message']}"
+            )
+        if errors:
+            print(f"Validation failed: {len(errors)} error(s) across {checked} manifest(s).")
+        else:
+            print(f"All manifests valid: {checked} checked.")
+    if errors:
+        sys.exit(1)
 
 
 def workload_paths() -> list[str]:
@@ -1365,6 +1487,24 @@ def configure_workload_queue(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def configure_workload_lint(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--root",
+        default=str(WORKLOAD_ROOT),
+        help="Workload root directory (default: catalog/workloads).",
+    )
+    parser.add_argument(
+        "--schema",
+        default=str(WORKLOAD_SCHEMA_FILE),
+        help="Path to workload manifest schema JSON file.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output lint report as JSON.",
+    )
+
+
 def configure_history_show(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--tail",
@@ -1515,6 +1655,7 @@ def build_registry() -> CommandRegistry:
                 CommandSpec("list", "List workloads", configure_workload_list, cmd_workload_list),
                 CommandSpec("show", "Show a workload manifest", configure_workload_show, cmd_workload_show),
                 CommandSpec("queue", "Generate a queue file from a summary.json", configure_workload_queue, cmd_workload_queue),
+                CommandSpec("lint", "Validate workload manifests against schema", configure_workload_lint, cmd_workload_lint),
             ],
         )
     )
@@ -1728,6 +1869,11 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             return [p for p in paths if p.startswith(text)]
         if sub == "queue":
             opts = ["--summary", "--output"]
+            if text.startswith("-"):
+                return [opt for opt in opts if opt.startswith(text)]
+            return []
+        if sub == "lint":
+            opts = ["--root", "--schema", "--json"]
             if text.startswith("-"):
                 return [opt for opt in opts if opt.startswith(text)]
             return []

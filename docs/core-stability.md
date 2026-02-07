@@ -26,6 +26,7 @@ Scope: splitter, executor, worker, CLI orchestration, and optional Docker infra.
 
 ### CLI (`silicium`)
 - `./silicium workload list` exits 0 and prints entries.
+- `./silicium workload lint` exits 0 and validates all manifests.
 - `./silicium workload show calcul/math-simulation --readme` exits 0.
 
 ### Python tests (entrypoint + manifests)

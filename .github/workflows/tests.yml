@@ -41,8 +41,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install dev dependencies
+        run: python -m pip install -r requirements-dev.txt
+
       - name: Validate UTF-8 files
         run: python tools/check_utf8.py
+
+      - name: Lint workload manifests
+        run: ./silicium workload lint
 
       - name: Run test suite via silicium CLI
         run: ./silicium test

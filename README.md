@@ -312,6 +312,7 @@ Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches couran
 ./silicium ledger import devnet --archive backups/devnet.tar.gz -y
 ./silicium ledger wipe devnet    # supprime uniquement le ledger devnet
 ./silicium workload list --tree  # liste les workloads (calcul/..., verification/...)
+./silicium workload lint         # valide tous les manifests workloads (schema v1)
 ./silicium workload show calcul/math-simulation --readme
 ./silicium start localnet        # démarre un service (compose up -d)
 ./silicium logs proxy-smoke -f   # logs suivis (profil smoke auto)
