@@ -18,6 +18,7 @@ Chaque profil est versionné dans son propre sous-dossier et contient :
 ## Manifest schema (aperçu)
 
 ```yaml
+schema_version: 1
 id: calcul/video-encoding/h264
 version: 0.1.0
 engine: container
@@ -33,6 +34,11 @@ payment:
   unit: fragment
   estimated_cost: 0.001 # en token Silicium
 ```
+
+Schéma de référence versionné:
+
+- `catalog/workloads/schema/workload-manifest-v1.schema.json`
+- `schema_version: 1` est obligatoire dans chaque `manifest.yaml`
 
 Les devices téléchargent le manifest correspondant au job pour savoir quel binaire lancer et comment reporter la preuve (hash, logs, temps).
 

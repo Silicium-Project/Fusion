@@ -1,4 +1,5 @@
 id: calcul/ml-inference/embeddings
+schema_version: 1
 version: 0.2.0
 engine: python
 command: python infer.py --model {model} --batch {batch} --out {output} --dtype {dtype}

@@ -1,4 +1,5 @@
 id: calcul/math-simulation/generic
+schema_version: 1
 version: 0.1.0
 engine: python
 command: python simulate.py --config {config} --input {task} --out {output}

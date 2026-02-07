@@ -1,4 +1,5 @@
 id: verification/hash-audit/sha256
+schema_version: 1
 version: 0.1.0
 engine: container
 command: >
