@@ -51,6 +51,8 @@ def test_load_profiles(tmp_path: Path) -> None:
                     "quick": {
                         "description": "Quick path",
                         "command": ["echo", "ok"],
+                        "timeout_sec": 5.0,
+                        "env": {"A": "B"},
                         "budgets": {"wall_sec": 1.0, "cpu_sec": 2.0, "max_rss_kib": 3.0},
                     }
                 },
@@ -63,6 +65,8 @@ def test_load_profiles(tmp_path: Path) -> None:
     profile = profiles["quick"]
     assert profile.command == ["echo", "ok"]
     assert profile.budgets["wall_sec"] == 1.0
+    assert profile.timeout_sec == 5.0
+    assert profile.env["A"] == "B"
 
 
 def test_run_profile_command_not_found() -> None:
@@ -71,11 +75,14 @@ def test_run_profile_command_not_found() -> None:
         description="missing command",
         command=["__this_command_does_not_exist__"],
         budgets={"wall_sec": 1.0},
+        timeout_sec=None,
+        env={},
     )
     result = perf_budget.run_profile(profile, Path.cwd())
     assert result.return_code == 127
     assert result.violations
     assert result.violations[0].startswith("command_not_found:")
+    assert result.timed_out is False
 
 
 def test_parse_args_rejects_all_with_profile() -> None:
@@ -118,3 +125,19 @@ def test_normalize_command_for_platform_windows_silicium(monkeypatch: pytest.Mon
     assert command[0] == perf_budget.sys.executable
     assert Path(command[1]) == script
     assert command[2:] == ["budget", "--list"]
+
+
+def test_run_profile_timeout() -> None:
+    profile = perf_budget.Profile(
+        key="timeout",
+        description="times out",
+        command=[perf_budget.sys.executable, "-c", "import time; time.sleep(0.2)"],
+        budgets={"wall_sec": 1.0},
+        timeout_sec=0.05,
+        env={},
+    )
+    result = perf_budget.run_profile(profile, Path.cwd())
+    assert result.return_code == 124
+    assert result.timed_out is True
+    assert result.violations
+    assert result.violations[0].startswith("timeout:")

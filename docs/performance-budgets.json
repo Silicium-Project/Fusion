@@ -13,6 +13,10 @@
         "2",
         "--no-docker"
       ],
+      "timeout_sec": 1500.0,
+      "env": {
+        "CORE_CHECK_FORCE_EXECUTOR_REBUILD": "1"
+      },
       "budgets": {
         "wall_sec": 480.0,
         "cpu_sec": 1200.0,
@@ -27,6 +31,7 @@
         "pytest",
         "tests/test_manifests.py"
       ],
+      "timeout_sec": 300.0,
       "budgets": {
         "wall_sec": 180.0,
         "cpu_sec": 400.0,
@@ -41,6 +46,7 @@
         "pytest",
         "tests/test_manifests.py"
       ],
+      "timeout_sec": 300.0,
       "budgets": {
         "wall_sec": 180.0,
         "cpu_sec": 400.0,
@@ -56,6 +62,7 @@
         "tests/test_entrypoint.py",
         "tests/test_manifests.py"
       ],
+      "timeout_sec": 420.0,
       "budgets": {
         "wall_sec": 240.0,
         "cpu_sec": 500.0,
@@ -70,6 +77,7 @@
         "splitter",
         "demo"
       ],
+      "timeout_sec": 1200.0,
       "budgets": {
         "wall_sec": 600.0,
         "cpu_sec": 1500.0,

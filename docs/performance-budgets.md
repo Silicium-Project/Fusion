@@ -12,6 +12,11 @@ Budget file: `docs/performance-budgets.json`
 - `cpu_sec`: user + system CPU seconds (energy proxy).
 - `max_rss_kib`: peak resident memory in KiB.
 
+## Optional Profile Fields
+
+- `timeout_sec`: hard timeout for a profile command (returns `exit_code=124` when exceeded).
+- `env`: extra environment variables injected only for that profile command.
+
 ## Profiles
 
 - `check_worker_quick`: quick worker-focused core check.

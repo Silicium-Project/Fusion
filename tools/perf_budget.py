@@ -29,6 +29,8 @@ class Profile:
     description: str
     command: list[str]
     budgets: dict[str, float]
+    timeout_sec: float | None
+    env: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class ProfileResult:
     budgets: dict[str, float]
     violations: list[str]
     metrics_unavailable: list[str]
+    timed_out: bool
 
 
 def parse_time_marker(stderr: str) -> dict[str, float] | None:
@@ -89,6 +92,30 @@ def load_profiles(path: Path) -> dict[str, Profile]:
         budgets = value.get("budgets", {})
         if not isinstance(budgets, dict):
             raise ValueError(f"Invalid profile '{key}' in {path}: object expected for 'budgets'")
+        env = value.get("env", {})
+        if not isinstance(env, dict):
+            raise ValueError(f"Invalid profile '{key}' in {path}: object expected for 'env'")
+        normalized_env: dict[str, str] = {}
+        for env_key, env_value in env.items():
+            if not isinstance(env_key, str) or not env_key.strip():
+                raise ValueError(f"Invalid profile '{key}' in {path}: env key must be non-empty string")
+            if not isinstance(env_value, str):
+                raise ValueError(
+                    f"Invalid profile '{key}' in {path}: env value for '{env_key}' must be string"
+                )
+            normalized_env[env_key] = env_value
+        timeout_raw = value.get("timeout_sec")
+        timeout_sec: float | None = None
+        if timeout_raw is not None:
+            if not isinstance(timeout_raw, (int, float)):
+                raise ValueError(
+                    f"Invalid profile '{key}' in {path}: numeric expected for 'timeout_sec'"
+                )
+            timeout_sec = float(timeout_raw)
+            if not math.isfinite(timeout_sec) or timeout_sec <= 0:
+                raise ValueError(
+                    f"Invalid profile '{key}' in {path}: positive finite value expected for 'timeout_sec'"
+                )
         numeric_budgets: dict[str, float] = {}
         for metric in ("wall_sec", "cpu_sec", "max_rss_kib"):
             raw = budgets.get(metric)
@@ -109,6 +136,8 @@ def load_profiles(path: Path) -> dict[str, Profile]:
             description=str(value.get("description", "")).strip(),
             command=command,
             budgets=numeric_budgets,
+            timeout_sec=timeout_sec,
+            env=normalized_env,
         )
     return profiles
 
@@ -149,12 +178,22 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
     wall_sec: float | None = None
     cpu_sec: float | None = None
     max_rss_kib: float | None = None
+    run_env = os.environ.copy()
+    run_env.update(profile.env)
 
     try:
         if time_bin:
             fmt = f"{TIME_MARKER} elapsed=%e user=%U sys=%S rss_kib=%M exit=%x"
             cmd = [time_bin, "-f", fmt, *effective_command]
-            result = subprocess.run(cmd, cwd=repo_root, text=True, capture_output=True, check=False)
+            result = subprocess.run(
+                cmd,
+                cwd=repo_root,
+                env=run_env,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=profile.timeout_sec,
+            )
             marker = parse_time_marker(result.stderr)
             if marker is not None:
                 wall_sec = marker.get("elapsed")
@@ -174,9 +213,30 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             return_code = result.returncode
         else:
             start = time.perf_counter()
-            result = subprocess.run(effective_command, cwd=repo_root, text=True, check=False)
+            result = subprocess.run(
+                effective_command,
+                cwd=repo_root,
+                env=run_env,
+                text=True,
+                check=False,
+                timeout=profile.timeout_sec,
+            )
             wall_sec = time.perf_counter() - start
             return_code = result.returncode
+    except subprocess.TimeoutExpired:
+        return ProfileResult(
+            key=profile.key,
+            command=effective_command,
+            description=profile.description,
+            return_code=124,
+            wall_sec=profile.timeout_sec,
+            cpu_sec=None,
+            max_rss_kib=None,
+            budgets=profile.budgets,
+            violations=[f"timeout: exceeded {profile.timeout_sec:.3f}s"],
+            metrics_unavailable=["cpu_sec", "max_rss_kib"],
+            timed_out=True,
+        )
     except FileNotFoundError as exc:
         return ProfileResult(
             key=profile.key,
@@ -189,6 +249,7 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             budgets=profile.budgets,
             violations=[f"command_not_found: {getattr(exc, 'filename', None) or str(exc)}"],
             metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
+            timed_out=False,
         )
     except OSError as exc:
         return ProfileResult(
@@ -202,6 +263,7 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             budgets=profile.budgets,
             violations=[f"command_launch_error: {getattr(exc, 'filename', None) or str(exc)}"],
             metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
+            timed_out=False,
         )
 
     metrics = {
@@ -224,6 +286,7 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
         budgets=profile.budgets,
         violations=violations,
         metrics_unavailable=unavailable,
+        timed_out=False,
     )
 
 
@@ -254,6 +317,8 @@ def print_result(result: ProfileResult) -> None:
     )
     if result.metrics_unavailable:
         print(f"  note: unavailable metrics -> {', '.join(result.metrics_unavailable)}")
+    if result.timed_out:
+        print("  note: command timed out")
     if result.violations:
         for violation in result.violations:
             print(f"  violation: {violation}")
@@ -276,6 +341,7 @@ def serialize_results(results: list[ProfileResult], budget_file: Path) -> dict[s
                 "budgets": item.budgets,
                 "violations": item.violations,
                 "metrics_unavailable": item.metrics_unavailable,
+                "timed_out": item.timed_out,
             }
         )
     return {
@@ -369,6 +435,7 @@ def main(argv: list[str] | None = None) -> int:
                 budgets=profiles[key].budgets,
                 violations=[f"internal_error: {exc.__class__.__name__}: {exc}"],
                 metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
+                timed_out=False,
             )
         print_result(result)
         results.append(result)
