@@ -1,5 +1,6 @@
 #include "artifacts/SummaryHashCalculator.hpp"
 #include "artifacts/FnvHashAlgorithm.hpp"
+#include "artifacts/StdHashAlgorithm.hpp"
 
 #include <algorithm>
 
@@ -19,7 +20,7 @@ void HashStrings(IHashAlgorithm& h, const Container& c) {
 }  // namespace
 
 SummaryHashCalculator::SummaryHashCalculator(std::shared_ptr<IHashAlgorithm> algorithm, HashService hash_service)
-    : algorithm_(algorithm ? std::move(algorithm) : std::make_shared<FnvHashAlgorithm>()),
+    : algorithm_(std::move(algorithm)),
       hash_service_(std::move(hash_service)) {}
 
 SummaryHashCalculator::SummaryHashCalculator(std::shared_ptr<IHashAlgorithm> algorithm)
@@ -31,14 +32,21 @@ SummaryHashCalculator::SummaryHashCalculator(HashService hash_service)
 std::unique_ptr<IHashAlgorithm> SummaryHashCalculator::make_hash() const {
     if (algorithm_)
         return algorithm_->Clone();
-    return std::make_unique<FnvHashAlgorithm>();
+    return hash_service_.CreateHasher();
 }
 
 std::string SummaryHashCalculator::ComputePartitionHash(
-    const Partition& p, const std::set<std::string>& resolved_libs) const {
+    const Partition& p,
+    const std::set<std::string>& resolved_libs,
+    const std::string& partition_os,
+    const std::string& partition_format) const {
     auto hasher = make_hash();
     hasher->Reset();
     hasher->AddString(p.Id());
+    if (!partition_os.empty())
+        hasher->AddString(partition_os);
+    if (!partition_format.empty())
+        hasher->AddString(partition_format);
     hasher->AddUint64(p.StartAddr());
     hasher->AddUint64(p.EndAddr());
     hasher->AddString(p.BinHash());
@@ -71,9 +79,15 @@ std::string SummaryHashCalculator::ComputeSummaryHash(
     const std::string& binary_hash, const std::string& memory_hash, bool can_split,
     const std::vector<std::string>& required_libraries,
     const std::vector<LibraryInfo>& libraries,
-    const std::vector<std::pair<std::string, std::string>>& partition_hashes) const {
+    const std::vector<std::pair<std::string, std::string>>& partition_hashes,
+    const std::string& binary_os,
+    const std::string& binary_format) const {
     auto hasher = make_hash();
     hasher->Reset();
+    if (!binary_os.empty())
+        hasher->AddString(binary_os);
+    if (!binary_format.empty())
+        hasher->AddString(binary_format);
     hasher->AddString(binary_hash);
     hasher->AddString(memory_hash);
     hasher->AddBool(can_split);
@@ -99,6 +113,17 @@ std::string SummaryHashCalculator::ComputeSummaryHash(
     }
 
     return hasher->Hex();
+}
+
+std::string SummaryHashCalculator::AlgorithmName() const {
+    if (algorithm_) {
+        if (dynamic_cast<FnvHashAlgorithm*>(algorithm_.get()))
+            return "fnv";
+        if (dynamic_cast<StdHashAlgorithm*>(algorithm_.get()))
+            return "std";
+        return "custom";
+    }
+    return hash_service_.AlgorithmName();
 }
 
 }  // namespace splitter

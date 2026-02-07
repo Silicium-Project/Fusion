@@ -18,6 +18,8 @@ public:
                       std::shared_ptr<BinaryExtractor> extractor);
     std::string Name() const override;
     void Execute(PipelineContext& context) override;
+    std::vector<std::string> Inputs() const override;
+    std::vector<std::string> Outputs() const override;
 
 private:
     std::unique_ptr<IPartitioner> partitioner_;

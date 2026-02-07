@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "ExecutionResult.hpp"
-#include "PartitionSummary.hpp"
-#include "worker/backend_connector.hpp"
-#include "worker/worker.hpp"
+#include "core/ExecutionResult.hpp"
+#include "partition/PartitionSummary.hpp"
+#include "worker/backend/BackendConnector.hpp"
+#include "worker/core/Worker.hpp"
 
 namespace {
 

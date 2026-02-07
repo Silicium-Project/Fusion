@@ -250,7 +250,7 @@ def summary_html(title: str, line_pct: float, func_pct: float, branch_pct: float
     <header>
       <div>
         <h1>{title}</h1>
-        <div class="pill">Dernière exécution · couverture</div>
+        <div class="pill">DerniÃ¨re exÃ©cution Â· couverture</div>
       </div>
     </header>
     <section class="charts">
@@ -377,12 +377,12 @@ def main() -> None:
         metrics_text = f"Lignes {line_pct:.1f} %, fonctions {func_pct:.1f} %, branches {branch_pct:.1f} %"
         snippet_parts = []
         if readme_snapshot and args.readme_report:
-            snippet_parts.append(f"- Aperçu : [![worker coverage]({readme_snapshot} \"{metrics_text}\")]({args.readme_report})")
+            snippet_parts.append(f"- AperÃ§u : [![worker coverage]({readme_snapshot} \"{metrics_text}\")]({args.readme_report})")
         elif readme_snapshot:
-            snippet_parts.append(f"- Aperçu : ![worker coverage]({readme_snapshot} \"{metrics_text}\")")
+            snippet_parts.append(f"- AperÃ§u : ![worker coverage]({readme_snapshot} \"{metrics_text}\")")
         elif args.readme_report:
             snippet_parts.append(f"- Snapshot (auto) : {metrics_text}")
-            snippet_parts.append(f"- Aperçu : {args.readme_report}")
+            snippet_parts.append(f"- AperÃ§u : {args.readme_report}")
         else:
             snippet_parts.append(f"- Snapshot (auto) : {metrics_text}")
 

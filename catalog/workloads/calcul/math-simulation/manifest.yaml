@@ -1,4 +1,5 @@
 id: calcul/math-simulation/generic
+schema_version: 1
 version: 0.1.0
 engine: python
 command: python simulate.py --config {config} --input {task} --out {output}
@@ -6,6 +7,17 @@ resources:
   cpu: 2
   gpu: none
   memory: 2Gi
+taxonomy:
+  category: calcul
+  domain: simulation
+  complexity: medium
+  resource_profile: cpu_heavy
+  determinism: bounded_stochastic
+  tags:
+    - simulation
+    - math
+    - cpu
+    - stochastic
 artifacts:
   input:
     - name: config

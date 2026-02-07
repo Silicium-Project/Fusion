@@ -1,0 +1,21 @@
+{
+  "id": "cpp.header_source_pair",
+  "description": "Headers under include/ should have a matching source file under src/.",
+  "severity": "warning",
+  "kind": "cpp_header_source_pair",
+  "scope": {
+    "include": [
+      "**/*.hpp",
+      "**/*.h"
+    ]
+  },
+  "pairing": {
+    "include_root": "include",
+    "src_root": "src",
+    "extensions": [
+      ".cpp",
+      ".cc",
+      ".cxx"
+    ]
+  }
+}

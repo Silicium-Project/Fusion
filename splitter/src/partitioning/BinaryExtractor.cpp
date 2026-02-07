@@ -1,5 +1,7 @@
 #include "partitioning/BinaryExtractor.hpp"
 
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -19,48 +21,77 @@ std::vector<uint8_t> BinaryExtractor::ExtractSegment(const std::string& binary_p
                                                      uint64_t end_addr) const {
     std::vector<uint8_t> result;
     try {
-        std::string cmd = "readelf -W -S " + binary_path;
+        if (end_addr <= start_addr)
+            return result;
+
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(binary_path, ec);
+        if (!ec && size == 0)
+            return result;
+
+        std::string cmd = "readelf -W -S " + ShellQuote(binary_path);
         std::string output = ExecCommand(cmd);
         std::regex section_pattern(
             "\\[\\s*\\d+\\]\\s+([^\\s]+)\\s+([^\\s]+)\\s+([0-9a-f]+)\\s+([0-9a-f]+)\\s+([0-9a-f]+)");
         std::smatch match;
 
-        uint64_t text_offset = 0;
-        uint64_t text_vaddr = 0;
-        bool found_text = false;
+        struct SectionInfo {
+            std::string name;
+            uint64_t vaddr = 0;
+            uint64_t offset = 0;
+            uint64_t size = 0;
+        };
+        std::vector<SectionInfo> sections;
 
         std::istringstream stream(output);
         std::string line;
         while (std::getline(stream, line)) {
-            if (std::regex_search(line, match, section_pattern)
-                && match[1].str().find(".text") != std::string::npos) {
-                text_vaddr = std::stoull(match[3].str(), nullptr, 16);
-                text_offset = std::stoull(match[4].str(), nullptr, 16);
-                found_text = true;
+            if (!std::regex_search(line, match, section_pattern))
+                continue;
+            SectionInfo info;
+            info.name = match[1].str();
+            info.vaddr = std::stoull(match[3].str(), nullptr, 16);
+            info.offset = std::stoull(match[4].str(), nullptr, 16);
+            info.size = std::stoull(match[5].str(), nullptr, 16);
+            sections.push_back(std::move(info));
+        }
+
+        if (sections.empty())
+            return result;
+
+        const SectionInfo* section = nullptr;
+        for (const auto& sec : sections) {
+            if (sec.size == 0)
+                continue;
+            if (start_addr >= sec.vaddr && start_addr < sec.vaddr + sec.size) {
+                section = &sec;
                 break;
             }
         }
-
-        if (!found_text || end_addr <= start_addr || start_addr < text_vaddr)
+        if (!section)
             return result;
 
         std::ifstream file(binary_path, std::ios::binary);
         if (!file)
             return result;
 
-        uint64_t file_start = text_offset + (start_addr - text_vaddr);
-        uint64_t file_end = text_offset + (end_addr - text_vaddr);
+        const uint64_t clamped_end = std::min(end_addr, section->vaddr + section->size);
+        uint64_t file_start = section->offset + (start_addr - section->vaddr);
+        uint64_t file_end = section->offset + (clamped_end - section->vaddr);
         if (file_end <= file_start)
             return result;
 
         file.seekg(file_start);
         const size_t segment_size = static_cast<size_t>(file_end - file_start);
-        const size_t kMaxSegment = 16 * 1024 * 1024;  // 16 Mo max pour éviter les dépassements.
+        const size_t kMaxSegment = 16 * 1024 * 1024;  // 16 Mo max pour ?viter les d?passements.
         if (segment_size == 0 || segment_size > kMaxSegment)
             return result;
         std::vector<char> buffer(segment_size);
         file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-        result.assign(buffer.begin(), buffer.end());
+        const auto read_bytes = static_cast<size_t>(file.gcount());
+        if (read_bytes == 0)
+            return result;
+        result.assign(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(read_bytes));
     } catch (const std::exception& e) {
         std::cerr << "Avertissement: impossible d'extraire segment: " << e.what() << "\n";
     }
@@ -71,7 +102,12 @@ std::vector<MemorySegment> BinaryExtractor::ExtractDataSections(const std::strin
     std::vector<MemorySegment> segments;
 
     try {
-        std::string cmd = "readelf -W -S " + binary_path;
+        std::error_code ec;
+        const auto size = std::filesystem::file_size(binary_path, ec);
+        if (!ec && size == 0)
+            return segments;
+
+        std::string cmd = "readelf -W -S " + ShellQuote(binary_path);
         std::string output = ExecCommand(cmd);
         std::regex section_pattern(
             "\\[\\s*\\d+\\]\\s+([^\\s]+)\\s+([^\\s]+)\\s+([0-9a-f]+)\\s+([0-9a-f]+)\\s+([0-9a-f]+)");
@@ -111,14 +147,16 @@ std::vector<MemorySegment> BinaryExtractor::ExtractDataSections(const std::strin
                 if (file) {
                     file.seekg(static_cast<std::streamoff>(offset));
                     file.read(reinterpret_cast<char*>(segment.Bytes().data()), static_cast<std::streamsize>(size));
+                    const auto read_bytes = static_cast<size_t>(file.gcount());
+                    if (read_bytes < segment.Bytes().size())
+                        segment.Bytes().resize(read_bytes);
                 }
             }
 
-            if (!segment.Bytes().empty())
-                segments.push_back(std::move(segment));
+            segments.push_back(std::move(segment));
         }
     } catch (const std::exception& e) {
-        std::cerr << "Avertissement: impossible d'extraire les sections de données: " << e.what() << "\n";
+        std::cerr << "Avertissement: impossible d'extraire les sections de donn?es: " << e.what() << "\n";
     }
 
     return segments;

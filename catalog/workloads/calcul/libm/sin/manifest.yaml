@@ -1,4 +1,5 @@
 id: calcul/libm/sin
+schema_version: 1
 version: 0.1.0
 engine: python
 command: python -m silicium.libm_runner --function sin --value {value} --out {output}
@@ -6,6 +7,17 @@ resources:
   cpu: 1
   gpu: none
   memory: 256Mi
+taxonomy:
+  category: calcul
+  domain: math
+  complexity: low
+  resource_profile: cpu_light
+  determinism: deterministic
+  tags:
+    - math
+    - libm
+    - cpu
+    - deterministic
 artifacts:
   input:
     - name: value

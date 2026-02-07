@@ -16,10 +16,13 @@ CPP_TEST_CONTEXT := $(dir $(CPP_TEST_DOCKERFILE))
 CCACHE_DIR := $(REPO_ROOT)/.cache/cpp-tests/ccache
 SPLITTER_BIN := splitter
 EXECUTOR_DIR := ../executor
-EXECUTOR_BIN := $(EXECUTOR_DIR)/fragment_executor
+EXECUTOR_BIN := $(EXECUTOR_DIR)/fragment_emulator
+EXECUTOR_NATIVE_BIN := $(EXECUTOR_DIR)/fragment_executor
 DEMO_SRC := $(REPO_ROOT)/demo/fragment/hello.c
 DEMO_BIN := run_build/hello_demo
 DEMO_OUT := run_output/demo
+DEMO_HASH ?=
+DEMO_HASH_ARG := $(if $(DEMO_HASH),--hash $(DEMO_HASH),)
 LOG_FILE := fragment_executor.log
 
 PROGRAM ?=
@@ -38,14 +41,14 @@ PROGRAM_LIBS ?= -lavformat -lavcodec -lavutil -lswscale -lm -lcsfml-graphics -lc
 BUILDER_WRAPPER ?= $(REPO_ROOT)/worker/scripts/builder_wrapper.sh
 BUILD_WITH_DOCKER ?= $(BUILDER_WRAPPER)
 
-.PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test build-cpp-test-image
+.PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test test-clean build-cpp-test-image
 
 SRC_FILES := $(shell find $(SRC_DIR) -name '*.cpp')
 OBJ_DIR := build
 OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
 CPPFLAGS := -Iinclude
 
-TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp tests/hash_test.cpp tests/partitioner_test.cpp tests/summary_writer_test.cpp tests/flat_map_test.cpp tests/pipeline_integration_test.cpp tests/pipeline_real_integration_test.cpp tests/reporter_factory_test.cpp tests/instruction_analyzer_factory_test.cpp
+TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp tests/hash_test.cpp tests/partitioner_test.cpp tests/summary_writer_test.cpp tests/flat_map_test.cpp tests/pipeline_integration_test.cpp tests/pipeline_real_integration_test.cpp tests/reporter_factory_test.cpp tests/instruction_analyzer_factory_test.cpp tests/binary_extractor_test.cpp
 TEST_EXTRA_SRCS := $(filter-out $(SRC_DIR)/main.cpp,$(SRC_FILES))
 TEST_BUILD_DIR := build/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
@@ -56,6 +59,7 @@ TEST_OBJS := $(TEST_TEST_OBJS) $(TEST_EXTRA_OBJS)
 TEST_CXX ?= $(CXX)
 TEST_CXXFLAGS ?= $(CXXFLAGS) --coverage
 TEST_LDFLAGS ?= --coverage -lgtest -lgtest_main -pthread
+CPP_TEST_LOCAL ?= 0
 
 all: $(SPLITTER_BIN)
 
@@ -88,10 +92,12 @@ $(TEST_OBJ_DIR)/src/%.o: $(SRC_DIR)/%.cpp | $(TEST_OBJ_DIR)/src
 $(TEST_BIN): $(TEST_OBJS) | $(TEST_BUILD_DIR)
 	$(TEST_CXX) $(TEST_OBJS) -o $@ $(TEST_LDFLAGS)
 
-executor: $(EXECUTOR_BIN)
+executor:
+	$(MAKE) -C $(EXECUTOR_DIR) all
 
-$(EXECUTOR_BIN):
-	$(MAKE) -C $(EXECUTOR_DIR)
+$(EXECUTOR_BIN): executor
+
+$(EXECUTOR_NATIVE_BIN): executor
 
 $(DEMO_BIN): $(DEMO_SRC)
 	@mkdir -p $(dir $(DEMO_BIN))
@@ -101,7 +107,7 @@ demo: all executor $(DEMO_BIN)
 	@rm -f $(LOG_FILE)
 	@echo "==> Génération des partitions de démonstration"
 	@rm -rf $(DEMO_OUT)
-	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
+	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT) $(DEMO_HASH_ARG)
 	@echo "==> Exécution via fragment_executor (mode émulation)"
 	$(EXECUTOR_BIN) --summary $(DEMO_OUT)/summary.json --log $(LOG_FILE)
 
@@ -109,17 +115,17 @@ demo-native: all executor $(DEMO_BIN)
 	@rm -f $(LOG_FILE)
 	@echo "==> Génération des partitions de démonstration"
 	@rm -rf $(DEMO_OUT)
-	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
+	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT) $(DEMO_HASH_ARG)
 	@echo "==> Exécution via fragment_executor (mode natif - DANGEREUX, peut planter)"
-	-$(EXECUTOR_BIN) --summary $(DEMO_OUT)/summary.json --native --log $(LOG_FILE)
+	-$(EXECUTOR_NATIVE_BIN) --summary $(DEMO_OUT)/summary.json --native --log $(LOG_FILE)
 
 demo-native-force: all executor $(DEMO_BIN)
 	@rm -f $(LOG_FILE)
 	@echo "==> Génération des partitions de démonstration"
 	@rm -rf $(DEMO_OUT)
-	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT)
+	./splitter $(DEMO_BIN) --output-dir $(DEMO_OUT) $(DEMO_HASH_ARG)
 	@echo "==> Exécution via fragment_executor (mode natif FORCÉ - très dangereux)"
-	-$(EXECUTOR_BIN) --summary $(DEMO_OUT)/summary.json --native --native-force --log $(LOG_FILE)
+	-$(EXECUTOR_NATIVE_BIN) --summary $(DEMO_OUT)/summary.json --native --native-force --log $(LOG_FILE)
 
 run: MODE = emulation
 run: run-internal
@@ -150,7 +156,7 @@ run-internal: all executor prep-program
 	./splitter $(RUN_BIN) --output-dir $(RUN_OUT)
 	@echo "==> Exécution via fragment_executor ($(MODE))"
 	@if [ "$(MODE)" = "native" ]; then \
-		$(EXECUTOR_BIN) --summary $(RUN_OUT)/summary.json --native --log $(RUN_LOG) || true; \
+		$(EXECUTOR_NATIVE_BIN) --summary $(RUN_OUT)/summary.json --native --log $(RUN_LOG) || true; \
 	else \
 		$(EXECUTOR_BIN) --summary $(RUN_OUT)/summary.json --log $(RUN_LOG); \
 	fi
@@ -159,6 +165,12 @@ run-binary: all prep-program
 	@echo "==> Exécution du binaire original: $(RUN_BIN) $(ARGS)"
 	@$(RUN_BIN) $(ARGS)
 
+ifeq ($(CPP_TEST_LOCAL),1)
+test:
+	$(MAKE) test-clean
+	$(MAKE) $(TEST_BIN)
+	$(TEST_BIN)
+else
 test: build-cpp-test-image
 	@mkdir -p $(CCACHE_DIR)
 	docker run --rm \
@@ -170,9 +182,11 @@ test: build-cpp-test-image
 		set -euo pipefail; \
 		ccache -M 2G >/dev/null; \
 		cd splitter; \
+		make test-clean; \
 		env TEST_CXX="ccache g++" $(MAKE) $(TEST_BIN); \
 		$(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID splitter/build && rm -f splitter/*.gcov'
+endif
 
 build-cpp-test-image:
 	@docker image inspect $(CPP_TEST_IMAGE) >/dev/null 2>&1 || \
@@ -196,6 +210,11 @@ clean: demo-clean
 	fi
 	@# Nettoyage des traces gcov pour éviter les warnings lors des tests.
 	@test ! -d build || find build -name '*.gcda' -o -name '*.gcno' -delete
+
+test-clean:
+	@# Nettoyage des traces gcov pour Ã©viter les warnings lors des tests.
+	@test ! -d $(TEST_BUILD_DIR) || rm -rf $(TEST_BUILD_DIR)
+	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f \( -name '*.gcda' -o -name '*.gcno' \) -delete
 
 fclean: clean
 	@if [ -d $(RUN_BUILD_DIR) ]; then \

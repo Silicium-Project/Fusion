@@ -12,6 +12,14 @@ std::string TimingPhase::Name() const {
     return inner_->Name();
 }
 
+std::vector<std::string> TimingPhase::Inputs() const {
+    return inner_->Inputs();
+}
+
+std::vector<std::string> TimingPhase::Outputs() const {
+    return inner_->Outputs();
+}
+
 void TimingPhase::Execute(PipelineContext& context) {
     using clock = std::chrono::steady_clock;
     auto start = clock::now();

@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "Opcodes.hpp"
+#include "core/Opcodes.hpp"
 
 using fragment::Opcode;
 using fragment::classify_opcode;

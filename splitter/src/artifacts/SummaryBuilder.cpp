@@ -11,6 +11,8 @@ namespace splitter {
 
 namespace {
 
+constexpr unsigned kSummarySchemaVersion = 1;
+
 std::string HexString(uint64_t value) {
     std::ostringstream oss;
     oss << "0x" << std::hex << value;
@@ -53,10 +55,14 @@ std::string SerializeLibraries(const std::vector<LibraryInfo>& libs) {
 
 std::string SerializePartition(const Partition& partition,
                                const std::optional<PartitionFiles>& files,
-                               const std::set<std::string>& required_libs) {
+                               const std::set<std::string>& required_libs,
+                               const std::string& partition_os,
+                               const std::string& partition_format) {
     std::ostringstream oss;
     oss << "    {\n";
     oss << "      \"id\": \"" << JsonEscape(partition.Id()) << "\",\n";
+    oss << "      \"os\": \"" << JsonEscape(partition_os) << "\",\n";
+    oss << "      \"format\": \"" << JsonEscape(partition_format) << "\",\n";
     oss << "      \"start\": \"" << HexString(partition.StartAddr()) << "\",\n";
     oss << "      \"end\": \"" << HexString(partition.EndAddr()) << "\",\n";
     oss << "      \"size\": " << partition.RawBytes().size() << ",\n";
@@ -109,14 +115,21 @@ std::string SerializeMemory(const std::vector<MemorySegment>& segments) {
 }  // namespace
 
 void SummaryBuilder::SetBinaryInfo(const std::string& binary_path,
+                                   const std::string& binary_os,
+                                   const std::string& binary_format,
                                    const std::string& binary_hash,
+                                   const std::string& hash_algo,
                                    const std::string& memory_hash,
                                    bool can_split,
                                    const std::string& summary_hash) {
     std::ostringstream oss;
     oss << "{\n";
+    oss << "  \"schema_version\": " << kSummarySchemaVersion << ",\n";
     oss << "  \"binary\": \"" << JsonEscape(binary_path) << "\",\n";
+    oss << "  \"binary_os\": \"" << JsonEscape(binary_os) << "\",\n";
+    oss << "  \"binary_format\": \"" << JsonEscape(binary_format) << "\",\n";
     oss << "  \"binary_hash\": \"" << JsonEscape(binary_hash) << "\",\n";
+    oss << "  \"hash_algo\": \"" << JsonEscape(hash_algo) << "\",\n";
     oss << "  \"can_split\": " << (can_split ? "true" : "false") << ",\n";
     oss << "  \"memory_hash\": \"" << JsonEscape(memory_hash) << "\",\n";
     oss << "  \"summary_hash\": \"" << JsonEscape(summary_hash) << "\"\n";
@@ -140,10 +153,12 @@ void SummaryBuilder::SetLibraries(const std::vector<LibraryInfo>& libs) {
 
 void SummaryBuilder::AddPartition(const Partition& partition,
                                   const std::optional<PartitionFiles>& files,
-                                  const std::set<std::string>& required_libraries) {
+                                  const std::set<std::string>& required_libraries,
+                                  const std::string& partition_os,
+                                  const std::string& partition_format) {
     if (!partitions_.empty())
         partitions_ += ",\n";
-    partitions_ += SerializePartition(partition, files, required_libraries);
+    partitions_ += SerializePartition(partition, files, required_libraries, partition_os, partition_format);
 }
 
 void SummaryBuilder::SetPartitionHashes(const std::vector<std::pair<std::string, std::string>>& hashes) {

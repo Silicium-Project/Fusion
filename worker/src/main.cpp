@@ -1,17 +1,23 @@
+#include <cstdint>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
-#include <unistd.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <unistd.h>
 
-#include "Config.hpp"
-#include "worker/dynamorio_runner.hpp"
-#include "worker/job_runner.hpp"
-#include "worker/queue_loader.hpp"
-#include "worker/reporter.hpp"
-#include "PartitionSummary.hpp"
+#include "core/Config.hpp"
+#include "worker/runtime/DynamoRunner.hpp"
+#include "worker/runtime/JobRunner.hpp"
+#include "worker/io/QueueLoader.hpp"
+#include "worker/io/Reporter.hpp"
+#include "worker/mcp/McpReadOnlyConnectorAdapter.hpp"
+#include "partition/PartitionSummary.hpp"
 
 namespace {
 
@@ -35,6 +41,25 @@ struct CliOptions {
     std::string stdin_text;
     std::string stdin_file;
     std::vector<fragment::FdRule> extra_fds;
+    std::string linux_fragments_policy;
+    std::string windows_fragments_policy;
+    bool linux_fragments_set = false;
+    bool windows_fragments_set = false;
+    bool wsl_enabled = false;
+    bool wsl_enabled_set = false;
+    double wsl_min_reward = 0.0;
+    bool wsl_min_reward_set = false;
+    std::uint64_t wsl_min_jobs = 0;
+    bool wsl_min_jobs_set = false;
+    double wsl_current_reward = 0.0;
+    bool wsl_current_reward_set = false;
+    std::uint64_t wsl_available_jobs = 0;
+    bool wsl_available_jobs_set = false;
+    bool mcp_read_only = false;
+    bool mcp_read_only_set = false;
+    bool mcp_enable_tools = false;
+    bool mcp_enable_tools_set = false;
+    std::string mcp_export_dir;
 };
 
 void print_usage(const char* prog) {
@@ -60,6 +85,17 @@ void print_usage(const char* prog) {
               << "  --drrun-arg <arg>  Argument supplémentaire pour le binaire (répétable)\n"
               << "  --connector mode   Méthode de liaison backend (direct|http)\n"
               << "  --connector-endpoint <url>  Endpoint du connecteur (HTTP)\n"
+              << "  --linux-fragments native|wsl|skip|error|queue  Politique fragments Linux\n"
+              << "  --windows-fragments native|wsl|skip|error|queue  Politique fragments Windows\n"
+              << "  --wsl-enable        Active la délégation WSL (si conditions remplies)\n"
+              << "  --wsl-disable       Désactive la délégation WSL\n"
+              << "  --wsl-min-reward <v>  Seuil de récompense minimal\n"
+              << "  --wsl-min-jobs <n>  Seuil minimal de jobs disponibles\n"
+              << "  --wsl-reward <v>    Récompense actuelle (entrée trigger)\n"
+              << "  --wsl-available-jobs <n> Jobs disponibles (entrée trigger)\n"
+              << "  --mcp-readonly      Active l'adapter MCP read-only (resources uniquement)\n"
+              << "  --mcp-enable-tools  Active les tools MCP de controle (guarded)\n"
+              << "  --mcp-export-dir <path> Exporte les resources MCP dans ce dossier\n"
               << "  --runner-binary <path> Binaire runner (backend Dynamo)\n"
               << "  --runner-launcher <path> Script/commande pour lancer le runner Dynamo\n"
               << "  --help             Affiche cette aide\n";
@@ -133,6 +169,56 @@ CliOptions parse_cli(int argc, char** argv) {
             if (++i >= argc)
                 throw std::runtime_error("--connector-endpoint requiert une valeur");
             opts.connector_endpoint = argv[i];
+        } else if (arg == "--linux-fragments") {
+            if (++i >= argc)
+                throw std::runtime_error("--linux-fragments requiert une valeur");
+            opts.linux_fragments_policy = argv[i];
+            opts.linux_fragments_set = true;
+        } else if (arg == "--windows-fragments") {
+            if (++i >= argc)
+                throw std::runtime_error("--windows-fragments requiert une valeur");
+            opts.windows_fragments_policy = argv[i];
+            opts.windows_fragments_set = true;
+        } else if (arg == "--wsl-enable") {
+            opts.wsl_enabled = true;
+            opts.wsl_enabled_set = true;
+        } else if (arg == "--wsl-disable") {
+            opts.wsl_enabled = false;
+            opts.wsl_enabled_set = true;
+        } else if (arg == "--wsl-min-reward") {
+            if (++i >= argc)
+                throw std::runtime_error("--wsl-min-reward requiert une valeur");
+            opts.wsl_min_reward = std::stod(argv[i]);
+            opts.wsl_min_reward_set = true;
+        } else if (arg == "--wsl-min-jobs") {
+            if (++i >= argc)
+                throw std::runtime_error("--wsl-min-jobs requiert une valeur");
+            opts.wsl_min_jobs = std::stoull(argv[i]);
+            opts.wsl_min_jobs_set = true;
+        } else if (arg == "--wsl-reward") {
+            if (++i >= argc)
+                throw std::runtime_error("--wsl-reward requiert une valeur");
+            opts.wsl_current_reward = std::stod(argv[i]);
+            opts.wsl_current_reward_set = true;
+        } else if (arg == "--wsl-available-jobs") {
+            if (++i >= argc)
+                throw std::runtime_error("--wsl-available-jobs requiert une valeur");
+            opts.wsl_available_jobs = std::stoull(argv[i]);
+            opts.wsl_available_jobs_set = true;
+        } else if (arg == "--mcp-readonly") {
+            opts.mcp_read_only = true;
+            opts.mcp_read_only_set = true;
+        } else if (arg == "--mcp-enable-tools") {
+            opts.mcp_enable_tools = true;
+            opts.mcp_enable_tools_set = true;
+            opts.mcp_read_only = true;
+            opts.mcp_read_only_set = true;
+        } else if (arg == "--mcp-export-dir") {
+            if (++i >= argc)
+                throw std::runtime_error("--mcp-export-dir requiert un chemin");
+            opts.mcp_export_dir = argv[i];
+            opts.mcp_read_only = true;
+            opts.mcp_read_only_set = true;
         } else if (arg == "--runner-binary") {
             if (++i >= argc)
                 throw std::runtime_error("--runner-binary requiert un chemin");
@@ -187,7 +273,127 @@ CliOptions parse_cli(int argc, char** argv) {
     if (!opts.stdin_text.empty() && !opts.stdin_file.empty())
         throw std::runtime_error("--stdin-text et --stdin-file sont exclusifs");
 
+    if (!opts.linux_fragments_set) {
+        if (const char* env = std::getenv("SILICIUM_LINUX_FRAGMENTS")) {
+            opts.linux_fragments_policy = env;
+            opts.linux_fragments_set = true;
+        }
+    }
+    if (!opts.windows_fragments_set) {
+        if (const char* env = std::getenv("SILICIUM_WINDOWS_FRAGMENTS")) {
+            opts.windows_fragments_policy = env;
+            opts.windows_fragments_set = true;
+        }
+    }
+    if (!opts.wsl_enabled_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_ENABLE")) {
+            std::string value(env);
+            if (value == "1" || value == "true" || value == "yes") {
+                opts.wsl_enabled = true;
+                opts.wsl_enabled_set = true;
+            } else if (value == "0" || value == "false" || value == "no") {
+                opts.wsl_enabled = false;
+                opts.wsl_enabled_set = true;
+            }
+        }
+    }
+    if (!opts.wsl_min_reward_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_MIN_REWARD")) {
+            opts.wsl_min_reward = std::stod(env);
+            opts.wsl_min_reward_set = true;
+        }
+    }
+    if (!opts.wsl_min_jobs_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_MIN_JOBS")) {
+            opts.wsl_min_jobs = std::stoull(env);
+            opts.wsl_min_jobs_set = true;
+        }
+    }
+    if (!opts.wsl_current_reward_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_REWARD")) {
+            opts.wsl_current_reward = std::stod(env);
+            opts.wsl_current_reward_set = true;
+        }
+    }
+    if (!opts.wsl_available_jobs_set) {
+        if (const char* env = std::getenv("SILICIUM_WSL_AVAILABLE_JOBS")) {
+            opts.wsl_available_jobs = std::stoull(env);
+            opts.wsl_available_jobs_set = true;
+        }
+    }
+    if (!opts.mcp_read_only_set) {
+        if (const char* env = std::getenv("SILICIUM_MCP_READONLY")) {
+            std::string value(env);
+            if (value == "1" || value == "true" || value == "yes") {
+                opts.mcp_read_only = true;
+                opts.mcp_read_only_set = true;
+            }
+        }
+    }
+    if (opts.mcp_export_dir.empty()) {
+        if (const char* env = std::getenv("SILICIUM_MCP_EXPORT_DIR")) {
+            opts.mcp_export_dir = env;
+            opts.mcp_read_only = true;
+            opts.mcp_read_only_set = true;
+        }
+    }
+    if (!opts.mcp_enable_tools_set) {
+        if (const char* env = std::getenv("SILICIUM_MCP_ENABLE_TOOLS")) {
+            std::string value(env);
+            if (value == "1" || value == "true" || value == "yes") {
+                opts.mcp_enable_tools = true;
+                opts.mcp_enable_tools_set = true;
+                opts.mcp_read_only = true;
+                opts.mcp_read_only_set = true;
+            }
+        }
+    }
+
     return opts;
+}
+
+std::string sanitize_task_id(std::string task_id) {
+    if (task_id.empty())
+        return "task";
+    for (char& ch : task_id) {
+        const bool valid = (ch >= 'a' && ch <= 'z')
+            || (ch >= 'A' && ch <= 'Z')
+            || (ch >= '0' && ch <= '9')
+            || ch == '-'
+            || ch == '_'
+            || ch == '.';
+        if (!valid)
+            ch = '_';
+    }
+    return task_id;
+}
+
+void write_text_file(const std::filesystem::path& path, const std::string& content) {
+    std::ofstream out(path, std::ios::out | std::ios::trunc);
+    if (!out)
+        throw std::runtime_error("Impossible d'ecrire le fichier: " + path.string());
+    out << content;
+}
+
+void export_mcp_resources(const worker::mcp::McpReadOnlyConnectorAdapter& adapter,
+                          const std::filesystem::path& export_dir,
+                          const std::string& task_id) {
+    std::filesystem::create_directories(export_dir);
+
+    write_text_file(export_dir / "status.current.json",
+                    adapter.read_resource(std::string(worker::mcp::kResourceStatusCurrent)));
+    write_text_file(export_dir / "reports.recent.json",
+                    adapter.read_resource(std::string(worker::mcp::kResourceReportsRecent)));
+
+    if (!task_id.empty()) {
+        const std::string safe_task_id = sanitize_task_id(task_id);
+        const std::string result_uri = "resources://silicium/results/by-task/" + task_id;
+        const std::string logs_uri = "resources://silicium/logs/by-task/" + task_id;
+        write_text_file(export_dir / ("result." + safe_task_id + ".json"),
+                        adapter.read_resource(result_uri));
+        write_text_file(export_dir / ("logs." + safe_task_id + ".json"),
+                        adapter.read_resource(logs_uri));
+    }
 }
 
 }  // namespace
@@ -238,6 +444,23 @@ int main(int argc, char** argv) {
         config.reset_between_tasks = opts.reset_state;
         config.connector = opts.connector;
         config.connector_endpoint = opts.connector_endpoint;
+        if (opts.linux_fragments_set)
+            config.fragment_os_policy.linux = worker::parse_fragment_os_action(opts.linux_fragments_policy);
+        if (opts.windows_fragments_set)
+            config.fragment_os_policy.windows = worker::parse_fragment_os_action(opts.windows_fragments_policy);
+        config.wsl_triggers.enabled = opts.wsl_enabled_set ? opts.wsl_enabled : false;
+        if (opts.wsl_min_reward_set)
+            config.wsl_triggers.min_reward = opts.wsl_min_reward;
+        if (opts.wsl_min_jobs_set)
+            config.wsl_triggers.min_jobs = opts.wsl_min_jobs;
+        if (opts.wsl_current_reward_set)
+            config.wsl_triggers.current_reward = opts.wsl_current_reward;
+        if (opts.wsl_available_jobs_set)
+            config.wsl_triggers.available_jobs = opts.wsl_available_jobs;
+        config.wsl_enabled = worker::evaluate_wsl_triggers(config.wsl_triggers, &config.wsl_decision);
+        config.mcp.read_only = opts.mcp_read_only;
+        config.mcp.enable_control_tools = opts.mcp_enable_tools;
+        config.mcp.export_dir = opts.mcp_export_dir;
         if (!opts.runner_binary.empty())
             config.dynamo_runner_binary = opts.runner_binary;
         if (!opts.runner_launcher.empty())
@@ -274,6 +497,14 @@ int main(int argc, char** argv) {
         config.executor.fd_rules = std::move(fd_rules);
 
         worker::JobRunner runner(opts.summary_path, config);
+        std::shared_ptr<worker::mcp::McpReadOnlyConnectorAdapter> mcp_adapter;
+        if (config.mcp.read_only) {
+            worker::mcp::McpReadOnlyAdapterOptions mcp_options{};
+            mcp_options.enable_control_tools = config.mcp.enable_control_tools;
+            mcp_adapter = std::make_shared<worker::mcp::McpReadOnlyConnectorAdapter>(
+                nullptr, nullptr, mcp_options);
+            runner.add_observer(mcp_adapter);
+        }
 
         worker::WorkerReport report;
         report.summary_path = runner.summary_path();
@@ -284,8 +515,54 @@ int main(int argc, char** argv) {
             log_stream.open(opts.log_path, std::ios::out | std::ios::trunc);
 
         for (const auto& task : tasks) {
+            if (mcp_adapter) {
+                if (auto requested_mode = mcp_adapter->consume_mode_request(); requested_mode.has_value()) {
+                    runner.set_mode(*requested_mode);
+                    report.mode = *requested_mode;
+                }
+                if (mcp_adapter->consume_interrupt_request()) {
+                    worker::TaskReport interrupted;
+                    interrupted.partition_id = task.partition_id;
+                    interrupted.inputs = task.inputs;
+                    interrupted.result.success = false;
+                    interrupted.result.error_message = "interrupted_by_mcp";
+                    interrupted.telemetry.task_id = task.partition_id;
+                    interrupted.telemetry.type = task.type;
+                    interrupted.telemetry.status = "interrupted";
+                    interrupted.telemetry.linux_policy =
+                        worker::fragment_os_action_to_string(config.fragment_os_policy.linux);
+                    interrupted.telemetry.windows_policy =
+                        worker::fragment_os_action_to_string(config.fragment_os_policy.windows);
+                    interrupted.telemetry.wsl_enabled = config.wsl_enabled;
+                    interrupted.telemetry.wsl_decision = config.wsl_decision;
+                    interrupted.telemetry.mcp_enabled = config.mcp.read_only;
+                    const auto metrics = mcp_adapter->snapshot_metrics();
+                    interrupted.telemetry.mcp_tool_calls = metrics.calls;
+                    interrupted.telemetry.mcp_tool_failures = metrics.failures;
+                    interrupted.telemetry.mcp_last_tool_latency_ms = metrics.last_latency_ms;
+                    interrupted.telemetry.mcp_last_error = metrics.last_error;
+                    report.tasks.push_back(std::move(interrupted));
+                    mcp_adapter->publish_worker_report(report);
+                    if (!config.mcp.export_dir.empty()) {
+                        const std::string current_task_id =
+                            report.tasks.back().telemetry.task_id.empty()
+                                ? report.tasks.back().partition_id
+                                : report.tasks.back().telemetry.task_id;
+                        export_mcp_resources(*mcp_adapter, config.mcp.export_dir, current_task_id);
+                    }
+                    break;
+                }
+            }
             try {
                 auto task_report = runner.execute(task);
+                if (mcp_adapter) {
+                    const auto metrics = mcp_adapter->snapshot_metrics();
+                    task_report.telemetry.mcp_enabled = config.mcp.read_only;
+                    task_report.telemetry.mcp_tool_calls = metrics.calls;
+                    task_report.telemetry.mcp_tool_failures = metrics.failures;
+                    task_report.telemetry.mcp_last_tool_latency_ms = metrics.last_latency_ms;
+                    task_report.telemetry.mcp_last_error = metrics.last_error;
+                }
                 if (log_stream) {
                     if (!task_report.result.program_stdout.empty())
                         log_stream << task_report.result.program_stdout;
@@ -293,13 +570,48 @@ int main(int argc, char** argv) {
                         log_stream << task_report.result.program_stderr;
                 }
                 report.tasks.push_back(std::move(task_report));
+                if (mcp_adapter) {
+                    mcp_adapter->publish_worker_report(report);
+                    if (!config.mcp.export_dir.empty()) {
+                        const std::string current_task_id =
+                            report.tasks.back().telemetry.task_id.empty()
+                                ? report.tasks.back().partition_id
+                                : report.tasks.back().telemetry.task_id;
+                        export_mcp_resources(*mcp_adapter, config.mcp.export_dir, current_task_id);
+                    }
+                }
             } catch (const std::exception& e) {
                 worker::TaskReport failure;
                 failure.partition_id = task.partition_id;
                 failure.inputs = task.inputs;
                 failure.result.success = false;
                 failure.result.error_message = e.what();
+                failure.telemetry.task_id = task.partition_id;
+                failure.telemetry.type = task.type;
+                failure.telemetry.status = "failure";
+                failure.telemetry.linux_policy = worker::fragment_os_action_to_string(config.fragment_os_policy.linux);
+                failure.telemetry.windows_policy = worker::fragment_os_action_to_string(config.fragment_os_policy.windows);
+                failure.telemetry.wsl_enabled = config.wsl_enabled;
+                failure.telemetry.wsl_decision = config.wsl_decision;
+                if (mcp_adapter) {
+                    const auto metrics = mcp_adapter->snapshot_metrics();
+                    failure.telemetry.mcp_enabled = config.mcp.read_only;
+                    failure.telemetry.mcp_tool_calls = metrics.calls;
+                    failure.telemetry.mcp_tool_failures = metrics.failures;
+                    failure.telemetry.mcp_last_tool_latency_ms = metrics.last_latency_ms;
+                    failure.telemetry.mcp_last_error = metrics.last_error;
+                }
                 report.tasks.push_back(std::move(failure));
+                if (mcp_adapter) {
+                    mcp_adapter->publish_worker_report(report);
+                    if (!config.mcp.export_dir.empty()) {
+                        const std::string current_task_id =
+                            report.tasks.back().telemetry.task_id.empty()
+                                ? report.tasks.back().partition_id
+                                : report.tasks.back().telemetry.task_id;
+                        export_mcp_resources(*mcp_adapter, config.mcp.export_dir, current_task_id);
+                    }
+                }
             }
         }
 

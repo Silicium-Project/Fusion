@@ -1,0 +1,11 @@
+{
+  "id": "py.function_snake_case",
+  "description": "Python function names should be snake_case.",
+  "severity": "warning",
+  "kind": "py_function_snake_case",
+  "scope": {
+    "include": [
+      "**/*.py"
+    ]
+  }
+}

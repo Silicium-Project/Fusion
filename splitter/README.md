@@ -8,6 +8,15 @@ L'exécuteur vit désormais dans `../executor` et est invoqué automatiquement p
 
 Les scripts s'appuient sur `objdump`/`readelf` (binutils) pour la phase de désassemblage et ciblent principalement Linux x86_64.
 
+## Architecture rapide
+
+- Pipeline compose de phases independantes (desassemblage, analyse, partitionnement, artefacts).
+- Chaque phase expose ses entrees/sorties via `IPipelinePhase::Inputs()` / `Outputs()`.
+- Les effets de bord (shell, env, systeme de fichiers) passent par `SystemContext` pour faciliter les tests.
+- Selection des strategies via factories (`DisassemblerFactory`, `InstructionAnalyzerFactory`).
+- L'analyse des instructions est centralisee dans la phase `Analysis` (disassembleur neutre, analyseur configurable).
+
+
 ## Contenu principal
 
 - `splitter.cpp` : découpeur/désassembleur de binaires, génère `.asm`, `.bin`, wrappers C et `summary.json`.
@@ -39,6 +48,12 @@ cd ../executor && g++ -std=c++17 -O2 fragment_executor.cpp -o fragment_executor
 make test
 ```
 
+Nettoyage des artefacts de couverture avant relance :
+
+```bash
+make test-clean
+```
+
 Comme pour `executor`, la première exécution construit automatiquement
 l'image Docker `silicium/cpp-tests` (compilateurs + googletest). Une fois l'image
 présente en local, les tests s'exécutent en quelques secondes. Vous pouvez
@@ -53,6 +68,12 @@ Une cible `make demo` prépare un binaire jouet (`demo/fragment/hello.c`), lance
 
 ```bash
 make demo
+```
+
+Pour choisir l'algo de hash dans la demo :
+
+```bash
+DEMO_HASH=std make demo
 ```
 
 La sortie console montre :
@@ -101,9 +122,16 @@ Résultats générés par défaut :
 - `partitions/summary.json` : métadonnées (dépendances, registres, parallélisabilité, chemins de fichiers).
 
 Options de hachage et de scan :
-- `--hash fnv|std` ou `SPLITTER_HASH_ALGO` pour choisir l'algorithme (par défaut FNV).
-- `--resolver ldd|readelf` ou `SPLITTER_LIB_RESOLVER` pour sélectionner le détecteur de bibliothèques.
-- `--indexer nm|objdump` ou `SPLITTER_SYMBOL_INDEXER` pour sélectionner l'indexeur de symboles.
+- `--hash fnv|std` ou `SPLITTER_HASH_ALGO` pour choisir l'algorithme (par d?faut FNV).
+- `--resolver ldd|readelf` ou `SPLITTER_LIB_RESOLVER` pour s?lectionner le d?tecteur de biblioth?ques.
+- `--indexer nm|objdump` ou `SPLITTER_SYMBOL_INDEXER` pour s?lectionner l'indexeur de symboles.
+
+Cas "no-bytes" : si aucun octet n'est extractible (binaire minimal/sections vides),
+les hashes sont calcul?s sur une entr?e vide et restent stables. Valeurs actuelles :
+- FNV : `0xcbf29ce484222325`
+- std : `0x9e3779b97f4a7c15`
+
+
 
 ### 2. Exécuter des fragments
 

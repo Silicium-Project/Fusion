@@ -1,6 +1,8 @@
 #include "artifacts/SummaryWriter.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -41,6 +43,44 @@ std::set<std::string> ResolvePartitionLibraries(const Partition& partition, cons
     return names;
 }
 
+struct BinaryFormatInfo {
+    std::string os;
+    std::string format;
+};
+
+BinaryFormatInfo DetectBinaryFormat(const fs::path& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+        return {};
+
+    std::array<std::uint8_t, 4> magic{};
+    file.read(reinterpret_cast<char*>(magic.data()), static_cast<std::streamsize>(magic.size()));
+    if (!file)
+        return {};
+
+    if (magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F')
+        return {"linux", "elf"};
+
+    if (magic[0] == 'M' && magic[1] == 'Z') {
+        file.seekg(0x3c, std::ios::beg);
+        std::array<std::uint8_t, 4> offset_bytes{};
+        file.read(reinterpret_cast<char*>(offset_bytes.data()), static_cast<std::streamsize>(offset_bytes.size()));
+        if (!file)
+            return {};
+        std::uint32_t pe_offset = static_cast<std::uint32_t>(offset_bytes[0])
+                                | (static_cast<std::uint32_t>(offset_bytes[1]) << 8)
+                                | (static_cast<std::uint32_t>(offset_bytes[2]) << 16)
+                                | (static_cast<std::uint32_t>(offset_bytes[3]) << 24);
+        file.seekg(pe_offset, std::ios::beg);
+        std::array<std::uint8_t, 4> pe_sig{};
+        file.read(reinterpret_cast<char*>(pe_sig.data()), static_cast<std::streamsize>(pe_sig.size()));
+        if (file && pe_sig[0] == 'P' && pe_sig[1] == 'E' && pe_sig[2] == 0 && pe_sig[3] == 0)
+            return {"windows", "pe"};
+    }
+
+    return {};
+}
+
 }  // namespace
 
 SummaryWriter::SummaryWriter(std::filesystem::path output_dir,
@@ -66,6 +106,7 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
     fs::create_directories(output_dir_);
 
     const std::string abs_binary = fs::absolute(binary_path).string();
+    const BinaryFormatInfo format_info = DetectBinaryFormat(abs_binary);
     auto libraries = scanner_->DetectLibraries(abs_binary);
     std::vector<std::string> library_names;
     {
@@ -87,17 +128,20 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
     partition_hashes.clear();
     for (auto& p : partitions_copy) {
         auto resolved_libs = ResolvePartitionLibraries(p, symbol_index);
-        p.SetPartitionHash(hash_calculator_->ComputePartitionHash(p, resolved_libs));
+        p.SetPartitionHash(hash_calculator_->ComputePartitionHash(p, resolved_libs,
+                                                                 format_info.os,
+                                                                 format_info.format));
         partition_hashes.emplace_back(p.Id(), p.PartitionHash());
     }
 
     const std::string memory_hash = hash_calculator_->ComputeMemoryHash(memory_segments);
     const std::string summary_hash =
         hash_calculator_->ComputeSummaryHash(binary_hash, memory_hash, can_split, library_names, libraries,
-                                             partition_hashes);
+                                             partition_hashes, format_info.os, format_info.format);
 
     SummaryBuilder builder;
-    builder.SetBinaryInfo(abs_binary, binary_hash, memory_hash, can_split, summary_hash);
+    builder.SetBinaryInfo(abs_binary, format_info.os, format_info.format,
+                          binary_hash, hash_calculator_->AlgorithmName(), memory_hash, can_split, summary_hash);
     builder.SetCounts(partitions_copy.size(), CountParallelizable(partitions_copy));
     builder.SetRequiredLibraries(library_names);
     builder.SetLibraries(libraries);
@@ -106,7 +150,7 @@ void SummaryWriter::Write(const std::vector<Partition>& partitions,
         if (idx < artifacts.size())
             files_opt = artifacts[idx];
         auto req = ResolvePartitionLibraries(partitions_copy[idx], symbol_index);
-        builder.AddPartition(partitions_copy[idx], files_opt, req);
+        builder.AddPartition(partitions_copy[idx], files_opt, req, format_info.os, format_info.format);
     }
     builder.SetPartitionHashes(partition_hashes);
     builder.SetMemorySegments(memory_segments);

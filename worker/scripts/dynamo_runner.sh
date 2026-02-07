@@ -24,23 +24,28 @@ to_host_path() {
     local path="${1}"
     if [[ "${path}" == "${CONTAINER_DIR}"* ]]; then
         local rel="${path#"${CONTAINER_DIR}"}"
-        printf '%s\n' "${HOST_WORKSPACE}${rel}"
+        printf '%s
+' "${HOST_WORKSPACE}${rel}"
     else
-        printf '%s\n' "${path}"
+        printf '%s
+' "${path}"
     fi
 }
 
 to_container_path() {
     local path="${1}"
     if [[ "${path}" == "${CONTAINER_DIR}"* ]]; then
-        printf '%s\n' "${path}"
+        printf '%s
+' "${path}"
         return
     fi
     if [[ "${path}" == "${HOST_WORKSPACE}"* ]]; then
         local rel="${path#"${HOST_WORKSPACE}"}"
-        printf '%s\n' "${CONTAINER_DIR}${rel}"
+        printf '%s
+' "${CONTAINER_DIR}${rel}"
     else
-        printf '%s\n' "${path}"
+        printf '%s
+' "${path}"
     fi
 }
 
@@ -115,7 +120,7 @@ fi
 
 if [[ "${should_use_docker}" -eq 0 ]]; then
     if [[ -n "${docker_error}" ]]; then
-        echo "[WARN] ${docker_error} - exécution du runner sur l'hôte" >&2
+        echo "[WARN] ${docker_error} - exÃƒÂ©cution du runner sur l'hÃƒÂ´te" >&2
     fi
     host_input_path=""
     for (( idx=0; idx<${#host_args[@]}; ++idx )); do
@@ -125,7 +130,7 @@ if [[ "${should_use_docker}" -eq 0 ]]; then
         fi
     done
     if [[ -n "${host_input_path}" && ! -f "${host_input_path}" ]]; then
-        echo "[ERROR] Fichier d'entrée manquant: ${host_input_path}" >&2
+        echo "[ERROR] Fichier d'entrÃƒÂ©e manquant: ${host_input_path}" >&2
         exit 1
     fi
     rewrite_payload_for_host "${host_input_path}"

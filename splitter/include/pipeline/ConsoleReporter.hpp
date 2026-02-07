@@ -6,7 +6,6 @@
 #include <string>
 #include <vector>
 
-#include "analysis/X86_64InstructionAnalyzer.hpp"
 #include "pipeline/IReporter.hpp"
 #include "core/Function.hpp"
 #include "core/Partition.hpp"

@@ -1,0 +1,15 @@
+{
+  "id": "cpp.primary_class_filename",
+  "description": "Primary class/struct name should match the file name.",
+  "severity": "warning",
+  "kind": "cpp_primary_class_filename",
+  "scope": {
+    "include": [
+      "**/*.hpp",
+      "**/*.h",
+      "**/*.cpp",
+      "**/*.cc",
+      "**/*.cxx"
+    ]
+  }
+}

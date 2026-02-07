@@ -1,4 +1,5 @@
 id: calcul/monte-carlo/payoff
+schema_version: 1
 version: 0.1.0
 engine: python
 command: python montecarlo.py --config {config} --seed {seed} --iterations {iterations} --out {output}
@@ -6,6 +7,17 @@ resources:
   cpu: 4
   gpu: optional
   memory: 4Gi
+taxonomy:
+  category: calcul
+  domain: simulation
+  complexity: high
+  resource_profile: gpu_optional
+  determinism: stochastic
+  tags:
+    - simulation
+    - monte_carlo
+    - cpu
+    - stochastic
 artifacts:
   input:
     - name: config

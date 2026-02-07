@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "analysis/LoopAnalysis.hpp"
 #include "core/Instruction.hpp"
 #include "core/LoopInfo.hpp"
 
@@ -29,6 +31,10 @@ public:
     const std::vector<LoopInfo>& Loops() const noexcept;
     std::vector<LoopInfo>& Loops() noexcept;
 
+    const std::optional<LoopAnalysis>& LoopAnalysisInfo() const noexcept;
+    void SetLoopAnalysis(LoopAnalysis info);
+    bool HasLoopAnalysis() const noexcept;
+
 private:
     std::string name_;
     uint64_t start_addr_ = 0;
@@ -36,6 +42,7 @@ private:
     std::vector<Instruction> instructions_;
     bool is_loop_ = false;
     std::vector<LoopInfo> loops_;
+    std::optional<LoopAnalysis> loop_analysis_;
 };
 
 }  // namespace splitter

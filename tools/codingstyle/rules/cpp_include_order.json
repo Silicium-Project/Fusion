@@ -1,0 +1,15 @@
+{
+  "id": "cpp.include_order",
+  "description": "Order includes with <system/third-party> before \"project\" headers.",
+  "severity": "warning",
+  "kind": "cpp_include_order",
+  "scope": {
+    "include": [
+      "**/*.cpp",
+      "**/*.cc",
+      "**/*.cxx",
+      "**/*.hpp",
+      "**/*.h"
+    ]
+  }
+}

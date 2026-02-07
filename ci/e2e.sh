@@ -34,7 +34,7 @@ if have_docker; then
   log "Proxy smoke test"
   ./silicium smoke
 else
-  echo "[WARN] Docker indisponible, étapes dynamo et proxy ignorées" >&2
+  echo "[WARN] Docker indisponible, ÃƒÂ©tapes dynamo et proxy ignorÃƒÂ©es" >&2
 fi
 
 log "Python tests"

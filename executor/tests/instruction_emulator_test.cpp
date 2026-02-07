@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "InstructionEmulator.hpp"
-#include "Memory.hpp"
+#include "core/InstructionEmulator.hpp"
+#include "core/Memory.hpp"
 
 using fragment::ExecutionResult;
 using fragment::InstructionEmulator;
@@ -70,4 +70,46 @@ TEST(InstructionEmulator, MovUsesDeclaredMemoryWidth) {
     EXPECT_TRUE(std::equal(bytes.begin(), bytes.end(), expected.begin(), expected.end()));
     ASSERT_EQ(result.memory_patches.size(), 2u);
     EXPECT_EQ(result.memory_patches.back().after.size(), 2u);
+}
+
+TEST(InstructionEmulator, HandlesSubRegisterAliases) {
+    RegisterEmulator regs;
+
+    regs.set("al", 0x12);
+    regs.set("ah", 0x34);
+    regs.set("ax", 0x5678);
+    EXPECT_EQ(regs.get("al"), 0x78u);
+    EXPECT_EQ(regs.get("ah"), 0x56u);
+    EXPECT_EQ(regs.get("ax"), 0x5678u);
+
+    regs.set("r8b", 0xAA);
+    regs.set("r8w", 0xBEEF);
+    EXPECT_EQ(regs.get("r8b"), 0xEFu);
+    EXPECT_EQ(regs.get("r8w"), 0xBEEFu);
+
+    regs.set("r10b", 0x11);
+    regs.set("r10w", 0x2233);
+    EXPECT_EQ(regs.get("r10b"), 0x33u);
+    EXPECT_EQ(regs.get("r10w"), 0x2233u);
+}
+
+TEST(InstructionEmulator, SupportsScaledIndexAddressing) {
+    RegisterEmulator regs;
+    ExecutionResult result;
+    PatchLogGuard guard(regs, result.memory_patches);
+    InstructionEmulator emu(regs);
+
+    regs.set("rax", 0x1000);
+    regs.set("rbx", 0x10);
+
+    const uint64_t expected_addr = 0x1000 + 0x10 * 4 + 0x20;
+    ASSERT_TRUE(emu.emulate_line(
+        "0000000000004000: mov qword ptr [rax+rbx*4+0x20], $0x1122334455667788",
+        result));
+    EXPECT_EQ(regs.read_qword(expected_addr), 0x1122334455667788ULL);
+
+    ASSERT_TRUE(emu.emulate_line(
+        "0000000000004008: mov rcx, qword ptr [rax+4*rbx+0x20]",
+        result));
+    EXPECT_EQ(regs.get("rcx"), 0x1122334455667788ULL);
 }

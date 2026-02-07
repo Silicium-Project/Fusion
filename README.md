@@ -1,5 +1,218 @@
 # Network
 
+## Architecture Graph (Complete)
+
+```mermaid
+flowchart LR
+  subgraph Entry["Entry Points"]
+    direction TB
+    CLI["silicium CLI"]
+    TUI["TUI (Textual)"]
+    Viewer["Viewer (Qt)"]
+    Web["Web UI (future)"]
+    Tests["CI tests.yml"]
+    AutoWF["CI project-automation.yml"]
+    CoreCheck["ci/core_check.sh"]
+    Tests --> CoreCheck
+  end
+
+  subgraph Orch["Orchestration"]
+    direction TB
+    Scheduler["TUI scheduler/state"]
+    Router["Command Router"]
+    ConnFactory["BackendConnectorFactory"]
+  end
+
+  subgraph Compute["Compute Core"]
+    direction TB
+    Catalog["catalog/workloads"]
+
+    subgraph Splitter["splitter"]
+      direction TB
+      Pipe["PipelineRunner"]
+      Phases["Disassembly -> Analysis -> Partitioning -> Artifacts"]
+      SWriter["SummaryWriter"]
+      Pipe --> Phases --> SWriter
+    end
+
+    subgraph Worker["worker"]
+      direction TB
+      WJob["JobRunner"]
+      WCore["Worker"]
+      WRouter["TaskRouter"]
+      WPolicy["Fragment OS policy + WSL triggers"]
+      WObs["TaskObserver + Reporter"]
+      WJob --> WCore --> WRouter
+      WCore --> WPolicy
+      WCore --> WObs
+    end
+
+    subgraph Executor["executor"]
+      direction TB
+      EFactory["ExecutionBackendFactory"]
+      EBack["Emulated/Native backends"]
+      EExec["FragmentExecutor"]
+      EApi["FragmentApi (C ABI)"]
+      EFactory --> EBack --> EExec
+      EApi --> EExec
+    end
+  end
+
+  subgraph Conn["Connectors"]
+    direction TB
+    Direct["DirectConnector"]
+    Http["HttpConnector"]
+    Dynamo["DynamoBackend"]
+    HttpRunner["External HTTP runner"]
+    DynRun["DynamoRunner -> docker -> drrun"]
+    FragLib["Executor shared libs"]
+    Direct --> FragLib
+    Http --> HttpRunner
+    Dynamo --> DynRun
+  end
+
+  subgraph Out["Artifacts + Infra + Future"]
+    direction TB
+
+    subgraph Art["Artifacts/Contracts"]
+      direction TB
+      Summary["summary.json"]
+      Frags["fragments (.asm/.bin/wrapper)"]
+      Payload["TaskPayload JSON"]
+      Result["ExecutionResult"]
+      Report["TaskReport + telemetry"]
+      ExecLog["fragment_executor.log"]
+    end
+
+    subgraph Infra["Infra / Network"]
+      direction TB
+      Compose["docker compose"]
+      Profiles["profiles: localnet/devnet/testnet/mainnet/proxy"]
+      Entrypoint["solana-entrypoint.sh"]
+      NodeLocal["silicium-localnet"]
+      NodeDev["silicium-devnet"]
+      NodeTest["silicium-node (testnet)"]
+      NodeMain["silicium-mainnet"]
+      Caddy["Caddy TLS proxy"]
+      WG["WireGuard secure stack"]
+      RpcSecure["isolated solana-rpc"]
+      RpcDev["api.devnet.solana.com"]
+      RpcTest["api.testnet.solana.com"]
+      RpcMain["api.mainnet-beta.solana.com"]
+      Compose --> Profiles
+      Compose --> Entrypoint
+      Compose --> NodeLocal
+      Compose --> NodeDev
+      Compose --> NodeTest
+      Compose --> NodeMain
+      Compose --> Caddy
+      WG --> RpcSecure
+      NodeDev --> RpcDev
+      NodeTest --> RpcTest
+      NodeMain --> RpcMain
+    end
+
+    subgraph Future["Product (future)"]
+      direction TB
+      ApiSvc["API service"]
+      Programs["Solana programs"]
+      State["On-chain state"]
+      ApiSvc --> Programs --> State
+    end
+  end
+
+  TUI --> Scheduler --> Router
+  CLI --> Router
+  Tests --> CLI
+
+  Router --> Catalog
+  Router --> Pipe
+  Router --> WJob
+  Router --> Compose
+
+  WCore --> ConnFactory
+  ConnFactory --> Direct
+  ConnFactory --> Http
+  ConnFactory --> Dynamo
+
+  WCore --> EFactory
+  Direct --> EApi
+
+  SWriter --> Summary
+  SWriter --> Frags
+  WJob --> Summary
+  WJob --> Frags
+  Http --> Payload
+  EExec --> Result
+  EExec --> ExecLog
+  WCore --> Report
+  WCore --> Result
+
+  Viewer --> Summary
+  Viewer --> Report
+  ApiSvc --> WCore
+```
+
+## Zoom: Worker <-> Executor <-> Connectors
+
+```mermaid
+flowchart LR
+  Task["Task (binary/health)"] --> Worker["Worker"]
+  Worker --> Router["TaskRouter"]
+  Worker --> Policy["OS policy + WSL triggers"]
+  Worker --> Obs["TaskObserver/Reporter"]
+
+  Worker --> CFactory["BackendConnectorFactory"]
+  CFactory --> Direct["DirectConnector"]
+  CFactory --> Http["HttpConnector"]
+  CFactory --> Dynamo["DynamoBackend"]
+
+  Direct --> FFI["FragmentApi / shared libs"]
+  Http --> HttpExec["POST /execute (JSON)"]
+  Dynamo --> Drrun["DynamoRunner -> drrun"]
+
+  FFI --> Exec["FragmentExecutor"]
+  Exec --> Result["ExecutionResult"]
+  Worker --> Report["TaskReport + telemetry"]
+```
+
+## Zoom: Splitter -> Artifacts -> Execution
+
+```mermaid
+flowchart LR
+  Input["Input binary"] --> Splitter["splitter pipeline"]
+  Splitter --> Summary["summary.json"]
+  Splitter --> Frags["fragment files (.asm/.bin/wrapper)"]
+  Summary --> Worker["worker JobRunner"]
+  Frags --> Worker
+  Worker --> Executor["executor backends"]
+  Executor --> Log["fragment_executor.log"]
+  Executor --> Result["ExecutionResult"]
+```
+
+## Zoom: Infra and Networks
+
+```mermaid
+flowchart TB
+  CLI["silicium CLI"] --> Compose["docker compose"]
+  Compose --> Local["localnet"]
+  Compose --> Dev["devnet"]
+  Compose --> Test["testnet"]
+  Compose --> Main["mainnet"]
+  Compose --> Proxy["Caddy TLS proxy"]
+
+  Dev --> DevRpc["api.devnet.solana.com"]
+  Test --> TestRpc["api.testnet.solana.com"]
+  Main --> MainRpc["api.mainnet-beta.solana.com"]
+
+  VPN["WireGuard"] --> SecureRpc["isolated solana-rpc"]
+  Proxy --> Clients["RPC clients"]
+  VPN --> Clients
+```
+
+
+
+
 Cette base de code fournit une image Docker unique permettant de lancer un nœud **Silicium** (surcouche Solana) dans plusieurs contextes : localnet isolé, Devnet, Testnet ou Mainnet. Tout est orchestré via Docker Compose et un script d'entrée (`infra/docker/solana-entrypoint.sh`) qui gère les clés, la configuration Solana et le lancement du validateur ou du test validator.
 
 ---
@@ -27,18 +240,37 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 ---
 
+## Schema
+
+Voir docs/network-schema.md pour les diagrammes Mermaid (compute + network).
+Spec MCP (connecteur LLM) : `docs/mcp-connector-spec.md`.
+
+---
+
 ## Couverture (worker)
 
 Badge (local) : ![Badge](docs/coverage/worker/badge.svg)  
 Badge (Pages si public) : `https://silicium-project.github.io/Network/worker/badge.svg`
 
 <!-- worker-coverage:start -->
-- Aperçu local : [![worker coverage](docs/coverage/worker/snapshot.svg)](docs/coverage/worker/index.html)
-- Aperçu Pages (si public) : `https://silicium-project.github.io/Network/worker/`
+- AperÃ§u : [![worker coverage](.\docs\coverage\worker\snapshot.svg "Lignes 86.7 %, fonctions 92.9 %, branches 50.2 %")](.\docs\coverage\worker\index.html)
 <!-- worker-coverage:end -->
 - Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html` (ou Pages si accessible)
 - Résumé JSON : `docs/coverage/worker/coverage-summary.json` (ou Pages si accessible)
 - La CI (`tests` sur `main`) regénère l’aperçu via GitHub Pages (job `coverage-pages`) sans commit de couverture ; si le dépôt est privé, servez l’aperçu local.
+
+---
+
+
+## Couverture (executor)
+
+Badge (local) : ![Badge](docs/coverage/executor/badge.svg)
+
+<!-- executor-coverage:start -->
+- Aper?u : [![executor coverage](.\docs\coverage\executor\snapshot.svg "Lignes 44.1 %, fonctions 48.0 %, branches 26.9 %")](.\docs\coverage\executor\index.html)
+<!-- executor-coverage:end -->
+- Rapport HTML (derni?re ex?cution CI) : `docs/coverage/executor/index.html`
+- R?sum? JSON : `docs/coverage/executor/coverage-summary.json`
 
 ---
 
@@ -57,12 +289,22 @@ Badge (Pages si public) : `https://silicium-project.github.io/Network/worker/bad
 
 ---
 
+## CI / Project Automation
+
+Le workflow `Project automation` (fichier `.github/workflows/project-automation.yml`) met ? jour un Project v2 ? chaque issue/PR. Le token GitHub par d?faut n'a pas les droits suffisants?: **ajoutez un secret `PROJECTS_TOKEN`** avec le scope `project`.
+
+Si le secret n'est pas d?fini, le workflow saute l'?tape avec un avertissement.
+
+---
+
 ## Silicium CLI
 
 Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches courantes (tests, démos outils, nettoyage, gestion des volumes ledger) et fournit un shell interactif (`./silicium shell`). Les principales commandes :
 
 ```bash
 ./silicium test                  # installe les deps et lance pytest
+./silicium check --docker-strict # check complet (Docker requis)
+./silicium check --jobs 2 --runner docker --docker-cpus 2 --docker-memory 4g
 ./silicium smoke                 # proxy + healthcheck
 ./silicium tools demo            # démo splitter + fragment executor
 ./silicium clean all -y          # nettoie caches + volumes (mode "fclean")
@@ -70,6 +312,7 @@ Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches couran
 ./silicium ledger import devnet --archive backups/devnet.tar.gz -y
 ./silicium ledger wipe devnet    # supprime uniquement le ledger devnet
 ./silicium workload list --tree  # liste les workloads (calcul/..., verification/...)
+./silicium workload lint         # valide tous les manifests workloads (schema v1)
 ./silicium workload show calcul/math-simulation --readme
 ./silicium start localnet        # démarre un service (compose up -d)
 ./silicium logs proxy-smoke -f   # logs suivis (profil smoke auto)
@@ -78,6 +321,11 @@ Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches couran
 ./silicium exec silicium-localnet -- /bin/bash
 ./silicium history show --tail 20# affiche les dernières commandes
 ./silicium shell                 # démarre un shell REPL Silicium (help/exit)
+./silicium tui                   # lance l'UI terminale (TUI)
+
+TUI (UI terminale) :
+- Installation: `python -m pip install -r requirements-tui.txt`
+- Details + capture: `docs/tui.md`
 ```
 
 `SILICIUM_LEDGER_PREFIX` (dans `infra/.env`) contrôle le nommage des volumes (`<prefix>-local-ledger`, etc.). Utilisez `./silicium clean --ledgers -y` pour reproduire l'ancien “fclean” en une seule commande.
@@ -419,6 +667,9 @@ Pour chaque profil (encodage vidéo, simulation mathématique, inference IA, ren
 Les devices téléchargent le manifest correspondant au job pour sélectionner le bon exécutable et reporter les preuves (hash, logs). Ajoutez vos propres profils en créant un nouveau sous-dossier dans `catalog/workloads/` puis en complétant les deux fichiers de référence.
 
 Chaque manifest de calcul référence au moins une opération de vérification (`catalog/workloads/verification/...`). Lors du scheduling, seuls des noeuds n'ayant pas participé au calcul peuvent exécuter la vérification correspondante, garantissant une séparation stricte entre production et audit.
+
+Voir aussi la matrice de couverture workloads/features:
+`docs/workloads-coverage-matrix.md`
 
 ### Bibliothèques dynamiques requises
 

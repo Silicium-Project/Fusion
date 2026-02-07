@@ -41,6 +41,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install dev dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Validate UTF-8 files
+        run: python tools/check_utf8.py
+
+      - name: Lint workload manifests
+        run: ./silicium workload lint
+
       - name: Run test suite via silicium CLI
         run: ./silicium test
 
@@ -88,6 +97,65 @@ jobs:
           test -s "$OUT/badge.svg"
           test -s "$OUT/index.html"
           test -s "$OUT/snapshot.svg"
+
+  perf-budget:
+    runs-on: ubuntu-latest
+    needs: pytest
+    env:
+      SILICIUM_MAX_JOBS: "2"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run budget checks
+        run: |
+          python tools/perf_budget.py \
+            --all \
+            --strict \
+            --output /tmp/perf-budget-report.json
+
+      - name: Publish budget summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path("/tmp/perf-budget-report.json").read_text())
+          lines = ["## Performance budget report", ""]
+          for item in report.get("results", []):
+              profile = item.get("profile", "unknown")
+              metrics = item.get("metrics", {})
+              budgets = item.get("budgets", {})
+              violations = item.get("violations", [])
+              status = "FAIL" if violations else "PASS"
+              lines.append(f"- `{profile}`: **{status}**")
+              lines.append(
+                  "  "
+                  + f"wall={metrics.get('wall_sec')} / {budgets.get('wall_sec')}, "
+                  + f"cpu={metrics.get('cpu_sec')} / {budgets.get('cpu_sec')}, "
+                  + f"rss={metrics.get('max_rss_kib')} / {budgets.get('max_rss_kib')}"
+              )
+              if violations:
+                  for violation in violations:
+                      lines.append(f"  - violation: `{violation}`")
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines))
+          PY
+
+      - name: Upload budget artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-budget-report
+          path: /tmp/perf-budget-report.json
 
   worker-cpp:
     runs-on: ubuntu-latest

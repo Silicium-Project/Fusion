@@ -5,9 +5,9 @@
 
 #include <gtest/gtest.h>
 
-#include "worker/job_runner.hpp"
-#include "worker/task.hpp"
-#include "worker/worker_config.hpp"
+#include "worker/runtime/JobRunner.hpp"
+#include "worker/task/Task.hpp"
+#include "worker/core/WorkerConfig.hpp"
 
 namespace {
 

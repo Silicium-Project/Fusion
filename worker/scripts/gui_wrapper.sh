@@ -25,7 +25,19 @@ if ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
     docker build -t "${IMAGE}" -f "${DOCKERFILE}" "${DOCKER_CONTEXT}"
 fi
 
-docker_args=(--rm --network host -e RUNNING_IN_GUI_CONTAINER=1)
+network_mode="${FRAGMENT_GUI_NETWORK_MODE:-}"
+if [[ -z "${network_mode}" ]]; then
+    if [[ "$(uname -s)" == "Linux" ]]; then
+        network_mode="host"
+    else
+        network_mode="bridge"
+    fi
+fi
+
+docker_args=(--rm -e RUNNING_IN_GUI_CONTAINER=1)
+if [[ "${network_mode}" == "host" ]]; then
+    docker_args+=(--network host)
+fi
 
 if [[ -n "${FRAGMENT_GUI_VNC_PORT:-}" ]]; then
     docker_args+=(-e "VNC_PORT=${FRAGMENT_GUI_VNC_PORT}" "-p" "${FRAGMENT_GUI_VNC_PORT}:5900")

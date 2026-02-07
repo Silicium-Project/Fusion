@@ -20,6 +20,9 @@ public:
 
     void SetAlgorithm(std::shared_ptr<IHashAlgorithm> prototype);
 
+    std::string AlgorithmName() const;
+    std::unique_ptr<IHashAlgorithm> CreateHasher() const;
+
     std::string HashBytes(const std::vector<uint8_t>& data) const;
     std::string HashString(std::string_view data) const;
     std::string HashFile(const std::string& path) const;
@@ -28,6 +31,7 @@ private:
     std::unique_ptr<IHashAlgorithm> MakeHasher() const;
 
     std::shared_ptr<IHashAlgorithm> prototype_;
+    std::string algo_name_;
 };
 
 // Fabrique utilitaire pour lire la config depuis l'environnement (SPLITTER_HASH_ALGO).

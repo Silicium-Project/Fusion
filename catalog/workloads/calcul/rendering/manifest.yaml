@@ -1,4 +1,5 @@
 id: calcul/rendering/blender
+schema_version: 1
 version: 0.2.0
 engine: container
 command: blender -b {scene} -o {output_pattern} -f {frame}
@@ -6,6 +7,16 @@ resources:
   cpu: 8
   gpu: optional
   memory: 8Gi
+taxonomy:
+  category: calcul
+  domain: rendering
+  complexity: high
+  resource_profile: gpu_optional
+  determinism: deterministic
+  tags:
+    - rendering
+    - gpu
+    - deterministic
 artifacts:
   input:
     - name: scene

@@ -9,15 +9,15 @@
   </style>
   <rect class="bg" x="0" y="0" width="320" height="150" rx="14" />
   <rect class="card" x="6" y="6" width="308" height="138" rx="12" />
-  <circle class="track" cx="60" cy="70" r="32" /><circle class="arc" cx="60" cy="70" r="32" stroke="#97CA00" stroke-dasharray="201.06" stroke-dashoffset="29.00" transform="rotate(-90 60 70)" />
-  <text class="value" x="60" y="74">85.6%</text>
+  <circle class="track" cx="60" cy="70" r="32" /><circle class="arc" cx="60" cy="70" r="32" stroke="#97CA00" stroke-dasharray="201.06" stroke-dashoffset="26.84" transform="rotate(-90 60 70)" />
+  <text class="value" x="60" y="74">86.7%</text>
   <text class="label" x="60" y="118">Lignes</text>
 
-  <circle class="track" cx="160" cy="70" r="32" /><circle class="arc" cx="160" cy="70" r="32" stroke="#4c1" stroke-dasharray="201.06" stroke-dashoffset="19.62" transform="rotate(-90 160 70)" />
-  <text class="value" x="160" y="74">90.2%</text>
+  <circle class="track" cx="160" cy="70" r="32" /><circle class="arc" cx="160" cy="70" r="32" stroke="#4c1" stroke-dasharray="201.06" stroke-dashoffset="14.19" transform="rotate(-90 160 70)" />
+  <text class="value" x="160" y="74">92.9%</text>
   <text class="label" x="160" y="118">Fonctions</text>
 
-  <circle class="track" cx="260" cy="70" r="32" /><circle class="arc" cx="260" cy="70" r="32" stroke="#e05d44" stroke-dasharray="201.06" stroke-dashoffset="102.58" transform="rotate(-90 260 70)" />
-  <text class="value" x="260" y="74">49.0%</text>
+  <circle class="track" cx="260" cy="70" r="32" /><circle class="arc" cx="260" cy="70" r="32" stroke="#fe7d37" stroke-dasharray="201.06" stroke-dashoffset="100.11" transform="rotate(-90 260 70)" />
+  <text class="value" x="260" y="74">50.2%</text>
   <text class="label" x="260" y="118">Branches</text>
 </svg>

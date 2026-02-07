@@ -7,7 +7,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 # When already inside the GUI container (e.g. running in CI), run the command directly.
-# Déjà dans un conteneur (ou docker indisponible) : exécute directement.
+# DÃƒÂ©jÃƒÂ  dans un conteneur (ou docker indisponible) : exÃƒÂ©cute directement.
 if [[ "${RUNNING_IN_GUI_CONTAINER:-}" == "1" ]] || ! command -v docker >/dev/null 2>&1; then
     exec "$@"
 fi
@@ -21,11 +21,11 @@ fi
 
 IMAGE="${FRAGMENT_GUI_BUILDER_IMAGE:-luis1454/worker:builder}"
 
-# Align UID/GID so que les artefacts générés restent supprimables depuis l'hôte.
+# Align UID/GID so que les artefacts gÃƒÂ©nÃƒÂ©rÃƒÂ©s restent supprimables depuis l'hÃƒÂ´te.
 HOST_UID=$(id -u)
 HOST_GID=$(id -g)
 
-# Ajuste l'étiquette SELinux si nécessaire pour éviter les AVC (ex: Fedora).
+# Ajuste l'ÃƒÂ©tiquette SELinux si nÃƒÂ©cessaire pour ÃƒÂ©viter les AVC (ex: Fedora).
 VOLUME_SUFFIX=""
 if [[ -d /sys/fs/selinux ]]; then
     VOLUME_SUFFIX=":z"

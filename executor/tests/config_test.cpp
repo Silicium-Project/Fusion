@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "Config.hpp"
+#include "core/Config.hpp"
 
 using fragment::ExecutorConfig;
 

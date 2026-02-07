@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Mode headless: pas de X/VNC, on exécute directement la commande.
+# Mode headless: pas de X/VNC, on exÃƒÂ©cute directement la commande.
 if [[ "${HEADLESS:-}" == "1" || "${1:-}" == "--headless" ]]; then
     [[ "${1:-}" == "--headless" ]] && shift
     exec "$@"

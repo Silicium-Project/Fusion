@@ -1,4 +1,4 @@
-#include "FragmentApi.h"
+#include "api/FragmentApi.h"
 
 #include <algorithm>
 #include <cstring>
@@ -7,10 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "Cli.hpp"
-#include "FragmentExecutor.hpp"
-#include "PartitionRegistry.hpp"
-#include "PartitionSummary.hpp"
+#include "cli/Cli.hpp"
+#include "core/FragmentExecutor.hpp"
+#include "partition/PartitionRegistry.hpp"
+#include "partition/PartitionSummary.hpp"
 #include "backend/ExecutionBackend.hpp"
 
 using fragment::ExecutionEntry;

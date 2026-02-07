@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include "worker/dynamorio_runner.hpp"
+#include "worker/runtime/DynamoRunner.hpp"
 
 namespace {
 
@@ -66,5 +66,5 @@ TEST(DynamoRunner, NonZeroExitSetsErrorMessage) {
     const bool ok = runner.run_binary("/bin/true", {}, out, err);
 
     EXPECT_FALSE(ok);
-    EXPECT_NE(std::string::npos, err.find("drrun a retourné"));
+    EXPECT_NE(std::string::npos, err.find("drrun a retourne"));
 }

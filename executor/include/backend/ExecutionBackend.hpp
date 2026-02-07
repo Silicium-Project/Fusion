@@ -2,9 +2,9 @@
 
 #include <memory>
 
-#include "Cli.hpp"
-#include "FragmentExecutor.hpp"
-#include "ExecutionResult.hpp"
+#include "cli/Cli.hpp"
+#include "core/FragmentExecutor.hpp"
+#include "core/ExecutionResult.hpp"
 
 namespace fragment {
 
@@ -16,6 +16,16 @@ public:
                      FragmentExecutor& executor,
                      ExecutionResult& result) const = 0;
 };
+
+class ExecutionBackendFactory {
+public:
+    virtual ~ExecutionBackendFactory() = default;
+    virtual std::unique_ptr<IExecutionBackend> create(bool native_mode,
+                                                      bool force_native) const = 0;
+};
+
+// Fabrique un backend en fonction du mode demandé.
+std::unique_ptr<ExecutionBackendFactory> make_backend_factory();
 
 // Fabrique un backend en fonction du mode demandé.
 std::unique_ptr<IExecutionBackend> make_backend(bool native_mode, bool force_native);

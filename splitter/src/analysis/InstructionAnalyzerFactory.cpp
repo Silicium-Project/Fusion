@@ -9,8 +9,6 @@
 #include "analysis/GuiInstructionAnalyzer.hpp"
 #include "analysis/RiscVInstructionAnalyzer.hpp"
 #include "analysis/X86_64InstructionAnalyzer.hpp"
-#include "support/Env.hpp"
-#include "support/ShellCommand.hpp"
 
 namespace splitter {
 
@@ -83,20 +81,28 @@ CompositeInstructionAnalyzer InstructionAnalyzerFactory::Create(const std::strin
 }
 
 CompositeInstructionAnalyzer InstructionAnalyzerFactory::CreateDefault() {
-    if (auto env = GetEnv("SPLITTER_ARCH"))
-        return Create(*env);
+    return CreateDefault(DefaultSystemContext());
+}
+
+CompositeInstructionAnalyzer InstructionAnalyzerFactory::CreateDefault(const SystemContext& system) {
+    if (system.env) {
+        if (auto env = system.env->Get("SPLITTER_ARCH"))
+            return Create(*env);
+    }
 
     // Déduire l'architecture via uname -m (sans préprocesseur).
-    try {
-        std::string arch_hint = ExecCommand("uname -m");
-        // nettoyer fin de ligne
-        arch_hint.erase(std::remove_if(arch_hint.begin(), arch_hint.end(),
-                                       [](unsigned char c) { return c == '\n' || c == '\r'; }),
-                        arch_hint.end());
-        if (!arch_hint.empty())
-            return Create(arch_hint);
-    } catch (const std::exception&) {
-        // ignore et fallback
+    if (system.shell) {
+        try {
+            std::string arch_hint = system.shell->Run("uname -m");
+            // nettoyer fin de ligne
+            arch_hint.erase(std::remove_if(arch_hint.begin(), arch_hint.end(),
+                                           [](unsigned char c) { return c == '\n' || c == '\r'; }),
+                            arch_hint.end());
+            if (!arch_hint.empty())
+                return Create(arch_hint);
+        } catch (const std::exception&) {
+            // ignore et fallback
+        }
     }
     return Create("generic");
 }

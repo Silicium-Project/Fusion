@@ -2,14 +2,15 @@
 
 #include <sstream>
 
-#include "worker/reporter.hpp"
-#include "worker/task_serializer.hpp"
-#include "worker/worker_report.hpp"
+#include "worker/io/Reporter.hpp"
+#include "worker/task/TaskSerializer.hpp"
+#include "worker/core/WorkerReport.hpp"
 
 namespace worker {
 
 TEST(TaskSerializer, RoundTripPayload) {
     TaskPayload payload;
+    payload.type = TaskType::Binary;
     payload.partition_id = "p1";
     payload.asm_path = "/tmp/a.asm";
     payload.binary_path = "/tmp/bin";
@@ -28,8 +29,11 @@ TEST(TaskSerializer, RoundTripPayload) {
     payload.fd_rules.push_back(rule);
 
     const std::string serialized = serialize_task_payload(payload);
+    EXPECT_NE(std::string::npos, serialized.find("\"schema_version\":1"));
     const TaskPayload deserialized = deserialize_task_payload(serialized);
 
+    EXPECT_EQ(1u, deserialized.schema_version);
+    EXPECT_EQ(payload.type, deserialized.type);
     EXPECT_EQ(payload.partition_id, deserialized.partition_id);
     EXPECT_EQ(payload.asm_path, deserialized.asm_path);
     EXPECT_EQ(payload.binary_path, deserialized.binary_path);
@@ -44,6 +48,36 @@ TEST(TaskSerializer, RoundTripPayload) {
     EXPECT_EQ(payload.fd_rules[0].capture, deserialized.fd_rules[0].capture);
     EXPECT_EQ(payload.fd_rules[0].alias, deserialized.fd_rules[0].alias);
     EXPECT_EQ(payload.fd_rules[0].input_data, deserialized.fd_rules[0].input_data);
+}
+
+TEST(TaskSerializer, DefaultTypeWhenMissing) {
+    const std::string json = R"({
+      "partition_id":"p",
+      "asm_path":"/tmp/a",
+      "binary_path":"",
+      "mode":"emu",
+      "fd_redirections":[],
+      "inputs":[],
+      "register_state":[],
+      "memory":[]
+    })";
+    TaskPayload payload = deserialize_task_payload(json);
+    EXPECT_EQ(payload.type, TaskType::Binary);
+}
+
+TEST(TaskSerializer, RejectsUnknownType) {
+    const std::string json = R"({
+      "type":"mystery",
+      "partition_id":"p",
+      "asm_path":"/tmp/a",
+      "binary_path":"",
+      "mode":"emu",
+      "fd_redirections":[],
+      "inputs":[],
+      "register_state":[],
+      "memory":[]
+    })";
+    EXPECT_THROW(deserialize_task_payload(json), std::runtime_error);
 }
 
 TEST(TaskSerializer, RoundTripExecutionResult) {
@@ -69,6 +103,7 @@ TEST(TaskSerializer, RoundTripExecutionResult) {
     result.fd_outputs.set(2, cap2);
 
     const std::string serialized = serialize_execution_result(result);
+    EXPECT_NE(std::string::npos, serialized.find("\"schema_version\":1"));
     const fragment::ExecutionResult deserialized = deserialize_execution_result(serialized);
 
     EXPECT_TRUE(deserialized.success);
@@ -101,6 +136,14 @@ TEST(Reporter, EmitsJsonAndText) {
     task.inputs = {{"r1", 10}, {"r2", 20}};
     task.result.success = false;
     task.result.error_message = "boom";
+    task.telemetry.task_id = "task-1";
+    task.telemetry.type = TaskType::Binary;
+    task.telemetry.status = "failure";
+    task.telemetry.duration_ms = 12;
+    task.telemetry.linux_policy = "native";
+    task.telemetry.windows_policy = "skip";
+    task.telemetry.wsl_enabled = true;
+    task.telemetry.wsl_decision = "enabled";
     task.result.instructions_executed = 3;
     task.result.memory_accesses = 4;
     task.result.program_stdout = "hello\n";
@@ -121,6 +164,17 @@ TEST(Reporter, EmitsJsonAndText) {
     Reporter json_reporter(OutputFormat::Json, json_stream);
     json_reporter.emit(report);
     const std::string json_out = json_stream.str();
+    EXPECT_NE(std::string::npos, json_out.find("\"task_id\":\"task-1\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"type\":\"binary\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"status\":\"failure\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"duration_ms\":12"));
+    EXPECT_NE(std::string::npos, json_out.find("\"linux_policy\":\"native\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"windows_policy\":\"skip\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"wsl_enabled\":true"));
+    EXPECT_NE(std::string::npos, json_out.find("\"wsl_decision\":\"enabled\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_enabled\":false"));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_calls\":0"));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_failures\":0"));
     EXPECT_NE(std::string::npos, json_out.find("\"partition\":\"part-1\""));
     EXPECT_NE(std::string::npos, json_out.find("\"fd_outputs\":{\"5\""));
     EXPECT_NE(std::string::npos, json_out.find("\"alias\":\"out\""));
@@ -131,12 +185,77 @@ TEST(Reporter, EmitsJsonAndText) {
     Reporter text_reporter(OutputFormat::Text, text_stream);
     text_reporter.emit(report);
     const std::string text_out = text_stream.str();
+    EXPECT_NE(std::string::npos, text_out.find("Task ID: task-1"));
+    EXPECT_NE(std::string::npos, text_out.find("Type: binary"));
+    EXPECT_NE(std::string::npos, text_out.find("Status: failure"));
+    EXPECT_NE(std::string::npos, text_out.find("Durée: 12 ms"));
+    EXPECT_NE(std::string::npos, text_out.find("Policy: linux=native windows=skip"));
+    EXPECT_NE(std::string::npos, text_out.find("WSL: on (enabled)"));
     EXPECT_NE(std::string::npos, text_out.find("Partition: part-1"));
     EXPECT_NE(std::string::npos, text_out.find("ÉCHEC"));
     EXPECT_NE(std::string::npos, text_out.find("fd 5 (out)"));
     EXPECT_NE(std::string::npos, text_out.find("Écritures mémoire"));
     EXPECT_NE(std::string::npos, text_out.find("avant"));
     EXPECT_NE(std::string::npos, text_out.find("après"));
+}
+
+TEST(TaskSerializer, RejectsUnsupportedPayloadSchemaVersion) {
+    const std::string json = R"({
+      "schema_version":99,
+      "partition_id":"p",
+      "asm_path":"/tmp/a",
+      "binary_path":"",
+      "mode":"emu",
+      "fd_redirections":[],
+      "inputs":[],
+      "register_state":[],
+      "memory":[]
+    })";
+    EXPECT_THROW(deserialize_task_payload(json), std::runtime_error);
+}
+
+TEST(TaskSerializer, RejectsUnsupportedExecutionResultSchemaVersion) {
+    const std::string json = R"({
+      "schema_version":99,
+      "success":true,
+      "error":"",
+      "stdout":"",
+      "stderr":"",
+      "fd_outputs":{},
+      "initial_regs":[],
+      "final_regs":[],
+      "memory_patches":[],
+      "instructions":1,
+      "memory_accesses":1
+    })";
+    EXPECT_THROW(deserialize_execution_result(json), std::runtime_error);
+}
+
+TEST(Reporter, DefaultsTelemetryFields) {
+    WorkerReport report;
+    report.summary_path = "/tmp/summary.json";
+    report.mode = ExecutionMode::Emulator;
+
+    TaskReport task;
+    task.partition_id = "part-2";
+    task.result.success = true;
+    report.tasks.push_back(task);
+
+    std::ostringstream json_stream;
+    Reporter json_reporter(OutputFormat::Json, json_stream);
+    json_reporter.emit(report);
+    const std::string json_out = json_stream.str();
+    EXPECT_NE(std::string::npos, json_out.find("\"task_id\":\"part-2\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"type\":\"binary\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"status\":\"success\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"duration_ms\":0"));
+    EXPECT_NE(std::string::npos, json_out.find("\"linux_policy\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"windows_policy\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"wsl_enabled\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"wsl_decision\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_enabled\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_calls\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_failures\""));
 }
 
 TEST(TaskSerializer, DeserializeTaskPayloadRejectsBadMemoryHex) {

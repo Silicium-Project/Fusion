@@ -50,4 +50,16 @@ std::vector<LoopInfo>& Function::Loops() noexcept {
     return loops_;
 }
 
+const std::optional<LoopAnalysis>& Function::LoopAnalysisInfo() const noexcept {
+    return loop_analysis_;
+}
+
+void Function::SetLoopAnalysis(LoopAnalysis info) {
+    loop_analysis_ = std::move(info);
+}
+
+bool Function::HasLoopAnalysis() const noexcept {
+    return loop_analysis_.has_value();
+}
+
 }  // namespace splitter

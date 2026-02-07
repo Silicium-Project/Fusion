@@ -52,6 +52,102 @@ worker --drrun <binaire> [--drrun-arg <arg> ...]
 Si aucune file ni tâche n'est fournie, l'ordre d'exécution est dérivé du
 `summary` (topo-sort des dépendances).
 
+## Types de tâches
+
+Le worker supporte désormais plusieurs **types de tâches**. Le binaire reste la
+forme la plus générale, mais d'autres types existent pour des checks simples.
+
+Types supportés :
+- `binary` (par défaut) : exécute un fragment à partir du `summary.json`.
+- `health` (alias `check`) : tâche non-binaire qui renvoie un statut minimal.
+
+### Sélection via queue
+
+Dans un fichier `--queue`, ajoutez `type=...` :
+
+```
+func_3_main type=binary rax=0x10
+health_check type=health
+```
+
+Si `type` est absent, le worker assume `binary`.
+
+## Politique OS des fragments
+
+Le worker peut être configuré pour décider comment traiter les fragments Linux/Windows
+en fonction de la plateforme et des préférences d'exécution.
+
+Actions disponibles :
+- `native` : exécute localement (si supporté).
+- `wsl` : délègue au backend WSL (Windows).
+- `skip` : ignore la partition.
+- `error` : refuse la partition (échec explicite).
+- `queue` : marque la partition comme mise en file.
+
+### Configuration CLI / env
+
+```
+--linux-fragments native|wsl|skip|error|queue
+--windows-fragments native|wsl|skip|error|queue
+```
+
+Variables d’environnement :
+```
+SILICIUM_LINUX_FRAGMENTS
+SILICIUM_WINDOWS_FRAGMENTS
+```
+
+## Triggers WSL
+
+Pour activer dynamiquement la délégation WSL, des triggers peuvent être configurés :
+
+```
+--wsl-enable / --wsl-disable
+--wsl-min-reward <v>
+--wsl-min-jobs <n>
+--wsl-reward <v>
+--wsl-available-jobs <n>
+```
+
+Variables d’environnement :
+```
+SILICIUM_WSL_ENABLE
+SILICIUM_WSL_MIN_REWARD
+SILICIUM_WSL_MIN_JOBS
+SILICIUM_WSL_REWARD
+SILICIUM_WSL_AVAILABLE_JOBS
+```
+
+La décision (`wsl_enabled` + raison) est exposée dans la télémétrie et les rapports.
+
+### Sélection via JSON
+
+Les payloads JSON (connecteur/runner) acceptent un champ `type` :
+
+```
+{
+  "type":"health",
+  "partition_id":"health_check",
+  "asm_path":"",
+  "binary_path":"",
+  "mode":"emu",
+  "fd_redirections":[],
+  "inputs":[],
+  "register_state":[],
+  "memory":[]
+}
+```
+
+### Télémétrie commune
+
+Tous les rapports incluent maintenant une base commune de télémétrie :
+- `task_id`, `type`, `status`
+- `started_at_ms`, `finished_at_ms`, `duration_ms`
+- `warnings` (liste)
+
+Ces champs sont ajoutés au JSON de sortie du `Reporter` en plus des informations
+spécifiques à l'exécution de fragments.
+
 ## Tests unitaires
 
 ```bash
@@ -133,12 +229,47 @@ backends d'exécution. Deux modes sont câblés :
 
 1. `--connector direct` (défaut) : exécute les fragments localement (émulateur) ou
    lance `drrun` via Docker pour le backend Dynamo.
-2. `--connector http` : préfigure un mode serveur. Pour l'instant, il renvoie une
-   erreur explicite tant qu'aucun point d'entrée HTTP n'est branché. Utilisez
+2. `--connector http` : délègue l'exécution à un endpoint HTTP qui reçoit un
+   payload JSON et renvoie un `ExecutionResult`. Utilisez
    `--connector-endpoint https://localhost:9000/run` pour définir la cible.
 
 Cette abstraction permet d'introduire ultérieurement un “runner” externe sans
 changer la logique du worker (sérialisation JSON des registres/mémoires).
+
+### Contrat HTTP (payload)
+
+Requête `POST` (JSON) :
+
+```
+{
+  "type":"binary",
+  "partition_id":"func_main",
+  "asm_path":"/path/func_main.asm",
+  "binary_path":"/path/func_main.bin",
+  "mode":"emu",
+  "fd_redirections":[{"fd":1,"capture":true,"input":"","alias":"stdout"}],
+  "inputs":["rax=0x1"],
+  "register_state":["rbx=0x2"],
+  "memory":["0x1000:deadbeef"]
+}
+```
+
+Réponse `ExecutionResult` :
+
+```
+{
+  "success":true,
+  "error":"",
+  "stdout":"ok",
+  "stderr":"",
+  "fd_outputs":{"1":{"data":"6f6b","alias":"stdout"}},
+  "initial_regs":["rax=0x1"],
+  "final_regs":["rax=0x2"],
+  "memory_patches":["0x1000:beef"],
+  "instructions":12,
+  "memory_accesses":4
+}
+```
 
 ### Test rapide : lecture sur `stdin`
 

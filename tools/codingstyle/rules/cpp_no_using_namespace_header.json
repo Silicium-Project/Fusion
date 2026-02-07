@@ -1,0 +1,20 @@
+{
+  "id": "cpp.no_using_namespace_header",
+  "description": "Disallow using-namespace directives in headers.",
+  "severity": "error",
+  "kind": "pattern_count",
+  "sanitize": "cpp",
+  "scope": {
+    "include": [
+      "**/*.hpp",
+      "**/*.h"
+    ]
+  },
+  "patterns": [
+    {
+      "label": "using namespace directive",
+      "regex": "\\busing\\s+namespace\\s+[A-Za-z_]\\w*(?:\\s*::\\s*[A-Za-z_]\\w*)*\\s*;",
+      "max": 0
+    }
+  ]
+}

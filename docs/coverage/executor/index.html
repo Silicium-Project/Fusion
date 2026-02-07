@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Executor Coverage</title>
+  <style>
+    :root {
+      --accent: #a4a61d;
+      --bg: #0f172a;
+      --card: #111827;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --border: #1f2937;
+      --chart-track: #1f2937;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(37,99,235,0.1), transparent 30%), radial-gradient(circle at 80% 0%, rgba(16,185,129,0.12), transparent 35%), var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+    .shell {
+      width: min(1100px, 100%);
+      background: linear-gradient(145deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+      border: 1px solid var(--border);
+      box-shadow: 0 10px 60px rgba(0,0,0,0.35);
+      border-radius: 18px;
+      padding: 28px;
+      backdrop-filter: blur(10px);
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.01em;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 14px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .pill::before {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+    }
+    a {
+      color: var(--text);
+    }
+    .charts {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      text-align: center;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    svg {
+      width: 160px;
+      height: 160px;
+    }
+    .track {
+      fill: none;
+      stroke: var(--chart-track);
+      stroke-width: 14;
+    }
+    .progress {
+      fill: none;
+      stroke-width: 14;
+      stroke-linecap: round;
+      filter: drop-shadow(0 0 8px rgba(34,197,94,0.35));
+    }
+    .value {
+      font-size: 22px;
+      fill: var(--text);
+      font-weight: 700;
+      text-anchor: middle;
+    }
+    .chart-label {
+      margin-top: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }
+    .links {
+      margin-top: 16px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .links a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .links a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <div>
+        <h1>Executor Coverage</h1>
+        <div class="pill">DerniÃ¨re exÃ©cution Â· couverture</div>
+      </div>
+    </header>
+    <section class="charts">
+      <div class="chart-card">
+  <svg viewBox="0 0 120 120" role="img" aria-label="Lignes: 71.5%">
+    <circle class="track" cx="60" cy="60" r="42" />
+    <circle class="progress" cx="60" cy="60" r="42" stroke="#a4a61d" stroke-dasharray="263.89" stroke-dashoffset="75.09" transform="rotate(-90 60 60)" />
+    <text x="60" y="64" class="value">71.5%</text>
+  </svg>
+  <div class="chart-label">Lignes</div>
+</div>
+      <div class="chart-card">
+  <svg viewBox="0 0 120 120" role="img" aria-label="Fonctions: 72.7%">
+    <circle class="track" cx="60" cy="60" r="42" />
+    <circle class="progress" cx="60" cy="60" r="42" stroke="#a4a61d" stroke-dasharray="263.89" stroke-dashoffset="71.97" transform="rotate(-90 60 60)" />
+    <text x="60" y="64" class="value">72.7%</text>
+  </svg>
+  <div class="chart-label">Fonctions</div>
+</div>
+      <div class="chart-card">
+  <svg viewBox="0 0 120 120" role="img" aria-label="Branches: 45.9%">
+    <circle class="track" cx="60" cy="60" r="42" />
+    <circle class="progress" cx="60" cy="60" r="42" stroke="#e05d44" stroke-dasharray="263.89" stroke-dashoffset="142.83" transform="rotate(-90 60 60)" />
+    <text x="60" y="64" class="value">45.9%</text>
+  </svg>
+  <div class="chart-label">Branches</div>
+</div>
+    </section>
+    <div class="links">
+      Rapport complet : <a href="coverage-full.html">coverage-full.html</a>
+    </div>
+  </div>
+</body>
+</html>

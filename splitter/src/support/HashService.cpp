@@ -6,20 +6,44 @@
 
 namespace splitter {
 
+namespace {
+
+std::string DetectAlgorithmName(const std::shared_ptr<IHashAlgorithm>& prototype) {
+    if (!prototype)
+        return "fnv";
+    if (dynamic_cast<FnvHashAlgorithm*>(prototype.get()))
+        return "fnv";
+    if (dynamic_cast<StdHashAlgorithm*>(prototype.get()))
+        return "std";
+    return "custom";
+}
+
+}  // namespace
+
 HashService::HashService()
 : HashService(std::make_shared<FnvHashAlgorithm>()) {}
 
 HashService::HashService(std::shared_ptr<IHashAlgorithm> prototype)
-: prototype_(std::move(prototype)) {}
+: prototype_(std::move(prototype)),
+  algo_name_(DetectAlgorithmName(prototype_)) {}
 
 void HashService::SetAlgorithm(std::shared_ptr<IHashAlgorithm> prototype) {
     prototype_ = std::move(prototype);
+    algo_name_ = DetectAlgorithmName(prototype_);
 }
 
 std::unique_ptr<IHashAlgorithm> HashService::MakeHasher() const {
     if (prototype_)
         return prototype_->Clone();
     return std::make_unique<FnvHashAlgorithm>();
+}
+
+std::string HashService::AlgorithmName() const {
+    return algo_name_.empty() ? "fnv" : algo_name_;
+}
+
+std::unique_ptr<IHashAlgorithm> HashService::CreateHasher() const {
+    return MakeHasher();
 }
 
 std::string HashService::HashBytes(const std::vector<uint8_t>& data) const {

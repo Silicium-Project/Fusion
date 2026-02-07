@@ -2,9 +2,9 @@
 #include <iostream>
 #include <stdexcept>
 
-#include "Cli.hpp"
-#include "worker/task_serializer.hpp"
-#include "worker/task_types.hpp"
+#include "cli/Cli.hpp"
+#include "worker/task/TaskSerializer.hpp"
+#include "worker/task/TaskTypes.hpp"
 
 namespace {
 

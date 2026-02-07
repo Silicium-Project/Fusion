@@ -57,8 +57,16 @@ std::vector<Partition> Partitioner::Run(std::vector<Function>& functions) {
         if (ShouldSkipFunction(func))
             continue;
 
-        analyzer_->AnalyzeFunctionLoops(func);
-        auto loop_info = analyzer_->DetectLoopPatterns(func);
+        std::optional<LoopAnalysis> loop_info;
+        if (func.HasLoopAnalysis())
+            loop_info = func.LoopAnalysisInfo();
+        if (!loop_info.has_value() && analyzer_) {
+            for (auto& inst : func.Instructions())
+                analyzer_->AnalyzeInstruction(inst);
+            analyzer_->AnalyzeFunctionLoops(func);
+            loop_info = analyzer_->DetectLoopPatterns(func);
+            func.SetLoopAnalysis(*loop_info);
+        }
 
         Partition partition;
         partition.SetId("func_" + std::to_string(partition_id) + "_" + func.Name());
@@ -70,7 +78,8 @@ std::vector<Partition> Partitioner::Run(std::vector<Function>& functions) {
             partition.RawBytes() =
                 extractor_->ExtractSegment(binary_path_.Value(), func.StartAddr(), func.EndAddr());
         }
-        partition.SetIsParallelizable(loop_info.parallelizable);
+        if (loop_info.has_value())
+            partition.SetIsParallelizable(loop_info->parallelizable);
 
         FlatStringSet outputs;
         FlatStringSet observed_inputs;
