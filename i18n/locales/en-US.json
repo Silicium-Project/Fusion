@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "locale": "en-US",
+    "fallback": "en",
+    "version": 1
+  },
+  "messages": {
+    "core.ok": "OK",
+    "core.error": "Error",
+    "cli.shell.prompt": "silicium> ",
+    "cli.workload.list.none": "No workloads found.",
+    "cli.workload.lint.success": "All manifests valid.",
+    "tui.status.idle": "Idle",
+    "tui.status.running": "Running",
+    "worker.error.summary_not_found": "Summary not found.",
+    "executor.error.partition_not_found": "Partition not found.",
+    "splitter.phase.analysis": "Analysis phase",
+    "viewer.menu.open_file": "Open File",
+    "infra.compose.service_unavailable": "Service unavailable."
+  }
+}
