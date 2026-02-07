@@ -82,6 +82,14 @@ TaskReport JobRunner::execute(const Task& task) {
     return report;
 }
 
+void JobRunner::set_mode(ExecutionMode mode) {
+    worker_.set_mode(mode);
+}
+
+ExecutionMode JobRunner::mode() const {
+    return worker_.mode();
+}
+
 void JobRunner::add_observer(std::shared_ptr<TaskObserver> observer) {
     worker_.add_observer(std::move(observer));
 }

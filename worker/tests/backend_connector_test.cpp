@@ -151,6 +151,7 @@ TEST(BackendConnector, DynamoBackendExecutesAndParsesOutput) {
                            tmp.string(),
                            (tmp / "prog.asm").string(),
                            (tmp / "prog.bin").string(),
+                           config.mode,
                            {{"rax", 0}},
                            {{"rax", 0}},
                            {},
@@ -174,7 +175,7 @@ TEST(BackendConnector, HttpConnectorMessages) {
     fragment::PartitionInfo part;
     part.id = "p1";
     auto connector = make_backend_connector(config);
-    BackendRequest req{part, "", "", "", {}, {}, {}, {}};
+    BackendRequest req{part, "", "", "", config.mode, {}, {}, {}, {}};
     fragment::ExecutionResult res = connector->execute(req);
     EXPECT_FALSE(res.success);
     EXPECT_NE(std::string::npos, res.error_message.find("endpoint manquant"));
@@ -274,6 +275,7 @@ TEST(BackendConnector, HttpConnectorPostsPayloadToServer) {
                        tmp.string(),
                        (tmp / "prog.asm").string(),
                        (tmp / "prog.bin").string(),
+                       config.mode,
                        {{"rax", 0x10}},
                        {{"rbx", 0x20}},
                        {},
@@ -324,6 +326,7 @@ TEST(BackendConnector, DynamoBackendBadJsonSetsError) {
                            tmp.string(),
                            (tmp / "prog.asm").string(),
                            (tmp / "prog.bin").string(),
+                           config.mode,
                            {{"rax", 0}},
                            {{"rax", 0}},
                            {},
@@ -370,6 +373,7 @@ TEST(BackendConnector, DynamoBackendExitCodeSetsErrorMessage) {
                            tmp.string(),
                            (tmp / "prog.asm").string(),
                            (tmp / "prog.bin").string(),
+                           config.mode,
                            {{"rax", 0}},
                            {{"rax", 0}},
                            {},

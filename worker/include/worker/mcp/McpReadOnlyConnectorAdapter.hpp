@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "worker/mcp/IMcpConnectorAdapter.hpp"
@@ -29,6 +30,8 @@ public:
     std::string read_resource(const std::string& resource_uri) const override;
     std::string execute_tool(const std::string& tool_name, const std::string& args_json) override;
     McpAdapterMetrics snapshot_metrics() const;
+    bool consume_interrupt_request();
+    std::optional<ExecutionMode> consume_mode_request();
 
 private:
     std::shared_ptr<IMcpResourceStore> store_;

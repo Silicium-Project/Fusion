@@ -121,8 +121,33 @@ TEST(McpConnectorAdapter, ControlToolsCanBeGuardEnabled) {
     McpReadOnlyConnectorAdapter adapter(nullptr, nullptr, options);
 
     const std::string out = adapter.execute_tool(std::string(kToolInterruptAction), "{\"task_id\":\"t\"}");
-    EXPECT_NE(std::string::npos, out.find("\"status\":\"not_implemented\""));
+    EXPECT_NE(std::string::npos, out.find("\"status\":\"accepted\""));
     EXPECT_NE(std::string::npos, out.find("\"tool\":\"tools.silicium.interrupt_action\""));
+}
+
+TEST(McpConnectorAdapter, InterruptRequestIsConsumable) {
+    McpReadOnlyAdapterOptions options{};
+    options.enable_control_tools = true;
+    McpReadOnlyConnectorAdapter adapter(nullptr, nullptr, options);
+
+    const std::string out = adapter.execute_tool(std::string(kToolInterruptAction), "{}");
+    EXPECT_NE(std::string::npos, out.find("\"status\":\"accepted\""));
+    EXPECT_TRUE(adapter.consume_interrupt_request());
+    EXPECT_FALSE(adapter.consume_interrupt_request());
+}
+
+TEST(McpConnectorAdapter, SelectRunnerModeRequestIsConsumable) {
+    McpReadOnlyAdapterOptions options{};
+    options.enable_control_tools = true;
+    McpReadOnlyConnectorAdapter adapter(nullptr, nullptr, options);
+
+    const std::string out = adapter.execute_tool(
+        std::string(kToolSelectRunnerMode), "{\"mode\":\"native\"}");
+    EXPECT_NE(std::string::npos, out.find("\"status\":\"accepted\""));
+    const auto mode = adapter.consume_mode_request();
+    ASSERT_TRUE(mode.has_value());
+    EXPECT_EQ(ExecutionMode::Native, *mode);
+    EXPECT_FALSE(adapter.consume_mode_request().has_value());
 }
 
 TEST(McpConnectorAdapter, RunActionAllowlistReadsResources) {

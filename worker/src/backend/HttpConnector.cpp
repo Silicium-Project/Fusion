@@ -109,7 +109,7 @@ fragment::ExecutionResult HttpConnector::execute(const BackendRequest& request) 
     payload.partition_id = request.partition.id;
     payload.asm_path = request.asm_path;
     payload.binary_path = request.binary_path;
-    payload.mode = config_.mode;
+    payload.mode = request.mode;
     payload.inputs = request.inputs;
     payload.register_state = request.register_state;
     payload.memory_state = request.memory_state;

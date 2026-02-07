@@ -19,6 +19,8 @@ public:
     JobRunner(std::string summary_path, WorkerConfig config = {});
 
     TaskReport execute(const Task& task);
+    void set_mode(ExecutionMode mode);
+    ExecutionMode mode() const;
     void add_observer(std::shared_ptr<TaskObserver> observer);
     const fragment::PartitionSummary& summary() const;
     const std::string& summary_path() const;

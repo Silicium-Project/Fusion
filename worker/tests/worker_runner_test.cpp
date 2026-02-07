@@ -59,3 +59,15 @@ TEST(WorkerRunner, ObserverReceivesHealthTaskEvents) {
     EXPECT_EQ(1, observer->starts);
     EXPECT_EQ(1, observer->finishes);
 }
+
+TEST(WorkerRunner, RunnerModeCanBeUpdatedAtRuntime) {
+    const std::string summary = "../demo/worker/summary.json";
+
+    worker::WorkerConfig config;
+    config.mode = worker::ExecutionMode::Emulator;
+    worker::JobRunner runner(summary, config);
+
+    EXPECT_EQ(worker::ExecutionMode::Emulator, runner.mode());
+    runner.set_mode(worker::ExecutionMode::Native);
+    EXPECT_EQ(worker::ExecutionMode::Native, runner.mode());
+}

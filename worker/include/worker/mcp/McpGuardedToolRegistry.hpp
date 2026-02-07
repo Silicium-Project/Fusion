@@ -3,11 +3,13 @@
 #include <cstdint>
 #include <mutex>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "worker/mcp/IMcpResourceStore.hpp"
 #include "worker/mcp/IMcpToolRegistry.hpp"
 #include "worker/mcp/McpSchema.hpp"
+#include "worker/core/WorkerConfig.hpp"
 
 namespace worker::mcp {
 
@@ -29,12 +31,17 @@ public:
 
     std::string execute_tool(const std::string& tool_name, const std::string& args_json) override;
     McpToolMetrics snapshot_metrics() const;
+    bool consume_interrupt_request();
+    std::optional<ExecutionMode> consume_mode_request();
 
 private:
     std::shared_ptr<IMcpResourceStore> store_;
     McpToolRegistryConfig config_{};
     mutable std::mutex metrics_mutex_;
     McpToolMetrics metrics_{};
+    mutable std::mutex control_mutex_;
+    bool interrupt_requested_ = false;
+    std::optional<ExecutionMode> requested_mode_{};
 };
 
 }  // namespace worker::mcp

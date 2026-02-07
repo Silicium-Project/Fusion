@@ -173,6 +173,18 @@ McpAdapterMetrics McpReadOnlyConnectorAdapter::snapshot_metrics() const {
     return guarded_tool_registry_->snapshot_metrics();
 }
 
+bool McpReadOnlyConnectorAdapter::consume_interrupt_request() {
+    if (!guarded_tool_registry_)
+        return false;
+    return guarded_tool_registry_->consume_interrupt_request();
+}
+
+std::optional<ExecutionMode> McpReadOnlyConnectorAdapter::consume_mode_request() {
+    if (!guarded_tool_registry_)
+        return std::nullopt;
+    return guarded_tool_registry_->consume_mode_request();
+}
+
 void McpReadOnlyConnectorAdapter::publish_event(McpEnvelope envelope) {
     store_->upsert_from_event(envelope);
     if (!event_sink_)

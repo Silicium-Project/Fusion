@@ -160,6 +160,15 @@ When `--mcp-enable-tools` (or `SILICIUM_MCP_ENABLE_TOOLS=1`) is enabled:
 
 Any other action is rejected with `error_code=action_not_allowed`.
 
+### Guarded control tools (current behavior)
+
+With `--mcp-enable-tools`:
+
+- `tools.silicium.interrupt_action` -> registers an interrupt request consumed by the worker loop before the next task starts.
+- `tools.silicium.select_runner_mode` with `{"mode":"auto|emu|native|dynamo"}` -> registers a mode switch consumed before the next task.
+
+Invalid payloads return `error_code=bad_request`.
+
 ## References
 
 - `worker/include/worker/backend/BackendConnector.hpp`

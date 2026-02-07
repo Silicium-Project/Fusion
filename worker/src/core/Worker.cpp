@@ -86,6 +86,14 @@ Worker::Worker(WorkerConfig config, WorkerDependencies dependencies)
     register_action_handlers();
 }
 
+void Worker::set_mode(ExecutionMode mode) {
+    config_.mode = mode;
+}
+
+ExecutionMode Worker::mode() const {
+    return config_.mode;
+}
+
 void Worker::reset_state() {
     memory_lut_.clear();
     register_state_.clear();
@@ -213,6 +221,7 @@ TaskReport Worker::run_backend(const TaskContext& context,
         context.summary_path,
         context.asm_path,
         context.binary_path,
+        config_.mode,
         task.inputs,
         register_state_,
         snapshot_memory_state(),

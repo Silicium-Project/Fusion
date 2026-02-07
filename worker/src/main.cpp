@@ -515,6 +515,44 @@ int main(int argc, char** argv) {
             log_stream.open(opts.log_path, std::ios::out | std::ios::trunc);
 
         for (const auto& task : tasks) {
+            if (mcp_adapter) {
+                if (auto requested_mode = mcp_adapter->consume_mode_request(); requested_mode.has_value()) {
+                    runner.set_mode(*requested_mode);
+                    report.mode = *requested_mode;
+                }
+                if (mcp_adapter->consume_interrupt_request()) {
+                    worker::TaskReport interrupted;
+                    interrupted.partition_id = task.partition_id;
+                    interrupted.inputs = task.inputs;
+                    interrupted.result.success = false;
+                    interrupted.result.error_message = "interrupted_by_mcp";
+                    interrupted.telemetry.task_id = task.partition_id;
+                    interrupted.telemetry.type = task.type;
+                    interrupted.telemetry.status = "interrupted";
+                    interrupted.telemetry.linux_policy =
+                        worker::fragment_os_action_to_string(config.fragment_os_policy.linux);
+                    interrupted.telemetry.windows_policy =
+                        worker::fragment_os_action_to_string(config.fragment_os_policy.windows);
+                    interrupted.telemetry.wsl_enabled = config.wsl_enabled;
+                    interrupted.telemetry.wsl_decision = config.wsl_decision;
+                    interrupted.telemetry.mcp_enabled = config.mcp.read_only;
+                    const auto metrics = mcp_adapter->snapshot_metrics();
+                    interrupted.telemetry.mcp_tool_calls = metrics.calls;
+                    interrupted.telemetry.mcp_tool_failures = metrics.failures;
+                    interrupted.telemetry.mcp_last_tool_latency_ms = metrics.last_latency_ms;
+                    interrupted.telemetry.mcp_last_error = metrics.last_error;
+                    report.tasks.push_back(std::move(interrupted));
+                    mcp_adapter->publish_worker_report(report);
+                    if (!config.mcp.export_dir.empty()) {
+                        const std::string current_task_id =
+                            report.tasks.back().telemetry.task_id.empty()
+                                ? report.tasks.back().partition_id
+                                : report.tasks.back().telemetry.task_id;
+                        export_mcp_resources(*mcp_adapter, config.mcp.export_dir, current_task_id);
+                    }
+                    break;
+                }
+            }
             try {
                 auto task_report = runner.execute(task);
                 if (mcp_adapter) {

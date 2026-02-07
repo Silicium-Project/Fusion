@@ -23,7 +23,7 @@ DirectConnector::DirectConnector(const WorkerConfig& config)
 DirectConnector::~DirectConnector() = default;
 
 fragment::ExecutionResult DirectConnector::execute(const BackendRequest& request) {
-    switch (config_.mode) {
+    switch (request.mode) {
         case ExecutionMode::Dynamo:
             if (dynamo_) return dynamo_->execute(request);
             throw std::runtime_error("Mode Dynamo requis mais runner indisponible");

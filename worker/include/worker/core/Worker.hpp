@@ -42,6 +42,8 @@ public:
                         const std::string& summary_path,
                         const Task& task);
 
+    void set_mode(ExecutionMode mode);
+    ExecutionMode mode() const;
     void reset_state();
     void load_initial_memory(const std::vector<MemorySnapshot>& snapshots);
     void add_observer(std::shared_ptr<TaskObserver> observer);

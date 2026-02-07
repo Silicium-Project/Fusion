@@ -6,6 +6,7 @@
 #include "partition/PartitionSummary.hpp"
 #include "core/Config.hpp"
 
+#include "worker/core/WorkerConfig.hpp"
 #include "worker/state/MemorySnapshot.hpp"
 #include "worker/task/TaskTypes.hpp"
 
@@ -16,6 +17,7 @@ struct BackendRequest {
     std::string summary_path;
     std::string asm_path;
     std::string binary_path;
+    ExecutionMode mode = ExecutionMode::Auto;
     RegisterState inputs;
     RegisterState register_state;
     std::vector<MemorySnapshot> memory_state;

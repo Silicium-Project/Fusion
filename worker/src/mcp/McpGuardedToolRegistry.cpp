@@ -90,6 +90,18 @@ std::string parse_json_string_field(const std::string& json_payload,
     return out;
 }
 
+std::optional<ExecutionMode> parse_execution_mode_name(const std::string& value) {
+    if (value == "auto")
+        return ExecutionMode::Auto;
+    if (value == "emu")
+        return ExecutionMode::Emulator;
+    if (value == "native")
+        return ExecutionMode::Native;
+    if (value == "dynamo")
+        return ExecutionMode::Dynamo;
+    return std::nullopt;
+}
+
 }  // namespace
 
 McpGuardedToolRegistry::McpGuardedToolRegistry(std::shared_ptr<IMcpResourceStore> store,
@@ -160,9 +172,38 @@ std::string McpGuardedToolRegistry::execute_tool(const std::string& tool_name,
             }
         }
     } else if (tool_name == std::string(kToolInterruptAction)) {
-        response = tool_ack_json(tool_name, "not_implemented", "interrupt path is not wired yet");
+        {
+            std::lock_guard<std::mutex> lock(control_mutex_);
+            interrupt_requested_ = true;
+        }
+        response = tool_ack_json(tool_name, "accepted", "interrupt request registered");
     } else if (tool_name == std::string(kToolSelectRunnerMode)) {
-        response = tool_ack_json(tool_name, "not_implemented", "runner mode selection is not wired yet");
+        try {
+            bool has_mode = false;
+            const std::string mode_name = parse_json_string_field(args_json, "mode", &has_mode);
+            if (!has_mode || mode_name.empty()) {
+                failed = true;
+                failure_code = "bad_request";
+                response = tool_error_json(failure_code, tool_name, "missing mode");
+            } else {
+                const auto mode = parse_execution_mode_name(mode_name);
+                if (!mode.has_value()) {
+                    failed = true;
+                    failure_code = "bad_request";
+                    response = tool_error_json(failure_code, tool_name, "unsupported mode");
+                } else {
+                    {
+                        std::lock_guard<std::mutex> lock(control_mutex_);
+                        requested_mode_ = *mode;
+                    }
+                    response = tool_ack_json(tool_name, "accepted", "runner mode request registered");
+                }
+            }
+        } catch (const std::runtime_error&) {
+            failed = true;
+            failure_code = "bad_request";
+            response = tool_error_json(failure_code, tool_name, "invalid args_json");
+        }
     } else {
         failed = true;
         failure_code = "unsupported_tool";
@@ -191,6 +232,20 @@ std::string McpGuardedToolRegistry::execute_tool(const std::string& tool_name,
 McpToolMetrics McpGuardedToolRegistry::snapshot_metrics() const {
     std::lock_guard<std::mutex> lock(metrics_mutex_);
     return metrics_;
+}
+
+bool McpGuardedToolRegistry::consume_interrupt_request() {
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    const bool value = interrupt_requested_;
+    interrupt_requested_ = false;
+    return value;
+}
+
+std::optional<ExecutionMode> McpGuardedToolRegistry::consume_mode_request() {
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    const auto out = requested_mode_;
+    requested_mode_.reset();
+    return out;
 }
 
 }  // namespace worker::mcp
