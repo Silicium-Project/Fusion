@@ -7,6 +7,7 @@
 
 #include "worker/io/Reporter.hpp"
 #include "worker/mcp/InMemoryMcpResourceStore.hpp"
+#include "worker/mcp/McpGuardedToolRegistry.hpp"
 #include "worker/task/TaskTypes.hpp"
 
 namespace worker::mcp {
@@ -69,14 +70,17 @@ McpReadOnlyConnectorAdapter::McpReadOnlyConnectorAdapter()
 : McpReadOnlyConnectorAdapter(std::make_shared<InMemoryMcpResourceStore>()) {}
 
 McpReadOnlyConnectorAdapter::McpReadOnlyConnectorAdapter(std::shared_ptr<IMcpResourceStore> store)
-: McpReadOnlyConnectorAdapter(std::move(store), nullptr) {}
+: McpReadOnlyConnectorAdapter(std::move(store), nullptr, {}) {}
 
 McpReadOnlyConnectorAdapter::McpReadOnlyConnectorAdapter(std::shared_ptr<IMcpResourceStore> store,
-                                                         std::shared_ptr<IMcpEventSink> event_sink)
+                                                         std::shared_ptr<IMcpEventSink> event_sink,
+                                                         McpReadOnlyAdapterOptions options)
 : store_(std::move(store)),
   event_sink_(std::move(event_sink)) {
     if (!store_)
         store_ = std::make_shared<InMemoryMcpResourceStore>();
+    tool_registry_ = std::make_shared<McpGuardedToolRegistry>(
+        store_, McpToolRegistryConfig{options.enable_control_tools});
 }
 
 void McpReadOnlyConnectorAdapter::on_task_start(const TaskContext& context, const Task& task) {
@@ -149,15 +153,17 @@ std::string McpReadOnlyConnectorAdapter::read_resource(const std::string& resour
 
 std::string McpReadOnlyConnectorAdapter::execute_tool(const std::string& tool_name,
                                                       const std::string& args_json) {
-    std::ostringstream oss;
-    oss << "{"
-        << "\"schema_version\":" << kMcpEnvelopeSchemaVersion << ","
-        << "\"error_code\":\"read_only_adapter\","
-        << "\"tool\":\"" << escape_json(tool_name) << "\","
-        << "\"message\":\"tool execution is disabled in read-only mode\","
-        << "\"args_json\":\"" << escape_json(args_json) << "\""
-        << "}";
-    return oss.str();
+    if (!tool_registry_) {
+        std::ostringstream oss;
+        oss << "{"
+            << "\"schema_version\":" << kMcpEnvelopeSchemaVersion << ","
+            << "\"error_code\":\"tool_registry_unavailable\","
+            << "\"tool\":\"" << escape_json(tool_name) << "\","
+            << "\"message\":\"tool registry is unavailable\""
+            << "}";
+        return oss.str();
+    }
+    return tool_registry_->execute_tool(tool_name, args_json);
 }
 
 void McpReadOnlyConnectorAdapter::publish_event(McpEnvelope envelope) {

@@ -97,7 +97,31 @@ TEST(McpConnectorAdapter, PublishesWorkerStatusResource) {
 TEST(McpConnectorAdapter, ToolExecutionIsDisabledInReadOnlyMode) {
     McpReadOnlyConnectorAdapter adapter;
     const std::string out = adapter.execute_tool(std::string(kToolRunAction), "{}");
-    EXPECT_NE(std::string::npos, out.find("\"error_code\":\"read_only_adapter\""));
+    EXPECT_NE(std::string::npos, out.find("\"error_code\":\"tool_disabled\""));
+    EXPECT_NE(std::string::npos, out.find("\"tool\":\"tools.silicium.run_action\""));
+}
+
+TEST(McpConnectorAdapter, GetHealthToolReturnsStatusResource) {
+    McpReadOnlyConnectorAdapter adapter;
+
+    WorkerReport report;
+    report.summary_path = "/tmp/summary-health.json";
+    report.mode = ExecutionMode::Emulator;
+    report.tasks.push_back(make_success_report("p3", "task-3"));
+    adapter.publish_worker_report(report);
+
+    const std::string out = adapter.execute_tool(std::string(kToolGetHealth), "{}");
+    EXPECT_NE(std::string::npos, out.find("\"summary\":\"/tmp/summary-health.json\""));
+    EXPECT_NE(std::string::npos, out.find("\"task_id\":\"task-3\""));
+}
+
+TEST(McpConnectorAdapter, ControlToolsCanBeGuardEnabled) {
+    McpReadOnlyAdapterOptions options{};
+    options.enable_control_tools = true;
+    McpReadOnlyConnectorAdapter adapter(nullptr, nullptr, options);
+
+    const std::string out = adapter.execute_tool(std::string(kToolRunAction), "{\"action\":\"check\"}");
+    EXPECT_NE(std::string::npos, out.find("\"status\":\"not_implemented\""));
     EXPECT_NE(std::string::npos, out.find("\"tool\":\"tools.silicium.run_action\""));
 }
 

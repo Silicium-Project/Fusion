@@ -84,6 +84,7 @@ struct WslTriggerConfig {
 
 struct McpConfig {
     bool read_only = false;
+    bool enable_control_tools = false;
     std::string export_dir;
 };
 

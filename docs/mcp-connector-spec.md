@@ -138,9 +138,11 @@ Error envelope:
 ## Current Runtime Hook (step 3)
 
 - Worker CLI flag: `--mcp-readonly`
+- Worker CLI flag: `--mcp-enable-tools` (guarded control tools)
 - Optional export: `--mcp-export-dir <path>`
 - Environment equivalents:
 - `SILICIUM_MCP_READONLY=1`
+- `SILICIUM_MCP_ENABLE_TOOLS=1`
 - `SILICIUM_MCP_EXPORT_DIR=<path>`
 - Exported snapshots:
 - `status.current.json`

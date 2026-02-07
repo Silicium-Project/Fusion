@@ -57,6 +57,8 @@ struct CliOptions {
     bool wsl_available_jobs_set = false;
     bool mcp_read_only = false;
     bool mcp_read_only_set = false;
+    bool mcp_enable_tools = false;
+    bool mcp_enable_tools_set = false;
     std::string mcp_export_dir;
 };
 
@@ -92,6 +94,7 @@ void print_usage(const char* prog) {
               << "  --wsl-reward <v>    Récompense actuelle (entrée trigger)\n"
               << "  --wsl-available-jobs <n> Jobs disponibles (entrée trigger)\n"
               << "  --mcp-readonly      Active l'adapter MCP read-only (resources uniquement)\n"
+              << "  --mcp-enable-tools  Active les tools MCP de controle (guarded)\n"
               << "  --mcp-export-dir <path> Exporte les resources MCP dans ce dossier\n"
               << "  --runner-binary <path> Binaire runner (backend Dynamo)\n"
               << "  --runner-launcher <path> Script/commande pour lancer le runner Dynamo\n"
@@ -203,6 +206,11 @@ CliOptions parse_cli(int argc, char** argv) {
             opts.wsl_available_jobs = std::stoull(argv[i]);
             opts.wsl_available_jobs_set = true;
         } else if (arg == "--mcp-readonly") {
+            opts.mcp_read_only = true;
+            opts.mcp_read_only_set = true;
+        } else if (arg == "--mcp-enable-tools") {
+            opts.mcp_enable_tools = true;
+            opts.mcp_enable_tools_set = true;
             opts.mcp_read_only = true;
             opts.mcp_read_only_set = true;
         } else if (arg == "--mcp-export-dir") {
@@ -329,6 +337,17 @@ CliOptions parse_cli(int argc, char** argv) {
             opts.mcp_read_only_set = true;
         }
     }
+    if (!opts.mcp_enable_tools_set) {
+        if (const char* env = std::getenv("SILICIUM_MCP_ENABLE_TOOLS")) {
+            std::string value(env);
+            if (value == "1" || value == "true" || value == "yes") {
+                opts.mcp_enable_tools = true;
+                opts.mcp_enable_tools_set = true;
+                opts.mcp_read_only = true;
+                opts.mcp_read_only_set = true;
+            }
+        }
+    }
 
     return opts;
 }
@@ -440,6 +459,7 @@ int main(int argc, char** argv) {
             config.wsl_triggers.available_jobs = opts.wsl_available_jobs;
         config.wsl_enabled = worker::evaluate_wsl_triggers(config.wsl_triggers, &config.wsl_decision);
         config.mcp.read_only = opts.mcp_read_only;
+        config.mcp.enable_control_tools = opts.mcp_enable_tools;
         config.mcp.export_dir = opts.mcp_export_dir;
         if (!opts.runner_binary.empty())
             config.dynamo_runner_binary = opts.runner_binary;
@@ -479,7 +499,10 @@ int main(int argc, char** argv) {
         worker::JobRunner runner(opts.summary_path, config);
         std::shared_ptr<worker::mcp::McpReadOnlyConnectorAdapter> mcp_adapter;
         if (config.mcp.read_only) {
-            mcp_adapter = std::make_shared<worker::mcp::McpReadOnlyConnectorAdapter>();
+            worker::mcp::McpReadOnlyAdapterOptions mcp_options{};
+            mcp_options.enable_control_tools = config.mcp.enable_control_tools;
+            mcp_adapter = std::make_shared<worker::mcp::McpReadOnlyConnectorAdapter>(
+                nullptr, nullptr, mcp_options);
             runner.add_observer(mcp_adapter);
         }
 

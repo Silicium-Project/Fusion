@@ -5,15 +5,21 @@
 #include <string>
 
 #include "worker/mcp/IMcpConnectorAdapter.hpp"
+#include "worker/mcp/McpGuardedToolRegistry.hpp"
 
 namespace worker::mcp {
+
+struct McpReadOnlyAdapterOptions {
+    bool enable_control_tools = false;
+};
 
 class McpReadOnlyConnectorAdapter : public IMcpConnectorAdapter {
 public:
     McpReadOnlyConnectorAdapter();
     explicit McpReadOnlyConnectorAdapter(std::shared_ptr<IMcpResourceStore> store);
     McpReadOnlyConnectorAdapter(std::shared_ptr<IMcpResourceStore> store,
-                                std::shared_ptr<IMcpEventSink> event_sink);
+                                std::shared_ptr<IMcpEventSink> event_sink,
+                                McpReadOnlyAdapterOptions options = {});
 
     void on_task_start(const TaskContext& context, const Task& task) override;
     void on_task_finish(const TaskContext& context, const Task& task, const TaskReport& report) override;
@@ -24,6 +30,7 @@ public:
 private:
     std::shared_ptr<IMcpResourceStore> store_;
     std::shared_ptr<IMcpEventSink> event_sink_;
+    std::shared_ptr<IMcpToolRegistry> tool_registry_;
     std::atomic<std::uint64_t> sequence_{0};
 
     void publish_event(McpEnvelope envelope);
