@@ -55,6 +55,7 @@
     },
     "pytest_core_linux": {
       "description": "Linux/CI Python tests subset including entrypoint scenarios.",
+      "platforms": ["linux"],
       "command": [
         "python3",
         "-m",
@@ -71,6 +72,7 @@
     },
     "splitter_demo": {
       "description": "Representative local compute flow (splitter demo + executor).",
+      "platforms": ["linux"],
       "command": [
         "make",
         "-C",

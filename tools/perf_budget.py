@@ -31,6 +31,7 @@ class Profile:
     budgets: dict[str, float]
     timeout_sec: float | None
     env: dict[str, str]
+    platforms: list[str]
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,8 @@ class ProfileResult:
     violations: list[str]
     metrics_unavailable: list[str]
     timed_out: bool
+    skipped: bool
+    skip_reason: str | None
 
 
 def parse_time_marker(stderr: str) -> dict[str, float] | None:
@@ -116,6 +119,25 @@ def load_profiles(path: Path) -> dict[str, Profile]:
                 raise ValueError(
                     f"Invalid profile '{key}' in {path}: positive finite value expected for 'timeout_sec'"
                 )
+        platforms_raw = value.get("platforms")
+        platforms: list[str] = []
+        if platforms_raw is not None:
+            if not isinstance(platforms_raw, list) or not platforms_raw:
+                raise ValueError(
+                    f"Invalid profile '{key}' in {path}: non-empty list expected for 'platforms'"
+                )
+            allowed = {"windows", "linux", "darwin"}
+            for item in platforms_raw:
+                if not isinstance(item, str):
+                    raise ValueError(
+                        f"Invalid profile '{key}' in {path}: string entries expected in 'platforms'"
+                    )
+                item_norm = item.strip().lower()
+                if item_norm not in allowed:
+                    raise ValueError(
+                        f"Invalid profile '{key}' in {path}: unsupported platform '{item}'"
+                    )
+                platforms.append(item_norm)
         numeric_budgets: dict[str, float] = {}
         for metric in ("wall_sec", "cpu_sec", "max_rss_kib"):
             raw = budgets.get(metric)
@@ -138,6 +160,7 @@ def load_profiles(path: Path) -> dict[str, Profile]:
             budgets=numeric_budgets,
             timeout_sec=timeout_sec,
             env=normalized_env,
+            platforms=platforms,
         )
     return profiles
 
@@ -169,9 +192,46 @@ def normalize_command_for_platform(command: list[str], repo_root: Path) -> list[
     return command
 
 
+def host_platform_tag() -> str:
+    if os.name == "nt":
+        return "windows"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    if sys.platform == "darwin":
+        return "darwin"
+    return sys.platform.lower()
+
+
+def profile_is_supported(profile: Profile) -> tuple[bool, str | None]:
+    if not profile.platforms:
+        return True, None
+    host = host_platform_tag()
+    if host in profile.platforms:
+        return True, None
+    return False, f"host '{host}' not in supported platforms: {', '.join(profile.platforms)}"
+
+
 def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
-    time_bin = shutil.which("time") or ("/usr/bin/time" if Path("/usr/bin/time").exists() else None)
+    supported, reason = profile_is_supported(profile)
     effective_command = normalize_command_for_platform(profile.command, repo_root)
+    if not supported:
+        return ProfileResult(
+            key=profile.key,
+            command=effective_command,
+            description=profile.description,
+            return_code=0,
+            wall_sec=None,
+            cpu_sec=None,
+            max_rss_kib=None,
+            budgets=profile.budgets,
+            violations=[],
+            metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
+            timed_out=False,
+            skipped=True,
+            skip_reason=reason,
+        )
+
+    time_bin = shutil.which("time") or ("/usr/bin/time" if Path("/usr/bin/time").exists() else None)
     command_line = " ".join(shlex.quote(part) for part in effective_command)
     print(f">> [{profile.key}] {command_line}")
 
@@ -236,6 +296,8 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             violations=[f"timeout: exceeded {profile.timeout_sec:.3f}s"],
             metrics_unavailable=["cpu_sec", "max_rss_kib"],
             timed_out=True,
+            skipped=False,
+            skip_reason=None,
         )
     except FileNotFoundError as exc:
         return ProfileResult(
@@ -250,6 +312,8 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             violations=[f"command_not_found: {getattr(exc, 'filename', None) or str(exc)}"],
             metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
             timed_out=False,
+            skipped=False,
+            skip_reason=None,
         )
     except OSError as exc:
         return ProfileResult(
@@ -264,6 +328,8 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             violations=[f"command_launch_error: {getattr(exc, 'filename', None) or str(exc)}"],
             metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
             timed_out=False,
+            skipped=False,
+            skip_reason=None,
         )
 
     metrics = {
@@ -287,6 +353,8 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
         violations=violations,
         metrics_unavailable=unavailable,
         timed_out=False,
+        skipped=False,
+        skip_reason=None,
     )
 
 
@@ -300,7 +368,10 @@ def format_metric(name: str, value: float | None, limit: float | None) -> str:
 
 
 def print_result(result: ProfileResult) -> None:
-    status = "PASS" if not result.violations else "FAIL"
+    if result.skipped:
+        status = "SKIP"
+    else:
+        status = "PASS" if not result.violations else "FAIL"
     print(f"\n[{status}] {result.key}")
     if result.description:
         print(f"  desc: {result.description}")
@@ -317,6 +388,8 @@ def print_result(result: ProfileResult) -> None:
     )
     if result.metrics_unavailable:
         print(f"  note: unavailable metrics -> {', '.join(result.metrics_unavailable)}")
+    if result.skipped and result.skip_reason:
+        print(f"  note: skipped -> {result.skip_reason}")
     if result.timed_out:
         print("  note: command timed out")
     if result.violations:
@@ -342,6 +415,8 @@ def serialize_results(results: list[ProfileResult], budget_file: Path) -> dict[s
                 "violations": item.violations,
                 "metrics_unavailable": item.metrics_unavailable,
                 "timed_out": item.timed_out,
+                "skipped": item.skipped,
+                "skip_reason": item.skip_reason,
             }
         )
     return {
@@ -436,6 +511,8 @@ def main(argv: list[str] | None = None) -> int:
                 violations=[f"internal_error: {exc.__class__.__name__}: {exc}"],
                 metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
                 timed_out=False,
+                skipped=False,
+                skip_reason=None,
             )
         print_result(result)
         results.append(result)
@@ -451,8 +528,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(f"\nWrote report to {output_path}")
 
-    total_violations = sum(1 for item in results if item.violations)
-    print(f"\nProfiles run: {len(results)}, failures: {total_violations}")
+    executed_results = [item for item in results if not item.skipped]
+    total_violations = sum(1 for item in executed_results if item.violations)
+    total_skipped = sum(1 for item in results if item.skipped)
+    print(f"\nProfiles run: {len(executed_results)}, skipped: {total_skipped}, failures: {total_violations}")
     if args.strict and total_violations:
         return 1
     return 0

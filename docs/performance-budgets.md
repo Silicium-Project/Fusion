@@ -16,6 +16,7 @@ Budget file: `docs/performance-budgets.json`
 
 - `timeout_sec`: hard timeout for a profile command (returns `exit_code=124` when exceeded).
 - `env`: extra environment variables injected only for that profile command.
+- `platforms`: optional allow-list (`windows`, `linux`, `darwin`); unsupported hosts are marked `SKIP`.
 
 ## Profiles
 

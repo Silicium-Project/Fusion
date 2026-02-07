@@ -53,6 +53,7 @@ def test_load_profiles(tmp_path: Path) -> None:
                         "command": ["echo", "ok"],
                         "timeout_sec": 5.0,
                         "env": {"A": "B"},
+                        "platforms": ["linux", "windows"],
                         "budgets": {"wall_sec": 1.0, "cpu_sec": 2.0, "max_rss_kib": 3.0},
                     }
                 },
@@ -67,6 +68,7 @@ def test_load_profiles(tmp_path: Path) -> None:
     assert profile.budgets["wall_sec"] == 1.0
     assert profile.timeout_sec == 5.0
     assert profile.env["A"] == "B"
+    assert profile.platforms == ["linux", "windows"]
 
 
 def test_run_profile_command_not_found() -> None:
@@ -77,6 +79,7 @@ def test_run_profile_command_not_found() -> None:
         budgets={"wall_sec": 1.0},
         timeout_sec=None,
         env={},
+        platforms=[],
     )
     result = perf_budget.run_profile(profile, Path.cwd())
     assert result.return_code == 127
@@ -135,9 +138,28 @@ def test_run_profile_timeout() -> None:
         budgets={"wall_sec": 1.0},
         timeout_sec=0.05,
         env={},
+        platforms=[],
     )
     result = perf_budget.run_profile(profile, Path.cwd())
     assert result.return_code == 124
     assert result.timed_out is True
     assert result.violations
     assert result.violations[0].startswith("timeout:")
+
+
+def test_run_profile_skips_when_platform_not_supported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(perf_budget.os, "name", "nt")
+    profile = perf_budget.Profile(
+        key="linux_only",
+        description="linux profile",
+        command=["python", "-c", "print('ok')"],
+        budgets={"wall_sec": 1.0},
+        timeout_sec=None,
+        env={},
+        platforms=["linux"],
+    )
+    result = perf_budget.run_profile(profile, Path.cwd())
+    assert result.skipped is True
+    assert result.return_code == 0
+    assert result.violations == []
+    assert result.skip_reason is not None
