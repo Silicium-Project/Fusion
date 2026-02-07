@@ -33,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 SPLITTER_DIR = REPO_ROOT / "splitter"
 EXECUTOR_DIR = REPO_ROOT / "executor"
 WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
+PERF_BUDGET_FILE = REPO_ROOT / "docs" / "performance-budgets.json"
 CORE_CHECK_IMAGE_DEFAULT = "silicium/core-check:lite"
 CORE_CHECK_DOCKERFILE = REPO_ROOT / "docker" / "core-check" / "Dockerfile"
 LEDGER_SUFFIX = {
@@ -74,6 +75,7 @@ SERVICE_CHOICES = sorted(
 TOP_LEVEL_COMMANDS = [
     "test",
     "check",
+    "budget",
     "smoke",
     "tools",
     "clean",
@@ -919,6 +921,27 @@ def cmd_shell(_: argparse.Namespace, ctx: Context) -> None:
     launch_shell(ctx)
 
 
+def cmd_budget(args: argparse.Namespace, ctx: Context) -> None:
+    script = REPO_ROOT / "tools" / "perf_budget.py"
+    if not script.exists():
+        print(f"Budget script not found: {script}")
+        sys.exit(1)
+    cmd = [sys.executable, str(script)]
+    if args.budget_file:
+        cmd += ["--budget-file", args.budget_file]
+    if args.list:
+        cmd.append("--list")
+    if args.all:
+        cmd.append("--all")
+    for profile in args.profile:
+        cmd += ["--profile", profile]
+    if args.strict:
+        cmd.append("--strict")
+    if args.output:
+        cmd += ["--output", args.output]
+    run(cmd)
+
+
 def configure_test(parser: argparse.ArgumentParser) -> None:
     pass
 
@@ -991,6 +1014,39 @@ def configure_check(parser: argparse.ArgumentParser) -> None:
         help="Limit memory for docker-run core checks (e.g. 4g, 4096m).",
     )
     parser.set_defaults(docker=None)
+
+
+def configure_budget(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--budget-file",
+        default=str(PERF_BUDGET_FILE),
+        help="Path to the performance budget JSON file.",
+    )
+    parser.add_argument(
+        "--profile",
+        action="append",
+        default=[],
+        help="Profile key to run (repeatable).",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run all budget profiles.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Return non-zero when a budget is exceeded.",
+    )
+    parser.add_argument(
+        "--output",
+        help="Optional JSON report output path.",
+    )
+    parser.add_argument(
+        "--list",
+        action="store_true",
+        help="List available profiles and exit.",
+    )
 
 
 def configure_smoke(parser: argparse.ArgumentParser) -> None:
@@ -1226,6 +1282,7 @@ def build_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.add(CommandSpec("test", "Install dev deps and run pytest", configure_test, cmd_test))
     registry.add(CommandSpec("check", "Run core stability checks", configure_check, cmd_check))
+    registry.add(CommandSpec("budget", "Measure command metrics against budgets", configure_budget, cmd_budget))
     registry.add(CommandSpec("smoke", "Run the proxy smoke test", configure_smoke, cmd_smoke))
     registry.add(CommandSpec("clean", "Clean caches/ledgers", configure_clean, cmd_clean))
     registry.add(CommandSpec("start", "Start a Silicium service", configure_start, cmd_start))
@@ -1406,6 +1463,26 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             "--python",
         ]
         return [flag for flag in flags if flag.startswith(text)]
+    if first == "budget":
+        flags = [
+            "--budget-file",
+            "--profile",
+            "--all",
+            "--strict",
+            "--output",
+            "--list",
+        ]
+        if text.startswith("-"):
+            return [flag for flag in flags if flag.startswith(text)]
+        if tokens[-1] == "--profile" and PERF_BUDGET_FILE.exists():
+            try:
+                raw = json.loads(PERF_BUDGET_FILE.read_text(encoding="utf-8"))
+                profiles = raw.get("profiles", {})
+                if isinstance(profiles, dict):
+                    return [str(key) for key in profiles.keys() if str(key).startswith(text)]
+            except Exception:
+                return []
+        return []
     if first == "history":
         if len(tokens) == 1:
             return [cmd for cmd in SUBCOMMANDS["history"] if cmd.startswith(text)]

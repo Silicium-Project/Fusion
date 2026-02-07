@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "notes": "cpu_sec is used as a proxy for energy usage. Budgets are baseline guardrails, not hard performance claims.",
+  "profiles": {
+    "check_worker_quick": {
+      "description": "Core check focused on worker path, no docker optional checks.",
+      "command": [
+        "./silicium",
+        "check",
+        "--scope",
+        "worker",
+        "--jobs",
+        "2",
+        "--no-docker"
+      ],
+      "budgets": {
+        "wall_sec": 480.0,
+        "cpu_sec": 1200.0,
+        "max_rss_kib": 3500000.0
+      }
+    },
+    "pytest_core": {
+      "description": "Cross-platform Python tests subset used as test budget sentinel.",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_manifests.py"
+      ],
+      "budgets": {
+        "wall_sec": 180.0,
+        "cpu_sec": 400.0,
+        "max_rss_kib": 1500000.0
+      }
+    },
+    "splitter_demo": {
+      "description": "Representative local compute flow (splitter demo + executor).",
+      "command": [
+        "make",
+        "-C",
+        "splitter",
+        "demo"
+      ],
+      "budgets": {
+        "wall_sec": 600.0,
+        "cpu_sec": 1500.0,
+        "max_rss_kib": 4000000.0
+      }
+    }
+  }
+}
