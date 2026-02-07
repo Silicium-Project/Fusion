@@ -57,3 +57,15 @@ Use `--json` for a machine-readable report.
 - Never overwrite existing files in place.
 - Always add new versioned fixtures and update the index.
 - Deletions require a documented reason and explicit removal from the index.
+
+## Determinism and reproducibility
+
+- `deterministic`: expected identical output for identical inputs.
+- `bounded_stochastic`: output may vary but stays within an explicit tolerance.
+- `stochastic`: non-deterministic, must include a rationale and `non_deterministic` tag.
+
+For deterministic workloads, fixtures should include:
+
+- A fixed preset (`presets.default`) with stable inputs.
+- A reproducibility note in the workload README.
+ - A `./silicium workload repro --workload <id>` check entry.

@@ -22,6 +22,7 @@ taxonomy:
     - monte_carlo
     - cpu
     - stochastic
+    - non_deterministic
 artifacts:
   input:
     - name: config

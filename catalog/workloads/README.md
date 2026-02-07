@@ -95,6 +95,7 @@ Required fields under `taxonomy`:
 - `complexity`: `low` | `medium` | `high`
 - `resource_profile`: `cpu_light` | `cpu_heavy` | `gpu_optional` | `gpu_required` | `memory_light` | `memory_heavy`
 - `determinism`: `deterministic` | `bounded_stochastic` | `stochastic`
+- `bounded_stochastic` and `stochastic` workloads must include the `stochastic` tag. `stochastic` workloads should include `non_deterministic`.
 - `tags`: approved tag list from the v1 schema (`workload-manifest-v1.schema.json`)
 
 CLI selection filters:

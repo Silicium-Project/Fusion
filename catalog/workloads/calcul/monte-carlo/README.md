@@ -5,6 +5,7 @@
 - **Sorties** : `chunk_<id>.json` (estimations, intervalles de confiance) + `chunk_<id>.hash`.
 - **Exigences** : CPU vectorisé, possibilité d'utiliser GPU CUDA/OpenCL.  
 - **Vérification** : profil `verification/statistical-consistency` (rejeu sur un sous-ensemble) + `verification/hash-audit` pour l'intégrité.
+- **Déterminisme** : charge **stochastique**. Les sorties peuvent varier, même à seed constant, selon l'implémentation et la plate-forme. Tag `non_deterministic` requis.
 
 Commande type :
 

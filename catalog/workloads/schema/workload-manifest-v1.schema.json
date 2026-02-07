@@ -170,12 +170,78 @@
               "spotcheck",
               "statistics",
               "stochastic",
+              "non_deterministic",
               "transcoding",
               "verification"
             ]
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "determinism": {
+                "const": "deterministic"
+              }
+            },
+            "required": [
+              "determinism"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tags": {
+                "contains": {
+                  "const": "deterministic"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "determinism": {
+                "const": "bounded_stochastic"
+              }
+            },
+            "required": [
+              "determinism"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tags": {
+                "contains": {
+                  "const": "stochastic"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "determinism": {
+                "const": "stochastic"
+              }
+            },
+            "required": [
+              "determinism"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tags": {
+                "contains": {
+                  "const": "stochastic"
+                }
+              }
+            }
+          }
+        }
+      ]
     },
     "artifacts": {
       "type": "object",

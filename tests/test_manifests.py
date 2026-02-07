@@ -46,3 +46,13 @@ def test_manifest_schema(manifest_path: Path) -> None:
     assert taxonomy.get("category") == category, (
         f"{manifest_path} taxonomy.category must match folder category '{category}'"
     )
+    determinism = taxonomy.get("determinism")
+    tags = taxonomy.get("tags", [])
+    if determinism == "deterministic":
+        assert "deterministic" in tags, (
+            f"{manifest_path} deterministic workloads must include deterministic tag"
+        )
+    if determinism in {"bounded_stochastic", "stochastic"}:
+        assert "stochastic" in tags, (
+            f"{manifest_path} stochastic workloads must include stochastic tag"
+        )

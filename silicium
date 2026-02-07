@@ -143,6 +143,7 @@ WORKLOAD_TAXONOMY_TAGS = [
     "math",
     "ml",
     "monte_carlo",
+    "non_deterministic",
     "rendering",
     "simulation",
     "spotcheck",
@@ -824,6 +825,17 @@ def _workload_matches_filters(data: dict[str, Any], args: argparse.Namespace) ->
             return False
         tag_set = {str(item) for item in tags}
         if not set(args.tag).issubset(tag_set):
+            return False
+    determinism = taxonomy.get("determinism")
+    if determinism == "deterministic":
+        tags = taxonomy.get("tags", [])
+        tag_set = {str(item) for item in tags} if isinstance(tags, list) else set()
+        if "deterministic" not in tag_set:
+            return False
+    if determinism in {"bounded_stochastic", "stochastic"}:
+        tags = taxonomy.get("tags", [])
+        tag_set = {str(item) for item in tags} if isinstance(tags, list) else set()
+        if "stochastic" not in tag_set:
             return False
     return True
 
