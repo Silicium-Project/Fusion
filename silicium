@@ -39,6 +39,7 @@ WORKLOAD_SCHEMA_FILE = WORKLOAD_ROOT / "schema" / "workload-manifest-v1.schema.j
 WORKLOAD_FIXTURES_DIR = WORKLOAD_ROOT / "fixtures"
 WORKLOAD_FIXTURES_INDEX = WORKLOAD_FIXTURES_DIR / "fixtures.json"
 WORKLOAD_ALIGNMENT_POLICY = WORKLOAD_FIXTURES_DIR / "alignment-policy.json"
+WORKLOAD_GOLDEN_CORPUS_FILE = WORKLOAD_ROOT / "golden" / "golden-corpus.json"
 PERF_BUDGET_FILE = REPO_ROOT / "docs" / "performance-budgets.json"
 CORE_CHECK_IMAGE_DEFAULT = "silicium/core-check:lite"
 CORE_CHECK_DOCKERFILE = REPO_ROOT / "docker" / "core-check" / "Dockerfile"
@@ -105,7 +106,7 @@ SUBCOMMANDS = {
     "ledger": ["list", "wipe", "export", "import"],
     "history": ["show", "clear"],
     "clean": ["cache", "ledgers", "all"],
-    "workload": ["list", "show", "queue", "lint", "fixtures", "alignment"],
+    "workload": ["list", "show", "queue", "lint", "fixtures", "alignment", "golden"],
 }
 WORKLOAD_TAXONOMY_CATEGORIES = ["calcul", "verification"]
 WORKLOAD_TAXONOMY_DOMAINS = [
@@ -1243,6 +1244,162 @@ def cmd_workload_alignment(args: argparse.Namespace, ctx: Context) -> None:
         sys.exit(1)
 
 
+def _golden_corpus(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        print(f"Golden corpus not found: {path}")
+        sys.exit(1)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        print(f"Failed to parse golden corpus: {exc}")
+        sys.exit(1)
+    if not isinstance(raw, dict):
+        print("Golden corpus must be a JSON object.")
+        sys.exit(1)
+    return raw
+
+
+def _golden_case_hash(plan: dict[str, Any], manifest_data: dict[str, Any]) -> str:
+    material = {
+        "engine": manifest_data.get("engine"),
+        "command": plan.get("command"),
+        "artifacts": manifest_data.get("artifacts", {}),
+        "preset": plan.get("preset"),
+    }
+    encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def workload_golden_report(corpus_path: Path) -> dict[str, Any]:
+    corpus = _golden_corpus(corpus_path)
+    cases = corpus.get("cases", [])
+    report: dict[str, Any] = {
+        "checked": 0,
+        "passed": 0,
+        "failed": 0,
+        "errors": [],
+    }
+    if not isinstance(cases, list):
+        report["errors"].append(
+            {"case": "<corpus>", "field": "cases", "message": "cases must be a list"}
+        )
+        report["failed"] += 1
+        return report
+
+    entries = _workload_entries()
+    by_id: dict[str, tuple[str, dict[str, Any]]] = {}
+    for path, data in entries:
+        workload_id = data.get("id")
+        if isinstance(workload_id, str) and workload_id:
+            by_id[workload_id] = (path, data)
+
+    for case in cases:
+        report["checked"] += 1
+        if not isinstance(case, dict):
+            report["failed"] += 1
+            report["errors"].append(
+                {"case": "<unknown>", "field": "<root>", "message": "case must be object"}
+            )
+            continue
+        workload_id = case.get("id")
+        preset = case.get("preset")
+        expected_hash = case.get("expected_plan_hash")
+        case_name = str(workload_id) if workload_id else "<unknown>"
+        if not isinstance(workload_id, str) or not workload_id:
+            report["failed"] += 1
+            report["errors"].append(
+                {"case": case_name, "field": "id", "message": "id is required"}
+            )
+            continue
+        if not isinstance(expected_hash, str) or not expected_hash:
+            report["failed"] += 1
+            report["errors"].append(
+                {
+                    "case": case_name,
+                    "field": "expected_plan_hash",
+                    "message": "expected_plan_hash is required",
+                }
+            )
+            continue
+        if workload_id not in by_id:
+            report["failed"] += 1
+            report["errors"].append(
+                {
+                    "case": case_name,
+                    "field": "id",
+                    "message": f"workload id not found: {workload_id}",
+                }
+            )
+            continue
+
+        path, manifest_data = by_id[workload_id]
+        taxonomy = manifest_data.get("taxonomy", {})
+        determinism = taxonomy.get("determinism") if isinstance(taxonomy, dict) else None
+        if determinism != "deterministic":
+            report["failed"] += 1
+            report["errors"].append(
+                {
+                    "case": case_name,
+                    "field": "taxonomy.determinism",
+                    "message": f"golden corpus requires deterministic workload, got {determinism}",
+                }
+            )
+            continue
+
+        manifest_path = WORKLOAD_ROOT / path / "manifest.yaml"
+        plan = _workload_dry_run_plan(
+            path,
+            manifest_path,
+            manifest_data,
+            preset if isinstance(preset, str) else None,
+        )
+        missing = plan.get("missing_variables", [])
+        if isinstance(missing, list) and missing:
+            report["failed"] += 1
+            report["errors"].append(
+                {
+                    "case": case_name,
+                    "field": "missing_variables",
+                    "message": f"missing variables: {', '.join(str(value) for value in missing)}",
+                }
+            )
+            continue
+        actual_hash = _golden_case_hash(plan, manifest_data)
+        if actual_hash != expected_hash:
+            report["failed"] += 1
+            report["errors"].append(
+                {
+                    "case": case_name,
+                    "field": "expected_plan_hash",
+                    "message": "plan hash mismatch",
+                    "expected": expected_hash,
+                    "actual": actual_hash,
+                }
+            )
+            continue
+        report["passed"] += 1
+    return report
+
+
+def cmd_workload_golden(args: argparse.Namespace, ctx: Context) -> None:
+    corpus_path = Path(args.corpus).resolve()
+    report = workload_golden_report(corpus_path)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print(
+            f"Golden corpus: {report['passed']} passed, "
+            f"{report['failed']} failed, {report['checked']} checked."
+        )
+        for error in report["errors"]:
+            case = error.get("case", "<unknown>")
+            field = error.get("field", "<root>")
+            message = error.get("message", "error")
+            print(f"[ERROR] {case} field={field} message={message}")
+    if args.strict and report["failed"] > 0:
+        sys.exit(1)
+
+
 def workload_paths() -> list[str]:
     if not WORKLOAD_ROOT.exists():
         return []
@@ -1934,6 +2091,24 @@ def configure_workload_alignment(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def configure_workload_golden(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--corpus",
+        default=str(WORKLOAD_GOLDEN_CORPUS_FILE),
+        help="Path to golden corpus JSON file.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output golden validation report as JSON.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail when any golden case check fails.",
+    )
+
+
 def configure_history_show(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--tail",
@@ -2096,6 +2271,12 @@ def build_registry() -> CommandRegistry:
                     "Report workload to fixture alignment",
                     configure_workload_alignment,
                     cmd_workload_alignment,
+                ),
+                CommandSpec(
+                    "golden",
+                    "Validate deterministic golden corpus",
+                    configure_workload_golden,
+                    cmd_workload_golden,
                 ),
             ],
         )
@@ -2333,6 +2514,11 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             return []
         if sub == "alignment":
             opts = ["--json", "--strict"]
+            if text.startswith("-"):
+                return [opt for opt in opts if opt.startswith(text)]
+            return []
+        if sub == "golden":
+            opts = ["--corpus", "--json", "--strict"]
             if text.startswith("-"):
                 return [opt for opt in opts if opt.startswith(text)]
             return []

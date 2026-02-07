@@ -50,6 +50,9 @@ jobs:
       - name: Lint workload manifests
         run: ./silicium workload lint
 
+      - name: Validate golden corpus
+        run: ./silicium workload golden --strict
+
       - name: Run test suite via silicium CLI
         run: ./silicium test
 

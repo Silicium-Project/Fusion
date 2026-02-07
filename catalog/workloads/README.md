@@ -63,6 +63,7 @@ Schéma de référence versionné:
 - `presets` fournit des variables d'exemple pour `workload show --dry-run`.
 - `catalog/workloads/fixtures/fixtures.json` référence les fixtures versionnées.
 - Politique d'alignement workloads/golden corpus: `docs/workload-alignment-policy.md`
+- Politique golden corpus: `docs/golden-corpus.md`
 
 Les devices téléchargent le manifest correspondant au job pour savoir quel binaire lancer et comment reporter la preuve (hash, logs, temps).
 
@@ -106,3 +107,4 @@ CLI selection filters:
 - `./silicium workload show calcul/libm/sin --domain math --tag libm`
 - `./silicium workload fixtures --json`
 - `./silicium workload alignment --json`
+- `./silicium workload golden --strict`
