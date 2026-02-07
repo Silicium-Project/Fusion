@@ -2,6 +2,10 @@
 
 This contract defines how user-facing strings are keyed, stored, and resolved.
 
+Developer workflow:
+
+- `docs/i18n/README.md`
+
 ## Scope
 
 - CLI/TUI Python strings.
