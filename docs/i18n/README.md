@@ -70,13 +70,60 @@ Run from repository root:
 python tools/check_utf8.py
 python -m pytest tests/test_i18n_contract.py
 python tools/check_i18n_locales.py --strict
+python tools/check_i18n_hardcoded_strings.py --strict
 ```
 
 Optional pre-check:
 
 ```bash
-python -m pytest tests/test_i18n_contract.py tests/test_i18n_locales.py tests/test_workload_cli.py
+python -m pytest tests/test_i18n_contract.py tests/test_i18n_locales.py tests/test_i18n_hardcoded_strings.py tests/test_workload_cli.py
 ```
+
+## Hard-coded string gate
+
+Covered paths:
+
+- `silicium`
+- `tools/tui`
+- `worker/src`, `worker/include`
+- `executor/src`, `executor/include`
+- `splitter/src`, `splitter/include`
+- `viewer/src`
+- `infra`
+
+Local run against last commit:
+
+```bash
+python tools/check_i18n_hardcoded_strings.py --strict
+```
+
+CI run against merge/push diff:
+
+```bash
+python tools/check_i18n_hardcoded_strings.py --base <base_sha> --head <head_sha> --strict
+```
+
+### Suppression format
+
+- Inline suppression on added line: `i18n:ignore`
+- File-based suppression: `docs/i18n/hardcoded-exceptions.json`
+- Entry format:
+
+```json
+[
+  {
+    "path_regex": "^silicium$",
+    "literal_regex": "^Internal non-localized token$",
+    "reason": "Machine-only diagnostic marker"
+  }
+]
+```
+
+### Review policy for suppressions
+
+- Every suppression must include a clear `reason`.
+- Prefer key extraction over suppression.
+- Suppressions are reviewed like code and must be minimal.
 
 ## Common failure modes
 

@@ -50,6 +50,18 @@ jobs:
       - name: Validate i18n locale packs
         run: python tools/check_i18n_locales.py --strict
 
+      - name: Validate hard-coded i18n strings (changed lines)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          BASE_SHA="${PR_BASE_SHA:-$PUSH_BASE_SHA}"
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="HEAD~1"
+          fi
+          python tools/check_i18n_hardcoded_strings.py --base "$BASE_SHA" --head "$HEAD_SHA" --strict
+
       - name: Lint workload manifests
         run: ./silicium workload lint
 
