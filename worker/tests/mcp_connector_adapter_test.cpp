@@ -120,9 +120,51 @@ TEST(McpConnectorAdapter, ControlToolsCanBeGuardEnabled) {
     options.enable_control_tools = true;
     McpReadOnlyConnectorAdapter adapter(nullptr, nullptr, options);
 
-    const std::string out = adapter.execute_tool(std::string(kToolRunAction), "{\"action\":\"check\"}");
+    const std::string out = adapter.execute_tool(std::string(kToolInterruptAction), "{\"task_id\":\"t\"}");
     EXPECT_NE(std::string::npos, out.find("\"status\":\"not_implemented\""));
-    EXPECT_NE(std::string::npos, out.find("\"tool\":\"tools.silicium.run_action\""));
+    EXPECT_NE(std::string::npos, out.find("\"tool\":\"tools.silicium.interrupt_action\""));
+}
+
+TEST(McpConnectorAdapter, RunActionAllowlistReadsResources) {
+    McpReadOnlyAdapterOptions options{};
+    options.enable_control_tools = true;
+    McpReadOnlyConnectorAdapter adapter(nullptr, nullptr, options);
+
+    WorkerReport report;
+    report.summary_path = "/tmp/summary-allowlist.json";
+    report.mode = ExecutionMode::Emulator;
+    report.tasks.push_back(make_success_report("p4", "task-allow"));
+    adapter.publish_worker_report(report);
+    const TaskContext context = make_context("p4");
+    const Task task = make_binary_task("task-allow");
+    adapter.on_task_finish(context, task, make_success_report("p4", "task-allow"));
+
+    const std::string health = adapter.execute_tool(
+        std::string(kToolRunAction), "{\"action\":\"get_health_snapshot\"}");
+    EXPECT_NE(std::string::npos, health.find("\"summary\":\"/tmp/summary-allowlist.json\""));
+
+    const std::string recent = adapter.execute_tool(
+        std::string(kToolRunAction), "{\"action\":\"read_recent_reports\"}");
+    EXPECT_NE(std::string::npos, recent.find("\"events\""));
+
+    const std::string result = adapter.execute_tool(
+        std::string(kToolRunAction), "{\"action\":\"read_task_result\",\"task_id\":\"task-allow\"}");
+    EXPECT_NE(std::string::npos, result.find("\"success\":true"));
+}
+
+TEST(McpConnectorAdapter, ToolMetricsTrackFailures) {
+    McpReadOnlyAdapterOptions options{};
+    options.enable_control_tools = true;
+    McpReadOnlyConnectorAdapter adapter(nullptr, nullptr, options);
+
+    const std::string err = adapter.execute_tool(
+        std::string(kToolRunAction), "{\"action\":\"not_allowed\"}");
+    EXPECT_NE(std::string::npos, err.find("\"error_code\":\"action_not_allowed\""));
+
+    const auto metrics = adapter.snapshot_metrics();
+    EXPECT_GE(metrics.calls, 1u);
+    EXPECT_GE(metrics.failures, 1u);
+    EXPECT_EQ("action_not_allowed", metrics.last_error);
 }
 
 TEST(McpConnectorAdapter, MissingResultReturnsNotFound) {

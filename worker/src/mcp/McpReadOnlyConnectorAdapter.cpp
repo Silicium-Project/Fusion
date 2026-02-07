@@ -79,8 +79,9 @@ McpReadOnlyConnectorAdapter::McpReadOnlyConnectorAdapter(std::shared_ptr<IMcpRes
   event_sink_(std::move(event_sink)) {
     if (!store_)
         store_ = std::make_shared<InMemoryMcpResourceStore>();
-    tool_registry_ = std::make_shared<McpGuardedToolRegistry>(
+    guarded_tool_registry_ = std::make_shared<McpGuardedToolRegistry>(
         store_, McpToolRegistryConfig{options.enable_control_tools});
+    tool_registry_ = guarded_tool_registry_;
 }
 
 void McpReadOnlyConnectorAdapter::on_task_start(const TaskContext& context, const Task& task) {
@@ -164,6 +165,12 @@ std::string McpReadOnlyConnectorAdapter::execute_tool(const std::string& tool_na
         return oss.str();
     }
     return tool_registry_->execute_tool(tool_name, args_json);
+}
+
+McpAdapterMetrics McpReadOnlyConnectorAdapter::snapshot_metrics() const {
+    if (!guarded_tool_registry_)
+        return {};
+    return guarded_tool_registry_->snapshot_metrics();
 }
 
 void McpReadOnlyConnectorAdapter::publish_event(McpEnvelope envelope) {

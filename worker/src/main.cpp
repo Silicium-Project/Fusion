@@ -517,6 +517,14 @@ int main(int argc, char** argv) {
         for (const auto& task : tasks) {
             try {
                 auto task_report = runner.execute(task);
+                if (mcp_adapter) {
+                    const auto metrics = mcp_adapter->snapshot_metrics();
+                    task_report.telemetry.mcp_enabled = config.mcp.read_only;
+                    task_report.telemetry.mcp_tool_calls = metrics.calls;
+                    task_report.telemetry.mcp_tool_failures = metrics.failures;
+                    task_report.telemetry.mcp_last_tool_latency_ms = metrics.last_latency_ms;
+                    task_report.telemetry.mcp_last_error = metrics.last_error;
+                }
                 if (log_stream) {
                     if (!task_report.result.program_stdout.empty())
                         log_stream << task_report.result.program_stdout;
@@ -547,6 +555,14 @@ int main(int argc, char** argv) {
                 failure.telemetry.windows_policy = worker::fragment_os_action_to_string(config.fragment_os_policy.windows);
                 failure.telemetry.wsl_enabled = config.wsl_enabled;
                 failure.telemetry.wsl_decision = config.wsl_decision;
+                if (mcp_adapter) {
+                    const auto metrics = mcp_adapter->snapshot_metrics();
+                    failure.telemetry.mcp_enabled = config.mcp.read_only;
+                    failure.telemetry.mcp_tool_calls = metrics.calls;
+                    failure.telemetry.mcp_tool_failures = metrics.failures;
+                    failure.telemetry.mcp_last_tool_latency_ms = metrics.last_latency_ms;
+                    failure.telemetry.mcp_last_error = metrics.last_error;
+                }
                 report.tasks.push_back(std::move(failure));
                 if (mcp_adapter) {
                     mcp_adapter->publish_worker_report(report);

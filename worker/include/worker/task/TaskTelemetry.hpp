@@ -19,6 +19,11 @@ struct TaskTelemetry {
     std::string windows_policy;
     bool wsl_enabled = false;
     std::string wsl_decision;
+    bool mcp_enabled = false;
+    std::uint64_t mcp_tool_calls = 0;
+    std::uint64_t mcp_tool_failures = 0;
+    std::uint64_t mcp_last_tool_latency_ms = 0;
+    std::string mcp_last_error;
     std::vector<std::string> warnings;
 };
 

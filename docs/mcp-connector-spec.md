@@ -150,6 +150,16 @@ Error envelope:
 - `result.<task_id>.json`
 - `logs.<task_id>.json`
 
+### Guarded `run_action` allowlist
+
+When `--mcp-enable-tools` (or `SILICIUM_MCP_ENABLE_TOOLS=1`) is enabled:
+
+- `action=get_health_snapshot` -> returns `resources://silicium/status/current`
+- `action=read_recent_reports` -> returns `resources://silicium/reports/recent`
+- `action=read_task_result` + `task_id` -> returns `resources://silicium/results/by-task/{task_id}`
+
+Any other action is rejected with `error_code=action_not_allowed`.
+
 ## References
 
 - `worker/include/worker/backend/BackendConnector.hpp`

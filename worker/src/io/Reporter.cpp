@@ -115,6 +115,13 @@ void Reporter::emit_text(const WorkerReport& report) {
         *stream_ << "Policy: linux=" << linux_policy << " windows=" << windows_policy << "\n";
         *stream_ << "WSL: " << (telemetry.wsl_enabled ? "on" : "off")
                  << " (" << wsl_decision << ")\n";
+        *stream_ << "MCP: " << (telemetry.mcp_enabled ? "on" : "off")
+                 << " calls=" << telemetry.mcp_tool_calls
+                 << " failures=" << telemetry.mcp_tool_failures
+                 << " last_latency_ms=" << telemetry.mcp_last_tool_latency_ms;
+        if (!telemetry.mcp_last_error.empty())
+            *stream_ << " last_error=" << telemetry.mcp_last_error;
+        *stream_ << "\n";
         *stream_ << "Partition: " << task.partition_id << "\n";
         *stream_ << "Entrées:";
         if (task.inputs.empty())
@@ -210,6 +217,11 @@ void Reporter::emit_json(const WorkerReport& report) {
         oss << "\"windows_policy\":\"" << escape_json(windows_policy) << "\",";
         oss << "\"wsl_enabled\":" << (telemetry.wsl_enabled ? "true" : "false") << ",";
         oss << "\"wsl_decision\":\"" << escape_json(wsl_decision) << "\",";
+        oss << "\"mcp_enabled\":" << (telemetry.mcp_enabled ? "true" : "false") << ",";
+        oss << "\"mcp_tool_calls\":" << telemetry.mcp_tool_calls << ",";
+        oss << "\"mcp_tool_failures\":" << telemetry.mcp_tool_failures << ",";
+        oss << "\"mcp_last_tool_latency_ms\":" << telemetry.mcp_last_tool_latency_ms << ",";
+        oss << "\"mcp_last_error\":\"" << escape_json(telemetry.mcp_last_error) << "\",";
         oss << "\"warnings\":[";
         for (size_t w = 0; w < telemetry.warnings.size(); ++w) {
             if (w)

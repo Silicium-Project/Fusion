@@ -48,6 +48,7 @@ static void fill_telemetry(TaskReport& report,
     report.telemetry.windows_policy = fragment_os_action_to_string(config.fragment_os_policy.windows);
     report.telemetry.wsl_enabled = config.wsl_enabled;
     report.telemetry.wsl_decision = config.wsl_decision;
+    report.telemetry.mcp_enabled = config.mcp.read_only;
 }
 
 FragmentOsAction Worker::resolve_fragment_action(const fragment::PartitionInfo& partition) const {

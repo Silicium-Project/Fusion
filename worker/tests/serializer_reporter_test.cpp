@@ -172,6 +172,9 @@ TEST(Reporter, EmitsJsonAndText) {
     EXPECT_NE(std::string::npos, json_out.find("\"windows_policy\":\"skip\""));
     EXPECT_NE(std::string::npos, json_out.find("\"wsl_enabled\":true"));
     EXPECT_NE(std::string::npos, json_out.find("\"wsl_decision\":\"enabled\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_enabled\":false"));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_calls\":0"));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_failures\":0"));
     EXPECT_NE(std::string::npos, json_out.find("\"partition\":\"part-1\""));
     EXPECT_NE(std::string::npos, json_out.find("\"fd_outputs\":{\"5\""));
     EXPECT_NE(std::string::npos, json_out.find("\"alias\":\"out\""));
@@ -250,6 +253,9 @@ TEST(Reporter, DefaultsTelemetryFields) {
     EXPECT_NE(std::string::npos, json_out.find("\"windows_policy\""));
     EXPECT_NE(std::string::npos, json_out.find("\"wsl_enabled\""));
     EXPECT_NE(std::string::npos, json_out.find("\"wsl_decision\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_enabled\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_calls\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_failures\""));
 }
 
 TEST(TaskSerializer, DeserializeTaskPayloadRejectsBadMemoryHex) {

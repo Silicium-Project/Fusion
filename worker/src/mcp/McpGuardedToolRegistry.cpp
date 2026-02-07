@@ -1,6 +1,9 @@
 #include "worker/mcp/McpGuardedToolRegistry.hpp"
 
+#include <chrono>
+#include <jansson.h>
 #include <sstream>
+#include <stdexcept>
 
 namespace worker::mcp {
 
@@ -47,6 +50,46 @@ std::string tool_error_json(const std::string& code,
     return oss.str();
 }
 
+std::string tool_ack_json(const std::string& tool_name,
+                          const std::string& status,
+                          const std::string& message) {
+    std::ostringstream oss;
+    oss << "{"
+        << "\"schema_version\":" << kMcpEnvelopeSchemaVersion << ","
+        << "\"tool\":\"" << escape_json(tool_name) << "\","
+        << "\"status\":\"" << escape_json(status) << "\","
+        << "\"message\":\"" << escape_json(message) << "\""
+        << "}";
+    return oss.str();
+}
+
+std::string parse_json_string_field(const std::string& json_payload,
+                                    const char* key,
+                                    bool* has_field = nullptr) {
+    if (has_field)
+        *has_field = false;
+    if (json_payload.empty())
+        return "";
+
+    json_error_t err;
+    json_t* root = json_loads(json_payload.c_str(), 0, &err);
+    if (!root)
+        throw std::runtime_error("invalid_json");
+    if (!json_is_object(root)) {
+        json_decref(root);
+        throw std::runtime_error("invalid_json_object");
+    }
+
+    std::string out;
+    if (json_t* value = json_object_get(root, key); json_is_string(value)) {
+        out = json_string_value(value);
+        if (has_field)
+            *has_field = true;
+    }
+    json_decref(root);
+    return out;
+}
+
 }  // namespace
 
 McpGuardedToolRegistry::McpGuardedToolRegistry(std::shared_ptr<IMcpResourceStore> store,
@@ -56,28 +99,98 @@ McpGuardedToolRegistry::McpGuardedToolRegistry(std::shared_ptr<IMcpResourceStore
 
 std::string McpGuardedToolRegistry::execute_tool(const std::string& tool_name,
                                                  const std::string& args_json) {
-    if (!is_supported_tool(tool_name))
-        return tool_error_json("unsupported_tool", tool_name, "tool is not supported");
+    const auto start = std::chrono::steady_clock::now();
+    bool failed = false;
+    std::string failure_code;
+    std::string response;
 
-    if (tool_name == std::string(kToolGetHealth)) {
-        if (!store_)
-            return tool_error_json("store_unavailable", tool_name, "resource store is unavailable");
-        return store_->read_resource(std::string(kResourceStatusCurrent));
+    if (!is_supported_tool(tool_name)) {
+        failed = true;
+        failure_code = "unsupported_tool";
+        response = tool_error_json(failure_code, tool_name, "tool is not supported");
+    } else if (tool_name == std::string(kToolGetHealth)) {
+        if (!store_) {
+            failed = true;
+            failure_code = "store_unavailable";
+            response = tool_error_json(failure_code, tool_name, "resource store is unavailable");
+        } else {
+            response = store_->read_resource(std::string(kResourceStatusCurrent));
+        }
+    } else if (!config_.enable_control_tools) {
+        failed = true;
+        failure_code = "tool_disabled";
+        response = tool_error_json(failure_code, tool_name, "control tools are disabled by policy");
+    } else if (tool_name == std::string(kToolRunAction)) {
+        if (!store_) {
+            failed = true;
+            failure_code = "store_unavailable";
+            response = tool_error_json(failure_code, tool_name, "resource store is unavailable");
+        } else {
+            try {
+                bool has_action = false;
+                const std::string action = parse_json_string_field(args_json, "action", &has_action);
+                if (!has_action || action.empty()) {
+                    failed = true;
+                    failure_code = "bad_request";
+                    response = tool_error_json(failure_code, tool_name, "missing action");
+                } else if (action == "get_health_snapshot") {
+                    response = store_->read_resource(std::string(kResourceStatusCurrent));
+                } else if (action == "read_recent_reports") {
+                    response = store_->read_resource(std::string(kResourceReportsRecent));
+                } else if (action == "read_task_result") {
+                    bool has_task_id = false;
+                    const std::string task_id = parse_json_string_field(args_json, "task_id", &has_task_id);
+                    if (!has_task_id || task_id.empty()) {
+                        failed = true;
+                        failure_code = "bad_request";
+                        response = tool_error_json(failure_code, tool_name, "missing task_id");
+                    } else {
+                        response = store_->read_resource(
+                            std::string("resources://silicium/results/by-task/") + task_id);
+                    }
+                } else {
+                    failed = true;
+                    failure_code = "action_not_allowed";
+                    response = tool_error_json(failure_code, tool_name, "action is not allowed");
+                }
+            } catch (const std::runtime_error&) {
+                failed = true;
+                failure_code = "bad_request";
+                response = tool_error_json(failure_code, tool_name, "invalid args_json");
+            }
+        }
+    } else if (tool_name == std::string(kToolInterruptAction)) {
+        response = tool_ack_json(tool_name, "not_implemented", "interrupt path is not wired yet");
+    } else if (tool_name == std::string(kToolSelectRunnerMode)) {
+        response = tool_ack_json(tool_name, "not_implemented", "runner mode selection is not wired yet");
+    } else {
+        failed = true;
+        failure_code = "unsupported_tool";
+        response = tool_error_json(failure_code, tool_name, "tool is not supported");
     }
 
-    if (!config_.enable_control_tools)
-        return tool_error_json("tool_disabled", tool_name, "control tools are disabled by policy");
+    const auto end = std::chrono::steady_clock::now();
+    const auto latency_ms = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count());
 
-    std::ostringstream oss;
-    oss << "{"
-        << "\"schema_version\":" << kMcpEnvelopeSchemaVersion << ","
-        << "\"tool\":\"" << escape_json(tool_name) << "\","
-        << "\"accepted\":false,"
-        << "\"status\":\"not_implemented\","
-        << "\"message\":\"control path is enabled but not wired yet\","
-        << "\"args_json\":\"" << escape_json(args_json) << "\""
-        << "}";
-    return oss.str();
+    {
+        std::lock_guard<std::mutex> lock(metrics_mutex_);
+        ++metrics_.calls;
+        metrics_.last_latency_ms = latency_ms;
+        if (failed) {
+            ++metrics_.failures;
+            metrics_.last_error = failure_code;
+        } else {
+            metrics_.last_error.clear();
+        }
+    }
+
+    return response;
+}
+
+McpToolMetrics McpGuardedToolRegistry::snapshot_metrics() const {
+    std::lock_guard<std::mutex> lock(metrics_mutex_);
+    return metrics_;
 }
 
 }  // namespace worker::mcp
