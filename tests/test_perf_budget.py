@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tools import perf_budget
 
 
@@ -74,3 +76,35 @@ def test_run_profile_command_not_found() -> None:
     assert result.return_code == 127
     assert result.violations
     assert result.violations[0].startswith("command_not_found:")
+
+
+def test_parse_args_rejects_all_with_profile() -> None:
+    with pytest.raises(SystemExit) as exc:
+        perf_budget.parse_args(["--all", "--profile", "quick"])
+    assert exc.value.code == 2
+
+
+def test_main_handles_internal_profile_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    budget_file = tmp_path / "budgets.json"
+    budget_file.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "profiles": {
+                    "quick": {
+                        "description": "Quick path",
+                        "command": ["echo", "ok"],
+                        "budgets": {"wall_sec": 1.0},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def _explode(*_args: object, **_kwargs: object) -> perf_budget.ProfileResult:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(perf_budget, "run_profile", _explode)
+    code = perf_budget.main(["--budget-file", str(budget_file), "--profile", "quick", "--strict"])
+    assert code == 1

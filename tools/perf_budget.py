@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import shlex
 import shutil
 import subprocess
@@ -64,22 +65,44 @@ def parse_time_marker(stderr: str) -> dict[str, float] | None:
 
 def load_profiles(path: Path) -> dict[str, Profile]:
     content = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(content, dict):
+        raise ValueError(f"Invalid budget file format in {path}: root object expected")
     profiles_data = content.get("profiles", {})
+    if not isinstance(profiles_data, dict):
+        raise ValueError(f"Invalid budget file format in {path}: 'profiles' object expected")
     profiles: dict[str, Profile] = {}
     for key, value in profiles_data.items():
+        if not isinstance(key, str) or not key:
+            raise ValueError(f"Invalid profile key in {path}: non-empty string expected")
         if not isinstance(value, dict):
-            continue
+            raise ValueError(f"Invalid profile '{key}' in {path}: object expected")
         command = value.get("command", [])
-        if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
-            continue
+        if (
+            not isinstance(command, list)
+            or not command
+            or not all(isinstance(item, str) and item.strip() for item in command)
+        ):
+            raise ValueError(
+                f"Invalid profile '{key}' in {path}: non-empty string list expected for 'command'"
+            )
         budgets = value.get("budgets", {})
         if not isinstance(budgets, dict):
-            budgets = {}
+            raise ValueError(f"Invalid profile '{key}' in {path}: object expected for 'budgets'")
         numeric_budgets: dict[str, float] = {}
         for metric in ("wall_sec", "cpu_sec", "max_rss_kib"):
             raw = budgets.get(metric)
-            if isinstance(raw, (int, float)):
-                numeric_budgets[metric] = float(raw)
+            if raw is None:
+                continue
+            if not isinstance(raw, (int, float)):
+                raise ValueError(
+                    f"Invalid profile '{key}' in {path}: numeric expected for budget '{metric}'"
+                )
+            value_num = float(raw)
+            if not math.isfinite(value_num) or value_num < 0:
+                raise ValueError(
+                    f"Invalid profile '{key}' in {path}: non-negative finite value expected for '{metric}'"
+                )
+            numeric_budgets[metric] = value_num
         profiles[key] = Profile(
             key=key,
             description=str(value.get("description", "")).strip(),
@@ -151,7 +174,20 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             cpu_sec=None,
             max_rss_kib=None,
             budgets=profile.budgets,
-            violations=[f"command_not_found: {exc.filename}"],
+            violations=[f"command_not_found: {getattr(exc, 'filename', None) or str(exc)}"],
+            metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
+        )
+    except OSError as exc:
+        return ProfileResult(
+            key=profile.key,
+            command=profile.command,
+            description=profile.description,
+            return_code=127,
+            wall_sec=None,
+            cpu_sec=None,
+            max_rss_kib=None,
+            budgets=profile.budgets,
+            violations=[f"command_launch_error: {getattr(exc, 'filename', None) or str(exc)}"],
             metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
         )
 
@@ -236,20 +272,21 @@ def serialize_results(results: list[ProfileResult], budget_file: Path) -> dict[s
     }
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run budgeted performance checks.")
     parser.add_argument(
         "--budget-file",
         default=str(DEFAULT_BUDGET_FILE),
         help="Path to performance budget JSON.",
     )
-    parser.add_argument(
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
         "--profile",
         action="append",
         default=[],
         help="Profile key to run (repeatable).",
     )
-    parser.add_argument(
+    selection.add_argument(
         "--all",
         action="store_true",
         help="Run all profiles from the budget file.",
@@ -268,17 +305,21 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="List available profiles and exit.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     budget_file = Path(args.budget_file)
     if not budget_file.exists():
         print(f"Budget file not found: {budget_file}", file=sys.stderr)
         return 2
 
-    profiles = load_profiles(budget_file)
+    try:
+        profiles = load_profiles(budget_file)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"Failed to load budget file '{budget_file}': {exc}", file=sys.stderr)
+        return 2
     if not profiles:
         print(f"No valid profiles found in {budget_file}", file=sys.stderr)
         return 2
@@ -301,15 +342,33 @@ def main() -> int:
 
     results: list[ProfileResult] = []
     for key in selected_keys:
-        result = run_profile(profiles[key], REPO_ROOT)
+        try:
+            result = run_profile(profiles[key], REPO_ROOT)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            result = ProfileResult(
+                key=profiles[key].key,
+                command=profiles[key].command,
+                description=profiles[key].description,
+                return_code=127,
+                wall_sec=None,
+                cpu_sec=None,
+                max_rss_kib=None,
+                budgets=profiles[key].budgets,
+                violations=[f"internal_error: {exc.__class__.__name__}: {exc}"],
+                metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
+            )
         print_result(result)
         results.append(result)
 
     report = serialize_results(results, budget_file)
     if args.output:
         output_path = Path(args.output)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        except OSError as exc:
+            print(f"Failed to write report '{output_path}': {exc}", file=sys.stderr)
+            return 2
         print(f"\nWrote report to {output_path}")
 
     total_violations = sum(1 for item in results if item.violations)

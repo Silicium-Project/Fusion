@@ -926,6 +926,9 @@ def cmd_budget(args: argparse.Namespace, ctx: Context) -> None:
     if not script.exists():
         print(f"Budget script not found: {script}")
         sys.exit(1)
+    if args.all and args.profile:
+        print("Use either --all or --profile (repeatable), not both.")
+        sys.exit(2)
     cmd = [sys.executable, str(script)]
     if args.budget_file:
         cmd += ["--budget-file", args.budget_file]
@@ -1025,13 +1028,14 @@ def configure_budget(parser: argparse.ArgumentParser) -> None:
         default=str(PERF_BUDGET_FILE),
         help="Path to the performance budget JSON file.",
     )
-    parser.add_argument(
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
         "--profile",
         action="append",
         default=[],
         help="Profile key to run (repeatable).",
     )
-    parser.add_argument(
+    selection.add_argument(
         "--all",
         action="store_true",
         help="Run all budget profiles.",
