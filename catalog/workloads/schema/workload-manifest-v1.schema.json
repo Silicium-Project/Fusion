@@ -47,7 +47,8 @@
       "required": [
         "cpu",
         "gpu",
-        "memory"
+        "memory",
+        "budget"
       ],
       "properties": {
         "cpu": {
@@ -61,6 +62,29 @@
         "memory": {
           "type": "string",
           "pattern": "^[0-9]+(Ki|Mi|Gi|Ti)$"
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "wall_sec",
+            "cpu_sec",
+            "memory"
+          ],
+          "properties": {
+            "wall_sec": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "cpu_sec": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "memory": {
+              "type": "string",
+              "pattern": "^[0-9]+(Ki|Mi|Gi|Ti)$"
+            }
+          }
         }
       }
     },

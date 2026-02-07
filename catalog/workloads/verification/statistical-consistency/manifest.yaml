@@ -7,6 +7,10 @@ resources:
   cpu: 2
   gpu: optional
   memory: 2Gi
+  budget:
+    wall_sec: 120
+    cpu_sec: 180
+    memory: 2Gi
 taxonomy:
   category: verification
   domain: statistics

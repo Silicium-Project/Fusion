@@ -7,6 +7,10 @@ resources:
   cpu: 1
   gpu: none
   memory: 256Mi
+  budget:
+    wall_sec: 2
+    cpu_sec: 1
+    memory: 256Mi
 taxonomy:
   category: calcul
   domain: math

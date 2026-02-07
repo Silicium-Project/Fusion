@@ -7,6 +7,10 @@ resources:
   cpu: 4
   gpu: optional
   memory: 4Gi
+  budget:
+    wall_sec: 240
+    cpu_sec: 480
+    memory: 4Gi
 taxonomy:
   category: calcul
   domain: simulation

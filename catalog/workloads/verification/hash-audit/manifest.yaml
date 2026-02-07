@@ -9,6 +9,10 @@ resources:
   cpu: 1
   gpu: none
   memory: 512Mi
+  budget:
+    wall_sec: 10
+    cpu_sec: 8
+    memory: 512Mi
 taxonomy:
   category: verification
   domain: integrity

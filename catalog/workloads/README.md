@@ -27,6 +27,10 @@ resources:
   cpu: 4
   gpu: optional
   memory: 4Gi
+  budget:
+    wall_sec: 300
+    cpu_sec: 450
+    memory: 4Gi
 taxonomy:
   category: calcul
   domain: video
@@ -49,6 +53,7 @@ Schéma de référence versionné:
 
 - `catalog/workloads/schema/workload-manifest-v1.schema.json`
 - `schema_version: 1` est obligatoire dans chaque `manifest.yaml`
+- `resources.budget` fournit l'enveloppe attendue (wall/cpu/memory) pour planifier.
 
 Les devices téléchargent le manifest correspondant au job pour savoir quel binaire lancer et comment reporter la preuve (hash, logs, temps).
 

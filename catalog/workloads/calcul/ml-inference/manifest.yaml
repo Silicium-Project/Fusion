@@ -7,6 +7,10 @@ resources:
   cpu: 4
   gpu: optional
   memory: 6Gi
+  budget:
+    wall_sec: 120
+    cpu_sec: 240
+    memory: 6Gi
 taxonomy:
   category: calcul
   domain: ml

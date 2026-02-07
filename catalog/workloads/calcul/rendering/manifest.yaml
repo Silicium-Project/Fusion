@@ -7,6 +7,10 @@ resources:
   cpu: 8
   gpu: optional
   memory: 8Gi
+  budget:
+    wall_sec: 600
+    cpu_sec: 900
+    memory: 8Gi
 taxonomy:
   category: calcul
   domain: rendering

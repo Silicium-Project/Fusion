@@ -7,6 +7,10 @@ resources:
   cpu: 2
   gpu: none
   memory: 2Gi
+  budget:
+    wall_sec: 120
+    cpu_sec: 200
+    memory: 2Gi
 taxonomy:
   category: calcul
   domain: simulation
