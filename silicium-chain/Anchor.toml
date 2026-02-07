@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-silicium_chain = "3EGvQNx7pEr2nZb2Lm623qxMLhUkU7v6F1xxcLUnpnDF"
+silicium_chain = "9fXMziZ32jdmisi7YgQPG6LWX884AWSs1efpNFrJg6wC"
 
 [registry]
 url = "https://api.apr.dev"
