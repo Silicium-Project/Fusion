@@ -4,7 +4,7 @@ use crate::{
     error::SiliciumError,
     state::{
         fragment::{Fragment, FragmentStatus},
-        job::Job,
+        job::{Job, JobStatus},
     },
 };
 
@@ -15,19 +15,18 @@ pub struct SubmitFragmentResult<'info> {
     pub worker: Signer<'info>,
 
     #[account(
-        constraint = !job.is_finalized @ SiliciumError::JobFinalized
+        constraint = job.status == JobStatus::Open @ SiliciumError::JobFinalized
     )]
     pub job: Account<'info, Job>,
 
     #[account(
-        init,
+        init_if_needed,
         payer = worker,
         space = Fragment::SPACE,
         seeds = [
             b"fragment",
             job.key().as_ref(),
-            &fragment_index.to_le_bytes(),
-            worker.key().as_ref()
+            &fragment_index.to_le_bytes()
         ],
         bump
     )]
@@ -42,12 +41,19 @@ pub fn handler(
     result_hash: [u8; 32],
     proof_ref: [u8; 32],
 ) -> Result<()> {
-    require!(
-        fragment_index < ctx.accounts.job.expected_fragments,
-        SiliciumError::InvalidParams
-    );
+    require!(fragment_index < ctx.accounts.job.expected_fragments, SiliciumError::InvalidParams);
 
     let f = &mut ctx.accounts.fragment;
+
+    if f.job != Pubkey::default() {
+        require!(f.job == ctx.accounts.job.key(), SiliciumError::InvalidParams);
+        require!(f.status != FragmentStatus::Verified, SiliciumError::BadFragmentState);
+
+        if f.status == FragmentStatus::Submitted {
+            require!(f.worker == ctx.accounts.worker.key(), SiliciumError::NotAuthorized);
+        }
+    }
+
     f.job = ctx.accounts.job.key();
     f.fragment_index = fragment_index;
     f.worker = ctx.accounts.worker.key();

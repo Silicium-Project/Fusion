@@ -5,29 +5,32 @@ use crate::{
     error::SiliciumError,
     state::{
         fragment::{Fragment, FragmentStatus},
-        job::Job,
+        job::{Job, JobStatus},
     },
 };
 
 #[derive(Accounts)]
 pub struct VerifyFragment<'info> {
-    /// Vérificateur (MVP: le client)
     pub verifier: Signer<'info>,
 
     #[account(
         mut,
-        constraint = !job.is_finalized @ SiliciumError::JobFinalized,
-        has_one = client @ SiliciumError::NotAuthorized
+        constraint = job.status == JobStatus::Open @ SiliciumError::JobFinalized
     )]
     pub job: Account<'info, Job>,
 
-    /// CHECK: juste utilisé pour has_one / contrôle
-    pub client: UncheckedAccount<'info>,
-
-    #[account(mut)]
+    #[account(
+        mut,
+        seeds = [
+            b"fragment",
+            job.key().as_ref(),
+            &fragment.fragment_index.to_le_bytes()
+        ],
+        bump = fragment.bump
+    )]
     pub fragment: Account<'info, Fragment>,
 
-    /// CHECK: PDA authority of escrow token account
+    /// CHECK: escrow authority PDA
     #[account(
         seeds = [b"escrow_auth", job.key().as_ref()],
         bump = job.escrow_auth_bump
@@ -48,15 +51,9 @@ pub struct VerifyFragment<'info> {
 }
 
 pub fn handler(ctx: Context<VerifyFragment>, verdict: bool) -> Result<()> {
-    // verifier doit être le client (MVP)
     require!(
-        ctx.accounts.verifier.key() == ctx.accounts.job.client,
+        ctx.accounts.verifier.key() == ctx.accounts.job.verifier_authority,
         SiliciumError::NotAuthorized
-    );
-
-    require!(
-        ctx.accounts.fragment.job == ctx.accounts.job.key(),
-        SiliciumError::InvalidParams
     );
 
     require!(
@@ -68,7 +65,6 @@ pub fn handler(ctx: Context<VerifyFragment>, verdict: bool) -> Result<()> {
         let reward = ctx.accounts.job.reward_per_fragment;
         require!(ctx.accounts.escrow.amount >= reward, SiliciumError::InsufficientEscrow);
 
-        // signer seeds (pas de temporaire)
         let job_key = ctx.accounts.job.key();
         let bump = ctx.accounts.job.escrow_auth_bump;
         let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
@@ -85,10 +81,13 @@ pub fn handler(ctx: Context<VerifyFragment>, verdict: bool) -> Result<()> {
         );
         token::transfer(cpi_ctx, reward)?;
 
-        ctx.accounts.job.paid_amount = ctx.accounts.job.paid_amount.saturating_add(reward);
-        ctx.accounts.job.verified_fragments = ctx.accounts.job.verified_fragments.saturating_add(1);
-
+        ctx.accounts.job.paid_amount += reward;
+        ctx.accounts.job.verified_fragments += 1;
         ctx.accounts.fragment.status = FragmentStatus::Verified;
+
+        if ctx.accounts.job.verified_fragments == ctx.accounts.job.expected_fragments {
+            ctx.accounts.job.verified_at_unix = Clock::get()?.unix_timestamp;
+        }
     } else {
         ctx.accounts.fragment.status = FragmentStatus::Rejected;
     }
