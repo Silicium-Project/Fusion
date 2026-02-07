@@ -61,6 +61,7 @@ Schéma de référence versionné:
 - `schema_version: 1` est obligatoire dans chaque `manifest.yaml`
 - `resources.budget` fournit l'enveloppe attendue (wall/cpu/memory) pour planifier.
 - `presets` fournit des variables d'exemple pour `workload show --dry-run`.
+- `catalog/workloads/fixtures/fixtures.json` référence les fixtures versionnées.
 
 Les devices téléchargent le manifest correspondant au job pour savoir quel binaire lancer et comment reporter la preuve (hash, logs, temps).
 
