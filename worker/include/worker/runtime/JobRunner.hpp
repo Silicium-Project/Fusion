@@ -9,6 +9,7 @@
 #include "worker/core/Worker.hpp"
 #include "worker/core/WorkerConfig.hpp"
 #include "worker/task/Task.hpp"
+#include "worker/task/TaskObserver.hpp"
 #include "worker/task/TaskReport.hpp"
 
 namespace worker {
@@ -18,6 +19,7 @@ public:
     JobRunner(std::string summary_path, WorkerConfig config = {});
 
     TaskReport execute(const Task& task);
+    void add_observer(std::shared_ptr<TaskObserver> observer);
     const fragment::PartitionSummary& summary() const;
     const std::string& summary_path() const;
 

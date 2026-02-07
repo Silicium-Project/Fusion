@@ -82,6 +82,11 @@ struct WslTriggerConfig {
     std::uint64_t available_jobs = 0;
 };
 
+struct McpConfig {
+    bool read_only = false;
+    std::string export_dir;
+};
+
 inline bool evaluate_wsl_triggers(const WslTriggerConfig& config, std::string* reason = nullptr) {
     if (!config.enabled) {
         if (reason)
@@ -120,6 +125,7 @@ public:
     std::string native_library = "../executor/libfragment_executor.so";
     FragmentOsPolicy fragment_os_policy{};
     WslTriggerConfig wsl_triggers{};
+    McpConfig mcp{};
     bool wsl_enabled = false;
     std::string wsl_decision;
 };

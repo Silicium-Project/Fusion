@@ -82,6 +82,10 @@ TaskReport JobRunner::execute(const Task& task) {
     return report;
 }
 
+void JobRunner::add_observer(std::shared_ptr<TaskObserver> observer) {
+    worker_.add_observer(std::move(observer));
+}
+
 const fragment::PartitionSummary& JobRunner::summary() const {
     return summary_;
 }

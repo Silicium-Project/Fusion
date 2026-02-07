@@ -135,6 +135,19 @@ Error envelope:
 4. Add telemetry for bridge latency/errors in `TaskTelemetry`.
 5. Enable by default once CI validates linux + windows flows.
 
+## Current Runtime Hook (step 3)
+
+- Worker CLI flag: `--mcp-readonly`
+- Optional export: `--mcp-export-dir <path>`
+- Environment equivalents:
+- `SILICIUM_MCP_READONLY=1`
+- `SILICIUM_MCP_EXPORT_DIR=<path>`
+- Exported snapshots:
+- `status.current.json`
+- `reports.recent.json`
+- `result.<task_id>.json`
+- `logs.<task_id>.json`
+
 ## References
 
 - `worker/include/worker/backend/BackendConnector.hpp`

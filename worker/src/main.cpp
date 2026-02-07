@@ -1,18 +1,22 @@
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <sstream>
-#include <unistd.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <unistd.h>
 
 #include "core/Config.hpp"
 #include "worker/runtime/DynamoRunner.hpp"
 #include "worker/runtime/JobRunner.hpp"
 #include "worker/io/QueueLoader.hpp"
 #include "worker/io/Reporter.hpp"
+#include "worker/mcp/McpReadOnlyConnectorAdapter.hpp"
 #include "partition/PartitionSummary.hpp"
 
 namespace {
@@ -51,6 +55,9 @@ struct CliOptions {
     bool wsl_current_reward_set = false;
     std::uint64_t wsl_available_jobs = 0;
     bool wsl_available_jobs_set = false;
+    bool mcp_read_only = false;
+    bool mcp_read_only_set = false;
+    std::string mcp_export_dir;
 };
 
 void print_usage(const char* prog) {
@@ -84,6 +91,8 @@ void print_usage(const char* prog) {
               << "  --wsl-min-jobs <n>  Seuil minimal de jobs disponibles\n"
               << "  --wsl-reward <v>    Récompense actuelle (entrée trigger)\n"
               << "  --wsl-available-jobs <n> Jobs disponibles (entrée trigger)\n"
+              << "  --mcp-readonly      Active l'adapter MCP read-only (resources uniquement)\n"
+              << "  --mcp-export-dir <path> Exporte les resources MCP dans ce dossier\n"
               << "  --runner-binary <path> Binaire runner (backend Dynamo)\n"
               << "  --runner-launcher <path> Script/commande pour lancer le runner Dynamo\n"
               << "  --help             Affiche cette aide\n";
@@ -193,6 +202,15 @@ CliOptions parse_cli(int argc, char** argv) {
                 throw std::runtime_error("--wsl-available-jobs requiert une valeur");
             opts.wsl_available_jobs = std::stoull(argv[i]);
             opts.wsl_available_jobs_set = true;
+        } else if (arg == "--mcp-readonly") {
+            opts.mcp_read_only = true;
+            opts.mcp_read_only_set = true;
+        } else if (arg == "--mcp-export-dir") {
+            if (++i >= argc)
+                throw std::runtime_error("--mcp-export-dir requiert un chemin");
+            opts.mcp_export_dir = argv[i];
+            opts.mcp_read_only = true;
+            opts.mcp_read_only_set = true;
         } else if (arg == "--runner-binary") {
             if (++i >= argc)
                 throw std::runtime_error("--runner-binary requiert un chemin");
@@ -295,8 +313,68 @@ CliOptions parse_cli(int argc, char** argv) {
             opts.wsl_available_jobs_set = true;
         }
     }
+    if (!opts.mcp_read_only_set) {
+        if (const char* env = std::getenv("SILICIUM_MCP_READONLY")) {
+            std::string value(env);
+            if (value == "1" || value == "true" || value == "yes") {
+                opts.mcp_read_only = true;
+                opts.mcp_read_only_set = true;
+            }
+        }
+    }
+    if (opts.mcp_export_dir.empty()) {
+        if (const char* env = std::getenv("SILICIUM_MCP_EXPORT_DIR")) {
+            opts.mcp_export_dir = env;
+            opts.mcp_read_only = true;
+            opts.mcp_read_only_set = true;
+        }
+    }
 
     return opts;
+}
+
+std::string sanitize_task_id(std::string task_id) {
+    if (task_id.empty())
+        return "task";
+    for (char& ch : task_id) {
+        const bool valid = (ch >= 'a' && ch <= 'z')
+            || (ch >= 'A' && ch <= 'Z')
+            || (ch >= '0' && ch <= '9')
+            || ch == '-'
+            || ch == '_'
+            || ch == '.';
+        if (!valid)
+            ch = '_';
+    }
+    return task_id;
+}
+
+void write_text_file(const std::filesystem::path& path, const std::string& content) {
+    std::ofstream out(path, std::ios::out | std::ios::trunc);
+    if (!out)
+        throw std::runtime_error("Impossible d'ecrire le fichier: " + path.string());
+    out << content;
+}
+
+void export_mcp_resources(const worker::mcp::McpReadOnlyConnectorAdapter& adapter,
+                          const std::filesystem::path& export_dir,
+                          const std::string& task_id) {
+    std::filesystem::create_directories(export_dir);
+
+    write_text_file(export_dir / "status.current.json",
+                    adapter.read_resource(std::string(worker::mcp::kResourceStatusCurrent)));
+    write_text_file(export_dir / "reports.recent.json",
+                    adapter.read_resource(std::string(worker::mcp::kResourceReportsRecent)));
+
+    if (!task_id.empty()) {
+        const std::string safe_task_id = sanitize_task_id(task_id);
+        const std::string result_uri = "resources://silicium/results/by-task/" + task_id;
+        const std::string logs_uri = "resources://silicium/logs/by-task/" + task_id;
+        write_text_file(export_dir / ("result." + safe_task_id + ".json"),
+                        adapter.read_resource(result_uri));
+        write_text_file(export_dir / ("logs." + safe_task_id + ".json"),
+                        adapter.read_resource(logs_uri));
+    }
 }
 
 }  // namespace
@@ -361,6 +439,8 @@ int main(int argc, char** argv) {
         if (opts.wsl_available_jobs_set)
             config.wsl_triggers.available_jobs = opts.wsl_available_jobs;
         config.wsl_enabled = worker::evaluate_wsl_triggers(config.wsl_triggers, &config.wsl_decision);
+        config.mcp.read_only = opts.mcp_read_only;
+        config.mcp.export_dir = opts.mcp_export_dir;
         if (!opts.runner_binary.empty())
             config.dynamo_runner_binary = opts.runner_binary;
         if (!opts.runner_launcher.empty())
@@ -397,6 +477,11 @@ int main(int argc, char** argv) {
         config.executor.fd_rules = std::move(fd_rules);
 
         worker::JobRunner runner(opts.summary_path, config);
+        std::shared_ptr<worker::mcp::McpReadOnlyConnectorAdapter> mcp_adapter;
+        if (config.mcp.read_only) {
+            mcp_adapter = std::make_shared<worker::mcp::McpReadOnlyConnectorAdapter>();
+            runner.add_observer(mcp_adapter);
+        }
 
         worker::WorkerReport report;
         report.summary_path = runner.summary_path();
@@ -416,6 +501,16 @@ int main(int argc, char** argv) {
                         log_stream << task_report.result.program_stderr;
                 }
                 report.tasks.push_back(std::move(task_report));
+                if (mcp_adapter) {
+                    mcp_adapter->publish_worker_report(report);
+                    if (!config.mcp.export_dir.empty()) {
+                        const std::string current_task_id =
+                            report.tasks.back().telemetry.task_id.empty()
+                                ? report.tasks.back().partition_id
+                                : report.tasks.back().telemetry.task_id;
+                        export_mcp_resources(*mcp_adapter, config.mcp.export_dir, current_task_id);
+                    }
+                }
             } catch (const std::exception& e) {
                 worker::TaskReport failure;
                 failure.partition_id = task.partition_id;
@@ -430,6 +525,16 @@ int main(int argc, char** argv) {
                 failure.telemetry.wsl_enabled = config.wsl_enabled;
                 failure.telemetry.wsl_decision = config.wsl_decision;
                 report.tasks.push_back(std::move(failure));
+                if (mcp_adapter) {
+                    mcp_adapter->publish_worker_report(report);
+                    if (!config.mcp.export_dir.empty()) {
+                        const std::string current_task_id =
+                            report.tasks.back().telemetry.task_id.empty()
+                                ? report.tasks.back().partition_id
+                                : report.tasks.back().telemetry.task_id;
+                        export_mcp_resources(*mcp_adapter, config.mcp.export_dir, current_task_id);
+                    }
+                }
             }
         }
 
