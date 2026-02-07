@@ -108,3 +108,13 @@ def test_main_handles_internal_profile_error(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setattr(perf_budget, "run_profile", _explode)
     code = perf_budget.main(["--budget-file", str(budget_file), "--profile", "quick", "--strict"])
     assert code == 1
+
+
+def test_normalize_command_for_platform_windows_silicium(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    script = tmp_path / "silicium"
+    script.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
+    monkeypatch.setattr(perf_budget.os, "name", "nt")
+    command = perf_budget.normalize_command_for_platform(["./silicium", "budget", "--list"], tmp_path)
+    assert command[0] == perf_budget.sys.executable
+    assert Path(command[1]) == script
+    assert command[2:] == ["budget", "--list"]

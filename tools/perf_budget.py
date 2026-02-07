@@ -7,6 +7,7 @@ import argparse
 import datetime as dt
 import json
 import math
+import os
 import shlex
 import shutil
 import subprocess
@@ -128,9 +129,21 @@ def check_budgets(metrics: dict[str, float | None], budgets: dict[str, float]) -
     return violations, unavailable
 
 
+def normalize_command_for_platform(command: list[str], repo_root: Path) -> list[str]:
+    if os.name != "nt" or not command:
+        return command
+    head = command[0].replace("\\", "/")
+    if head in {"./silicium", "silicium"}:
+        script = repo_root / "silicium"
+        if script.exists():
+            return [sys.executable, str(script), *command[1:]]
+    return command
+
+
 def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
     time_bin = shutil.which("time") or ("/usr/bin/time" if Path("/usr/bin/time").exists() else None)
-    command_line = " ".join(shlex.quote(part) for part in profile.command)
+    effective_command = normalize_command_for_platform(profile.command, repo_root)
+    command_line = " ".join(shlex.quote(part) for part in effective_command)
     print(f">> [{profile.key}] {command_line}")
 
     wall_sec: float | None = None
@@ -140,7 +153,7 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
     try:
         if time_bin:
             fmt = f"{TIME_MARKER} elapsed=%e user=%U sys=%S rss_kib=%M exit=%x"
-            cmd = [time_bin, "-f", fmt, *profile.command]
+            cmd = [time_bin, "-f", fmt, *effective_command]
             result = subprocess.run(cmd, cwd=repo_root, text=True, capture_output=True, check=False)
             marker = parse_time_marker(result.stderr)
             if marker is not None:
@@ -161,13 +174,13 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             return_code = result.returncode
         else:
             start = time.perf_counter()
-            result = subprocess.run(profile.command, cwd=repo_root, text=True, check=False)
+            result = subprocess.run(effective_command, cwd=repo_root, text=True, check=False)
             wall_sec = time.perf_counter() - start
             return_code = result.returncode
     except FileNotFoundError as exc:
         return ProfileResult(
             key=profile.key,
-            command=profile.command,
+            command=effective_command,
             description=profile.description,
             return_code=127,
             wall_sec=None,
@@ -180,7 +193,7 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
     except OSError as exc:
         return ProfileResult(
             key=profile.key,
-            command=profile.command,
+            command=effective_command,
             description=profile.description,
             return_code=127,
             wall_sec=None,
@@ -202,7 +215,7 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
 
     return ProfileResult(
         key=profile.key,
-        command=profile.command,
+        command=effective_command,
         description=profile.description,
         return_code=return_code,
         wall_sec=wall_sec,
