@@ -2,7 +2,8 @@
   "license": "ISC",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "test": "ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
   },
   "dependencies": {
     "@anchor-lang/core": "^0.32.1",
@@ -12,12 +13,14 @@
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.0",
-    "@types/chai": "^4.3.0",
+    "@types/chai": "^5.2.3",
     "@types/mocha": "^10.0.10",
-    "chai": "^4.3.4",
+    "@types/node": "^25.2.1",
+    "chai": "^6.2.2",
     "mocha": "^11.7.5",
     "prettier": "^2.6.2",
     "ts-mocha": "^11.1.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   }
 }
