@@ -6,6 +6,7 @@ use crate::{
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
+        worker::{Worker, WorkerStatus},
     },
 };
 
@@ -29,6 +30,15 @@ pub struct VerifyFragment<'info> {
         bump = fragment.bump
     )]
     pub fragment: Account<'info, Fragment>,
+
+    // Worker registry PDA derived from fragment.worker
+    #[account(
+        mut,
+        seeds = [b"worker", fragment.worker.as_ref()],
+        bump = worker_account.bump,
+        constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized
+    )]
+    pub worker_account: Account<'info, Worker>,
 
     /// CHECK: escrow authority PDA
     #[account(
@@ -63,7 +73,10 @@ pub fn handler(ctx: Context<VerifyFragment>, verdict: bool) -> Result<()> {
 
     if verdict {
         let reward = ctx.accounts.job.reward_per_fragment;
-        require!(ctx.accounts.escrow.amount >= reward, SiliciumError::InsufficientEscrow);
+        require!(
+            ctx.accounts.escrow.amount >= reward,
+            SiliciumError::InsufficientEscrow
+        );
 
         let job_key = ctx.accounts.job.key();
         let bump = ctx.accounts.job.escrow_auth_bump;
@@ -81,15 +94,32 @@ pub fn handler(ctx: Context<VerifyFragment>, verdict: bool) -> Result<()> {
         );
         token::transfer(cpi_ctx, reward)?;
 
-        ctx.accounts.job.paid_amount += reward;
-        ctx.accounts.job.verified_fragments += 1;
+        ctx.accounts.job.paid_amount = ctx.accounts.job.paid_amount.saturating_add(reward);
+        ctx.accounts.job.verified_fragments = ctx
+            .accounts
+            .job
+            .verified_fragments
+            .saturating_add(1);
+
         ctx.accounts.fragment.status = FragmentStatus::Verified;
+
+        // update worker stats (verdict true)
+        ctx.accounts.worker_account.reputation =
+            ctx.accounts.worker_account.reputation.saturating_add(1);
+        ctx.accounts.worker_account.total_verified =
+            ctx.accounts.worker_account.total_verified.saturating_add(1);
 
         if ctx.accounts.job.verified_fragments == ctx.accounts.job.expected_fragments {
             ctx.accounts.job.verified_at_unix = Clock::get()?.unix_timestamp;
         }
     } else {
         ctx.accounts.fragment.status = FragmentStatus::Rejected;
+
+        // update worker stats (verdict false)
+        ctx.accounts.worker_account.reputation =
+            ctx.accounts.worker_account.reputation.saturating_sub(1);
+        ctx.accounts.worker_account.total_rejected =
+            ctx.accounts.worker_account.total_rejected.saturating_add(1);
     }
 
     Ok(())

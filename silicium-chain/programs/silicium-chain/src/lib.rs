@@ -4,7 +4,6 @@ pub mod instructions;
 pub mod state;
 pub mod error;
 
-
 #[allow(unused_imports)]
 use crate::instructions::create_job::__client_accounts_create_job;
 #[allow(unused_imports)]
@@ -15,12 +14,18 @@ use crate::instructions::verify_fragment::__client_accounts_verify_fragment;
 use crate::instructions::finalize_job::__client_accounts_finalize_job;
 #[allow(unused_imports)]
 use crate::instructions::cancel_job::__client_accounts_cancel_job;
+#[allow(unused_imports)]
+use crate::instructions::register_worker::__client_accounts_register_worker;
+#[allow(unused_imports)]
+use crate::instructions::vote_fragment::__client_accounts_vote_fragment;
 
 use crate::instructions::create_job::CreateJob;
 use crate::instructions::submit_fragment_result::SubmitFragmentResult;
 use crate::instructions::verify_fragment::VerifyFragment;
 use crate::instructions::finalize_job::FinalizeJob;
 use crate::instructions::cancel_job::CancelJob;
+use crate::instructions::register_worker::RegisterWorker;
+use crate::instructions::vote_fragment::VoteFragment;
 
 declare_id!("9fXMziZ32jdmisi7YgQPG6LWX884AWSs1efpNFrJg6wC");
 
@@ -60,6 +65,14 @@ pub mod silicium_chain {
 
     pub fn verify_fragment(ctx: Context<VerifyFragment>, verdict: bool) -> Result<()> {
         crate::instructions::verify_fragment::handler(ctx, verdict)
+    }
+
+    pub fn register_worker(ctx: Context<RegisterWorker>) -> Result<()> {
+        crate::instructions::register_worker::handler(ctx)
+    }
+
+    pub fn vote_fragment(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
+        crate::instructions::vote_fragment::handler(ctx, choice)
     }
 
     pub fn finalize_job(

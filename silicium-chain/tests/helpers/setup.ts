@@ -139,3 +139,25 @@ export async function createJobOnce(env: any) {
     .signers([env.escrowKp])
     .rpc();
 }
+
+export async function registerWorkerIfNeeded(env: any) {
+  const [workerPda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("worker"), env.worker.publicKey.toBuffer()],
+    env.program.programId
+  );
+
+  // tente register (si déjà fait dans ce test, ça fail => ignore)
+  try {
+    await (env.program as any).methods
+      .registerWorker()
+      .accounts({
+        worker: env.worker.publicKey,
+        workerAccount: workerPda,
+        systemProgram: env.systemProgram,
+      })
+      .signers([env.worker])
+      .rpc();
+  } catch (_) {}
+
+  return workerPda;
+}
