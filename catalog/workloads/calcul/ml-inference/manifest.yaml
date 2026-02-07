@@ -40,3 +40,11 @@ validation:
 payment:
   unit: batch
   estimated_cost: 0.002
+presets:
+  - name: default
+    description: Baseline batch inference.
+    vars:
+      model: model.bin
+      batch: batch.json
+      output: embeddings.json
+      dtype: fp16

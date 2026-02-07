@@ -47,6 +47,12 @@ validation:
 payment:
   unit: fragment
   estimated_cost: 0.001 # en token Silicium
+presets:
+  - name: default
+    description: Example preset inputs
+    vars:
+      input: input.mp4
+      output: segment.mp4
 ```
 
 Schéma de référence versionné:
@@ -54,6 +60,7 @@ Schéma de référence versionné:
 - `catalog/workloads/schema/workload-manifest-v1.schema.json`
 - `schema_version: 1` est obligatoire dans chaque `manifest.yaml`
 - `resources.budget` fournit l'enveloppe attendue (wall/cpu/memory) pour planifier.
+- `presets` fournit des variables d'exemple pour `workload show --dry-run`.
 
 Les devices téléchargent le manifest correspondant au job pour savoir quel binaire lancer et comment reporter la preuve (hash, logs, temps).
 

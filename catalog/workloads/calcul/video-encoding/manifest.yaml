@@ -39,3 +39,12 @@ validation:
 payment:
   unit: fragment
   estimated_cost: 0.001
+presets:
+  - name: default
+    description: Baseline H.265 encode.
+    vars:
+      input: input.mp4
+      codec: libx265
+      preset: medium
+      crf: 28
+      output: segment.mp4

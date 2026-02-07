@@ -38,3 +38,9 @@ validation:
 payment:
   unit: audit
   estimated_cost: 0.0001
+presets:
+  - name: default
+    description: Hash verification sample.
+    vars:
+      artifact: payload.bin
+      expected_hash: payload.sha256

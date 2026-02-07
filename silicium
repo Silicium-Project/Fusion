@@ -13,6 +13,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import string
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
@@ -824,6 +825,100 @@ def _workload_matches_filters(data: dict[str, Any], args: argparse.Namespace) ->
     return True
 
 
+def _workload_presets(data: dict[str, Any]) -> list[dict[str, Any]]:
+    presets = data.get("presets", [])
+    if not isinstance(presets, list):
+        return []
+    valid: list[dict[str, Any]] = []
+    for preset in presets:
+        if isinstance(preset, dict):
+            name = preset.get("name")
+            vars_map = preset.get("vars", {})
+            if isinstance(name, str) and name and isinstance(vars_map, dict):
+                valid.append(preset)
+    return valid
+
+
+def _workload_preset_names(data: dict[str, Any]) -> list[str]:
+    return [str(preset.get("name")) for preset in _workload_presets(data)]
+
+
+def _select_preset(data: dict[str, Any], name: str | None) -> dict[str, Any] | None:
+    presets = _workload_presets(data)
+    if not presets:
+        return None
+    if name:
+        for preset in presets:
+            if preset.get("name") == name:
+                return preset
+        return None
+    if len(presets) == 1:
+        return presets[0]
+    for preset in presets:
+        if preset.get("name") == "default":
+            return preset
+    return None
+
+
+def _extract_placeholders(command: str) -> list[str]:
+    placeholders: list[str] = []
+    formatter = string.Formatter()
+    for _, field_name, _, _ in formatter.parse(command):
+        if not field_name:
+            continue
+        name = field_name.split(".", 1)[0].split("[", 1)[0]
+        if name not in placeholders:
+            placeholders.append(name)
+    return placeholders
+
+
+def _render_command(command: str, variables: Mapping[str, Any]) -> str:
+    rendered = command
+    for key, value in variables.items():
+        rendered = rendered.replace(f"{{{key}}}", str(value))
+    return rendered
+
+
+def _workload_metadata(path: str, data: dict[str, Any]) -> dict[str, Any]:
+    resources = data.get("resources", {})
+    taxonomy = data.get("taxonomy", {})
+    presets = _workload_preset_names(data)
+    return {
+        "path": path,
+        "id": data.get("id"),
+        "engine": data.get("engine"),
+        "resources": resources if isinstance(resources, dict) else {},
+        "taxonomy": taxonomy if isinstance(taxonomy, dict) else {},
+        "payment": data.get("payment", {}),
+        "presets": presets,
+    }
+
+
+def _workload_dry_run_plan(path: str, manifest: Path, data: dict[str, Any], preset_name: str | None) -> dict[str, Any]:
+    command = str(data.get("command") or "")
+    preset = _select_preset(data, preset_name)
+    variables = {}
+    if preset:
+        vars_map = preset.get("vars", {})
+        if isinstance(vars_map, dict):
+            variables = vars_map
+    placeholders = _extract_placeholders(command)
+    missing = [name for name in placeholders if name not in variables]
+    plan = _workload_metadata(path, data)
+    plan.update(
+        {
+            "manifest": str(manifest),
+            "command": _render_command(command, variables),
+            "placeholders": placeholders,
+            "variables": variables,
+            "missing_variables": missing,
+            "preset": preset.get("name") if preset else None,
+            "artifacts": data.get("artifacts", {}),
+        }
+    )
+    return plan
+
+
 def _schema_error_path(error: Any) -> str:
     path = getattr(error, "absolute_path", [])
     return "/".join(str(part) for part in path) or "<root>"
@@ -952,13 +1047,52 @@ def cmd_workload_list(args: argparse.Namespace, ctx: Context) -> None:
     if not entries:
         print("No workloads found.")
         return
-    paths = [path for path, data in entries if _workload_matches_filters(data, args)]
-    if not paths:
+    matches = [(path, data) for path, data in entries if _workload_matches_filters(data, args)]
+    if not matches:
         if _workload_has_filters(args):
             print(f"No workloads match filters: {_workload_filter_summary(args)}")
         else:
             print("No workloads found.")
         return
+    if args.json:
+        payload = [_workload_metadata(path, data) for path, data in matches]
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    if args.details:
+        header = [
+            "path",
+            "engine",
+            "cpu",
+            "gpu",
+            "memory",
+            "wall_sec",
+            "cpu_sec",
+            "budget_mem",
+            "resource_profile",
+            "determinism",
+            "presets",
+        ]
+        print("\t".join(header))
+        for path, data in matches:
+            resources = data.get("resources", {})
+            taxonomy = data.get("taxonomy", {})
+            budget = resources.get("budget", {}) if isinstance(resources, dict) else {}
+            row = [
+                path,
+                str(data.get("engine", "-")),
+                str(resources.get("cpu", "-")),
+                str(resources.get("gpu", "-")),
+                str(resources.get("memory", "-")),
+                str(budget.get("wall_sec", "-")),
+                str(budget.get("cpu_sec", "-")),
+                str(budget.get("memory", "-")),
+                str(taxonomy.get("resource_profile", "-")),
+                str(taxonomy.get("determinism", "-")),
+                ",".join(_workload_preset_names(data)) or "-",
+            ]
+            print("\t".join(row))
+        return
+    paths = [path for path, _ in matches]
     if not args.tree:
         for path in paths:
             print(path)
@@ -994,6 +1128,45 @@ def cmd_workload_show(args: argparse.Namespace, ctx: Context) -> None:
     if not _workload_matches_filters(data, args):
         print(f"Manifest does not match filters: {_workload_filter_summary(args)}")
         sys.exit(1)
+    if args.preset and not args.dry_run:
+        print("--preset requires --dry-run.")
+        sys.exit(1)
+    if args.dry_run:
+        if args.preset and not _select_preset(data, args.preset):
+            available = ", ".join(_workload_preset_names(data)) or "-"
+            print(f"Preset not found: {args.preset}")
+            print(f"Available presets: {available}")
+            sys.exit(1)
+        plan = _workload_dry_run_plan(args.path, manifest, data, args.preset)
+        print(json.dumps(plan, indent=2, sort_keys=True))
+        return
+    if args.meta:
+        meta = _workload_metadata(args.path, data)
+        resources = meta["resources"]
+        taxonomy = meta["taxonomy"]
+        presets = meta["presets"]
+        budget = resources.get("budget", {}) if isinstance(resources, dict) else {}
+        print(f"Path: {meta['path']}")
+        print(f"ID: {meta.get('id', '-')}")
+        print(f"Engine: {meta.get('engine', '-')}")
+        print(
+            f"Resources: cpu={resources.get('cpu', '-')} "
+            f"gpu={resources.get('gpu', '-')} memory={resources.get('memory', '-')}"
+        )
+        if budget:
+            print(
+                f"Budget: wall_sec={budget.get('wall_sec', '-')} "
+                f"cpu_sec={budget.get('cpu_sec', '-')} memory={budget.get('memory', '-')}"
+            )
+        print(
+            f"Taxonomy: category={taxonomy.get('category', '-')} "
+            f"domain={taxonomy.get('domain', '-')} "
+            f"complexity={taxonomy.get('complexity', '-')} "
+            f"resource_profile={taxonomy.get('resource_profile', '-')} "
+            f"determinism={taxonomy.get('determinism', '-')}"
+        )
+        print(f"Presets: {', '.join(presets) if presets else '-'}")
+        return
     print(colorize(f"==> {manifest}", COLOR_YELLOW))
     print(manifest.read_text(encoding="utf-8"))
     if args.readme:
@@ -1459,6 +1632,16 @@ def configure_workload_list(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Display full tree instead of compact list.",
     )
+    parser.add_argument(
+        "--details",
+        action="store_true",
+        help="Display metadata table for workloads.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output workload metadata as JSON.",
+    )
     add_workload_filter_args(parser)
 
 
@@ -1472,6 +1655,20 @@ def configure_workload_show(parser: argparse.ArgumentParser) -> None:
         "--readme",
         action="store_true",
         help="Also display README.md if present.",
+    )
+    parser.add_argument(
+        "--meta",
+        action="store_true",
+        help="Show metadata summary and presets.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print deterministic execution plan as JSON.",
+    )
+    parser.add_argument(
+        "--preset",
+        help="Preset name to apply with --dry-run.",
     )
 
 
@@ -1836,7 +2033,11 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
         ]
         if sub == "list":
             if text.startswith("-"):
-                return [flag for flag in (["--tree"] + taxonomy_flags) if flag.startswith(text)]
+                return [
+                    flag
+                    for flag in (["--tree", "--details", "--json"] + taxonomy_flags)
+                    if flag.startswith(text)
+                ]
             if tokens[-1] == "--category":
                 return [value for value in WORKLOAD_TAXONOMY_CATEGORIES if value.startswith(text)]
             if tokens[-1] == "--domain":
@@ -1852,7 +2053,11 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             return []
         if sub == "show":
             if text.startswith("-"):
-                return [flag for flag in (["--readme"] + taxonomy_flags) if flag.startswith(text)]
+                return [
+                    flag
+                    for flag in (["--readme", "--meta", "--dry-run", "--preset"] + taxonomy_flags)
+                    if flag.startswith(text)
+                ]
             if tokens[-1] == "--category":
                 return [value for value in WORKLOAD_TAXONOMY_CATEGORIES if value.startswith(text)]
             if tokens[-1] == "--domain":

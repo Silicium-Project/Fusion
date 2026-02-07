@@ -38,3 +38,12 @@ validation:
 payment:
   unit: batch
   estimated_cost: 0.0008
+presets:
+  - name: default
+    description: Small directory compression sample.
+    vars:
+      input_dir: /data/input
+      output_tar: archive.tar
+      output: archive.tar.zst
+      hash_file: archive.sha256
+      level: 3

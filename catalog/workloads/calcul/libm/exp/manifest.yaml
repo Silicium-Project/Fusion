@@ -37,3 +37,9 @@ validation:
 payment:
   unit: invocation
   estimated_cost: 0.00005
+presets:
+  - name: default
+    description: Single value sample.
+    vars:
+      value: 0.5
+      output: result.json

@@ -39,3 +39,10 @@ validation:
 payment:
   unit: frame
   estimated_cost: 0.003
+presets:
+  - name: default
+    description: Single frame render.
+    vars:
+      scene: scene.blend
+      output_pattern: frame_
+      frame: 1

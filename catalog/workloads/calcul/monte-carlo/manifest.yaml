@@ -38,3 +38,11 @@ validation:
 payment:
   unit: chunk
   estimated_cost: 0.002
+presets:
+  - name: default
+    description: Moderate iteration sample.
+    vars:
+      config: config.json
+      seed: 42
+      iterations: 100000
+      output: chunk.json

@@ -39,3 +39,10 @@ validation:
 payment:
   unit: batch
   estimated_cost: 0.0005
+presets:
+  - name: default
+    description: Baseline simulation run.
+    vars:
+      config: config.json
+      task: task.bin
+      output: result.json

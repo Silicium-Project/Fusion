@@ -45,3 +45,13 @@ validation:
 payment:
   unit: audit
   estimated_cost: 0.0006
+presets:
+  - name: default
+    description: Single frame spotcheck.
+    vars:
+      scene: scene.blend
+      output_pattern: frame_
+      frame: 1
+      reference: reference.png
+      candidate: candidate.png
+      report: report.json

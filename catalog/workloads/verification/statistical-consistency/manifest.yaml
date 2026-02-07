@@ -41,3 +41,11 @@ validation:
 payment:
   unit: audit
   estimated_cost: 0.0004
+presets:
+  - name: default
+    description: Subsample verification.
+    vars:
+      config: config.json
+      chunk: chunk.json
+      subset: subset.txt
+      report: report.json
