@@ -307,6 +307,7 @@ Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches couran
 ./silicium check --jobs 2 --runner docker --docker-cpus 2 --docker-memory 4g
 python silicium cpp-test --scope worker --gtest-filter TaskSerializer.* --timeout 600
 python silicium cpp-test --scope executor --timeout 900
+python silicium doctor           # diagnostic Docker / WSL (Windows)
 ./silicium smoke                 # proxy + healthcheck
 ./silicium tools demo            # démo splitter + fragment executor
 ./silicium clean all -y          # nettoie caches + volumes (mode "fclean")

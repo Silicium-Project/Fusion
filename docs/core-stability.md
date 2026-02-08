@@ -10,6 +10,21 @@ Scope: splitter, executor, worker, CLI orchestration, and optional Docker infra.
 - `python3` (or `python`) with `pytest` and `pyyaml`
 - Docker (optional, required for full infra and DynamoRIO checks)
 
+## WSL + Docker Desktop integration (Windows)
+
+If you run tools inside WSL, Docker Desktop integration must be enabled for the
+distribution. Use:
+
+```
+python silicium doctor
+```
+
+If the socket is missing inside your distro:
+
+1. Open Docker Desktop -> Settings -> Resources -> WSL Integration.
+2. Enable integration for your distro (e.g. Ubuntu).
+3. Restart Docker Desktop and retry.
+
 ## Acceptance Criteria (by module)
 
 ### Splitter

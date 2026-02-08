@@ -86,6 +86,7 @@ TOP_LEVEL_COMMANDS = [
     "test",
     "check",
     "cpp-test",
+    "doctor",
     "budget",
     "smoke",
     "tools",
@@ -286,6 +287,37 @@ def run(
     return result.returncode
 
 
+def _decode_output(raw: bytes) -> str:
+    if not raw:
+        return ""
+    if b"\x00" in raw:
+        for encoding in ("utf-16-le", "utf-16"):
+            try:
+                return raw.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("utf-8", errors="replace")
+
+
+def run_capture(cmd: list[str], *, timeout_s: float = 8.0) -> tuple[int, str, str]:
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=False,
+            check=False,
+            timeout=timeout_s,
+        )
+        return result.returncode, _decode_output(result.stdout), _decode_output(result.stderr)
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timeout after {timeout_s}s"
+    except OSError as exc:
+        return 127, "", str(exc)
+
+
 def _classify_docker_probe_failure(output: str) -> tuple[str, str]:
     text = output.lower()
     if "unexpected eof" in text or "_ping" in text or "internal server error" in text:
@@ -379,6 +411,40 @@ def wsl_available() -> bool:
     if os.name != "nt":
         return False
     return bool(shutil.which("wsl.exe") or shutil.which("wsl"))
+
+
+def list_wsl_distros() -> list[dict[str, str]]:
+    if not wsl_available():
+        return []
+    wsl_bin = shutil.which("wsl.exe") or shutil.which("wsl")
+    if not wsl_bin:
+        return []
+    code, out, err = run_capture([wsl_bin, "-l", "-v"], timeout_s=6.0)
+    if code != 0:
+        detail = (out + err).strip()
+        if detail:
+            print(f"WSL listing failed: {detail}")
+        return []
+    distros: list[dict[str, str]] = []
+    lines = [line.rstrip() for line in out.splitlines() if line.strip()]
+    for line in lines[1:]:
+        default = line.lstrip().startswith("*")
+        cleaned = line.replace("*", "", 1).strip() if default else line.strip()
+        parts = cleaned.split()
+        if len(parts) < 3:
+            continue
+        version = parts[-1]
+        state = parts[-2]
+        name = " ".join(parts[:-2])
+        distros.append(
+            {
+                "name": name,
+                "state": state,
+                "version": version,
+                "default": "yes" if default else "no",
+            }
+        )
+    return distros
 
 
 def compose_command(ctx: Context) -> list[str]:
@@ -675,6 +741,67 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
     except OSError as exc:
         print(f"Failed to launch Docker command: {exc}")
         sys.exit(1)
+
+
+def cmd_doctor(_: argparse.Namespace, ctx: Context) -> None:
+    print(colorize("==> Silicium doctor", COLOR_YELLOW))
+    print(f"os={os.name} python={sys.version.split()[0]}")
+    print(f"docker_bin={ctx.config.docker_bin} DOCKER_HOST={os.environ.get('DOCKER_HOST', '<unset>')}")
+
+    health = docker_health(ctx, retries=1, timeout_s=6.0)
+    if health.ok:
+        print(f"Docker: OK (server {health.detail or 'unknown'})")
+    else:
+        print(f"Docker: FAIL [{health.error_code}] {health.message}")
+        if health.detail:
+            detail = health.detail.strip().replace("\n", " | ")
+            print(f"detail={detail[:800]}")
+
+    if os.name != "nt":
+        return
+
+    distros = list_wsl_distros()
+    if not distros:
+        print("WSL: not available or no distributions found.")
+        return
+
+    print("WSL distros:")
+    for distro in distros:
+        flag = "*" if distro.get("default") == "yes" else " "
+        print(f"  {flag} {distro['name']} (state={distro['state']} version={distro['version']})")
+
+    default = next((d for d in distros if d.get("default") == "yes"), distros[0])
+    name = default["name"]
+    state = default.get("state", "")
+    wsl_bin = shutil.which("wsl.exe") or shutil.which("wsl")
+    if not wsl_bin:
+        print("WSL: wsl.exe not found in PATH.")
+        return
+
+    if state.lower() != "running":
+        print(f"WSL docker integration: unknown (distro '{name}' is {state}).")
+        print("Tip: run `wsl -d <distro>` once, then re-run `python silicium doctor`.")
+        return
+
+    code, _, err = run_capture(
+        [wsl_bin, "-d", name, "--", "sh", "-lc", "test -S /var/run/docker.sock"],
+        timeout_s=5.0,
+    )
+    if code == 0:
+        print(f"WSL docker integration: OK (socket present in '{name}')")
+    else:
+        detail = err.strip()
+        print(f"WSL docker integration: FAIL (no socket in '{name}')")
+        if detail:
+            print(f"detail={detail[:800]}")
+        print("Fix: Docker Desktop -> Settings -> Resources -> WSL Integration -> enable this distro.")
+
+    code, _, _ = run_capture(
+        [wsl_bin, "-d", name, "--", "sh", "-lc", "command -v docker >/dev/null 2>&1"],
+        timeout_s=5.0,
+    )
+    if code != 0:
+        print(f"WSL docker CLI: missing in '{name}' (install docker-cli or use Windows docker.exe).")
 
 
 def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
@@ -2065,6 +2192,10 @@ def configure_cpp_test(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def configure_doctor(parser: argparse.ArgumentParser) -> None:
+    pass
+
+
 def configure_budget(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--budget-file",
@@ -2459,6 +2590,7 @@ def build_registry() -> CommandRegistry:
             cmd_cpp_test,
         )
     )
+    registry.add(CommandSpec("doctor", "Run environment diagnostics", configure_doctor, cmd_doctor))
     registry.add(CommandSpec("budget", "Measure command metrics against budgets", configure_budget, cmd_budget))
     registry.add(CommandSpec("smoke", "Run the proxy smoke test", configure_smoke, cmd_smoke))
     registry.add(CommandSpec("clean", "Clean caches/ledgers", configure_clean, cmd_clean))
@@ -2659,6 +2791,8 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             "--python",
         ]
         return [flag for flag in flags if flag.startswith(text)]
+    if first == "doctor":
+        return []
     if first == "cpp-test":
         flags = [
             "--scope",
