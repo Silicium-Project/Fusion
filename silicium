@@ -690,7 +690,7 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
     jobs = jobs or 2
 
     if args.scope == "worker":
-        test_bin = "./build/worker_tests"
+        test_bin = "./build/tests/worker_tests"
         script = (
             "set -euo pipefail; "
             "ccache -M 2G >/dev/null || true; "

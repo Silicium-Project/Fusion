@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import inspect
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
 from tools.tui.headless_app import run_script as default_headless_script_runner
-
-HeadlessScriptRunner = Callable[..., dict[str, object]]
-TextualProbe = Callable[[], tuple[bool, str]]
-TextualRun = Callable[[FrontendRunConfig], None]
 
 if TYPE_CHECKING:
     from tools.tui.connectors import ITuiConnector
@@ -22,6 +19,11 @@ class FrontendRunConfig:
     headless_timeout: float = 120.0
     headless_json: Path | None = None
     connector: "ITuiConnector | None" = None
+
+
+HeadlessScriptRunner = Callable[..., dict[str, object]]
+TextualProbe = Callable[[], tuple[bool, str]]
+TextualRun = Callable[[FrontendRunConfig], None]
 
 
 @dataclass(frozen=True)
@@ -63,7 +65,7 @@ class TextualFrontend(ITuiFrontend):
         if not ok:
             return FrontendRunResult(False, reason)
         try:
-            self._run_impl(config)
+            _invoke_textual_run(self._run_impl, config)
             return FrontendRunResult(True, "")
         except Exception as exc:  # pragma: no cover - interactive path
             return FrontendRunResult(False, f"textual frontend failed: {exc}")
@@ -165,3 +167,21 @@ def _default_textual_run(config: FrontendRunConfig) -> None:
     from tools.tui.app import run as run_textual
 
     run_textual(connector=config.connector)
+
+
+def _invoke_textual_run(run_impl: TextualRun, config: FrontendRunConfig) -> None:
+    try:
+        signature = inspect.signature(run_impl)
+    except (TypeError, ValueError):
+        run_impl(config)
+        return
+
+    positional = [
+        param
+        for param in signature.parameters.values()
+        if param.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    ]
+    if not positional:
+        run_impl()  # type: ignore[call-arg]
+        return
+    run_impl(config)

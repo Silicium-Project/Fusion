@@ -1,10 +1,16 @@
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Any, Callable
 
 import pytest
 
+if os.name == "nt":
+    pytest.skip(
+        "infra/docker entrypoint tests require a POSIX environment; run in Linux CI or via Docker/WSL.",
+        allow_module_level=True,
+    )
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger(__name__)
