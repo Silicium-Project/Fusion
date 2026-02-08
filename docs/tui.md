@@ -38,7 +38,8 @@ python -m pip install -r requirements-tui.txt
 
 Notes:
 - The curses frontend requires a real terminal/TTY.
-- On platforms where Python `curses` is unavailable, startup falls back to `textual`.
+- On Windows, `windows-curses` is required and currently supported up to Python 3.13.
+- If curses is unavailable, startup falls back to `textual`.
 
 ## Key bindings
 
