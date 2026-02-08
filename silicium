@@ -2258,22 +2258,44 @@ def resolve_tui_frontend(requested: str | None) -> tuple[str, list[str]]:
     return candidate, warnings
 
 
-def _run_textual_frontend() -> tuple[bool, str]:
+def _probe_textual_frontend() -> tuple[bool, str]:
     try:
         from tools.tui.app import run as run_textual
     except ImportError:
         return False, "Textual dependencies missing."
+    return True, ""
+
+
+def _run_textual_frontend() -> tuple[bool, str]:
+    ok, reason = _probe_textual_frontend()
+    if not ok:
+        return False, reason
+    from tools.tui.app import run as run_textual
     run_textual()
     return True, ""
 
 
-def _run_curses_frontend() -> tuple[bool, str]:
+def _probe_curses_frontend() -> tuple[bool, str]:
     try:
-        from tools.tui.curses_app import run as run_curses
+        from tools.tui.curses_app import _load_curses  # type: ignore[attr-defined]
     except ImportError:
         return False, "curses frontend module unavailable."
     except Exception as exc:  # pragma: no cover - defensive
         return False, f"failed to import curses frontend: {exc}"
+    try:
+        _load_curses()
+        return True, ""
+    except RuntimeError as exc:
+        return False, str(exc)
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, f"curses probe failed: {exc}"
+
+
+def _run_curses_frontend() -> tuple[bool, str]:
+    ok, reason = _probe_curses_frontend()
+    if not ok:
+        return False, reason
+    from tools.tui.curses_app import run as run_curses
     try:
         run_curses()
         return True, ""
@@ -2283,10 +2305,35 @@ def _run_curses_frontend() -> tuple[bool, str]:
         return False, f"curses frontend failed: {exc}"
 
 
-def run_tui_frontend(requested: str | None, ctx: Context) -> None:
+def run_tui_frontend(requested: str | None, ctx: Context, *, smoke: bool = False, strict_frontend: bool = False) -> None:
     frontend, warnings = resolve_tui_frontend(requested)
     for warning in warnings:
         print(colorize(f"[WARN] {warning}", COLOR_YELLOW))
+
+    if smoke:
+        print(f"TUI frontend probe requested: {frontend}")
+        if frontend == "headless":
+            print("Frontend headless: OK")
+            return
+        if frontend == "curses":
+            ok, reason = _probe_curses_frontend()
+            if ok:
+                print("Frontend curses: OK")
+                return
+            print(colorize(f"[WARN] Frontend curses unavailable: {reason}", COLOR_YELLOW))
+            if strict_frontend:
+                sys.exit(1)
+            print("Trying fallback frontend: textual")
+            frontend = "textual"
+        ok, reason = _probe_textual_frontend()
+        if ok:
+            print("Frontend textual: OK")
+            return
+        print(colorize(f"[WARN] Frontend textual unavailable: {reason}", COLOR_YELLOW))
+        if strict_frontend:
+            sys.exit(1)
+        print("Fallback frontend headless: OK")
+        return
 
     if frontend == "headless":
         print("Using TUI frontend: headless (shell mode).")
@@ -2312,7 +2359,7 @@ def run_tui_frontend(requested: str | None, ctx: Context) -> None:
 
 
 def cmd_tui(args: argparse.Namespace, ctx: Context) -> None:
-    run_tui_frontend(args.tui_frontend, ctx)
+    run_tui_frontend(args.tui_frontend, ctx, smoke=args.smoke, strict_frontend=args.strict_frontend)
 
 
 def cmd_shell(_: argparse.Namespace, ctx: Context) -> None:
@@ -2884,6 +2931,16 @@ def configure_tui(parser: argparse.ArgumentParser) -> None:
         "--tui-frontend",
         help="Frontend selection: textual, curses, headless (or SILICIUM_TUI_FRONTEND).",
     )
+    parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help="Probe frontend availability and exit without opening interactive UI.",
+    )
+    parser.add_argument(
+        "--strict-frontend",
+        action="store_true",
+        help="With --smoke, fail if requested frontend is not directly available.",
+    )
 
 
 def build_registry() -> CommandRegistry:
@@ -3267,7 +3324,7 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             return [opt for opt in LOG_CHOICES if opt.startswith(text)]
         return [flag for flag in ["-u", "--user"] if flag.startswith(text)]
     if first == "tui":
-        flags = ["--tui-frontend"]
+        flags = ["--tui-frontend", "--smoke", "--strict-frontend"]
         if text.startswith("-"):
             return [flag for flag in flags if flag.startswith(text)]
         if tokens[-1] == "--tui-frontend":

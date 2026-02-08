@@ -18,6 +18,8 @@ python -m pip install -r requirements-tui.txt
 
 - CLI option: `./silicium tui --tui-frontend textual|curses|headless`
 - Env override: `SILICIUM_TUI_FRONTEND=textual|curses|headless`
+- Non-interactive probe: `./silicium tui --smoke`
+- Strict probe: `./silicium tui --smoke --strict-frontend --tui-frontend <name>`
 - Precedence: CLI argument first, then env var, then default `textual`
 - Fallback policy:
   - invalid value -> warning -> fallback to `textual`
