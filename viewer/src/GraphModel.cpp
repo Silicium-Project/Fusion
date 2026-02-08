@@ -1,5 +1,6 @@
 #include "GraphModel.hpp"
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -37,17 +38,22 @@ const std::unordered_set<std::string>& GraphModel::CycleNodes() const {
 
 std::unordered_map<QString, GraphModel::Node> GraphModel::LoadSummary(const QString& path) const {
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly))
-        throw std::runtime_error("Impossible d'ouvrir le summary: " + path.toStdString());
+    if (!file.open(QIODevice::ReadOnly)) {
+        const QString msg =
+            QCoreApplication::translate("GraphModel", "Unable to open summary file: %1").arg(path);
+        throw std::runtime_error(msg.toStdString());
+    }
 
     auto doc = QJsonDocument::fromJson(file.readAll());
     if (!doc.isObject())
-        throw std::runtime_error("Summary JSON invalide");
+        throw std::runtime_error(
+            QCoreApplication::translate("GraphModel", "Invalid summary JSON").toStdString());
 
     QJsonObject root = doc.object();
     auto partitions_val = root.value("partitions");
     if (!partitions_val.isArray())
-        throw std::runtime_error("Champ 'partitions' manquant");
+        throw std::runtime_error(
+            QCoreApplication::translate("GraphModel", "Missing 'partitions' field").toStdString());
 
     std::unordered_map<QString, Node> nodes;
     for (const auto& item : partitions_val.toArray()) {
@@ -199,7 +205,7 @@ std::unordered_map<QString, GraphModel::Node> GraphModel::LoadSummary(const QStr
     // Global memory node.
     Node mem;
     mem.id = "memory";
-    mem.label = "Memory";
+    mem.label = QCoreApplication::translate("GraphModel", "Memory");
     mem.external = true;
     mem.memory = true;
     mem.partition_hash = root.value("memory_hash").toString();
@@ -228,7 +234,7 @@ void GraphModel::DetectCycles() {
         if (kv.second.self_call) {
             cycle_nodes_.insert(kv.first.toStdString());
             cycle_edges_.insert(EdgeKey(kv.first, kv.first));
-            qDebug() << "[viewer] Auto-appel detecte pour" << kv.first;
+            qDebug() << "[viewer] Self-call detected for" << kv.first;
         }
     }
     std::unordered_map<QString, int> index;
@@ -267,7 +273,7 @@ void GraphModel::DetectCycles() {
 
             const bool self_loop = scc.size() == 1 && HasReverseEdge(scc.front(), scc.front());
             if (scc.size() > 1 || self_loop) {
-                qDebug() << "[viewer] SCC detecte:" << scc << "self_loop?" << self_loop;
+                qDebug() << "[viewer] SCC detected:" << scc << "self_loop?" << self_loop;
                 for (const auto& n : scc)
                     cycle_nodes_.insert(n.toStdString());
                 for (const auto& n : scc) {
@@ -275,7 +281,7 @@ void GraphModel::DetectCycles() {
                     for (const auto& d : node.deps) {
                         if (std::find(scc.begin(), scc.end(), d) != scc.end()) {
                             cycle_edges_.insert(EdgeKey(d, n));
-                            qDebug() << "[viewer]   arete cycle" << d << "->" << n;
+                            qDebug() << "[viewer]   cycle edge" << d << "->" << n;
                         }
                     }
                 }

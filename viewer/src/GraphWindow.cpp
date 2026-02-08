@@ -35,15 +35,15 @@ GraphWindow::GraphWindow(const QString& summary_path, QWidget* parent)
       scene_(new QGraphicsScene(this)),
       view_(new QGraphicsView(scene_)),
       model_(summary_path) {
-    setWindowTitle("Fragment Graph Viewer");
+    setWindowTitle(tr("Fragment Graph Viewer"));
     setCentralWidget(view_);
     view_->setRenderHint(QPainter::Antialiasing);
     view_->setDragMode(QGraphicsView::ScrollHandDrag);
     view_->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
 
-    auto* toolbar = addToolBar("Layout");
-    auto* circleAction = toolbar->addAction("Cercle");
-    auto* treeAction = toolbar->addAction("Arborescence");
+    auto* toolbar = addToolBar(tr("Layout"));
+    auto* circleAction = toolbar->addAction(tr("Circle"));
+    auto* treeAction = toolbar->addAction(tr("Tree"));
     connect(circleAction, &QAction::triggered, this, &GraphWindow::UseCircularLayout);
     connect(treeAction, &QAction::triggered, this, &GraphWindow::UseTreeLayout);
 
@@ -94,7 +94,7 @@ void GraphWindow::BuildGraph() {
         if (idx_it != order_index.end())
             label = QString::number(idx_it->second) + " - " + label;
         if (is_cycle)
-            label += " [cycle]";
+            label += tr(" [cycle]");
         auto text = scene_->addText(label);
         text->setPos(center.x() - node_radius, center.y() - node_radius - 24);
         text->setRotation(-20);
@@ -155,27 +155,27 @@ QString GraphWindow::BuildTooltip(const GraphModel::Node& node) const {
     QStringList lines;
     lines << node.label;
     if (!node.start.isEmpty())
-        lines << QString("Adresse: %1 - %2 (%3 o)").arg(node.start, node.end).arg(node.size);
+        lines << tr("Address: %1 - %2 (%3 bytes)").arg(node.start, node.end).arg(node.size);
     if (!node.inputs.empty())
-        lines << "Entrees: " + QStringList(node.inputs.begin(), node.inputs.end()).join(", ");
+        lines << tr("Inputs: %1").arg(QStringList(node.inputs.begin(), node.inputs.end()).join(", "));
     if (!node.outputs.empty())
-        lines << "Sorties: " + QStringList(node.outputs.begin(), node.outputs.end()).join(", ");
+        lines << tr("Outputs: %1").arg(QStringList(node.outputs.begin(), node.outputs.end()).join(", "));
     if (!node.external_inputs.empty())
-        lines << "Entrees externes: " + QStringList(node.external_inputs.begin(), node.external_inputs.end()).join(", ");
+        lines << tr("External inputs: %1").arg(QStringList(node.external_inputs.begin(), node.external_inputs.end()).join(", "));
     if (!node.external_calls.empty())
-        lines << "Appels externes: " + QStringList(node.external_calls.begin(), node.external_calls.end()).join(", ");
+        lines << tr("External calls: %1").arg(QStringList(node.external_calls.begin(), node.external_calls.end()).join(", "));
     if (!node.unresolved.empty())
-        lines << "Appels inconnus: " + QStringList(node.unresolved.begin(), node.unresolved.end()).join(", ");
+        lines << tr("Unresolved calls: %1").arg(QStringList(node.unresolved.begin(), node.unresolved.end()).join(", "));
     if (!node.required_libraries.empty())
-        lines << "Libs: " + QStringList(node.required_libraries.begin(), node.required_libraries.end()).join(", ");
+        lines << tr("Libraries: %1").arg(QStringList(node.required_libraries.begin(), node.required_libraries.end()).join(", "));
     if (!node.bin_hash.isEmpty())
-        lines << "bin_hash: " + node.bin_hash;
+        lines << tr("bin_hash: %1").arg(node.bin_hash);
     if (!node.partition_hash.isEmpty())
-        lines << "part_hash: " + node.partition_hash;
+        lines << tr("part_hash: %1").arg(node.partition_hash);
     if (node.memory)
-        lines << "Memoire globale";
+        lines << tr("Global memory");
     if (node.external)
-        lines << "Externe";
+        lines << tr("External");
     return lines.join("\n");
 }
 
