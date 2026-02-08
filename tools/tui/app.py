@@ -20,6 +20,7 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
+from tools.i18n import tr
 from tools.tui.actions import ActionSpec, CLI, LOG_DIR, REPO_ROOT, build_actions
 from tools.tui.connectors import ITuiConnector, InProcessConnector
 
@@ -201,12 +202,7 @@ class SiliciumTui(App):
     }
     """
 
-    BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("r", "refresh", "Refresh"),
-        ("l", "clear_log", "Clear log"),
-        ("i", "stop", "Interrupt"),
-    ]
+    BINDINGS: list[tuple[str, str, str]] = []
 
     def __init__(self, *, connector: ITuiConnector | None = None) -> None:
         super().__init__()
@@ -228,42 +224,47 @@ class SiliciumTui(App):
         yield Header(show_clock=True)
         with Horizontal(id="taskbar"):
             with Horizontal(id="taskbar-left"):
-                yield Static("Silicium TUI", id="taskbar-title")
-                yield Static("Idle", id="taskbar-state")
+                yield Static(tr("tui.title"), id="taskbar-title")
+                yield Static(tr("tui.status.idle"), id="taskbar-state")
             with Horizontal(id="taskbar-right"):
                 with Horizontal(id="taskbar-buttons"):
-                    yield Button("Run", id="run")
+                    yield Button(tr("tui.button.run"), id="run")
                     yield Static("|", classes="taskbar-sep")
-                    yield Button("Refresh", id="refresh")
+                    yield Button(tr("tui.button.refresh"), id="refresh")
                     yield Static("|", classes="taskbar-sep")
-                    yield Button("Clear log", id="clear")
+                    yield Button(tr("tui.button.clear_log"), id="clear")
                     yield Static("|", classes="taskbar-sep")
-                    yield Button("Copy log", id="copy_log")
+                    yield Button(tr("tui.button.copy_log"), id="copy_log")
                     yield Static("|", classes="taskbar-sep")
-                    yield Button("Runner: auto", id="runner")
+                    yield Button(tr("tui.button.runner", mode=self._runner_mode), id="runner")
         with Horizontal(id="body"):
             with Vertical(id="left"):
-                yield Static("Actions", id="actions-title")
+                yield Static(tr("tui.section.actions"), id="actions-title")
                 yield OptionList(id="actions")
-                yield Static("Select an action and press Enter.", id="details")
-                yield Static("Click Run to start | i: interrupt | r: refresh | l: clear log | q: quit", id="hint")
+                yield Static(tr("tui.details.select_action"), id="details")
+                yield Static(tr("tui.hint"), id="hint")
             with Vertical(id="right"):
-                yield Static("Status", id="status-title")
+                yield Static(tr("tui.section.status"), id="status-title")
                 with Vertical(id="status-panel"):
-                    yield Static("Idle", id="status-head")
+                    yield Static(tr("tui.status.idle"), id="status-head")
                     with Horizontal(id="status-badges"):
-                        yield Static("IDLE", id="badge-state", classes="badge")
-                        yield Static("EXIT -", id="badge-exit", classes="badge")
-                        yield Static("ELAPSED -", id="badge-elapsed", classes="badge")
+                        yield Static(tr("tui.badge.idle"), id="badge-state", classes="badge")
+                        yield Static(tr("tui.badge.exit", code="-"), id="badge-exit", classes="badge")
+                        yield Static(tr("tui.badge.elapsed", value="-"), id="badge-elapsed", classes="badge")
                     yield Static("-", id="status-lines")
                     with Horizontal(id="status-row"):
                         yield LoadingIndicator(id="spinner")
                         yield ProgressBar(total=100, id="progress")
-                yield Static("Logs (tail)", id="log-title")
+                yield Static(tr("tui.section.logs"), id="log-title")
                 yield RichLog(id="log", max_lines=300)
         yield Footer()
 
     def on_mount(self) -> None:
+        self.bind("q", "quit", tr("tui.bind.quit"))
+        self.bind("r", "refresh", tr("tui.bind.refresh"))
+        self.bind("l", "clear_log", tr("tui.bind.clear_log"))
+        self.bind("i", "stop", tr("tui.bind.interrupt"))
+
         option_list = self.query_one("#actions", OptionList)
         option_list.add_options(
             [Option(f"[{action.key}] {action.label}", id=action.key) for action in self._actions]
@@ -294,7 +295,7 @@ class SiliciumTui(App):
         state.cancel_event.set()
         if self._active_log_action == action.key:
             log = self.query_one("#log", RichLog)
-            log.write("[interrupt] requested", scroll_end=True)
+            log.write(tr("tui.log.interrupt_requested"), scroll_end=True)
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         action = self._action_by_key.get(event.option.id or "")
@@ -550,13 +551,13 @@ class SiliciumTui(App):
         log_path = "-"
         elapsed = None
         exit_code = "-"
-        state = "Idle"
+        state_key = "idle"
         if running_state:
             log_path = str(running_state.log_path)
             elapsed = asyncio.get_running_loop().time() - running_state.start_time
-            state = "Running"
+            state_key = "running"
         elif queued:
-            state = "Queued"
+            state_key = "queued"
             if last_state:
                 log_path = str(last_state.log_path)
                 exit_code = str(last_state.exit_code) if last_state.exit_code is not None else "-"
@@ -565,24 +566,33 @@ class SiliciumTui(App):
             exit_code = str(last_state.exit_code) if last_state.exit_code is not None else "-"
 
         busy = ", ".join(sorted(self._busy_resources())) or "-"
+        state = tr(f"tui.status.{state_key}")
         status_head.update(action_label)
         status_lines.update(
             "\n".join(
                 [
-                    f"Command: {command}",
-                    f"Log    : {log_path}",
-                    f"Runner : {self._runner_mode}",
-                    f"Running: {len(self._running_actions)} | Queued: {len(self._queued_actions)} | Busy: {busy}",
+                    tr("tui.status.line.command", command=command),
+                    tr("tui.status.line.log", path=log_path),
+                    tr("tui.status.line.runner", mode=self._runner_mode),
+                    tr(
+                        "tui.status.line.counts",
+                        running=len(self._running_actions),
+                        queued=len(self._queued_actions),
+                        busy=busy,
+                    ),
                 ]
             )
         )
-        badge_state.update(state.upper())
-        badge_state.set_class(state == "Running", "badge--running")
-        badge_exit.update(f"EXIT {exit_code}")
+        badge_state.update(tr(f"tui.badge.{state_key}"))
+        badge_state.set_class(state_key == "running", "badge--running")
+        badge_exit.update(tr("tui.badge.exit", code=exit_code))
         badge_exit.set_class(exit_code not in ("-", "0"), "badge--error")
-        badge_elapsed.update(f"ELAPSED {format_duration(elapsed)}")
-        state_suffix = f"{state} ({len(self._running_actions)})" if self._running_actions else state
-        self.query_one("#taskbar-state", Static).update(f"* {state_suffix}")
+        badge_elapsed.update(tr("tui.badge.elapsed", value=format_duration(elapsed)))
+        if self._running_actions:
+            state_suffix = tr("tui.taskbar.state_running", state=state, count=len(self._running_actions))
+        else:
+            state_suffix = state
+        self.query_one("#taskbar-state", Static).update(tr("tui.taskbar.state", state=state_suffix))
 
     def _sync_toolbar(self) -> None:
         run_button = self.query_one("#run", Button)
@@ -591,15 +601,15 @@ class SiliciumTui(App):
         selected = self._selected_action
         running = bool(selected and selected.key in self._running_actions)
         queued = bool(selected and any(a.key == selected.key for a in self._queued_actions))
-        run_button.label = "Interrupt" if running else "Run"
+        run_button.label = tr("tui.button.interrupt") if running else tr("tui.button.run")
         run_button.variant = "error" if running else "primary"
         if queued and not running:
-            run_button.label = "Queued"
+            run_button.label = tr("tui.button.queued")
             run_button.variant = "default"
         run_button.set_class(bool(selected) and not running and not queued, "run-ready")
         run_button.disabled = selected is None or queued
         copy_button.disabled = self._log_path_for(selected.key) is None if selected else True
-        runner_button.label = f"Runner: {self._runner_mode}"
+        runner_button.label = tr("tui.button.runner", mode=self._runner_mode)
         runner_button.disabled = bool(self._running_actions)
 
     def _tick_elapsed(self) -> None:
