@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import threading
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -20,6 +21,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from tools.tui.actions import ActionSpec, CLI, LOG_DIR, REPO_ROOT, build_actions
+from tools.tui.connectors import ITuiConnector, InProcessConnector
 
 
 @dataclass
@@ -29,7 +31,7 @@ class RunState:
     start_time: float
     resources: frozenset[str]
     runner_mode: str
-    proc: asyncio.subprocess.Process | None
+    cancel_event: threading.Event
     exit_code: int | None = None
 
 
@@ -206,8 +208,9 @@ class SiliciumTui(App):
         ("i", "stop", "Interrupt"),
     ]
 
-    def __init__(self) -> None:
+    def __init__(self, *, connector: ITuiConnector | None = None) -> None:
         super().__init__()
+        self._connector = connector or InProcessConnector()
         self._actions: list[ActionSpec] = build_actions()
         self._action_by_key = {action.key: action for action in self._actions}
         self._progress_value = 0
@@ -286,9 +289,12 @@ class SiliciumTui(App):
         if not action:
             return
         state = self._running_actions.get(action.key)
-        if not state or not state.proc:
+        if not state:
             return
-        state.proc.terminate()
+        state.cancel_event.set()
+        if self._active_log_action == action.key:
+            log = self.query_one("#log", RichLog)
+            log.write("[interrupt] requested", scroll_end=True)
 
     def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
         action = self._action_by_key.get(event.option.id or "")
@@ -423,13 +429,14 @@ class SiliciumTui(App):
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_path = LOG_DIR / f"{timestamp}_{action.key}.log"
+        cancel_event = threading.Event()
         state = RunState(
             action=action,
             log_path=log_path,
             start_time=asyncio.get_running_loop().time(),
             resources=frozenset(action.resources_for(self._runner_mode)),
             runner_mode=self._runner_mode,
-            proc=None,
+            cancel_event=cancel_event,
         )
         self._running_actions[action.key] = state
         self._sync_toolbar()
@@ -452,11 +459,14 @@ class SiliciumTui(App):
             log.write(command_line, scroll_end=True)
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *command,
-                cwd=REPO_ROOT,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
+            runner_task = asyncio.create_task(
+                asyncio.to_thread(
+                    self._connector.run_action,
+                    action,
+                    state.runner_mode,
+                    log_path,
+                    cancel_event,
+                )
             )
         except Exception as exc:  # pragma: no cover - UI error path
             if self._active_log_action == action.key:
@@ -476,21 +486,7 @@ class SiliciumTui(App):
             self._try_start_queued()
             return
 
-        state.proc = proc
-
-        with log_path.open("w", encoding="utf-8") as handle:
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                text_line = line.decode(errors="replace").rstrip()
-                handle.write(text_line + "\n")
-                if self._active_log_action == action.key:
-                    log.write(text_line, scroll_end=True)
-
-            await proc.wait()
-
-        state.exit_code = proc.returncode
+        state.exit_code = await self._tail_until_done(action.key, log_path, runner_task)
         self._running_actions.pop(action.key, None)
         self._last_runs[action.key] = state
         if not self._running_actions:
@@ -504,6 +500,35 @@ class SiliciumTui(App):
         self._render_status()
         self._sync_toolbar()
         self._try_start_queued()
+
+    async def _tail_until_done(
+        self,
+        action_key: str,
+        log_path: Path,
+        runner_task: asyncio.Task[int],
+    ) -> int:
+        offset = 0
+        while True:
+            if log_path.exists():
+                try:
+                    with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+                        handle.seek(offset)
+                        chunk = handle.read()
+                        offset = handle.tell()
+                except OSError:
+                    chunk = ""
+                if chunk and self._active_log_action == action_key:
+                    log = self.query_one("#log", RichLog)
+                    for line in chunk.splitlines():
+                        log.write(line, scroll_end=True)
+
+            if runner_task.done():
+                try:
+                    return int(await runner_task)
+                except Exception:
+                    return 1
+
+            await asyncio.sleep(0.05)
 
     def _render_status(self) -> None:
         status_head = self.query_one("#status-head", Static)
@@ -590,5 +615,5 @@ class SiliciumTui(App):
         progress.update(progress=self._progress_value)
 
 
-def run() -> None:
-    SiliciumTui().run()
+def run(connector: ITuiConnector | None = None) -> None:
+    SiliciumTui(connector=connector).run()

@@ -19,7 +19,8 @@ python -m pip install -r requirements-tui.txt
 - CLI option: `./silicium tui --tui-frontend textual|curses|headless`
 - CLI connector: `./silicium tui --tui-connector inprocess|stdio`
 - Env override: `SILICIUM_TUI_FRONTEND=textual|curses|headless`
-- Env connector override: `SILICIUM_TUI_CONNECTOR=inprocess|stdio`
+- Env connector override: `SILICIUM_TUI_CONNECTOR=inprocess|stdio|http`
+- HTTP connector endpoint: `SILICIUM_TUI_ENDPOINT=http://127.0.0.1:8765`
 - Non-interactive probe: `./silicium tui --smoke`
 - Strict probe: `./silicium tui --smoke --strict-frontend --tui-frontend <name>`
 - Headless script run: `./silicium tui --tui-frontend headless --headless-script <path.json>`
@@ -27,6 +28,7 @@ python -m pip install -r requirements-tui.txt
 - Connector default: `inprocess` when not specified
 - `stdio` uses a JSON line protocol with `tools/tui/stdio_core.cpp` over stdin/stdout
 - For `stdio`, override core launch command with `SILICIUM_TUI_STDIO_CORE_CMD`
+- `http` uses a local HTTP API exposed by a C++ core (default endpoint: `http://127.0.0.1:8765`)
 - Fallback policy:
   - invalid value -> warning -> fallback to `textual`
   - `curses` selected -> runs minimal curses frontend

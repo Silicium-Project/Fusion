@@ -10,7 +10,7 @@ from tools.tui.headless_app import run_script as default_headless_script_runner
 
 HeadlessScriptRunner = Callable[..., dict[str, object]]
 TextualProbe = Callable[[], tuple[bool, str]]
-TextualRun = Callable[[], None]
+TextualRun = Callable[[FrontendRunConfig], None]
 
 if TYPE_CHECKING:
     from tools.tui.connectors import ITuiConnector
@@ -63,7 +63,7 @@ class TextualFrontend(ITuiFrontend):
         if not ok:
             return FrontendRunResult(False, reason)
         try:
-            self._run_impl()
+            self._run_impl(config)
             return FrontendRunResult(True, "")
         except Exception as exc:  # pragma: no cover - interactive path
             return FrontendRunResult(False, f"textual frontend failed: {exc}")
@@ -161,7 +161,7 @@ def _default_textual_probe() -> tuple[bool, str]:
     return True, ""
 
 
-def _default_textual_run() -> None:
+def _default_textual_run(config: FrontendRunConfig) -> None:
     from tools.tui.app import run as run_textual
 
-    run_textual()
+    run_textual(connector=config.connector)

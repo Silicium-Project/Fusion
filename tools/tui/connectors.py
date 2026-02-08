@@ -11,6 +11,9 @@ import shutil
 import subprocess
 import threading
 import time
+from urllib import error as url_error
+from urllib import parse as url_parse
+from urllib import request as url_request
 
 from tools.tui.actions import ActionSpec, REPO_ROOT
 
@@ -175,6 +178,110 @@ class StdIoConnector(ITuiConnector):
             line_queue.put(None)
 
 
+class HttpConnector(ITuiConnector):
+    def __init__(
+        self,
+        endpoint: str | None = None,
+        *,
+        poll_interval_sec: float = 0.10,
+        request_timeout_sec: float = 5.0,
+    ) -> None:
+        super().__init__("http")
+        configured_endpoint = endpoint or os.environ.get("SILICIUM_TUI_ENDPOINT", "")
+        self._endpoint = _normalize_http_endpoint(configured_endpoint)
+        self._poll_interval_sec = max(0.01, poll_interval_sec)
+        self._request_timeout_sec = max(0.5, request_timeout_sec)
+
+    def run_action(
+        self,
+        action: ActionSpec,
+        runner_mode: str,
+        log_path: Path,
+        cancel_event: threading.Event,
+    ) -> int:
+        command = action.command(runner_mode)
+        request_payload = {
+            "type": "run",
+            "action": action.key,
+            "runner_mode": runner_mode,
+            "cwd": str(REPO_ROOT),
+            "command": command,
+        }
+        start_response = self._request_json("POST", "/command", request_payload)
+        run_id = _extract_run_id(start_response)
+        if not run_id:
+            raise RuntimeError(
+                "HTTP connector expected a run identifier in /command response "
+                "(accepted: run_id, id, task_id)."
+            )
+
+        cursor = 0
+        cancel_sent = False
+        with log_path.open("w", encoding="utf-8") as handle:
+            while True:
+                if cancel_event.is_set() and not cancel_sent:
+                    self._request_json(
+                        "POST",
+                        "/command",
+                        {"type": "interrupt", "run_id": run_id},
+                    )
+                    cancel_sent = True
+
+                logs_query = url_parse.urlencode({"run_id": run_id, "cursor": cursor})
+                logs_response = self._request_json("GET", f"/logs?{logs_query}")
+                cursor = _write_http_logs(handle, logs_response, cursor)
+
+                state_query = url_parse.urlencode({"run_id": run_id})
+                state_response = self._request_json("GET", f"/state?{state_query}")
+                state = str(state_response.get("status", "")).strip().lower()
+                if state in {"completed", "failed", "error", "cancelled", "canceled", "done"}:
+                    return _extract_exit_code(state_response, state)
+
+                time.sleep(self._poll_interval_sec)
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        if payload is None:
+            body = None
+        else:
+            body = json.dumps(payload).encode("utf-8")
+        req = url_request.Request(
+            f"{self._endpoint}{path}",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method=method,
+        )
+        try:
+            with url_request.urlopen(req, timeout=self._request_timeout_sec) as response:
+                raw = response.read().decode("utf-8").strip()
+        except url_error.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace").strip()
+            raise RuntimeError(
+                f"HTTP connector request failed {method} {path}: {exc.code} {details}"
+            ) from exc
+        except url_error.URLError as exc:
+            raise RuntimeError(
+                f"HTTP connector request failed {method} {path}: {exc.reason}"
+            ) from exc
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"HTTP connector received invalid JSON for {method} {path}"
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise RuntimeError(
+                f"HTTP connector expected object response for {method} {path}"
+            )
+        return parsed
+
+
 def _parse_event_line(line: str) -> dict[str, object] | None:
     raw = line.strip()
     if not raw:
@@ -190,6 +297,77 @@ def _parse_event_line(line: str) -> dict[str, object] | None:
 
 def _b64_encode(value: str) -> str:
     return base64.b64encode(value.encode("utf-8")).decode("ascii")
+
+
+def _normalize_http_endpoint(raw: str) -> str:
+    endpoint = raw.strip() or "http://127.0.0.1:8765"
+    endpoint = endpoint.rstrip("/")
+    if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
+        endpoint = f"http://{endpoint}"
+    return endpoint
+
+
+def _extract_run_id(payload: dict[str, object]) -> str:
+    for key in ("run_id", "id", "task_id"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int):
+            return str(value)
+    return ""
+
+
+def _extract_exit_code(payload: dict[str, object], state: str) -> int:
+    for key in ("exit_code", "code"):
+        value = payload.get(key)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+            return int(value.strip())
+    if state == "completed":
+        return 0
+    return 1
+
+
+def _write_http_logs(
+    handle: "typing.TextIO",
+    payload: dict[str, object],
+    cursor: int,
+) -> int:
+    import typing
+
+    lines_obj = payload.get("lines", payload.get("logs", []))
+    items: list[tuple[int | None, str]] = []
+    if isinstance(lines_obj, list):
+        for entry in lines_obj:
+            if isinstance(entry, str):
+                items.append((None, entry))
+                continue
+            if not isinstance(entry, dict):
+                continue
+            text_value = entry.get("line")
+            if not isinstance(text_value, str):
+                continue
+            cursor_value = entry.get("cursor")
+            if isinstance(cursor_value, int):
+                items.append((cursor_value, text_value))
+            else:
+                items.append((None, text_value))
+
+    if any(cursor_value is not None for cursor_value, _ in items):
+        items.sort(key=lambda item: item[0] if item[0] is not None else 0)
+
+    for cursor_value, text_line in items:
+        handle.write(text_line.rstrip("\r\n") + "\n")
+        if cursor_value is not None and cursor_value > cursor:
+            cursor = cursor_value
+        else:
+            cursor += 1
+
+    next_cursor = payload.get("next_cursor")
+    if isinstance(next_cursor, int) and next_cursor > cursor:
+        cursor = next_cursor
+    return cursor
 
 
 def _resolve_stdio_core_command() -> list[str] | None:
@@ -236,4 +414,5 @@ def build_connector_registry() -> dict[str, ITuiConnector]:
     return {
         "inprocess": InProcessConnector(),
         "stdio": StdIoConnector(),
+        "http": HttpConnector(),
     }

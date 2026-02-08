@@ -164,7 +164,7 @@ WORKLOAD_TAXONOMY_TAGS = [
     "verification",
 ]
 TUI_FRONTENDS = {"textual", "curses", "headless"}
-TUI_CONNECTORS = {"inprocess", "stdio"}
+TUI_CONNECTORS = {"inprocess", "stdio", "http"}
 
 
 @dataclass(frozen=True)
@@ -2266,7 +2266,7 @@ def resolve_tui_connector(requested: str | None) -> tuple[str, list[str]]:
     if candidate not in TUI_CONNECTORS:
         warnings.append(
             f"Unsupported TUI connector '{candidate}', falling back to inprocess "
-            "(supported: inprocess, stdio)."
+            "(supported: inprocess, stdio, http)."
         )
         candidate = "inprocess"
     return candidate, warnings
@@ -2354,7 +2354,7 @@ def run_tui_frontend(
             return
         print(colorize(f"[WARN] {result.reason} Falling back to textual.", COLOR_YELLOW))
 
-    result = registry["textual"].run(FrontendRunConfig())
+    result = registry["textual"].run(FrontendRunConfig(connector=connector))
     if result.ok:
         return
 
@@ -2950,7 +2950,7 @@ def configure_tui(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--tui-connector",
-        help="Connector selection: inprocess, stdio (or SILICIUM_TUI_CONNECTOR).",
+        help="Connector selection: inprocess, stdio, http (or SILICIUM_TUI_CONNECTOR).",
     )
     parser.add_argument(
         "--smoke",
