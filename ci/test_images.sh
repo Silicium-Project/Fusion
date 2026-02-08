@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# shellcheck source=infra/bin/i18n.sh
+. "$ROOT/infra/bin/i18n.sh"
+
 TMP_TAG_PREFIX="ci-test-$$"
 
 cleanup() {
@@ -16,25 +19,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo ">> Build worker builder"
+echo ">> $(sil_i18n_lookup "ci.test_images.build_worker_builder")"
 docker build -t ${TMP_TAG_PREFIX}-worker-builder -f docker/worker-builder/Dockerfile .
 
-echo ">> Build worker runtime"
+echo ">> $(sil_i18n_lookup "ci.test_images.build_worker_runtime")"
 docker build -t ${TMP_TAG_PREFIX}-worker-runtime -f docker/worker-runtime/Dockerfile .
 
-echo ">> Smoke worker runtime (--help)"
+echo ">> $(sil_i18n_lookup "ci.test_images.smoke_worker_runtime")"
 docker run --rm ${TMP_TAG_PREFIX}-worker-runtime --help >/dev/null 2>&1 || true
 
-echo ">> Build GUI runtime"
+echo ">> $(sil_i18n_lookup "ci.test_images.build_gui_runtime")"
 docker build -t ${TMP_TAG_PREFIX}-gui-runtime -f docker/gui-runner/Dockerfile .
 
-echo ">> Smoke GUI runtime in headless mode (--help)"
+echo ">> $(sil_i18n_lookup "ci.test_images.smoke_gui_runtime")"
 docker run --rm ${TMP_TAG_PREFIX}-gui-runtime --headless fragment_executor --help >/dev/null 2>&1 || true
 
-echo ">> Build GUI headless runtime"
+echo ">> $(sil_i18n_lookup "ci.test_images.build_gui_headless")"
 docker build -t ${TMP_TAG_PREFIX}-gui-headless -f docker/gui-headless-runtime/Dockerfile .
 
-echo ">> Smoke GUI headless (--help)"
+echo ">> $(sil_i18n_lookup "ci.test_images.smoke_gui_headless")"
 docker run --rm ${TMP_TAG_PREFIX}-gui-headless fragment_executor --help >/dev/null 2>&1 || true
 
-echo "All Docker image tests passed."
+sil_i18n_echo "ci.test_images.ok"
