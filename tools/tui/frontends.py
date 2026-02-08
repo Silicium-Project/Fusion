@@ -9,6 +9,8 @@ from typing import Callable
 from tools.tui.headless_app import run_script as default_headless_script_runner
 
 HeadlessScriptRunner = Callable[..., dict[str, object]]
+TextualProbe = Callable[[], tuple[bool, str]]
+TextualRun = Callable[[], None]
 
 
 @dataclass(frozen=True)
@@ -39,24 +41,25 @@ class ITuiFrontend(ABC):
 
 
 class TextualFrontend(ITuiFrontend):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        probe_impl: TextualProbe | None = None,
+        run_impl: TextualRun | None = None,
+    ) -> None:
         super().__init__("textual")
+        self._probe_impl = probe_impl or _default_textual_probe
+        self._run_impl = run_impl or _default_textual_run
 
     def probe(self) -> tuple[bool, str]:
-        try:
-            from tools.tui.app import run as _run_textual  # noqa: F401
-        except ImportError:
-            return False, "Textual dependencies missing."
-        return True, ""
+        return self._probe_impl()
 
     def run(self, config: FrontendRunConfig) -> FrontendRunResult:
         ok, reason = self.probe()
         if not ok:
             return FrontendRunResult(False, reason)
-        from tools.tui.app import run as run_textual
-
         try:
-            run_textual()
+            self._run_impl()
             return FrontendRunResult(True, "")
         except Exception as exc:  # pragma: no cover - interactive path
             return FrontendRunResult(False, f"textual frontend failed: {exc}")
@@ -140,3 +143,17 @@ def build_frontend_registry() -> dict[str, ITuiFrontend]:
         "curses": CursesFrontend(),
         "headless": HeadlessFrontend(),
     }
+
+
+def _default_textual_probe() -> tuple[bool, str]:
+    try:
+        from tools.tui.app import run as _run_textual  # noqa: F401
+    except ImportError:
+        return False, "Textual dependencies missing."
+    return True, ""
+
+
+def _default_textual_run() -> None:
+    from tools.tui.app import run as run_textual
+
+    run_textual()
