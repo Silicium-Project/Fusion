@@ -89,6 +89,7 @@ TOP_LEVEL_COMMANDS = [
     "doctor",
     "budget",
     "smoke",
+    "setup",
     "tools",
     "clean",
     "ledger",
@@ -108,11 +109,14 @@ TOP_LEVEL_COMMANDS = [
 ]
 SUBCOMMANDS = {
     "tools": ["demo", "clean"],
+    "setup": ["up", "down"],
     "ledger": ["list", "wipe", "export", "import"],
     "history": ["show", "clear"],
     "clean": ["cache", "ledgers", "all"],
     "workload": ["list", "show", "queue", "lint", "fixtures", "alignment", "golden"],
 }
+SETUP_TARGET_CHOICES = ["localnet", "devnet", "testnet", "mainnet", "proxy"]
+SETUP_DEFAULT_TARGETS = ["localnet", "proxy"]
 WORKLOAD_TAXONOMY_CATEGORIES = ["calcul", "verification"]
 WORKLOAD_TAXONOMY_DOMAINS = [
     "compression",
@@ -1931,6 +1935,197 @@ def cmd_history_clear(_: argparse.Namespace, ctx: Context) -> None:
     print("History cleared.")
 
 
+def _dedupe(values: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    return ordered
+
+
+def _resolve_setup_targets(args: argparse.Namespace) -> list[str]:
+    targets = list(args.target or [])
+    if args.full:
+        targets = list(SETUP_TARGET_CHOICES)
+    if not targets:
+        targets = list(SETUP_DEFAULT_TARGETS)
+    if args.no_proxy:
+        targets = [item for item in targets if item != "proxy"]
+    return _dedupe(targets)
+
+
+def _emit_setup_summary(summary: dict[str, Any], as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return
+    action = summary.get("action", "setup")
+    print(colorize(f"==> {action}", COLOR_YELLOW))
+    preflight = summary.get("preflight", {})
+    docker_state = preflight.get("docker", {})
+    compose_state = preflight.get("compose", {})
+    if docker_state:
+        print(f"Docker preflight: {docker_state.get('status', 'unknown')}")
+        if docker_state.get("reason"):
+            print(f"  reason: {docker_state.get('reason')}")
+    if compose_state:
+        print(f"Compose preflight: {compose_state.get('status', 'unknown')}")
+        if compose_state.get("reason"):
+            print(f"  reason: {compose_state.get('reason')}")
+    for key in ("started", "stopped", "failed", "skipped"):
+        rows = summary.get(key, [])
+        if rows:
+            print(f"{key.capitalize()}:")
+            for row in rows:
+                profile = row.get("profile") or "-"
+                reason = row.get("reason", "")
+                code = row.get("exit_code", "")
+                extra = f" profile={profile}"
+                if code != "":
+                    extra += f" exit={code}"
+                if reason:
+                    extra += f" reason={reason}"
+                print(f"  - {row.get('target', '?')} ({row.get('service', '?')}){extra}")
+    print("Summary JSON:")
+    print(json.dumps(summary, indent=2, sort_keys=True))
+
+
+def cmd_setup_up(args: argparse.Namespace, ctx: Context) -> None:
+    targets = _resolve_setup_targets(args)
+    summary: dict[str, Any] = {
+        "action": "setup up",
+        "targets": targets,
+        "preflight": {},
+        "started": [],
+        "failed": [],
+        "skipped": [],
+    }
+
+    health = docker_health(ctx, retries=2, timeout_s=8.0)
+    if not health.ok:
+        summary["preflight"]["docker"] = {
+            "status": "failed",
+            "error_code": health.error_code,
+            "reason": health.message,
+        }
+        if os.name == "nt":
+            summary["preflight"]["hint"] = "Run `python silicium doctor` for WSL integration hints."
+        _emit_setup_summary(summary, as_json=args.json)
+        sys.exit(1)
+    summary["preflight"]["docker"] = {"status": "ok", "detail": health.detail}
+
+    try:
+        compose_command(ctx)
+    except SystemExit:
+        summary["preflight"]["compose"] = {
+            "status": "failed",
+            "reason": "Docker Compose not available",
+        }
+        _emit_setup_summary(summary, as_json=args.json)
+        sys.exit(1)
+    summary["preflight"]["compose"] = {"status": "ok"}
+
+    for target in targets:
+        service, profile = START_TARGETS[target]
+        cmd = compose_base(ctx)
+        if profile:
+            cmd += ["--profile", profile]
+        cmd += ["up", "-d", service]
+        code = run(cmd, allow_failure=True)
+        record = {"target": target, "service": service, "profile": profile or "", "exit_code": code}
+        if code == 0:
+            summary["started"].append(record)
+        else:
+            record["reason"] = "compose up failed"
+            summary["failed"].append(record)
+
+    ps_cmd = compose_base(ctx) + ["ps"]
+    code, out, err = run_capture(ps_cmd, timeout_s=20.0)
+    summary["status"] = {"exit_code": code}
+    if out.strip():
+        summary["status"]["stdout"] = out.strip()
+    if err.strip():
+        summary["status"]["stderr"] = err.strip()
+
+    _emit_setup_summary(summary, as_json=args.json)
+    if summary["failed"]:
+        sys.exit(1)
+
+
+def cmd_setup_down(args: argparse.Namespace, ctx: Context) -> None:
+    targets = _dedupe(list(args.target or []))
+    summary: dict[str, Any] = {
+        "action": "setup down",
+        "targets": targets,
+        "preflight": {},
+        "stopped": [],
+        "failed": [],
+        "skipped": [],
+    }
+
+    health = docker_health(ctx, retries=1, timeout_s=6.0)
+    if not health.ok:
+        summary["preflight"]["docker"] = {
+            "status": "failed",
+            "error_code": health.error_code,
+            "reason": health.message,
+        }
+        _emit_setup_summary(summary, as_json=args.json)
+        sys.exit(1)
+    summary["preflight"]["docker"] = {"status": "ok", "detail": health.detail}
+
+    if not targets:
+        cmd = compose_base(ctx) + ["down"]
+        if args.volumes:
+            cmd.append("-v")
+        code = run(cmd, allow_failure=True)
+        record = {"target": "all", "service": "all", "profile": "", "exit_code": code}
+        if code == 0:
+            summary["stopped"].append(record)
+        else:
+            record["reason"] = "compose down failed"
+            summary["failed"].append(record)
+    else:
+        for target in targets:
+            service, profile = START_TARGETS[target]
+            cmd = compose_base(ctx)
+            if profile:
+                cmd += ["--profile", profile]
+            cmd += ["stop", service]
+            code = run(cmd, allow_failure=True)
+            record = {"target": target, "service": service, "profile": profile or "", "exit_code": code}
+            if code == 0:
+                if args.remove:
+                    rm_cmd = compose_base(ctx)
+                    if profile:
+                        rm_cmd += ["--profile", profile]
+                    rm_cmd += ["rm", "-f", service]
+                    rm_code = run(rm_cmd, allow_failure=True)
+                    record["remove_exit_code"] = rm_code
+                    if rm_code != 0:
+                        record["reason"] = "compose rm failed"
+                        summary["failed"].append(record)
+                        continue
+                summary["stopped"].append(record)
+            else:
+                record["reason"] = "compose stop failed"
+                summary["failed"].append(record)
+
+    ps_cmd = compose_base(ctx) + ["ps"]
+    code, out, err = run_capture(ps_cmd, timeout_s=20.0)
+    summary["status"] = {"exit_code": code}
+    if out.strip():
+        summary["status"]["stdout"] = out.strip()
+    if err.strip():
+        summary["status"]["stderr"] = err.strip()
+
+    _emit_setup_summary(summary, as_json=args.json)
+    if summary["failed"]:
+        sys.exit(1)
+
+
 def cmd_start(args: argparse.Namespace, ctx: Context) -> None:
     service, profile = START_TARGETS[args.target]
     compose_up(service, profile, ctx)
@@ -2494,6 +2689,55 @@ def configure_history_clear(parser: argparse.ArgumentParser) -> None:
     pass
 
 
+def configure_setup_up(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--target",
+        choices=SETUP_TARGET_CHOICES,
+        action="append",
+        help="Target to start (repeatable). Defaults to localnet+proxy.",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="Start all targets (localnet, devnet, testnet, mainnet, proxy).",
+    )
+    parser.add_argument(
+        "--no-proxy",
+        action="store_true",
+        help="Exclude proxy from selected targets.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON summary.",
+    )
+
+
+def configure_setup_down(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--target",
+        choices=SETUP_TARGET_CHOICES,
+        action="append",
+        help="Target to stop (repeatable). If omitted, runs compose down.",
+    )
+    parser.add_argument(
+        "-v",
+        "--volumes",
+        action="store_true",
+        help="When stopping all, also remove volumes (compose down -v).",
+    )
+    parser.add_argument(
+        "--remove",
+        action="store_true",
+        help="When stopping selected targets, also remove containers.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON summary.",
+    )
+
+
 def configure_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "target",
@@ -2603,6 +2847,17 @@ def build_registry() -> CommandRegistry:
     registry.add(CommandSpec("tui", "Launch terminal UI", configure_tui, cmd_tui))
     registry.add(CommandSpec("shell", "Start interactive shell", configure_shell, cmd_shell))
 
+    registry.add_group(
+        CommandGroup(
+            name="setup",
+            help="Bootstrap and stop local stack",
+            dest="setup_cmd",
+            commands=[
+                CommandSpec("up", "Bootstrap/start selected targets", configure_setup_up, cmd_setup_up),
+                CommandSpec("down", "Stop/cleanup selected targets", configure_setup_down, cmd_setup_down),
+            ],
+        )
+    )
     registry.add_group(
         CommandGroup(
             name="tools",
@@ -2777,6 +3032,25 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             return [cmd for cmd in SUBCOMMANDS["clean"] if cmd.startswith(text)]
         flags = ["-y", "--yes", "--ledgers"]
         return [flag for flag in flags if flag.startswith(text)]
+    if first == "setup":
+        if len(tokens) == 1:
+            return [cmd for cmd in SUBCOMMANDS["setup"] if cmd.startswith(text)]
+        sub = tokens[1]
+        if sub == "up":
+            flags = ["--target", "--full", "--no-proxy", "--json"]
+            if text.startswith("-"):
+                return [flag for flag in flags if flag.startswith(text)]
+            if tokens[-1] == "--target":
+                return [opt for opt in SETUP_TARGET_CHOICES if opt.startswith(text)]
+            return [opt for opt in SETUP_TARGET_CHOICES if opt.startswith(text)]
+        if sub == "down":
+            flags = ["--target", "-v", "--volumes", "--remove", "--json"]
+            if text.startswith("-"):
+                return [flag for flag in flags if flag.startswith(text)]
+            if tokens[-1] == "--target":
+                return [opt for opt in SETUP_TARGET_CHOICES if opt.startswith(text)]
+            return [opt for opt in SETUP_TARGET_CHOICES if opt.startswith(text)]
+        return []
     if first == "check":
         flags = [
             "--full",

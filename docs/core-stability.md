@@ -71,6 +71,13 @@ CORE_CHECK_MODE=full ./ci/core_check.sh
 ./silicium check --runner docker
 ```
 
+Bootstrap helpers:
+
+```
+python silicium setup up
+python silicium setup down -v
+```
+
 Docker runner defaults to the lightweight image `silicium/core-check:lite`
 (built from `docker/core-check/Dockerfile`). Override with
 `SILICIUM_CORE_CHECK_IMAGE` if needed.
