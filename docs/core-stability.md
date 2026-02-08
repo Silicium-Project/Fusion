@@ -10,6 +10,9 @@ Scope: splitter, executor, worker, CLI orchestration, and optional Docker infra.
 - `python3` (or `python`) with `pytest` and `pyyaml`
 - Docker (optional, required for full infra and DynamoRIO checks)
 
+See also:
+- `docs/windows-support.md` for the Windows support matrix.
+
 ## WSL + Docker Desktop integration (Windows)
 
 If you run tools inside WSL, Docker Desktop integration must be enabled for the
