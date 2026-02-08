@@ -96,6 +96,25 @@ void copy_into_layout(uint8_t* base_ptr,
     std::memcpy(base_ptr + offset, bytes.data(), len);
 }
 
+std::string lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool is_windows_import_target(const std::string& target) {
+    const std::string lowered = lowercase(target);
+    return lowered.find("__imp_") != std::string::npos
+        || lowered.find("@iat") != std::string::npos
+        || lowered.find(".idata") != std::string::npos;
+}
+
+bool is_windows_unsupported_opcode(const std::string& opcode) {
+    const std::string lowered = lowercase(opcode);
+    return lowered == "syscall" || lowered == "sysenter" || lowered == "int" || lowered == "int3";
+}
+
 }  // namespace
 
 static bool should_skip_line(const std::string& line) {
@@ -132,6 +151,14 @@ FragmentExecutor::FragmentExecutor(ExecutorConfig config)
 
 void FragmentExecutor::set_use_native(bool native) {
     config_.use_native_execution = native;
+}
+
+void FragmentExecutor::set_abi_profile(AbiProfile profile) {
+    config_.abi_profile = profile;
+}
+
+AbiProfile FragmentExecutor::abi_profile() const noexcept {
+    return config_.abi_profile;
 }
 
 void FragmentExecutor::set_binary_path(const std::string& path) {
@@ -208,7 +235,8 @@ ExecutionResult FragmentExecutor::execute_safe(const std::string& asm_file) {
             next_addr = lines[idx + 1].addr;
         instruction_emulator_.set_next_instruction_address(next_addr);
         if (!emulate_instruction(info.text, result)) {
-            result.error_message = "Erreur lors de l'émulation: " + info.text;
+            if (result.error_message.empty())
+                result.error_message = "Erreur lors de l'émulation: " + info.text;
             return result;
         }
         result.instructions_executed++;
@@ -643,6 +671,11 @@ bool FragmentExecutor::emulate_instruction(const std::string& line, ExecutionRes
     std::string opcode;
     iss >> opcode;
 
+    if (config_.abi_profile == AbiProfile::WindowsX64 && is_windows_unsupported_opcode(opcode)) {
+        result.error_message = "Unsupported Windows opcode in emulation: " + opcode;
+        return false;
+    }
+
     Opcode op = classify_opcode(opcode);
     if (op == Opcode::Call)
         return emulate_call(iss, result);
@@ -663,7 +696,8 @@ bool FragmentExecutor::emulate_call(std::istringstream& iss, ExecutionResult& re
         return true;
 
     if (target.find("puts") != std::string::npos) {
-        uint64_t addr = emulator.get("rdi");
+        const std::string arg_reg = (config_.abi_profile == AbiProfile::WindowsX64) ? "rcx" : "rdi";
+        uint64_t addr = emulator.get(arg_reg);
         auto text = read_string_from_binary(addr);
         if (!text) {
             // fallback: tente de charger en mémoire émulée et relit
@@ -681,7 +715,7 @@ bool FragmentExecutor::emulate_call(std::istringstream& iss, ExecutionResult& re
     }
 
     if (is_printf_symbol(target)) {
-        const auto args = gather_printf_args(emulator);
+        const auto args = gather_printf_args(emulator, config_.abi_profile);
         auto format = read_string_from_binary(args.fmt);
         if (format) {
             auto read_string = [this](uint64_t addr) {
@@ -696,6 +730,11 @@ bool FragmentExecutor::emulate_call(std::istringstream& iss, ExecutionResult& re
             result.program_stdout += format_printf_like(*format, args, read_string);
         }
         return true;
+    }
+
+    if (config_.abi_profile == AbiProfile::WindowsX64 && is_windows_import_target(target)) {
+        result.error_message = "Unsupported Windows import call in emulation: " + target;
+        return false;
     }
 
     return true;

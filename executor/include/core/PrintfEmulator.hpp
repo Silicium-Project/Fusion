@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Config.hpp"
 #include "core/Memory.hpp"
 
 #include <array>
@@ -18,7 +19,9 @@ struct PrintfArgs {
 
 using ReadStringFunc = std::function<std::optional<std::string>(uint64_t)>;
 
-PrintfArgs gather_printf_args(const RegisterEmulator& emulator, std::size_t max_stack_args = 16);
+PrintfArgs gather_printf_args(const RegisterEmulator& emulator,
+                              AbiProfile profile = AbiProfile::SystemV,
+                              std::size_t max_stack_args = 16);
 std::string format_printf_like(const std::string& fmt, const PrintfArgs& args, const ReadStringFunc& read_string);
 
 }  // namespace fragment

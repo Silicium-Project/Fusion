@@ -217,6 +217,57 @@ TEST(FragmentExecutor, EmulateCallPrintfFormatsArgs) {
     EXPECT_EQ(result.program_stdout, "value=42");
 }
 
+TEST(FragmentExecutor, EmulateCallPrintfFormatsArgsWindowsAbi) {
+    const uint64_t vaddr = 0x710000;
+    const std::string fmt = "value=%d";
+    std::vector<uint8_t> payload(fmt.begin(), fmt.end());
+    payload.push_back('\0');
+    auto bin = write_fake_elf("fragment_executor_printf_win.bin", vaddr, payload);
+
+    ExecutorConfig cfg;
+    cfg.binary_path = bin.string();
+    cfg.abi_profile = fragment::AbiProfile::WindowsX64;
+    FragmentExecutor executor(cfg);
+    executor.set_input("rcx", vaddr);
+    executor.set_input("rdx", 42);
+
+    const std::string asm_path = write_temp_asm(
+        "0000000000002000: call printf\n",
+        "fragment_executor_printf_win.asm");
+
+    auto result = executor.execute_safe(asm_path);
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(result.program_stdout, "value=42");
+}
+
+TEST(FragmentExecutor, UnsupportedWindowsImportCallFailsSafely) {
+    ExecutorConfig cfg;
+    cfg.abi_profile = fragment::AbiProfile::WindowsX64;
+    FragmentExecutor executor(cfg);
+
+    const std::string asm_path = write_temp_asm(
+        "0000000000003000: call __imp_MessageBoxA\n",
+        "fragment_executor_windows_import.asm");
+
+    auto result = executor.execute_safe(asm_path);
+    EXPECT_FALSE(result.success);
+    EXPECT_NE(result.error_message.find("Unsupported Windows import call"), std::string::npos);
+}
+
+TEST(FragmentExecutor, UnsupportedWindowsOpcodeFailsSafely) {
+    ExecutorConfig cfg;
+    cfg.abi_profile = fragment::AbiProfile::WindowsX64;
+    FragmentExecutor executor(cfg);
+
+    const std::string asm_path = write_temp_asm(
+        "0000000000003000: syscall\n",
+        "fragment_executor_windows_opcode.asm");
+
+    auto result = executor.execute_safe(asm_path);
+    EXPECT_FALSE(result.success);
+    EXPECT_NE(result.error_message.find("Unsupported Windows opcode"), std::string::npos);
+}
+
 TEST(FragmentExecutor, ExecuteNativeNoopReturnsSuccess) {
     FragmentExecutor executor;
     std::vector<uint8_t> empty;

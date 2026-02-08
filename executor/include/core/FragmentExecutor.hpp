@@ -17,6 +17,8 @@ public:
     explicit FragmentExecutor(ExecutorConfig config = {});
 
     void set_use_native(bool native);
+    void set_abi_profile(AbiProfile profile);
+    [[nodiscard]] AbiProfile abi_profile() const noexcept;
     void set_binary_path(const std::string& path);
     uint64_t get_register(const std::string& reg) const;
     void set_input(const std::string& reg, uint64_t value);

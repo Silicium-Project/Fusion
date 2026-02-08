@@ -7,6 +7,7 @@
 
 
 #include <algorithm>
+#include <cctype>
 
 #include <optional>
 
@@ -141,6 +142,21 @@ struct ExecutionPlanData {
     bool from_summary = false;
 };
 
+static std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+static AbiProfile select_abi_profile(const PartitionSummary& summary) {
+    const std::string os = lower_copy(summary.binary_os);
+    const std::string format = lower_copy(summary.binary_format);
+    if (os == "windows" && format == "pe")
+        return AbiProfile::WindowsX64;
+    return AbiProfile::SystemV;
+}
+
 static bool build_execution_plan(const CliOptions& opts,
                                 const std::vector<std::string_view>& args,
                                 const std::vector<std::string>& raw_args,
@@ -155,6 +171,11 @@ static bool build_execution_plan(const CliOptions& opts,
             diag.error(std::string("Erreur lors du chargement du graphe: ") + e.what());
             return false;
         }
+
+        const AbiProfile profile = select_abi_profile(summary);
+        executor.set_abi_profile(profile);
+        log::info("ABI profile selected: " + abi_profile_name(profile)
+                  + " (binary_os=" + summary.binary_os + ", binary_format=" + summary.binary_format + ")");
 
         plan.partitions = summary.partitions;
         plan.from_summary = true;
@@ -194,6 +215,9 @@ static bool build_execution_plan(const CliOptions& opts,
     }
 
     set_partition_registry(nullptr);
+    executor.set_abi_profile(AbiProfile::SystemV);
+    log::info("ABI profile selected: " + abi_profile_name(AbiProfile::SystemV)
+              + " (no summary metadata)");
     plan.entries = plan_from_files(opts.asm_files);
     plan.from_summary = false;
     return true;

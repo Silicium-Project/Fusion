@@ -31,19 +31,40 @@ std::string apply_width(std::string value, int width, char pad, bool left_align)
 
 }  // namespace
 
-PrintfArgs gather_printf_args(const RegisterEmulator& emulator, std::size_t max_stack_args) {
+PrintfArgs gather_printf_args(const RegisterEmulator& emulator,
+                              AbiProfile profile,
+                              std::size_t max_stack_args) {
     PrintfArgs args{};
-    args.fmt = emulator.get("rdi");
-    args.regs[0] = emulator.get("rsi");
-    args.regs[1] = emulator.get("rdx");
-    args.regs[2] = emulator.get("rcx");
-    args.regs[3] = emulator.get("r8");
-    args.regs[4] = emulator.get("r9");
-
     uint64_t sp = emulator.get("rsp");
+    uint64_t stack_start = sp;
+    if (profile == AbiProfile::WindowsX64) {
+        // Windows x64 ABI:
+        // - fmt in RCX
+        // - first varargs in RDX, R8, R9
+        // - caller shadow space (32 bytes) and return address before stack args
+        args.fmt = emulator.get("rcx");
+        args.regs[0] = emulator.get("rdx");
+        args.regs[1] = emulator.get("r8");
+        args.regs[2] = emulator.get("r9");
+        args.regs[3] = emulator.read_qword(sp + 0x28);
+        args.regs[4] = emulator.read_qword(sp + 0x30);
+        stack_start = sp + 0x38;
+    } else {
+        // System V x64 ABI:
+        // - fmt in RDI
+        // - first varargs in RSI, RDX, RCX, R8, R9
+        args.fmt = emulator.get("rdi");
+        args.regs[0] = emulator.get("rsi");
+        args.regs[1] = emulator.get("rdx");
+        args.regs[2] = emulator.get("rcx");
+        args.regs[3] = emulator.get("r8");
+        args.regs[4] = emulator.get("r9");
+    }
+
     args.stack.reserve(max_stack_args);
     for (std::size_t i = 0; i < max_stack_args; ++i) {
-        args.stack.push_back(emulator.read_qword(sp + static_cast<uint64_t>(i * sizeof(uint64_t))));
+        args.stack.push_back(
+            emulator.read_qword(stack_start + static_cast<uint64_t>(i * sizeof(uint64_t))));
     }
     return args;
 }
