@@ -1,0 +1,142 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from typing import Callable
+
+from tools.tui.headless_app import run_script as default_headless_script_runner
+
+HeadlessScriptRunner = Callable[..., dict[str, object]]
+
+
+@dataclass(frozen=True)
+class FrontendRunConfig:
+    headless_script: Path | None = None
+    headless_timeout: float = 120.0
+    headless_json: Path | None = None
+
+
+@dataclass(frozen=True)
+class FrontendRunResult:
+    ok: bool
+    reason: str = ""
+    fallback_to_shell: bool = False
+
+
+class ITuiFrontend(ABC):
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    @abstractmethod
+    def probe(self) -> tuple[bool, str]:
+        pass
+
+    @abstractmethod
+    def run(self, config: FrontendRunConfig) -> FrontendRunResult:
+        pass
+
+
+class TextualFrontend(ITuiFrontend):
+    def __init__(self) -> None:
+        super().__init__("textual")
+
+    def probe(self) -> tuple[bool, str]:
+        try:
+            from tools.tui.app import run as _run_textual  # noqa: F401
+        except ImportError:
+            return False, "Textual dependencies missing."
+        return True, ""
+
+    def run(self, config: FrontendRunConfig) -> FrontendRunResult:
+        ok, reason = self.probe()
+        if not ok:
+            return FrontendRunResult(False, reason)
+        from tools.tui.app import run as run_textual
+
+        try:
+            run_textual()
+            return FrontendRunResult(True, "")
+        except Exception as exc:  # pragma: no cover - interactive path
+            return FrontendRunResult(False, f"textual frontend failed: {exc}")
+
+
+class CursesFrontend(ITuiFrontend):
+    def __init__(self) -> None:
+        super().__init__("curses")
+
+    def probe(self) -> tuple[bool, str]:
+        try:
+            from tools.tui.curses_app import _load_curses  # type: ignore[attr-defined]
+        except ImportError:
+            return False, "curses frontend module unavailable."
+        except Exception as exc:  # pragma: no cover - defensive
+            return False, f"failed to import curses frontend: {exc}"
+        try:
+            _load_curses()
+            return True, ""
+        except RuntimeError as exc:
+            return False, str(exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            return False, f"curses probe failed: {exc}"
+
+    def run(self, config: FrontendRunConfig) -> FrontendRunResult:
+        ok, reason = self.probe()
+        if not ok:
+            return FrontendRunResult(False, reason)
+        from tools.tui.curses_app import run as run_curses
+
+        try:
+            run_curses()
+            return FrontendRunResult(True, "")
+        except RuntimeError as exc:
+            return FrontendRunResult(False, str(exc))
+        except Exception as exc:  # pragma: no cover - interactive path
+            return FrontendRunResult(False, f"curses frontend failed: {exc}")
+
+
+class HeadlessFrontend(ITuiFrontend):
+    def __init__(self, *, script_runner: HeadlessScriptRunner = default_headless_script_runner) -> None:
+        super().__init__("headless")
+        self._script_runner = script_runner
+
+    def probe(self) -> tuple[bool, str]:
+        return True, ""
+
+    def run(self, config: FrontendRunConfig) -> FrontendRunResult:
+        if config.headless_script is None:
+            return FrontendRunResult(True, fallback_to_shell=True)
+
+        script_path = config.headless_script
+        if not script_path.exists():
+            return FrontendRunResult(False, f"Headless script not found: {script_path}")
+
+        snapshot = self._script_runner(script_path, timeout_sec=config.headless_timeout)
+        if config.headless_json:
+            config.headless_json.parent.mkdir(parents=True, exist_ok=True)
+            config.headless_json.write_text(
+                json.dumps(snapshot, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+
+        records = snapshot.get("records", {})
+        failed = [
+            key
+            for key, rec in records.items()
+            if rec.get("status") not in {"completed", "interrupted"}
+        ]
+        if failed:
+            return FrontendRunResult(
+                False,
+                f"headless script failed actions: {', '.join(sorted(failed))}",
+            )
+        return FrontendRunResult(True, "Headless script: OK")
+
+
+def build_frontend_registry() -> dict[str, ITuiFrontend]:
+    return {
+        "textual": TextualFrontend(),
+        "curses": CursesFrontend(),
+        "headless": HeadlessFrontend(),
+    }

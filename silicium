@@ -2258,53 +2258,6 @@ def resolve_tui_frontend(requested: str | None) -> tuple[str, list[str]]:
     return candidate, warnings
 
 
-def _probe_textual_frontend() -> tuple[bool, str]:
-    try:
-        from tools.tui.app import run as run_textual
-    except ImportError:
-        return False, "Textual dependencies missing."
-    return True, ""
-
-
-def _run_textual_frontend() -> tuple[bool, str]:
-    ok, reason = _probe_textual_frontend()
-    if not ok:
-        return False, reason
-    from tools.tui.app import run as run_textual
-    run_textual()
-    return True, ""
-
-
-def _probe_curses_frontend() -> tuple[bool, str]:
-    try:
-        from tools.tui.curses_app import _load_curses  # type: ignore[attr-defined]
-    except ImportError:
-        return False, "curses frontend module unavailable."
-    except Exception as exc:  # pragma: no cover - defensive
-        return False, f"failed to import curses frontend: {exc}"
-    try:
-        _load_curses()
-        return True, ""
-    except RuntimeError as exc:
-        return False, str(exc)
-    except Exception as exc:  # pragma: no cover - defensive
-        return False, f"curses probe failed: {exc}"
-
-
-def _run_curses_frontend() -> tuple[bool, str]:
-    ok, reason = _probe_curses_frontend()
-    if not ok:
-        return False, reason
-    from tools.tui.curses_app import run as run_curses
-    try:
-        run_curses()
-        return True, ""
-    except RuntimeError as exc:
-        return False, str(exc)
-    except Exception as exc:  # pragma: no cover - UI runtime path
-        return False, f"curses frontend failed: {exc}"
-
-
 def run_tui_frontend(
     requested: str | None,
     ctx: Context,
@@ -2315,7 +2268,10 @@ def run_tui_frontend(
     headless_timeout: float = 120.0,
     headless_json: str | None = None,
 ) -> None:
+    from tools.tui.frontends import FrontendRunConfig, build_frontend_registry
+
     frontend, warnings = resolve_tui_frontend(requested)
+    registry = build_frontend_registry()
     for warning in warnings:
         print(colorize(f"[WARN] {warning}", COLOR_YELLOW))
 
@@ -2325,7 +2281,7 @@ def run_tui_frontend(
             print("Frontend headless: OK")
             return
         if frontend == "curses":
-            ok, reason = _probe_curses_frontend()
+            ok, reason = registry["curses"].probe()
             if ok:
                 print("Frontend curses: OK")
                 return
@@ -2334,7 +2290,7 @@ def run_tui_frontend(
                 sys.exit(1)
             print("Trying fallback frontend: textual")
             frontend = "textual"
-        ok, reason = _probe_textual_frontend()
+        ok, reason = registry["textual"].probe()
         if ok:
             print("Frontend textual: OK")
             return
@@ -2345,53 +2301,44 @@ def run_tui_frontend(
         return
 
     if frontend == "headless":
-        if headless_script:
-            from tools.tui.headless_app import run_script
-
-            script_path = Path(headless_script).expanduser()
-            if not script_path.is_absolute():
-                script_path = (REPO_ROOT / script_path).resolve()
-            if not script_path.exists():
-                print(f"Headless script not found: {script_path}")
-                sys.exit(2)
-            snapshot = run_script(script_path, timeout_sec=headless_timeout)
-            if headless_json:
-                output_path = Path(headless_json).expanduser()
-                if not output_path.is_absolute():
-                    output_path = (REPO_ROOT / output_path).resolve()
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_text(
-                    json.dumps(snapshot, indent=2, sort_keys=True),
-                    encoding="utf-8",
-                )
-                print(f"Headless report written to {output_path}")
-            records = snapshot.get("records", {})
-            failed = [
-                key
-                for key, rec in records.items()
-                if rec.get("status") not in {"completed", "interrupted"}
-            ]
-            if failed:
-                print(colorize(f"[FAIL] headless script failed actions: {', '.join(sorted(failed))}", COLOR_YELLOW))
-                sys.exit(1)
-            print("Headless script: OK")
+        script_path = Path(headless_script).expanduser() if headless_script else None
+        if script_path and not script_path.is_absolute():
+            script_path = (REPO_ROOT / script_path).resolve()
+        output_path = Path(headless_json).expanduser() if headless_json else None
+        if output_path and not output_path.is_absolute():
+            output_path = (REPO_ROOT / output_path).resolve()
+        result = registry["headless"].run(
+            FrontendRunConfig(
+                headless_script=script_path,
+                headless_timeout=headless_timeout,
+                headless_json=output_path,
+            )
+        )
+        if output_path and result.ok and not result.fallback_to_shell:
+            print(f"Headless report written to {output_path}")
+        if result.fallback_to_shell:
+            print("Using TUI frontend: headless (shell mode).")
+            launch_shell(ctx)
             return
-        print("Using TUI frontend: headless (shell mode).")
-        launch_shell(ctx)
+        if not result.ok:
+            print(colorize(f"[FAIL] {result.reason}", COLOR_YELLOW))
+            sys.exit(1)
+        if result.reason:
+            print(result.reason)
         return
 
     if frontend == "curses":
-        ok, reason = _run_curses_frontend()
-        if ok:
+        result = registry["curses"].run(FrontendRunConfig())
+        if result.ok:
             return
-        print(colorize(f"[WARN] {reason} Falling back to textual.", COLOR_YELLOW))
+        print(colorize(f"[WARN] {result.reason} Falling back to textual.", COLOR_YELLOW))
 
-    ok, reason = _run_textual_frontend()
-    if ok:
+    result = registry["textual"].run(FrontendRunConfig())
+    if result.ok:
         return
 
     if frontend == "textual":
-        print(colorize(f"[WARN] {reason} Falling back to headless shell.", COLOR_YELLOW))
+        print(colorize(f"[WARN] {result.reason} Falling back to headless shell.", COLOR_YELLOW))
     else:
         print(colorize("[WARN] textual frontend unavailable. Falling back to headless shell.", COLOR_YELLOW))
     print("Install with: python -m pip install -r requirements-tui.txt")
