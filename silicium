@@ -164,7 +164,7 @@ WORKLOAD_TAXONOMY_TAGS = [
     "verification",
 ]
 TUI_FRONTENDS = {"textual", "curses", "headless"}
-TUI_CONNECTORS = {"inprocess"}
+TUI_CONNECTORS = {"inprocess", "stdio"}
 
 
 @dataclass(frozen=True)
@@ -2266,7 +2266,7 @@ def resolve_tui_connector(requested: str | None) -> tuple[str, list[str]]:
     if candidate not in TUI_CONNECTORS:
         warnings.append(
             f"Unsupported TUI connector '{candidate}', falling back to inprocess "
-            "(supported: inprocess)."
+            "(supported: inprocess, stdio)."
         )
         candidate = "inprocess"
     return candidate, warnings
@@ -2950,7 +2950,7 @@ def configure_tui(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--tui-connector",
-        help="Connector selection: inprocess (or SILICIUM_TUI_CONNECTOR).",
+        help="Connector selection: inprocess, stdio (or SILICIUM_TUI_CONNECTOR).",
     )
     parser.add_argument(
         "--smoke",
