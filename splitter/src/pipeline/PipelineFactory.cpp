@@ -1,8 +1,12 @@
 #include "pipeline/PipelineFactory.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 
 #include "analysis/CompositeInstructionAnalyzer.hpp"
@@ -38,6 +42,50 @@ std::string GetEnvValue(const SystemContext& system, const std::string& key) {
     return {};
 }
 
+std::string ToLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+std::string DetectBinaryFormat(const std::string& binary_path) {
+    std::ifstream file(binary_path, std::ios::binary);
+    if (!file.is_open())
+        return "";
+
+    std::array<std::uint8_t, 4> magic{};
+    file.read(reinterpret_cast<char*>(magic.data()), static_cast<std::streamsize>(magic.size()));
+    if (!file)
+        return "";
+
+    if (magic[0] == 0x7f && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F')
+        return "elf";
+
+    if (magic[0] != 'M' || magic[1] != 'Z')
+        return "";
+
+    file.seekg(0x3c, std::ios::beg);
+    std::array<std::uint8_t, 4> offset_bytes{};
+    file.read(reinterpret_cast<char*>(offset_bytes.data()), static_cast<std::streamsize>(offset_bytes.size()));
+    if (!file)
+        return "";
+
+    const std::uint32_t pe_offset = static_cast<std::uint32_t>(offset_bytes[0])
+                                  | (static_cast<std::uint32_t>(offset_bytes[1]) << 8)
+                                  | (static_cast<std::uint32_t>(offset_bytes[2]) << 16)
+                                  | (static_cast<std::uint32_t>(offset_bytes[3]) << 24);
+    file.seekg(pe_offset, std::ios::beg);
+    std::array<std::uint8_t, 4> pe_signature{};
+    file.read(reinterpret_cast<char*>(pe_signature.data()), static_cast<std::streamsize>(pe_signature.size()));
+    if (file && pe_signature[0] == 'P' && pe_signature[1] == 'E' && pe_signature[2] == 0
+        && pe_signature[3] == 0) {
+        return "pe";
+    }
+
+    return "";
+}
+
 bool CommandExists(const std::string& cmd, const SystemContext& system);
 
 HashService ChooseHashService(const PipelineConfig& config, const SystemContext& system) {
@@ -50,13 +98,24 @@ HashService ChooseHashService(const PipelineConfig& config, const SystemContext&
 
 std::shared_ptr<ILibraryScanner> BuildScanner(const PipelineConfig& config,
                                               const SystemContext& system) {
-    std::string resolver = config.resolver;
+    std::string resolver = ToLower(config.resolver);
     if (resolver.empty())
-        resolver = GetEnvValue(system, "SPLITTER_LIB_RESOLVER");
+        resolver = ToLower(GetEnvValue(system, "SPLITTER_LIB_RESOLVER"));
 
-    std::string indexer = config.symbol_indexer;
+    std::string indexer = ToLower(config.symbol_indexer);
     if (indexer.empty())
-        indexer = GetEnvValue(system, "SPLITTER_SYMBOL_INDEXER");
+        indexer = ToLower(GetEnvValue(system, "SPLITTER_SYMBOL_INDEXER"));
+
+    const std::string format = DetectBinaryFormat(config.binary_path.Value());
+    if (resolver.empty() && indexer.empty() && format == "pe") {
+        resolver = "pe";
+        indexer = "pe";
+    } else {
+        if (resolver.empty())
+            resolver = "ldd";
+        if (indexer.empty())
+            indexer = "nm";
+    }
 
     if (resolver == "readelf" && !CommandExists("readelf", system))
         throw std::runtime_error("readelf requis mais introuvable (installez binutils)");

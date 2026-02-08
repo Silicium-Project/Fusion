@@ -36,16 +36,16 @@ std::vector<PipelineRunner::PipelineStep> MakeDefaultSteps(
 
 void PrintUsage(std::string_view prog) {
     std::cout << "Usage: " << prog << " <binary_file> [--output-dir <dir>] [--hash <fnv|std>] "
-              << "[--resolver <ldd|readelf>] [--indexer <nm|objdump>] [--disassembler <objdump>] "
+              << "[--resolver <ldd|readelf|pe>] [--indexer <nm|objdump|pe>] [--disassembler <objdump>] "
               << "[--reporter <console|json|ndjson>] [--report-file <path>]\n\n"
               << "Exemples:\n"
               << "  " << prog << " ./a.out\n"
               << "  " << prog << " program.exe --output-dir ./partitions --hash std\n\n"
-              << "N?cessite: objdump, readelf (binutils)\n"
+              << "Necessite: objdump (and readelf/ldd for ELF paths)\n"
               << "Hash: variable d'environnement SPLITTER_HASH_ALGO ou option --hash.\n"
               << "D?sassembleur: env SPLITTER_DISASSEMBLER ou --disassembler (objdump).\n"
-              << "R?solveur de biblioth?ques: env SPLITTER_LIB_RESOLVER ou --resolver (ldd/readelf).\n"
-              << "Indexation des symboles: env SPLITTER_SYMBOL_INDEXER ou --indexer (nm/objdump).\n"
+              << "R?solveur de biblioth?ques: env SPLITTER_LIB_RESOLVER ou --resolver (ldd/readelf/pe).\n"
+              << "Indexation des symboles: env SPLITTER_SYMBOL_INDEXER ou --indexer (nm/objdump/pe).\n"
               << "Reporter: env SPLITTER_REPORTER ou --reporter (console/json).\n";
 }
 

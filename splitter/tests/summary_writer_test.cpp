@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -53,6 +55,45 @@ PartitionFiles MakeFiles(const std::string& base) {
     f.SetBinFile(base + ".bin");
     f.SetWrapperFile(base + "_wrapper.c");
     return f;
+}
+
+std::filesystem::path MakePeFixtureFile() {
+    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path()
+                    / ("splitter_summary_pe_fixture_" + std::to_string(nonce) + ".exe");
+
+    std::vector<std::uint8_t> bytes(0x80u, 0);
+    bytes[0] = 'M';
+    bytes[1] = 'Z';
+    constexpr std::uint32_t pe_offset = 0x40u;
+    bytes[0x3c] = static_cast<std::uint8_t>(pe_offset & 0xffu);
+    bytes[0x3d] = static_cast<std::uint8_t>((pe_offset >> 8) & 0xffu);
+    bytes[0x3e] = static_cast<std::uint8_t>((pe_offset >> 16) & 0xffu);
+    bytes[0x3f] = static_cast<std::uint8_t>((pe_offset >> 24) & 0xffu);
+    bytes[0x40] = 'P';
+    bytes[0x41] = 'E';
+    bytes[0x42] = 0;
+    bytes[0x43] = 0;
+
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    out.close();
+    return path;
+}
+
+std::filesystem::path MakeInvalidPeFixtureFile() {
+    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path()
+                    / ("splitter_summary_invalid_pe_fixture_" + std::to_string(nonce) + ".exe");
+
+    std::vector<std::uint8_t> bytes(0x80u, 0);
+    bytes[0] = 'M';
+    bytes[1] = 'Z';
+
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    out.close();
+    return path;
 }
 
 class FakeHash : public IHashAlgorithm {
@@ -134,4 +175,51 @@ TEST(SummaryWriter, AcceptsCustomHashService) {
     ASSERT_TRUE(in.is_open());
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     EXPECT_NE(content.find("fake_"), std::string::npos);  // hash issu du FakeHash
+}
+
+TEST(SummaryWriter, DetectsPeBinaryFormat) {
+    auto scanner = std::make_shared<FakeScanner>();
+    auto hash_calc = std::make_shared<SummaryHashCalculator>();
+    const std::filesystem::path out_dir = std::filesystem::temp_directory_path() / "splitter_test_out_pe";
+    SummaryWriter writer(out_dir, scanner, hash_calc);
+
+    std::vector<Partition> parts{MakePartition("p0")};
+    std::vector<PartitionFiles> files{MakeFiles("p0")};
+    std::vector<MemorySegment> mem;
+
+    const auto pe_binary = MakePeFixtureFile();
+    writer.Write(parts, files, mem, pe_binary);
+
+    std::ifstream in(out_dir / "summary.json");
+    ASSERT_TRUE(in.is_open());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("\"binary_os\": \"windows\""), std::string::npos);
+    EXPECT_NE(content.find("\"binary_format\": \"pe\""), std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(pe_binary, ec);
+}
+
+TEST(SummaryWriter, InvalidPeFallsBackToUnknownFormat) {
+    auto scanner = std::make_shared<FakeScanner>();
+    auto hash_calc = std::make_shared<SummaryHashCalculator>();
+    const std::filesystem::path out_dir =
+        std::filesystem::temp_directory_path() / "splitter_test_out_invalid_pe";
+    SummaryWriter writer(out_dir, scanner, hash_calc);
+
+    std::vector<Partition> parts{MakePartition("p0")};
+    std::vector<PartitionFiles> files{MakeFiles("p0")};
+    std::vector<MemorySegment> mem;
+
+    const auto pe_binary = MakeInvalidPeFixtureFile();
+    writer.Write(parts, files, mem, pe_binary);
+
+    std::ifstream in(out_dir / "summary.json");
+    ASSERT_TRUE(in.is_open());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("\"binary_os\": \"\""), std::string::npos);
+    EXPECT_NE(content.find("\"binary_format\": \"\""), std::string::npos);
+
+    std::error_code ec;
+    std::filesystem::remove(pe_binary, ec);
 }

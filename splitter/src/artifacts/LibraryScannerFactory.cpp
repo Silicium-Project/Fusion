@@ -4,12 +4,16 @@
 #include "artifacts/DefaultSymbolIndexer.hpp"
 #include "artifacts/LibraryScanner.hpp"
 #include "artifacts/ObjdumpSymbolIndexer.hpp"
+#include "artifacts/PeLibraryScanner.hpp"
 #include "artifacts/ReadelfLibraryResolver.hpp"
 
 namespace splitter {
 
 std::shared_ptr<ILibraryScanner> LibraryScannerFactory::Create(const std::string& resolver,
                                                                const std::string& indexer) {
+    if (resolver == "pe" || indexer == "pe")
+        return std::make_shared<PeLibraryScanner>();
+
     std::unique_ptr<ILibraryResolver> resolver_impl;
     if (resolver == "readelf")
         resolver_impl = std::make_unique<ReadelfLibraryResolver>();
