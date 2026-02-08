@@ -329,12 +329,14 @@ python silicium setup down -v    # stop + cleanup volumes
 ./silicium tui                   # lance l'UI terminale (TUI)
 ./silicium tui --tui-frontend headless
 ./silicium tui --tui-frontend curses --smoke
+./silicium tui --tui-frontend headless --headless-script .silicium/tui-script.json --headless-json .silicium/tui-report.json
 
 TUI (UI terminale) :
 - Installation: `python -m pip install -r requirements-tui.txt`
 - Details + capture: `docs/tui.md`
 - Frontend: `--tui-frontend textual|curses|headless` ou `SILICIUM_TUI_FRONTEND=...`
 - Probe non-interactive: `--smoke` (`--strict-frontend` pour exiger le frontend demandé)
+- CI headless script: `--headless-script <json>` (optionnellement `--headless-json <rapport>`)
 ```
 
 Sous PowerShell Windows, utilisez `python silicium ...` (ou `.\silicium ...`) pour exécuter

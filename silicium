@@ -2305,7 +2305,16 @@ def _run_curses_frontend() -> tuple[bool, str]:
         return False, f"curses frontend failed: {exc}"
 
 
-def run_tui_frontend(requested: str | None, ctx: Context, *, smoke: bool = False, strict_frontend: bool = False) -> None:
+def run_tui_frontend(
+    requested: str | None,
+    ctx: Context,
+    *,
+    smoke: bool = False,
+    strict_frontend: bool = False,
+    headless_script: str | None = None,
+    headless_timeout: float = 120.0,
+    headless_json: str | None = None,
+) -> None:
     frontend, warnings = resolve_tui_frontend(requested)
     for warning in warnings:
         print(colorize(f"[WARN] {warning}", COLOR_YELLOW))
@@ -2336,6 +2345,37 @@ def run_tui_frontend(requested: str | None, ctx: Context, *, smoke: bool = False
         return
 
     if frontend == "headless":
+        if headless_script:
+            from tools.tui.headless_app import run_script
+
+            script_path = Path(headless_script).expanduser()
+            if not script_path.is_absolute():
+                script_path = (REPO_ROOT / script_path).resolve()
+            if not script_path.exists():
+                print(f"Headless script not found: {script_path}")
+                sys.exit(2)
+            snapshot = run_script(script_path, timeout_sec=headless_timeout)
+            if headless_json:
+                output_path = Path(headless_json).expanduser()
+                if not output_path.is_absolute():
+                    output_path = (REPO_ROOT / output_path).resolve()
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(
+                    json.dumps(snapshot, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+                print(f"Headless report written to {output_path}")
+            records = snapshot.get("records", {})
+            failed = [
+                key
+                for key, rec in records.items()
+                if rec.get("status") not in {"completed", "interrupted"}
+            ]
+            if failed:
+                print(colorize(f"[FAIL] headless script failed actions: {', '.join(sorted(failed))}", COLOR_YELLOW))
+                sys.exit(1)
+            print("Headless script: OK")
+            return
         print("Using TUI frontend: headless (shell mode).")
         launch_shell(ctx)
         return
@@ -2359,7 +2399,15 @@ def run_tui_frontend(requested: str | None, ctx: Context, *, smoke: bool = False
 
 
 def cmd_tui(args: argparse.Namespace, ctx: Context) -> None:
-    run_tui_frontend(args.tui_frontend, ctx, smoke=args.smoke, strict_frontend=args.strict_frontend)
+    run_tui_frontend(
+        args.tui_frontend,
+        ctx,
+        smoke=args.smoke,
+        strict_frontend=args.strict_frontend,
+        headless_script=args.headless_script,
+        headless_timeout=args.headless_timeout,
+        headless_json=args.headless_json,
+    )
 
 
 def cmd_shell(_: argparse.Namespace, ctx: Context) -> None:
@@ -2941,6 +2989,20 @@ def configure_tui(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="With --smoke, fail if requested frontend is not directly available.",
     )
+    parser.add_argument(
+        "--headless-script",
+        help="Path to a headless TUI script (JSON steps) when using --tui-frontend headless.",
+    )
+    parser.add_argument(
+        "--headless-timeout",
+        type=float,
+        default=120.0,
+        help="Max seconds for headless script completion (default: 120).",
+    )
+    parser.add_argument(
+        "--headless-json",
+        help="Optional output path for headless execution snapshot JSON.",
+    )
 
 
 def build_registry() -> CommandRegistry:
@@ -3324,7 +3386,14 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             return [opt for opt in LOG_CHOICES if opt.startswith(text)]
         return [flag for flag in ["-u", "--user"] if flag.startswith(text)]
     if first == "tui":
-        flags = ["--tui-frontend", "--smoke", "--strict-frontend"]
+        flags = [
+            "--tui-frontend",
+            "--smoke",
+            "--strict-frontend",
+            "--headless-script",
+            "--headless-timeout",
+            "--headless-json",
+        ]
         if text.startswith("-"):
             return [flag for flag in flags if flag.startswith(text)]
         if tokens[-1] == "--tui-frontend":

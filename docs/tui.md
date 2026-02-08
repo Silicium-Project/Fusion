@@ -20,6 +20,7 @@ python -m pip install -r requirements-tui.txt
 - Env override: `SILICIUM_TUI_FRONTEND=textual|curses|headless`
 - Non-interactive probe: `./silicium tui --smoke`
 - Strict probe: `./silicium tui --smoke --strict-frontend --tui-frontend <name>`
+- Headless script run: `./silicium tui --tui-frontend headless --headless-script <path.json>`
 - Precedence: CLI argument first, then env var, then default `textual`
 - Fallback policy:
   - invalid value -> warning -> fallback to `textual`
@@ -42,6 +43,28 @@ Notes:
 - The curses frontend requires a real terminal/TTY.
 - On Windows, `windows-curses` is required and currently supported up to Python 3.13.
 - If curses is unavailable, startup falls back to `textual`.
+
+## Headless Script Mode
+
+Use this mode for deterministic CI checks without rendering a terminal UI.
+
+```bash
+./silicium tui --tui-frontend headless --headless-script .silicium/tui-script.json --headless-json .silicium/tui-report.json
+```
+
+Script format:
+
+```json
+{
+  "runner_mode": "auto",
+  "steps": [
+    {"run": "status"},
+    {"run": "check_quick"},
+    {"interrupt": "check_quick"},
+    {"wait_all": true, "timeout_sec": 120}
+  ]
+}
+```
 
 ## Key bindings
 
