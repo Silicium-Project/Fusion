@@ -163,6 +163,7 @@ WORKLOAD_TAXONOMY_TAGS = [
     "transcoding",
     "verification",
 ]
+TUI_FRONTENDS = {"textual", "curses", "headless"}
 
 
 @dataclass(frozen=True)
@@ -2244,14 +2245,55 @@ alias sstop='silicium stop'
     print(f"Aliases appended to {target}")
 
 
-def cmd_tui(_: argparse.Namespace, ctx: Context) -> None:
+def resolve_tui_frontend(requested: str | None) -> tuple[str, list[str]]:
+    warnings: list[str] = []
+    env_frontend = os.environ.get("SILICIUM_TUI_FRONTEND", "").strip().lower()
+    candidate = (requested or env_frontend or "textual").strip().lower()
+    if candidate not in TUI_FRONTENDS:
+        warnings.append(
+            f"Unsupported TUI frontend '{candidate}', falling back to textual "
+            "(supported: textual, curses, headless)."
+        )
+        candidate = "textual"
+    return candidate, warnings
+
+
+def _run_textual_frontend() -> tuple[bool, str]:
     try:
-        from tools.tui.app import run
+        from tools.tui.app import run as run_textual
     except ImportError:
-        print("TUI dependencies missing. Install with:")
-        print("  python -m pip install -r requirements-tui.txt")
-        sys.exit(1)
-    run()
+        return False, "Textual dependencies missing."
+    run_textual()
+    return True, ""
+
+
+def run_tui_frontend(requested: str | None, ctx: Context) -> None:
+    frontend, warnings = resolve_tui_frontend(requested)
+    for warning in warnings:
+        print(colorize(f"[WARN] {warning}", COLOR_YELLOW))
+
+    if frontend == "headless":
+        print("Using TUI frontend: headless (shell mode).")
+        launch_shell(ctx)
+        return
+
+    if frontend == "curses":
+        print(colorize("[WARN] curses frontend not implemented yet; trying textual.", COLOR_YELLOW))
+
+    ok, reason = _run_textual_frontend()
+    if ok:
+        return
+
+    if frontend == "textual":
+        print(colorize(f"[WARN] {reason} Falling back to headless shell.", COLOR_YELLOW))
+    else:
+        print(colorize("[WARN] textual frontend unavailable. Falling back to headless shell.", COLOR_YELLOW))
+    print("Install with: python -m pip install -r requirements-tui.txt")
+    launch_shell(ctx)
+
+
+def cmd_tui(args: argparse.Namespace, ctx: Context) -> None:
+    run_tui_frontend(args.tui_frontend, ctx)
 
 
 def cmd_shell(_: argparse.Namespace, ctx: Context) -> None:
@@ -2819,7 +2861,10 @@ def configure_shell(parser: argparse.ArgumentParser) -> None:
 
 
 def configure_tui(parser: argparse.ArgumentParser) -> None:
-    pass
+    parser.add_argument(
+        "--tui-frontend",
+        help="Frontend selection: textual, curses, headless (or SILICIUM_TUI_FRONTEND).",
+    )
 
 
 def build_registry() -> CommandRegistry:
@@ -3202,6 +3247,13 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
         if len(tokens) == 1:
             return [opt for opt in LOG_CHOICES if opt.startswith(text)]
         return [flag for flag in ["-u", "--user"] if flag.startswith(text)]
+    if first == "tui":
+        flags = ["--tui-frontend"]
+        if text.startswith("-"):
+            return [flag for flag in flags if flag.startswith(text)]
+        if tokens[-1] == "--tui-frontend":
+            return [opt for opt in sorted(TUI_FRONTENDS) if opt.startswith(text)]
+        return [opt for opt in sorted(TUI_FRONTENDS) if opt.startswith(text)]
     return []
 
 
@@ -3254,14 +3306,7 @@ def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
     ctx = build_context()
     if not argv:
-        try:
-            from tools.tui.app import run
-        except ImportError:
-            print("TUI dependencies missing. Falling back to shell.")
-            print("Install with: python -m pip install -r requirements-tui.txt")
-            launch_shell(ctx)
-            return
-        run()
+        run_tui_frontend(None, ctx)
         return
     try:
         execute(argv, ctx)

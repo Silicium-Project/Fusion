@@ -327,10 +327,12 @@ python silicium setup down -v    # stop + cleanup volumes
 ./silicium history show --tail 20# affiche les dernières commandes
 ./silicium shell                 # démarre un shell REPL Silicium (help/exit)
 ./silicium tui                   # lance l'UI terminale (TUI)
+./silicium tui --tui-frontend headless
 
 TUI (UI terminale) :
 - Installation: `python -m pip install -r requirements-tui.txt`
 - Details + capture: `docs/tui.md`
+- Frontend: `--tui-frontend textual|curses|headless` ou `SILICIUM_TUI_FRONTEND=...`
 ```
 
 Sous PowerShell Windows, utilisez `python silicium ...` (ou `.\silicium ...`) pour exécuter
