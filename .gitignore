@@ -18,6 +18,17 @@ worker/dynamo_fragment_runner
 tmp/
 video.mp4
 
+# Local runtime artifacts
+.silicium/
+__pycache__/
+build/
+perf-budget-report.json
+tools/__pycache__/
+tools/tui/__pycache__/
+executor/fragment_emulator
+executor/libfragment_emulator.so
+executor/libfragment_executor.so
+
 # Experimental leftovers
 # Legacy experiments cleaned up
 
