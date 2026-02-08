@@ -9,7 +9,8 @@ fi
 
 WORKSPACE="${WORKSPACE:-$(pwd -P)}"
 IMAGE="${DYNAMO_RUNNER_IMAGE:-dynamorio-runner}"
-COMMON_OPTS=${DYNAMO_RUNNER_OPTS:-"--rm -i --cap-add SYS_PTRACE --security-opt seccomp=unconfined --security-opt label=disable"}
+SECURITY_MODE="${DYNAMO_RUNNER_SECURITY_MODE:-strict}"
+DYNAMO_RUNNER_OPTS="${DYNAMO_RUNNER_OPTS:-}"
 VOLUME_SPEC="${DYNAMO_RUNNER_VOLUME_SPEC:-/workspace:Z}"
 DRRUN_FLAGS="${DYNAMO_RUNNER_DRRUN_FLAGS:--native_exec_managed_code}"
 RUN_MODE="${DYNAMO_RUNNER_MODE:-native}"
@@ -19,6 +20,50 @@ if [[ -z "${CONTAINER_DIR}" ]]; then
     CONTAINER_DIR="/workspace"
 fi
 HOST_WORKSPACE="${HOST_WORKSPACE:-$WORKSPACE}"
+RUN_USER="${DYNAMO_RUNNER_USER:-$(id -u):$(id -g)}"
+RUN_NETWORK="${DYNAMO_RUNNER_NETWORK:-none}"
+RUN_MEMORY="${DYNAMO_RUNNER_MEMORY:-2g}"
+RUN_CPUS="${DYNAMO_RUNNER_CPUS:-2.0}"
+RUN_PIDS="${DYNAMO_RUNNER_PIDS_LIMIT:-512}"
+RUN_TMPFS_SIZE="${DYNAMO_RUNNER_TMPFS_SIZE:-64m}"
+
+case "${SECURITY_MODE}" in
+    strict|compat) ;;
+    *)
+        echo "[ERROR] DYNAMO_RUNNER_SECURITY_MODE must be 'strict' or 'compat' (got: ${SECURITY_MODE})" >&2
+        exit 1
+        ;;
+esac
+
+docker_run_base_args() {
+    local args=(
+        --rm
+        -i
+        --cap-drop ALL
+        --cap-add SYS_PTRACE
+        --security-opt no-new-privileges
+        --user "${RUN_USER}"
+        --network "${RUN_NETWORK}"
+        --memory "${RUN_MEMORY}"
+        --cpus "${RUN_CPUS}"
+        --pids-limit "${RUN_PIDS}"
+        --read-only
+        --tmpfs "/tmp:rw,nosuid,nodev,noexec,size=${RUN_TMPFS_SIZE}"
+        --tmpfs "/var/tmp:rw,nosuid,nodev,noexec,size=${RUN_TMPFS_SIZE}"
+    )
+
+    if [[ "${SECURITY_MODE}" == "compat" ]]; then
+        args+=(--security-opt seccomp=unconfined --security-opt label=disable)
+    fi
+
+    if [[ -n "${DYNAMO_RUNNER_OPTS}" ]]; then
+        local extra=()
+        read -r -a extra <<< "${DYNAMO_RUNNER_OPTS}"
+        args+=("${extra[@]}")
+    fi
+
+    printf '%s\0' "${args[@]}"
+}
 
 to_host_path() {
     local path="${1}"
@@ -138,7 +183,8 @@ if [[ "${should_use_docker}" -eq 0 ]]; then
 fi
 
 if [[ "${RUN_MODE}" = "native" ]]; then
-    docker run ${COMMON_OPTS} \
+    mapfile -d '' -t docker_args < <(docker_run_base_args)
+    docker run "${docker_args[@]}" \
         -v "${WORKSPACE}:${VOLUME_SPEC}" \
         -w "${CONTAINER_DIR}" \
         --entrypoint "${CONTAINER_BINARY}" \
@@ -149,7 +195,8 @@ else
     else
         DRRUN_ARGS=()
     fi
-    docker run ${COMMON_OPTS} \
+    mapfile -d '' -t docker_args < <(docker_run_base_args)
+    docker run "${docker_args[@]}" \
         -v "${WORKSPACE}:${VOLUME_SPEC}" \
         -w "${CONTAINER_DIR}" \
         --entrypoint "${DRRUN_BIN}" \

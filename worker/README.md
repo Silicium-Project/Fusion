@@ -213,14 +213,20 @@ prochaine tâche, garantissant que les fragments détachés puissent relire les
 > utilisé à l'intérieur du conteneur (par défaut `/opt/dynamo-runner/dynamo_fragment_runner`).
 > `--runner-launcher <path>` permet de remplacer le script d'invocation (par défaut
 > `worker/scripts/dynamo_runner.sh`) si vous préférez un autre runtime que Docker.
-> Le lanceur Docker active `SYS_PTRACE`, désactive le profil seccomp, monte automatiquement
-> le workspace avec `:Z` (re-labellisation SELinux) et, par défaut, passe `-native_exec_managed_code`
-> à `drrun` afin d'autoriser l'exécution du code JIT produit par le worker. Ajustez
-> `DYNAMO_RUNNER_OPTS` (options `docker run`), `DYNAMO_RUNNER_VOLUME_SPEC` (chemin
-> + options du volume, `/workspace:Z` par défaut), `DYNAMO_RUNNER_DRRUN_FLAGS`
-> (flags supplémentaires pour `drrun`), `DYNAMO_RUNNER_DRRUN_BIN` (chemin vers `drrun`)
-> et `DYNAMO_RUNNER_MODE=native|drrun` (défaut: `native`, mettre `drrun` pour forcer
-> l'instrumentation DynamoRIO) si nécessaire.
+> Le lanceur Docker applique maintenant un profil durci par defaut:
+> `--network none`, `--security-opt no-new-privileges`, `--cap-drop ALL`,
+> `--cap-add SYS_PTRACE`, limites CPU/RAM/PIDs, filesystem read-only + `tmpfs`.
+> Le workspace est toujours monte via `DYNAMO_RUNNER_VOLUME_SPEC` (defaut `/workspace:Z`)
+> pour permettre la lecture/ecriture des artefacts du job.
+>
+> Variables utiles:
+> `DYNAMO_RUNNER_SECURITY_MODE=strict|compat` (defaut `strict`, `compat` reactive
+> `seccomp=unconfined` + `label=disable`), `DYNAMO_RUNNER_USER` (UID:GID dans le
+> conteneur), `DYNAMO_RUNNER_NETWORK`, `DYNAMO_RUNNER_MEMORY`, `DYNAMO_RUNNER_CPUS`,
+> `DYNAMO_RUNNER_PIDS_LIMIT`, `DYNAMO_RUNNER_TMPFS_SIZE`, `DYNAMO_RUNNER_OPTS`
+> (options additionnelles `docker run`), `DYNAMO_RUNNER_DRRUN_FLAGS`,
+> `DYNAMO_RUNNER_DRRUN_BIN` et `DYNAMO_RUNNER_MODE=native|drrun` (defaut `native`,
+> mettre `drrun` pour forcer l'instrumentation DynamoRIO).
 
 ### Connecteurs modulaires
 
