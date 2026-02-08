@@ -48,7 +48,30 @@ static void fill_telemetry(TaskReport& report,
     report.telemetry.windows_policy = fragment_os_action_to_string(config.fragment_os_policy.windows);
     report.telemetry.wsl_enabled = config.wsl_enabled;
     report.telemetry.wsl_decision = config.wsl_decision;
+    if (report.telemetry.required_backend.empty())
+        report.telemetry.required_backend = "none";
+    if (report.telemetry.routing_decision.empty())
+        report.telemetry.routing_decision = "unspecified";
+    if (report.telemetry.capability_matrix.empty()) {
+        std::ostringstream capabilities;
+        capabilities << "native=" << (config.capabilities.native ? "1" : "0")
+                     << ",docker=" << (config.capabilities.docker ? "1" : "0")
+                     << ",wsl=" << (config.capabilities.wsl ? "1" : "0")
+                     << ",http=" << (config.capabilities.http ? "1" : "0");
+        report.telemetry.capability_matrix = capabilities.str();
+    }
     report.telemetry.mcp_enabled = config.mcp.read_only;
+}
+
+static bool capability_for_target(const BackendCapabilities& capabilities,
+                                  BackendTarget target) {
+    switch (target) {
+        case BackendTarget::Native: return capabilities.native;
+        case BackendTarget::Docker: return capabilities.docker;
+        case BackendTarget::Wsl: return capabilities.wsl;
+        case BackendTarget::Http: return capabilities.http;
+        case BackendTarget::None: default: return true;
+    }
 }
 
 FragmentOsAction Worker::resolve_fragment_action(const fragment::PartitionInfo& partition) const {
@@ -183,7 +206,13 @@ TaskReport Worker::run_health_task(const TaskContext& context,
             << "\"connector\":\"" << connector_label(config_.connector) << "\","
             << "\"reset_between_tasks\":" << (config_.reset_between_tasks ? "true" : "false") << ","
             << "\"wsl_enabled\":" << (config_.wsl_enabled ? "true" : "false") << ","
-            << "\"wsl_decision\":\"" << config_.wsl_decision << "\""
+            << "\"wsl_decision\":\"" << config_.wsl_decision << "\","
+            << "\"capabilities\":{"
+            << "\"native\":" << (config_.capabilities.native ? "true" : "false") << ","
+            << "\"docker\":" << (config_.capabilities.docker ? "true" : "false") << ","
+            << "\"wsl\":" << (config_.capabilities.wsl ? "true" : "false") << ","
+            << "\"http\":" << (config_.capabilities.http ? "true" : "false")
+            << "}"
             << "}";
     report.result.program_stdout = payload.str();
 
@@ -216,17 +245,24 @@ TaskReport Worker::run_binary_task(const TaskContext& context,
 
 TaskReport Worker::run_backend(const TaskContext& context,
                                const Task& task) {
+    return run_backend(context, task, config_.mode);
+}
+
+TaskReport Worker::run_backend(const TaskContext& context,
+                               const Task& task,
+                               ExecutionMode mode_override) {
     BackendRequest request{
         context.partition,
         context.summary_path,
         context.asm_path,
         context.binary_path,
-        config_.mode,
+        mode_override,
         task.inputs,
         register_state_,
         snapshot_memory_state(),
         config_.executor.fd_rules
     };
+    request.mode = mode_override;
     auto exec_result = connector_->execute(request);
     return build_report(context.partition, task, std::move(exec_result));
 }
@@ -240,45 +276,108 @@ TaskReport Worker::build_policy_report(const fragment::PartitionInfo& partition,
     return build_report(partition, task, std::move(result));
 }
 
+TaskReport Worker::decorate_route(TaskReport report,
+                                  BackendTarget required_backend,
+                                  const std::string& routing_decision) const {
+    report.telemetry.required_backend = backend_target_to_string(required_backend);
+    report.telemetry.routing_decision = routing_decision;
+    report.telemetry.capability_matrix = capability_matrix_label();
+    return report;
+}
+
+bool Worker::is_backend_supported(BackendTarget target, std::string* reason) const {
+    if (capability_for_target(config_.capabilities, target))
+        return true;
+    if (reason)
+        *reason = "capability_disabled:" + backend_target_to_string(target);
+    return false;
+}
+
+BackendTarget Worker::target_for_action(FragmentOsAction action) const {
+    if (action == FragmentOsAction::Wsl)
+        return BackendTarget::Wsl;
+    if (config_.connector == ConnectorMode::Http)
+        return BackendTarget::Http;
+    if (config_.mode == ExecutionMode::Dynamo)
+        return BackendTarget::Docker;
+    return BackendTarget::Native;
+}
+
+std::string Worker::capability_matrix_label() const {
+    std::ostringstream oss;
+    oss << "native=" << (config_.capabilities.native ? "1" : "0")
+        << ",docker=" << (config_.capabilities.docker ? "1" : "0")
+        << ",wsl=" << (config_.capabilities.wsl ? "1" : "0")
+        << ",http=" << (config_.capabilities.http ? "1" : "0");
+    return oss.str();
+}
+
 void Worker::register_action_handlers() {
     action_handlers_.clear();
     action_handlers_.emplace(FragmentOsAction::Skip,
                              [this](const TaskContext& context, const Task& task) {
-                                 return build_policy_report(
+                                 auto report = build_policy_report(
                                      context.partition,
                                      task,
-                                     "Fragment ignoré par la policy OS");
+                                     "Fragment ignore par la policy OS");
+                                 return decorate_route(std::move(report), BackendTarget::None, "policy_skip");
                              });
     action_handlers_.emplace(FragmentOsAction::Queue,
                              [this](const TaskContext& context, const Task& task) {
-                                 return build_policy_report(
+                                 auto report = build_policy_report(
                                      context.partition,
                                      task,
                                      "Fragment mis en file par la policy OS");
+                                 return decorate_route(std::move(report), BackendTarget::None, "policy_queue");
                              });
     action_handlers_.emplace(FragmentOsAction::Error,
                              [this](const TaskContext& context, const Task& task) {
-                                 return build_policy_report(
+                                 auto report = build_policy_report(
                                      context.partition,
                                      task,
-                                     "Fragment refusé par la policy OS");
+                                     "Fragment refuse par la policy OS");
+                                 return decorate_route(std::move(report), BackendTarget::None, "policy_error");
                              });
     action_handlers_.emplace(FragmentOsAction::Wsl,
                              [this](const TaskContext& context, const Task& task) {
+                                 const BackendTarget required = target_for_action(FragmentOsAction::Wsl);
                                  if (!config_.wsl_enabled) {
-                                     return build_policy_report(
+                                     auto report = build_policy_report(
                                          context.partition,
                                          task,
-                                         "Policy WSL demandée mais triggers inactifs");
+                                         "Policy WSL demandee mais triggers inactifs");
+                                     return decorate_route(std::move(report), required, "policy_wsl_triggers_disabled");
                                  }
-                                 return run_backend(context, task);
+                                 std::string reason;
+                                 if (!is_backend_supported(required, &reason)) {
+                                     auto report = build_policy_report(
+                                         context.partition,
+                                         task,
+                                         "Backend non supporte pour policy WSL: " + reason);
+                                     return decorate_route(std::move(report), required, "policy_wsl_unsupported");
+                                 }
+                                 auto report = run_backend(context, task, config_.mode);
+                                 return decorate_route(std::move(report), required, "policy_wsl_execute");
                              });
     action_handlers_.emplace(FragmentOsAction::Native,
                              [this](const TaskContext& context, const Task& task) {
-                                 return run_backend(context, task);
+                                 const BackendTarget required = target_for_action(FragmentOsAction::Native);
+                                 std::string reason;
+                                 if (!is_backend_supported(required, &reason)) {
+                                     auto report = build_policy_report(
+                                         context.partition,
+                                         task,
+                                         "Backend non supporte pour policy native: " + reason);
+                                     return decorate_route(std::move(report), required, "policy_native_unsupported");
+                                 }
+                                 const ExecutionMode effective_mode =
+                                     (config_.connector == ConnectorMode::Direct && config_.mode == ExecutionMode::Auto)
+                                         ? ExecutionMode::Native
+                                         : config_.mode;
+                                 auto report = run_backend(context, task, effective_mode);
+                                 return decorate_route(std::move(report), required, "policy_native_execute");
                              });
 }
-
 void Worker::notify_task_start(const TaskContext& context, const Task& task) const {
     for (const auto& observer : observers_) {
         if (!observer)
@@ -318,3 +417,4 @@ TaskReport Worker::build_report(const fragment::PartitionInfo& partition,
 }
 
 }  // namespace worker
+

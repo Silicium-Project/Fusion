@@ -71,9 +71,18 @@ private:
                                const Task& task);
     TaskReport run_backend(const TaskContext& context,
                            const Task& task);
+    TaskReport run_backend(const TaskContext& context,
+                           const Task& task,
+                           ExecutionMode mode_override);
     TaskReport build_policy_report(const fragment::PartitionInfo& partition,
                                    const Task& task,
                                    const std::string& message);
+    TaskReport decorate_route(TaskReport report,
+                              BackendTarget required_backend,
+                              const std::string& routing_decision) const;
+    bool is_backend_supported(BackendTarget target, std::string* reason) const;
+    BackendTarget target_for_action(FragmentOsAction action) const;
+    std::string capability_matrix_label() const;
     FragmentOsAction resolve_fragment_action(const fragment::PartitionInfo& partition) const;
     void register_action_handlers();
     void notify_task_start(const TaskContext& context, const Task& task) const;

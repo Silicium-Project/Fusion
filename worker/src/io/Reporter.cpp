@@ -106,6 +106,15 @@ void Reporter::emit_text(const WorkerReport& report) {
         const std::string wsl_decision = telemetry.wsl_decision.empty()
             ? "unknown"
             : telemetry.wsl_decision;
+        const std::string required_backend = telemetry.required_backend.empty()
+            ? "none"
+            : telemetry.required_backend;
+        const std::string routing_decision = telemetry.routing_decision.empty()
+            ? "unspecified"
+            : telemetry.routing_decision;
+        const std::string capability_matrix = telemetry.capability_matrix.empty()
+            ? "unknown"
+            : telemetry.capability_matrix;
 
         *stream_ << "\n==============================\n";
         *stream_ << "Task ID: " << task_id << "\n";
@@ -115,6 +124,9 @@ void Reporter::emit_text(const WorkerReport& report) {
         *stream_ << "Policy: linux=" << linux_policy << " windows=" << windows_policy << "\n";
         *stream_ << "WSL: " << (telemetry.wsl_enabled ? "on" : "off")
                  << " (" << wsl_decision << ")\n";
+        *stream_ << "Backend requis: " << required_backend
+                 << " / routage=" << routing_decision << "\n";
+        *stream_ << "Capabilities: " << capability_matrix << "\n";
         *stream_ << "MCP: " << (telemetry.mcp_enabled ? "on" : "off")
                  << " calls=" << telemetry.mcp_tool_calls
                  << " failures=" << telemetry.mcp_tool_failures
@@ -206,6 +218,15 @@ void Reporter::emit_json(const WorkerReport& report) {
         const std::string wsl_decision = telemetry.wsl_decision.empty()
             ? "unknown"
             : telemetry.wsl_decision;
+        const std::string required_backend = telemetry.required_backend.empty()
+            ? "none"
+            : telemetry.required_backend;
+        const std::string routing_decision = telemetry.routing_decision.empty()
+            ? "unspecified"
+            : telemetry.routing_decision;
+        const std::string capability_matrix = telemetry.capability_matrix.empty()
+            ? "unknown"
+            : telemetry.capability_matrix;
         oss << "{";
         oss << "\"task_id\":\"" << escape_json(task_id) << "\",";
         oss << "\"type\":\"" << escape_json(task_type_to_string(telemetry.type)) << "\",";
@@ -217,6 +238,9 @@ void Reporter::emit_json(const WorkerReport& report) {
         oss << "\"windows_policy\":\"" << escape_json(windows_policy) << "\",";
         oss << "\"wsl_enabled\":" << (telemetry.wsl_enabled ? "true" : "false") << ",";
         oss << "\"wsl_decision\":\"" << escape_json(wsl_decision) << "\",";
+        oss << "\"required_backend\":\"" << escape_json(required_backend) << "\",";
+        oss << "\"routing_decision\":\"" << escape_json(routing_decision) << "\",";
+        oss << "\"capability_matrix\":\"" << escape_json(capability_matrix) << "\",";
         oss << "\"mcp_enabled\":" << (telemetry.mcp_enabled ? "true" : "false") << ",";
         oss << "\"mcp_tool_calls\":" << telemetry.mcp_tool_calls << ",";
         oss << "\"mcp_tool_failures\":" << telemetry.mcp_tool_failures << ",";

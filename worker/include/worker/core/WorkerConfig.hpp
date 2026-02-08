@@ -28,6 +28,25 @@ enum class FragmentOsAction {
     Queue,
 };
 
+enum class BackendTarget {
+    None,
+    Native,
+    Docker,
+    Wsl,
+    Http,
+};
+
+inline std::string backend_target_to_string(BackendTarget target) {
+    switch (target) {
+        case BackendTarget::Native: return "native";
+        case BackendTarget::Docker: return "docker";
+        case BackendTarget::Wsl: return "wsl";
+        case BackendTarget::Http: return "http";
+        case BackendTarget::None:
+        default: return "none";
+    }
+}
+
 inline std::string fragment_os_action_to_string(FragmentOsAction action) {
     switch (action) {
         case FragmentOsAction::Native: return "native";
@@ -82,6 +101,13 @@ struct WslTriggerConfig {
     std::uint64_t available_jobs = 0;
 };
 
+struct BackendCapabilities {
+    bool native = true;
+    bool docker = true;
+    bool wsl = true;
+    bool http = true;
+};
+
 struct McpConfig {
     bool read_only = false;
     bool enable_control_tools = false;
@@ -126,6 +152,7 @@ public:
     std::string native_library = "../executor/libfragment_executor.so";
     FragmentOsPolicy fragment_os_policy{};
     WslTriggerConfig wsl_triggers{};
+    BackendCapabilities capabilities{};
     McpConfig mcp{};
     bool wsl_enabled = false;
     std::string wsl_decision;

@@ -316,3 +316,27 @@ transfert d'état (mémoire + registres) :
 La sortie montre que `reader` récupère bien la valeur écrite par `writer`
 grâce au mécanisme de diff mémoire. Ajoutez `--reset-state` si vous souhaitez
 revenir à un worker stateless.
+
+
+## Backend capability matrix
+
+The worker now evaluates explicit backend capabilities: `native`, `docker`, `wsl`, `http`.
+If OS policy requires an unavailable backend, routing fails deterministically (no implicit fallback).
+
+```text
+--cap-native on|off
+--cap-docker on|off
+--cap-wsl on|off
+--cap-http on|off
+```
+
+Environment variables:
+
+```text
+SILICIUM_CAP_NATIVE
+SILICIUM_CAP_DOCKER
+SILICIUM_CAP_WSL
+SILICIUM_CAP_HTTP
+```
+
+Telemetry fields include `required_backend`, `routing_decision`, and `capability_matrix`.

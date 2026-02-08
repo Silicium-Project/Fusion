@@ -144,6 +144,9 @@ TEST(Reporter, EmitsJsonAndText) {
     task.telemetry.windows_policy = "skip";
     task.telemetry.wsl_enabled = true;
     task.telemetry.wsl_decision = "enabled";
+    task.telemetry.required_backend = "native";
+    task.telemetry.routing_decision = "policy_native_execute";
+    task.telemetry.capability_matrix = "native=1,docker=0,wsl=0,http=1";
     task.result.instructions_executed = 3;
     task.result.memory_accesses = 4;
     task.result.program_stdout = "hello\n";
@@ -172,6 +175,9 @@ TEST(Reporter, EmitsJsonAndText) {
     EXPECT_NE(std::string::npos, json_out.find("\"windows_policy\":\"skip\""));
     EXPECT_NE(std::string::npos, json_out.find("\"wsl_enabled\":true"));
     EXPECT_NE(std::string::npos, json_out.find("\"wsl_decision\":\"enabled\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"required_backend\":\"native\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"routing_decision\":\"policy_native_execute\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"capability_matrix\":\"native=1,docker=0,wsl=0,http=1\""));
     EXPECT_NE(std::string::npos, json_out.find("\"mcp_enabled\":false"));
     EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_calls\":0"));
     EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_failures\":0"));
@@ -191,6 +197,8 @@ TEST(Reporter, EmitsJsonAndText) {
     EXPECT_NE(std::string::npos, text_out.find("Durée: 12 ms"));
     EXPECT_NE(std::string::npos, text_out.find("Policy: linux=native windows=skip"));
     EXPECT_NE(std::string::npos, text_out.find("WSL: on (enabled)"));
+    EXPECT_NE(std::string::npos, text_out.find("Backend requis: native / routage=policy_native_execute"));
+    EXPECT_NE(std::string::npos, text_out.find("Capabilities: native=1,docker=0,wsl=0,http=1"));
     EXPECT_NE(std::string::npos, text_out.find("Partition: part-1"));
     EXPECT_NE(std::string::npos, text_out.find("ÉCHEC"));
     EXPECT_NE(std::string::npos, text_out.find("fd 5 (out)"));
@@ -253,6 +261,9 @@ TEST(Reporter, DefaultsTelemetryFields) {
     EXPECT_NE(std::string::npos, json_out.find("\"windows_policy\""));
     EXPECT_NE(std::string::npos, json_out.find("\"wsl_enabled\""));
     EXPECT_NE(std::string::npos, json_out.find("\"wsl_decision\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"required_backend\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"routing_decision\""));
+    EXPECT_NE(std::string::npos, json_out.find("\"capability_matrix\""));
     EXPECT_NE(std::string::npos, json_out.find("\"mcp_enabled\""));
     EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_calls\""));
     EXPECT_NE(std::string::npos, json_out.find("\"mcp_tool_failures\""));

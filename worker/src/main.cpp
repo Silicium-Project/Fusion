@@ -60,6 +60,14 @@ struct CliOptions {
     bool mcp_enable_tools = false;
     bool mcp_enable_tools_set = false;
     std::string mcp_export_dir;
+    bool cap_native = false;
+    bool cap_native_set = false;
+    bool cap_docker = false;
+    bool cap_docker_set = false;
+    bool cap_wsl = false;
+    bool cap_wsl_set = false;
+    bool cap_http = false;
+    bool cap_http_set = false;
 };
 
 void print_usage(const char* prog) {
@@ -96,9 +104,75 @@ void print_usage(const char* prog) {
               << "  --mcp-readonly      Active l'adapter MCP read-only (resources uniquement)\n"
               << "  --mcp-enable-tools  Active les tools MCP de controle (guarded)\n"
               << "  --mcp-export-dir <path> Exporte les resources MCP dans ce dossier\n"
+              << "  --cap-native on|off  Force la capacite backend native\n"
+              << "  --cap-docker on|off  Force la capacite backend docker\n"
+              << "  --cap-wsl on|off     Force la capacite backend WSL\n"
+              << "  --cap-http on|off    Force la capacite backend HTTP\n"
               << "  --runner-binary <path> Binaire runner (backend Dynamo)\n"
               << "  --runner-launcher <path> Script/commande pour lancer le runner Dynamo\n"
               << "  --help             Affiche cette aide\n";
+}
+
+bool parse_bool_value(const std::string& value, bool* out) {
+    if (value == "1" || value == "true" || value == "on" || value == "yes") {
+        *out = true;
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "off" || value == "no") {
+        *out = false;
+        return true;
+    }
+    return false;
+}
+
+bool command_available(const char* command) {
+#ifdef _WIN32
+    const std::string cmd = std::string("where ") + command + " >NUL 2>NUL";
+#else
+    const std::string cmd = std::string("command -v ") + command + " >/dev/null 2>&1";
+#endif
+    return std::system(cmd.c_str()) == 0;
+}
+
+void apply_capability_override(bool is_set,
+                               bool value,
+                               bool* target) {
+    if (is_set)
+        *target = value;
+}
+
+void apply_capability_env_override(const char* env_name,
+                                   bool* target) {
+    if (const char* value = std::getenv(env_name)) {
+        bool parsed = false;
+        if (parse_bool_value(value, &parsed))
+            *target = parsed;
+    }
+}
+
+worker::BackendCapabilities detect_backend_capabilities(const CliOptions& opts) {
+    worker::BackendCapabilities capabilities;
+    capabilities.native = (opts.connector == worker::ConnectorMode::Direct);
+    capabilities.docker = command_available("docker");
+#ifdef _WIN32
+    capabilities.wsl = command_available("wsl.exe") || command_available("wsl");
+#else
+    capabilities.wsl = false;
+#endif
+    capabilities.http = command_available("curl");
+    if (opts.connector == worker::ConnectorMode::Http && opts.connector_endpoint.empty())
+        capabilities.http = false;
+
+    apply_capability_override(opts.cap_native_set, opts.cap_native, &capabilities.native);
+    apply_capability_override(opts.cap_docker_set, opts.cap_docker, &capabilities.docker);
+    apply_capability_override(opts.cap_wsl_set, opts.cap_wsl, &capabilities.wsl);
+    apply_capability_override(opts.cap_http_set, opts.cap_http, &capabilities.http);
+
+    apply_capability_env_override("SILICIUM_CAP_NATIVE", &capabilities.native);
+    apply_capability_env_override("SILICIUM_CAP_DOCKER", &capabilities.docker);
+    apply_capability_env_override("SILICIUM_CAP_WSL", &capabilities.wsl);
+    apply_capability_env_override("SILICIUM_CAP_HTTP", &capabilities.http);
+    return capabilities;
 }
 
 CliOptions parse_cli(int argc, char** argv) {
@@ -219,6 +293,30 @@ CliOptions parse_cli(int argc, char** argv) {
             opts.mcp_export_dir = argv[i];
             opts.mcp_read_only = true;
             opts.mcp_read_only_set = true;
+        } else if (arg == "--cap-native") {
+            if (++i >= argc)
+                throw std::runtime_error("--cap-native requiert on|off");
+            if (!parse_bool_value(argv[i], &opts.cap_native))
+                throw std::runtime_error("--cap-native attend on|off");
+            opts.cap_native_set = true;
+        } else if (arg == "--cap-docker") {
+            if (++i >= argc)
+                throw std::runtime_error("--cap-docker requiert on|off");
+            if (!parse_bool_value(argv[i], &opts.cap_docker))
+                throw std::runtime_error("--cap-docker attend on|off");
+            opts.cap_docker_set = true;
+        } else if (arg == "--cap-wsl") {
+            if (++i >= argc)
+                throw std::runtime_error("--cap-wsl requiert on|off");
+            if (!parse_bool_value(argv[i], &opts.cap_wsl))
+                throw std::runtime_error("--cap-wsl attend on|off");
+            opts.cap_wsl_set = true;
+        } else if (arg == "--cap-http") {
+            if (++i >= argc)
+                throw std::runtime_error("--cap-http requiert on|off");
+            if (!parse_bool_value(argv[i], &opts.cap_http))
+                throw std::runtime_error("--cap-http attend on|off");
+            opts.cap_http_set = true;
         } else if (arg == "--runner-binary") {
             if (++i >= argc)
                 throw std::runtime_error("--runner-binary requiert un chemin");
@@ -458,6 +556,11 @@ int main(int argc, char** argv) {
         if (opts.wsl_available_jobs_set)
             config.wsl_triggers.available_jobs = opts.wsl_available_jobs;
         config.wsl_enabled = worker::evaluate_wsl_triggers(config.wsl_triggers, &config.wsl_decision);
+        config.capabilities = detect_backend_capabilities(opts);
+        if (config.wsl_enabled && !config.capabilities.wsl) {
+            config.wsl_enabled = false;
+            config.wsl_decision = "capability_unavailable";
+        }
         config.mcp.read_only = opts.mcp_read_only;
         config.mcp.enable_control_tools = opts.mcp_enable_tools;
         config.mcp.export_dir = opts.mcp_export_dir;
@@ -535,6 +638,13 @@ int main(int argc, char** argv) {
                         worker::fragment_os_action_to_string(config.fragment_os_policy.windows);
                     interrupted.telemetry.wsl_enabled = config.wsl_enabled;
                     interrupted.telemetry.wsl_decision = config.wsl_decision;
+                    interrupted.telemetry.required_backend = "none";
+                    interrupted.telemetry.routing_decision = "interrupted_by_mcp";
+                    interrupted.telemetry.capability_matrix =
+                        std::string("native=") + (config.capabilities.native ? "1" : "0")
+                        + ",docker=" + (config.capabilities.docker ? "1" : "0")
+                        + ",wsl=" + (config.capabilities.wsl ? "1" : "0")
+                        + ",http=" + (config.capabilities.http ? "1" : "0");
                     interrupted.telemetry.mcp_enabled = config.mcp.read_only;
                     const auto metrics = mcp_adapter->snapshot_metrics();
                     interrupted.telemetry.mcp_tool_calls = metrics.calls;
@@ -593,6 +703,13 @@ int main(int argc, char** argv) {
                 failure.telemetry.windows_policy = worker::fragment_os_action_to_string(config.fragment_os_policy.windows);
                 failure.telemetry.wsl_enabled = config.wsl_enabled;
                 failure.telemetry.wsl_decision = config.wsl_decision;
+                failure.telemetry.required_backend = "none";
+                failure.telemetry.routing_decision = "task_exception";
+                failure.telemetry.capability_matrix =
+                    std::string("native=") + (config.capabilities.native ? "1" : "0")
+                    + ",docker=" + (config.capabilities.docker ? "1" : "0")
+                    + ",wsl=" + (config.capabilities.wsl ? "1" : "0")
+                    + ",http=" + (config.capabilities.http ? "1" : "0");
                 if (mcp_adapter) {
                     const auto metrics = mcp_adapter->snapshot_metrics();
                     failure.telemetry.mcp_enabled = config.mcp.read_only;
