@@ -154,6 +154,19 @@ spécifiques à l'exécution de fragments.
 make test
 ```
 
+Sous Windows (PowerShell), utilisez l'entrypoint CLI dédié :
+
+```powershell
+python silicium cpp-test --scope worker --timeout 900
+```
+
+Pour cibler une suite précise :
+
+```powershell
+python silicium cpp-test --scope worker --gtest-filter TaskSerializer.*
+python silicium cpp-test --scope executor --gtest-filter PartitionSummarySchema.*
+```
+
 Les tests réutilisent l'image Docker `silicium/cpp-tests` (buildée pour
 `splitter`/`fragment-executor`) et montent un cache `ccache` partagé dans
 `.cache/cpp-tests/ccache`. La première compilation prend ~15 s, puis les

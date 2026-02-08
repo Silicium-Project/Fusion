@@ -305,6 +305,8 @@ Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches couran
 ./silicium test                  # installe les deps et lance pytest
 ./silicium check --docker-strict # check complet (Docker requis)
 ./silicium check --jobs 2 --runner docker --docker-cpus 2 --docker-memory 4g
+python silicium cpp-test --scope worker --gtest-filter TaskSerializer.* --timeout 600
+python silicium cpp-test --scope executor --timeout 900
 ./silicium smoke                 # proxy + healthcheck
 ./silicium tools demo            # démo splitter + fragment executor
 ./silicium clean all -y          # nettoie caches + volumes (mode "fclean")
@@ -327,6 +329,10 @@ TUI (UI terminale) :
 - Installation: `python -m pip install -r requirements-tui.txt`
 - Details + capture: `docs/tui.md`
 ```
+
+Sous PowerShell Windows, utilisez `python silicium ...` (ou `.\silicium ...`) pour exécuter
+les commandes locales; la commande `cpp-test` exécute les suites C++ dans Docker sans dépendre
+de `make`, `id`, `find` ou d'un shell GNU sur l'hôte.
 
 `SILICIUM_LEDGER_PREFIX` (dans `infra/.env`) contrôle le nommage des volumes (`<prefix>-local-ledger`, etc.). Utilisez `./silicium clean --ledgers -y` pour reproduire l'ancien “fclean” en une seule commande.
 

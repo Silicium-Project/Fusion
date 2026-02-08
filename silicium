@@ -44,6 +44,8 @@ WORKLOAD_GOLDEN_CORPUS_FILE = WORKLOAD_ROOT / "golden" / "golden-corpus.json"
 PERF_BUDGET_FILE = REPO_ROOT / "docs" / "performance-budgets.json"
 CORE_CHECK_IMAGE_DEFAULT = "silicium/core-check:lite"
 CORE_CHECK_DOCKERFILE = REPO_ROOT / "docker" / "core-check" / "Dockerfile"
+CPP_TEST_IMAGE_DEFAULT = "silicium/cpp-tests:latest"
+CPP_TEST_DOCKERFILE = REPO_ROOT / "infra" / "docker" / "cpp-tests" / "Dockerfile"
 LEDGER_SUFFIX = {
     "localnet": "local-ledger",
     "devnet": "devnet-ledger",
@@ -83,6 +85,7 @@ SERVICE_CHOICES = sorted(
 TOP_LEVEL_COMMANDS = [
     "test",
     "check",
+    "cpp-test",
     "budget",
     "smoke",
     "tools",
@@ -164,6 +167,7 @@ class EnvConfig:
     ledger_prefix: str
     core_check_image: str
     core_check_setup: str | None
+    cpp_test_image: str
 
 
 @dataclass(frozen=True)
@@ -235,6 +239,7 @@ def load_env_config(env: Mapping[str, str] | None = None) -> EnvConfig:
         ledger_prefix=source.get("SILICIUM_LEDGER_PREFIX", "silicium"),
         core_check_image=source.get("SILICIUM_CORE_CHECK_IMAGE", CORE_CHECK_IMAGE_DEFAULT),
         core_check_setup=source.get("SILICIUM_CORE_CHECK_SETUP"),
+        cpp_test_image=source.get("SILICIUM_CPP_TEST_IMAGE", CPP_TEST_IMAGE_DEFAULT),
     )
 
 
@@ -259,10 +264,23 @@ def colorize(text: str, color: str) -> str:
     return f"{color}{text}{COLOR_RESET}"
 
 
-def run(cmd: list[str], *, cwd: Path | None = None, env: dict | None = None, allow_failure: bool = False) -> int:
+def run(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict | None = None,
+    allow_failure: bool = False,
+    timeout_s: float | None = None,
+) -> int:
     pretty = " ".join(cmd)
     print(colorize(f">> {pretty}", COLOR_GREEN))
-    result = subprocess.run(cmd, cwd=cwd or REPO_ROOT, env=env, check=not allow_failure)
+    result = subprocess.run(
+        cmd,
+        cwd=cwd or REPO_ROOT,
+        env=env,
+        check=not allow_failure,
+        timeout=timeout_s,
+    )
     if allow_failure and result.returncode:
         print(colorize(f"[WARN] Command failed but ignored (code {result.returncode})", COLOR_YELLOW))
     return result.returncode
@@ -410,6 +428,39 @@ def ensure_core_check_image(image: str, ctx: Context) -> None:
     )
 
 
+def ensure_cpp_test_image(image: str, ctx: Context) -> None:
+    try:
+        subprocess.run(
+            [ctx.config.docker_bin, "image", "inspect", image],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
+        return
+    except subprocess.SubprocessError:
+        pass
+
+    if image != CPP_TEST_IMAGE_DEFAULT or not CPP_TEST_DOCKERFILE.exists():
+        print(
+            f"Docker image '{image}' not found. Build it first or set "
+            "SILICIUM_CPP_TEST_IMAGE to an existing image."
+        )
+        sys.exit(1)
+
+    print(colorize(f">> Building {image} (cpp-tests image)", COLOR_GREEN))
+    run(
+        [
+            ctx.config.docker_bin,
+            "build",
+            "-t",
+            image,
+            "-f",
+            str(CPP_TEST_DOCKERFILE),
+            str(CPP_TEST_DOCKERFILE.parent),
+        ]
+    )
+
+
 def run_core_check_in_docker(env_vars: dict[str, str], ctx: Context) -> None:
     ensure_docker_healthy(ctx, retries=2, timeout_s=8.0)
     image = ctx.config.core_check_image
@@ -546,6 +597,84 @@ def cmd_test(_: argparse.Namespace, ctx: Context) -> None:
         ctx,
     )
     run([sys.executable, "-m", "pytest"])
+
+
+def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
+    ensure_docker_healthy(ctx, retries=2, timeout_s=8.0)
+    image = args.image or ctx.config.cpp_test_image
+    ensure_cpp_test_image(image, ctx)
+
+    ccache_dir = REPO_ROOT / ".cache" / "cpp-tests" / "ccache"
+    ccache_dir.mkdir(parents=True, exist_ok=True)
+    jobs = args.jobs
+    if jobs is None:
+        env_jobs = os.environ.get("SILICIUM_MAX_JOBS")
+        if env_jobs:
+            try:
+                jobs = int(env_jobs)
+            except ValueError:
+                print(f"Invalid SILICIUM_MAX_JOBS value: {env_jobs}")
+                sys.exit(1)
+    jobs = jobs or 2
+
+    if args.scope == "worker":
+        test_bin = "./build/worker_tests"
+        script = (
+            "set -euo pipefail; "
+            "ccache -M 2G >/dev/null || true; "
+            f"cd /workspace && make -C executor JOBS={jobs}; "
+            f"cd /workspace/worker && make test-clean && "
+            f"env TEST_CXX='ccache g++' make {test_bin} JOBS={jobs}; "
+            "if [ -n \"$GTEST_FILTER\" ]; then "
+            f"LD_LIBRARY_PATH=/workspace/executor {test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
+            "else "
+            f"LD_LIBRARY_PATH=/workspace/executor {test_bin}; "
+            "fi"
+        )
+    else:
+        test_bin = "./build/tests/fragment_tests"
+        script = (
+            "set -euo pipefail; "
+            "ccache -M 2G >/dev/null || true; "
+            f"cd /workspace/executor && make test-clean && "
+            f"env TEST_CXX='ccache g++' make {test_bin} JOBS={jobs}; "
+            "if [ -n \"$GTEST_FILTER\" ]; then "
+            f"{test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
+            "else "
+            f"{test_bin}; "
+            "fi"
+        )
+
+    cmd = [
+        ctx.config.docker_bin,
+        "run",
+        "--rm",
+        "-e",
+        "CCACHE_DIR=/ccache",
+        "-e",
+        f"GTEST_FILTER={args.gtest_filter or ''}",
+        "-v",
+        f"{REPO_ROOT}:/workspace",
+        "-v",
+        f"{ccache_dir}:/ccache",
+        "-w",
+        "/workspace",
+        image,
+        "bash",
+        "-lc",
+        script,
+    ]
+    try:
+        run(cmd, timeout_s=float(args.timeout))
+    except subprocess.TimeoutExpired:
+        print(
+            f"C++ test run timed out after {args.timeout}s. "
+            "Retry with a larger --timeout or narrower --gtest-filter."
+        )
+        sys.exit(124)
+    except OSError as exc:
+        print(f"Failed to launch Docker command: {exc}")
+        sys.exit(1)
 
 
 def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
@@ -1908,6 +2037,34 @@ def configure_check(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(docker=None)
 
 
+def configure_cpp_test(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--scope",
+        choices=["worker", "executor"],
+        default="worker",
+        help="C++ test suite to run in Docker (default: worker).",
+    )
+    parser.add_argument(
+        "--gtest-filter",
+        help="Optional GoogleTest filter (e.g. TaskSerializer.*).",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=900,
+        help="Max runtime in seconds before hard timeout (default: 900).",
+    )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        help="Parallel build jobs inside container (default: SILICIUM_MAX_JOBS or 2).",
+    )
+    parser.add_argument(
+        "--image",
+        help="Override cpp-tests image (default from SILICIUM_CPP_TEST_IMAGE).",
+    )
+
+
 def configure_budget(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--budget-file",
@@ -2294,6 +2451,14 @@ def build_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.add(CommandSpec("test", "Install dev deps and run pytest", configure_test, cmd_test))
     registry.add(CommandSpec("check", "Run core stability checks", configure_check, cmd_check))
+    registry.add(
+        CommandSpec(
+            "cpp-test",
+            "Run worker/executor C++ tests in Docker (Windows-friendly)",
+            configure_cpp_test,
+            cmd_cpp_test,
+        )
+    )
     registry.add(CommandSpec("budget", "Measure command metrics against budgets", configure_budget, cmd_budget))
     registry.add(CommandSpec("smoke", "Run the proxy smoke test", configure_smoke, cmd_smoke))
     registry.add(CommandSpec("clean", "Clean caches/ledgers", configure_clean, cmd_clean))
@@ -2494,6 +2659,19 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             "--python",
         ]
         return [flag for flag in flags if flag.startswith(text)]
+    if first == "cpp-test":
+        flags = [
+            "--scope",
+            "--gtest-filter",
+            "--timeout",
+            "--jobs",
+            "--image",
+        ]
+        if text.startswith("-"):
+            return [flag for flag in flags if flag.startswith(text)]
+        if tokens[-1] == "--scope":
+            return [opt for opt in ["worker", "executor"] if opt.startswith(text)]
+        return []
     if first == "budget":
         flags = [
             "--budget-file",
