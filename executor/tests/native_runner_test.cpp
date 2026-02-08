@@ -73,6 +73,26 @@ TEST(NativeRunner, BlocksMissingSymbolsWithoutForce) {
     EXPECT_NE(result.error_message.find("missing_symbol"), std::string::npos);
 }
 
+TEST(NativeRunner, RejectsPeFormatDeterministically) {
+    const std::string bin_path = write_temp_bin({0xC3}, "native_runner_pe.bin");
+
+    PartitionInfo info;
+    info.id = "p_pe";
+    info.asm_path = "p_pe.asm";
+    info.bin_path = bin_path;
+    info.start_address = 0x3000;
+    info.binary_size = 1;
+    info.format = "pe";
+
+    FragmentExecutor executor;
+    ExecutionResult result;
+    NativeRunner runner(false);
+
+    EXPECT_FALSE(runner.run(make_entry(info), executor, result));
+    EXPECT_FALSE(result.success);
+    EXPECT_NE(result.error_message.find("PE/COFF"), std::string::npos);
+}
+
 #else
 
 TEST(NativeRunner, UnsupportedOnNonLinux) {

@@ -17,8 +17,17 @@ namespace fragment {
 
 namespace {
 
-PartitionRegistry& registry() {
-    return global_partition_registry();
+PartitionRegistry& registry() {
+
+    return global_partition_registry();
+
+}
+
+std::string lowercase(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
 }
 
 std::vector<uint8_t> read_binary_file(const std::string& path) {
@@ -279,6 +288,20 @@ bool NativeRunner::run(const ExecutionEntry& entry,
         return false;
 
     const auto& meta = entry.meta->get();
+    const std::string format = lowercase(meta.format);
+    if (!format.empty()) {
+        if (format == "pe") {
+            result.success = false;
+            result.error_message =
+                "Native execution blocked: PE/COFF partitions are not supported by this native backend.";
+            return false;
+        }
+        if (format != "elf") {
+            result.success = false;
+            result.error_message = "Native execution blocked: unsupported partition format '" + meta.format + "'.";
+            return false;
+        }
+    }
     preload_dependency_code(meta, executor);
     auto hooks = install_unresolved_hooks(meta, executor, force_native_);
     if (!force_native_ && !hooks.ok()) {

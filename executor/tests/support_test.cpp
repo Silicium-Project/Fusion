@@ -64,6 +64,71 @@ std::filesystem::path write_fake_elf(const std::string& name,
     return write_binary_file(name, data);
 }
 
+std::filesystem::path write_fake_pe(const std::string& name,
+                                    uint64_t image_base,
+                                    uint32_t section_rva,
+                                    const std::vector<uint8_t>& payload,
+                                    bool with_import_table = false) {
+    std::vector<uint8_t> data(0x200 + payload.size(), 0);
+
+    data[0] = 'M';
+    data[1] = 'Z';
+    const uint32_t pe_offset = 0x80;
+    std::memcpy(data.data() + 0x3c, &pe_offset, sizeof(pe_offset));
+    data[pe_offset + 0] = 'P';
+    data[pe_offset + 1] = 'E';
+
+    const uint32_t file_header = pe_offset + 4;
+    const uint16_t machine = 0x8664;  // AMD64
+    const uint16_t number_of_sections = 1;
+    const uint16_t optional_header_size = 0xF0;
+    const uint16_t characteristics = 0x0022;
+    std::memcpy(data.data() + file_header + 0, &machine, sizeof(machine));
+    std::memcpy(data.data() + file_header + 2, &number_of_sections, sizeof(number_of_sections));
+    std::memcpy(data.data() + file_header + 16, &optional_header_size, sizeof(optional_header_size));
+    std::memcpy(data.data() + file_header + 18, &characteristics, sizeof(characteristics));
+
+    const uint32_t optional = file_header + 20;
+    const uint16_t magic = 0x20b;  // PE32+
+    const uint32_t entrypoint_rva = section_rva;
+    const uint32_t section_alignment = 0x1000;
+    const uint32_t file_alignment = 0x200;
+    const uint32_t size_of_image = 0x2000;
+    const uint32_t size_of_headers = 0x200;
+    const uint32_t number_of_rva_and_sizes = 16;
+    std::memcpy(data.data() + optional + 0, &magic, sizeof(magic));
+    std::memcpy(data.data() + optional + 16, &entrypoint_rva, sizeof(entrypoint_rva));
+    std::memcpy(data.data() + optional + 24, &image_base, sizeof(image_base));
+    std::memcpy(data.data() + optional + 32, &section_alignment, sizeof(section_alignment));
+    std::memcpy(data.data() + optional + 36, &file_alignment, sizeof(file_alignment));
+    std::memcpy(data.data() + optional + 56, &size_of_image, sizeof(size_of_image));
+    std::memcpy(data.data() + optional + 60, &size_of_headers, sizeof(size_of_headers));
+    std::memcpy(data.data() + optional + 108, &number_of_rva_and_sizes, sizeof(number_of_rva_and_sizes));
+
+    if (with_import_table) {
+        const uint32_t import_rva = 0x1800;
+        const uint32_t import_size = 0x40;
+        std::memcpy(data.data() + optional + 120, &import_rva, sizeof(import_rva));
+        std::memcpy(data.data() + optional + 124, &import_size, sizeof(import_size));
+    }
+
+    const uint32_t section_header = optional + optional_header_size;
+    const char section_name[8] = {'.', 'r', 'd', 'a', 't', 'a', 0, 0};
+    const uint32_t virtual_size = static_cast<uint32_t>(payload.size());
+    const uint32_t size_of_raw_data = static_cast<uint32_t>(payload.size());
+    const uint32_t pointer_to_raw_data = 0x200;
+    const uint32_t characteristics_section = 0x40000040;  // read + initialized data
+    std::memcpy(data.data() + section_header + 0, section_name, sizeof(section_name));
+    std::memcpy(data.data() + section_header + 8, &virtual_size, sizeof(virtual_size));
+    std::memcpy(data.data() + section_header + 12, &section_rva, sizeof(section_rva));
+    std::memcpy(data.data() + section_header + 16, &size_of_raw_data, sizeof(size_of_raw_data));
+    std::memcpy(data.data() + section_header + 20, &pointer_to_raw_data, sizeof(pointer_to_raw_data));
+    std::memcpy(data.data() + section_header + 36, &characteristics_section, sizeof(characteristics_section));
+
+    std::memcpy(data.data() + pointer_to_raw_data, payload.data(), payload.size());
+    return write_binary_file(name, data);
+}
+
 }  // namespace
 
 TEST(Utils, Trim) {
@@ -225,4 +290,30 @@ TEST(SegmentLoader, RejectsEmptyPath) {
     SegmentLoader loader("");
     EXPECT_FALSE(loader.read_string(0x10).has_value());
     EXPECT_TRUE(loader.read_bytes(0x10, 4).empty());
+}
+
+TEST(SegmentLoader, ReadsPeStringsAndEntrypoint) {
+    const uint64_t image_base = 0x140000000ULL;
+    const uint32_t rva = 0x1000;
+    std::vector<uint8_t> payload = {'h', 'e', 'l', 'l', 'o', 0};
+    auto path = write_fake_pe("segment_loader_pe.bin", image_base, rva, payload);
+
+    SegmentLoader loader(path.string());
+    auto str = loader.read_string(image_base + rva);
+    ASSERT_TRUE(str.has_value());
+    EXPECT_EQ(*str, "hello");
+    EXPECT_EQ(loader.format(), SegmentLoader::BinaryFormat::Pe32Plus);
+    ASSERT_TRUE(loader.entrypoint().has_value());
+    EXPECT_EQ(*loader.entrypoint(), image_base + rva);
+}
+
+TEST(SegmentLoader, RejectsPeWithImportTable) {
+    const uint64_t image_base = 0x140000000ULL;
+    const uint32_t rva = 0x1000;
+    std::vector<uint8_t> payload = {'x', 0};
+    auto path = write_fake_pe("segment_loader_pe_imports.bin", image_base, rva, payload, true);
+
+    SegmentLoader loader(path.string());
+    EXPECT_FALSE(loader.read_string(image_base + rva).has_value());
+    EXPECT_NE(loader.last_error().find("import table"), std::string::npos);
 }
