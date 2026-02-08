@@ -335,6 +335,7 @@ TUI (UI terminale) :
 - Installation: `python -m pip install -r requirements-tui.txt`
 - Details + capture: `docs/tui.md`
 - Frontend: `--tui-frontend textual|curses|headless` ou `SILICIUM_TUI_FRONTEND=...`
+- Connector: `--tui-connector inprocess` ou `SILICIUM_TUI_CONNECTOR=inprocess`
 - Probe non-interactive: `--smoke` (`--strict-frontend` pour exiger le frontend demandé)
 - CI headless script: `--headless-script <json>` (optionnellement `--headless-json <rapport>`)
 ```

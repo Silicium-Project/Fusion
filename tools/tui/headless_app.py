@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 import threading
 import time
 from collections import deque
@@ -10,7 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
 
-from tools.tui.actions import ActionSpec, LOG_DIR, REPO_ROOT, build_actions
+from tools.tui.actions import ActionSpec, LOG_DIR, build_actions
+from tools.tui.connectors import ITuiConnector, InProcessConnector
 
 RunStatus = str
 CommandRunner = Callable[[ActionSpec, str, Path, threading.Event], int]
@@ -49,31 +49,22 @@ def _default_command_runner(
     log_path: Path,
     cancel_event: threading.Event,
 ) -> int:
-    cmd = action.command(runner_mode)
-    with log_path.open("w", encoding="utf-8") as handle:
-        process = subprocess.Popen(
-            cmd,
-            cwd=REPO_ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        try:
-            while True:
-                if cancel_event.is_set() and process.poll() is None:
-                    process.terminate()
-                line = process.stdout.readline() if process.stdout else ""
-                if line:
-                    handle.write(line)
-                elif process.poll() is not None:
-                    break
-                else:
-                    time.sleep(0.01)
-        finally:
-            if process.poll() is None:
-                process.kill()
-        return process.wait()
+    return InProcessConnector().run_action(action, runner_mode, log_path, cancel_event)
+
+
+class _RunnerConnector(ITuiConnector):
+    def __init__(self, runner: CommandRunner) -> None:
+        super().__init__("runner")
+        self._runner = runner
+
+    def run_action(
+        self,
+        action: ActionSpec,
+        runner_mode: str,
+        log_path: Path,
+        cancel_event: threading.Event,
+    ) -> int:
+        return self._runner(action, runner_mode, log_path, cancel_event)
 
 
 class HeadlessScheduler:
@@ -83,12 +74,16 @@ class HeadlessScheduler:
         actions: Iterable[ActionSpec] | None = None,
         runner_mode: str = "auto",
         log_dir: Path = LOG_DIR,
+        connector: ITuiConnector | None = None,
         command_runner: CommandRunner | None = None,
     ) -> None:
         self._actions = {action.key: action for action in (actions or build_actions())}
         self._runner_mode = runner_mode
         self._log_dir = log_dir
-        self._command_runner = command_runner or _default_command_runner
+        if command_runner is not None:
+            self._connector = _RunnerConnector(command_runner)
+        else:
+            self._connector = connector or InProcessConnector()
 
         self._records: dict[str, RunRecord] = {}
         self._running: dict[str, _RunningTask] = {}
@@ -217,7 +212,7 @@ class HeadlessScheduler:
     ) -> None:
         exit_code = 1
         try:
-            exit_code = self._command_runner(
+            exit_code = self._connector.run_action(
                 action,
                 self._runner_mode,
                 record.log_path,
@@ -260,6 +255,7 @@ def run_script(
     runner_mode: str = "auto",
     timeout_sec: float = 120.0,
     log_dir: Path = LOG_DIR,
+    connector: ITuiConnector | None = None,
     command_runner: CommandRunner | None = None,
 ) -> dict[str, object]:
     payload = json.loads(script_path.read_text(encoding="utf-8-sig"))
@@ -271,6 +267,7 @@ def run_script(
         actions=actions,
         runner_mode=script_runner_mode,
         log_dir=log_dir,
+        connector=connector,
         command_runner=command_runner,
     )
     for idx, step in enumerate(steps, start=1):

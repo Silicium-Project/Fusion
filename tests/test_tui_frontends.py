@@ -8,6 +8,7 @@ from tools.tui.frontends import (
     ITuiFrontend,
     build_frontend_registry,
 )
+from tools.tui.connectors import ITuiConnector
 
 
 def test_frontend_registry_exposes_all_adapters() -> None:
@@ -39,3 +40,33 @@ def test_headless_frontend_script_failure_detection(tmp_path: Path) -> None:
     result = frontend.run(FrontendRunConfig(headless_script=script))
     assert not result.ok
     assert "failed actions" in result.reason
+
+
+def test_headless_frontend_passes_connector_to_script_runner(tmp_path: Path) -> None:
+    class FakeConnector(ITuiConnector):
+        def __init__(self) -> None:
+            super().__init__("fake")
+
+        def run_action(self, action, runner_mode, log_path, cancel_event) -> int:  # pragma: no cover - not called here
+            return 0
+
+    connector = FakeConnector()
+    script = tmp_path / "script.json"
+    script.write_text("{\"steps\": []}", encoding="utf-8")
+    captured = {}
+
+    def fake_runner(script_path, **kwargs):
+        captured["script_path"] = script_path
+        captured["connector"] = kwargs.get("connector")
+        return {"records": {}}
+
+    frontend = HeadlessFrontend(script_runner=fake_runner)
+    result = frontend.run(
+        FrontendRunConfig(
+            headless_script=script,
+            connector=connector,
+        )
+    )
+    assert result.ok
+    assert captured["script_path"] == script
+    assert captured["connector"] is connector

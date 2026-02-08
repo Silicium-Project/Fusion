@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import json
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from tools.tui.headless_app import run_script as default_headless_script_runner
 
@@ -12,12 +12,16 @@ HeadlessScriptRunner = Callable[..., dict[str, object]]
 TextualProbe = Callable[[], tuple[bool, str]]
 TextualRun = Callable[[], None]
 
+if TYPE_CHECKING:
+    from tools.tui.connectors import ITuiConnector
+
 
 @dataclass(frozen=True)
 class FrontendRunConfig:
     headless_script: Path | None = None
     headless_timeout: float = 120.0
     headless_json: Path | None = None
+    connector: "ITuiConnector | None" = None
 
 
 @dataclass(frozen=True)
@@ -115,7 +119,11 @@ class HeadlessFrontend(ITuiFrontend):
         if not script_path.exists():
             return FrontendRunResult(False, f"Headless script not found: {script_path}")
 
-        snapshot = self._script_runner(script_path, timeout_sec=config.headless_timeout)
+        snapshot = self._script_runner(
+            script_path,
+            timeout_sec=config.headless_timeout,
+            connector=config.connector,
+        )
         if config.headless_json:
             config.headless_json.parent.mkdir(parents=True, exist_ok=True)
             config.headless_json.write_text(

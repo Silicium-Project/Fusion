@@ -17,11 +17,14 @@ python -m pip install -r requirements-tui.txt
 ## Frontend Selection
 
 - CLI option: `./silicium tui --tui-frontend textual|curses|headless`
+- CLI connector: `./silicium tui --tui-connector inprocess`
 - Env override: `SILICIUM_TUI_FRONTEND=textual|curses|headless`
+- Env connector override: `SILICIUM_TUI_CONNECTOR=inprocess`
 - Non-interactive probe: `./silicium tui --smoke`
 - Strict probe: `./silicium tui --smoke --strict-frontend --tui-frontend <name>`
 - Headless script run: `./silicium tui --tui-frontend headless --headless-script <path.json>`
 - Precedence: CLI argument first, then env var, then default `textual`
+- Connector default: `inprocess` when not specified
 - Fallback policy:
   - invalid value -> warning -> fallback to `textual`
   - `curses` selected -> runs minimal curses frontend

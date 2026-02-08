@@ -164,6 +164,7 @@ WORKLOAD_TAXONOMY_TAGS = [
     "verification",
 ]
 TUI_FRONTENDS = {"textual", "curses", "headless"}
+TUI_CONNECTORS = {"inprocess"}
 
 
 @dataclass(frozen=True)
@@ -2258,8 +2259,22 @@ def resolve_tui_frontend(requested: str | None) -> tuple[str, list[str]]:
     return candidate, warnings
 
 
+def resolve_tui_connector(requested: str | None) -> tuple[str, list[str]]:
+    warnings: list[str] = []
+    env_connector = os.environ.get("SILICIUM_TUI_CONNECTOR", "").strip().lower()
+    candidate = (requested or env_connector or "inprocess").strip().lower()
+    if candidate not in TUI_CONNECTORS:
+        warnings.append(
+            f"Unsupported TUI connector '{candidate}', falling back to inprocess "
+            "(supported: inprocess)."
+        )
+        candidate = "inprocess"
+    return candidate, warnings
+
+
 def run_tui_frontend(
     requested: str | None,
+    requested_connector: str | None,
     ctx: Context,
     *,
     smoke: bool = False,
@@ -2268,10 +2283,15 @@ def run_tui_frontend(
     headless_timeout: float = 120.0,
     headless_json: str | None = None,
 ) -> None:
+    from tools.tui.connectors import build_connector_registry
     from tools.tui.frontends import FrontendRunConfig, build_frontend_registry
 
     frontend, warnings = resolve_tui_frontend(requested)
+    connector_name, connector_warnings = resolve_tui_connector(requested_connector)
+    warnings.extend(connector_warnings)
     registry = build_frontend_registry()
+    connector_registry = build_connector_registry()
+    connector = connector_registry[connector_name]
     for warning in warnings:
         print(colorize(f"[WARN] {warning}", COLOR_YELLOW))
 
@@ -2312,6 +2332,7 @@ def run_tui_frontend(
                 headless_script=script_path,
                 headless_timeout=headless_timeout,
                 headless_json=output_path,
+                connector=connector,
             )
         )
         if output_path and result.ok and not result.fallback_to_shell:
@@ -2348,6 +2369,7 @@ def run_tui_frontend(
 def cmd_tui(args: argparse.Namespace, ctx: Context) -> None:
     run_tui_frontend(
         args.tui_frontend,
+        args.tui_connector,
         ctx,
         smoke=args.smoke,
         strict_frontend=args.strict_frontend,
@@ -2927,6 +2949,10 @@ def configure_tui(parser: argparse.ArgumentParser) -> None:
         help="Frontend selection: textual, curses, headless (or SILICIUM_TUI_FRONTEND).",
     )
     parser.add_argument(
+        "--tui-connector",
+        help="Connector selection: inprocess (or SILICIUM_TUI_CONNECTOR).",
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help="Probe frontend availability and exit without opening interactive UI.",
@@ -3335,6 +3361,7 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
     if first == "tui":
         flags = [
             "--tui-frontend",
+            "--tui-connector",
             "--smoke",
             "--strict-frontend",
             "--headless-script",
@@ -3345,6 +3372,8 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
             return [flag for flag in flags if flag.startswith(text)]
         if tokens[-1] == "--tui-frontend":
             return [opt for opt in sorted(TUI_FRONTENDS) if opt.startswith(text)]
+        if tokens[-1] == "--tui-connector":
+            return [opt for opt in sorted(TUI_CONNECTORS) if opt.startswith(text)]
         return [opt for opt in sorted(TUI_FRONTENDS) if opt.startswith(text)]
     return []
 
@@ -3398,7 +3427,7 @@ def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
     ctx = build_context()
     if not argv:
-        run_tui_frontend(None, ctx)
+        run_tui_frontend(None, None, ctx)
         return
     try:
         execute(argv, ctx)
