@@ -2267,6 +2267,22 @@ def _run_textual_frontend() -> tuple[bool, str]:
     return True, ""
 
 
+def _run_curses_frontend() -> tuple[bool, str]:
+    try:
+        from tools.tui.curses_app import run as run_curses
+    except ImportError:
+        return False, "curses frontend module unavailable."
+    except Exception as exc:  # pragma: no cover - defensive
+        return False, f"failed to import curses frontend: {exc}"
+    try:
+        run_curses()
+        return True, ""
+    except RuntimeError as exc:
+        return False, str(exc)
+    except Exception as exc:  # pragma: no cover - UI runtime path
+        return False, f"curses frontend failed: {exc}"
+
+
 def run_tui_frontend(requested: str | None, ctx: Context) -> None:
     frontend, warnings = resolve_tui_frontend(requested)
     for warning in warnings:
@@ -2278,7 +2294,10 @@ def run_tui_frontend(requested: str | None, ctx: Context) -> None:
         return
 
     if frontend == "curses":
-        print(colorize("[WARN] curses frontend not implemented yet; trying textual.", COLOR_YELLOW))
+        ok, reason = _run_curses_frontend()
+        if ok:
+            return
+        print(colorize(f"[WARN] {reason} Falling back to textual.", COLOR_YELLOW))
 
     ok, reason = _run_textual_frontend()
     if ok:

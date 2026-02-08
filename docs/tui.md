@@ -21,8 +21,24 @@ python -m pip install -r requirements-tui.txt
 - Precedence: CLI argument first, then env var, then default `textual`
 - Fallback policy:
   - invalid value -> warning -> fallback to `textual`
-  - `curses` selected -> warning (not yet implemented) -> tries `textual`
+  - `curses` selected -> runs minimal curses frontend
+  - curses startup failure -> warning -> fallback to `textual`
   - `textual` unavailable -> warning -> fallback to `headless` shell mode
+
+## Curses Smoke
+
+```bash
+./silicium tui --tui-frontend curses
+```
+
+- `Up/Down`: select action
+- `Enter`: run selected action
+- `i`: interrupt selected running action
+- `q`: quit
+
+Notes:
+- The curses frontend requires a real terminal/TTY.
+- On platforms where Python `curses` is unavailable, startup falls back to `textual`.
 
 ## Key bindings
 
