@@ -169,6 +169,41 @@ With `--mcp-enable-tools`:
 
 Invalid payloads return `error_code=bad_request`.
 
+## Standalone MCP HTTP Server (v1)
+
+The repo includes a minimal local-only HTTP server that serves the exported MCP resources for external clients.
+
+- Script: `tools/mcp_server.py`
+- Default bind: `127.0.0.1` (local-only)
+- Export directory: passed via `--export-dir` or `SILICIUM_MCP_EXPORT_DIR`
+- Optional auth: `SILICIUM_MCP_TOKEN` (Bearer token)
+
+Run worker + export:
+
+```bash
+./worker --summary summary.json --queue queue.txt --mcp-readonly --mcp-export-dir /tmp/silicium-mcp
+```
+
+Run server (read-only resources):
+
+```bash
+python tools/mcp_server.py --export-dir /tmp/silicium-mcp
+```
+
+Enable guarded tools (writes `control.request.json` in export dir):
+
+```bash
+python tools/mcp_server.py --export-dir /tmp/silicium-mcp --enable-tools
+```
+
+Endpoints:
+
+- `GET /healthz`
+- `GET /resources/list`
+- `GET /resources?uri=resources://...`
+- `GET /tools/list`
+- `POST /tools` with `{"name":"tools.silicium.get_health","args":{}}`
+
 ## References
 
 - `worker/include/worker/backend/BackendConnector.hpp`
