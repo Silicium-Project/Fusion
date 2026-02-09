@@ -139,3 +139,54 @@ def test_mcp_server_token_auth(tmp_path: Path) -> None:
         except subprocess.TimeoutExpired:
             proc.kill()
 
+
+def test_mcp_streamable_http_initialize(tmp_path: Path) -> None:
+    export_dir = tmp_path / "mcp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "status.current.json").write_text('{"ok":true}', encoding="utf-8")
+    (export_dir / "reports.recent.json").write_text('{"tasks":[]}', encoding="utf-8")
+
+    port = _find_free_port()
+    env = os.environ.copy()
+    env["SILICIUM_MCP_EXPORT_DIR"] = str(export_dir)
+    env["SILICIUM_MCP_TOKEN"] = "secret"
+    proc = subprocess.Popen(
+        [sys.executable, "tools/mcp_server.py", "--port", str(port)],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"http://127.0.0.1:{port}"
+        headers = {"Authorization": "Bearer secret"}
+        _wait_ready(base, headers=headers)
+
+        code, body = _http_post(
+            base + "/mcp",
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2024-11-05", "clientInfo": {"name": "pytest", "version": "0"}},
+            },
+            headers=headers,
+        )
+        assert code == 200
+        payload = json.loads(body)
+        assert payload["jsonrpc"] == "2.0"
+        assert payload["id"] == 1
+        assert payload["result"]["serverInfo"]["name"] == "silicium-mcp"
+
+        code, body = _http_post(base + "/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, headers=headers)
+        assert code == 200
+        payload = json.loads(body)
+        assert payload["id"] == 2
+        assert isinstance(payload["result"]["tools"], list)
+        assert any(t.get("name") == "tools.silicium.get_health" for t in payload["result"]["tools"])
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()

@@ -36,6 +36,9 @@ RESOURCE_REPORTS_RECENT = "resources://silicium/reports/recent"
 RESOURCE_RESULT_PREFIX = "resources://silicium/results/by-task/"
 RESOURCE_LOGS_PREFIX = "resources://silicium/logs/by-task/"
 
+MCP_JSONRPC_VERSION = "2.0"
+MCP_DEFAULT_PROTOCOL_VERSION = "2024-11-05"
+
 TOOL_RUN_ACTION = "tools.silicium.run_action"
 TOOL_INTERRUPT_ACTION = "tools.silicium.interrupt_action"
 TOOL_SELECT_RUNNER_MODE = "tools.silicium.select_runner_mode"
@@ -82,6 +85,17 @@ def _read_json_request(handler: BaseHTTPRequestHandler, max_bytes: int = 256 * 1
         return json.loads(raw.decode("utf-8"))
     except Exception as exc:
         raise ValueError("invalid_json") from exc
+
+
+def _jsonrpc_ok(req_id: Any, result: Any) -> Mapping[str, Any]:
+    return {"jsonrpc": MCP_JSONRPC_VERSION, "id": req_id, "result": result}
+
+
+def _jsonrpc_err(req_id: Any, code: int, message: str, data: Any | None = None) -> Mapping[str, Any]:
+    err: dict[str, Any] = {"code": code, "message": message}
+    if data is not None:
+        err["data"] = data
+    return {"jsonrpc": MCP_JSONRPC_VERSION, "id": req_id, "error": err}
 
 
 def _sanitize_task_id(task_id: str) -> str:
@@ -188,6 +202,10 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if parsed.path == "/mcp":
+            # Streamable HTTP MCP transport is primarily POST-based.
+            _json_response(self, HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method_not_allowed"})
+            return
         if parsed.path == "/resources/list":
             _json_response(self, HTTPStatus.OK, {"resources": list(SUPPORTED_RESOURCES)})
             return
@@ -220,10 +238,169 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             return
         _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
+    def _send_mcp_response(self, payload: Any) -> None:
+        accept = (self.headers.get("Accept") or "").lower()
+        if "text/event-stream" in accept:
+            body = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+            raw = ("event: message\ndata: " + body + "\n\n").encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        _json_response(self, HTTPStatus.OK, payload)
+
+    def _handle_mcp_call(self, method: str, params: Any) -> Any:
+        if method == "ping":
+            return {}
+
+        if method == "initialize":
+            if not isinstance(params, dict):
+                raise ValueError("bad_params")
+            client_proto = params.get("protocolVersion")
+            protocol_version = client_proto if isinstance(client_proto, str) and client_proto else MCP_DEFAULT_PROTOCOL_VERSION
+            return {
+                "protocolVersion": protocol_version,
+                "serverInfo": {"name": "silicium-mcp", "version": "1.0"},
+                "capabilities": {
+                    "resources": {"listChanged": False},
+                    "tools": {"listChanged": False},
+                },
+            }
+
+        if method == "resources/list":
+            resources: list[dict[str, Any]] = []
+            for uri in SUPPORTED_RESOURCES:
+                if "{task_id}" in uri:
+                    continue
+                resources.append({"uri": uri, "name": uri.rsplit("/", 1)[-1], "mimeType": "application/json"})
+            # Include template URIs as discoverable patterns.
+            resources.append({"uri": "resources://silicium/results/by-task/{task_id}", "name": "result_by_task", "mimeType": "application/json"})
+            resources.append({"uri": "resources://silicium/logs/by-task/{task_id}", "name": "logs_by_task", "mimeType": "application/json"})
+            return {"resources": resources}
+
+        if method == "resources/read":
+            if not isinstance(params, dict):
+                raise ValueError("bad_params")
+            uri = params.get("uri")
+            if not isinstance(uri, str) or not uri:
+                raise ValueError("missing_uri")
+            body = self._app.store.read_resource(uri)
+            return {"contents": [{"uri": uri, "mimeType": "application/json", "text": body}]}
+
+        if method == "tools/list":
+            tools: list[dict[str, Any]] = [
+                {
+                    "name": TOOL_GET_HEALTH,
+                    "description": "Return status.current.json from the worker export directory.",
+                    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+                },
+                {
+                    "name": TOOL_RUN_ACTION,
+                    "description": "Run a guarded read-only action (exported snapshots).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "action": {"type": "string"},
+                            "task_id": {"type": "string"},
+                        },
+                        "additionalProperties": True,
+                    },
+                },
+                {
+                    "name": TOOL_INTERRUPT_ACTION,
+                    "description": "Request an interrupt via control.request.json (if enabled).",
+                    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+                },
+                {
+                    "name": TOOL_SELECT_RUNNER_MODE,
+                    "description": "Request a runner mode selection via control.request.json (if enabled).",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"mode": {"type": "string", "enum": ["auto", "emu", "native", "dynamo"]}},
+                        "required": ["mode"],
+                        "additionalProperties": False,
+                    },
+                },
+            ]
+            return {"tools": tools}
+
+        if method == "tools/call":
+            if not isinstance(params, dict):
+                raise ValueError("bad_params")
+            name = params.get("name")
+            arguments = params.get("arguments", {})
+            if not isinstance(name, str) or not name:
+                raise ValueError("missing_tool_name")
+            result = self._app.execute_tool(name, arguments)
+            if isinstance(result, str):
+                text = result
+            else:
+                text = json.dumps(result, separators=(",", ":"), ensure_ascii=True)
+            return {"content": [{"type": "text", "text": text}], "isError": False}
+
+        raise ValueError("unknown_method")
+
     def do_POST(self) -> None:  # noqa: N802
         if not self._require_auth():
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/mcp":
+            try:
+                req = _read_json_request(self)
+            except ValueError as exc:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                return
+
+            def handle_one(obj: Any) -> Mapping[str, Any] | None:
+                if not isinstance(obj, dict):
+                    return _jsonrpc_err(None, -32600, "Invalid Request")
+                if obj.get("jsonrpc") not in (MCP_JSONRPC_VERSION, None):
+                    return _jsonrpc_err(obj.get("id"), -32600, "Invalid Request")
+                req_id = obj.get("id")
+                method = obj.get("method")
+                params = obj.get("params", {})
+                if not isinstance(method, str) or not method:
+                    return _jsonrpc_err(req_id, -32600, "Invalid Request")
+                if req_id is None and method.startswith("notifications/"):
+                    return None
+                try:
+                    result = self._handle_mcp_call(method, params)
+                except PermissionError:
+                    return _jsonrpc_err(req_id, -32003, "Forbidden")
+                except FileNotFoundError:
+                    return _jsonrpc_err(req_id, -32004, "Not Found")
+                except ValueError as exc:
+                    msg = str(exc)
+                    if msg in {"missing_uri", "missing_tool_name", "bad_params"}:
+                        return _jsonrpc_err(req_id, -32602, "Invalid params", {"detail": msg})
+                    if msg == "unknown_method":
+                        return _jsonrpc_err(req_id, -32601, "Method not found")
+                    return _jsonrpc_err(req_id, -32602, "Invalid params", {"detail": msg})
+                except Exception as exc:
+                    return _jsonrpc_err(req_id, -32603, "Internal error", {"detail": str(exc)})
+                return _jsonrpc_ok(req_id, result)
+
+            if isinstance(req, list):
+                responses = [r for r in (handle_one(o) for o in req) if r is not None]
+                if not responses:
+                    self.send_response(HTTPStatus.NO_CONTENT)
+                    self.end_headers()
+                    return
+                self._send_mcp_response(responses)
+                return
+
+            resp = handle_one(req)
+            if resp is None:
+                self.send_response(HTTPStatus.NO_CONTENT)
+                self.end_headers()
+                return
+            self._send_mcp_response(resp)
+            return
+
         if parsed.path != "/tools":
             _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
             return
@@ -355,4 +532,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
