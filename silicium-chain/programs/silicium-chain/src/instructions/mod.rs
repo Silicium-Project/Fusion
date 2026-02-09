@@ -5,3 +5,4 @@ pub mod finalize_job;
 pub mod cancel_job;
 pub mod register_worker;
 pub mod vote_fragment;
+pub mod stake_worker;

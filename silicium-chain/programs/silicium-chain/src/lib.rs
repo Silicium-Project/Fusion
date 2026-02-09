@@ -18,6 +18,8 @@ use crate::instructions::cancel_job::__client_accounts_cancel_job;
 use crate::instructions::register_worker::__client_accounts_register_worker;
 #[allow(unused_imports)]
 use crate::instructions::vote_fragment::__client_accounts_vote_fragment;
+#[allow(unused_imports)]
+use crate::instructions::stake_worker::__client_accounts_stake_worker;
 
 use crate::instructions::create_job::CreateJob;
 use crate::instructions::submit_fragment_result::SubmitFragmentResult;
@@ -26,6 +28,7 @@ use crate::instructions::finalize_job::FinalizeJob;
 use crate::instructions::cancel_job::CancelJob;
 use crate::instructions::register_worker::RegisterWorker;
 use crate::instructions::vote_fragment::VoteFragment;
+use crate::instructions::stake_worker::StakeWorker;
 
 declare_id!("9fXMziZ32jdmisi7YgQPG6LWX884AWSs1efpNFrJg6wC");
 
@@ -69,6 +72,10 @@ pub mod silicium_chain {
 
     pub fn register_worker(ctx: Context<RegisterWorker>) -> Result<()> {
         crate::instructions::register_worker::handler(ctx)
+    }
+
+    pub fn stake_worker(ctx: Context<StakeWorker>, amount: u64) -> Result<()> {
+        crate::instructions::stake_worker::handler(ctx, amount)
     }
 
     pub fn vote_fragment(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {

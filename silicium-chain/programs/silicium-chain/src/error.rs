@@ -18,4 +18,10 @@ pub enum SiliciumError {
     UriTooLong,
     #[msg("Job not cancellable yet")]
     JobNotCancellable,
+    #[msg("Invalid amount.")]
+    InvalidAmount,
+    #[msg("Wrong stake mint.")]
+    WrongStakeMint,
+    #[msg("Wrong stake vault.")]
+    WrongStakeVault,
 }

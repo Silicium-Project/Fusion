@@ -21,13 +21,22 @@ pub struct RegisterWorker<'info> {
 
 pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
     let w = &mut ctx.accounts.worker_account;
+
     w.owner = ctx.accounts.worker.key();
+
+    // stake (empty)
+    w.stake_mint = Pubkey::default();
+    w.stake_vault = Pubkey::default();
     w.stake_amount = 0;
+
+    // stats
     w.reputation = 0;
     w.total_submitted = 0;
     w.total_verified = 0;
     w.total_rejected = 0;
+
     w.status = WorkerStatus::Active;
     w.bump = ctx.bumps.worker_account;
+
     Ok(())
 }

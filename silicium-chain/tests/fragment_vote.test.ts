@@ -2,6 +2,10 @@ import { setupTestEnv, createJobOnce } from "./helpers/setup";
 import { expectFail } from "./helpers/utils";
 import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey } from "@solana/web3.js";
+import {
+  getOrCreateAssociatedTokenAccount,
+  mintTo,
+} from "@solana/spl-token";
 import { assert } from "chai";
 
 describe("fragment_vote.test", () => {
@@ -9,36 +13,42 @@ describe("fragment_vote.test", () => {
     const env = await setupTestEnv();
     await createJobOnce(env);
 
-    // Extra verifiers
+    // --- Verifiers ---
     const verifier1 = Keypair.generate();
     const verifier2 = Keypair.generate();
     const badVerifier = Keypair.generate();
 
-    // airdrops
+    // Airdrops
     for (const kp of [verifier1, verifier2, badVerifier]) {
-      const sig = await env.provider.connection.requestAirdrop(kp.publicKey, 2e9);
+      const sig = await env.provider.connection.requestAirdrop(
+        kp.publicKey,
+        2e9
+      );
       await env.provider.connection.confirmTransaction(sig, "confirmed");
     }
 
-    // PDAs: worker accounts
-    const [workerPda] = PublicKey.findProgramAddressSync(
+    // --- Worker PDAs ---
+    const workerPda = PublicKey.findProgramAddressSync(
       [Buffer.from("worker"), env.worker.publicKey.toBuffer()],
       env.program.programId
-    );
-    const [verifier1Pda] = PublicKey.findProgramAddressSync(
+    )[0];
+
+    const verifier1Pda = PublicKey.findProgramAddressSync(
       [Buffer.from("worker"), verifier1.publicKey.toBuffer()],
       env.program.programId
-    );
-    const [verifier2Pda] = PublicKey.findProgramAddressSync(
+    )[0];
+
+    const verifier2Pda = PublicKey.findProgramAddressSync(
       [Buffer.from("worker"), verifier2.publicKey.toBuffer()],
       env.program.programId
-    );
-    const [badVerifierPda] = PublicKey.findProgramAddressSync(
+    )[0];
+
+    const badVerifierPda = PublicKey.findProgramAddressSync(
       [Buffer.from("worker"), badVerifier.publicKey.toBuffer()],
       env.program.programId
-    );
+    )[0];
 
-    // Register submitter worker (env.worker)
+    // --- Register workers ---
     await (env.program as any).methods
       .registerWorker()
       .accounts({
@@ -49,7 +59,6 @@ describe("fragment_vote.test", () => {
       .signers([env.worker])
       .rpc();
 
-    // Register verifiers
     for (const v of [
       { kp: verifier1, pda: verifier1Pda },
       { kp: verifier2, pda: verifier2Pda },
@@ -63,13 +72,59 @@ describe("fragment_vote.test", () => {
         })
         .signers([v.kp])
         .rpc();
+
+      // --- Create ATA + mint stake token ---
+      const ata = await getOrCreateAssociatedTokenAccount(
+        env.provider.connection,
+        (env.client as any).payer,
+        env.mint,
+        v.kp.publicKey
+      );
+
+      await mintTo(
+        env.provider.connection,
+        (env.client as any).payer,
+        env.mint,
+        ata.address,
+        env.client.publicKey,
+        1
+      );
+
+      // --- Stake worker (MIN_VERIFIER_STAKE = 1) ---
+      const stakeAuth = PublicKey.findProgramAddressSync(
+        [Buffer.from("stake_auth"), v.pda.toBuffer()],
+        env.program.programId
+      )[0];
+
+      const stakeVault = PublicKey.findProgramAddressSync(
+        [Buffer.from("stake_vault"), v.kp.publicKey.toBuffer()],
+        env.program.programId
+      )[0];
+
+      await (env.program as any).methods
+        .stakeWorker(new anchor.BN(1))
+        .accounts({
+          worker: v.kp.publicKey,
+          workerAccount: v.pda,
+          mint: env.mint,
+          workerToken: ata.address,
+          stakeAuth,
+          stakeVault,
+          tokenProgram: env.tokenProgram,
+          systemProgram: env.systemProgram,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        })
+        .signers([v.kp])
+        .rpc();
     }
 
-    // Submit fragment 0 (needs workerAccount in your accounts)
-    const fragmentIndex = 0;
-
+    // --- Submit fragment ---
     await (env.program as any).methods
-      .submitFragmentResult(fragmentIndex, Array(32).fill(1), Array(32).fill(2))
+      .submitFragmentResult(
+        0,
+        Array(32).fill(1),
+        Array(32).fill(2)
+      )
       .accounts({
         worker: env.worker.publicKey,
         workerAccount: workerPda,
@@ -80,17 +135,23 @@ describe("fragment_vote.test", () => {
       .signers([env.worker])
       .rpc();
 
-    // Balance before
-    const balBefore = await env.provider.connection.getTokenAccountBalance(env.workerToken);
+    const balBefore =
+      await env.provider.connection.getTokenAccountBalance(
+        env.workerToken
+      );
 
-    // Vote PDA helper
+    // --- Vote helper ---
     const votePda = (fragmentPk: PublicKey, verifierPk: PublicKey) =>
       PublicKey.findProgramAddressSync(
-        [Buffer.from("fragment_vote"), fragmentPk.toBuffer(), verifierPk.toBuffer()],
+        [
+          Buffer.from("fragment_vote"),
+          fragmentPk.toBuffer(),
+          verifierPk.toBuffer(),
+        ],
         env.program.programId
       )[0];
 
-    // Vote 1 (verifier1)
+    // --- Vote 1 ---
     await (env.program as any).methods
       .voteFragment(true)
       .accounts({
@@ -108,7 +169,7 @@ describe("fragment_vote.test", () => {
       .signers([verifier1])
       .rpc();
 
-    // Vote 2 (verifier2) => should hit quorum=2 and pay worker
+    // --- Vote 2 (quorum reached) ---
     await (env.program as any).methods
       .voteFragment(true)
       .accounts({
@@ -126,14 +187,23 @@ describe("fragment_vote.test", () => {
       .signers([verifier2])
       .rpc();
 
-    const balAfter = await env.provider.connection.getTokenAccountBalance(env.workerToken);
-    assert.isTrue(Number(balAfter.value.amount) > Number(balBefore.value.amount));
+    const balAfter =
+      await env.provider.connection.getTokenAccountBalance(
+        env.workerToken
+      );
 
-    // Fragment status should no longer be Submitted
-    const frag: any = await (env.program as any).account.fragment.fetch(env.fragment0Pda);
+    assert.isTrue(
+      Number(balAfter.value.amount) >
+        Number(balBefore.value.amount)
+    );
+
+    // --- Fragment status ---
+    const frag: any = await (env.program as any).account.fragment.fetch(
+      env.fragment0Pda
+    );
     assert.notDeepEqual(frag.status, { submitted: {} });
 
-    // Double vote by verifier1 should fail (vote PDA already exists)
+    // --- Double vote should fail ---
     await expectFail(
       (env.program as any).methods
         .voteFragment(true)
@@ -142,7 +212,7 @@ describe("fragment_vote.test", () => {
           job: env.jobPda,
           fragment: env.fragment0Pda,
           verifierWorker: verifier1Pda,
-          vote: votePda(env.fragment0Pda, verifier1.publicKey), // same PDA
+          vote: votePda(env.fragment0Pda, verifier1.publicKey),
           escrowAuth: env.escrowAuthPda,
           escrow: env.escrowKp.publicKey,
           workerToken: env.workerToken,
@@ -150,11 +220,10 @@ describe("fragment_vote.test", () => {
           systemProgram: env.systemProgram,
         })
         .signers([verifier1])
-        .rpc(),
-      "Expected double vote to fail"
+        .rpc()
     );
 
-    // Unregistered verifier should fail (worker PDA doesn't exist)
+    // --- Unregistered verifier should fail ---
     await expectFail(
       (env.program as any).methods
         .voteFragment(true)
@@ -162,7 +231,7 @@ describe("fragment_vote.test", () => {
           verifier: badVerifier.publicKey,
           job: env.jobPda,
           fragment: env.fragment0Pda,
-          verifierWorker: badVerifierPda, // not created on-chain
+          verifierWorker: badVerifierPda,
           vote: votePda(env.fragment0Pda, badVerifier.publicKey),
           escrowAuth: env.escrowAuthPda,
           escrow: env.escrowKp.publicKey,
@@ -171,8 +240,7 @@ describe("fragment_vote.test", () => {
           systemProgram: env.systemProgram,
         })
         .signers([badVerifier])
-        .rpc(),
-      "Expected unregistered verifier vote to fail"
+        .rpc()
     );
   });
 });
