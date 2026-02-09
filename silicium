@@ -16,6 +16,7 @@ import subprocess
 import sys
 import string
 import time
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
@@ -74,6 +75,8 @@ LOG_CHOICES = sorted(SERVICE_MAP.keys())
 HISTORY_FILE = Path.home() / ".silicium_history"
 COMPOSE_FILE = REPO_ROOT / "infra" / "docker-compose.yml"
 COMPOSE_ENV_FILE = REPO_ROOT / "infra" / ".env"
+LOCAL_STATE_DIR = REPO_ROOT / ".silicium"
+DEFAULT_CONFIG_FILE = LOCAL_STATE_DIR / "config.json"
 SERVICE_CHOICES = sorted(
     {
         "silicium-localnet",
@@ -105,6 +108,7 @@ TOP_LEVEL_COMMANDS = [
     "alias",
     "tui",
     "shell",
+    "mcp",
     "help",
     "exit",
     "quit",
@@ -116,6 +120,7 @@ SUBCOMMANDS = {
     "history": ["show", "clear"],
     "clean": ["cache", "ledgers", "all"],
     "workload": ["list", "show", "queue", "lint", "fixtures", "alignment", "golden"],
+    "mcp": ["serve", "print-config"],
 }
 SETUP_TARGET_CHOICES = ["localnet", "devnet", "testnet", "mainnet", "proxy"]
 SETUP_DEFAULT_TARGETS = ["localnet", "proxy"]
@@ -167,6 +172,11 @@ WORKLOAD_TAXONOMY_TAGS = [
 ]
 TUI_FRONTENDS = {"textual", "curses", "headless"}
 TUI_CONNECTORS = {"inprocess", "stdio", "http"}
+
+MCP_DEFAULT_BIND = "127.0.0.1"
+MCP_DEFAULT_PORT = 9765
+MCP_DEFAULT_EXPORT_DIR = LOCAL_STATE_DIR / "mcp" / "export"
+MCP_DEFAULT_TOKEN_FILE = LOCAL_STATE_DIR / "mcp" / "token"
 
 
 @dataclass(frozen=True)
@@ -238,6 +248,81 @@ class CommandRegistry:
         def _inner(args: argparse.Namespace) -> None:
             handler(args, ctx)
         return _inner
+
+
+def _load_json_file(path: Path) -> dict[str, Any]:
+    try:
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _resolve_config_file() -> Path:
+    override = os.environ.get("SILICIUM_CONFIG", "").strip()
+    if override:
+        return Path(override)
+    return DEFAULT_CONFIG_FILE
+
+
+def _resolve_repo_path(value: str, base: Path = REPO_ROOT) -> Path:
+    p = Path(value)
+    if p.is_absolute():
+        return p
+    return base / p
+
+
+def _ensure_token_file(path: Path) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    token = secrets.token_urlsafe(32)
+    path.write_text(token, encoding="utf-8")
+    return token
+
+
+def _resolve_mcp_settings(args: argparse.Namespace) -> dict[str, Any]:
+    cfg = _load_json_file(_resolve_config_file()).get("mcp", {})
+    if not isinstance(cfg, dict):
+        cfg = {}
+
+    bind = getattr(args, "bind", "") or os.environ.get("SILICIUM_MCP_BIND", "") or str(cfg.get("bind") or MCP_DEFAULT_BIND)
+    port = getattr(args, "port", 0) or int(os.environ.get("SILICIUM_MCP_PORT", "0") or 0) or int(cfg.get("port") or MCP_DEFAULT_PORT)
+
+    export_dir_value = (
+        getattr(args, "export_dir", "")
+        or os.environ.get("SILICIUM_MCP_EXPORT_DIR", "")
+        or str(cfg.get("export_dir") or MCP_DEFAULT_EXPORT_DIR)
+    )
+    export_dir = _resolve_repo_path(export_dir_value) if export_dir_value else MCP_DEFAULT_EXPORT_DIR
+
+    token_file_value = os.environ.get("SILICIUM_MCP_TOKEN_FILE", "") or str(cfg.get("token_file") or MCP_DEFAULT_TOKEN_FILE)
+    token_file = _resolve_repo_path(token_file_value)
+
+    enable_tools = bool(getattr(args, "enable_tools", False))
+    if not getattr(args, "enable_tools", False):
+        env_enable = os.environ.get("SILICIUM_MCP_ENABLE_TOOLS", "").strip().lower()
+        if env_enable:
+            enable_tools = env_enable not in {"0", "false", "no"}
+        else:
+            enable_tools = bool(cfg.get("enable_tools") or False)
+
+    token = getattr(args, "token", "") or os.environ.get("SILICIUM_MCP_TOKEN", "") or _ensure_token_file(token_file)
+
+    export_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "bind": bind,
+        "port": port,
+        "export_dir": str(export_dir),
+        "token": token,
+        "enable_tools": enable_tools,
+    }
+
+
+def _mcp_base_url(settings: Mapping[str, Any]) -> str:
+    return f"http://{settings['bind']}:{settings['port']}"
 
 
 def load_env_config(env: Mapping[str, str] | None = None) -> EnvConfig:
@@ -2385,6 +2470,67 @@ def cmd_shell(_: argparse.Namespace, ctx: Context) -> None:
     launch_shell(ctx)
 
 
+def configure_mcp_serve(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--bind", default="", help="Bind address (default: from config/env or 127.0.0.1).")
+    parser.add_argument("--port", type=int, default=0, help="HTTP port (default: from config/env or 9765).")
+    parser.add_argument("--export-dir", default="", help="MCP export directory (default: from config/env).")
+    parser.add_argument("--enable-tools", action="store_true", help="Enable guarded control tools.")
+    parser.add_argument("--token", default="", help="Bearer token (default: from token file/config/env).")
+
+
+def cmd_mcp_serve(args: argparse.Namespace, ctx: Context) -> None:
+    (void := ctx)  # keep signature consistent
+    settings = _resolve_mcp_settings(args)
+    from tools import mcp_server
+
+    argv = [
+        "--bind",
+        str(settings["bind"]),
+        "--port",
+        str(settings["port"]),
+        "--export-dir",
+        str(settings["export_dir"]),
+        "--token",
+        str(settings["token"]),
+    ]
+    if settings["enable_tools"]:
+        argv.append("--enable-tools")
+    raise SystemExit(mcp_server.main(argv))
+
+
+def configure_mcp_print_config(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--format", choices=["json", "env"], default="json", help="Output format.")
+    parser.add_argument("--bind", default="", help="Override bind address for output.")
+    parser.add_argument("--port", type=int, default=0, help="Override port for output.")
+    parser.add_argument("--export-dir", default="", help="Override export directory for output.")
+    parser.add_argument("--token", default="", help="Override token for output.")
+    parser.add_argument("--enable-tools", action="store_true", help="Enable tools in output (does not start server).")
+
+
+def cmd_mcp_print_config(args: argparse.Namespace, ctx: Context) -> None:
+    (void := ctx)
+    settings = _resolve_mcp_settings(args)
+    base_url = _mcp_base_url(settings)
+    if args.format == "env":
+        print(f"SILICIUM_MCP_URL={base_url}")
+        print(f"SILICIUM_MCP_TOKEN={settings['token']}")
+        print(f"SILICIUM_MCP_EXPORT_DIR={settings['export_dir']}")
+        print(f"SILICIUM_MCP_ENABLE_TOOLS={'1' if settings['enable_tools'] else '0'}")
+        return
+    print(
+        json.dumps(
+            {
+                "base_url": base_url,
+                "token": settings["token"],
+                "export_dir": settings["export_dir"],
+                "enable_tools": settings["enable_tools"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
 def cmd_budget(args: argparse.Namespace, ctx: Context) -> None:
     script = REPO_ROOT / "tools" / "perf_budget.py"
     if not script.exists():
@@ -3004,6 +3150,18 @@ def build_registry() -> CommandRegistry:
     registry.add(CommandSpec("alias", "Install helper function/aliases in shell rc", configure_alias, cmd_alias))
     registry.add(CommandSpec("tui", "Launch terminal UI", configure_tui, cmd_tui))
     registry.add(CommandSpec("shell", "Start interactive shell", configure_shell, cmd_shell))
+
+    registry.add_group(
+        CommandGroup(
+            name="mcp",
+            help=tr("cli.mcp.help"),
+            dest="mcp_cmd",
+            commands=[
+                CommandSpec("serve", tr("cli.mcp.serve.help"), configure_mcp_serve, cmd_mcp_serve),
+                CommandSpec("print-config", tr("cli.mcp.print_config.help"), configure_mcp_print_config, cmd_mcp_print_config),
+            ],
+        )
+    )
 
     registry.add_group(
         CommandGroup(

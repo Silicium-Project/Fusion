@@ -187,13 +187,13 @@ Run worker + export:
 Run server (read-only resources):
 
 ```bash
-python tools/mcp_server.py --export-dir /tmp/silicium-mcp
+python silicium mcp serve --export-dir /tmp/silicium-mcp
 ```
 
 Enable guarded tools (writes `control.request.json` in export dir):
 
 ```bash
-python tools/mcp_server.py --export-dir /tmp/silicium-mcp --enable-tools
+python silicium mcp serve --export-dir /tmp/silicium-mcp --enable-tools
 ```
 
 Endpoints:
@@ -203,6 +203,20 @@ Endpoints:
 - `GET /resources?uri=resources://...`
 - `GET /tools/list`
 - `POST /tools` with `{"name":"tools.silicium.get_health","args":{}}`
+
+### Standardized local configuration
+
+To keep configuration minimal, `python silicium mcp serve` and `python silicium mcp print-config` resolve settings with:
+
+- CLI flags (lowest priority, only for overrides)
+- Environment variables (`SILICIUM_MCP_*`)
+- Local file: `.silicium/config.json` (or `SILICIUM_CONFIG=/path/to/config.json`)
+- Defaults
+
+Default local paths (repo-relative):
+
+- export dir: `.silicium/mcp/export/`
+- token file: `.silicium/mcp/token`
 
 ## References
 
