@@ -70,6 +70,7 @@ tokens as stake to participate in fragment verification.
 
 Main fields:
 - `owner`: worker authority (signer)
+- `roles`: bitflags defining worker capabilities
 - `stake_mint`: SPL token used for staking
 - `stake_vault`: escrow account holding staked tokens
 - `stake_amount`: total amount staked
@@ -78,6 +79,18 @@ Main fields:
 - `total_submitted`: number of fragments submitted
 - `total_verified`: number of fragments verified
 - `total_rejected`: number of fragments rejected
+
+---
+
+### Worker Roles
+
+Each worker has explicit on-chain roles:
+
+- `ROLE_COMPUTE`: may submit fragment results
+- `ROLE_VERIFY`: may participate in fragment verification (voting)
+
+A single worker may hold multiple roles.
+Roles are enforced on-chain by instruction-level checks.
 
 ---
 
@@ -128,6 +141,8 @@ Creates a job and:
 Allows a worker to submit a result for a specific fragment.
 
 Rules:
+- Worker must be registered and `Active`
+- Worker must have the `ROLE_COMPUTE`
 - Fragments are uniquely identified by `(job, fragment_index)`
 - A verified fragment cannot be overwritten
 - A rejected fragment may be resubmitted
@@ -190,9 +205,12 @@ Required before:
 ### `vote_fragment`
 Decentralized verification (quorum-based).
 
-- Any verifier must be a registered `Worker`
+Rules:
+- Verifier must be a registered `Worker`
 - Must be `Active`
+- Must have role `ROLE_VERIFY`
 - Must have a minimum stake: `MIN_VERIFIER_STAKE`
+- Verifier cannot vote on their own fragment
 - A fragment becomes `Verified` when quorum is reached
 - Payment is executed once upon quorum
 - A `FragmentVote` PDA prevents double voting
@@ -211,9 +229,12 @@ Decentralized verification (quorum-based).
 
 ## Current Limitations
 
-- Two verification flows exist:
-  - `verify_fragment`: centralized (MVP)
-  - `vote_fragment`: decentralized quorum voting (in progress / optional)
+- Two verification flows currently exist:
+  - `verify_fragment`: centralized (legacy / MVP only)
+  - `vote_fragment`: decentralized quorum-based verification (recommended)
+
+The centralized flow is expected to be removed once decentralized
+verification is fully adopted.
 
 This logic **does not yet include**:
 - No slashing yet (stake is locked but cannot be penalized)

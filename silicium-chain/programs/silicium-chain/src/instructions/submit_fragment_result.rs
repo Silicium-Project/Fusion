@@ -5,7 +5,7 @@ use crate::{
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
-        worker::{Worker, WorkerStatus},
+        worker::{Worker, WorkerStatus, ROLE_COMPUTE},
     },
 };
 
@@ -55,7 +55,10 @@ pub fn handler(
         fragment_index < ctx.accounts.job.expected_fragments,
         SiliciumError::InvalidParams
     );
-
+    require!(
+        ctx.accounts.worker_account.has_role(ROLE_COMPUTE),
+        SiliciumError::MissingComputeRole
+    );
     let f = &mut ctx.accounts.fragment;
 
     // Detect first initialization

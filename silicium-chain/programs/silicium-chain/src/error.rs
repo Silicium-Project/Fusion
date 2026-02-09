@@ -24,4 +24,10 @@ pub enum SiliciumError {
     WrongStakeMint,
     #[msg("Wrong stake vault.")]
     WrongStakeVault,
+    #[msg("Worker does not have compute role")]
+    MissingComputeRole,
+    #[msg("Worker does not have verify role")]
+    MissingVerifyRole,
+    #[msg("Verifier cannot vote on their own fragment")]
+    SelfVoteForbidden,
 }

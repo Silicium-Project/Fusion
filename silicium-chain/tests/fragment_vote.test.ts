@@ -208,17 +208,17 @@ describe("fragment_vote.test", () => {
       (env.program as any).methods
         .voteFragment(true)
         .accounts({
-          verifier: verifier1.publicKey,
-          job: env.jobPda,
-          fragment: env.fragment0Pda,
-          verifierWorker: verifier1Pda,
-          vote: votePda(env.fragment0Pda, verifier1.publicKey),
-          escrowAuth: env.escrowAuthPda,
-          escrow: env.escrowKp.publicKey,
-          workerToken: env.workerToken,
-          tokenProgram: env.tokenProgram,
-          systemProgram: env.systemProgram,
-        })
+            verifier: verifier1.publicKey,
+            job: env.jobPda,
+            fragment: env.fragment0Pda,
+            verifierWorker: verifier1Pda,
+            vote: votePda(env.fragment0Pda, verifier1.publicKey),
+            escrowAuth: env.escrowAuthPda,
+            escrow: env.escrowKp.publicKey,
+            workerToken: env.workerToken,
+            tokenProgram: env.tokenProgram,
+            systemProgram: env.systemProgram,
+          })
         .signers([verifier1])
         .rpc()
     );

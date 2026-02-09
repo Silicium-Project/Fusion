@@ -7,7 +7,7 @@ use crate::{
         fragment::{Fragment, FragmentStatus},
         fragment_vote::FragmentVote,
         job::{Job, JobStatus},
-        worker::{Worker, WorkerStatus},
+        worker::{Worker, WorkerStatus, ROLE_VERIFY},
     },
 };
 
@@ -81,6 +81,18 @@ pub struct VoteFragment<'info> {
 }
 
 pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
+    // verifier must NOT be the submitter worker
+    require!(
+        ctx.accounts.verifier.key() != ctx.accounts.fragment.worker,
+        SiliciumError::SelfVoteForbidden
+    );
+
+    // verifier must have VERIFY role
+    require!(
+        ctx.accounts.verifier_worker.has_role(ROLE_VERIFY),
+        SiliciumError::MissingVerifyRole
+    );
+
     // Fragment must be in Submitted state
     require!(
         ctx.accounts.fragment.status == FragmentStatus::Submitted,

@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::state::worker::{Worker, WorkerStatus};
+use crate::state::worker::{Worker, WorkerStatus, ROLE_COMPUTE, ROLE_VERIFY};
 
 #[derive(Accounts)]
 pub struct RegisterWorker<'info> {
@@ -34,6 +34,8 @@ pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
     w.total_submitted = 0;
     w.total_verified = 0;
     w.total_rejected = 0;
+
+    w.roles = ROLE_COMPUTE | ROLE_VERIFY;
 
     w.status = WorkerStatus::Active;
     w.bump = ctx.bumps.worker_account;
