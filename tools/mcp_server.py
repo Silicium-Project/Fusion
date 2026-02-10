@@ -109,14 +109,26 @@ def _sanitize_task_id(task_id: str) -> str:
 
 
 class McpExportStore:
-    def __init__(self, export_dir: Path) -> None:
+    def __init__(self, export_dir: Path, snapshot_store: "McpSnapshotStore | None" = None) -> None:
         self._export_dir = export_dir
+        self._snapshot_store = snapshot_store
 
     @property
     def export_dir(self) -> Path:
         return self._export_dir
 
     def read_resource(self, uri: str) -> str:
+        try:
+            body = self._read_live_resource(uri)
+            if self._snapshot_store is not None:
+                self._snapshot_store.capture(uri, body)
+            return body
+        except FileNotFoundError:
+            if self._snapshot_store is not None:
+                return self._snapshot_store.read_latest(uri)
+            raise
+
+    def _read_live_resource(self, uri: str) -> str:
         if uri == RESOURCE_STATUS_CURRENT:
             return self._read_text(self._export_dir / "status.current.json")
         if uri == RESOURCE_REPORTS_RECENT:
@@ -135,6 +147,172 @@ class McpExportStore:
 
     def _read_text(self, path: Path) -> str:
         return path.read_text(encoding="utf-8")
+
+
+class McpSnapshotStore:
+    def __init__(self, snapshot_dir: Path, max_files: int, max_total_bytes: int) -> None:
+        self._snapshot_dir = snapshot_dir
+        self._snapshot_dir.mkdir(parents=True, exist_ok=True)
+        self._index_path = self._snapshot_dir / "snapshot.index.json"
+        self._max_files = max(0, int(max_files))
+        self._max_total_bytes = max(0, int(max_total_bytes))
+        self._lock = threading.Lock()
+        self._entries: list[dict[str, Any]] = []
+        self._load_index()
+
+    @property
+    def snapshot_dir(self) -> Path:
+        return self._snapshot_dir
+
+    def capture(self, uri: str, text: str) -> None:
+        created_ms = int(time.time() * 1000)
+        entry_id = f"{created_ms}-{uuid.uuid4().hex[:8]}"
+        filename = f"{entry_id}.json"
+        payload = text.encode("utf-8")
+        final_path = self._snapshot_dir / filename
+        tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+        tmp_path.write_bytes(payload)
+        tmp_path.replace(final_path)
+        entry = {
+            "id": entry_id,
+            "uri": uri,
+            "created_utc": _utc_now(),
+            "created_ms": created_ms,
+            "size": len(payload),
+            "file": filename,
+        }
+        with self._lock:
+            self._entries.append(entry)
+            self._apply_retention_locked()
+            self._save_index_locked()
+
+    def read_latest(self, uri: str) -> str:
+        with self._lock:
+            for entry in reversed(self._entries):
+                if str(entry.get("uri", "")) != uri:
+                    continue
+                p = self._snapshot_dir / str(entry.get("file", ""))
+                if p.exists():
+                    return p.read_text(encoding="utf-8")
+            raise FileNotFoundError("snapshot_not_found")
+
+    def list_entries(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [
+                {
+                    "id": str(entry.get("id", "")),
+                    "uri": str(entry.get("uri", "")),
+                    "created_utc": str(entry.get("created_utc", "")),
+                    "size": int(entry.get("size", 0)),
+                    "file": str(entry.get("file", "")),
+                }
+                for entry in self._entries
+            ]
+
+    def export_bundle(self) -> dict[str, Any]:
+        entries = self.list_entries()
+        exported: list[dict[str, Any]] = []
+        for entry in entries:
+            p = self._snapshot_dir / entry["file"]
+            if not p.exists():
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            exported.append(
+                {
+                    "id": entry["id"],
+                    "uri": entry["uri"],
+                    "created_utc": entry["created_utc"],
+                    "size": entry["size"],
+                    "text": text,
+                }
+            )
+        return {"schema_version": 1, "exported_utc": _utc_now(), "entries": exported}
+
+    def import_bundle(self, payload: Any) -> int:
+        if not isinstance(payload, dict):
+            raise ValueError("bad_bundle")
+        entries = payload.get("entries", [])
+        if not isinstance(entries, list):
+            raise ValueError("bad_bundle")
+        imported = 0
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            uri = item.get("uri")
+            text = item.get("text")
+            if not isinstance(uri, str) or not uri or not isinstance(text, str):
+                continue
+            self.capture(uri, text)
+            imported += 1
+        return imported
+
+    def _load_index(self) -> None:
+        with self._lock:
+            entries: list[dict[str, Any]] = []
+            if self._index_path.exists():
+                try:
+                    data = json.loads(self._index_path.read_text(encoding="utf-8"))
+                    raw_entries = data.get("entries", []) if isinstance(data, dict) else []
+                    if isinstance(raw_entries, list):
+                        for item in raw_entries:
+                            if not isinstance(item, dict):
+                                continue
+                            file_name = str(item.get("file", ""))
+                            uri = str(item.get("uri", ""))
+                            if not file_name or not uri:
+                                continue
+                            size = int(item.get("size", 0) or 0)
+                            created_ms = int(item.get("created_ms", 0) or 0)
+                            created_utc = str(item.get("created_utc", ""))
+                            entry_id = str(item.get("id", ""))
+                            entries.append(
+                                {
+                                    "id": entry_id or f"{created_ms}-{file_name}",
+                                    "uri": uri,
+                                    "created_utc": created_utc or _utc_now(),
+                                    "created_ms": created_ms,
+                                    "size": size,
+                                    "file": file_name,
+                                }
+                            )
+                except Exception:
+                    entries = []
+            self._entries = [e for e in entries if (self._snapshot_dir / str(e.get("file", ""))).exists()]
+            self._entries.sort(key=lambda e: int(e.get("created_ms", 0)))
+            self._apply_retention_locked()
+            self._save_index_locked()
+
+    def _apply_retention_locked(self) -> None:
+        self._entries.sort(key=lambda e: int(e.get("created_ms", 0)))
+        if self._max_files > 0:
+            while len(self._entries) > self._max_files:
+                removed = self._entries.pop(0)
+                self._remove_entry_file(removed)
+        if self._max_total_bytes > 0:
+            total = sum(int(e.get("size", 0)) for e in self._entries)
+            while self._entries and total > self._max_total_bytes:
+                removed = self._entries.pop(0)
+                total -= int(removed.get("size", 0))
+                self._remove_entry_file(removed)
+
+    def _remove_entry_file(self, entry: dict[str, Any]) -> None:
+        file_name = str(entry.get("file", ""))
+        if not file_name:
+            return
+        p = self._snapshot_dir / file_name
+        try:
+            p.unlink(missing_ok=True)
+        except Exception:
+            return
+
+    def _save_index_locked(self) -> None:
+        data = {"schema_version": 1, "entries": self._entries}
+        tmp = self._index_path.with_suffix(self._index_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
+        tmp.replace(self._index_path)
 
 
 class McpControlPlane:
@@ -379,6 +557,26 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             if parsed.path == "/tools/list":
                 _json_response(self, HTTPStatus.OK, {"tools": list(SUPPORTED_TOOLS)})
                 return
+            if parsed.path == "/snapshots/list":
+                if self._app.snapshot_store is None:
+                    _json_response(self, HTTPStatus.NOT_FOUND, {"error": "snapshots_disabled"})
+                    return
+                _json_response(
+                    self,
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "snapshot_dir": str(self._app.snapshot_store.snapshot_dir),
+                        "entries": self._app.snapshot_store.list_entries(),
+                    },
+                )
+                return
+            if parsed.path == "/snapshots/export":
+                if self._app.snapshot_store is None:
+                    _json_response(self, HTTPStatus.NOT_FOUND, {"error": "snapshots_disabled"})
+                    return
+                _json_response(self, HTTPStatus.OK, self._app.snapshot_store.export_bundle())
+                return
             if parsed.path == "/resources":
                 qs = parse_qs(parsed.query)
                 uri = (qs.get("uri") or [""])[0]
@@ -520,6 +718,22 @@ class McpHttpHandler(BaseHTTPRequestHandler):
         try:
             if not self._require_auth():
                 return
+            if parsed.path == "/snapshots/import":
+                if self._app.snapshot_store is None:
+                    _json_response(self, HTTPStatus.NOT_FOUND, {"error": "snapshots_disabled"})
+                    return
+                try:
+                    req = _read_json_request(self)
+                except ValueError as exc:
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+                try:
+                    imported = self._app.snapshot_store.import_bundle(req)
+                except ValueError as exc:
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+                _json_response(self, HTTPStatus.OK, {"ok": True, "imported": imported})
+                return
             if parsed.path == "/mcp":
                 try:
                     req = _read_json_request(self)
@@ -627,8 +841,16 @@ class McpHttpHandler(BaseHTTPRequestHandler):
 
 
 class McpHttpApp:
-    def __init__(self, export_dir: Path, enable_tools: bool, token: str | None, obs: McpObservability) -> None:
-        self.store = McpExportStore(export_dir)
+    def __init__(
+        self,
+        export_dir: Path,
+        enable_tools: bool,
+        token: str | None,
+        obs: McpObservability,
+        snapshot_store: McpSnapshotStore | None = None,
+    ) -> None:
+        self.snapshot_store = snapshot_store
+        self.store = McpExportStore(export_dir, snapshot_store=snapshot_store)
         self.control = McpControlPlane(export_dir)
         self.enable_tools = enable_tools
         self.token = token or ""
@@ -681,6 +903,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--bind", default="127.0.0.1", help="Bind address (default: 127.0.0.1)")
     p.add_argument("--port", type=int, default=9765, help="HTTP port (default: 9765)")
     p.add_argument("--export-dir", default="", help="Worker MCP export directory")
+    p.add_argument("--snapshot-dir", default="", help="Enable persistent snapshots in this directory.")
+    p.add_argument("--snapshot-max-files", type=int, default=200, help="Max number of snapshots kept (0 disables cap).")
+    p.add_argument("--snapshot-max-bytes", type=int, default=10 * 1024 * 1024, help="Max total snapshot bytes (0 disables cap).")
     p.add_argument("--enable-tools", action="store_true", help="Enable guarded control tools")
     p.add_argument("--token", default="", help="Optional bearer token (or env SILICIUM_MCP_TOKEN)")
     p.add_argument("--log-format", choices=["text", "json"], default="text", help="Structured logs format (default: text)")
@@ -696,9 +921,26 @@ def main(argv: list[str] | None = None) -> int:
     export_path = Path(export_dir)
     export_path.mkdir(parents=True, exist_ok=True)
 
+    snapshot_dir_arg = str(args.snapshot_dir or os.environ.get("SILICIUM_MCP_SNAPSHOT_DIR", "")).strip()
+    snapshot_store: McpSnapshotStore | None = None
+    if snapshot_dir_arg:
+        snapshot_dir = Path(snapshot_dir_arg)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_store = McpSnapshotStore(
+            snapshot_dir=snapshot_dir,
+            max_files=int(args.snapshot_max_files),
+            max_total_bytes=int(args.snapshot_max_bytes),
+        )
+
     token = args.token or os.environ.get("SILICIUM_MCP_TOKEN", "")
     obs = McpObservability(str(args.log_format))
-    app = McpHttpApp(export_path, enable_tools=bool(args.enable_tools), token=token or None, obs=obs)
+    app = McpHttpApp(
+        export_path,
+        enable_tools=bool(args.enable_tools),
+        token=token or None,
+        obs=obs,
+        snapshot_store=snapshot_store,
+    )
 
     server = ThreadingHTTPServer((args.bind, args.port), McpHttpHandler)
     server.daemon_threads = True
@@ -709,6 +951,10 @@ def main(argv: list[str] | None = None) -> int:
         bind=str(args.bind),
         port=int(args.port),
         export_dir=str(export_path),
+        snapshot_enabled=bool(snapshot_store is not None),
+        snapshot_dir=str(snapshot_store.snapshot_dir) if snapshot_store is not None else "",
+        snapshot_max_files=int(args.snapshot_max_files),
+        snapshot_max_bytes=int(args.snapshot_max_bytes),
         enable_tools=bool(args.enable_tools),
         token_enabled=bool(token),
         metrics_endpoint="/metrics",
