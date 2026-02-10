@@ -746,6 +746,7 @@ Flux simplifié : l'UI appelle JobRegistry pour créer un job + escrow SPL →
 ---
 
 RÃ©fÃ©rence JobRegistry (spec + threat model) : `docs/job-registry-contract-spec.md`.
+RÃ©fÃ©rence Payment contract (token/credit accounting) : `docs/payment-contract-accounting-spec.md`.
 
 ## Interface web & API (esquisse)
 
