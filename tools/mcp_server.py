@@ -122,6 +122,56 @@ def _sanitize_task_id(task_id: str) -> str:
     return _SAFE_TASK_ID_RE.sub("_", task_id)
 
 
+def _csv_values(raw: str) -> list[str]:
+    return [item.strip() for item in str(raw).split(",") if item.strip()]
+
+
+def _policy_rule_matches(value: str, rule: str) -> bool:
+    r = rule.strip()
+    if not r:
+        return False
+    if r.endswith("*"):
+        return value.startswith(r[:-1])
+    if "{task_id}" in r:
+        return value.startswith(r.split("{task_id}", 1)[0])
+    return value == r
+
+
+class McpAccessPolicy:
+    def __init__(
+        self,
+        *,
+        tool_allowlist: list[str] | None = None,
+        tool_denylist: list[str] | None = None,
+        resource_allowlist: list[str] | None = None,
+        resource_denylist: list[str] | None = None,
+    ) -> None:
+        self._tool_allowlist = tuple(tool_allowlist or [])
+        self._tool_denylist = tuple(tool_denylist or [])
+        self._resource_allowlist = tuple(resource_allowlist or [])
+        self._resource_denylist = tuple(resource_denylist or [])
+
+    def tool_allowed(self, name: str) -> bool:
+        if any(_policy_rule_matches(name, rule) for rule in self._tool_denylist):
+            return False
+        if self._tool_allowlist and not any(_policy_rule_matches(name, rule) for rule in self._tool_allowlist):
+            return False
+        return True
+
+    def resource_allowed(self, uri: str) -> bool:
+        if any(_policy_rule_matches(uri, rule) for rule in self._resource_denylist):
+            return False
+        if self._resource_allowlist and not any(_policy_rule_matches(uri, rule) for rule in self._resource_allowlist):
+            return False
+        return True
+
+    def filter_tools(self, names: list[str]) -> list[str]:
+        return [name for name in names if self.tool_allowed(name)]
+
+    def filter_resources(self, uris: list[str]) -> list[str]:
+        return [uri for uri in uris if self.resource_allowed(uri)]
+
+
 class McpExportStore:
     def __init__(self, export_dir: Path, snapshot_store: "McpSnapshotStore | None" = None) -> None:
         self._export_dir = export_dir
@@ -570,10 +620,10 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                 _json_response(self, HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method_not_allowed"})
                 return
             if path == "/resources/list":
-                _json_response(self, HTTPStatus.OK, {"resources": list(SUPPORTED_RESOURCES)})
+                _json_response(self, HTTPStatus.OK, {"resources": self._app.list_resources()})
                 return
             if path == "/tools/list":
-                _json_response(self, HTTPStatus.OK, {"tools": list(SUPPORTED_TOOLS)})
+                _json_response(self, HTTPStatus.OK, {"tools": self._app.list_tools()})
                 return
             if path == "/snapshots/list":
                 if self._app.snapshot_store is None:
@@ -602,7 +652,10 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                     _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "missing_uri"})
                     return
                 try:
-                    body = self._app.store.read_resource(uri)
+                    body = self._app.read_resource(uri)
+                except PermissionError:
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "forbidden_resource"})
+                    return
                 except FileNotFoundError:
                     _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
                     return
@@ -658,13 +711,15 @@ class McpHttpHandler(BaseHTTPRequestHandler):
 
         if method == "resources/list":
             resources: list[dict[str, Any]] = []
-            for uri in SUPPORTED_RESOURCES:
+            for uri in self._app.list_resources():
                 if "{task_id}" in uri:
                     continue
                 resources.append({"uri": uri, "name": uri.rsplit("/", 1)[-1], "mimeType": "application/json"})
             # Include template URIs as discoverable patterns.
-            resources.append({"uri": "resources://silicium/results/by-task/{task_id}", "name": "result_by_task", "mimeType": "application/json"})
-            resources.append({"uri": "resources://silicium/logs/by-task/{task_id}", "name": "logs_by_task", "mimeType": "application/json"})
+            if self._app.access_policy.resource_allowed("resources://silicium/results/by-task/{task_id}"):
+                resources.append({"uri": "resources://silicium/results/by-task/{task_id}", "name": "result_by_task", "mimeType": "application/json"})
+            if self._app.access_policy.resource_allowed("resources://silicium/logs/by-task/{task_id}"):
+                resources.append({"uri": "resources://silicium/logs/by-task/{task_id}", "name": "logs_by_task", "mimeType": "application/json"})
             return {"resources": resources}
 
         if method == "resources/read":
@@ -673,7 +728,7 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             uri = params.get("uri")
             if not isinstance(uri, str) or not uri:
                 raise ValueError("missing_uri")
-            body = self._app.store.read_resource(uri)
+            body = self._app.read_resource(uri)
             return {"contents": [{"uri": uri, "mimeType": "application/json", "text": body}]}
 
         if method == "tools/list":
@@ -711,7 +766,8 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                     },
                 },
             ]
-            return {"tools": tools}
+            allowed = set(self._app.list_tools())
+            return {"tools": [tool for tool in tools if str(tool.get("name", "")) in allowed]}
 
         if method == "tools/call":
             if not isinstance(params, dict):
@@ -720,6 +776,8 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             arguments = params.get("arguments", {})
             if not isinstance(name, str) or not name:
                 raise ValueError("missing_tool_name")
+            if not self._app.access_policy.tool_allowed(name):
+                raise PermissionError("tool_denied")
             self._app.obs.metrics.inc_tool_call(name)
             result = self._app.execute_tool(name, arguments)
             if isinstance(result, str):
@@ -832,6 +890,9 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             if name not in SUPPORTED_TOOLS:
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "unsupported_tool"})
                 return
+            if not self._app.access_policy.tool_allowed(name):
+                _json_response(self, HTTPStatus.FORBIDDEN, {"error": "forbidden_tool"})
+                return
 
             try:
                 self._app.obs.metrics.inc_tool_call(name)
@@ -866,6 +927,7 @@ class McpHttpApp:
         token: str | None,
         obs: McpObservability,
         snapshot_store: McpSnapshotStore | None = None,
+        access_policy: McpAccessPolicy | None = None,
     ) -> None:
         self.snapshot_store = snapshot_store
         self.store = McpExportStore(export_dir, snapshot_store=snapshot_store)
@@ -873,10 +935,24 @@ class McpHttpApp:
         self.enable_tools = enable_tools
         self.token = token or ""
         self.obs = obs
+        self.access_policy = access_policy or McpAccessPolicy()
+
+    def list_tools(self) -> list[str]:
+        return self.access_policy.filter_tools(list(SUPPORTED_TOOLS))
+
+    def list_resources(self) -> list[str]:
+        return self.access_policy.filter_resources(list(SUPPORTED_RESOURCES))
+
+    def read_resource(self, uri: str) -> str:
+        if not self.access_policy.resource_allowed(uri):
+            raise PermissionError("resource_denied")
+        return self.store.read_resource(uri)
 
     def execute_tool(self, name: str, args: Any) -> Any:
+        if not self.access_policy.tool_allowed(name):
+            raise PermissionError("tool_denied")
         if name == TOOL_GET_HEALTH:
-            return self.store.read_resource(RESOURCE_STATUS_CURRENT)
+            return self.read_resource(RESOURCE_STATUS_CURRENT)
 
         if not self.enable_tools:
             raise PermissionError("tools_disabled")
@@ -888,14 +964,14 @@ class McpHttpApp:
             if not isinstance(action, str) or not action:
                 raise ValueError("missing_action")
             if action == "get_health_snapshot":
-                return self.store.read_resource(RESOURCE_STATUS_CURRENT)
+                return self.read_resource(RESOURCE_STATUS_CURRENT)
             if action == "read_recent_reports":
-                return self.store.read_resource(RESOURCE_REPORTS_RECENT)
+                return self.read_resource(RESOURCE_REPORTS_RECENT)
             if action == "read_task_result":
                 task_id = args.get("task_id")
                 if not isinstance(task_id, str) or not task_id:
                     raise ValueError("missing_task_id")
-                return self.store.read_resource(RESOURCE_RESULT_PREFIX + task_id)
+                return self.read_resource(RESOURCE_RESULT_PREFIX + task_id)
             raise ValueError("action_not_allowed")
 
         if name == TOOL_INTERRUPT_ACTION:
@@ -925,6 +1001,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--snapshot-max-files", type=int, default=200, help="Max number of snapshots kept (0 disables cap).")
     p.add_argument("--snapshot-max-bytes", type=int, default=10 * 1024 * 1024, help="Max total snapshot bytes (0 disables cap).")
     p.add_argument("--enable-tools", action="store_true", help="Enable guarded control tools")
+    p.add_argument("--tool-allowlist", default="", help="Comma-separated allowed tool names/patterns")
+    p.add_argument("--tool-denylist", default="", help="Comma-separated denied tool names/patterns")
+    p.add_argument("--resource-allowlist", default="", help="Comma-separated allowed resource URI patterns")
+    p.add_argument("--resource-denylist", default="", help="Comma-separated denied resource URI patterns")
     p.add_argument("--token", default="", help="Optional bearer token (or env SILICIUM_MCP_TOKEN)")
     p.add_argument("--no-auth", action="store_true", help="Disable bearer auth even if token env/flag is set")
     p.add_argument("--log-format", choices=["text", "json"], default="text", help="Structured logs format (default: text)")
@@ -951,6 +1031,17 @@ def main(argv: list[str] | None = None) -> int:
             max_total_bytes=int(args.snapshot_max_bytes),
         )
 
+    tool_allowlist = _csv_values(str(args.tool_allowlist or os.environ.get("SILICIUM_MCP_TOOL_ALLOWLIST", "")))
+    tool_denylist = _csv_values(str(args.tool_denylist or os.environ.get("SILICIUM_MCP_TOOL_DENYLIST", "")))
+    resource_allowlist = _csv_values(str(args.resource_allowlist or os.environ.get("SILICIUM_MCP_RESOURCE_ALLOWLIST", "")))
+    resource_denylist = _csv_values(str(args.resource_denylist or os.environ.get("SILICIUM_MCP_RESOURCE_DENYLIST", "")))
+    access_policy = McpAccessPolicy(
+        tool_allowlist=tool_allowlist,
+        tool_denylist=tool_denylist,
+        resource_allowlist=resource_allowlist,
+        resource_denylist=resource_denylist,
+    )
+
     token = ""
     if not args.no_auth:
         token = args.token or os.environ.get("SILICIUM_MCP_TOKEN", "")
@@ -961,6 +1052,7 @@ def main(argv: list[str] | None = None) -> int:
         token=token or None,
         obs=obs,
         snapshot_store=snapshot_store,
+        access_policy=access_policy,
     )
 
     server = ThreadingHTTPServer((args.bind, args.port), McpHttpHandler)
@@ -977,6 +1069,10 @@ def main(argv: list[str] | None = None) -> int:
         snapshot_max_files=int(args.snapshot_max_files),
         snapshot_max_bytes=int(args.snapshot_max_bytes),
         enable_tools=bool(args.enable_tools),
+        tool_allowlist=tool_allowlist,
+        tool_denylist=tool_denylist,
+        resource_allowlist=resource_allowlist,
+        resource_denylist=resource_denylist,
         token_enabled=bool(token),
         metrics_endpoint="/metrics",
         mcp_endpoint="/mcp",

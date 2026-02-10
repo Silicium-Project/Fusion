@@ -474,3 +474,110 @@ def test_mcp_server_snapshot_export_import(tmp_path: Path) -> None:
             proc_b.wait(timeout=3)
         except subprocess.TimeoutExpired:
             proc_b.kill()
+
+
+def test_mcp_server_tool_access_lists(tmp_path: Path) -> None:
+    export_dir = tmp_path / "mcp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "status.current.json").write_text('{"ok":true}', encoding="utf-8")
+    (export_dir / "reports.recent.json").write_text('{"tasks":[]}', encoding="utf-8")
+
+    port = _find_free_port()
+    env = os.environ.copy()
+    env["SILICIUM_MCP_EXPORT_DIR"] = str(export_dir)
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "tools/mcp_server.py",
+            "--port",
+            str(port),
+            "--enable-tools",
+            "--tool-allowlist",
+            "tools.silicium.get_health,tools.silicium.interrupt_action",
+            "--tool-denylist",
+            "tools.silicium.interrupt_action",
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"http://127.0.0.1:{port}"
+        _wait_ready(base)
+
+        code, body = _http_get(base + "/tools/list")
+        assert code == 200
+        payload = json.loads(body)
+        tools = payload.get("tools", [])
+        assert "tools.silicium.get_health" in tools
+        assert "tools.silicium.interrupt_action" not in tools
+
+        code, body = _http_post(base + "/tools", {"name": "tools.silicium.interrupt_action", "args": {}})
+        assert code == 403
+        assert json.loads(body)["error"] == "forbidden_tool"
+
+        code, body = _http_post(base + "/tools", {"name": "tools.silicium.get_health", "args": {}})
+        assert code == 200
+        wrapped = json.loads(body)
+        assert wrapped["ok"] is True
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_mcp_server_resource_access_lists(tmp_path: Path) -> None:
+    export_dir = tmp_path / "mcp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "status.current.json").write_text('{"ok":true}', encoding="utf-8")
+    (export_dir / "reports.recent.json").write_text('{"tasks":[]}', encoding="utf-8")
+    (export_dir / "result.task_x.json").write_text('{"value":123}', encoding="utf-8")
+
+    port = _find_free_port()
+    env = os.environ.copy()
+    env["SILICIUM_MCP_EXPORT_DIR"] = str(export_dir)
+    proc = subprocess.Popen(
+        [
+            sys.executable,
+            "tools/mcp_server.py",
+            "--port",
+            str(port),
+            "--resource-allowlist",
+            "resources://silicium/results/by-task/*,resources://silicium/status/current",
+            "--resource-denylist",
+            "resources://silicium/status/current",
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"http://127.0.0.1:{port}"
+        _wait_ready(base)
+
+        code, body = _http_get(base + "/resources/list")
+        assert code == 200
+        payload = json.loads(body)
+        resources = payload.get("resources", [])
+        assert "resources://silicium/results/by-task/{task_id}" in resources
+        assert "resources://silicium/status/current" not in resources
+        assert "resources://silicium/reports/recent" not in resources
+
+        code, _ = _http_get(base + "/resources?uri=resources://silicium/status/current")
+        assert code == 403
+        code, _ = _http_get(base + "/resources?uri=resources://silicium/reports/recent")
+        assert code == 403
+
+        code, body = _http_get(base + "/resources?uri=resources://silicium/results/by-task/task_x")
+        assert code == 200
+        assert json.loads(body)["value"] == 123
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()

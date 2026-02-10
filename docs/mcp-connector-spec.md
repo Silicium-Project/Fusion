@@ -179,6 +179,7 @@ The repo includes a minimal local-only HTTP server that serves the exported MCP 
 - Optional snapshots: `--snapshot-dir <path>` (or `SILICIUM_MCP_SNAPSHOT_DIR`).
 - Retention controls: `--snapshot-max-files` and `--snapshot-max-bytes`.
 - Optional auth: `SILICIUM_MCP_TOKEN` (Bearer token), disabled with `--no-auth`
+- Access control (optional): `--tool-allowlist`, `--tool-denylist`, `--resource-allowlist`, `--resource-denylist`
 
 Run worker + export:
 
@@ -220,6 +221,7 @@ Endpoints:
 - `POST /snapshots/import` with export bundle payload
 
 OAuth discovery endpoints return `200` with `oauth_not_supported` metadata so MCP clients probing OAuth routes do not receive `404`.
+Allow/deny lists accept comma-separated exact names or prefix rules ending with `*` (for example `resources://silicium/results/by-task/*`).
 
 Logging:
 
@@ -238,6 +240,7 @@ Default local paths (repo-relative):
 
 - export dir: `.silicium/mcp/export/`
 - token file: `.silicium/mcp/token`
+- access policy env vars: `SILICIUM_MCP_TOOL_ALLOWLIST`, `SILICIUM_MCP_TOOL_DENYLIST`, `SILICIUM_MCP_RESOURCE_ALLOWLIST`, `SILICIUM_MCP_RESOURCE_DENYLIST`
 
 ## References
 
