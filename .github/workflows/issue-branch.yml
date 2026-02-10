@@ -1,0 +1,79 @@
+name: Issue branch
+
+on:
+  issues:
+    types: [opened, reopened]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create branch for issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (!issue) {
+              core.info("No issue payload; skipping.");
+              return;
+            }
+
+            if (issue.pull_request) {
+              core.info("This is a PR, not an issue; skipping.");
+              return;
+            }
+
+            function slugify(s) {
+              return String(s || "")
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/-+/g, "-")
+                .replace(/(^-|-$)/g, "")
+                .slice(0, 48) || "issue";
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const repoInfo = await github.rest.repos.get({ owner, repo });
+            const baseBranch = repoInfo.data.default_branch || "main";
+
+            const branchName = `issue-${issue.number}-${slugify(issue.title)}`;
+            const ref = `refs/heads/${branchName}`;
+
+            const baseRef = await github.rest.git.getRef({
+              owner,
+              repo,
+              ref: `heads/${baseBranch}`,
+            });
+            const baseSha = baseRef.data.object.sha;
+
+            try {
+              await github.rest.git.getRef({ owner, repo, ref: `heads/${branchName}` });
+              core.info(`Branch already exists: ${branchName}`);
+            } catch (err) {
+              if (err.status !== 404) throw err;
+              await github.rest.git.createRef({ owner, repo, ref, sha: baseSha });
+              core.info(`Branch created: ${branchName} @ ${baseBranch}`);
+            }
+
+            const body = [
+              `Branche créée: \`${branchName}\` (base: \`${baseBranch}\`).`,
+              "",
+              "Workflow conseillé :",
+              `- Checkout: \`git switch ${branchName}\``,
+              `- Ouvre une PR vers \`${baseBranch}\` avec \`Fixes #${issue.number}\` dans la description.`,
+              "- Ajoute le label `automerge` si tu veux une fusion automatique (si le CI passe).",
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issue.number,
+              body,
+            });
+
