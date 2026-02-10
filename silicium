@@ -813,7 +813,7 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
             f"cd /workspace && make -C executor JOBS={jobs}; "
             f"cd /workspace/worker && make test-clean && "
             f"env TEST_CXX='ccache g++' make {test_bin} JOBS={jobs}; "
-            "if [ -n \"$GTEST_FILTER\" ]; then "
+            "if [ -n \"${GTEST_FILTER:-}\" ]; then "
             f"LD_LIBRARY_PATH=/workspace/executor {test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
             "else "
             f"LD_LIBRARY_PATH=/workspace/executor {test_bin}; "
@@ -826,7 +826,7 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
             "ccache -M 2G >/dev/null || true; "
             f"cd /workspace/executor && make test-clean && "
             f"env TEST_CXX='ccache g++' make {test_bin} JOBS={jobs}; "
-            "if [ -n \"$GTEST_FILTER\" ]; then "
+            "if [ -n \"${GTEST_FILTER:-}\" ]; then "
             f"{test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
             "else "
             f"{test_bin}; "
@@ -839,8 +839,10 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
         "--rm",
         "-e",
         "CCACHE_DIR=/ccache",
-        "-e",
-        f"GTEST_FILTER={args.gtest_filter or ''}",
+    ]
+    if args.gtest_filter:
+        cmd.extend(["-e", f"GTEST_FILTER={args.gtest_filter}"])
+    cmd += [
         "-v",
         f"{REPO_ROOT}:/workspace",
         "-v",
