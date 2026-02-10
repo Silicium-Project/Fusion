@@ -2,16 +2,16 @@
 
 #include <memory>
 
-#include "artifacts/ArtifactBuilder.hpp"
-#include "artifacts/SummaryWriter.hpp"
+#include "artifacts/IArtifactBuilder.hpp"
+#include "artifacts/ISummaryWriter.hpp"
 #include "pipeline/IPipelinePhase.hpp"
 
 namespace splitter {
 
 class ArtifactsPhase : public IPipelinePhase {
 public:
-    ArtifactsPhase(std::unique_ptr<ArtifactBuilder> builder,
-                   std::unique_ptr<SummaryWriter> summary_writer,
+    ArtifactsPhase(std::unique_ptr<IArtifactBuilder> builder,
+                   std::unique_ptr<ISummaryWriter> summary_writer,
                    bool parallel = false);
 
     std::string Name() const override;
@@ -20,8 +20,8 @@ public:
     std::vector<std::string> Outputs() const override;
 
 private:
-    std::unique_ptr<ArtifactBuilder> builder_;
-    std::unique_ptr<SummaryWriter> summary_writer_;
+    std::unique_ptr<IArtifactBuilder> builder_;
+    std::unique_ptr<ISummaryWriter> summary_writer_;
     bool parallel_;
 };
 

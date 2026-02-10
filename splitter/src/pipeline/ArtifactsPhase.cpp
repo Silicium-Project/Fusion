@@ -6,8 +6,8 @@
 
 namespace splitter {
 
-ArtifactsPhase::ArtifactsPhase(std::unique_ptr<ArtifactBuilder> builder,
-                               std::unique_ptr<SummaryWriter> summary_writer,
+ArtifactsPhase::ArtifactsPhase(std::unique_ptr<IArtifactBuilder> builder,
+                               std::unique_ptr<ISummaryWriter> summary_writer,
                                bool parallel)
     : builder_(std::move(builder)),
       summary_writer_(std::move(summary_writer)),

@@ -245,9 +245,13 @@ std::unique_ptr<PipelineRunner> PipelineFactory::BuildDefault(PipelineConfig con
             extractor), reporter);
     });
     registry.Register("artifacts", [&]() {
+        std::unique_ptr<IArtifactBuilder> artifact_builder =
+            std::make_unique<ArtifactBuilder>(config.output_dir.Value());
+        std::unique_ptr<ISummaryWriter> summary_writer =
+            std::make_unique<SummaryWriter>(std::filesystem::path(config.output_dir.Value()), scanner, hash_calc);
         return std::make_unique<TimingPhase>(std::make_unique<ArtifactsPhase>(
-            std::make_unique<ArtifactBuilder>(config.output_dir.Value()),
-            std::make_unique<SummaryWriter>(std::filesystem::path(config.output_dir.Value()), scanner, hash_calc),
+            std::move(artifact_builder),
+            std::move(summary_writer),
             config.parallel_artifacts), reporter);
     });
 
