@@ -6,6 +6,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import re
 from pathlib import Path
 
 
@@ -184,6 +185,48 @@ def test_mcp_streamable_http_initialize(tmp_path: Path) -> None:
         assert payload["id"] == 2
         assert isinstance(payload["result"]["tools"], list)
         assert any(t.get("name") == "tools.silicium.get_health" for t in payload["result"]["tools"])
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_mcp_server_metrics_counters(tmp_path: Path) -> None:
+    export_dir = tmp_path / "mcp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "status.current.json").write_text('{"ok":true}', encoding="utf-8")
+    (export_dir / "reports.recent.json").write_text('{"tasks":[]}', encoding="utf-8")
+
+    port = _find_free_port()
+    env = os.environ.copy()
+    env["SILICIUM_MCP_EXPORT_DIR"] = str(export_dir)
+    proc = subprocess.Popen(
+        [sys.executable, "tools/mcp_server.py", "--port", str(port), "--enable-tools", "--log-format", "json"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"http://127.0.0.1:{port}"
+        _wait_ready(base)
+
+        _http_get(base + "/healthz")
+        _http_get(base + "/healthz")
+        _http_post(base + "/tools", {"name": "tools.silicium.interrupt_action", "args": {}})
+
+        code, body = _http_get(base + "/metrics")
+        assert code == 200
+
+        m = re.search(r'mcp_http_requests_total\{method="GET",path="/healthz",status="200"\}\s+(\d+)', body)
+        assert m is not None
+        assert int(m.group(1)) >= 2
+
+        m = re.search(r'mcp_tool_calls_total\{tool="tools\.silicium\.interrupt_action"\}\s+(\d+)', body)
+        assert m is not None
+        assert int(m.group(1)) >= 1
     finally:
         proc.terminate()
         try:
