@@ -176,6 +176,8 @@ The repo includes a minimal local-only HTTP server that serves the exported MCP 
 - Script: `tools/mcp_server.py`
 - Default bind: `127.0.0.1` (local-only)
 - Export directory: passed via `--export-dir` or `SILICIUM_MCP_EXPORT_DIR`
+- Optional snapshots: `--snapshot-dir <path>` (or `SILICIUM_MCP_SNAPSHOT_DIR`).
+- Retention controls: `--snapshot-max-files` and `--snapshot-max-bytes`.
 - Optional auth: `SILICIUM_MCP_TOKEN` (Bearer token)
 
 Run worker + export:
@@ -203,7 +205,10 @@ Endpoints:
 - `GET /resources/list`
 - `GET /resources?uri=resources://...`
 - `GET /tools/list`
+- `GET /snapshots/list` (when snapshots are enabled)
+- `GET /snapshots/export` (offline bundle export)
 - `POST /tools` with `{"name":"tools.silicium.get_health","args":{}}`
+- `POST /snapshots/import` with export bundle payload
 
 Logging:
 
