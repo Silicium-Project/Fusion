@@ -21,13 +21,15 @@ struct TaskContext {
     std::string summary_path;
 };
 
-class TaskHandler {
+class ITaskHandler {
 public:
-    virtual ~TaskHandler() = default;
+    virtual ~ITaskHandler() = default;
     virtual TaskReport handle(const TaskContext& context, const Task& task) = 0;
 };
 
-class FunctionTaskHandler : public TaskHandler {
+using TaskHandler = ITaskHandler;
+
+class FunctionTaskHandler : public ITaskHandler {
 public:
     using Handler = std::function<TaskReport(const TaskContext&, const Task&)>;
 
@@ -44,11 +46,11 @@ private:
 
 class TaskRouter {
 public:
-    void register_handler(TaskType type, std::unique_ptr<TaskHandler> handler);
+    void register_handler(TaskType type, std::unique_ptr<ITaskHandler> handler);
     TaskReport execute(const TaskContext& context, const Task& task) const;
 
 private:
-    std::map<TaskType, std::unique_ptr<TaskHandler>> handlers_;
+    std::map<TaskType, std::unique_ptr<ITaskHandler>> handlers_;
 };
 
 }  // namespace worker

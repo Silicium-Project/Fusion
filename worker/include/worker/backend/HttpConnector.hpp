@@ -5,7 +5,7 @@
 
 namespace worker {
 
-class HttpConnector : public BackendConnector {
+class HttpConnector : public IBackendConnector {
 public:
     explicit HttpConnector(const WorkerConfig& config);
 

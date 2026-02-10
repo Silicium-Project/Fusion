@@ -10,7 +10,7 @@
 
 namespace worker::mcp {
 
-class IMcpConnectorAdapter : public TaskObserver {
+class IMcpConnectorAdapter : public ITaskObserver {
 public:
     virtual ~IMcpConnectorAdapter() = default;
     virtual void publish_worker_report(const WorkerReport& report) = 0;

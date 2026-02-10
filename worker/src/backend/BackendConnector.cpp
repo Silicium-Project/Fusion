@@ -4,7 +4,7 @@
 
 namespace worker {
 
-std::unique_ptr<BackendConnector> make_backend_connector(const WorkerConfig& config) {
+std::unique_ptr<IBackendConnector> make_backend_connector(const WorkerConfig& config) {
     return make_backend_connector_factory()->create(config);
 }
 

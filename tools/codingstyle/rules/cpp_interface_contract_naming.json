@@ -23,31 +23,6 @@
       "path": "executor/include/support/Hash.hpp",
       "name": "Hasher",
       "reason": "Legacy hash contract naming retained for compatibility; migration tracked separately."
-    },
-    {
-      "path": "worker/include/worker/backend/BackendConnector.hpp",
-      "name": "BackendConnector",
-      "reason": "Worker contract migration to I* naming tracked by #106."
-    },
-    {
-      "path": "worker/include/worker/backend/BackendConnectorFactory.hpp",
-      "name": "BackendConnectorFactory",
-      "reason": "Worker contract migration to I* naming tracked by #106."
-    },
-    {
-      "path": "worker/include/worker/core/TaskRouter.hpp",
-      "name": "TaskHandler",
-      "reason": "Worker contract migration to I* naming tracked by #106."
-    },
-    {
-      "path": "worker/include/worker/task/TaskHandlerFactory.hpp",
-      "name": "TaskHandlerFactory",
-      "reason": "Worker contract migration to I* naming tracked by #106."
-    },
-    {
-      "path": "worker/include/worker/task/TaskObserver.hpp",
-      "name": "TaskObserver",
-      "reason": "Worker contract migration to I* naming tracked by #106."
     }
   ]
 }

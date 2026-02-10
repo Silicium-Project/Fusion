@@ -6,11 +6,13 @@
 
 namespace worker {
 
-class TaskObserver {
+class ITaskObserver {
 public:
-    virtual ~TaskObserver() = default;
+    virtual ~ITaskObserver() = default;
     virtual void on_task_start(const TaskContext& context, const Task& task) = 0;
     virtual void on_task_finish(const TaskContext& context, const Task& task, const TaskReport& report) = 0;
 };
+
+using TaskObserver = ITaskObserver;
 
 }  // namespace worker

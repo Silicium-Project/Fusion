@@ -24,16 +24,16 @@ namespace worker {
 class DefaultTaskHandlerFactory;
 
 struct WorkerDependencies {
-    std::unique_ptr<BackendConnector> connector{};
-    std::unique_ptr<BackendConnectorFactory> connector_factory{};
-    std::unique_ptr<TaskHandlerFactory> handler_factory{};
-    std::vector<std::shared_ptr<TaskObserver>> observers{};
+    std::unique_ptr<IBackendConnector> connector{};
+    std::unique_ptr<IBackendConnectorFactory> connector_factory{};
+    std::unique_ptr<ITaskHandlerFactory> handler_factory{};
+    std::vector<std::shared_ptr<ITaskObserver>> observers{};
 };
 
 class Worker {
 public:
     explicit Worker(WorkerConfig config = {});
-    Worker(WorkerConfig config, std::unique_ptr<BackendConnector> connector);
+    Worker(WorkerConfig config, std::unique_ptr<IBackendConnector> connector);
     Worker(WorkerConfig config, WorkerDependencies dependencies);
 
     TaskReport run_task(const fragment::PartitionInfo& partition,
@@ -46,18 +46,18 @@ public:
     ExecutionMode mode() const;
     void reset_state();
     void load_initial_memory(const std::vector<MemorySnapshot>& snapshots);
-    void add_observer(std::shared_ptr<TaskObserver> observer);
+    void add_observer(std::shared_ptr<ITaskObserver> observer);
 
 private:
     friend class DefaultTaskHandlerFactory;
     WorkerConfig config_;
     MemoryLut memory_lut_;
     RegisterState register_state_;
-    std::unique_ptr<BackendConnector> connector_;
+    std::unique_ptr<IBackendConnector> connector_;
     std::vector<MemorySnapshot> initial_memory_;
     TaskRouter router_;
     std::map<FragmentOsAction, std::function<TaskReport(const TaskContext&, const Task&)>> action_handlers_;
-    std::vector<std::shared_ptr<TaskObserver>> observers_;
+    std::vector<std::shared_ptr<ITaskObserver>> observers_;
 
     void record_memory_patches(const std::vector<fragment::MemoryPatch>& patches);
     void record_register_state(const RegisterState& regs);

@@ -10,7 +10,7 @@ namespace worker {
 class DynamoBackend;
 class LibraryBackend;
 
-class DirectConnector : public BackendConnector {
+class DirectConnector : public IBackendConnector {
 public:
     explicit DirectConnector(const WorkerConfig& config);
     ~DirectConnector() override;

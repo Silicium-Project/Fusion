@@ -10,9 +10,9 @@
 namespace worker {
 namespace {
 
-class DefaultBackendConnectorFactory : public BackendConnectorFactory {
+class DefaultBackendConnectorFactory : public IBackendConnectorFactory {
 public:
-    std::unique_ptr<BackendConnector> create(const WorkerConfig& config) const override {
+    std::unique_ptr<IBackendConnector> create(const WorkerConfig& config) const override {
         switch (config.connector) {
             case ConnectorMode::Direct:
                 return std::make_unique<DirectConnector>(config);
@@ -25,7 +25,7 @@ public:
 
 }  // namespace
 
-std::unique_ptr<BackendConnectorFactory> make_backend_connector_factory() {
+std::unique_ptr<IBackendConnectorFactory> make_backend_connector_factory() {
     return std::make_unique<DefaultBackendConnectorFactory>();
 }
 

@@ -2,7 +2,7 @@
 
 namespace worker {
 
-void TaskRouter::register_handler(TaskType type, std::unique_ptr<TaskHandler> handler) {
+void TaskRouter::register_handler(TaskType type, std::unique_ptr<ITaskHandler> handler) {
     if (!handler)
         throw std::runtime_error("Handler de tâche nul");
     handlers_[type] = std::move(handler);

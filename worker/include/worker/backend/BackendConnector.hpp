@@ -11,12 +11,14 @@
 
 namespace worker {
 
-class BackendConnector {
+class IBackendConnector {
 public:
-    virtual ~BackendConnector() = default;
+    virtual ~IBackendConnector() = default;
     virtual fragment::ExecutionResult execute(const BackendRequest& request) = 0;
 };
 
-std::unique_ptr<BackendConnector> make_backend_connector(const WorkerConfig& config);
+using BackendConnector = IBackendConnector;
+
+std::unique_ptr<IBackendConnector> make_backend_connector(const WorkerConfig& config);
 
 }  // namespace worker

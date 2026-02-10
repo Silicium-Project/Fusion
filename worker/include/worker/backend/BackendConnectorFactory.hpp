@@ -4,15 +4,17 @@
 
 namespace worker {
 
-class BackendConnector;
+class IBackendConnector;
 class WorkerConfig;
 
-class BackendConnectorFactory {
+class IBackendConnectorFactory {
 public:
-    virtual ~BackendConnectorFactory() = default;
-    virtual std::unique_ptr<BackendConnector> create(const WorkerConfig& config) const = 0;
+    virtual ~IBackendConnectorFactory() = default;
+    virtual std::unique_ptr<IBackendConnector> create(const WorkerConfig& config) const = 0;
 };
 
-std::unique_ptr<BackendConnectorFactory> make_backend_connector_factory();
+using BackendConnectorFactory = IBackendConnectorFactory;
+
+std::unique_ptr<IBackendConnectorFactory> make_backend_connector_factory();
 
 }  // namespace worker

@@ -88,7 +88,7 @@ FragmentOsAction Worker::resolve_fragment_action(const fragment::PartitionInfo& 
 Worker::Worker(WorkerConfig config)
 : Worker(std::move(config), WorkerDependencies{}) {}
 
-Worker::Worker(WorkerConfig config, std::unique_ptr<BackendConnector> connector)
+Worker::Worker(WorkerConfig config, std::unique_ptr<IBackendConnector> connector)
 : Worker(std::move(config), WorkerDependencies{std::move(connector)}) {}
 
 Worker::Worker(WorkerConfig config, WorkerDependencies dependencies)
@@ -130,7 +130,7 @@ void Worker::load_initial_memory(const std::vector<MemorySnapshot>& snapshots) {
     memory_lut_.seed(initial_memory_);
 }
 
-void Worker::add_observer(std::shared_ptr<TaskObserver> observer) {
+void Worker::add_observer(std::shared_ptr<ITaskObserver> observer) {
     if (observer)
         observers_.push_back(std::move(observer));
 }

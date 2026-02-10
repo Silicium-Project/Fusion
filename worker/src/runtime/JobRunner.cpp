@@ -90,7 +90,7 @@ ExecutionMode JobRunner::mode() const {
     return worker_.mode();
 }
 
-void JobRunner::add_observer(std::shared_ptr<TaskObserver> observer) {
+void JobRunner::add_observer(std::shared_ptr<ITaskObserver> observer) {
     worker_.add_observer(std::move(observer));
 }
 
