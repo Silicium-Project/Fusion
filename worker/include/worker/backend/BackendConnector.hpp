@@ -17,8 +17,6 @@ public:
     virtual fragment::ExecutionResult execute(const BackendRequest& request) = 0;
 };
 
-using BackendConnector = IBackendConnector;
-
 std::unique_ptr<IBackendConnector> make_backend_connector(const WorkerConfig& config);
 
 }  // namespace worker

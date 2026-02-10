@@ -6,7 +6,7 @@ namespace worker {
 
 namespace {
 
-class DummyHandler : public TaskHandler {
+class DummyHandler : public ITaskHandler {
 public:
     explicit DummyHandler(bool& called)
     : called_(called) {}

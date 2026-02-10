@@ -13,8 +13,6 @@ public:
     virtual void register_handlers(TaskRouter& router, Worker& worker) const = 0;
 };
 
-using TaskHandlerFactory = ITaskHandlerFactory;
-
 std::unique_ptr<ITaskHandlerFactory> make_task_handler_factory();
 
 }  // namespace worker

@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>

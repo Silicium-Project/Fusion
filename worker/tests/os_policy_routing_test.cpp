@@ -6,7 +6,7 @@
 namespace worker {
 namespace {
 
-class FakeConnector : public BackendConnector {
+class FakeConnector : public IBackendConnector {
 public:
     fragment::ExecutionResult execute(const BackendRequest&) override {
         called = true;

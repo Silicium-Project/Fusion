@@ -27,8 +27,6 @@ public:
     virtual TaskReport handle(const TaskContext& context, const Task& task) = 0;
 };
 
-using TaskHandler = ITaskHandler;
-
 class FunctionTaskHandler : public ITaskHandler {
 public:
     using Handler = std::function<TaskReport(const TaskContext&, const Task&)>;

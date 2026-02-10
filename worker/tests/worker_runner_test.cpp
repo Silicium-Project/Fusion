@@ -5,7 +5,7 @@
 
 namespace {
 
-class CountingObserver : public worker::TaskObserver {
+class CountingObserver : public worker::ITaskObserver {
 public:
     void on_task_start(const worker::TaskContext&, const worker::Task&) override {
         ++starts;

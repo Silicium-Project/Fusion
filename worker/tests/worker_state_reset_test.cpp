@@ -7,7 +7,7 @@
 
 namespace {
 
-class FakeConnector : public worker::BackendConnector {
+class FakeConnector : public worker::IBackendConnector {
 public:
     fragment::ExecutionResult result;
     std::vector<std::vector<worker::MemorySnapshot>> memory_states;

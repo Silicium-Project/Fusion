@@ -13,6 +13,4 @@ public:
     virtual void on_task_finish(const TaskContext& context, const Task& task, const TaskReport& report) = 0;
 };
 
-using TaskObserver = ITaskObserver;
-
 }  // namespace worker
