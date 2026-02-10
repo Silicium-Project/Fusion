@@ -176,7 +176,7 @@ The repo includes a minimal local-only HTTP server that serves the exported MCP 
 - Script: `tools/mcp_server.py`
 - Default bind: `127.0.0.1` (local-only)
 - Export directory: passed via `--export-dir` or `SILICIUM_MCP_EXPORT_DIR`
-- Optional auth: `SILICIUM_MCP_TOKEN` (Bearer token)
+- Optional auth: `SILICIUM_MCP_TOKEN` (Bearer token), disabled with `--no-auth`
 
 Run worker + export:
 
@@ -196,6 +196,12 @@ Enable guarded tools (writes `control.request.json` in export dir):
 python silicium mcp serve --export-dir /tmp/silicium-mcp --enable-tools
 ```
 
+Disable auth even when token env/file exists:
+
+```bash
+python silicium mcp serve --export-dir /tmp/silicium-mcp --no-auth
+```
+
 Endpoints:
 
 - `GET /healthz`
@@ -203,7 +209,12 @@ Endpoints:
 - `GET /resources/list`
 - `GET /resources?uri=resources://...`
 - `GET /tools/list`
+- `GET /.well-known/oauth-authorization-server`
+- `GET /.well-known/oauth-authorization-server/mcp`
+- `GET /mcp/.well-known/oauth-authorization-server`
 - `POST /tools` with `{"name":"tools.silicium.get_health","args":{}}`
+
+OAuth discovery endpoints return `200` with `oauth_not_supported` metadata so MCP clients probing OAuth routes do not receive `404`.
 
 Logging:
 

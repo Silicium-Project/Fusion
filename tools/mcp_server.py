@@ -12,7 +12,7 @@ V1 design:
   - GET  /resources?uri=<resource_uri>
   - GET  /tools/list
   - POST /tools  {"name": "...", "args": {...}}  (guarded allowlist)
-- Optional bearer token auth via SILICIUM_MCP_TOKEN.
+- Optional bearer token auth via SILICIUM_MCP_TOKEN (disable with --no-auth).
 """
 
 from __future__ import annotations
@@ -62,6 +62,11 @@ SUPPORTED_TOOLS = (
 _SAFE_TASK_ID_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
 
 METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+OAUTH_DISCOVERY_PATHS = (
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-authorization-server/mcp",
+    "/mcp/.well-known/oauth-authorization-server",
+)
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Mapping[str, Any]) -> None:
@@ -71,6 +76,15 @@ def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Mappin
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def _oauth_discovery_payload(path: str) -> Mapping[str, Any]:
+    return {
+        "oauth_supported": False,
+        "error": "oauth_not_supported",
+        "path": path,
+        "mcp_endpoint": "/mcp",
+    }
 
 
 def _read_json_request(handler: BaseHTTPRequestHandler, max_bytes: int = 256 * 1024) -> Any:
@@ -345,11 +359,15 @@ class McpHttpHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
-        self._obs_begin(parsed.path or "/")
+        path = parsed.path or "/"
+        self._obs_begin(path)
         try:
+            if path in OAUTH_DISCOVERY_PATHS:
+                _json_response(self, HTTPStatus.OK, _oauth_discovery_payload(path))
+                return
             if not self._require_auth():
                 return
-            if parsed.path == "/healthz":
+            if path == "/healthz":
                 _json_response(
                     self,
                     HTTPStatus.OK,
@@ -361,7 +379,7 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                     },
                 )
                 return
-            if parsed.path == "/metrics":
+            if path == "/metrics":
                 raw = self._app.obs.metrics.render().encode("utf-8")
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", METRICS_CONTENT_TYPE)
@@ -369,17 +387,17 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(raw)
                 return
-            if parsed.path == "/mcp":
+            if path == "/mcp":
                 # Streamable HTTP MCP transport is primarily POST-based.
                 _json_response(self, HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method_not_allowed"})
                 return
-            if parsed.path == "/resources/list":
+            if path == "/resources/list":
                 _json_response(self, HTTPStatus.OK, {"resources": list(SUPPORTED_RESOURCES)})
                 return
-            if parsed.path == "/tools/list":
+            if path == "/tools/list":
                 _json_response(self, HTTPStatus.OK, {"tools": list(SUPPORTED_TOOLS)})
                 return
-            if parsed.path == "/resources":
+            if path == "/resources":
                 qs = parse_qs(parsed.query)
                 uri = (qs.get("uri") or [""])[0]
                 if not uri:
@@ -683,6 +701,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--export-dir", default="", help="Worker MCP export directory")
     p.add_argument("--enable-tools", action="store_true", help="Enable guarded control tools")
     p.add_argument("--token", default="", help="Optional bearer token (or env SILICIUM_MCP_TOKEN)")
+    p.add_argument("--no-auth", action="store_true", help="Disable bearer auth even if token env/flag is set")
     p.add_argument("--log-format", choices=["text", "json"], default="text", help="Structured logs format (default: text)")
     return p
 
@@ -696,7 +715,9 @@ def main(argv: list[str] | None = None) -> int:
     export_path = Path(export_dir)
     export_path.mkdir(parents=True, exist_ok=True)
 
-    token = args.token or os.environ.get("SILICIUM_MCP_TOKEN", "")
+    token = ""
+    if not args.no_auth:
+        token = args.token or os.environ.get("SILICIUM_MCP_TOKEN", "")
     obs = McpObservability(str(args.log_format))
     app = McpHttpApp(export_path, enable_tools=bool(args.enable_tools), token=token or None, obs=obs)
 
