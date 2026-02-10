@@ -64,6 +64,9 @@ jobs:
           fi
           python tools/check_i18n_hardcoded_strings.py --base "$BASE_SHA" --head "$HEAD_SHA" --strict
 
+      - name: Validate C++ interface contract naming
+        run: python tools/style_check.py --rules cpp.interface_contract_naming
+
       - name: Lint workload manifests
         run: ./silicium workload lint
 

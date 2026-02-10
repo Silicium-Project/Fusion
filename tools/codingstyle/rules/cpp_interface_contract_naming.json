@@ -1,0 +1,53 @@
+{
+  "id": "cpp.interface_contract_naming",
+  "description": "Enforce I* naming and virtual destructor discipline for abstract C++ contracts.",
+  "severity": "error",
+  "kind": "cpp_interface_contract_naming",
+  "sanitize": "cpp",
+  "scope": {
+    "include": [
+      "**/*.cpp",
+      "**/*.hpp",
+      "**/*.h",
+      "**/*.cc",
+      "**/*.cxx"
+    ]
+  },
+  "allowlist": [
+    {
+      "path": "executor/include/backend/ExecutionBackend.hpp",
+      "name": "ExecutionBackendFactory",
+      "reason": "Legacy factory naming retained until broader backend boundary cleanup (#108)."
+    },
+    {
+      "path": "executor/include/support/Hash.hpp",
+      "name": "Hasher",
+      "reason": "Legacy hash contract naming retained for compatibility; migration tracked separately."
+    },
+    {
+      "path": "worker/include/worker/backend/BackendConnector.hpp",
+      "name": "BackendConnector",
+      "reason": "Worker contract migration to I* naming tracked by #106."
+    },
+    {
+      "path": "worker/include/worker/backend/BackendConnectorFactory.hpp",
+      "name": "BackendConnectorFactory",
+      "reason": "Worker contract migration to I* naming tracked by #106."
+    },
+    {
+      "path": "worker/include/worker/core/TaskRouter.hpp",
+      "name": "TaskHandler",
+      "reason": "Worker contract migration to I* naming tracked by #106."
+    },
+    {
+      "path": "worker/include/worker/task/TaskHandlerFactory.hpp",
+      "name": "TaskHandlerFactory",
+      "reason": "Worker contract migration to I* naming tracked by #106."
+    },
+    {
+      "path": "worker/include/worker/task/TaskObserver.hpp",
+      "name": "TaskObserver",
+      "reason": "Worker contract migration to I* naming tracked by #106."
+    }
+  ]
+}

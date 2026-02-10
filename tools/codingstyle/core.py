@@ -485,12 +485,142 @@ def _check_py_final_constant_upper_snake(rule: Rule, rel_path, path: Path, conte
     return issues
 
 
+def _parse_interface_allowlist(rule: Rule) -> list[dict[str, str]]:
+    raw_entries = rule.spec.get("allowlist", [])
+    if not isinstance(raw_entries, list):
+        raise ValueError(f"Rule '{rule.meta.rule_id}' allowlist must be a list")
+    entries: list[dict[str, str]] = []
+    for item in raw_entries:
+        if isinstance(item, str):
+            if "::" in item:
+                path_part, name_part = item.rsplit("::", 1)
+                path_part = path_part.strip()
+                name_part = name_part.strip()
+                if not path_part or not name_part:
+                    raise ValueError(f"Rule '{rule.meta.rule_id}' invalid allowlist entry: {item!r}")
+                entries.append({"path": path_part, "name": name_part})
+            else:
+                name = item.strip()
+                if not name:
+                    raise ValueError(f"Rule '{rule.meta.rule_id}' invalid allowlist entry: {item!r}")
+                entries.append({"path": "", "name": name})
+            continue
+        if isinstance(item, dict):
+            name = str(item.get("name", "")).strip()
+            path_pattern = str(item.get("path", "")).strip()
+            if not name:
+                raise ValueError(f"Rule '{rule.meta.rule_id}' allowlist dict requires 'name'")
+            entries.append({"path": path_pattern, "name": name})
+            continue
+        raise ValueError(f"Rule '{rule.meta.rule_id}' invalid allowlist entry type: {type(item).__name__}")
+    return entries
+
+
+def _allowlisted_interface_name(name: str, rel_path, allowlist: list[dict[str, str]]) -> bool:
+    rel_posix = rel_path.as_posix()
+    for entry in allowlist:
+        if entry["name"] != name:
+            continue
+        pattern = entry["path"]
+        if not pattern:
+            return True
+        if rel_path.match(pattern):
+            return True
+        if rel_posix == pattern:
+            return True
+    return False
+
+
+def _extract_cpp_class_blocks(text: str) -> list[tuple[str, int, int, int]]:
+    class_re = re.compile(r"\b(?<!enum\s)(?:class|struct)\s+([A-Za-z_]\w*)\s*(?:final\s*)?(?:[^;{]*)\{")
+    blocks: list[tuple[str, int, int, int]] = []
+    for match in class_re.finditer(text):
+        name = match.group(1)
+        open_idx = text.find("{", match.start())
+        if open_idx < 0:
+            continue
+        depth = 0
+        close_idx = -1
+        for idx in range(open_idx, len(text)):
+            ch = text[idx]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    close_idx = idx
+                    break
+        if close_idx < 0:
+            continue
+        blocks.append((name, match.start(1), open_idx + 1, close_idx))
+    return blocks
+
+
+def _interface_has_virtual_destructor(name: str, body: str) -> bool:
+    dtor_re = re.compile(rf"([^\n;{{}}]*)~{re.escape(name)}\s*\([^)]*\)\s*([^;{{}}]*)(?:;|\{{)")
+    for match in dtor_re.finditer(body):
+        prefix = (match.group(1) or "").strip()
+        suffix = (match.group(2) or "").strip()
+        if (
+            "virtual" in prefix
+            or "override" in suffix
+            or "final" in suffix
+            or re.search(r"=\s*0\b", suffix)
+        ):
+            return True
+    return False
+
+
+def _check_cpp_interface_contract_naming(rule: Rule, rel_path, path: Path, content: str) -> List[Issue]:
+    text = _sanitize_content(rule, content)
+    allowlist = _parse_interface_allowlist(rule)
+    issues: List[Issue] = []
+    pure_virtual_re = re.compile(r"\bvirtual\b[^;{}]*=\s*0\s*;")
+
+    for name, name_idx, body_start, body_end in _extract_cpp_class_blocks(text):
+        body = text[body_start:body_end]
+        if not pure_virtual_re.search(body):
+            continue
+        if not name.startswith("I") and not _allowlisted_interface_name(name, rel_path, allowlist):
+            line, col = line_col_from_index(text, name_idx)
+            issues.append(
+                Issue(
+                    rule_id=rule.meta.rule_id,
+                    message=(
+                        f"Abstract contract '{name}' must use 'I*' prefix "
+                        "or be documented in this rule allowlist."
+                    ),
+                    path=path,
+                    line=line,
+                    column=col,
+                    severity=rule.severity,
+                )
+            )
+        if not _interface_has_virtual_destructor(name, body):
+            line, col = line_col_from_index(text, name_idx)
+            issues.append(
+                Issue(
+                    rule_id=rule.meta.rule_id,
+                    message=(
+                        f"Abstract contract '{name}' must declare a virtual "
+                        "or pure virtual destructor."
+                    ),
+                    path=path,
+                    line=line,
+                    column=col,
+                    severity=rule.severity,
+                )
+            )
+    return issues
+
+
 _HANDLERS: dict[str, Callable[[Rule, object, Path, str], List[Issue]]] = {
     "pattern_count": _check_pattern_count,
     "pattern_match": _check_pattern_match,
     "cpp_primary_class_filename": _check_cpp_primary_class_filename,
     "cpp_header_source_pair": _check_cpp_header_source_pair,
     "cpp_include_order": _check_cpp_include_order,
+    "cpp_interface_contract_naming": _check_cpp_interface_contract_naming,
     "py_file_snake_case": _check_py_file_snake_case,
     "py_function_snake_case": _check_py_function_snake_case,
     "py_final_constant_upper_snake": _check_py_final_constant_upper_snake,
@@ -504,6 +634,7 @@ _DEFAULT_KIND_BY_ID = {
     "cpp.primary_class_filename": "cpp_primary_class_filename",
     "cpp.header_source_pair": "cpp_header_source_pair",
     "cpp.include_order": "cpp_include_order",
+    "cpp.interface_contract_naming": "cpp_interface_contract_naming",
     "cpp.no_unsafe_allocation": "pattern_match",
     "py.file_snake_case": "py_file_snake_case",
     "py.function_snake_case": "py_function_snake_case",

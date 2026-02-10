@@ -15,6 +15,7 @@ This folder contains JSON-driven rules used by the coding style checker.
 - `cpp.primary_class_filename`: Primary class/struct name should match the file name.
 - `cpp.header_source_pair`: Headers under include/ should have a matching source under src/.
 - `cpp.include_order`: Order includes with `<system/third-party>` before `"project"`.
+- `cpp.interface_contract_naming`: Enforce `I*` naming for abstract contracts, with allowlisted legacy exceptions, and require virtual/pure-virtual destructors.
 - `cpp.no_unsafe_allocation`: Disallow `new`/`delete`, C allocation APIs, and raw pointer declarations.
 - `py.file_snake_case`: Python file names should be snake_case.
 - `py.function_snake_case`: Python function names should be snake_case.
