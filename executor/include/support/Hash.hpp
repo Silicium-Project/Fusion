@@ -8,9 +8,9 @@
 namespace fragment {
 
 // Interface générique pour un algorithme de hachage.
-class Hasher {
+class IHasher {
     public:
-        virtual ~Hasher() = default;
+        virtual ~IHasher() = default;
         virtual void reset() = 0;
         virtual void add_byte(uint8_t b) = 0;
         virtual void add_string(std::string_view s) = 0;
@@ -19,8 +19,10 @@ class Hasher {
         virtual std::string hex() const = 0;
 };
 
+using Hasher = IHasher;
+
 // Implémentation FNV-1a 64-bit (par défaut).
-class Fnv1aHasher : public Hasher {
+class Fnv1aHasher : public IHasher {
     public:
         Fnv1aHasher();
         void reset() override;
@@ -35,7 +37,7 @@ class Fnv1aHasher : public Hasher {
 };
 
 // Implémentation "std" alignée sur le splitter.
-class StdHasher : public Hasher {
+class StdHasher : public IHasher {
     public:
         StdHasher();
         void reset() override;
@@ -56,9 +58,9 @@ using FnvHasher = Fnv1aHasher;
 
 // Décorateur de séparation de domaine : préfixe tous les hachages par un
 // identifiant logique (partition/memory/summary, etc.).
-class DomainHasher : public Hasher {
+class DomainHasher : public IHasher {
 public:
-    explicit DomainHasher(std::string_view domain, std::unique_ptr<Hasher> algo = nullptr);
+    explicit DomainHasher(std::string_view domain, std::unique_ptr<IHasher> algo = nullptr);
 
     void reset() override;
     void add_byte(uint8_t b) override;
@@ -69,7 +71,7 @@ public:
 
 private:
     std::string domain_;
-    std::unique_ptr<Hasher> algo_;
+    std::unique_ptr<IHasher> algo_;
 
     void prefix();
 };

@@ -13,7 +13,7 @@ namespace fragment {
 // assurer la stabilité quel que soit l'ordre d'écriture.
 class JsonHasher {
 public:
-    explicit JsonHasher(std::unique_ptr<Hasher> algo = nullptr);
+    explicit JsonHasher(std::unique_ptr<IHasher> algo = nullptr);
 
     // Intègre une valeur JSON (objet, tableau, scalaire).
     void add(json_t* value);
@@ -22,7 +22,7 @@ public:
     std::string hex() const;
 
 private:
-    std::unique_ptr<Hasher> hasher_;
+    std::unique_ptr<IHasher> hasher_;
 
     void hash_value(json_t* value);
     void hash_object(json_t* obj);

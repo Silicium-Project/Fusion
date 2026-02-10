@@ -76,7 +76,7 @@ std::string StdHasher::hex() const {
     return oss.str();
 }
 
-DomainHasher::DomainHasher(std::string_view domain, std::unique_ptr<Hasher> algo)
+DomainHasher::DomainHasher(std::string_view domain, std::unique_ptr<IHasher> algo)
     : domain_(domain), algo_(std::move(algo)) {
     if (!algo_)
         algo_ = std::make_unique<DefaultHasher>();

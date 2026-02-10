@@ -13,16 +13,5 @@
       "**/*.cxx"
     ]
   },
-  "allowlist": [
-    {
-      "path": "executor/include/backend/ExecutionBackend.hpp",
-      "name": "ExecutionBackendFactory",
-      "reason": "Legacy factory naming retained until broader backend boundary cleanup (#108)."
-    },
-    {
-      "path": "executor/include/support/Hash.hpp",
-      "name": "Hasher",
-      "reason": "Legacy hash contract naming retained for compatibility; migration tracked separately."
-    }
-  ]
+  "allowlist": []
 }

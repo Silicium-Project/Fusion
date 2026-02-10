@@ -17,7 +17,7 @@ std::string real_to_string(double v) {
 }
 }  // namespace
 
-JsonHasher::JsonHasher(std::unique_ptr<Hasher> algo)
+JsonHasher::JsonHasher(std::unique_ptr<IHasher> algo)
     : hasher_(std::move(algo)) {
     if (!hasher_)
         hasher_ = std::make_unique<DefaultHasher>();

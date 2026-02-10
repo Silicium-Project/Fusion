@@ -105,7 +105,7 @@ namespace fragment {
         return "fnv";
     }
 
-    std::unique_ptr<Hasher> make_hasher(const std::string& algo) {
+    std::unique_ptr<IHasher> make_hasher(const std::string& algo) {
         const auto normalized = normalize_algo(algo);
         if (normalized == "std")
             return std::make_unique<StdHasher>();

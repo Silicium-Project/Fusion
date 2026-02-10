@@ -5,7 +5,7 @@
 namespace fragment {
 namespace {
 
-class NativeBackendFactory : public ExecutionBackendFactory {
+class NativeBackendFactory : public IExecutionBackendFactory {
 public:
     std::unique_ptr<IExecutionBackend> create(bool /*native_mode*/,
                                               bool force_native) const override {
@@ -15,7 +15,7 @@ public:
 
 }  // namespace
 
-std::unique_ptr<ExecutionBackendFactory> make_backend_factory() {
+std::unique_ptr<IExecutionBackendFactory> make_backend_factory() {
     return std::make_unique<NativeBackendFactory>();
 }
 
