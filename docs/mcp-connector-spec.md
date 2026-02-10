@@ -199,10 +199,15 @@ python silicium mcp serve --export-dir /tmp/silicium-mcp --enable-tools
 Endpoints:
 
 - `GET /healthz`
+- `GET /metrics` (Prometheus text format)
 - `GET /resources/list`
 - `GET /resources?uri=resources://...`
 - `GET /tools/list`
 - `POST /tools` with `{"name":"tools.silicium.get_health","args":{}}`
+
+Logging:
+
+- `--log-format text|json` controls lifecycle + request logs emitted on stdout.
 
 ### Standardized local configuration
 

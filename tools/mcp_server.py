@@ -24,6 +24,7 @@ import re
 import sys
 import threading
 import time
+import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -59,6 +60,8 @@ SUPPORTED_TOOLS = (
 )
 
 _SAFE_TASK_ID_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
+
+METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Mapping[str, Any]) -> None:
@@ -161,16 +164,170 @@ def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def _prom_escape(value: str) -> str:
+    # Prometheus label escaping.
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+class McpMetrics:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._http_requests: dict[tuple[str, str, str], int] = {}
+        self._http_duration_sum_s: dict[tuple[str, str], float] = {}
+        self._http_duration_count: dict[tuple[str, str], int] = {}
+        self._jsonrpc_calls: dict[tuple[str, str], int] = {}
+        self._tool_calls: dict[str, int] = {}
+
+    def inc_http(self, method: str, path: str, status: int, duration_s: float) -> None:
+        m = method.upper()
+        p = path
+        s = str(status)
+        with self._lock:
+            self._http_requests[(m, p, s)] = self._http_requests.get((m, p, s), 0) + 1
+            self._http_duration_sum_s[(m, p)] = self._http_duration_sum_s.get((m, p), 0.0) + float(duration_s)
+            self._http_duration_count[(m, p)] = self._http_duration_count.get((m, p), 0) + 1
+
+    def inc_jsonrpc(self, method: str, ok: bool) -> None:
+        key = (method, "false" if ok else "true")
+        with self._lock:
+            self._jsonrpc_calls[key] = self._jsonrpc_calls.get(key, 0) + 1
+
+    def inc_tool_call(self, tool: str) -> None:
+        with self._lock:
+            self._tool_calls[tool] = self._tool_calls.get(tool, 0) + 1
+
+    def render(self) -> str:
+        lines: list[str] = []
+        with self._lock:
+            lines.extend(
+                [
+                    "# HELP mcp_http_requests_total Total HTTP requests served by the MCP server.",
+                    "# TYPE mcp_http_requests_total counter",
+                ]
+            )
+            for (method, path, status), value in sorted(self._http_requests.items()):
+                lines.append(
+                    'mcp_http_requests_total{method="%s",path="%s",status="%s"} %d'
+                    % (_prom_escape(method), _prom_escape(path), _prom_escape(status), value)
+                )
+
+            lines.extend(
+                [
+                    "# HELP mcp_http_request_duration_seconds HTTP request durations (sum/count).",
+                    "# TYPE mcp_http_request_duration_seconds summary",
+                ]
+            )
+            for (method, path), value in sorted(self._http_duration_sum_s.items()):
+                lines.append(
+                    'mcp_http_request_duration_seconds_sum{method="%s",path="%s"} %.6f'
+                    % (_prom_escape(method), _prom_escape(path), float(value))
+                )
+            for (method, path), value in sorted(self._http_duration_count.items()):
+                lines.append(
+                    'mcp_http_request_duration_seconds_count{method="%s",path="%s"} %d'
+                    % (_prom_escape(method), _prom_escape(path), value)
+                )
+
+            lines.extend(
+                [
+                    "# HELP mcp_jsonrpc_calls_total Total JSON-RPC calls received on /mcp.",
+                    "# TYPE mcp_jsonrpc_calls_total counter",
+                ]
+            )
+            for (method, is_error), value in sorted(self._jsonrpc_calls.items()):
+                lines.append(
+                    'mcp_jsonrpc_calls_total{method="%s",is_error="%s"} %d'
+                    % (_prom_escape(method), _prom_escape(is_error), value)
+                )
+
+            lines.extend(
+                [
+                    "# HELP mcp_tool_calls_total Total tool invocations (HTTP /tools and MCP tools/call).",
+                    "# TYPE mcp_tool_calls_total counter",
+                ]
+            )
+            for tool, value in sorted(self._tool_calls.items()):
+                lines.append('mcp_tool_calls_total{tool="%s"} %d' % (_prom_escape(tool), value))
+
+        return "\n".join(lines) + "\n"
+
+
+class McpLogger:
+    def __init__(self, fmt: str) -> None:
+        self._fmt = fmt
+
+    def log(self, event: str, **fields: Any) -> None:
+        if self._fmt == "json":
+            payload = {"ts": _utc_now(), "event": event, **fields}
+            sys.stdout.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n")
+            sys.stdout.flush()
+            return
+        # text
+        parts = [f"{k}={fields[k]!r}" for k in sorted(fields.keys())]
+        sys.stdout.write("[mcp-http] " + event + (" " + " ".join(parts) if parts else "") + "\n")
+        sys.stdout.flush()
+
+
+class McpObservability:
+    def __init__(self, log_format: str) -> None:
+        self.metrics = McpMetrics()
+        self.logger = McpLogger(log_format)
+
+
 class McpHttpHandler(BaseHTTPRequestHandler):
     server_version = "SiliciumMcpHttp/1.0"
 
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:  # noqa: N802
+        # Disable BaseHTTPRequestHandler access logging; we emit structured logs ourselves.
+        return
+
     def log_message(self, fmt: str, *args: Any) -> None:
-        # Keep logs structured-ish and single-line.
-        sys.stdout.write("[mcp-http] " + (fmt % args) + "\n")
+        # Disable BaseHTTPRequestHandler logging; see log_request override above.
+        return
+
+    def send_response(self, code: int, message: str | None = None) -> None:  # noqa: N802
+        self._resp_status = int(code)
+        super().send_response(code, message)
 
     @property
     def _app(self) -> "McpHttpApp":
         return self.server.app  # type: ignore[attr-defined]
+
+    def _obs_begin(self, path: str) -> None:
+        self._req_id = uuid.uuid4().hex
+        self._req_start = time.monotonic()
+        self._req_path = path
+        self._resp_status = 0
+        self._mcp_methods: list[str] = []
+
+    def _obs_end(self) -> None:
+        try:
+            start = getattr(self, "_req_start", None)
+            path = getattr(self, "_req_path", "")
+            if start is None:
+                return
+            duration_s = max(0.0, time.monotonic() - float(start))
+            status = int(getattr(self, "_resp_status", 0) or 0)
+            method = (self.command or "").upper()
+            self._app.obs.metrics.inc_http(method, path, status, duration_s)
+
+            fields: dict[str, Any] = {
+                "request_id": getattr(self, "_req_id", ""),
+                "method": method,
+                "path": path,
+                "status": status,
+                "duration_ms": round(duration_s * 1000.0, 3),
+                "client_ip": (self.client_address[0] if self.client_address else ""),
+            }
+            ua = (self.headers.get("User-Agent") or "").strip()
+            if ua:
+                fields["user_agent"] = ua[:200]
+            mcp_methods = getattr(self, "_mcp_methods", None)
+            if mcp_methods:
+                fields["mcp_methods"] = mcp_methods[:20]
+            self._app.obs.logger.log("http_request", **fields)
+        except Exception:
+            return
 
     def _require_auth(self) -> bool:
         token = self._app.token
@@ -187,56 +344,68 @@ class McpHttpHandler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self) -> None:  # noqa: N802
-        if not self._require_auth():
-            return
         parsed = urlparse(self.path)
-        if parsed.path == "/healthz":
-            _json_response(
-                self,
-                HTTPStatus.OK,
-                {
-                    "ok": True,
-                    "schema_version": 1,
-                    "export_dir": str(self._app.store.export_dir),
-                    "time_utc": _utc_now(),
-                },
-            )
-            return
-        if parsed.path == "/mcp":
-            # Streamable HTTP MCP transport is primarily POST-based.
-            _json_response(self, HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method_not_allowed"})
-            return
-        if parsed.path == "/resources/list":
-            _json_response(self, HTTPStatus.OK, {"resources": list(SUPPORTED_RESOURCES)})
-            return
-        if parsed.path == "/tools/list":
-            _json_response(self, HTTPStatus.OK, {"tools": list(SUPPORTED_TOOLS)})
-            return
-        if parsed.path == "/resources":
-            qs = parse_qs(parsed.query)
-            uri = (qs.get("uri") or [""])[0]
-            if not uri:
-                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "missing_uri"})
+        self._obs_begin(parsed.path or "/")
+        try:
+            if not self._require_auth():
                 return
-            try:
-                body = self._app.store.read_resource(uri)
-            except FileNotFoundError:
-                _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            if parsed.path == "/healthz":
+                _json_response(
+                    self,
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "schema_version": 1,
+                        "export_dir": str(self._app.store.export_dir),
+                        "time_utc": _utc_now(),
+                    },
+                )
                 return
-            except ValueError:
-                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "unsupported_resource"})
+            if parsed.path == "/metrics":
+                raw = self._app.obs.metrics.render().encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", METRICS_CONTENT_TYPE)
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
                 return
-            except Exception as exc:
-                _json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "io_error", "detail": str(exc)})
+            if parsed.path == "/mcp":
+                # Streamable HTTP MCP transport is primarily POST-based.
+                _json_response(self, HTTPStatus.METHOD_NOT_ALLOWED, {"error": "method_not_allowed"})
                 return
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            raw = body.encode("utf-8")
-            self.send_header("Content-Length", str(len(raw)))
-            self.end_headers()
-            self.wfile.write(raw)
-            return
-        _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+            if parsed.path == "/resources/list":
+                _json_response(self, HTTPStatus.OK, {"resources": list(SUPPORTED_RESOURCES)})
+                return
+            if parsed.path == "/tools/list":
+                _json_response(self, HTTPStatus.OK, {"tools": list(SUPPORTED_TOOLS)})
+                return
+            if parsed.path == "/resources":
+                qs = parse_qs(parsed.query)
+                uri = (qs.get("uri") or [""])[0]
+                if not uri:
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "missing_uri"})
+                    return
+                try:
+                    body = self._app.store.read_resource(uri)
+                except FileNotFoundError:
+                    _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+                    return
+                except ValueError:
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "unsupported_resource"})
+                    return
+                except Exception as exc:
+                    _json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "io_error", "detail": str(exc)})
+                    return
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                raw = body.encode("utf-8")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+        finally:
+            self._obs_end()
 
     def _send_mcp_response(self, payload: Any) -> None:
         accept = (self.headers.get("Accept") or "").lower()
@@ -335,6 +504,7 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             arguments = params.get("arguments", {})
             if not isinstance(name, str) or not name:
                 raise ValueError("missing_tool_name")
+            self._app.obs.metrics.inc_tool_call(name)
             result = self._app.execute_tool(name, arguments)
             if isinstance(result, str):
                 text = result
@@ -345,111 +515,124 @@ class McpHttpHandler(BaseHTTPRequestHandler):
         raise ValueError("unknown_method")
 
     def do_POST(self) -> None:  # noqa: N802
-        if not self._require_auth():
-            return
         parsed = urlparse(self.path)
-        if parsed.path == "/mcp":
+        self._obs_begin(parsed.path or "/")
+        try:
+            if not self._require_auth():
+                return
+            if parsed.path == "/mcp":
+                try:
+                    req = _read_json_request(self)
+                except ValueError as exc:
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+
+                def handle_one(obj: Any) -> Mapping[str, Any] | None:
+                    if not isinstance(obj, dict):
+                        return _jsonrpc_err(None, -32600, "Invalid Request")
+                    if obj.get("jsonrpc") not in (MCP_JSONRPC_VERSION, None):
+                        return _jsonrpc_err(obj.get("id"), -32600, "Invalid Request")
+                    req_id = obj.get("id")
+                    method = obj.get("method")
+                    params = obj.get("params", {})
+                    if not isinstance(method, str) or not method:
+                        return _jsonrpc_err(req_id, -32600, "Invalid Request")
+                    if isinstance(getattr(self, "_mcp_methods", None), list):
+                        self._mcp_methods.append(method)
+                    if req_id is None and method.startswith("notifications/"):
+                        return None
+                    try:
+                        result = self._handle_mcp_call(method, params)
+                        self._app.obs.metrics.inc_jsonrpc(method, ok=True)
+                    except PermissionError:
+                        self._app.obs.metrics.inc_jsonrpc(method, ok=False)
+                        return _jsonrpc_err(req_id, -32003, "Forbidden")
+                    except FileNotFoundError:
+                        self._app.obs.metrics.inc_jsonrpc(method, ok=False)
+                        return _jsonrpc_err(req_id, -32004, "Not Found")
+                    except ValueError as exc:
+                        self._app.obs.metrics.inc_jsonrpc(method, ok=False)
+                        msg = str(exc)
+                        if msg in {"missing_uri", "missing_tool_name", "bad_params"}:
+                            return _jsonrpc_err(req_id, -32602, "Invalid params", {"detail": msg})
+                        if msg == "unknown_method":
+                            return _jsonrpc_err(req_id, -32601, "Method not found")
+                        return _jsonrpc_err(req_id, -32602, "Invalid params", {"detail": msg})
+                    except Exception as exc:
+                        self._app.obs.metrics.inc_jsonrpc(method, ok=False)
+                        return _jsonrpc_err(req_id, -32603, "Internal error", {"detail": str(exc)})
+                    return _jsonrpc_ok(req_id, result)
+
+                if isinstance(req, list):
+                    responses = [r for r in (handle_one(o) for o in req) if r is not None]
+                    if not responses:
+                        self.send_response(HTTPStatus.NO_CONTENT)
+                        self.end_headers()
+                        return
+                    self._send_mcp_response(responses)
+                    return
+
+                resp = handle_one(req)
+                if resp is None:
+                    self.send_response(HTTPStatus.NO_CONTENT)
+                    self.end_headers()
+                    return
+                self._send_mcp_response(resp)
+                return
+
+            if parsed.path != "/tools":
+                _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+                return
             try:
                 req = _read_json_request(self)
             except ValueError as exc:
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                 return
 
-            def handle_one(obj: Any) -> Mapping[str, Any] | None:
-                if not isinstance(obj, dict):
-                    return _jsonrpc_err(None, -32600, "Invalid Request")
-                if obj.get("jsonrpc") not in (MCP_JSONRPC_VERSION, None):
-                    return _jsonrpc_err(obj.get("id"), -32600, "Invalid Request")
-                req_id = obj.get("id")
-                method = obj.get("method")
-                params = obj.get("params", {})
-                if not isinstance(method, str) or not method:
-                    return _jsonrpc_err(req_id, -32600, "Invalid Request")
-                if req_id is None and method.startswith("notifications/"):
-                    return None
-                try:
-                    result = self._handle_mcp_call(method, params)
-                except PermissionError:
-                    return _jsonrpc_err(req_id, -32003, "Forbidden")
-                except FileNotFoundError:
-                    return _jsonrpc_err(req_id, -32004, "Not Found")
-                except ValueError as exc:
-                    msg = str(exc)
-                    if msg in {"missing_uri", "missing_tool_name", "bad_params"}:
-                        return _jsonrpc_err(req_id, -32602, "Invalid params", {"detail": msg})
-                    if msg == "unknown_method":
-                        return _jsonrpc_err(req_id, -32601, "Method not found")
-                    return _jsonrpc_err(req_id, -32602, "Invalid params", {"detail": msg})
-                except Exception as exc:
-                    return _jsonrpc_err(req_id, -32603, "Internal error", {"detail": str(exc)})
-                return _jsonrpc_ok(req_id, result)
-
-            if isinstance(req, list):
-                responses = [r for r in (handle_one(o) for o in req) if r is not None]
-                if not responses:
-                    self.send_response(HTTPStatus.NO_CONTENT)
-                    self.end_headers()
-                    return
-                self._send_mcp_response(responses)
+            if not isinstance(req, dict):
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "bad_request"})
+                return
+            name = req.get("name")
+            args = req.get("args", {})
+            if not isinstance(name, str) or not name:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "missing_tool_name"})
+                return
+            if name not in SUPPORTED_TOOLS:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "unsupported_tool"})
                 return
 
-            resp = handle_one(req)
-            if resp is None:
-                self.send_response(HTTPStatus.NO_CONTENT)
-                self.end_headers()
+            try:
+                self._app.obs.metrics.inc_tool_call(name)
+                result = self._app.execute_tool(name, args)
+            except PermissionError:
+                _json_response(self, HTTPStatus.FORBIDDEN, {"error": "tool_disabled"})
                 return
-            self._send_mcp_response(resp)
-            return
+            except FileNotFoundError:
+                _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+                return
+            except ValueError as exc:
+                _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "bad_request", "detail": str(exc)})
+                return
+            except Exception as exc:
+                _json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "internal_error", "detail": str(exc)})
+                return
 
-        if parsed.path != "/tools":
-            _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
-            return
-        try:
-            req = _read_json_request(self)
-        except ValueError as exc:
-            _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
-            return
-
-        if not isinstance(req, dict):
-            _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "bad_request"})
-            return
-        name = req.get("name")
-        args = req.get("args", {})
-        if not isinstance(name, str) or not name:
-            _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "missing_tool_name"})
-            return
-        if name not in SUPPORTED_TOOLS:
-            _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "unsupported_tool"})
-            return
-
-        try:
-            result = self._app.execute_tool(name, args)
-        except PermissionError:
-            _json_response(self, HTTPStatus.FORBIDDEN, {"error": "tool_disabled"})
-            return
-        except FileNotFoundError:
-            _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
-            return
-        except ValueError as exc:
-            _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "bad_request", "detail": str(exc)})
-            return
-        except Exception as exc:
-            _json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "internal_error", "detail": str(exc)})
-            return
-
-        # result may already be a JSON payload string (resources), so wrap it.
-        if isinstance(result, str):
-            _json_response(self, HTTPStatus.OK, {"ok": True, "result_json": result})
-        else:
-            _json_response(self, HTTPStatus.OK, {"ok": True, "result": result})
+            # result may already be a JSON payload string (resources), so wrap it.
+            if isinstance(result, str):
+                _json_response(self, HTTPStatus.OK, {"ok": True, "result_json": result})
+            else:
+                _json_response(self, HTTPStatus.OK, {"ok": True, "result": result})
+        finally:
+            self._obs_end()
 
 
 class McpHttpApp:
-    def __init__(self, export_dir: Path, enable_tools: bool, token: str | None) -> None:
+    def __init__(self, export_dir: Path, enable_tools: bool, token: str | None, obs: McpObservability) -> None:
         self.store = McpExportStore(export_dir)
         self.control = McpControlPlane(export_dir)
         self.enable_tools = enable_tools
         self.token = token or ""
+        self.obs = obs
 
     def execute_tool(self, name: str, args: Any) -> Any:
         if name == TOOL_GET_HEALTH:
@@ -500,6 +683,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--export-dir", default="", help="Worker MCP export directory")
     p.add_argument("--enable-tools", action="store_true", help="Enable guarded control tools")
     p.add_argument("--token", default="", help="Optional bearer token (or env SILICIUM_MCP_TOKEN)")
+    p.add_argument("--log-format", choices=["text", "json"], default="text", help="Structured logs format (default: text)")
     return p
 
 
@@ -513,14 +697,23 @@ def main(argv: list[str] | None = None) -> int:
     export_path.mkdir(parents=True, exist_ok=True)
 
     token = args.token or os.environ.get("SILICIUM_MCP_TOKEN", "")
-    app = McpHttpApp(export_path, enable_tools=bool(args.enable_tools), token=token or None)
+    obs = McpObservability(str(args.log_format))
+    app = McpHttpApp(export_path, enable_tools=bool(args.enable_tools), token=token or None, obs=obs)
 
     server = ThreadingHTTPServer((args.bind, args.port), McpHttpHandler)
     server.daemon_threads = True
     server.app = app  # type: ignore[attr-defined]
 
-    sys.stdout.write(f"[mcp-http] listening on http://{args.bind}:{args.port}\n")
-    sys.stdout.flush()
+    app.obs.logger.log(
+        "listen",
+        bind=str(args.bind),
+        port=int(args.port),
+        export_dir=str(export_path),
+        enable_tools=bool(args.enable_tools),
+        token_enabled=bool(token),
+        metrics_endpoint="/metrics",
+        mcp_endpoint="/mcp",
+    )
     try:
         server.serve_forever(poll_interval=0.2)
     except KeyboardInterrupt:

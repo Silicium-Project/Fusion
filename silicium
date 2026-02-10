@@ -2476,6 +2476,7 @@ def configure_mcp_serve(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--export-dir", default="", help="MCP export directory (default: from config/env).")
     parser.add_argument("--enable-tools", action="store_true", help="Enable guarded control tools.")
     parser.add_argument("--token", default="", help="Bearer token (default: from token file/config/env).")
+    parser.add_argument("--log-format", choices=["text", "json"], default="", help="MCP server logs format override.")
 
 
 def cmd_mcp_serve(args: argparse.Namespace, ctx: Context) -> None:
@@ -2493,6 +2494,8 @@ def cmd_mcp_serve(args: argparse.Namespace, ctx: Context) -> None:
         "--token",
         str(settings["token"]),
     ]
+    if getattr(args, "log_format", ""):
+        argv.extend(["--log-format", str(args.log_format)])
     if settings["enable_tools"]:
         argv.append("--enable-tools")
     raise SystemExit(mcp_server.main(argv))
