@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   delete:
-    if: ${{ github.event.pull_request.merged == true }}
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' && github.event.pull_request.merged == true }}
     runs-on: ubuntu-latest
     steps:
       - name: Delete head branch (issue-*)

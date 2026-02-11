@@ -32,6 +32,7 @@ on:
 
 jobs:
   pytest:
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -77,6 +78,7 @@ jobs:
         run: ./silicium test
 
   pytest-windows:
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
     runs-on: windows-latest
 
     steps:

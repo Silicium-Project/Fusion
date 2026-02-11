@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   merge:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' && github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Merge PRs labeled automerge

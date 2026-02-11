@@ -11,12 +11,14 @@ permissions:
 
 jobs:
   tests:
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
     uses: ./.github/workflows/tests.yml
     with:
       publish_pages: true
       commit_coverage: false
 
   call:
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
     needs: [tests]
     uses: Silicium-Project/epitech-mirror/.github/workflows/subtree-reusable.yml@main
     with:

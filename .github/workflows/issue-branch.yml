@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   create-branch:
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
     runs-on: ubuntu-latest
     steps:
       - name: Create branch for issue
