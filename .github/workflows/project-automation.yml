@@ -8,7 +8,8 @@ on:
 
 jobs:
   update-project:
-    runs-on: [self-hosted, linux]
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
+    runs-on: ubuntu-latest
     permissions:
       issues: write
       pull-requests: write
