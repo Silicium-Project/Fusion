@@ -792,8 +792,6 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
     image = args.image or ctx.config.cpp_test_image
     ensure_cpp_test_image(image, ctx)
 
-    ccache_dir = REPO_ROOT / ".cache" / "cpp-tests" / "ccache"
-    ccache_dir.mkdir(parents=True, exist_ok=True)
     jobs = args.jobs
     if jobs is None:
         env_jobs = os.environ.get("SILICIUM_MAX_JOBS")
@@ -805,14 +803,24 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
                 sys.exit(1)
     jobs = jobs or 2
 
+    use_ccache = args.use_ccache
+    if use_ccache is None:
+        env_cache = os.environ.get("SILICIUM_CPP_TEST_USE_CCACHE", "").strip().lower()
+        if env_cache:
+            use_ccache = env_cache in {"1", "true", "yes", "on"}
+        else:
+            use_ccache = False
+    ccache_flag = "1" if use_ccache else "0"
+    ccache_setup = "ccache -M 2G >/dev/null || true; " if use_ccache else ""
+
     if args.scope == "worker":
         test_bin = "./build/tests/worker_tests"
         script = (
             "set -euo pipefail; "
-            "ccache -M 2G >/dev/null || true; "
+            f"{ccache_setup}"
             f"cd /workspace && make -C executor JOBS={jobs}; "
             f"cd /workspace/worker && make test-clean && "
-            f"env TEST_CXX='ccache g++' make {test_bin} JOBS={jobs}; "
+            f"make {test_bin} JOBS={jobs} CPP_TEST_JOBS={jobs} CPP_TEST_USE_CCACHE={ccache_flag}; "
             "if [ -n \"${GTEST_FILTER:-}\" ]; then "
             f"LD_LIBRARY_PATH=/workspace/executor {test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
             "else "
@@ -823,9 +831,9 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
         test_bin = "./build/tests/fragment_tests"
         script = (
             "set -euo pipefail; "
-            "ccache -M 2G >/dev/null || true; "
+            f"{ccache_setup}"
             f"cd /workspace/executor && make test-clean && "
-            f"env TEST_CXX='ccache g++' make {test_bin} JOBS={jobs}; "
+            f"make {test_bin} JOBS={jobs} CPP_TEST_JOBS={jobs} CPP_TEST_USE_CCACHE={ccache_flag}; "
             "if [ -n \"${GTEST_FILTER:-}\" ]; then "
             f"{test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
             "else "
@@ -837,34 +845,77 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
         ctx.config.docker_bin,
         "run",
         "--rm",
-        "-e",
-        "CCACHE_DIR=/ccache",
     ]
+    if use_ccache:
+        ccache_dir = REPO_ROOT / ".cache" / "cpp-tests" / "ccache"
+        ccache_dir.mkdir(parents=True, exist_ok=True)
+        cmd.extend(["-e", "CCACHE_DIR=/ccache"])
     if args.gtest_filter:
         cmd.extend(["-e", f"GTEST_FILTER={args.gtest_filter}"])
-    cmd += [
-        "-v",
-        f"{REPO_ROOT}:/workspace",
-        "-v",
-        f"{ccache_dir}:/ccache",
-        "-w",
-        "/workspace",
-        image,
-        "bash",
-        "-lc",
-        script,
-    ]
-    try:
-        run(cmd, timeout_s=float(args.timeout))
-    except subprocess.TimeoutExpired:
-        print(
-            f"C++ test run timed out after {args.timeout}s. "
-            "Retry with a larger --timeout or narrower --gtest-filter."
+    cmd.extend(["-v", f"{REPO_ROOT}:/workspace"])
+    if use_ccache:
+        cmd.extend(["-v", f"{ccache_dir}:/ccache"])
+    cmd += ["-w", "/workspace", image, "bash", "-lc", script]
+
+    attempts = max(1, int(args.retry))
+    timeout = float(args.timeout)
+    for attempt in range(1, attempts + 1):
+        pretty = " ".join(cmd)
+        print(colorize(f">> {pretty}", COLOR_GREEN))
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            if attempt < attempts:
+                print(
+                    colorize(
+                        f"[WARN] cpp-test timeout (attempt {attempt}/{attempts}), retrying...",
+                        COLOR_YELLOW,
+                    )
+                )
+                ensure_docker_healthy(ctx, retries=1, timeout_s=8.0)
+                time.sleep(1.5 * attempt)
+                continue
+            print(
+                f"C++ test run timed out after {args.timeout}s. "
+                "Retry with a larger --timeout or narrower --gtest-filter."
+            )
+            sys.exit(124)
+        except OSError as exc:
+            print(f"Failed to launch Docker command: {exc}")
+            sys.exit(1)
+
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
+        if result.returncode == 0:
+            return
+
+        combined = f"{result.stdout}\n{result.stderr}".lower()
+        transient = (
+            "unexpected eof" in combined
+            or "internal server error" in combined
+            or "_ping" in combined
+            or "docker api" in combined
         )
-        sys.exit(124)
-    except OSError as exc:
-        print(f"Failed to launch Docker command: {exc}")
-        sys.exit(1)
+        if transient and attempt < attempts:
+            print(
+                colorize(
+                    f"[WARN] transient docker failure (attempt {attempt}/{attempts}), retrying...",
+                    COLOR_YELLOW,
+                )
+            )
+            ensure_docker_healthy(ctx, retries=1, timeout_s=8.0)
+            time.sleep(1.5 * attempt)
+            continue
+        sys.exit(result.returncode)
 
 
 def cmd_doctor(_: argparse.Namespace, ctx: Context) -> None:
@@ -2724,6 +2775,26 @@ def configure_cpp_test(parser: argparse.ArgumentParser) -> None:
         "--image",
         help="Override cpp-tests image (default from SILICIUM_CPP_TEST_IMAGE).",
     )
+    parser.add_argument(
+        "--retry",
+        type=int,
+        default=2,
+        help="Retry count for transient Docker API failures (default: 2).",
+    )
+    ccache_group = parser.add_mutually_exclusive_group()
+    ccache_group.add_argument(
+        "--use-ccache",
+        dest="use_ccache",
+        action="store_true",
+        help="Enable ccache in cpp-test (disabled by default for reproducibility).",
+    )
+    ccache_group.add_argument(
+        "--no-ccache",
+        dest="use_ccache",
+        action="store_false",
+        help="Disable ccache in cpp-test.",
+    )
+    parser.set_defaults(use_ccache=None)
 
 
 def configure_doctor(parser: argparse.ArgumentParser) -> None:

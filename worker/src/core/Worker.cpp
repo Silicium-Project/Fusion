@@ -61,7 +61,13 @@ static std::string infer_binary_os(const fragment::PartitionInfo& partition) {
         return "windows";
     if (format == "elf")
         return "linux";
+#if defined(_WIN32)
+    return "windows";
+#elif defined(__linux__) || defined(__APPLE__)
+    return "linux";
+#else
     return "unknown";
+#endif
 }
 
 static void fill_telemetry(TaskReport& report,

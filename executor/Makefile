@@ -17,6 +17,16 @@ CPP_TEST_IMAGE ?= silicium/cpp-tests:latest
 CPP_TEST_DOCKERFILE := $(REPO_ROOT)/infra/docker/cpp-tests/Dockerfile
 CPP_TEST_CONTEXT := $(dir $(CPP_TEST_DOCKERFILE))
 CCACHE_DIR := $(REPO_ROOT)/.cache/cpp-tests/ccache
+CPP_TEST_USE_CCACHE ?= 0
+CPP_TEST_USE_CCACHE_BOOL := $(if $(filter 1 true yes on,$(CPP_TEST_USE_CCACHE)),1,0)
+CPP_TEST_JOBS ?= 2
+ifeq ($(CPP_TEST_USE_CCACHE_BOOL),1)
+CPP_TEST_COMPILER := ccache g++
+CPP_TEST_CCACHE_WARMUP := ccache -M 2G >/dev/null;
+else
+CPP_TEST_COMPILER := g++
+CPP_TEST_CCACHE_WARMUP := true;
+endif
 
 SRC_DIR := src
 OBJ_DIR := build
@@ -140,6 +150,7 @@ clean:
 	fi
 
 test-clean:
+	@test ! -d $(TEST_BUILD_DIR) || rm -rf $(TEST_BUILD_DIR)
 	@# Nettoyage des traces gcov pour éviter les warnings lors des tests.
 	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f \( -name '*.gcda' -o -name '*.gcno' \) -delete
 
@@ -158,10 +169,10 @@ test: build-cpp-test-image
 		-v $(CCACHE_DIR):/ccache \
 		$(CPP_TEST_IMAGE) bash -lc '\
 		set -euo pipefail; \
-		ccache -M 2G >/dev/null; \
+		$(CPP_TEST_CCACHE_WARMUP) \
 		cd executor; \
 		$(MAKE) test-clean; \
-		env TEST_CXX="ccache g++" $(MAKE) $(TEST_BIN); \
+		env TEST_CXX="$(CPP_TEST_COMPILER)" $(MAKE) $(TEST_BIN) JOBS=$(CPP_TEST_JOBS); \
 		$(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID executor/$(OBJ_DIR)'
 endif

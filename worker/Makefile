@@ -20,6 +20,16 @@ CPP_TEST_DOCKERFILE := $(REPO_ROOT)/infra/docker/cpp-tests/Dockerfile
 CPP_TEST_CONTEXT := $(dir $(CPP_TEST_DOCKERFILE))
 CCACHE_DIR := $(REPO_ROOT)/.cache/cpp-tests/ccache
 CPP_TEST_CONTAINER ?= worker-test
+CPP_TEST_USE_CCACHE ?= 0
+CPP_TEST_USE_CCACHE_BOOL := $(if $(filter 1 true yes on,$(CPP_TEST_USE_CCACHE)),1,0)
+CPP_TEST_JOBS ?= 2
+ifeq ($(CPP_TEST_USE_CCACHE_BOOL),1)
+CPP_TEST_COMPILER := ccache g++
+CPP_TEST_CCACHE_WARMUP := ccache -M 2G >/dev/null;
+else
+CPP_TEST_COMPILER := g++
+CPP_TEST_CCACHE_WARMUP := true;
+endif
 
 SRC_DIR := src
 OBJ_DIR := build
@@ -106,6 +116,7 @@ clean:
 	rm -rf $(OBJ_DIR)
 
 test-clean:
+	@test ! -d $(TEST_BUILD_DIR) || rm -rf $(TEST_BUILD_DIR)
 	@# Nettoyage des traces gcov pour éviter les warnings lors des tests.
 	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f \( -name '*.gcda' -o -name '*.gcno' \) -delete
 
@@ -118,22 +129,18 @@ test:
 else
 test: build-cpp-test-image
 	@mkdir -p $(CCACHE_DIR)
-	@if ! docker ps --format '{{.Names}}' | grep -qx $(CPP_TEST_CONTAINER); then \
-		echo ">> Starting test container $(CPP_TEST_CONTAINER)"; \
-		docker run -d --name $(CPP_TEST_CONTAINER) \
-			-e HOST_UID=$(HOST_UID) -e HOST_GID=$(HOST_GID) \
-			-e CCACHE_DIR=/ccache \
-			-v $(abspath ..):/workspace:Z -w /workspace \
-			-v $(CCACHE_DIR):/ccache \
-			$(CPP_TEST_IMAGE) tail -f /dev/null >/dev/null; \
-	fi
-	docker exec $(CPP_TEST_CONTAINER) bash -lc '\
+	docker run --rm \
+		-e HOST_UID=$(HOST_UID) -e HOST_GID=$(HOST_GID) \
+		-e CCACHE_DIR=/ccache \
+		-v $(abspath ..):/workspace:Z -w /workspace \
+		-v $(CCACHE_DIR):/ccache \
+		$(CPP_TEST_IMAGE) bash -lc '\
 		set -euo pipefail; \
-		ccache -M 2G >/dev/null; \
-		cd /workspace && make -C executor; \
+		$(CPP_TEST_CCACHE_WARMUP) \
+		cd /workspace && make -C executor JOBS=$(CPP_TEST_JOBS); \
 		cd worker; \
 		make test-clean; \
-		env TEST_CXX="ccache g++" make $(TEST_BIN); \
+		env TEST_CXX="$(CPP_TEST_COMPILER)" make $(TEST_BIN) JOBS=$(CPP_TEST_JOBS); \
 		LD_LIBRARY_PATH=/workspace/executor $(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID worker/build'
 endif
