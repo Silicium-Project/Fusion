@@ -106,6 +106,15 @@ void Reporter::emit_text(const WorkerReport& report) {
         const std::string wsl_decision = telemetry.wsl_decision.empty()
             ? "unknown"
             : telemetry.wsl_decision;
+        const std::string host_os = telemetry.host_os.empty()
+            ? "unknown"
+            : telemetry.host_os;
+        const std::string binary_os = telemetry.binary_os.empty()
+            ? "unknown"
+            : telemetry.binary_os;
+        const std::string binary_format = telemetry.binary_format.empty()
+            ? "unknown"
+            : telemetry.binary_format;
         const std::string required_backend = telemetry.required_backend.empty()
             ? "none"
             : telemetry.required_backend;
@@ -124,6 +133,9 @@ void Reporter::emit_text(const WorkerReport& report) {
         *stream_ << "Policy: linux=" << linux_policy << " windows=" << windows_policy << "\n";
         *stream_ << "WSL: " << (telemetry.wsl_enabled ? "on" : "off")
                  << " (" << wsl_decision << ")\n";
+        *stream_ << "Binary: os=" << binary_os
+                 << " format=" << binary_format
+                 << " host=" << host_os << "\n";
         *stream_ << "Backend requis: " << required_backend
                  << " / routage=" << routing_decision << "\n";
         *stream_ << "Capabilities: " << capability_matrix << "\n";
@@ -218,6 +230,15 @@ void Reporter::emit_json(const WorkerReport& report) {
         const std::string wsl_decision = telemetry.wsl_decision.empty()
             ? "unknown"
             : telemetry.wsl_decision;
+        const std::string host_os = telemetry.host_os.empty()
+            ? "unknown"
+            : telemetry.host_os;
+        const std::string binary_os = telemetry.binary_os.empty()
+            ? "unknown"
+            : telemetry.binary_os;
+        const std::string binary_format = telemetry.binary_format.empty()
+            ? "unknown"
+            : telemetry.binary_format;
         const std::string required_backend = telemetry.required_backend.empty()
             ? "none"
             : telemetry.required_backend;
@@ -236,6 +257,9 @@ void Reporter::emit_json(const WorkerReport& report) {
         oss << "\"duration_ms\":" << telemetry.duration_ms << ",";
         oss << "\"linux_policy\":\"" << escape_json(linux_policy) << "\",";
         oss << "\"windows_policy\":\"" << escape_json(windows_policy) << "\",";
+        oss << "\"host_os\":\"" << escape_json(host_os) << "\",";
+        oss << "\"binary_os\":\"" << escape_json(binary_os) << "\",";
+        oss << "\"binary_format\":\"" << escape_json(binary_format) << "\",";
         oss << "\"wsl_enabled\":" << (telemetry.wsl_enabled ? "true" : "false") << ",";
         oss << "\"wsl_decision\":\"" << escape_json(wsl_decision) << "\",";
         oss << "\"required_backend\":\"" << escape_json(required_backend) << "\",";

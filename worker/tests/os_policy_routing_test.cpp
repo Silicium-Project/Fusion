@@ -25,10 +25,11 @@ Task make_task() {
     return task;
 }
 
-fragment::PartitionInfo make_partition(const std::string& os) {
+fragment::PartitionInfo make_partition(const std::string& os, const std::string& format = "") {
     fragment::PartitionInfo partition;
     partition.id = "p1";
     partition.os = os;
+    partition.format = format;
     return partition;
 }
 
@@ -132,6 +133,40 @@ TEST(OsPolicyRouting, WindowsPolicyIsUsed) {
     auto report = worker.run_task(make_partition("windows"), "", "", "", make_task());
     EXPECT_FALSE(report.result.success);
     EXPECT_EQ("policy_skip", report.telemetry.routing_decision);
+    EXPECT_FALSE(connector_ptr->called);
+}
+
+TEST(OsPolicyRouting, PeFormatWithoutOsUsesWindowsPolicy) {
+    WorkerConfig config;
+    config.fragment_os_policy.linux = FragmentOsAction::Native;
+    config.fragment_os_policy.windows = FragmentOsAction::Skip;
+    config.capabilities.native = true;
+    auto connector = std::make_unique<FakeConnector>();
+    auto* connector_ptr = connector.get();
+    Worker worker(config, std::move(connector));
+
+    auto report = worker.run_task(make_partition("", "pe"), "", "", "", make_task());
+    EXPECT_FALSE(report.result.success);
+    EXPECT_EQ("policy_skip", report.telemetry.routing_decision);
+    EXPECT_EQ("windows", report.telemetry.binary_os);
+    EXPECT_EQ("pe", report.telemetry.binary_format);
+    EXPECT_FALSE(connector_ptr->called);
+}
+
+TEST(OsPolicyRouting, PeFormatLookupIsCaseInsensitive) {
+    WorkerConfig config;
+    config.fragment_os_policy.linux = FragmentOsAction::Native;
+    config.fragment_os_policy.windows = FragmentOsAction::Skip;
+    config.capabilities.native = true;
+    auto connector = std::make_unique<FakeConnector>();
+    auto* connector_ptr = connector.get();
+    Worker worker(config, std::move(connector));
+
+    auto report = worker.run_task(make_partition("", "PE"), "", "", "", make_task());
+    EXPECT_FALSE(report.result.success);
+    EXPECT_EQ("policy_skip", report.telemetry.routing_decision);
+    EXPECT_EQ("windows", report.telemetry.binary_os);
+    EXPECT_EQ("pe", report.telemetry.binary_format);
     EXPECT_FALSE(connector_ptr->called);
 }
 

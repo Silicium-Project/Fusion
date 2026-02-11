@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 #include "core/ExecutionResult.hpp"
@@ -127,6 +128,28 @@ std::filesystem::path write_fake_pe(const std::string& name,
 
     std::memcpy(data.data() + pointer_to_raw_data, payload.data(), payload.size());
     return write_binary_file(name, data);
+}
+
+std::filesystem::path find_pe_fixture(const std::string& filename) {
+    std::vector<std::filesystem::path> starts = {
+        std::filesystem::current_path(),
+        std::filesystem::path(__FILE__).parent_path()
+    };
+
+    for (const auto& start : starts) {
+        std::filesystem::path probe = std::filesystem::absolute(start);
+        while (!probe.empty()) {
+            const auto candidate = probe / "tests" / "fixtures" / "pe" / filename;
+            if (std::filesystem::exists(candidate))
+                return candidate;
+            const auto parent = probe.parent_path();
+            if (parent == probe)
+                break;
+            probe = parent;
+        }
+    }
+
+    throw std::runtime_error("PE fixture not found: " + filename);
 }
 
 }  // namespace
@@ -316,4 +339,25 @@ TEST(SegmentLoader, RejectsPeWithImportTable) {
     SegmentLoader loader(path.string());
     EXPECT_FALSE(loader.read_string(image_base + rva).has_value());
     EXPECT_NE(loader.last_error().find("import table"), std::string::npos);
+}
+
+TEST(SegmentLoader, UsesVersionedPeFixtureCorpus) {
+    const uint64_t image_base = 0x140000000ULL;
+    const uint32_t rva = 0x1000;
+
+    SegmentLoader valid_loader(find_pe_fixture("valid-minimal-pe64.exe").string());
+    ASSERT_TRUE(valid_loader.entrypoint().has_value());
+    EXPECT_EQ(*valid_loader.entrypoint(), image_base + rva);
+    auto valid_string = valid_loader.read_string(image_base + rva);
+    ASSERT_TRUE(valid_string.has_value());
+    EXPECT_EQ(*valid_string, "fixture-ok");
+    EXPECT_EQ(valid_loader.format(), SegmentLoader::BinaryFormat::Pe32Plus);
+
+    SegmentLoader malformed_loader(find_pe_fixture("malformed-mz-only.exe").string());
+    EXPECT_FALSE(malformed_loader.read_string(image_base + rva).has_value());
+    EXPECT_EQ(malformed_loader.format(), SegmentLoader::BinaryFormat::Unknown);
+
+    SegmentLoader unsupported_loader(find_pe_fixture("unsupported-import-table-pe64.exe").string());
+    EXPECT_FALSE(unsupported_loader.read_string(image_base + rva).has_value());
+    EXPECT_NE(unsupported_loader.last_error().find("import table"), std::string::npos);
 }

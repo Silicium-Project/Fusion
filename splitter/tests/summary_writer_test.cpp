@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -57,43 +57,26 @@ PartitionFiles MakeFiles(const std::string& base) {
     return f;
 }
 
-std::filesystem::path MakePeFixtureFile() {
-    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto path = std::filesystem::temp_directory_path()
-                    / ("splitter_summary_pe_fixture_" + std::to_string(nonce) + ".exe");
+std::filesystem::path FindPeFixture(const std::string& filename) {
+    std::vector<std::filesystem::path> starts = {
+        std::filesystem::current_path(),
+        std::filesystem::path(__FILE__).parent_path()
+    };
 
-    std::vector<std::uint8_t> bytes(0x80u, 0);
-    bytes[0] = 'M';
-    bytes[1] = 'Z';
-    constexpr std::uint32_t pe_offset = 0x40u;
-    bytes[0x3c] = static_cast<std::uint8_t>(pe_offset & 0xffu);
-    bytes[0x3d] = static_cast<std::uint8_t>((pe_offset >> 8) & 0xffu);
-    bytes[0x3e] = static_cast<std::uint8_t>((pe_offset >> 16) & 0xffu);
-    bytes[0x3f] = static_cast<std::uint8_t>((pe_offset >> 24) & 0xffu);
-    bytes[0x40] = 'P';
-    bytes[0x41] = 'E';
-    bytes[0x42] = 0;
-    bytes[0x43] = 0;
+    for (const auto& start : starts) {
+        std::filesystem::path probe = std::filesystem::absolute(start);
+        while (!probe.empty()) {
+            const auto candidate = probe / "tests" / "fixtures" / "pe" / filename;
+            if (std::filesystem::exists(candidate))
+                return candidate;
+            const auto parent = probe.parent_path();
+            if (parent == probe)
+                break;
+            probe = parent;
+        }
+    }
 
-    std::ofstream out(path, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    out.close();
-    return path;
-}
-
-std::filesystem::path MakeInvalidPeFixtureFile() {
-    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto path = std::filesystem::temp_directory_path()
-                    / ("splitter_summary_invalid_pe_fixture_" + std::to_string(nonce) + ".exe");
-
-    std::vector<std::uint8_t> bytes(0x80u, 0);
-    bytes[0] = 'M';
-    bytes[1] = 'Z';
-
-    std::ofstream out(path, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    out.close();
-    return path;
+    throw std::runtime_error("PE fixture not found: " + filename);
 }
 
 class FakeHash : public IHashAlgorithm {
@@ -187,7 +170,7 @@ TEST(SummaryWriter, DetectsPeBinaryFormat) {
     std::vector<PartitionFiles> files{MakeFiles("p0")};
     std::vector<MemorySegment> mem;
 
-    const auto pe_binary = MakePeFixtureFile();
+    const auto pe_binary = FindPeFixture("valid-minimal-pe64.exe");
     writer.Write(parts, files, mem, pe_binary);
 
     std::ifstream in(out_dir / "summary.json");
@@ -196,8 +179,6 @@ TEST(SummaryWriter, DetectsPeBinaryFormat) {
     EXPECT_NE(content.find("\"binary_os\": \"windows\""), std::string::npos);
     EXPECT_NE(content.find("\"binary_format\": \"pe\""), std::string::npos);
 
-    std::error_code ec;
-    std::filesystem::remove(pe_binary, ec);
 }
 
 TEST(SummaryWriter, InvalidPeFallsBackToUnknownFormat) {
@@ -211,7 +192,7 @@ TEST(SummaryWriter, InvalidPeFallsBackToUnknownFormat) {
     std::vector<PartitionFiles> files{MakeFiles("p0")};
     std::vector<MemorySegment> mem;
 
-    const auto pe_binary = MakeInvalidPeFixtureFile();
+    const auto pe_binary = FindPeFixture("malformed-mz-only.exe");
     writer.Write(parts, files, mem, pe_binary);
 
     std::ifstream in(out_dir / "summary.json");
@@ -220,6 +201,25 @@ TEST(SummaryWriter, InvalidPeFallsBackToUnknownFormat) {
     EXPECT_NE(content.find("\"binary_os\": \"\""), std::string::npos);
     EXPECT_NE(content.find("\"binary_format\": \"\""), std::string::npos);
 
-    std::error_code ec;
-    std::filesystem::remove(pe_binary, ec);
+}
+
+TEST(SummaryWriter, ImportTablePeStillTaggedAsPe) {
+    auto scanner = std::make_shared<FakeScanner>();
+    auto hash_calc = std::make_shared<SummaryHashCalculator>();
+    const std::filesystem::path out_dir =
+        std::filesystem::temp_directory_path() / "splitter_test_out_unsupported_pe";
+    SummaryWriter writer(out_dir, scanner, hash_calc);
+
+    std::vector<Partition> parts{MakePartition("p0")};
+    std::vector<PartitionFiles> files{MakeFiles("p0")};
+    std::vector<MemorySegment> mem;
+
+    const auto pe_binary = FindPeFixture("unsupported-import-table-pe64.exe");
+    writer.Write(parts, files, mem, pe_binary);
+
+    std::ifstream in(out_dir / "summary.json");
+    ASSERT_TRUE(in.is_open());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    EXPECT_NE(content.find("\"binary_os\": \"windows\""), std::string::npos);
+    EXPECT_NE(content.find("\"binary_format\": \"pe\""), std::string::npos);
 }

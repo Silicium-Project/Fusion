@@ -1,5 +1,7 @@
 #include "worker/core/Worker.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <sstream>
 
@@ -26,8 +28,45 @@ static std::string connector_label(ConnectorMode mode) {
     }
 }
 
+static std::string lower_copy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+static std::string host_os_label() {
+#if defined(_WIN32)
+    return "windows";
+#elif defined(__APPLE__)
+    return "macos";
+#elif defined(__linux__)
+    return "linux";
+#else
+    return "unknown";
+#endif
+}
+
+static std::string infer_binary_format(const fragment::PartitionInfo& partition) {
+    const std::string format = lower_copy(partition.format);
+    return format.empty() ? "unknown" : format;
+}
+
+static std::string infer_binary_os(const fragment::PartitionInfo& partition) {
+    std::string os = lower_copy(partition.os);
+    if (!os.empty())
+        return os;
+    const std::string format = infer_binary_format(partition);
+    if (format == "pe")
+        return "windows";
+    if (format == "elf")
+        return "linux";
+    return "unknown";
+}
+
 static void fill_telemetry(TaskReport& report,
                            const Task& task,
+                           const fragment::PartitionInfo& partition,
                            const WorkerConfig& config,
                            std::uint64_t wall_start,
                            std::uint64_t wall_end,
@@ -44,6 +83,9 @@ static void fill_telemetry(TaskReport& report,
     report.telemetry.duration_ms =
         static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::milliseconds>(steady_end - steady_start).count());
+    report.telemetry.host_os = host_os_label();
+    report.telemetry.binary_os = infer_binary_os(partition);
+    report.telemetry.binary_format = infer_binary_format(partition);
     report.telemetry.linux_policy = fragment_os_action_to_string(config.fragment_os_policy.linux);
     report.telemetry.windows_policy = fragment_os_action_to_string(config.fragment_os_policy.windows);
     report.telemetry.wsl_enabled = config.wsl_enabled;
@@ -75,9 +117,7 @@ static bool capability_for_target(const BackendCapabilities& capabilities,
 }
 
 FragmentOsAction Worker::resolve_fragment_action(const fragment::PartitionInfo& partition) const {
-    std::string os = partition.os;
-    if (os.empty())
-        os = partition.format == "pe" ? "windows" : "linux";
+    const std::string os = infer_binary_os(partition);
     if (os == "linux")
         return config_.fragment_os_policy.linux;
     if (os == "windows")
@@ -176,7 +216,7 @@ TaskReport Worker::run_task(const fragment::PartitionInfo& partition,
 
         const auto wall_end = now_ms();
         const auto steady_end = std::chrono::steady_clock::now();
-        fill_telemetry(report, task, config_, wall_start, wall_end, steady_start, steady_end);
+        fill_telemetry(report, task, context.partition, config_, wall_start, wall_end, steady_start, steady_end);
         notify_task_finish(context, task, report);
         return report;
     }
@@ -216,7 +256,7 @@ TaskReport Worker::run_health_task(const TaskContext& context,
             << "}";
     report.result.program_stdout = payload.str();
 
-    fill_telemetry(report, task, config_, wall_start, wall_end, steady_start, steady_end);
+    fill_telemetry(report, task, context.partition, config_, wall_start, wall_end, steady_start, steady_end);
     return report;
 }
 
@@ -238,7 +278,7 @@ TaskReport Worker::run_binary_task(const TaskContext& context,
 
     const auto wall_end = now_ms();
     const auto steady_end = std::chrono::steady_clock::now();
-    fill_telemetry(report, task, config_, wall_start, wall_end, steady_start, steady_end);
+    fill_telemetry(report, task, context.partition, config_, wall_start, wall_end, steady_start, steady_end);
 
     return report;
 }

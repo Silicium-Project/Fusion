@@ -15,6 +15,9 @@ struct TaskTelemetry {
     std::uint64_t started_at_ms = 0;
     std::uint64_t finished_at_ms = 0;
     std::uint64_t duration_ms = 0;
+    std::string host_os;
+    std::string binary_os;
+    std::string binary_format;
     std::string linux_policy;
     std::string windows_policy;
     bool wsl_enabled = false;
