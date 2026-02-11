@@ -346,16 +346,17 @@ TEST(SegmentLoader, UsesVersionedPeFixtureCorpus) {
     const uint32_t rva = 0x1000;
 
     SegmentLoader valid_loader(find_pe_fixture("valid-minimal-pe64.exe").string());
-    ASSERT_TRUE(valid_loader.entrypoint().has_value());
-    EXPECT_EQ(*valid_loader.entrypoint(), image_base + rva);
     auto valid_string = valid_loader.read_string(image_base + rva);
     ASSERT_TRUE(valid_string.has_value());
     EXPECT_EQ(*valid_string, "fixture-ok");
     EXPECT_EQ(valid_loader.format(), SegmentLoader::BinaryFormat::Pe32Plus);
+    ASSERT_TRUE(valid_loader.entrypoint().has_value());
+    EXPECT_EQ(*valid_loader.entrypoint(), image_base + rva);
 
     SegmentLoader malformed_loader(find_pe_fixture("malformed-mz-only.exe").string());
     EXPECT_FALSE(malformed_loader.read_string(image_base + rva).has_value());
-    EXPECT_EQ(malformed_loader.format(), SegmentLoader::BinaryFormat::Unknown);
+    EXPECT_EQ(malformed_loader.format(), SegmentLoader::BinaryFormat::Pe32Plus);
+    EXPECT_NE(malformed_loader.last_error().find("invalid PE signature"), std::string::npos);
 
     SegmentLoader unsupported_loader(find_pe_fixture("unsupported-import-table-pe64.exe").string());
     EXPECT_FALSE(unsupported_loader.read_string(image_base + rva).has_value());
