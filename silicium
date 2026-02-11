@@ -49,6 +49,7 @@ CORE_CHECK_IMAGE_DEFAULT = "silicium/core-check:lite"
 CORE_CHECK_DOCKERFILE = REPO_ROOT / "docker" / "core-check" / "Dockerfile"
 CPP_TEST_IMAGE_DEFAULT = "silicium/cpp-tests:latest"
 CPP_TEST_DOCKERFILE = REPO_ROOT / "infra" / "docker" / "cpp-tests" / "Dockerfile"
+POSIX_PYTEST_IMAGE_DEFAULT = "python:3.12-bookworm"
 LEDGER_SUFFIX = {
     "localnet": "local-ledger",
     "devnet": "devnet-ledger",
@@ -773,7 +774,31 @@ def compose_down(ctx: Context, volumes: bool = False) -> None:
     run(cmd)
 
 
-def cmd_test(_: argparse.Namespace, ctx: Context) -> None:
+def _run_entrypoint_posix_tests_in_docker(args: argparse.Namespace, ctx: Context) -> None:
+    ensure_docker_healthy(ctx, retries=2, timeout_s=8.0)
+    image = args.posix_pytest_image
+    script = (
+        "set -euo pipefail; "
+        "python -m pip install -q pytest; "
+        "python -m pytest -q tests/test_entrypoint.py -rs"
+    )
+    cmd = [
+        ctx.config.docker_bin,
+        "run",
+        "--rm",
+        "-v",
+        f"{REPO_ROOT}:/workspace",
+        "-w",
+        "/workspace",
+        image,
+        "bash",
+        "-lc",
+        script,
+    ]
+    run(cmd)
+
+
+def cmd_test(args: argparse.Namespace, ctx: Context) -> None:
     run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], allow_failure=True)
     run([sys.executable, "-m", "pip", "install", "-r", "requirements-dev.txt"], allow_failure=True)
     cmd_workload_lint(
@@ -784,7 +809,12 @@ def cmd_test(_: argparse.Namespace, ctx: Context) -> None:
         ),
         ctx,
     )
-    run([sys.executable, "-m", "pytest"])
+    pytest_cmd = [sys.executable, "-m", "pytest"]
+    if args.entrypoint_docker:
+        pytest_cmd += ["--ignore=tests/test_entrypoint.py"]
+    run(pytest_cmd)
+    if args.entrypoint_docker:
+        _run_entrypoint_posix_tests_in_docker(args, ctx)
 
 
 def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
@@ -2676,7 +2706,22 @@ def cmd_budget(args: argparse.Namespace, ctx: Context) -> None:
 
 
 def configure_test(parser: argparse.ArgumentParser) -> None:
-    pass
+    parser.add_argument(
+        "--entrypoint-docker",
+        action="store_true",
+        help=(
+            "Run tests/test_entrypoint.py in a Linux Docker container "
+            "(useful on Windows where this module is skipped on host)."
+        ),
+    )
+    parser.add_argument(
+        "--posix-pytest-image",
+        default=os.environ.get("SILICIUM_POSIX_PYTEST_IMAGE", POSIX_PYTEST_IMAGE_DEFAULT),
+        help=(
+            "Container image used with --entrypoint-docker "
+            f"(default: {POSIX_PYTEST_IMAGE_DEFAULT})."
+        ),
+    )
 
 
 def configure_check(parser: argparse.ArgumentParser) -> None:
