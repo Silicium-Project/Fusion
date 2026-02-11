@@ -32,8 +32,7 @@ on:
 
 jobs:
   pytest:
-    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
 
     steps:
       - name: Checkout
@@ -78,8 +77,7 @@ jobs:
         run: ./silicium test
 
   pytest-windows:
-    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
-    runs-on: windows-latest
+    runs-on: [self-hosted, windows]
 
     steps:
       - name: Checkout
@@ -94,7 +92,7 @@ jobs:
         run: python .\\silicium test
 
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs: pytest
 
     steps:
@@ -110,7 +108,7 @@ jobs:
         run: ./silicium smoke
 
   coverage-assets-smoke:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs: pytest
 
     steps:
@@ -139,7 +137,7 @@ jobs:
           test -s "$OUT/snapshot.svg"
 
   perf-budget:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs: pytest
     env:
       SILICIUM_MAX_JOBS: "2"
@@ -198,7 +196,7 @@ jobs:
           path: /tmp/perf-budget-report.json
 
   worker-cpp:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs: pytest
 
     steps:
@@ -249,7 +247,7 @@ jobs:
             worker/coverage-summary.json
 
   coverage-pages:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs: worker-cpp
     if: github.ref == 'refs/heads/main' && inputs.publish_pages != false
     permissions:
@@ -291,7 +289,7 @@ jobs:
           force_orphan: true
 
   commit-coverage:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs: worker-cpp
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && inputs.commit_coverage != false
     permissions:

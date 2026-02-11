@@ -10,12 +10,10 @@ permissions:
 
 jobs:
   tests:
-    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
     uses: ./.github/workflows/tests.yml
 
   release:
-    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs: [tests]
     steps:
       - name: Checkout
