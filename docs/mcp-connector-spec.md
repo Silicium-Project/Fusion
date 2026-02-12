@@ -226,6 +226,16 @@ Allow/deny lists accept comma-separated exact names or prefix rules ending with 
 Logging:
 
 - `--log-format text|json` controls lifecycle + request logs emitted on stdout.
+- `json` mode emits structured events (`listen`, `http_request`, `tool_call`) with latency/status fields.
+
+Prometheus metrics (non-exhaustive):
+
+- `mcp_http_requests_total{method,path,status}`
+- `mcp_http_request_duration_seconds_{sum,count}{method,path}`
+- `mcp_jsonrpc_calls_total{method,is_error}`
+- `mcp_tool_calls_total{tool}`
+- `mcp_tool_failures_total{tool}`
+- `mcp_tool_call_duration_seconds_{sum,count}{tool}`
 
 ### Standardized local configuration
 

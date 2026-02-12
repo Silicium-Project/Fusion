@@ -419,6 +419,9 @@ class McpMetrics:
         self._http_duration_count: dict[tuple[str, str], int] = {}
         self._jsonrpc_calls: dict[tuple[str, str], int] = {}
         self._tool_calls: dict[str, int] = {}
+        self._tool_failures: dict[str, int] = {}
+        self._tool_duration_sum_s: dict[str, float] = {}
+        self._tool_duration_count: dict[str, int] = {}
 
     def inc_http(self, method: str, path: str, status: int, duration_s: float) -> None:
         m = method.upper()
@@ -435,8 +438,15 @@ class McpMetrics:
             self._jsonrpc_calls[key] = self._jsonrpc_calls.get(key, 0) + 1
 
     def inc_tool_call(self, tool: str) -> None:
+        self.observe_tool_call(tool, ok=True, duration_s=0.0)
+
+    def observe_tool_call(self, tool: str, ok: bool, duration_s: float) -> None:
         with self._lock:
             self._tool_calls[tool] = self._tool_calls.get(tool, 0) + 1
+            self._tool_duration_sum_s[tool] = self._tool_duration_sum_s.get(tool, 0.0) + float(duration_s)
+            self._tool_duration_count[tool] = self._tool_duration_count.get(tool, 0) + 1
+            if not ok:
+                self._tool_failures[tool] = self._tool_failures.get(tool, 0) + 1
 
     def render(self) -> str:
         lines: list[str] = []
@@ -490,6 +500,32 @@ class McpMetrics:
             )
             for tool, value in sorted(self._tool_calls.items()):
                 lines.append('mcp_tool_calls_total{tool="%s"} %d' % (_prom_escape(tool), value))
+
+            lines.extend(
+                [
+                    "# HELP mcp_tool_failures_total Total failed tool invocations.",
+                    "# TYPE mcp_tool_failures_total counter",
+                ]
+            )
+            for tool, value in sorted(self._tool_failures.items()):
+                lines.append('mcp_tool_failures_total{tool="%s"} %d' % (_prom_escape(tool), value))
+
+            lines.extend(
+                [
+                    "# HELP mcp_tool_call_duration_seconds Tool invocation durations (sum/count).",
+                    "# TYPE mcp_tool_call_duration_seconds summary",
+                ]
+            )
+            for tool, value in sorted(self._tool_duration_sum_s.items()):
+                lines.append(
+                    'mcp_tool_call_duration_seconds_sum{tool="%s"} %.6f'
+                    % (_prom_escape(tool), float(value))
+                )
+            for tool, value in sorted(self._tool_duration_count.items()):
+                lines.append(
+                    'mcp_tool_call_duration_seconds_count{tool="%s"} %d'
+                    % (_prom_escape(tool), value)
+                )
 
         return "\n".join(lines) + "\n"
 
@@ -570,6 +606,19 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             self._app.obs.logger.log("http_request", **fields)
         except Exception:
             return
+
+    def _observe_tool_call(self, *, name: str, ok: bool, duration_s: float, transport: str, error: str = "") -> None:
+        self._app.obs.metrics.observe_tool_call(name, ok=ok, duration_s=duration_s)
+        fields: dict[str, Any] = {
+            "request_id": getattr(self, "_req_id", ""),
+            "transport": transport,
+            "tool": name,
+            "ok": bool(ok),
+            "duration_ms": round(max(0.0, float(duration_s)) * 1000.0, 3),
+        }
+        if error:
+            fields["error"] = error
+        self._app.obs.logger.log("tool_call", **fields)
 
     def _require_auth(self) -> bool:
         token = self._app.token
@@ -778,8 +827,24 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                 raise ValueError("missing_tool_name")
             if not self._app.access_policy.tool_allowed(name):
                 raise PermissionError("tool_denied")
-            self._app.obs.metrics.inc_tool_call(name)
-            result = self._app.execute_tool(name, arguments)
+            started = time.monotonic()
+            try:
+                result = self._app.execute_tool(name, arguments)
+            except Exception as exc:
+                self._observe_tool_call(
+                    name=name,
+                    ok=False,
+                    duration_s=time.monotonic() - started,
+                    transport="jsonrpc",
+                    error=exc.__class__.__name__,
+                )
+                raise
+            self._observe_tool_call(
+                name=name,
+                ok=True,
+                duration_s=time.monotonic() - started,
+                transport="jsonrpc",
+            )
             if isinstance(result, str):
                 text = result
             else:
@@ -894,21 +959,55 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                 _json_response(self, HTTPStatus.FORBIDDEN, {"error": "forbidden_tool"})
                 return
 
+            started = time.monotonic()
             try:
-                self._app.obs.metrics.inc_tool_call(name)
                 result = self._app.execute_tool(name, args)
             except PermissionError:
+                self._observe_tool_call(
+                    name=name,
+                    ok=False,
+                    duration_s=time.monotonic() - started,
+                    transport="http_tools",
+                    error="PermissionError",
+                )
                 _json_response(self, HTTPStatus.FORBIDDEN, {"error": "tool_disabled"})
                 return
             except FileNotFoundError:
+                self._observe_tool_call(
+                    name=name,
+                    ok=False,
+                    duration_s=time.monotonic() - started,
+                    transport="http_tools",
+                    error="FileNotFoundError",
+                )
                 _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
                 return
             except ValueError as exc:
+                self._observe_tool_call(
+                    name=name,
+                    ok=False,
+                    duration_s=time.monotonic() - started,
+                    transport="http_tools",
+                    error="ValueError",
+                )
                 _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "bad_request", "detail": str(exc)})
                 return
             except Exception as exc:
+                self._observe_tool_call(
+                    name=name,
+                    ok=False,
+                    duration_s=time.monotonic() - started,
+                    transport="http_tools",
+                    error=exc.__class__.__name__,
+                )
                 _json_response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "internal_error", "detail": str(exc)})
                 return
+            self._observe_tool_call(
+                name=name,
+                ok=True,
+                duration_s=time.monotonic() - started,
+                transport="http_tools",
+            )
 
             # result may already be a JSON payload string (resources), so wrap it.
             if isinstance(result, str):

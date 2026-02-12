@@ -292,6 +292,7 @@ def test_mcp_server_metrics_counters(tmp_path: Path) -> None:
         _http_get(base + "/healthz")
         _http_get(base + "/healthz")
         _http_post(base + "/tools", {"name": "tools.silicium.interrupt_action", "args": {}})
+        _http_post(base + "/tools", {"name": "tools.silicium.run_action", "args": {}})
 
         code, body = _http_get(base + "/metrics")
         assert code == 200
@@ -303,12 +304,87 @@ def test_mcp_server_metrics_counters(tmp_path: Path) -> None:
         m = re.search(r'mcp_tool_calls_total\{tool="tools\.silicium\.interrupt_action"\}\s+(\d+)', body)
         assert m is not None
         assert int(m.group(1)) >= 1
+
+        m = re.search(r'mcp_tool_failures_total\{tool="tools\.silicium\.run_action"\}\s+(\d+)', body)
+        assert m is not None
+        assert int(m.group(1)) >= 1
+
+        m = re.search(r'mcp_tool_call_duration_seconds_count\{tool="tools\.silicium\.interrupt_action"\}\s+(\d+)', body)
+        assert m is not None
+        assert int(m.group(1)) >= 1
     finally:
         proc.terminate()
         try:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+def test_mcp_server_json_logs_include_http_and_tool_events(tmp_path: Path) -> None:
+    export_dir = tmp_path / "mcp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "status.current.json").write_text('{"ok":true}', encoding="utf-8")
+    (export_dir / "reports.recent.json").write_text('{"tasks":[]}', encoding="utf-8")
+
+    port = _find_free_port()
+    env = os.environ.copy()
+    env["SILICIUM_MCP_EXPORT_DIR"] = str(export_dir)
+    proc = subprocess.Popen(
+        [sys.executable, "tools/mcp_server.py", "--port", str(port), "--enable-tools", "--log-format", "json"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"http://127.0.0.1:{port}"
+        _wait_ready(base)
+        _http_get(base + "/healthz")
+        _http_post(base + "/tools", {"name": "tools.silicium.interrupt_action", "args": {}})
+        _http_post(base + "/tools", {"name": "tools.silicium.run_action", "args": {}})
+    finally:
+        proc.terminate()
+        try:
+            out, _ = proc.communicate(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, _ = proc.communicate(timeout=3)
+
+    events = []
+    for raw in out.splitlines():
+        line = raw.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    assert any(evt.get("event") == "listen" for evt in events)
+
+    http_events = [evt for evt in events if evt.get("event") == "http_request"]
+    assert http_events
+    assert any(
+        evt.get("path") == "/healthz"
+        and evt.get("method") == "GET"
+        and isinstance(evt.get("duration_ms"), (int, float))
+        for evt in http_events
+    )
+
+    tool_events = [evt for evt in events if evt.get("event") == "tool_call"]
+    assert tool_events
+    assert any(
+        evt.get("tool") == "tools.silicium.interrupt_action"
+        and evt.get("transport") == "http_tools"
+        and evt.get("ok") is True
+        for evt in tool_events
+    )
+    assert any(
+        evt.get("tool") == "tools.silicium.run_action"
+        and evt.get("ok") is False
+        and evt.get("error") == "ValueError"
+        for evt in tool_events
+    )
 
 
 def test_mcp_server_snapshots_survive_restart(tmp_path: Path) -> None:
