@@ -1048,6 +1048,8 @@ def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
         env_vars["CORE_CHECK_DOCKER_MEMORY"] = str(docker_memory)
     if args.docker is not None:
         env_vars["CORE_CHECK_WITH_DOCKER"] = "1" if args.docker else "0"
+    if args.clean is not None:
+        env_vars["CORE_CHECK_CLEAN"] = "1" if args.clean else "0"
 
     if args.python:
         if os.name != "nt" or args.python.startswith("/"):
@@ -1065,6 +1067,9 @@ def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
                 sys.exit(1)
 
         if runner == "docker":
+            env_vars.setdefault("CORE_CHECK_CLEAN", "0")
+            if "CORE_CHECK_JOBS" not in env_vars:
+                env_vars["CORE_CHECK_JOBS"] = "2"
             ensure_docker_healthy(ctx, retries=2, timeout_s=8.0)
             run_core_check_in_docker(env_vars, ctx)
             return
@@ -2791,7 +2796,19 @@ def configure_check(parser: argparse.ArgumentParser) -> None:
         "--docker-memory",
         help="Limit memory for docker-run core checks (e.g. 4g, 4096m).",
     )
-    parser.set_defaults(docker=None)
+    parser.add_argument(
+        "--clean",
+        dest="clean",
+        action="store_true",
+        help="Force clean rebuild before checks (CORE_CHECK_CLEAN=1).",
+    )
+    parser.add_argument(
+        "--no-clean",
+        dest="clean",
+        action="store_false",
+        help="Disable clean rebuild before checks (CORE_CHECK_CLEAN=0).",
+    )
+    parser.set_defaults(docker=None, clean=None)
 
 
 def configure_cpp_test(parser: argparse.ArgumentParser) -> None:

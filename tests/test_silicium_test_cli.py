@@ -142,6 +142,7 @@ def test_cmd_check_windows_auto_uses_docker_without_wsl(monkeypatch) -> None:
         docker_cpus="",
         docker_memory="",
         docker=None,
+        clean=None,
         python="",
         runner="auto",
     )
@@ -149,4 +150,21 @@ def test_cmd_check_windows_auto_uses_docker_without_wsl(monkeypatch) -> None:
 
     assert len(docker_calls) == 1
     assert docker_calls[0]["CORE_CHECK_MODE"] == "quick"
+    assert docker_calls[0]["CORE_CHECK_CLEAN"] == "0"
+    assert docker_calls[0]["CORE_CHECK_JOBS"] == "2"
     assert wsl_checked["value"] == 0
+
+
+def test_configure_check_exposes_clean_flags() -> None:
+    cli = _load_silicium_module()
+    parser = argparse.ArgumentParser()
+    cli.configure_check(parser)
+
+    args = parser.parse_args([])
+    assert args.clean is None
+
+    args = parser.parse_args(["--clean"])
+    assert args.clean is True
+
+    args = parser.parse_args(["--no-clean"])
+    assert args.clean is False
