@@ -91,7 +91,18 @@ jobs:
           python-version: "3.11"
 
       - name: Run test suite via silicium CLI (Windows)
-        run: python .\\silicium test
+        shell: pwsh
+        run: |
+          $hasDocker = Get-Command docker -ErrorAction SilentlyContinue
+          if ($hasDocker) {
+            docker info *> $null
+            if ($LASTEXITCODE -eq 0) {
+              python .\silicium test --entrypoint-docker
+              exit $LASTEXITCODE
+            }
+          }
+          Write-Host "Docker unavailable on this runner; falling back to host-only Python tests."
+          python .\silicium test
 
   smoke:
     runs-on: ubuntu-latest

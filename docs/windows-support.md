@@ -20,6 +20,7 @@ Terminology
 
 What you can do:
 - `python .\\silicium test`
+- `python .\\silicium test --entrypoint-docker` (exécute `tests/test_entrypoint.py` dans un conteneur Linux)
 - `python .\\silicium tui` (Textual when available, else headless shell fallback)
 - `python .\\silicium check --runner docker` (core checks in container)
 - `python .\\silicium smoke` (proxy smoke, requires Docker)
@@ -54,6 +55,7 @@ Legend: "CI" = validated in GitHub Actions, "Local" = works but not CI-gated.
 | Capability | Windows native | Win + Docker Desktop | WSL + Docker Desktop |
 |---|---:|---:|---:|
 | `python .\\silicium test` | CI | CI | Local |
+| `python .\\silicium test --entrypoint-docker` | - | Local | Local |
 | `python .\\silicium tui` | Local | Local | Local |
 | `python .\\silicium check --runner docker` | - | Local | Local |
 | `python .\\silicium check --runner wsl` | - | - | Local |
@@ -69,4 +71,3 @@ Use:
 Expected signals:
 - Docker: OK/FAIL with a short reason.
 - On Windows, WSL distro listing and Docker socket integration hints.
-
