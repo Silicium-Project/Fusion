@@ -207,8 +207,8 @@ fi
 
 if [[ "$RUN_CLI" == "1" ]]; then
   log "CLI sanity"
-  ./silicium workload list >/dev/null
-  ./silicium workload show calcul/math-simulation --readme >/dev/null
+  "$PYTHON_BIN" ./silicium workload list >/dev/null
+  "$PYTHON_BIN" ./silicium workload show calcul/math-simulation --readme >/dev/null
 fi
 
 if [[ "$RUN_PYTHON" == "1" ]]; then
@@ -246,7 +246,7 @@ if [[ "$MODE" == "full" ]]; then
   if [[ "$RUN_SMOKE" == "1" ]]; then
     if [[ "$WITH_DOCKER" == "1" ]]; then
       log "Proxy smoke (Docker)"
-      ./silicium smoke
+      "$PYTHON_BIN" ./silicium smoke
     else
       log "Skipping proxy smoke (Docker unavailable)"
     fi
