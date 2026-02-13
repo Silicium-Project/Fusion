@@ -35,8 +35,12 @@ std::shared_ptr<IReporter> ReporterFactory::Create(const PipelineConfig& config)
             file_path = *env;
 
     auto make_single = [&]() -> std::shared_ptr<IReporter> {
-        if (mode == kReporterJson || mode == kReporterNdJson)
-            return std::make_shared<JsonReporter>();
+        if (mode == kReporterJson)
+            return std::make_shared<JsonReporter>(std::shared_ptr<std::ostream>{},
+                                                  JsonReporter::Mode::LegacyJson);
+        if (mode == kReporterNdJson)
+            return std::make_shared<JsonReporter>(std::shared_ptr<std::ostream>{},
+                                                  JsonReporter::Mode::StructuredV1Ndjson);
         return std::make_shared<ConsoleReporter>();
     };
 
@@ -51,8 +55,10 @@ std::shared_ptr<IReporter> ReporterFactory::Create(const PipelineConfig& config)
 
     std::vector<std::shared_ptr<IReporter>> reporters;
     reporters.push_back(make_single());
-    if (mode == kReporterJson || mode == kReporterNdJson)
-        reporters.push_back(std::make_shared<JsonReporter>(stream));
+    if (mode == kReporterJson)
+        reporters.push_back(std::make_shared<JsonReporter>(stream, JsonReporter::Mode::LegacyJson));
+    else if (mode == kReporterNdJson)
+        reporters.push_back(std::make_shared<JsonReporter>(stream, JsonReporter::Mode::StructuredV1Ndjson));
     else
         reporters.push_back(std::make_shared<ConsoleReporter>());
     return std::make_shared<MultiReporter>(std::move(reporters));

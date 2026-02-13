@@ -1,8 +1,10 @@
 #include "pipeline/PipelineRunner.hpp"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string_view>
 #include <vector>
 
@@ -46,7 +48,7 @@ void PrintUsage(std::string_view prog) {
               << "D?sassembleur: env SPLITTER_DISASSEMBLER ou --disassembler (objdump).\n"
               << "R?solveur de biblioth?ques: env SPLITTER_LIB_RESOLVER ou --resolver (ldd/readelf/pe).\n"
               << "Indexation des symboles: env SPLITTER_SYMBOL_INDEXER ou --indexer (nm/objdump/pe).\n"
-              << "Reporter: env SPLITTER_REPORTER ou --reporter (console/json).\n";
+              << "Reporter: env SPLITTER_REPORTER ou --reporter (console/json/ndjson).\n";
 }
 
 }  // namespace
@@ -75,25 +77,14 @@ PipelineRunner::PipelineRunner(PipelineConfig config,
                      std::move(reporter)) {}
 
 int PipelineRunner::Run() {
-    int exit_code = 0;
-    auto run_phase = [&](PipelineStep& step) -> bool {
-        if (!step.phase) {
-            std::cerr << "Erreur: phase '" << step.key << "' manquante.\n";
-            exit_code = static_cast<int>(step.on_error);
-            return false;
-        }
-        try {
-            step.phase->Execute(context_);
-        } catch (const PipelineError& e) {
-            std::cerr << "Erreur pendant " << step.phase->Name() << ": " << e.what() << "\n";
-            exit_code = static_cast<int>(e.Code());
-            return false;
-        } catch (const std::exception& e) {
-            std::cerr << "Erreur pendant " << step.phase->Name() << ": " << e.what() << "\n";
-            exit_code = static_cast<int>(step.on_error);
-            return false;
-        }
-        return true;
+    using clock = std::chrono::steady_clock;
+    const auto run_start = clock::now();
+    reporter_->ReportRunStart(context_.config.binary_path.Value(), context_.config.output_dir.Value());
+
+    auto complete_run = [&](int exit_code) -> int {
+        const auto run_ms = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - run_start).count();
+        reporter_->ReportRunCompleted(exit_code, run_ms);
+        return exit_code;
     };
 
     for (auto& step : steps_) {
@@ -105,41 +96,78 @@ int PipelineRunner::Run() {
             reporter_->Banner("=== Partitionnement du binaire ===");
         }
 
-        if (!run_phase(step))
-            return exit_code ? exit_code : static_cast<int>(step.on_error);
-
-        if (step.key == "disassembly") {
-            reporter_->Info("Fonctions trouv?es: " + std::to_string(context_.functions.size()));
-            PrintFunctionOverview(context_.functions);
-            if (context_.config.dump_full_disassembly)
-                DumpDisassembly(context_.disassembly);
-        } else if (step.key == "analysis") {
-            ReportLoops(context_.functions);
-        } else if (step.key == "partitioning") {
-            reporter_->Info("Partitions cr??es: " + std::to_string(context_.partitions.size()));
-            const std::size_t max_partitions =
-                []() {
-                    if (auto env = GetEnv("SPLITTER_MAX_PARTITIONS"))
-                        return static_cast<std::size_t>(std::stoull(*env));
-                    return static_cast<std::size_t>(100000);
-                }();
-            const std::size_t ratio_limit = 10;
-            if (context_.partitions.size() > max_partitions
-                || context_.partitions.size() > context_.functions.size() * ratio_limit) {
-                std::cerr << "Erreur: nombre de partitions incoh?rent (" << context_.partitions.size()
-                          << "), abandon.\n";
-                return static_cast<int>(PipelineExit::PartitioningError);
-            }
-
-            for (const auto& partition : context_.partitions)
-                ReportPartition(partition);
-        } else if (step.key == "artifacts") {
-            reporter_->Banner("=== Termin? ===");
-            reporter_->Info("Partitions: " + context_.config.output_dir.Value() + "/");
+        if (!step.phase) {
+            const int exit_code = static_cast<int>(step.on_error);
+            std::cerr << "Erreur: phase '" << step.key << "' manquante.\n";
+            reporter_->ReportPhaseFailed(step.key, {}, {}, 0, "missing phase implementation", exit_code);
+            return complete_run(exit_code);
         }
+
+        const auto phase_inputs = step.phase->Inputs();
+        const auto phase_outputs = step.phase->Outputs();
+        reporter_->ReportPhaseStart(step.key, phase_inputs, phase_outputs);
+        const auto phase_start = clock::now();
+
+        try {
+            step.phase->Execute(context_);
+
+            if (step.key == "disassembly") {
+                reporter_->Info("Fonctions trouv?es: " + std::to_string(context_.functions.size()));
+                PrintFunctionOverview(context_.functions);
+                if (context_.config.dump_full_disassembly)
+                    DumpDisassembly(context_.disassembly);
+            } else if (step.key == "analysis") {
+                ReportLoops(context_.functions);
+            } else if (step.key == "partitioning") {
+                reporter_->Info("Partitions cr??es: " + std::to_string(context_.partitions.size()));
+                const std::size_t max_partitions =
+                    []() {
+                        if (auto env = GetEnv("SPLITTER_MAX_PARTITIONS"))
+                            return static_cast<std::size_t>(std::stoull(*env));
+                        return static_cast<std::size_t>(100000);
+                    }();
+                const std::size_t ratio_limit = 10;
+                if (context_.partitions.size() > max_partitions
+                    || context_.partitions.size() > context_.functions.size() * ratio_limit) {
+                    std::ostringstream err;
+                    err << "incoherent partition count: " << context_.partitions.size();
+                    std::cerr << "Erreur: nombre de partitions incoh?rent (" << context_.partitions.size()
+                              << "), abandon.\n";
+                    const auto phase_ms =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - phase_start).count();
+                    const int exit_code = static_cast<int>(PipelineExit::PartitioningError);
+                    reporter_->ReportPhaseFailed(step.key, phase_inputs, phase_outputs, phase_ms, err.str(), exit_code);
+                    return complete_run(exit_code);
+                }
+
+                for (const auto& partition : context_.partitions)
+                    ReportPartition(partition);
+            } else if (step.key == "artifacts") {
+                reporter_->Banner("=== Termin? ===");
+                reporter_->Info("Partitions: " + context_.config.output_dir.Value() + "/");
+            }
+        } catch (const PipelineError& e) {
+            const auto phase_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - phase_start).count();
+            const int exit_code = static_cast<int>(e.Code());
+            std::cerr << "Erreur pendant " << step.phase->Name() << ": " << e.what() << "\n";
+            reporter_->ReportPhaseFailed(step.key, phase_inputs, phase_outputs, phase_ms, e.what(), exit_code);
+            return complete_run(exit_code);
+        } catch (const std::exception& e) {
+            const auto phase_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - phase_start).count();
+            const int exit_code = static_cast<int>(step.on_error);
+            std::cerr << "Erreur pendant " << step.phase->Name() << ": " << e.what() << "\n";
+            reporter_->ReportPhaseFailed(step.key, phase_inputs, phase_outputs, phase_ms, e.what(), exit_code);
+            return complete_run(exit_code);
+        }
+
+        const auto phase_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - phase_start).count();
+        reporter_->ReportPhaseCompleted(step.key, phase_inputs, phase_outputs, phase_ms);
     }
 
-    return 0;
+    return complete_run(0);
 }
 
 void PipelineRunner::PrintFunctionOverview(const std::vector<Function>& functions) const {

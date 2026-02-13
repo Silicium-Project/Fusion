@@ -17,6 +17,13 @@ TEST(ReporterFactory, CreatesJsonReporter) {
     EXPECT_NE(dynamic_cast<JsonReporter*>(reporter.get()), nullptr);
 }
 
+TEST(ReporterFactory, CreatesNdjsonReporter) {
+    PipelineConfig config;
+    config.reporter = "ndjson";
+    auto reporter = ReporterFactory::Create(config);
+    EXPECT_NE(dynamic_cast<JsonReporter*>(reporter.get()), nullptr);
+}
+
 TEST(ReporterFactory, CreatesConsoleReporterByDefault) {
     PipelineConfig config;
     auto reporter = ReporterFactory::Create(config);
