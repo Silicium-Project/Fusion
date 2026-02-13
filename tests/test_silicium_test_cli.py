@@ -6,6 +6,8 @@ import sys
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SILICIUM_PATH = REPO_ROOT / "silicium"
@@ -119,13 +121,13 @@ def test_cmd_check_windows_auto_uses_docker_without_wsl(monkeypatch) -> None:
         wsl_checked["value"] += 1
         return False
 
-    def fake_ensure_docker_healthy(ctx, retries, timeout_s):
+    def fake_ensure_docker_healthy(ctx, retries, timeout_s, min_memory_bytes=None):
         return None
 
     def fake_run_core_check_in_docker(env_vars, ctx):
         docker_calls.append(dict(env_vars))
 
-    monkeypatch.setattr(cli.os, "name", "nt")
+    monkeypatch.setattr(cli, "host_os_name", lambda: "nt")
     monkeypatch.setattr(cli, "docker_available", fake_docker_available)
     monkeypatch.setattr(cli, "wsl_available", fake_wsl_available)
     monkeypatch.setattr(cli, "ensure_docker_healthy", fake_ensure_docker_healthy)
@@ -168,3 +170,69 @@ def test_configure_check_exposes_clean_flags() -> None:
 
     args = parser.parse_args(["--no-clean"])
     assert args.clean is False
+
+
+def test_ensure_docker_healthy_fails_on_low_memory(monkeypatch, capsys) -> None:
+    cli = _load_silicium_module()
+
+    monkeypatch.setattr(cli, "docker_health", lambda ctx, retries, timeout_s: cli.DockerHealth(True, "", "ok"))
+    monkeypatch.setattr(cli, "docker_memory_bytes", lambda ctx, timeout_s=8.0: 512 * 1024 * 1024)
+    monkeypatch.setattr(cli, "host_os_name", lambda: "nt")
+
+    with pytest.raises(SystemExit) as exc:
+        cli.ensure_docker_healthy(_make_ctx(cli), min_memory_bytes=2 * 1024 * 1024 * 1024)
+
+    assert int(exc.value.code) == 1
+    captured = capsys.readouterr()
+    assert "Docker memory too low for this command" in captured.out
+    assert "Windows hint" in captured.out
+
+
+def test_ensure_docker_healthy_ignores_memory_when_probe_missing(monkeypatch) -> None:
+    cli = _load_silicium_module()
+
+    monkeypatch.setattr(cli, "docker_health", lambda ctx, retries, timeout_s: cli.DockerHealth(True, "", "ok"))
+    monkeypatch.setattr(cli, "docker_memory_bytes", lambda ctx, timeout_s=8.0: None)
+
+    cli.ensure_docker_healthy(_make_ctx(cli), min_memory_bytes=2 * 1024 * 1024 * 1024)
+
+
+def test_cmd_cpp_test_passes_memory_guard_to_docker_health(monkeypatch) -> None:
+    cli = _load_silicium_module()
+    ctx = _make_ctx(cli)
+    ensure_calls: list[int | None] = []
+    docker_runs: list[list[str]] = []
+
+    def fake_ensure(ctx, retries, timeout_s, min_memory_bytes=None):
+        ensure_calls.append(min_memory_bytes)
+
+    def fake_ensure_image(image, ctx):
+        return None
+
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_subprocess_run(cmd, **kwargs):
+        docker_runs.append(list(cmd))
+        return _Result()
+
+    monkeypatch.delenv("SILICIUM_CPP_TEST_MIN_DOCKER_MEMORY_MB", raising=False)
+    monkeypatch.setattr(cli, "ensure_docker_healthy", fake_ensure)
+    monkeypatch.setattr(cli, "ensure_cpp_test_image", fake_ensure_image)
+    monkeypatch.setattr(cli.subprocess, "run", fake_subprocess_run)
+
+    args = argparse.Namespace(
+        scope="executor",
+        gtest_filter="",
+        timeout=10,
+        jobs=1,
+        image="silicium/cpp-tests:latest",
+        retry=1,
+        use_ccache=False,
+    )
+    cli.cmd_cpp_test(args, ctx)
+
+    assert ensure_calls == [2 * 1024 * 1024 * 1024]
+    assert docker_runs

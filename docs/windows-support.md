@@ -71,3 +71,7 @@ Use:
 Expected signals:
 - Docker: OK/FAIL with a short reason.
 - On Windows, WSL distro listing and Docker socket integration hints.
+
+For C++ test runs (`python .\\silicium cpp-test`):
+- The CLI now checks Docker memory and fails fast if too low.
+- Default minimum is 2048 MB (override with `SILICIUM_CPP_TEST_MIN_DOCKER_MEMORY_MB`, set `0` to disable).

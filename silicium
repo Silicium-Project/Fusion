@@ -454,6 +454,29 @@ def _classify_docker_probe_failure(output: str) -> tuple[str, str]:
     return ("docker_probe_failed", "Docker health probe failed.")
 
 
+def docker_memory_bytes(ctx: Context, *, timeout_s: float = 8.0) -> int | None:
+    try:
+        result = subprocess.run(
+            [ctx.config.docker_bin, "info", "--format", "{{.MemTotal}}"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if result.returncode != 0:
+        return None
+    raw = (result.stdout or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
 def docker_health(ctx: Context, retries: int = 0, timeout_s: float = 8.0) -> DockerHealth:
     if not shutil.which(ctx.config.docker_bin):
         return DockerHealth(
@@ -507,7 +530,7 @@ def docker_health(ctx: Context, retries: int = 0, timeout_s: float = 8.0) -> Doc
 def print_docker_diagnostics(ctx: Context, health: DockerHealth) -> None:
     docker_host = os.environ.get("DOCKER_HOST", "<unset>")
     print(f"Docker check failed: [{health.error_code}] {health.message}")
-    print(f"docker_bin={ctx.config.docker_bin} os={os.name} DOCKER_HOST={docker_host}")
+    print(f"docker_bin={ctx.config.docker_bin} os={host_os_name()} DOCKER_HOST={docker_host}")
     if health.detail:
         detail = health.detail.strip().replace("\n", " | ")
         print(f"detail={detail[:800]}")
@@ -519,19 +542,45 @@ def print_docker_diagnostics(ctx: Context, health: DockerHealth) -> None:
         print("Fix Docker daemon permissions (docker group / elevated shell) and retry.")
 
 
-def ensure_docker_healthy(ctx: Context, *, retries: int = 2, timeout_s: float = 8.0) -> None:
+def ensure_docker_healthy(
+    ctx: Context,
+    *,
+    retries: int = 2,
+    timeout_s: float = 8.0,
+    min_memory_bytes: int | None = None,
+) -> None:
     health = docker_health(ctx, retries=retries, timeout_s=timeout_s)
     if not health.ok:
         print_docker_diagnostics(ctx, health)
         sys.exit(1)
+    if min_memory_bytes is None or min_memory_bytes <= 0:
+        return
+    mem_total = docker_memory_bytes(ctx, timeout_s=timeout_s)
+    if mem_total is None:
+        return
+    if mem_total >= min_memory_bytes:
+        return
+    mem_gib = mem_total / float(1024 ** 3)
+    min_gib = min_memory_bytes / float(1024 ** 3)
+    print(
+        "Docker memory too low for this command: "
+        f"{mem_gib:.2f} GiB available, {min_gib:.2f} GiB required."
+    )
+    if host_os_name() == "nt":
+        print("Windows hint: increase WSL2/Docker memory (Docker Desktop Resources or ~/.wslconfig).")
+    sys.exit(1)
 
 
 def docker_available(ctx: Context) -> bool:
     return docker_health(ctx, retries=0, timeout_s=4.0).ok
 
 
+def host_os_name() -> str:
+    return os.name
+
+
 def wsl_available() -> bool:
-    if os.name != "nt":
+    if host_os_name() != "nt":
         return False
     return bool(shutil.which("wsl.exe") or shutil.which("wsl"))
 
@@ -818,7 +867,14 @@ def cmd_test(args: argparse.Namespace, ctx: Context) -> None:
 
 
 def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
-    ensure_docker_healthy(ctx, retries=2, timeout_s=8.0)
+    min_mem_mb_env = os.environ.get("SILICIUM_CPP_TEST_MIN_DOCKER_MEMORY_MB", "2048").strip()
+    try:
+        min_mem_mb = int(min_mem_mb_env)
+    except ValueError:
+        print(f"Invalid SILICIUM_CPP_TEST_MIN_DOCKER_MEMORY_MB value: {min_mem_mb_env}")
+        sys.exit(1)
+    min_mem_bytes = max(0, min_mem_mb) * 1024 * 1024
+    ensure_docker_healthy(ctx, retries=2, timeout_s=8.0, min_memory_bytes=min_mem_bytes)
     image = args.image or ctx.config.cpp_test_image
     ensure_cpp_test_image(image, ctx)
 
@@ -842,6 +898,9 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
             use_ccache = False
     ccache_flag = "1" if use_ccache else "0"
     ccache_setup = "ccache -M 2G >/dev/null || true; " if use_ccache else ""
+    env_force = os.environ.get("SILICIUM_CPP_TEST_FORCE_REBUILD", "").strip().lower()
+    force_rebuild = env_force in {"1", "true", "yes", "on"}
+    clean_target = "test-clean" if force_rebuild else "test-reset-counters"
 
     if args.scope == "worker":
         test_bin = "./build/tests/worker_tests"
@@ -849,7 +908,7 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
             "set -euo pipefail; "
             f"{ccache_setup}"
             f"cd /workspace && make -C executor JOBS={jobs}; "
-            f"cd /workspace/worker && make test-clean && "
+            f"cd /workspace/worker && make {clean_target} && "
             f"make {test_bin} JOBS={jobs} CPP_TEST_JOBS={jobs} CPP_TEST_USE_CCACHE={ccache_flag}; "
             "if [ -n \"${GTEST_FILTER:-}\" ]; then "
             f"LD_LIBRARY_PATH=/workspace/executor {test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
@@ -862,7 +921,7 @@ def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
         script = (
             "set -euo pipefail; "
             f"{ccache_setup}"
-            f"cd /workspace/executor && make test-clean && "
+            f"cd /workspace/executor && make {clean_target} && "
             f"make {test_bin} JOBS={jobs} CPP_TEST_JOBS={jobs} CPP_TEST_USE_CCACHE={ccache_flag}; "
             "if [ -n \"${GTEST_FILTER:-}\" ]; then "
             f"{test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
@@ -1052,10 +1111,10 @@ def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
         env_vars["CORE_CHECK_CLEAN"] = "1" if args.clean else "0"
 
     if args.python:
-        if os.name != "nt" or args.python.startswith("/"):
+        if host_os_name() != "nt" or args.python.startswith("/"):
             env_vars["PYTHON_BIN"] = args.python
 
-    if os.name == "nt":
+    if host_os_name() == "nt":
         runner = args.runner
         if runner == "auto":
             if docker_available(ctx):
