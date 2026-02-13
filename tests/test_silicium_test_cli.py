@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
+import os
 import sys
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
@@ -236,3 +238,78 @@ def test_cmd_cpp_test_passes_memory_guard_to_docker_health(monkeypatch) -> None:
 
     assert ensure_calls == [2 * 1024 * 1024 * 1024]
     assert docker_runs
+
+
+def test_command_wrapper_emits_structured_start_and_finish(monkeypatch, tmp_path: Path) -> None:
+    cli = _load_silicium_module()
+    ctx = _make_ctx(cli)
+    log_path = tmp_path / "cli-structured.ndjson"
+
+    monkeypatch.setenv("SILICIUM_CLI_STRUCTURED_LOG", str(log_path))
+    monkeypatch.delenv("SILICIUM_RUN_ID", raising=False)
+    monkeypatch.delenv("EXECUTOR_RUN_ID", raising=False)
+    monkeypatch.delenv("WORKER_RUN_ID", raising=False)
+
+    observed = {"run_id": ""}
+
+    def fake_handler(args, inner_ctx):
+        assert inner_ctx == ctx
+        observed["run_id"] = os.environ.get("SILICIUM_RUN_ID", "")
+
+    wrapped = cli.CommandRegistry._wrap(fake_handler, ctx)
+    wrapped(argparse.Namespace(command="start"))
+
+    assert observed["run_id"].startswith("cli-")
+    lines = [line for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(lines) == 2
+    start_evt = json.loads(lines[0])
+    end_evt = json.loads(lines[1])
+
+    assert start_evt["event"] == "command_started"
+    assert end_evt["event"] == "command_finished"
+    assert start_evt["run_id"] == end_evt["run_id"] == observed["run_id"]
+    assert start_evt["schema_version"] == 1
+    assert end_evt["payload"]["exit_code"] == 0
+
+
+def test_command_wrapper_exports_run_id_to_executor_and_worker(monkeypatch, tmp_path: Path) -> None:
+    cli = _load_silicium_module()
+    ctx = _make_ctx(cli)
+    log_path = tmp_path / "cli-env.ndjson"
+    monkeypatch.setenv("SILICIUM_CLI_STRUCTURED_LOG", str(log_path))
+    monkeypatch.delenv("SILICIUM_RUN_ID", raising=False)
+    monkeypatch.delenv("EXECUTOR_RUN_ID", raising=False)
+    monkeypatch.delenv("WORKER_RUN_ID", raising=False)
+
+    captured = {"silicium": "", "executor": "", "worker": ""}
+
+    def fake_handler(_args, _ctx):
+        captured["silicium"] = os.environ.get("SILICIUM_RUN_ID", "")
+        captured["executor"] = os.environ.get("EXECUTOR_RUN_ID", "")
+        captured["worker"] = os.environ.get("WORKER_RUN_ID", "")
+
+    wrapped = cli.CommandRegistry._wrap(fake_handler, ctx)
+    wrapped(argparse.Namespace(command="check"))
+
+    assert captured["silicium"]
+    assert captured["silicium"] == captured["executor"] == captured["worker"]
+
+
+def test_cmd_start_emits_dispatch_target_event(monkeypatch, tmp_path: Path) -> None:
+    cli = _load_silicium_module()
+    ctx = _make_ctx(cli)
+    log_path = tmp_path / "cli-dispatch.ndjson"
+    monkeypatch.setenv("SILICIUM_CLI_STRUCTURED_LOG", str(log_path))
+    monkeypatch.setattr(cli, "compose_base", lambda _ctx: ["docker", "compose"])
+    monkeypatch.setattr(cli, "run", lambda cmd, **kwargs: 0)
+
+    wrapped = cli.CommandRegistry._wrap(cli.cmd_start, ctx)
+    wrapped(argparse.Namespace(command="start", target="localnet"))
+
+    events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    dispatch = [evt for evt in events if evt.get("event") == "dispatch_target"]
+    assert dispatch
+    payload = dispatch[0]["payload"]
+    assert payload["action"] == "compose_up"
+    assert payload["target"] == "localnet"
+    assert payload["service"] == "silicium-localnet"

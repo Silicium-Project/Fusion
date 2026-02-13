@@ -104,6 +104,8 @@ std::string StructuredRunLogger::TimestampUtcNow() {
 std::string StructuredRunLogger::GenerateRunId() {
     if (const char* env_run_id = std::getenv("EXECUTOR_RUN_ID"); env_run_id && *env_run_id)
         return env_run_id;
+    if (const char* env_run_id = std::getenv("SILICIUM_RUN_ID"); env_run_id && *env_run_id)
+        return env_run_id;
 
     std::random_device rd;
     std::mt19937_64 rng(rd());

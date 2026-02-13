@@ -16,6 +16,7 @@
 #include "worker/runtime/JobRunner.hpp"
 #include "worker/io/QueueLoader.hpp"
 #include "worker/io/Reporter.hpp"
+#include "worker/io/StructuredRunLogger.hpp"
 #include "worker/mcp/McpReadOnlyConnectorAdapter.hpp"
 #include "partition/PartitionSummary.hpp"
 
@@ -34,6 +35,7 @@ struct CliOptions {
     worker::ConnectorMode connector = worker::ConnectorMode::Direct;
     worker::OutputFormat output = worker::OutputFormat::Text;
     std::string log_path;
+    std::string structured_log_path;
     bool reset_state = false;
     std::string connector_endpoint;
     bool capture_stdout = true;
@@ -110,6 +112,7 @@ void print_usage(const char* prog) {
               << "  --cap-http on|off    Force la capacite backend HTTP\n"
               << "  --runner-binary <path> Binaire runner (backend Dynamo)\n"
               << "  --runner-launcher <path> Script/commande pour lancer le runner Dynamo\n"
+              << "  --structured-log <file.ndjson> Journal lifecycle NDJSON schema v1\n"
               << "  --help             Affiche cette aide\n";
 }
 
@@ -123,6 +126,15 @@ bool parse_bool_value(const std::string& value, bool* out) {
         return true;
     }
     return false;
+}
+
+std::string execution_mode_to_string(worker::ExecutionMode mode) {
+    switch (mode) {
+        case worker::ExecutionMode::Dynamo: return "dynamo";
+        case worker::ExecutionMode::Native: return "native";
+        case worker::ExecutionMode::Emulator: return "emu";
+        case worker::ExecutionMode::Auto: default: return "auto";
+    }
 }
 
 bool command_available(const char* command) {
@@ -359,6 +371,10 @@ CliOptions parse_cli(int argc, char** argv) {
             if (++i >= argc)
                 throw std::runtime_error("--log requiert un fichier");
             opts.log_path = argv[i];
+        } else if (arg == "--structured-log") {
+            if (++i >= argc)
+                throw std::runtime_error("--structured-log requiert un fichier");
+            opts.structured_log_path = argv[i];
         } else if (arg == "--help") {
             print_usage(argv[0]);
             std::exit(0);
@@ -445,6 +461,10 @@ CliOptions parse_cli(int argc, char** argv) {
                 opts.mcp_read_only_set = true;
             }
         }
+    }
+    if (opts.structured_log_path.empty()) {
+        if (const char* env = std::getenv("SILICIUM_WORKER_STRUCTURED_LOG"))
+            opts.structured_log_path = env;
     }
 
     return opts;
@@ -617,7 +637,89 @@ int main(int argc, char** argv) {
         if (!opts.log_path.empty())
             log_stream.open(opts.log_path, std::ios::out | std::ios::trunc);
 
-        for (const auto& task : tasks) {
+        const std::string structured_log_path = opts.structured_log_path.empty()
+            ? worker::StructuredRunLogger::DefaultLogPath()
+            : opts.structured_log_path;
+        worker::StructuredRunLogger structured_log(structured_log_path);
+
+        auto task_id_for = [](const worker::Task& task) -> std::string {
+            if (!task.partition_id.empty())
+                return task.partition_id;
+            return worker::task_type_to_string(task.type);
+        };
+        auto report_task_id_for = [](const worker::TaskReport& task_report) -> std::string {
+            if (!task_report.telemetry.task_id.empty())
+                return task_report.telemetry.task_id;
+            if (!task_report.partition_id.empty())
+                return task_report.partition_id;
+            return "task";
+        };
+        auto emit_task_routed = [&](const worker::TaskReport& task_report) {
+            if (!structured_log.enabled())
+                return;
+            const auto& telemetry = task_report.telemetry;
+            std::ostringstream payload;
+            payload << "{"
+                    << "\"task_id\":" << worker::StructuredRunLogger::QuoteForJson(report_task_id_for(task_report)) << ","
+                    << "\"partition_id\":" << worker::StructuredRunLogger::QuoteForJson(task_report.partition_id) << ","
+                    << "\"type\":" << worker::StructuredRunLogger::QuoteForJson(worker::task_type_to_string(telemetry.type)) << ","
+                    << "\"required_backend\":" << worker::StructuredRunLogger::QuoteForJson(telemetry.required_backend) << ","
+                    << "\"routing_decision\":" << worker::StructuredRunLogger::QuoteForJson(telemetry.routing_decision) << ","
+                    << "\"linux_policy\":" << worker::StructuredRunLogger::QuoteForJson(telemetry.linux_policy) << ","
+                    << "\"windows_policy\":" << worker::StructuredRunLogger::QuoteForJson(telemetry.windows_policy) << ","
+                    << "\"wsl_enabled\":" << (telemetry.wsl_enabled ? "true" : "false") << ","
+                    << "\"wsl_decision\":" << worker::StructuredRunLogger::QuoteForJson(telemetry.wsl_decision) << ","
+                    << "\"capability_matrix\":" << worker::StructuredRunLogger::QuoteForJson(telemetry.capability_matrix)
+                    << "}";
+            structured_log.info("routed", "Task routing decision recorded", payload.str());
+        };
+        auto emit_task_finished = [&](const worker::TaskReport& task_report) {
+            if (!structured_log.enabled())
+                return;
+            const auto& telemetry = task_report.telemetry;
+            std::ostringstream payload;
+            payload << "{"
+                    << "\"task_id\":" << worker::StructuredRunLogger::QuoteForJson(report_task_id_for(task_report)) << ","
+                    << "\"partition_id\":" << worker::StructuredRunLogger::QuoteForJson(task_report.partition_id) << ","
+                    << "\"type\":" << worker::StructuredRunLogger::QuoteForJson(worker::task_type_to_string(telemetry.type)) << ","
+                    << "\"status\":" << worker::StructuredRunLogger::QuoteForJson(telemetry.status) << ","
+                    << "\"duration_ms\":" << telemetry.duration_ms << ","
+                    << "\"success\":" << (task_report.result.success ? "true" : "false") << ","
+                    << "\"instructions\":" << task_report.result.instructions_executed << ","
+                    << "\"memory_accesses\":" << task_report.result.memory_accesses << ","
+                    << "\"error\":" << worker::StructuredRunLogger::QuoteForJson(task_report.result.error_message)
+                    << "}";
+            if (task_report.result.success) {
+                structured_log.info("finished", "Task execution completed", payload.str());
+            } else {
+                structured_log.error("failed", "Task execution failed", payload.str());
+            }
+        };
+
+        if (structured_log.enabled()) {
+            std::ostringstream payload;
+            payload << "{"
+                    << "\"summary_path\":" << worker::StructuredRunLogger::QuoteForJson(report.summary_path) << ","
+                    << "\"mode\":" << worker::StructuredRunLogger::QuoteForJson(execution_mode_to_string(report.mode)) << ","
+                    << "\"task_count\":" << tasks.size() << ","
+                    << "\"structured_log\":" << worker::StructuredRunLogger::QuoteForJson(structured_log.path())
+                    << "}";
+            structured_log.info("run_started", "Worker run started", payload.str());
+        }
+
+        for (std::size_t task_index = 0; task_index < tasks.size(); ++task_index) {
+            const auto& task = tasks[task_index];
+            if (structured_log.enabled()) {
+                std::ostringstream payload;
+                payload << "{"
+                        << "\"task_id\":" << worker::StructuredRunLogger::QuoteForJson(task_id_for(task)) << ","
+                        << "\"partition_id\":" << worker::StructuredRunLogger::QuoteForJson(task.partition_id) << ","
+                        << "\"type\":" << worker::StructuredRunLogger::QuoteForJson(worker::task_type_to_string(task.type)) << ","
+                        << "\"queue_index\":" << task_index << ","
+                        << "\"total_tasks\":" << tasks.size()
+                        << "}";
+                structured_log.info("task_received", "Task received by worker loop", payload.str());
+            }
             if (mcp_adapter) {
                 if (auto requested_mode = mcp_adapter->consume_mode_request(); requested_mode.has_value()) {
                     runner.set_mode(*requested_mode);
@@ -652,6 +754,8 @@ int main(int argc, char** argv) {
                     interrupted.telemetry.mcp_last_tool_latency_ms = metrics.last_latency_ms;
                     interrupted.telemetry.mcp_last_error = metrics.last_error;
                     report.tasks.push_back(std::move(interrupted));
+                    emit_task_routed(report.tasks.back());
+                    emit_task_finished(report.tasks.back());
                     mcp_adapter->publish_worker_report(report);
                     if (!config.mcp.export_dir.empty()) {
                         const std::string current_task_id =
@@ -664,6 +768,16 @@ int main(int argc, char** argv) {
                 }
             }
             try {
+                if (structured_log.enabled()) {
+                    std::ostringstream payload;
+                    payload << "{"
+                            << "\"task_id\":" << worker::StructuredRunLogger::QuoteForJson(task_id_for(task)) << ","
+                            << "\"partition_id\":" << worker::StructuredRunLogger::QuoteForJson(task.partition_id) << ","
+                            << "\"type\":" << worker::StructuredRunLogger::QuoteForJson(worker::task_type_to_string(task.type)) << ","
+                            << "\"mode\":" << worker::StructuredRunLogger::QuoteForJson(execution_mode_to_string(runner.mode()))
+                            << "}";
+                    structured_log.info("started", "Task execution started", payload.str());
+                }
                 auto task_report = runner.execute(task);
                 if (mcp_adapter) {
                     const auto metrics = mcp_adapter->snapshot_metrics();
@@ -680,6 +794,8 @@ int main(int argc, char** argv) {
                         log_stream << task_report.result.program_stderr;
                 }
                 report.tasks.push_back(std::move(task_report));
+                emit_task_routed(report.tasks.back());
+                emit_task_finished(report.tasks.back());
                 if (mcp_adapter) {
                     mcp_adapter->publish_worker_report(report);
                     if (!config.mcp.export_dir.empty()) {
@@ -719,6 +835,8 @@ int main(int argc, char** argv) {
                     failure.telemetry.mcp_last_error = metrics.last_error;
                 }
                 report.tasks.push_back(std::move(failure));
+                emit_task_routed(report.tasks.back());
+                emit_task_finished(report.tasks.back());
                 if (mcp_adapter) {
                     mcp_adapter->publish_worker_report(report);
                     if (!config.mcp.export_dir.empty()) {
@@ -730,6 +848,24 @@ int main(int argc, char** argv) {
                     }
                 }
             }
+        }
+
+        if (structured_log.enabled()) {
+            const std::size_t failed_count = std::count_if(report.tasks.begin(),
+                                                           report.tasks.end(),
+                                                           [](const worker::TaskReport& task_report) {
+                                                               return !task_report.result.success;
+                                                           });
+            std::ostringstream payload;
+            payload << "{"
+                    << "\"task_count\":" << report.tasks.size() << ","
+                    << "\"failed_count\":" << failed_count << ","
+                    << "\"mode\":" << worker::StructuredRunLogger::QuoteForJson(execution_mode_to_string(report.mode))
+                    << "}";
+            if (failed_count == 0u)
+                structured_log.info("run_completed", "Worker run completed", payload.str());
+            else
+                structured_log.error("run_completed", "Worker run completed with failures", payload.str());
         }
 
         worker::Reporter reporter(opts.output, std::cout);

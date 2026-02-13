@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import datetime
 import hashlib
 import json
 import os
@@ -178,6 +179,78 @@ MCP_DEFAULT_BIND = "127.0.0.1"
 MCP_DEFAULT_PORT = 9765
 MCP_DEFAULT_EXPORT_DIR = LOCAL_STATE_DIR / "mcp" / "export"
 MCP_DEFAULT_TOKEN_FILE = LOCAL_STATE_DIR / "mcp" / "token"
+CLI_STRUCTURED_LOG_DIR = LOCAL_STATE_DIR / "logs"
+CLI_STRUCTURED_LOG_ENV = "SILICIUM_CLI_STRUCTURED_LOG"
+
+
+def _now_rfc3339_utc() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _compact_timestamp_utc() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _generate_run_id() -> str:
+    existing = os.environ.get("SILICIUM_RUN_ID", "").strip()
+    if existing:
+        return existing
+    return "cli-" + secrets.token_hex(8)
+
+
+def _default_cli_structured_log_path(run_id: str) -> Path:
+    safe_run_id = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in run_id) or "run"
+    return CLI_STRUCTURED_LOG_DIR / f"cli-{_compact_timestamp_utc()}-{safe_run_id}.ndjson"
+
+
+class StructuredRunLogger:
+    def __init__(self, *, component: str, run_id: str, path: Path | None) -> None:
+        self.component = component
+        self.run_id = run_id
+        self.path = path
+        self._stream = None
+        if not path:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._stream = path.open("a", encoding="utf-8")
+        except OSError:
+            self._stream = None
+
+    @property
+    def enabled(self) -> bool:
+        return self._stream is not None
+
+    def emit(self, level: str, event: str, message: str, payload: Mapping[str, Any] | None = None) -> None:
+        if not self._stream:
+            return
+        event_payload = payload if isinstance(payload, Mapping) else {}
+        entry = {
+            "schema_version": 1,
+            "timestamp": _now_rfc3339_utc(),
+            "component": self.component,
+            "level": level,
+            "run_id": self.run_id,
+            "event": event,
+            "message": message,
+            "payload": dict(event_payload),
+        }
+        self._stream.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
+        self._stream.flush()
+
+    def close(self) -> None:
+        if self._stream:
+            self._stream.close()
+            self._stream = None
+
+
+_ACTIVE_CLI_LOGGER: StructuredRunLogger | None = None
+
+
+def _emit_cli_event(level: str, event: str, message: str, payload: Mapping[str, Any] | None = None) -> None:
+    if _ACTIVE_CLI_LOGGER is None:
+        return
+    _ACTIVE_CLI_LOGGER.emit(level, event, message, payload)
 
 
 @dataclass(frozen=True)
@@ -247,7 +320,80 @@ class CommandRegistry:
     @staticmethod
     def _wrap(handler: Callable[[argparse.Namespace, Context], None], ctx: Context) -> Callable[[argparse.Namespace], None]:
         def _inner(args: argparse.Namespace) -> None:
-            handler(args, ctx)
+            global _ACTIVE_CLI_LOGGER
+
+            run_id = _generate_run_id()
+            configured_log = os.environ.get(CLI_STRUCTURED_LOG_ENV, "").strip()
+            log_path = Path(configured_log).expanduser() if configured_log else _default_cli_structured_log_path(run_id)
+            logger = StructuredRunLogger(component="cli", run_id=run_id, path=log_path)
+            previous_logger = _ACTIVE_CLI_LOGGER
+            _ACTIVE_CLI_LOGGER = logger
+
+            command = getattr(args, "command", "") or ""
+            subcommands = [
+                value
+                for key, value in sorted(vars(args).items())
+                if key.endswith("_cmd") and isinstance(value, str) and value
+            ]
+            command_path = " ".join([command, *subcommands]).strip()
+            payload_base = {
+                "command": command,
+                "command_path": command_path,
+                "subcommands": subcommands,
+                "cwd": str(Path.cwd()),
+            }
+
+            previous_env = {
+                "SILICIUM_RUN_ID": os.environ.get("SILICIUM_RUN_ID"),
+                "EXECUTOR_RUN_ID": os.environ.get("EXECUTOR_RUN_ID"),
+                "WORKER_RUN_ID": os.environ.get("WORKER_RUN_ID"),
+            }
+            os.environ["SILICIUM_RUN_ID"] = run_id
+            os.environ["EXECUTOR_RUN_ID"] = run_id
+            os.environ["WORKER_RUN_ID"] = run_id
+
+            started_at = time.monotonic()
+            _emit_cli_event("info", "command_started", "CLI command started", payload_base)
+            try:
+                handler(args, ctx)
+            except SystemExit as exc:
+                code = exc.code if isinstance(exc.code, int) else (0 if exc.code in (None, "") else 1)
+                payload = {
+                    **payload_base,
+                    "exit_code": int(code),
+                    "duration_ms": int((time.monotonic() - started_at) * 1000),
+                }
+                _emit_cli_event(
+                    "info" if int(code) == 0 else "error",
+                    "command_finished",
+                    "CLI command completed" if int(code) == 0 else "CLI command failed",
+                    payload,
+                )
+                raise
+            except Exception as exc:
+                payload = {
+                    **payload_base,
+                    "exit_code": 1,
+                    "duration_ms": int((time.monotonic() - started_at) * 1000),
+                    "error": str(exc),
+                }
+                _emit_cli_event("error", "command_finished", "CLI command failed", payload)
+                raise
+            else:
+                payload = {
+                    **payload_base,
+                    "exit_code": 0,
+                    "duration_ms": int((time.monotonic() - started_at) * 1000),
+                }
+                _emit_cli_event("info", "command_finished", "CLI command completed", payload)
+            finally:
+                for key, value in previous_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+                _ACTIVE_CLI_LOGGER = previous_logger
+                logger.close()
         return _inner
 
 
@@ -794,7 +940,18 @@ def compose_base(ctx: Context) -> list[str]:
     return base
 
 
-def compose_up(service: str, profile: str | None, ctx: Context) -> None:
+def compose_up(service: str, profile: str | None, ctx: Context, *, target: str = "") -> None:
+    _emit_cli_event(
+        "info",
+        "dispatch_target",
+        "Dispatching compose up target",
+        {
+            "action": "compose_up",
+            "target": target or service,
+            "service": service,
+            "profile": profile or "",
+        },
+    )
     cmd = compose_base(ctx)
     if profile:
         cmd += ["--profile", profile]
@@ -802,7 +959,19 @@ def compose_up(service: str, profile: str | None, ctx: Context) -> None:
     run(cmd)
 
 
-def compose_stop(service: str, profile: str | None, ctx: Context, remove: bool = False) -> None:
+def compose_stop(service: str, profile: str | None, ctx: Context, remove: bool = False, *, target: str = "") -> None:
+    _emit_cli_event(
+        "info",
+        "dispatch_target",
+        "Dispatching compose stop target",
+        {
+            "action": "compose_stop",
+            "target": target or service,
+            "service": service,
+            "profile": profile or "",
+            "remove": remove,
+        },
+    )
     cmd = compose_base(ctx)
     if profile:
         cmd += ["--profile", profile]
@@ -817,6 +986,18 @@ def compose_stop(service: str, profile: str | None, ctx: Context, remove: bool =
 
 
 def compose_down(ctx: Context, volumes: bool = False) -> None:
+    _emit_cli_event(
+        "info",
+        "dispatch_target",
+        "Dispatching compose down target",
+        {
+            "action": "compose_down",
+            "target": "all",
+            "service": "all",
+            "profile": "",
+            "volumes": volumes,
+        },
+    )
     cmd = compose_base(ctx) + ["down"]
     if volumes:
         cmd.append("-v")
@@ -2294,6 +2475,17 @@ def cmd_setup_up(args: argparse.Namespace, ctx: Context) -> None:
 
     for target in targets:
         service, profile = START_TARGETS[target]
+        _emit_cli_event(
+            "info",
+            "dispatch_target",
+            "Dispatching setup up target",
+            {
+                "action": "setup_up",
+                "target": target,
+                "service": service,
+                "profile": profile or "",
+            },
+        )
         cmd = compose_base(ctx)
         if profile:
             cmd += ["--profile", profile]
@@ -2342,6 +2534,18 @@ def cmd_setup_down(args: argparse.Namespace, ctx: Context) -> None:
     summary["preflight"]["docker"] = {"status": "ok", "detail": health.detail}
 
     if not targets:
+        _emit_cli_event(
+            "info",
+            "dispatch_target",
+            "Dispatching setup down target",
+            {
+                "action": "setup_down",
+                "target": "all",
+                "service": "all",
+                "profile": "",
+                "volumes": bool(args.volumes),
+            },
+        )
         cmd = compose_base(ctx) + ["down"]
         if args.volumes:
             cmd.append("-v")
@@ -2355,6 +2559,18 @@ def cmd_setup_down(args: argparse.Namespace, ctx: Context) -> None:
     else:
         for target in targets:
             service, profile = START_TARGETS[target]
+            _emit_cli_event(
+                "info",
+                "dispatch_target",
+                "Dispatching setup down target",
+                {
+                    "action": "setup_down",
+                    "target": target,
+                    "service": service,
+                    "profile": profile or "",
+                    "remove": bool(args.remove),
+                },
+            )
             cmd = compose_base(ctx)
             if profile:
                 cmd += ["--profile", profile]
@@ -2393,7 +2609,7 @@ def cmd_setup_down(args: argparse.Namespace, ctx: Context) -> None:
 
 def cmd_start(args: argparse.Namespace, ctx: Context) -> None:
     service, profile = START_TARGETS[args.target]
-    compose_up(service, profile, ctx)
+    compose_up(service, profile, ctx, target=args.target)
 
 
 def cmd_stop(args: argparse.Namespace, ctx: Context) -> None:
@@ -2402,7 +2618,7 @@ def cmd_stop(args: argparse.Namespace, ctx: Context) -> None:
         compose_down(ctx, volumes=args.volumes)
     else:
         service, profile = START_TARGETS[target]
-        compose_stop(service, profile, ctx, remove=args.remove)
+        compose_stop(service, profile, ctx, remove=args.remove, target=target)
 
 
 def cmd_status(args: argparse.Namespace, ctx: Context) -> None:
