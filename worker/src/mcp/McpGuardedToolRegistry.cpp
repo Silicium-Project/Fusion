@@ -1,13 +1,29 @@
 #include "worker/mcp/McpGuardedToolRegistry.hpp"
 
 #include <chrono>
+#include <functional>
 #include <jansson.h>
+#include <memory>
+#include <optional>
 #include <sstream>
+#include <string_view>
 #include <stdexcept>
 
 namespace worker::mcp {
 
 namespace {
+
+using JsonHandle = std::unique_ptr<json_t, decltype(&json_decref)>;
+
+JsonHandle parse_json_object(const std::string& payload) {
+    json_error_t err;
+    JsonHandle root(json_loads(payload.c_str(), 0, &err), &json_decref);
+    if (!root)
+        throw std::runtime_error("invalid_json");
+    if (!json_is_object(root.get()))
+        throw std::runtime_error("invalid_json_object");
+    return root;
+}
 
 std::string escape_json(std::string_view value) {
     std::string out;
@@ -64,29 +80,21 @@ std::string tool_ack_json(const std::string& tool_name,
 }
 
 std::string parse_json_string_field(const std::string& json_payload,
-                                    const char* key,
-                                    bool* has_field = nullptr) {
-    if (has_field)
-        *has_field = false;
+                                    std::string_view key,
+                                    std::optional<std::reference_wrapper<bool>> has_field = std::nullopt) {
+    if (has_field.has_value())
+        has_field->get() = false;
     if (json_payload.empty())
         return "";
 
-    json_error_t err;
-    json_t* root = json_loads(json_payload.c_str(), 0, &err);
-    if (!root)
-        throw std::runtime_error("invalid_json");
-    if (!json_is_object(root)) {
-        json_decref(root);
-        throw std::runtime_error("invalid_json_object");
-    }
-
+    auto root = parse_json_object(json_payload);
     std::string out;
-    if (json_t* value = json_object_get(root, key); json_is_string(value)) {
+    const std::string key_copy(key);
+    if (auto value = json_object_get(root.get(), key_copy.c_str()); json_is_string(value)) {
         out = json_string_value(value);
-        if (has_field)
-            *has_field = true;
+        if (has_field.has_value())
+            has_field->get() = true;
     }
-    json_decref(root);
     return out;
 }
 
@@ -140,7 +148,7 @@ std::string McpGuardedToolRegistry::execute_tool(const std::string& tool_name,
         } else {
             try {
                 bool has_action = false;
-                const std::string action = parse_json_string_field(args_json, "action", &has_action);
+                const std::string action = parse_json_string_field(args_json, "action", std::ref(has_action));
                 if (!has_action || action.empty()) {
                     failed = true;
                     failure_code = "bad_request";
@@ -151,7 +159,7 @@ std::string McpGuardedToolRegistry::execute_tool(const std::string& tool_name,
                     response = store_->read_resource(std::string(kResourceReportsRecent));
                 } else if (action == "read_task_result") {
                     bool has_task_id = false;
-                    const std::string task_id = parse_json_string_field(args_json, "task_id", &has_task_id);
+                    const std::string task_id = parse_json_string_field(args_json, "task_id", std::ref(has_task_id));
                     if (!has_task_id || task_id.empty()) {
                         failed = true;
                         failure_code = "bad_request";
@@ -180,7 +188,7 @@ std::string McpGuardedToolRegistry::execute_tool(const std::string& tool_name,
     } else if (tool_name == std::string(kToolSelectRunnerMode)) {
         try {
             bool has_mode = false;
-            const std::string mode_name = parse_json_string_field(args_json, "mode", &has_mode);
+            const std::string mode_name = parse_json_string_field(args_json, "mode", std::ref(has_mode));
             if (!has_mode || mode_name.empty()) {
                 failed = true;
                 failure_code = "bad_request";

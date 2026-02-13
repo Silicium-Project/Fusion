@@ -2,9 +2,11 @@
 
 #include <cctype>
 #include <jansson.h>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <map>
+#include <string_view>
 
 #include "worker/core/WorkerConfig.hpp"
 #include "support/Utils.hpp"
@@ -12,6 +14,12 @@
 #include "worker/io/QueueLoader.hpp"
 
 namespace worker {
+
+namespace {
+
+using JsonHandle = std::unique_ptr<json_t, decltype(&json_decref)>;
+
+}
 
 static std::string json_escape(const std::string& value) {
     std::ostringstream oss;
@@ -128,22 +136,22 @@ static std::string join_fd_outputs(const fragment::FdTable& fds) {
     return oss.str();
 }
 
-static fragment::FdTable parse_fd_outputs(json_t* root) {
+static fragment::FdTable parse_fd_outputs(const json_t& root) {
     fragment::FdTable out;
-    if (json_t* obj = json_object_get(root, "fd_outputs"); json_is_object(obj)) {
-        const char* key;
-        json_t* val;
-        json_object_foreach(obj, key, val) {
-            if (!json_is_object(val))
+    if (auto object = json_object_get(&root, "fd_outputs"); json_is_object(object)) {
+        for (auto iter = json_object_iter(object); iter; iter = json_object_iter_next(object, iter)) {
+            const auto key_text = json_object_iter_key(iter);
+            auto value = json_object_iter_value(iter);
+            if (!json_is_object(value))
                 continue;
             try {
-                int fd = std::stoi(key);
+                int fd = std::stoi(key_text);
                 fragment::FdCapture cap;
-                if (json_t* data = json_object_get(val, "data"); json_is_string(data)) {
+                if (auto data = json_object_get(value, "data"); json_is_string(data)) {
                     auto bytes = decode_hex(json_string_value(data));
                     cap.data.assign(bytes.begin(), bytes.end());
                 }
-                if (json_t* alias = json_object_get(val, "alias"); json_is_string(alias))
+                if (auto alias = json_object_get(value, "alias"); json_is_string(alias))
                     cap.alias = json_string_value(alias);
                 out.set(fd, std::move(cap));
             } catch (...) {
@@ -171,25 +179,25 @@ static std::string join_fd_redirections(const std::vector<fragment::FdRule>& fds
     return oss.str();
 }
 
-static std::vector<fragment::FdRule> parse_fd_redirections(json_t* root) {
+static std::vector<fragment::FdRule> parse_fd_redirections(const json_t& root) {
     std::vector<fragment::FdRule> out;
-    if (json_t* arr = json_object_get(root, "fd_redirections"); json_is_array(arr)) {
-        size_t idx = 0;
-        json_t* item = nullptr;
-        json_array_foreach(arr, idx, item) {
+    if (auto array = json_object_get(&root, "fd_redirections"); json_is_array(array)) {
+        const auto count = json_array_size(array);
+        for (size_t index = 0; index < count; ++index) {
+            auto item = json_array_get(array, index);
             if (!json_is_object(item))
                 continue;
             fragment::FdRule fd{};
-            if (json_t* v = json_object_get(item, "fd"); json_is_integer(v))
-                fd.fd = static_cast<int>(json_integer_value(v));
-            if (json_t* v = json_object_get(item, "capture"); json_is_boolean(v))
-                fd.capture = json_is_true(v);
-            if (json_t* v = json_object_get(item, "input"); json_is_string(v)) {
-                auto bytes = decode_hex(json_string_value(v));
+            if (auto field = json_object_get(item, "fd"); json_is_integer(field))
+                fd.fd = static_cast<int>(json_integer_value(field));
+            if (auto field = json_object_get(item, "capture"); json_is_boolean(field))
+                fd.capture = json_is_true(field);
+            if (auto field = json_object_get(item, "input"); json_is_string(field)) {
+                auto bytes = decode_hex(json_string_value(field));
                 fd.input_data.assign(bytes.begin(), bytes.end());
             }
-            if (json_t* v = json_object_get(item, "alias"); json_is_string(v))
-                fd.alias = json_string_value(v);
+            if (auto field = json_object_get(item, "alias"); json_is_string(field))
+                fd.alias = json_string_value(field);
             out.push_back(std::move(fd));
         }
     }
@@ -202,41 +210,44 @@ static std::string build_kv_array(const RegisterState& values, const std::string
     return oss.str();
 }
 
-static json_t* load_json_root(const std::string& content) {
+static JsonHandle load_json_root(const std::string& content) {
     json_error_t err;
-    json_t* root = json_loads(content.c_str(), 0, &err);
+    JsonHandle root(json_loads(content.c_str(), 0, &err), &json_decref);
     if (!root)
         throw std::runtime_error(std::string("JSON invalide: ") + err.text);
-    if (!json_is_object(root)) {
-        json_decref(root);
+    if (!json_is_object(root.get())) {
         throw std::runtime_error("JSON inattendu (objet attendu)");
     }
     return root;
 }
 
-static std::string get_json_string(json_t* root, const char* key) {
-    if (json_t* v = json_object_get(root, key); json_is_string(v))
-        return json_string_value(v);
+static std::string get_json_string(const json_t& root, std::string_view key) {
+    const std::string key_copy(key);
+    if (auto value = json_object_get(&root, key_copy.c_str()); json_is_string(value))
+        return json_string_value(value);
     return {};
 }
 
-static bool get_json_bool(json_t* root, const char* key, bool default_value = false) {
-    if (json_t* v = json_object_get(root, key); json_is_boolean(v))
-        return json_is_true(v);
+static bool get_json_bool(const json_t& root, std::string_view key, bool default_value = false) {
+    const std::string key_copy(key);
+    if (auto value = json_object_get(&root, key_copy.c_str()); json_is_boolean(value))
+        return json_is_true(value);
     return default_value;
 }
 
-static uint64_t get_json_uint64(json_t* root, const char* key, uint64_t default_value = 0) {
-    if (json_t* v = json_object_get(root, key); json_is_integer(v))
-        return static_cast<uint64_t>(json_integer_value(v));
+static uint64_t get_json_uint64(const json_t& root, std::string_view key, uint64_t default_value = 0) {
+    const std::string key_copy(key);
+    if (auto value = json_object_get(&root, key_copy.c_str()); json_is_integer(value))
+        return static_cast<uint64_t>(json_integer_value(value));
     return default_value;
 }
 
-static uint32_t parse_schema_version(json_t* root,
-                                     const char* key,
+static uint32_t parse_schema_version(const json_t& root,
+                                     std::string_view key,
                                      uint32_t current_version,
-                                     const char* schema_name) {
-    json_t* value = json_object_get(root, key);
+                                     std::string_view schema_name) {
+    const std::string key_copy(key);
+    auto value = json_object_get(&root, key_copy.c_str());
     if (!value)
         return current_version;
     if (!json_is_integer(value))
@@ -249,12 +260,13 @@ static uint32_t parse_schema_version(json_t* root,
     return static_cast<uint32_t>(parsed);
 }
 
-static std::vector<std::string> get_json_string_array(json_t* root, const char* key) {
+static std::vector<std::string> get_json_string_array(const json_t& root, std::string_view key) {
     std::vector<std::string> out;
-    if (json_t* arr = json_object_get(root, key); json_is_array(arr)) {
-        size_t idx = 0;
-        json_t* item = nullptr;
-        json_array_foreach(arr, idx, item) {
+    const std::string key_copy(key);
+    if (auto array = json_object_get(&root, key_copy.c_str()); json_is_array(array)) {
+        const auto count = json_array_size(array);
+        for (size_t index = 0; index < count; ++index) {
+            auto item = json_array_get(array, index);
             if (json_is_string(item))
                 out.emplace_back(json_string_value(item));
         }
@@ -262,11 +274,11 @@ static std::vector<std::string> get_json_string_array(json_t* root, const char* 
     return out;
 }
 
-static RegisterState parse_register_map(json_t* root, const char* key) {
+static RegisterState parse_register_map(const json_t& root, std::string_view key) {
     return parse_kv_pairs(get_json_string_array(root, key));
 }
 
-static std::vector<MemorySnapshot> parse_memory_array(json_t* root, const char* key) {
+static std::vector<MemorySnapshot> parse_memory_array(const json_t& root, std::string_view key) {
     return parse_memory(get_json_string_array(root, key));
 }
 
@@ -308,24 +320,23 @@ std::string serialize_task_payload(const TaskPayload& payload) {
 }
 
 TaskPayload deserialize_task_payload(const std::string& content) {
-    json_t* root = load_json_root(content);
+    auto root = load_json_root(content);
     TaskPayload payload;
     payload.schema_version = parse_schema_version(
-        root, "schema_version", kTaskPayloadSchemaVersion, "TaskPayload");
-    const std::string type = get_json_string(root, "type");
+        *root, "schema_version", kTaskPayloadSchemaVersion, "TaskPayload");
+    const std::string type = get_json_string(*root, "type");
     if (type.empty())
         payload.type = TaskType::Binary;
     else
         payload.type = parse_task_type(type);
-    payload.partition_id = get_json_string(root, "partition_id");
-    payload.asm_path = get_json_string(root, "asm_path");
-    payload.binary_path = get_json_string(root, "binary_path");
-    payload.mode = parse_mode(get_json_string(root, "mode"));
-    payload.fd_rules = parse_fd_redirections(root);
-    payload.inputs = parse_register_map(root, "inputs");
-    payload.register_state = parse_register_map(root, "register_state");
-    payload.memory_state = parse_memory_array(root, "memory");
-    json_decref(root);
+    payload.partition_id = get_json_string(*root, "partition_id");
+    payload.asm_path = get_json_string(*root, "asm_path");
+    payload.binary_path = get_json_string(*root, "binary_path");
+    payload.mode = parse_mode(get_json_string(*root, "mode"));
+    payload.fd_rules = parse_fd_redirections(*root);
+    payload.inputs = parse_register_map(*root, "inputs");
+    payload.register_state = parse_register_map(*root, "register_state");
+    payload.memory_state = parse_memory_array(*root, "memory");
     return payload;
 }
 
@@ -376,22 +387,22 @@ static std::vector<fragment::MemoryPatch> parse_patches(const std::vector<std::s
 }
 
 fragment::ExecutionResult deserialize_execution_result(const std::string& content) {
-    json_t* root = load_json_root(content);
-    parse_schema_version(root,
+    auto root = load_json_root(content);
+    parse_schema_version(*root,
                          "schema_version",
                          kExecutionResultSchemaVersion,
                          "ExecutionResult");
     fragment::ExecutionResult result;
-    result.success = get_json_bool(root, "success", false);
-    result.error_message = get_json_string(root, "error");
-    result.program_stdout = get_json_string(root, "stdout");
-    result.program_stderr = get_json_string(root, "stderr");
-    result.fd_outputs = parse_fd_outputs(root);
-    result.initial_regs = parse_register_map(root, "initial_regs");
-    result.final_regs = parse_register_map(root, "final_regs");
-    result.memory_patches = parse_patches(get_json_string_array(root, "memory_patches"));
-    result.instructions_executed = get_json_uint64(root, "instructions", 0);
-    result.memory_accesses = get_json_uint64(root, "memory_accesses", 0);
+    result.success = get_json_bool(*root, "success", false);
+    result.error_message = get_json_string(*root, "error");
+    result.program_stdout = get_json_string(*root, "stdout");
+    result.program_stderr = get_json_string(*root, "stderr");
+    result.fd_outputs = parse_fd_outputs(*root);
+    result.initial_regs = parse_register_map(*root, "initial_regs");
+    result.final_regs = parse_register_map(*root, "final_regs");
+    result.memory_patches = parse_patches(get_json_string_array(*root, "memory_patches"));
+    result.instructions_executed = get_json_uint64(*root, "instructions", 0);
+    result.memory_accesses = get_json_uint64(*root, "memory_accesses", 0);
     // changed_regs is derived from initial/final at reporting time if needed.
     if (!result.initial_regs.empty() && !result.final_regs.empty()) {
         for (const auto& [reg, final_value] : result.final_regs) {
@@ -401,7 +412,6 @@ fragment::ExecutionResult deserialize_execution_result(const std::string& conten
                 result.changed_regs[reg] = {initial_value, final_value};
         }
     }
-    json_decref(root);
     return result;
 }
 

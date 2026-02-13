@@ -12,6 +12,20 @@
 
 namespace worker {
 
+namespace {
+
+struct ScopedResult {
+    FE_Result value{};
+    void (*releaser)(FE_Result*) = nullptr;
+
+    ~ScopedResult() {
+        if (releaser)
+            releaser(&value);
+    }
+};
+
+}
+
 template <typename Map>
 static std::vector<FE_RegisterKV> to_kv(const Map& regs, std::vector<std::string>& storage) {
     std::vector<FE_RegisterKV> out;
@@ -36,8 +50,8 @@ static fragment::ExecutionResult to_execution_result(const FE_Result& res) {
     if (res.program_stderr)
         out.program_stderr = res.program_stderr;
     if (res.fd_outputs && res.fd_outputs_count) {
-        for (size_t i = 0; i < res.fd_outputs_count; ++i) {
-            const auto& fd_out = res.fd_outputs[i];
+        for (size_t index = 0; index < res.fd_outputs_count; ++index) {
+            const auto& fd_out = res.fd_outputs[index];
             if (fd_out.fd < 0)
                 continue;
             fragment::FdCapture cap;
@@ -49,8 +63,8 @@ static fragment::ExecutionResult to_execution_result(const FE_Result& res) {
         }
     }
 
-    for (size_t i = 0; i < res.changed_registers_count; ++i) {
-        const auto& reg = res.changed_registers[i];
+    for (size_t index = 0; index < res.changed_registers_count; ++index) {
+        const auto& reg = res.changed_registers[index];
         if (!reg.name)
             continue;
         out.changed_regs[reg.name] = {reg.before, reg.after};
@@ -58,8 +72,8 @@ static fragment::ExecutionResult to_execution_result(const FE_Result& res) {
         out.final_regs[reg.name] = reg.after;
     }
 
-    for (size_t i = 0; i < res.memory_patches_count; ++i) {
-        const auto& patch_in = res.memory_patches[i];
+    for (size_t index = 0; index < res.memory_patches_count; ++index) {
+        const auto& patch_in = res.memory_patches[index];
         fragment::MemoryPatch patch;
         patch.address = patch_in.address;
         if (patch_in.before && patch_in.before_size)
@@ -71,7 +85,6 @@ static fragment::ExecutionResult to_execution_result(const FE_Result& res) {
     return out;
 }
 
-
 ExecutorClient::ExecutorClient(std::string library_path) {
     handle_ = std::unique_ptr<void, DllCloser>(
         dlopen(library_path.c_str(), RTLD_NOW),
@@ -80,13 +93,13 @@ ExecutorClient::ExecutorClient(std::string library_path) {
                 dlclose(handle);
         });
     if (!handle_)
-        throw std::runtime_error("Impossible de charger la bibliothèque: " + library_path);
+        throw std::runtime_error("Impossible de charger la bibliothÃ¨que: " + library_path);
 
     auto load_sym = [&](const char* name) -> void* {
-        void* sym = dlsym(handle_.get(), name);
-        if (!sym)
-            throw std::runtime_error(std::string("Symbole manquant dans la bibliothèque: ") + name);
-        return sym;
+        auto symbol = dlsym(handle_.get(), name);
+        if (!symbol)
+            throw std::runtime_error(std::string("Symbole manquant dans la bibliothÃ¨que: ") + name);
+        return symbol;
     };
 
     auto create = reinterpret_cast<CreateFn>(load_sym("fe_create"));
@@ -100,16 +113,16 @@ ExecutorClient::ExecutorClient(std::string library_path) {
     };
     context_ = std::unique_ptr<FE_Context, ContextDeleter>(create(), std::move(deleter));
     if (!context_)
-        throw std::runtime_error("Impossible d'initialiser le contexte d'exécution");
+        throw std::runtime_error("Impossible d'initialiser le contexte d'exÃ©cution");
 }
 
 fragment::ExecutionResult ExecutorClient::run(const BackendRequest& request,
                                               bool native_mode,
                                               bool force_native) const {
     if (!run_ || !free_result_)
-        throw std::runtime_error("API d'exécution invalide (pointeurs nuls)");
+        throw std::runtime_error("API d'exÃ©cution invalide (pointeurs nuls)");
     if (request.summary_path.empty())
-        throw std::runtime_error("Chemin du summary manquant pour le backend d'exécution");
+        throw std::runtime_error("Chemin du summary manquant pour le backend d'exÃ©cution");
 
     FE_Task task{};
     task.summary_path = request.summary_path.c_str();
@@ -122,9 +135,9 @@ fragment::ExecutionResult ExecutorClient::run(const BackendRequest& request,
     std::vector<std::string> state_names;
     auto inputs_kv = to_kv(request.inputs, input_names);
     auto state_kv = to_kv(request.register_state, state_names);
-    task.inputs = inputs_kv.data();
+    task.inputs = inputs_kv.empty() ? nullptr : inputs_kv.data();
     task.input_count = inputs_kv.size();
-    task.register_state = state_kv.data();
+    task.register_state = state_kv.empty() ? nullptr : state_kv.data();
     task.register_state_count = state_kv.size();
 
     std::vector<FE_MemoryPage> pages;
@@ -136,7 +149,7 @@ fragment::ExecutionResult ExecutorClient::run(const BackendRequest& request,
         page.size = snapshot.bytes.size();
         pages.push_back(page);
     }
-    task.memory_pages = pages.data();
+    task.memory_pages = pages.empty() ? nullptr : pages.data();
     task.memory_page_count = pages.size();
 
     std::vector<FE_FdRedirection> fd_redirs;
@@ -162,19 +175,19 @@ fragment::ExecutionResult ExecutorClient::run(const BackendRequest& request,
         }
         fd_redirs.push_back(c_fd);
     }
-    task.fd_redirections = fd_redirs.data();
+    task.fd_redirections = fd_redirs.empty() ? nullptr : fd_redirs.data();
     task.fd_redirections_count = fd_redirs.size();
 
-    FE_Result c_result{};
-    const int code = run_(context_.get(), &task, &c_result);
+    ScopedResult c_result;
+    c_result.releaser = free_result_;
+    const int code = run_(context_.get(), &task, &c_result.value);
     fragment::ExecutionResult result;
     if (code == 0) {
-        result = to_execution_result(c_result);
+        result = to_execution_result(c_result.value);
     } else {
         result.success = false;
         result.error_message = "Erreur backend (" + std::to_string(code) + ")";
     }
-    free_result_(&c_result);
     return result;
 }
 
