@@ -45,12 +45,15 @@ def _http_post(url: str, payload: dict, headers: dict[str, str] | None = None) -
 
 def _wait_ready(base_url: str, headers: dict[str, str] | None = None) -> None:
     deadline = time.time() + 5.0
-    last = None
+    last: Any = None
     while time.time() < deadline:
-        code, body = _http_get(base_url + "/healthz", headers=headers)
-        last = (code, body)
-        if code == 200:
-            return
+        try:
+            code, body = _http_get(base_url + "/healthz", headers=headers)
+            last = (code, body)
+            if code == 200:
+                return
+        except urllib.error.URLError as exc:
+            last = f"url_error: {exc}"
         time.sleep(0.05)
     raise AssertionError(f"server not ready: {last}")
 
@@ -125,6 +128,9 @@ def test_mcp_server_token_auth(tmp_path: Path) -> None:
     )
     try:
         base = f"http://127.0.0.1:{port}"
+        headers = {"Authorization": "Bearer secret"}
+        _wait_ready(base, headers=headers)
+
         # Without token -> unauthorized.
         code, _ = _http_get(base + "/healthz")
         assert code in (401, 403)
@@ -134,7 +140,6 @@ def test_mcp_server_token_auth(tmp_path: Path) -> None:
         payload = json.loads(body)
         assert payload["oauth_supported"] is False
 
-        headers = {"Authorization": "Bearer secret"}
         _wait_ready(base, headers=headers)
         code, body = _http_get(base + "/healthz", headers=headers)
         assert code == 200
