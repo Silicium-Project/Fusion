@@ -1,4 +1,5 @@
 CXX := g++
+AR ?= ar
 CXXFLAGS := -std=c++17 -O2 -g -Wall -Wextra -pedantic -fPIE
 CC := gcc
 CFLAGS := -O0 -g -no-pie
@@ -51,18 +52,19 @@ PROGRAM_LIBS ?= -lavformat -lavcodec -lavutil -lswscale -lm -lcsfml-graphics -lc
 BUILDER_WRAPPER ?= $(REPO_ROOT)/worker/scripts/builder_wrapper.sh
 BUILD_WITH_DOCKER ?= $(BUILDER_WRAPPER)
 
-.PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test test-clean build-cpp-test-image
+.PHONY: all clean fclean re demo demo-native demo-native-force demo-clean run run-native run-internal run-binary prep-program executor test test-clean test-reset-counters build-cpp-test-image
 
 SRC_FILES := $(shell find $(SRC_DIR) -name '*.cpp')
 OBJ_DIR := build
 OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SRC_FILES))
-CPPFLAGS := -Iinclude
+CPPFLAGS := -Iinclude -MMD -MP
 
 TEST_SRCS := tests/pipeline_config_test.cpp tests/instruction_analysis_test.cpp tests/disassembly_test.cpp tests/hash_test.cpp tests/partitioner_test.cpp tests/summary_writer_test.cpp tests/pe_library_scanner_test.cpp tests/flat_map_test.cpp tests/pipeline_integration_test.cpp tests/pipeline_real_integration_test.cpp tests/reporter_factory_test.cpp tests/instruction_analyzer_factory_test.cpp tests/binary_extractor_test.cpp
 TEST_EXTRA_SRCS := $(filter-out $(SRC_DIR)/main.cpp,$(SRC_FILES))
 TEST_BUILD_DIR := build/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
 TEST_BIN := $(TEST_BUILD_DIR)/splitter_tests
+TEST_SUPPORT_LIB := $(TEST_BUILD_DIR)/libsplitter_test_support.a
 TEST_TEST_OBJS := $(patsubst tests/%.cpp,$(TEST_OBJ_DIR)/tests/%.o,$(TEST_SRCS))
 TEST_EXTRA_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/src/%.o,$(TEST_EXTRA_SRCS))
 TEST_OBJS := $(TEST_TEST_OBJS) $(TEST_EXTRA_OBJS)
@@ -70,6 +72,7 @@ TEST_CXX ?= $(CXX)
 TEST_CXXFLAGS ?= $(CXXFLAGS) --coverage
 TEST_LDFLAGS ?= --coverage -lgtest -lgtest_main -pthread
 CPP_TEST_LOCAL ?= 0
+CPP_TEST_FORCE_REBUILD ?= 0
 
 all: $(SPLITTER_BIN)
 
@@ -99,8 +102,11 @@ $(TEST_OBJ_DIR)/src/%.o: $(SRC_DIR)/%.cpp | $(TEST_OBJ_DIR)/src
 	@mkdir -p $(dir $@)
 	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
 
-$(TEST_BIN): $(TEST_OBJS) | $(TEST_BUILD_DIR)
-	$(TEST_CXX) $(TEST_OBJS) -o $@ $(TEST_LDFLAGS)
+$(TEST_SUPPORT_LIB): $(TEST_EXTRA_OBJS) | $(TEST_BUILD_DIR)
+	$(AR) rcs $@ $^
+
+$(TEST_BIN): $(TEST_TEST_OBJS) $(TEST_SUPPORT_LIB) | $(TEST_BUILD_DIR)
+	$(TEST_CXX) $(TEST_TEST_OBJS) $(TEST_SUPPORT_LIB) -o $@ $(TEST_LDFLAGS)
 
 executor:
 	$(MAKE) -C $(EXECUTOR_DIR) all
@@ -177,7 +183,11 @@ run-binary: all prep-program
 
 ifeq ($(CPP_TEST_LOCAL),1)
 test:
-	$(MAKE) test-clean
+	@if [ "$(CPP_TEST_FORCE_REBUILD)" = "1" ]; then \
+		$(MAKE) test-clean; \
+	else \
+		$(MAKE) test-reset-counters; \
+	fi
 	$(MAKE) $(TEST_BIN)
 	$(TEST_BIN)
 else
@@ -192,7 +202,11 @@ test: build-cpp-test-image
 		set -euo pipefail; \
 		$(CPP_TEST_CCACHE_WARMUP) \
 		cd splitter; \
-		make test-clean; \
+		if [ "$(CPP_TEST_FORCE_REBUILD)" = "1" ]; then \
+			make test-clean; \
+		else \
+			make test-reset-counters; \
+		fi; \
 		env TEST_CXX="$(CPP_TEST_COMPILER)" $(MAKE) $(TEST_BIN) JOBS=$(CPP_TEST_JOBS); \
 		$(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID splitter/build && rm -f splitter/*.gcov'
@@ -226,6 +240,10 @@ test-clean:
 	@test ! -d $(TEST_BUILD_DIR) || rm -rf $(TEST_BUILD_DIR)
 	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f \( -name '*.gcda' -o -name '*.gcno' \) -delete
 
+test-reset-counters:
+	@# Keep compiled objects, reset runtime coverage counters only.
+	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f -name '*.gcda' -delete
+
 fclean: clean
 	@if [ -d $(RUN_BUILD_DIR) ]; then \
 		chmod -R u+rwX $(RUN_BUILD_DIR) >/dev/null 2>&1 || true; \
@@ -239,3 +257,6 @@ fclean: clean
 	@rm -rf run_output
 
 re: fclean all
+
+-include $(OBJS:.o=.d) \
+         $(TEST_OBJS:.o=.d)

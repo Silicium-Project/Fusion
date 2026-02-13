@@ -1,5 +1,6 @@
 REPO_ROOT := $(abspath ..)
 CXX := g++
+AR ?= ar
 CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -pedantic -fPIE
 CPPFLAGS := -Iinclude -I../executor/include -MMD -MP
 LDFLAGS :=
@@ -49,6 +50,7 @@ TEST_SRCS := $(wildcard tests/*.cpp)
 TEST_BUILD_DIR := $(OBJ_DIR)/tests
 TEST_OBJ_DIR := $(TEST_BUILD_DIR)/obj
 TEST_BIN := $(TEST_BUILD_DIR)/worker_tests
+TEST_SUPPORT_LIB := $(TEST_BUILD_DIR)/libworker_test_support.a
 TEST_OBJS := $(patsubst tests/%.cpp,$(TEST_OBJ_DIR)/tests/%.o,$(TEST_SRCS))
 TEST_WORKER_SRC := $(filter-out $(SRC_DIR)/main.cpp,$(WORKER_SRC))
 TEST_WORKER_OBJS := $(patsubst $(SRC_DIR)/%.cpp,$(TEST_OBJ_DIR)/worker/%.o,$(TEST_WORKER_SRC))
@@ -56,11 +58,12 @@ TEST_CXX ?= $(CXX)
 TEST_CXXFLAGS ?= $(CXXFLAGS) --coverage
 TEST_LDFLAGS ?= --coverage -lgtest -lgtest_main -pthread -L$(EXECUTOR_LIB_DIR) -Wl,-rpath,'$$ORIGIN/../../executor' -lfragment_emulator
 CPP_TEST_LOCAL ?= 0
+CPP_TEST_FORCE_REBUILD ?= 0
 
 HOST_UID := $(shell id -u)
 HOST_GID := $(shell id -g)
 
-.PHONY: all clean test test-clean build-cpp-test-image
+.PHONY: all clean test test-clean test-reset-counters build-cpp-test-image
 
 ifeq ($(NEED_DOCKER_BUILD),yes)
 ifndef IN_DOCKER_BUILD
@@ -108,8 +111,11 @@ $(TEST_OBJ_DIR)/worker/%.o: $(SRC_DIR)/%.cpp | $(TEST_OBJ_DIR)/worker
 	@mkdir -p $(dir $@)
 	$(TEST_CXX) $(CPPFLAGS) $(TEST_CXXFLAGS) -c $< -o $@
 
-$(TEST_BIN): $(TEST_OBJS) $(TEST_WORKER_OBJS) | $(TEST_BUILD_DIR)
-	$(TEST_CXX) $^ -o $@ $(TEST_LDFLAGS) $(LDLIBS)
+$(TEST_SUPPORT_LIB): $(TEST_WORKER_OBJS) | $(TEST_BUILD_DIR)
+	$(AR) rcs $@ $^
+
+$(TEST_BIN): $(TEST_OBJS) $(TEST_SUPPORT_LIB) | $(TEST_BUILD_DIR)
+	$(TEST_CXX) $(TEST_OBJS) $(TEST_SUPPORT_LIB) -o $@ $(TEST_LDFLAGS) $(LDLIBS)
 
 clean:
 	rm -f $(BIN) $(DYNAMO_RUNNER_BIN)
@@ -120,9 +126,17 @@ test-clean:
 	@# Nettoyage des traces gcov pour éviter les warnings lors des tests.
 	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f \( -name '*.gcda' -o -name '*.gcno' \) -delete
 
+test-reset-counters:
+	@# Keep compiled objects, reset runtime coverage counters only.
+	@test ! -d $(OBJ_DIR) || find $(OBJ_DIR) -type f -name '*.gcda' -delete
+
 ifeq ($(CPP_TEST_LOCAL),1)
 test:
-	$(MAKE) test-clean
+	@if [ "$(CPP_TEST_FORCE_REBUILD)" = "1" ]; then \
+		$(MAKE) test-clean; \
+	else \
+		$(MAKE) test-reset-counters; \
+	fi
 	$(MAKE) -C $(EXECUTOR_LIB_DIR)
 	$(MAKE) $(TEST_BIN)
 	LD_LIBRARY_PATH=$(EXECUTOR_LIB_DIR) $(TEST_BIN)
@@ -139,7 +153,11 @@ test: build-cpp-test-image
 		$(CPP_TEST_CCACHE_WARMUP) \
 		cd /workspace && make -C executor JOBS=$(CPP_TEST_JOBS); \
 		cd worker; \
-		make test-clean; \
+		if [ "$(CPP_TEST_FORCE_REBUILD)" = "1" ]; then \
+			make test-clean; \
+		else \
+			make test-reset-counters; \
+		fi; \
 		env TEST_CXX="$(CPP_TEST_COMPILER)" make $(TEST_BIN) JOBS=$(CPP_TEST_JOBS); \
 		LD_LIBRARY_PATH=/workspace/executor $(TEST_BIN); \
 		cd /workspace && chown -R $$HOST_UID:$$HOST_GID worker/build'
