@@ -20,6 +20,7 @@ struct CliOptions {
     bool skip_memory_check = false;
     std::string summary_file;
     std::string log_path;
+    std::string structured_log_path;
 };
 
 void print_usage(std::string_view prog);

@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -12,6 +13,7 @@
 #include "core/ExecutionResult.hpp"
 #include "core/SegmentLoader.hpp"
 #include "support/Logging.hpp"
+#include "support/StructuredRunLogger.hpp"
 #include "support/Utils.hpp"
 
 using fragment::ExecutionResult;
@@ -192,6 +194,81 @@ TEST(Logging, EmitsMessages) {
     EXPECT_NE(std::string::npos, out_text.find("[INFO] info"));
     EXPECT_NE(std::string::npos, out_text.find("[WARN] warn"));
     EXPECT_NE(std::string::npos, err_text.find("[ERROR] err"));
+}
+
+namespace {
+
+class ScopedEnvVar {
+public:
+    ScopedEnvVar(std::string key, std::string value) : key_(std::move(key)) {
+        if (const char* current = std::getenv(key_.c_str())) {
+            had_previous_ = true;
+            previous_value_ = current;
+        }
+        set_value(std::move(value));
+    }
+
+    ~ScopedEnvVar() {
+        if (had_previous_)
+            set_value(previous_value_);
+        else
+            unset_value();
+    }
+
+private:
+    void set_value(const std::string& value) {
+#ifdef _WIN32
+        _putenv_s(key_.c_str(), value.c_str());
+#else
+        setenv(key_.c_str(), value.c_str(), 1);
+#endif
+    }
+
+    void unset_value() {
+#ifdef _WIN32
+        _putenv_s(key_.c_str(), "");
+#else
+        unsetenv(key_.c_str());
+#endif
+    }
+
+    std::string key_;
+    std::string previous_value_;
+    bool had_previous_ = false;
+};
+
+}  // namespace
+
+TEST(StructuredRunLogger, WritesSchemaV1EventEnvelope) {
+    const ScopedEnvVar run_id("EXECUTOR_RUN_ID", "exec-run-test-01");
+    const auto log_path = std::filesystem::temp_directory_path() / "executor_structured_log_test.ndjson";
+
+    {
+        fragment::log::StructuredRunLogger logger(log_path.string());
+        ASSERT_TRUE(logger.enabled());
+        logger.info("execution_started", "Fragment execution started", R"({"partition":"p0"})");
+    }
+
+    std::ifstream input(log_path);
+    ASSERT_TRUE(input.good());
+    std::string line;
+    std::getline(input, line);
+
+    EXPECT_NE(std::string::npos, line.find("\"schema_version\":1"));
+    EXPECT_NE(std::string::npos, line.find("\"component\":\"executor\""));
+    EXPECT_NE(std::string::npos, line.find("\"level\":\"info\""));
+    EXPECT_NE(std::string::npos, line.find("\"run_id\":\"exec-run-test-01\""));
+    EXPECT_NE(std::string::npos, line.find("\"event\":\"execution_started\""));
+    EXPECT_NE(std::string::npos, line.find("\"message\":\"Fragment execution started\""));
+    EXPECT_NE(std::string::npos, line.find("\"payload\":{\"partition\":\"p0\"}"));
+
+    std::error_code ec;
+    std::filesystem::remove(log_path, ec);
+}
+
+TEST(StructuredRunLogger, DefaultPathUsesNdjsonExtension) {
+    const std::string path = fragment::log::StructuredRunLogger::DefaultLogPath();
+    EXPECT_NE(std::string::npos, path.find(".ndjson"));
 }
 
 TEST(FdTable, BasicOperations) {

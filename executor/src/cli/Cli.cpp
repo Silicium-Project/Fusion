@@ -1,10 +1,10 @@
 #include "cli/Cli.hpp"
 
-#include "support/Logging.hpp"
+#include "backend/ExecutionBackend.hpp"
 #include "partition/PartitionRegistry.hpp"
 #include "partition/PartitionSummary.hpp"
+#include "support/Logging.hpp"
 #include "support/Utils.hpp"
-#include "backend/ExecutionBackend.hpp"
 
 #include <fstream>
 #include <functional>
@@ -21,18 +21,18 @@ PartitionRegistry& registry() {
     return global_partition_registry();
 }
 
-std::string derive_binary_path(const PartitionInfo& info) {
+std::string derive_binary_path_from_info(const PartitionInfo& info) {
     if (!info.bin_path.empty())
         return info.bin_path;
     std::string path = info.asm_path;
-    size_t dot_pos = path.rfind('.');
+    const size_t dot_pos = path.rfind('.');
     if (dot_pos != std::string::npos)
         path = path.substr(0, dot_pos);
     return path + ".bin";
 }
 
 std::vector<std::reference_wrapper<const PartitionInfo>> order_plan(
-        const std::vector<PartitionInfo>& partitions) {
+    const std::vector<PartitionInfo>& partitions) {
     std::vector<std::reference_wrapper<const PartitionInfo>> ordered;
     auto ids = order_partitions(partitions);
     std::unordered_map<std::string, std::reference_wrapper<const PartitionInfo>> lookup;
@@ -56,18 +56,22 @@ void set_partition_registry(const std::vector<PartitionInfo>* partitions) {
 
 void print_usage(std::string_view prog) {
     std::cout << "Usage: " << prog
-              << " <asm_file> [<asm_file> ...] [--input reg=value ...] [--native] [--log fichier]\n"
-              << "   ou : " << prog
-              << " --summary partitions/summary.json [--input reg=value ...] [--native] [--native-force] [--skip-memory-check] [--log fichier]\n\n"
-              << "Exemples:\n"
+              << " <asm_file> [<asm_file> ...] [--input reg=value ...] [--native] [--log file] "
+                 "[--structured-log file.ndjson]\n"
+              << "   or : " << prog
+              << " --summary partitions/summary.json [--input reg=value ...] [--native] [--native-force] "
+                 "[--skip-memory-check] [--log file] [--structured-log file.ndjson]\n\n"
+              << "Examples:\n"
               << "  " << prog << " partition.asm\n"
               << "  " << prog << " func_0.asm func_1.asm --input rax=42 rbx=100\n"
-              << "  " << prog << " --summary partitions/summary.json --input rdi=0x1000\n\n"
+              << "  " << prog
+              << " --summary partitions/summary.json --input rdi=0x1000 --structured-log run.ndjson\n\n"
               << "Options:\n"
-              << "  --native          : Active l'exécution native (pas de repli automatique)\n"
-              << "  --native-force   : Force le natif même si entrées manquantes/appels externes\n"
-              << "  --skip-memory-check : Ignore les vérifications d'empreinte mémoire du summary\n"
-              << "  --log fichier     : Capture uniquement la sortie stdout des fragments dans un fichier\n";
+              << "  --native            : Enable native execution (no automatic fallback)\n"
+              << "  --native-force      : Force native mode with missing inputs/external calls\n"
+              << "  --skip-memory-check : Ignore summary memory fingerprint checks\n"
+              << "  --log file          : Capture stdout/stderr of fragments into a file\n"
+              << "  --structured-log    : Write NDJSON structured run log (schema v1)\n";
 }
 
 bool open_log_file(const std::string& path, std::ofstream& stream) {
@@ -79,7 +83,7 @@ void apply_inputs(FragmentExecutor& executor, const std::map<std::string, uint64
     if (inputs.empty())
         return;
 
-    log::section("Valeurs d'entrée");
+    log::section("Input values");
 
     for (const auto& [reg, val] : inputs) {
         std::cout << "  " << reg << " = 0x" << std::hex << val << std::dec << " (" << val << ")\n";
@@ -121,11 +125,11 @@ std::vector<ExecutionEntry> plan_from_files(const std::vector<std::string>& asm_
 
 void print_plan_overview(const std::string& summary_file, const std::vector<ExecutionEntry>& plan) {
     std::cout << "============================================================\n"
-              << " Graphe chargé\n"
+              << " Loaded graph\n"
               << "============================================================\n"
               << "Partitions: " << plan.size() << "\n"
-              << "Fichier: " << summary_file << "\n"
-              << "Ordre d'exécution: ";
+              << "File: " << summary_file << "\n"
+              << "Execution order: ";
     for (size_t i = 0; i < plan.size(); ++i) {
         if (i)
             std::cout << " -> ";
@@ -139,13 +143,13 @@ void describe_entry(size_t idx, const ExecutionEntry& entry) {
     if (entry.meta.has_value()) {
         const auto& meta = entry.meta->get();
         if (!meta.dependencies.empty()) {
-            std::cout << "  Dépendances internes:";
+            std::cout << "  Internal dependencies:";
             for (const auto& dep : meta.dependencies)
                 std::cout << " " << dep;
             std::cout << "\n";
         }
         if (!meta.unresolved_calls.empty()) {
-            std::cout << "  Appels externes:";
+            std::cout << "  External calls:";
             for (const auto& call : meta.unresolved_calls)
                 std::cout << " " << call;
             std::cout << "\n";
@@ -157,7 +161,6 @@ bool prepare_external_inputs(const ExecutionEntry& entry,
                              FragmentExecutor& executor,
                              const std::map<std::string, uint64_t>& inputs,
                              std::set<std::string>& consumed_inputs) {
-
     if (!entry.meta.has_value())
         return false;
 
@@ -178,10 +181,10 @@ bool prepare_external_inputs(const ExecutionEntry& entry,
 
 std::string derive_binary_path(const ExecutionEntry& entry) {
     if (entry.meta)
-        return derive_binary_path(entry.meta->get());
+        return derive_binary_path_from_info(entry.meta->get());
 
     std::string path = entry.asm_path;
-    size_t dot_pos = path.rfind('.');
+    const size_t dot_pos = path.rfind('.');
     if (dot_pos != std::string::npos)
         path = path.substr(0, dot_pos);
     return path + ".bin";
@@ -214,7 +217,7 @@ void warn_unused_inputs(const std::set<std::string>& expected,
         return;
     for (const auto& [reg, val] : inputs)
         if (expected.count(reg) && !consumed.count(reg))
-            log::warning("Entrée " + reg + " fournie mais non utilisée (valeur " + std::to_string(val) + ")");
+            log::warning("Input " + reg + " provided but not consumed (value " + std::to_string(val) + ")");
 }
 
 }  // namespace fragment

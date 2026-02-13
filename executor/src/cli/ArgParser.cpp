@@ -36,6 +36,7 @@ CliOptions parse_arguments(const std::vector<std::string_view>& args) {
 
     parser.add_value("--summary", [](const std::string& v, CliOptions& o) { o.summary_file = v; });
     parser.add_value("--log", [](const std::string& v, CliOptions& o) { o.log_path = v; });
+    parser.add_value("--structured-log", [](const std::string& v, CliOptions& o) { o.structured_log_path = v; });
     parser.add_value("--input", [](const std::string& v, CliOptions& o) { add_input_argument(v, o.inputs); });
 
     parser.add_passthrough([](const std::string& v, CliOptions& o) { o.asm_files.push_back(v); });

@@ -1,6 +1,7 @@
 #include "cli/Cli.hpp"
 
 #include "support/Logging.hpp"
+#include "support/StructuredRunLogger.hpp"
 
 #include "runtime/Runner.hpp"
 
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 
 #include <optional>
 
@@ -157,18 +159,51 @@ static AbiProfile select_abi_profile(const PartitionSummary& summary) {
     return AbiProfile::SystemV;
 }
 
+static std::string json_bool(bool value) {
+    return value ? "true" : "false";
+}
+
+static std::string current_backend_name(bool native_mode) {
+    return native_mode ? "native" : "emulated";
+}
+
+static std::string build_error_payload(const std::string& message) {
+    std::ostringstream payload;
+    payload << R"({"error":)" << log::StructuredRunLogger::QuoteForJson(message) << "}";
+    return payload.str();
+}
+
+static void emit_partition_loaded(log::StructuredRunLogger& structured_log,
+                                  const ExecutionEntry& entry,
+                                  std::size_t index,
+                                  std::size_t total,
+                                  const std::string& source) {
+    std::ostringstream payload;
+    payload << R"({"partition":)" << log::StructuredRunLogger::QuoteForJson(entry.name)
+            << R"(,"asm_path":)" << log::StructuredRunLogger::QuoteForJson(entry.asm_path)
+            << R"(,"binary_path":)" << log::StructuredRunLogger::QuoteForJson(derive_binary_path(entry))
+            << R"(,"index":)" << index
+            << R"(,"total":)" << total
+            << R"(,"source":)" << log::StructuredRunLogger::QuoteForJson(source)
+            << R"(,"has_metadata":)" << json_bool(entry.meta.has_value()) << "}";
+    structured_log.info("partition_loaded", "Partition loaded into execution plan", payload.str());
+}
+
 static bool build_execution_plan(const CliOptions& opts,
                                 const std::vector<std::string_view>& args,
                                 const std::vector<std::string>& raw_args,
                                 FragmentExecutor& executor,
                                 ExecutionPlanData& plan,
-                                Diagnostics& diag) {
+                                Diagnostics& diag,
+                                log::StructuredRunLogger& structured_log) {
     if (!opts.summary_file.empty()) {
         PartitionSummary summary;
         try {
             summary = load_partition_summary(opts.summary_file, opts.skip_memory_check);
         } catch (const std::exception& e) {
-            diag.error(std::string("Erreur lors du chargement du graphe: ") + e.what());
+            const std::string error = std::string("Erreur lors du chargement du graphe: ") + e.what();
+            diag.error(error);
+            structured_log.error("partition_load_error", "Failed to load summary graph", build_error_payload(error));
             return false;
         }
 
@@ -190,10 +225,21 @@ static bool build_execution_plan(const CliOptions& opts,
             }
 
             if (!wrapper_path.empty()) {
-                if (reexec_in_gui_wrapper(raw_args, wrapper_path))
+                if (reexec_in_gui_wrapper(raw_args, wrapper_path)) {
+                    structured_log.info(
+                        "gui_wrapper_reexec",
+                        "Re-executed through GUI wrapper",
+                        std::string(R"({"wrapper":)")
+                            + log::StructuredRunLogger::QuoteForJson(wrapper_path) + "}");
                     return false;
+                }
             } else {
                 diag.warning("Fragments GUI d?tect?s mais aucun wrapper GUI n'est disponible.");
+                structured_log.warning(
+                    "gui_wrapper_missing",
+                    "GUI fragments detected without wrapper",
+                    std::string(R"({"summary":)")
+                        + log::StructuredRunLogger::QuoteForJson(opts.summary_file) + "}");
             }
         }
 
@@ -201,7 +247,9 @@ static bool build_execution_plan(const CliOptions& opts,
         try {
             plan.entries = plan_from_summary(plan.partitions, plan.expected_inputs);
         } catch (const std::exception& e) {
-            diag.error(std::string("Cycle d?tect? dans le graphe: ") + e.what());
+            const std::string error = std::string("Cycle d?tect? dans le graphe: ") + e.what();
+            diag.error(error);
+            structured_log.error("partition_graph_cycle", "Cycle detected in partition graph", build_error_payload(error));
             return false;
         }
 
@@ -211,6 +259,8 @@ static bool build_execution_plan(const CliOptions& opts,
         if (opts.native_mode)
             ensure_required_libraries(summary);
         print_plan_overview(opts.summary_file, plan.entries);
+        for (std::size_t idx = 0; idx < plan.entries.size(); ++idx)
+            emit_partition_loaded(structured_log, plan.entries[idx], idx, plan.entries.size(), "summary");
         return true;
     }
 
@@ -220,6 +270,8 @@ static bool build_execution_plan(const CliOptions& opts,
               + " (no summary metadata)");
     plan.entries = plan_from_files(opts.asm_files);
     plan.from_summary = false;
+    for (std::size_t idx = 0; idx < plan.entries.size(); ++idx)
+        emit_partition_loaded(structured_log, plan.entries[idx], idx, plan.entries.size(), "asm");
     return true;
 }
 
@@ -227,7 +279,8 @@ static bool execute_plan(const CliOptions& opts,
                          FragmentExecutor& executor,
                          const ExecutionPlanData& plan,
                          std::ofstream& program_log,
-                         ExecutionResult& last_result) {
+                         ExecutionResult& last_result,
+                         log::StructuredRunLogger& structured_log) {
     log::banner();
     apply_inputs(executor, opts.inputs);
 
@@ -239,9 +292,32 @@ static bool execute_plan(const CliOptions& opts,
 
     for (size_t idx = 0; idx < plan.entries.size(); ++idx) {
         const auto& entry = plan.entries[idx];
+        const auto entry_start = std::chrono::steady_clock::now();
 
         describe_entry(idx, entry);
         bool missing_inputs = prepare_external_inputs(entry, executor, opts.inputs, consumed_external_inputs);
+
+        {
+            std::ostringstream payload;
+            payload << R"({"partition":)" << log::StructuredRunLogger::QuoteForJson(entry.name)
+                    << R"(,"backend":)"
+                    << log::StructuredRunLogger::QuoteForJson(current_backend_name(opts.native_mode))
+                    << R"(,"native_mode":)" << json_bool(opts.native_mode)
+                    << R"(,"force_native":)" << json_bool(opts.force_native) << "}";
+            structured_log.info("backend_selected", "Execution backend selected", payload.str());
+        }
+
+        {
+            std::ostringstream payload;
+            payload << R"({"partition":)" << log::StructuredRunLogger::QuoteForJson(entry.name)
+                    << R"(,"asm_path":)" << log::StructuredRunLogger::QuoteForJson(entry.asm_path)
+                    << R"(,"binary_path":)" << log::StructuredRunLogger::QuoteForJson(derive_binary_path(entry))
+                    << R"(,"index":)" << idx
+                    << R"(,"total":)" << plan.entries.size()
+                    << R"(,"mode":)"
+                    << log::StructuredRunLogger::QuoteForJson(current_backend_name(opts.native_mode)) << "}";
+            structured_log.info("execution_started", "Fragment execution started", payload.str());
+        }
 
         bool has_external_calls = entry.meta && (!entry.meta->get().external_calls.empty() ||
                                                  !entry.meta->get().unresolved_calls.empty());
@@ -249,6 +325,12 @@ static bool execute_plan(const CliOptions& opts,
             last_result.success = false;
             last_result.error_message = "Ex?cution native bloqu?e: entr?es externes manquantes pour " + entry.name;
             log::error(last_result.error_message);
+            structured_log.error(
+                "execution_error",
+                "Native execution blocked due to missing external inputs",
+                std::string(R"({"partition":)")
+                    + log::StructuredRunLogger::QuoteForJson(entry.name)
+                    + R"(,"error":)" + log::StructuredRunLogger::QuoteForJson(last_result.error_message) + "}");
             all_success = false;
             break;
         }
@@ -259,9 +341,23 @@ static bool execute_plan(const CliOptions& opts,
                 : "appels externes/non r?solus";
             log::warning("Ex?cution native malgr? " + risk + " sur " + entry.name
                          + " (pas de repli, risque de crash)." );
+            structured_log.warning(
+                "external_calls_detected",
+                "Native execution with unresolved external calls",
+                std::string(R"({"partition":)")
+                    + log::StructuredRunLogger::QuoteForJson(entry.name)
+                    + R"(,"risk":)" + log::StructuredRunLogger::QuoteForJson(risk) + "}");
         }
 
         if (!execute_entry(entry, opts.native_mode, opts.force_native, executor, last_result)) {
+            const auto duration_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - entry_start)
+                    .count();
+            std::ostringstream payload;
+            payload << R"({"partition":)" << log::StructuredRunLogger::QuoteForJson(entry.name)
+                    << R"(,"duration_ms":)" << duration_ms
+                    << R"(,"error":)" << log::StructuredRunLogger::QuoteForJson(last_result.error_message) << "}";
+            structured_log.error("execution_failed", "Fragment backend run failed", payload.str());
             all_success = false;
             break;
         }
@@ -270,9 +366,37 @@ static bool execute_plan(const CliOptions& opts,
         last_result.print();
         log_program_output(program_log, last_result);
 
+        const auto duration_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - entry_start)
+                .count();
+        {
+            std::ostringstream payload;
+            payload << R"({"partition":)" << log::StructuredRunLogger::QuoteForJson(entry.name)
+                    << R"(,"success":)" << json_bool(last_result.success)
+                    << R"(,"duration_ms":)" << duration_ms
+                    << R"(,"instructions":)" << last_result.instructions_executed
+                    << R"(,"memory_accesses":)" << last_result.memory_accesses << "}";
+            structured_log.info("execution_completed", "Fragment execution completed", payload.str());
+        }
+
+        {
+            std::ostringstream payload;
+            payload << R"({"partition":)" << log::StructuredRunLogger::QuoteForJson(entry.name)
+                    << R"(,"stdout_bytes":)" << last_result.program_stdout.size()
+                    << R"(,"stderr_bytes":)" << last_result.program_stderr.size()
+                    << R"(,"fd_captures":)" << last_result.fd_outputs.size() << "}";
+            structured_log.info("output_summary", "Captured stdout/stderr summary", payload.str());
+        }
+
         if (!last_result.success) {
             all_success = false;
             log::error("Arr?t: ?chec de l'ex?cution pour " + entry.asm_path);
+            structured_log.error(
+                "execution_error",
+                "Fragment execution marked as failed",
+                std::string(R"({"partition":)")
+                    + log::StructuredRunLogger::QuoteForJson(entry.name)
+                    + R"(,"error":)" + log::StructuredRunLogger::QuoteForJson(last_result.error_message) + "}");
             break;
         }
     }
@@ -376,6 +500,21 @@ bool reexec_in_gui_wrapper(const std::vector<std::string>& raw_args, const std::
 
 int run_cli(const std::vector<std::string_view>& args,
             const std::vector<std::string>& raw_args) {
+    const auto run_start = std::chrono::steady_clock::now();
+    auto complete_run = [&](log::StructuredRunLogger& structured_log, int exit_code) -> int {
+        const auto run_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - run_start)
+                .count();
+        std::ostringstream payload;
+        payload << R"({"exit_code":)" << exit_code
+                << R"(,"duration_ms":)" << run_ms << "}";
+        if (exit_code == 0)
+            structured_log.info("run_completed", "Executor run completed", payload.str());
+        else
+            structured_log.error("run_completed", "Executor run failed", payload.str());
+        return exit_code;
+    };
+
     if (args.size() < 2) {
         std::string_view prog = args.empty() ? "fragment_executor" : args.front();
         print_usage(prog);
@@ -391,6 +530,27 @@ int run_cli(const std::vector<std::string_view>& args,
         return 1;
     }
 
+    const std::string structured_log_path =
+        opts.structured_log_path.empty() ? log::StructuredRunLogger::DefaultLogPath() : opts.structured_log_path;
+    log::StructuredRunLogger structured_log(structured_log_path);
+    if (structured_log.enabled())
+        log::info("Structured log file: " + structured_log.path());
+    else
+        log::warning("Unable to open structured log file: " + structured_log_path);
+
+    {
+        std::ostringstream payload;
+        payload << R"({"argv0":)"
+                << log::StructuredRunLogger::QuoteForJson(args.empty() ? "fragment_executor" : std::string(args.front()))
+                << R"(,"native_mode":)" << json_bool(opts.native_mode)
+                << R"(,"force_native":)" << json_bool(opts.force_native)
+                << R"(,"summary":)" << log::StructuredRunLogger::QuoteForJson(opts.summary_file)
+                << R"(,"asm_count":)" << opts.asm_files.size()
+                << R"(,"text_log":)" << log::StructuredRunLogger::QuoteForJson(opts.log_path)
+                << R"(,"structured_log":)" << log::StructuredRunLogger::QuoteForJson(structured_log_path) << "}";
+        structured_log.info("run_started", "Executor run started", payload.str());
+    }
+
     Diagnostics diag;
 
     const std::string exe_name = std::filesystem::path(std::string(args.front())).filename().string();
@@ -398,17 +558,25 @@ int run_cli(const std::vector<std::string_view>& args,
     if (is_emulator && opts.native_mode) {
         diag.error("Le binaire fragment_emulator n'exécute que l'émulation; "
                    "utiliser fragment_executor pour le natif (--native ou --native-force).");
-        return 1;
+        structured_log.error(
+            "argument_error",
+            "Invalid native mode on emulator binary",
+            R"({"error":"native mode requested on fragment_emulator"})");
+        return complete_run(structured_log, 1);
     }
 
     if (!opts.summary_file.empty() && !opts.asm_files.empty()) {
         diag.error("Choisir soit des fichiers ASM, soit un fichier --summary, mais pas les deux.");
-        return 1;
+        structured_log.error("argument_error",
+                             "Summary and ASM files provided together",
+                             R"({"error":"conflicting inputs"})");
+        return complete_run(structured_log, 1);
     }
     if (opts.summary_file.empty() && opts.asm_files.empty()) {
         diag.error("Aucun fichier ASM ni fichier r?sum? fourni.");
         print_usage(args.front());
-        return 1;
+        structured_log.error("argument_error", "No input file provided", R"({"error":"missing summary or asm"})");
+        return complete_run(structured_log, 1);
     }
 
     std::ofstream program_log;
@@ -420,16 +588,16 @@ int run_cli(const std::vector<std::string_view>& args,
     FragmentExecutor executor(exec_cfg);
 
     ExecutionPlanData plan;
-    if (!build_execution_plan(opts, args, raw_args, executor, plan, diag)) {
+    if (!build_execution_plan(opts, args, raw_args, executor, plan, diag, structured_log)) {
         set_partition_registry(nullptr);
-        return 1;
+        return complete_run(structured_log, 1);
     }
 
     ExecutionResult last_result;
-    bool all_success = execute_plan(opts, executor, plan, program_log, last_result);
+    bool all_success = execute_plan(opts, executor, plan, program_log, last_result, structured_log);
 
     set_partition_registry(nullptr);
-    return all_success ? 0 : 1;
+    return complete_run(structured_log, all_success ? 0 : 1);
 }
 
 
