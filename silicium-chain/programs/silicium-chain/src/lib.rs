@@ -9,8 +9,6 @@ use crate::instructions::create_job::__client_accounts_create_job;
 #[allow(unused_imports)]
 use crate::instructions::submit_fragment_result::__client_accounts_submit_fragment_result;
 #[allow(unused_imports)]
-use crate::instructions::verify_fragment::__client_accounts_verify_fragment;
-#[allow(unused_imports)]
 use crate::instructions::finalize_job::__client_accounts_finalize_job;
 #[allow(unused_imports)]
 use crate::instructions::cancel_job::__client_accounts_cancel_job;
@@ -23,7 +21,6 @@ use crate::instructions::stake_worker::__client_accounts_stake_worker;
 
 use crate::instructions::create_job::CreateJob;
 use crate::instructions::submit_fragment_result::SubmitFragmentResult;
-use crate::instructions::verify_fragment::VerifyFragment;
 use crate::instructions::finalize_job::FinalizeJob;
 use crate::instructions::cancel_job::CancelJob;
 use crate::instructions::register_worker::RegisterWorker;
@@ -42,6 +39,7 @@ pub mod silicium_chain {
         expected_fragments: u32,
         reward_per_fragment: u64,
         deadline_unix: i64,
+        fragment_quorum: u16,
     ) -> Result<()> {
         crate::instructions::create_job::handler(
             ctx,
@@ -49,6 +47,7 @@ pub mod silicium_chain {
             expected_fragments,
             reward_per_fragment,
             deadline_unix,
+            fragment_quorum,
         )
     }
 
@@ -64,10 +63,6 @@ pub mod silicium_chain {
             result_hash,
             proof_ref,
         )
-    }
-
-    pub fn verify_fragment(ctx: Context<VerifyFragment>, verdict: bool) -> Result<()> {
-        crate::instructions::verify_fragment::handler(ctx, verdict)
     }
 
     pub fn register_worker(ctx: Context<RegisterWorker>) -> Result<()> {

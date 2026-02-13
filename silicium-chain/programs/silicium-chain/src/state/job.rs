@@ -23,11 +23,10 @@ pub struct Job {
     pub paid_amount: u64,
 
     pub deadline_unix: i64,
-
     pub status: JobStatus,
 
-    pub verifier_authority: Pubkey,
-    pub challenge_window_sec: i64,
+    pub fragment_quorum: u16,
+
     pub verified_at_unix: i64,
 
     pub bump: u8,
@@ -37,7 +36,7 @@ pub struct Job {
 impl Job {
     pub const SPACE: usize =
         8   // discr
-        + 8 // job_id
+        + 8  // job_id
         + 32 // client
         + 32 // mint
         + 32 // escrow
@@ -48,8 +47,7 @@ impl Job {
         + 8  // paid_amount
         + 8  // deadline_unix
         + 1  // status
-        + 32 // verifier_authority
-        + 8  // challenge_window_sec
+        + 2  // fragment_quorum
         + 8  // verified_at_unix
         + 1  // bump
         + 1; // escrow_auth_bump

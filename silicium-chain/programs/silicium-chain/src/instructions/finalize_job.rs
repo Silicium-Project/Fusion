@@ -53,32 +53,33 @@ pub struct FinalizeJob<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<FinalizeJob>, final_hash: [u8; 32], output_uri: Vec<u8>) -> Result<()> {
+pub fn handler(
+    ctx: Context<FinalizeJob>,
+    final_hash: [u8; 32],
+    output_uri: Vec<u8>,
+) -> Result<()> {
+
     require!(output_uri.len() <= URI_MAX_LEN, SiliciumError::UriTooLong);
+
+    // Must have all fragments verified
     require!(
         ctx.accounts.job.verified_fragments == ctx.accounts.job.expected_fragments,
         SiliciumError::NotReadyToFinalize
     );
 
-    let now = Clock::get()?.unix_timestamp;
-    let cw = ctx.accounts.job.challenge_window_sec;
-    if cw > 0 {
-        require!(
-            now >= ctx.accounts.job.verified_at_unix + cw,
-            SiliciumError::NotReadyToFinalize
-        );
-    }
-
     let r = &mut ctx.accounts.result;
     r.job = ctx.accounts.job.key();
     r.final_hash = final_hash;
     r.uri_len = output_uri.len() as u16;
+
     let mut buf = [0u8; URI_MAX_LEN];
     buf[..output_uri.len()].copy_from_slice(&output_uri);
     r.uri_bytes = buf;
     r.bump = ctx.bumps.result;
 
+    // Refund remaining escrow
     let remaining = ctx.accounts.escrow.amount;
+
     if remaining > 0 {
         let job_key = ctx.accounts.job.key();
         let bump = ctx.accounts.job.escrow_auth_bump;
@@ -94,6 +95,7 @@ pub fn handler(ctx: Context<FinalizeJob>, final_hash: [u8; 32], output_uri: Vec<
             },
             signer_seeds,
         );
+
         token::transfer(cpi_ctx, remaining)?;
 
         let close_ctx = CpiContext::new_with_signer(
@@ -105,9 +107,11 @@ pub fn handler(ctx: Context<FinalizeJob>, final_hash: [u8; 32], output_uri: Vec<
             },
             signer_seeds,
         );
+
         token::close_account(close_ctx)?;
     }
 
     ctx.accounts.job.status = JobStatus::Finalized;
+
     Ok(())
 }

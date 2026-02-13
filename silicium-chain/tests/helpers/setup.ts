@@ -1,3 +1,4 @@
+// helpers/setup.ts
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
@@ -51,6 +52,9 @@ export async function setupTestEnv() {
   const rewardPerFragment = new anchor.BN(10);
   const deadlineUnix = Math.floor(Date.now() / 1000) + 3600;
 
+  // ✅ NEW: quorum stored in Job (then copied into Fragment on first submit)
+  const fragmentQuorum = 2;
+
   // Mint funds
   const total = rewardPerFragment.mul(new anchor.BN(expectedFragments));
   await mintTo(
@@ -102,6 +106,7 @@ export async function setupTestEnv() {
     expectedFragments,
     rewardPerFragment,
     deadlineUnix,
+    fragmentQuorum, // ✅ NEW
     jobPda,
     escrowAuthPda,
     fragment0Pda,
@@ -123,7 +128,8 @@ export async function createJobOnce(env: any) {
       env.jobId,
       env.expectedFragments,
       env.rewardPerFragment,
-      new anchor.BN(env.deadlineUnix)
+      new anchor.BN(env.deadlineUnix),
+      env.fragmentQuorum // ✅ NEW
     )
     .accounts({
       client: env.client.publicKey,
@@ -146,7 +152,7 @@ export async function registerWorkerIfNeeded(env: any) {
     env.program.programId
   );
 
-  // tente register (si déjà fait dans ce test, ça fail => ignore)
+  // try register (if already created in this test, it fails => ignore)
   try {
     await (env.program as any).methods
       .registerWorker()
@@ -161,3 +167,4 @@ export async function registerWorkerIfNeeded(env: any) {
 
   return workerPda;
 }
+

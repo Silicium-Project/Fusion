@@ -56,9 +56,11 @@ pub fn handler(
     expected_fragments: u32,
     reward_per_fragment: u64,
     deadline_unix: i64,
+    fragment_quorum: u16,
 ) -> Result<()> {
     require!(expected_fragments > 0, SiliciumError::InvalidParams);
     require!(reward_per_fragment > 0, SiliciumError::InvalidParams);
+    require!(fragment_quorum > 0, SiliciumError::InvalidParams);
 
     let now = Clock::get()?.unix_timestamp;
     require!(deadline_unix > now, SiliciumError::InvalidParams);
@@ -67,6 +69,7 @@ pub fn handler(
         .checked_mul(reward_per_fragment as u128)
         .ok_or(SiliciumError::InvalidParams)? as u64;
 
+    // Transfer funds to escrow
     let cpi_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
         Transfer {
@@ -82,16 +85,19 @@ pub fn handler(
     job.client = ctx.accounts.client.key();
     job.mint = ctx.accounts.mint.key();
     job.escrow = ctx.accounts.escrow.key();
+
     job.expected_fragments = expected_fragments;
     job.verified_fragments = 0;
+
     job.reward_per_fragment = reward_per_fragment;
     job.deposited_amount = total;
     job.paid_amount = 0;
-    job.deadline_unix = deadline_unix;
 
+    job.deadline_unix = deadline_unix;
     job.status = JobStatus::Open;
-    job.verifier_authority = job.client; // MVP
-    job.challenge_window_sec = 0;
+
+    job.fragment_quorum = fragment_quorum;
+
     job.verified_at_unix = 0;
 
     job.bump = ctx.bumps.job;

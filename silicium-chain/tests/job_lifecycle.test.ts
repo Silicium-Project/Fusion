@@ -1,3 +1,4 @@
+// job_lifecycle.test.ts
 import * as anchor from "@coral-xyz/anchor";
 import { assert } from "chai";
 import { setupTestEnv } from "./helpers/setup";
@@ -19,13 +20,20 @@ describe("job lifecycle", () => {
       expectedFragments,
       rewardPerFragment,
       deadlineUnix,
+      fragmentQuorum, // ✅ NEW
       tokenProgram,
       systemProgram,
       resultPda,
     } = env;
 
     await (program as any).methods
-      .createJob(jobId, expectedFragments, rewardPerFragment, new anchor.BN(deadlineUnix))
+      .createJob(
+        jobId,
+        expectedFragments,
+        rewardPerFragment,
+        new anchor.BN(deadlineUnix),
+        fragmentQuorum // ✅ NEW
+      )
       .accounts({
         client: client.publicKey,
         mint,

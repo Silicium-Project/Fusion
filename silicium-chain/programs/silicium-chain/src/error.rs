@@ -30,4 +30,6 @@ pub enum SiliciumError {
     MissingVerifyRole,
     #[msg("Verifier cannot vote on their own fragment")]
     SelfVoteForbidden,
+    #[msg("Voting period is closed")]
+    VotingClosed,
 }

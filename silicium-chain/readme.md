@@ -1,10 +1,10 @@
 # Silicium Chain – On-chain Job & Reward Layer
 
 Silicium Chain is the **on-chain layer** of the Silicium project.  
-It is responsible for **coordination, fund security, and rewards distribution** for distributed computation executed off-chain by the network.
+It is responsible for **coordination, fund security, and decentralized rewards distribution** for distributed computation executed off-chain by the network.
 
 Computation, task splitting, and execution are **off-chain**.  
-The blockchain acts as a **source of truth, escrow, and verifiable payment layer**.
+The blockchain acts as a **source of truth, escrow, and decentralized validation layer**.
 
 ---
 
@@ -16,59 +16,83 @@ This Solana program (built with Anchor) enables:
 - Securing client funds via a **SPL Token escrow**
 - Management of **computation fragments**
 - **Per-fragment rewards** for workers
-- Verification of fragment results
+- **Decentralized fragment validation (quorum-based)**
 - Secure job **finalization or cancellation**
 
-This layer is **functional**, ready to be deployed on **devnet**.
+This layer is fully functional and ready to be deployed on **devnet**.
 
 ---
 
-## State Model
+# State Model
 
-### Job
+## Job
+
 Represents a global computation task submitted by a client.
 
-Main fields:
-- `job_id`: logical job identifier
-- `client`: job creator
-- `mint`: SPL token used for rewards
-- `escrow`: SPL token escrow account
-- `expected_fragments`: total number of fragments
-- `verified_fragments`: number of verified fragments
-- `reward_per_fragment`: reward per fragment
-- `deadline_unix`: job deadline
-- `status`: `Open | Cancelled | Finalized`
-- `verifier_authority`: verification authority (MVP = client)
-- `challenge_window_sec`: challenge window (MVP = 0)
+### Main fields:
+
+- `job_id`: logical job identifier  
+- `client`: job creator  
+- `mint`: SPL token used for rewards  
+- `escrow`: SPL token escrow account  
+- `expected_fragments`: total number of fragments  
+- `verified_fragments`: number of verified fragments  
+- `reward_per_fragment`: reward per fragment  
+- `deposited_amount`: total deposited funds  
+- `paid_amount`: total distributed rewards  
+- `deadline_unix`: job deadline  
+- `status`: `Open | Cancelled | Finalized`  
+- `fragment_quorum`: required number of YES votes per fragment  
+- `verified_at_unix`: timestamp when all fragments reached quorum  
+
+### Important Change
+
+Silicium Chain is now **fully decentralized**:
+
+- ❌ No `verifier_authority`
+- ❌ No `challenge_window`
+- ✅ Validation is purely quorum-based
 
 ---
 
-### Fragment
+## Fragment
+
 Represents **one unique fragment** of a job  
 (1 `fragment_index` = 1 on-chain fragment account).
 
-Key guarantees:
+### Key guarantees:
+
 - Only one fragment per `(job, fragment_index)`
 - A fragment cannot be verified more than once
+- Voting is strictly controlled on-chain
 
-Main fields:
+### Main fields:
+
 - `job`
 - `fragment_index`
 - `worker`
 - `result_hash`
 - `proof_ref`
 - `status`: `Submitted | Verified | Rejected`
+- `yes_votes`
+- `no_votes`
+- `required_quorum`
+- `voting_deadline_unix`
+
+`required_quorum` is initialized from `job.fragment_quorum` when the fragment is first submitted.
 
 ---
 
-### Worker
+## Worker
+
 Represents a registered participant in the network  
 (worker and/or verifier).
 
 Workers must be **explicitly registered on-chain** and may lock
 tokens as stake to participate in fragment verification.
 
-Main fields:
+### Main fields:
+
 - `owner`: worker authority (signer)
 - `roles`: bitflags defining worker capabilities
 - `stake_mint`: SPL token used for staking
@@ -76,25 +100,35 @@ Main fields:
 - `stake_amount`: total amount staked
 - `reputation`: reputation score (future use)
 - `status`: `Active | Banned`
-- `total_submitted`: number of fragments submitted
-- `total_verified`: number of fragments verified
-- `total_rejected`: number of fragments rejected
+- `total_submitted`
+- `total_verified`
+- `total_rejected`
 
 ---
 
-### Worker Roles
+## Worker Roles
 
 Each worker has explicit on-chain roles:
 
 - `ROLE_COMPUTE`: may submit fragment results
-- `ROLE_VERIFY`: may participate in fragment verification (voting)
+- `ROLE_VERIFY`: may participate in fragment voting
 
-A single worker may hold multiple roles.
-Roles are enforced on-chain by instruction-level checks.
+A worker may hold multiple roles.  
+Roles are enforced at instruction level.
 
 ---
 
-### JobResult
+## FragmentVote
+
+Prevents double voting.
+
+- One `FragmentVote` PDA per `(fragment, verifier)`
+- Ensures strict **one vote per verifier per fragment**
+
+---
+
+## JobResult
+
 Stores the final result of a completed job.
 
 - `final_hash`: hash of the final computation result
@@ -102,162 +136,185 @@ Stores the final result of a completed job.
 
 ---
 
-## Escrow & Fund Security
+# Escrow & Fund Security
 
 - Client funds are deposited into a **SPL Token escrow**
-- The escrow is controlled by a **Program Derived Address (PDA)**
-- Workers are paid **on-chain**, fragment by fragment
+- Escrow is controlled by a **Program Derived Address (PDA)**
+- Workers are paid **on-chain** upon quorum
 - Remaining funds are automatically **refunded** to the client upon finalization or cancellation
 
----
-
-## Worker Stake & Verifier Security
-
-To participate in fragment verification, a worker must lock
-tokens as **stake** on-chain.
-
-- Stake is deposited into a **worker-specific escrow (PDA)**
-- Only **staked and active workers** may act as verifiers
-- Stake creates an economic cost for malicious behavior
-- The staking model enables future **slashing and weighted voting**
-
-Minimum verifier stake (To change):
-- `MIN_VERIFIER_STAKE = 1` token
+All financial flows are fully deterministic and auditable.
 
 ---
 
-## Implemented Instructions
+# Decentralized Verification Model
 
-### `create_job`
-Creates a job and:
-- Initializes the `Job` account
-- Creates the SPL escrow account
-- Deposits the required funds  
-  (`expected_fragments × reward_per_fragment`)
+Fragment validation is now **fully quorum-based**.
+
+### Voting Rules
+
+A verifier must:
+
+- Be a registered `Worker`
+- Be `Active`
+- Have `ROLE_VERIFY`
+- Have a minimum stake (`MIN_VERIFIER_STAKE`)
+- Not vote on their own fragment
+
+A fragment becomes:
+
+- `Verified` when `yes_votes >= required_quorum`
+- `Rejected` when `no_votes >= required_quorum`
+
+Payment is executed **exactly once**, when quorum is reached.
 
 ---
 
-### `submit_fragment_result`
-Allows a worker to submit a result for a specific fragment.
+## Quorum Model
+
+Each job defines: fragment_quorum
+
+This value determines how many YES votes are required for a fragment to be validated.
+
+This allows:
+
+- Flexible security levels per job
+- Adaptation to network size
+- Progressive decentralization
+
+Example (majority model): fragment_quorum = total_verifiers / 2 + 1
+
+
+---
+
+# Implemented Instructions
+
+## `create_job`
+
+- Initializes the `Job`
+- Creates the escrow account
+- Transfers total required funds
+- Stores `fragment_quorum`
+
+---
+
+## `submit_fragment_result`
+
+Allows a worker to submit a fragment result.
 
 Rules:
-- Worker must be registered and `Active`
-- Worker must have the `ROLE_COMPUTE`
-- Fragments are uniquely identified by `(job, fragment_index)`
-- A verified fragment cannot be overwritten
-- A rejected fragment may be resubmitted
+
+- Worker must be `Active`
+- Must have `ROLE_COMPUTE`
+- Fragment is uniquely identified
+- Verified fragments cannot be overwritten
+- `required_quorum` is initialized from `job.fragment_quorum`
 
 ---
 
-### `verify_fragment`
-Verifies a submitted fragment.
+## `vote_fragment`
 
-- Verification authority: `verifier_authority` (MVP = client)
-- If accepted:
-  - The worker is paid immediately
-  - Fragment status becomes `Verified`
-- If rejected:
-  - Fragment status becomes `Rejected`
+Fully decentralized validation.
+
+Rules:
+
+- Must be `ROLE_VERIFY`
+- Must be staked
+- Cannot self-vote
+- One vote per verifier (PDA enforced)
+- Quorum determines final status
+- Payment executed atomically upon quorum
 
 ---
 
-### `finalize_job`
-Finalizes a job **only when all fragments are verified**.
+## `finalize_job`
+
+Can be executed when: verified_fragments == expected_fragments
 
 Actions:
-- Stores the `JobResult`
-- Refunds remaining escrow funds
-- Closes the escrow account
-- Sets the job status to `Finalized`
 
-Optional:
-- Supports a `challenge_window`  
-  (currently set to `0` for the MVP)
+- Stores `JobResult`
+- Refunds remaining escrow
+- Closes escrow
+- Sets status to `Finalized`
+
+There is no challenge window anymore.
 
 ---
 
-### `cancel_job`
+## `cancel_job`
+
 Cancels a job if:
-- No fragment has been paid **or**
-- The job deadline has passed
+
+- No fragment has been paid OR
+- Deadline has passed
 
 Actions:
+
 - Refunds remaining funds
-- Closes the escrow
-- Sets the job status to `Cancelled`
+- Closes escrow
+- Sets status to `Cancelled`
 
 ---
 
-### `register_worker`
-Registers a worker in the network.
+## `register_worker`
 
-Actions:
-- Creates a `Worker` account (PDA)
-- Initializes worker metadata
-- Marks the worker as `Active`
+Creates a worker account.
 
 Required before:
+
 - Submitting fragments
-- Verifying fragments
+- Voting on fragments
 
 ---
 
-### `vote_fragment`
-Decentralized verification (quorum-based).
+# Architectural Choices
 
-Rules:
-- Verifier must be a registered `Worker`
-- Must be `Active`
-- Must have role `ROLE_VERIFY`
-- Must have a minimum stake: `MIN_VERIFIER_STAKE`
-- Verifier cannot vote on their own fragment
-- A fragment becomes `Verified` when quorum is reached
-- Payment is executed once upon quorum
-- A `FragmentVote` PDA prevents double voting
+- Off-chain computation
+- On-chain coordination
+- Stake-based decentralized validation
+- Deterministic quorum model
+- Atomic reward execution
+- Fully auditable financial logic
 
 ---
 
-## Architectural Choices
+# Current Limitations
 
-- **Off-chain computation**, on-chain coordination
-- Explicit, auditable fragment tracking
-- Immediate per-fragment payments
-- No implicit trust between participants
-- All financial flows are **fully auditable on-chain**
-
----
-
-## Current Limitations
-
-- Two verification flows currently exist:
-  - `verify_fragment`: centralized (legacy / MVP only)
-  - `vote_fragment`: decentralized quorum-based verification (recommended)
-
-The centralized flow is expected to be removed once decentralized
-verification is fully adopted.
-
-This logic **does not yet include**:
-- No slashing yet (stake is locked but cannot be penalized)
-- No unstake / cooldown yet
+- No slashing yet (stake not penalized)
+- No weighted voting yet
+- No dynamic on-chain verifier counting
+- No unstake cooldown
 - No automatic fragment assignment
 
 ---
 
-## Status
+# Status
 
-- Core logic fully implemented
-- Basic security guarantees in place
+- Centralized verification removed
+- Full quorum-based validation implemented
+- Escrow model stable
+- Security checks enforced
 - Ready for **devnet deployment**
 - Designed for progressive decentralization
 
 ---
 
-## Summary
+# Summary
 
-Silicium Chain is a **coordination and payment layer** for distributed computation, designed to be:
-- minimal
-- secure
-- extensible
-- compatible with scalable off-chain execution
+Silicium Chain is now a:
 
-It provides the **on-chain foundation** of the Silicium project.
+**Fully decentralized coordination and payment layer**  
+for distributed computation.
+
+It is:
+
+- minimal  
+- secure  
+- deterministic  
+- extensible  
+- quorum-based  
+- economically aligned  
+
+It provides the secure on-chain foundation of Silicium.
+

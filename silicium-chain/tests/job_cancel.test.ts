@@ -1,9 +1,14 @@
-import { setupTestEnv } from "./helpers/setup";
+// job_cancellation.test.ts
+import { setupTestEnv, createJobOnce } from "./helpers/setup";
 import { expectFail } from "./helpers/utils";
 
 describe("job cancellation", () => {
   it("cancel blocked after progress", async () => {
     const env = await setupTestEnv();
+
+    // ✅ NEW: ensure the job account exists (otherwise test is meaningless)
+    await createJobOnce(env);
+
     const {
       program,
       client,
@@ -29,3 +34,4 @@ describe("job cancellation", () => {
     );
   });
 });
+

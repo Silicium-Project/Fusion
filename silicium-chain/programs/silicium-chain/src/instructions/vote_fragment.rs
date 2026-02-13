@@ -11,19 +11,22 @@ use crate::{
     },
 };
 
-pub const MIN_VERIFIER_STAKE: u64 = 1; // To change later
+pub const MIN_VERIFIER_STAKE: u64 = 1;
 
 #[derive(Accounts)]
 pub struct VoteFragment<'info> {
+    /// Verifier wallet
     #[account(mut)]
     pub verifier: Signer<'info>,
 
+    /// Job must be open
     #[account(
         mut,
         constraint = job.status == JobStatus::Open @ SiliciumError::JobFinalized
     )]
     pub job: Account<'info, Job>,
 
+    /// Fragment being voted
     #[account(
         mut,
         seeds = [
@@ -35,8 +38,9 @@ pub struct VoteFragment<'info> {
     )]
     pub fragment: Account<'info, Fragment>,
 
-    // verifier must be a registered worker (MVP)
+    /// Verifier must be registered worker
     #[account(
+        mut,
         seeds = [b"worker", verifier.key().as_ref()],
         bump = verifier_worker.bump,
         constraint = verifier_worker.owner == verifier.key() @ SiliciumError::NotAuthorized,
@@ -45,7 +49,7 @@ pub struct VoteFragment<'info> {
     )]
     pub verifier_worker: Account<'info, Worker>,
 
-    // ensures 1 vote per verifier per fragment
+    /// Prevent double voting
     #[account(
         init,
         payer = verifier,
@@ -81,54 +85,70 @@ pub struct VoteFragment<'info> {
 }
 
 pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
-    // verifier must NOT be the submitter worker
-    require!(
-        ctx.accounts.verifier.key() != ctx.accounts.fragment.worker,
-        SiliciumError::SelfVoteForbidden
-    );
+    let fragment = &mut ctx.accounts.fragment;
+    let job = &mut ctx.accounts.job;
+    let verifier_worker = &mut ctx.accounts.verifier_worker;
 
-    // verifier must have VERIFY role
+    // Fragment must still be pending
     require!(
-        ctx.accounts.verifier_worker.has_role(ROLE_VERIFY),
-        SiliciumError::MissingVerifyRole
-    );
-
-    // Fragment must be in Submitted state
-    require!(
-        ctx.accounts.fragment.status == FragmentStatus::Submitted,
+        fragment.status == FragmentStatus::Submitted,
         SiliciumError::BadFragmentState
     );
 
-    // Optional: voting deadline
-    let now = Clock::get()?.unix_timestamp;
+    // Prevent self vote
     require!(
-        now <= ctx.accounts.fragment.voting_deadline_unix,
-        SiliciumError::JobNotCancellable // (idéalement crée une erreur VotingClosed)
+        ctx.accounts.verifier.key() != fragment.worker,
+        SiliciumError::SelfVoteForbidden
     );
 
-    // record vote
-    ctx.accounts.vote.fragment = ctx.accounts.fragment.key();
+    // Must have VERIFY role
+    require!(
+        verifier_worker.has_role(ROLE_VERIFY),
+        SiliciumError::MissingVerifyRole
+    );
+
+    // Voting deadline
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        now <= fragment.voting_deadline_unix,
+        SiliciumError::VotingClosed
+    );
+
+    // quorum must be valid
+    require!(fragment.required_quorum > 0, SiliciumError::InvalidParams);
+
+    // Record vote
+    ctx.accounts.vote.fragment = fragment.key();
     ctx.accounts.vote.verifier = ctx.accounts.verifier.key();
     ctx.accounts.vote.choice = choice;
     ctx.accounts.vote.bump = ctx.bumps.vote;
 
-    // count vote
     if choice {
-        ctx.accounts.fragment.yes_votes = ctx.accounts.fragment.yes_votes.saturating_add(1);
+        fragment.yes_votes = fragment.yes_votes.saturating_add(1);
     } else {
-        ctx.accounts.fragment.no_votes = ctx.accounts.fragment.no_votes.saturating_add(1);
+        fragment.no_votes = fragment.no_votes.saturating_add(1);
     }
 
-    // check quorum reached
-    let q = ctx.accounts.fragment.required_quorum;
+    let quorum = fragment.required_quorum;
 
-    if ctx.accounts.fragment.yes_votes >= q {
-        // Verified => pay worker once
-        let reward = ctx.accounts.job.reward_per_fragment;
-        require!(ctx.accounts.escrow.amount >= reward, SiliciumError::InsufficientEscrow);
+    // If YES quorum reached
+    if fragment.yes_votes >= quorum {
+        let reward = job.reward_per_fragment;
 
-        let job_key = ctx.accounts.job.key();
-        let bump = ctx.accounts.job.escrow_auth_bump;
+        require!(
+            ctx.accounts.escrow.amount >= reward,
+            SiliciumError::InsufficientEscrow
+        );
+
+        // extra safety: prevent overshooting expected fragments
+        require!(
+            job.verified_fragments < job.expected_fragments,
+            SiliciumError::InvalidParams
+        );
+
+        // PDA signer seeds
+        let job_key = job.key();
+        let bump = job.escrow_auth_bump;
         let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
         let signer_seeds: &[&[&[u8]]] = &[seeds];
 
@@ -141,22 +161,30 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             },
             signer_seeds,
         );
+
         token::transfer(cpi_ctx, reward)?;
 
-        ctx.accounts.job.paid_amount = ctx.accounts.job.paid_amount.saturating_add(reward);
-        ctx.accounts.job.verified_fragments = ctx
-            .accounts
-            .job
-            .verified_fragments
-            .saturating_add(1);
+        // Update job
+        job.paid_amount = job.paid_amount.saturating_add(reward);
+        job.verified_fragments = job.verified_fragments.saturating_add(1);
 
-        ctx.accounts.fragment.status = FragmentStatus::Verified;
+        // Mark fragment verified
+        fragment.status = FragmentStatus::Verified;
 
-        if ctx.accounts.job.verified_fragments == ctx.accounts.job.expected_fragments {
-            ctx.accounts.job.verified_at_unix = now;
+        // Update verifier stats (your Worker struct stores verifier totals)
+        verifier_worker.total_verified =
+            verifier_worker.total_verified.saturating_add(1);
+
+        if job.verified_fragments == job.expected_fragments {
+            job.verified_at_unix = now;
         }
-    } else if ctx.accounts.fragment.no_votes >= q {
-        ctx.accounts.fragment.status = FragmentStatus::Rejected;
+    }
+    // If NO quorum reached
+    else if fragment.no_votes >= quorum {
+        fragment.status = FragmentStatus::Rejected;
+
+        verifier_worker.total_rejected =
+            verifier_worker.total_rejected.saturating_add(1);
     }
 
     Ok(())
