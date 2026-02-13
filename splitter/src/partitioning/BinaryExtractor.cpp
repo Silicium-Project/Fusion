@@ -59,25 +59,27 @@ std::vector<uint8_t> BinaryExtractor::ExtractSegment(const std::string& binary_p
         if (sections.empty())
             return result;
 
-        const SectionInfo* section = nullptr;
-        for (const auto& sec : sections) {
+        std::optional<std::size_t> section_index;
+        for (std::size_t index = 0; index < sections.size(); ++index) {
+            const auto& sec = sections[index];
             if (sec.size == 0)
                 continue;
             if (start_addr >= sec.vaddr && start_addr < sec.vaddr + sec.size) {
-                section = &sec;
+                section_index = index;
                 break;
             }
         }
-        if (!section)
+        if (!section_index.has_value())
             return result;
+        const auto& section = sections[*section_index];
 
         std::ifstream file(binary_path, std::ios::binary);
         if (!file)
             return result;
 
-        const uint64_t clamped_end = std::min(end_addr, section->vaddr + section->size);
-        uint64_t file_start = section->offset + (start_addr - section->vaddr);
-        uint64_t file_end = section->offset + (clamped_end - section->vaddr);
+        const uint64_t clamped_end = std::min(end_addr, section.vaddr + section.size);
+        uint64_t file_start = section.offset + (start_addr - section.vaddr);
+        uint64_t file_end = section.offset + (clamped_end - section.vaddr);
         if (file_end <= file_start)
             return result;
 
