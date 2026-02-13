@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -167,26 +168,48 @@ int normalize_exit_code(int raw_code) {
 #endif
 }
 
+int close_process_pipe(FILE *pipe) {
+#ifdef _WIN32
+  return _pclose(pipe);
+#else
+  return pclose(pipe);
+#endif
+}
+
+using ProcessPipe = std::unique_ptr<FILE, decltype(&close_process_pipe)>;
+
+ProcessPipe open_process_pipe(const std::string &command_line) {
+#ifdef _WIN32
+  std::string wrapped = "cmd /C " + command_line + " 2>&1";
+  return ProcessPipe(_popen(wrapped.c_str(), "r"), &close_process_pipe);
+#else
+  std::string wrapped = command_line + " 2>&1";
+  return ProcessPipe(popen(wrapped.c_str(), "r"), &close_process_pipe);
+#endif
+}
+
+int close_process_pipe_and_get_code(ProcessPipe &pipe) {
+  if (!pipe) {
+    return -1;
+  }
+  auto raw = pipe.release();
+  return close_process_pipe(raw);
+}
+
 int run_command_and_stream(const std::string &command_line) {
   if (command_line.empty()) {
     emit_state("failed", 1, "missing command");
     return 1;
   }
 
-#ifdef _WIN32
-  std::string wrapped = "cmd /C " + command_line + " 2>&1";
-  FILE *pipe = _popen(wrapped.c_str(), "r");
-#else
-  std::string wrapped = command_line + " 2>&1";
-  FILE *pipe = popen(wrapped.c_str(), "r");
-#endif
+  ProcessPipe pipe = open_process_pipe(command_line);
   if (!pipe) {
     emit_state("failed", 1, "unable to spawn child command");
     return 1;
   }
 
   char buffer[4096];
-  while (std::fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+  while (std::fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
     std::string line(buffer);
     while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
       line.pop_back();
@@ -194,11 +217,7 @@ int run_command_and_stream(const std::string &command_line) {
     emit_log(line);
   }
 
-#ifdef _WIN32
-  int raw_code = _pclose(pipe);
-#else
-  int raw_code = pclose(pipe);
-#endif
+  int raw_code = close_process_pipe_and_get_code(pipe);
   int exit_code = normalize_exit_code(raw_code);
   emit_state(exit_code == 0 ? "completed" : "failed", exit_code);
   return exit_code;
