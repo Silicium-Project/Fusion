@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 import threading
@@ -23,16 +23,19 @@ from textual.widgets.option_list import Option
 from tools.i18n import tr
 from tools.tui.actions import ActionSpec, CLI, LOG_DIR, REPO_ROOT, build_actions
 from tools.tui.connectors import ITuiConnector, InProcessConnector
+from tools.tui.structured_logs import StructuredProgress, StructuredProgressTracker
 
 
 @dataclass
 class RunState:
     action: "ActionSpec"
     log_path: Path
+    structured_paths: tuple[Path, ...]
     start_time: float
     resources: frozenset[str]
     runner_mode: str
     cancel_event: threading.Event
+    structured_tracker: StructuredProgressTracker = field(default_factory=StructuredProgressTracker)
     exit_code: int | None = None
 
 
@@ -430,10 +433,20 @@ class SiliciumTui(App):
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_path = LOG_DIR / f"{timestamp}_{action.key}.log"
+        structured_paths = (
+            log_path.with_suffix(".ndjson"),
+            log_path.with_suffix(".worker.ndjson"),
+        )
+        for structured_path in structured_paths:
+            try:
+                structured_path.unlink()
+            except FileNotFoundError:
+                pass
         cancel_event = threading.Event()
         state = RunState(
             action=action,
             log_path=log_path,
+            structured_paths=structured_paths,
             start_time=asyncio.get_running_loop().time(),
             resources=frozenset(action.resources_for(self._runner_mode)),
             runner_mode=self._runner_mode,
@@ -487,7 +500,7 @@ class SiliciumTui(App):
             self._try_start_queued()
             return
 
-        state.exit_code = await self._tail_until_done(action.key, log_path, runner_task)
+        state.exit_code = await self._tail_until_done(state, runner_task)
         self._running_actions.pop(action.key, None)
         self._last_runs[action.key] = state
         if not self._running_actions:
@@ -504,10 +517,12 @@ class SiliciumTui(App):
 
     async def _tail_until_done(
         self,
-        action_key: str,
-        log_path: Path,
+        state: RunState,
         runner_task: asyncio.Task[int],
     ) -> int:
+        action_key = state.action.key
+        log_path = state.log_path
+        offsets: dict[Path, int] = {structured_path: 0 for structured_path in state.structured_paths}
         offset = 0
         while True:
             if log_path.exists():
@@ -522,6 +537,26 @@ class SiliciumTui(App):
                     log = self.query_one("#log", RichLog)
                     for line in chunk.splitlines():
                         log.write(line, scroll_end=True)
+                        state.structured_tracker.consume_line(line)
+                elif chunk:
+                    for line in chunk.splitlines():
+                        state.structured_tracker.consume_line(line)
+
+            for structured_path in state.structured_paths:
+                if not structured_path.exists():
+                    continue
+                current_offset = offsets.get(structured_path, 0)
+                try:
+                    with structured_path.open("r", encoding="utf-8", errors="replace") as handle:
+                        handle.seek(current_offset)
+                        structured_chunk = handle.read()
+                        offsets[structured_path] = handle.tell()
+                except OSError:
+                    structured_chunk = ""
+                if not structured_chunk:
+                    continue
+                for line in structured_chunk.splitlines():
+                    state.structured_tracker.consume_line(line)
 
             if runner_task.done():
                 try:
@@ -537,6 +572,7 @@ class SiliciumTui(App):
         badge_state = self.query_one("#badge-state", Static)
         badge_exit = self.query_one("#badge-exit", Static)
         badge_elapsed = self.query_one("#badge-elapsed", Static)
+        progress_widget = self.query_one("#progress", ProgressBar)
         selected = self._selected_action or self._current_action
         action_label = selected.label if selected else "-"
         running_state = self._running_actions.get(selected.key) if selected else None
@@ -552,28 +588,47 @@ class SiliciumTui(App):
         elapsed = None
         exit_code = "-"
         state_key = "idle"
+        structured: StructuredProgress | None = None
         if running_state:
             log_path = str(running_state.log_path)
             elapsed = asyncio.get_running_loop().time() - running_state.start_time
             state_key = "running"
+            structured = running_state.structured_tracker.snapshot()
         elif queued:
             state_key = "queued"
             if last_state:
                 log_path = str(last_state.log_path)
                 exit_code = str(last_state.exit_code) if last_state.exit_code is not None else "-"
+                structured = last_state.structured_tracker.snapshot()
         elif last_state:
             log_path = str(last_state.log_path)
             exit_code = str(last_state.exit_code) if last_state.exit_code is not None else "-"
+            state_key = "done" if last_state.exit_code == 0 else "failed"
+            structured = last_state.structured_tracker.snapshot()
+
+        if structured and structured.has_events:
+            state_key = structured.state
+            if structured.progress is not None:
+                progress_widget.update(progress=max(0, min(100, structured.progress)))
 
         busy = ", ".join(sorted(self._busy_resources())) or "-"
         state = tr(f"tui.status.{state_key}")
         status_head.update(action_label)
+        structured_line = tr("tui.status.line.structured", component="-", event="-", message="-")
+        if structured and structured.has_events:
+            structured_line = tr(
+                "tui.status.line.structured",
+                component=structured.source_component or "-",
+                event=structured.source_event or "-",
+                message=structured.source_message or "-",
+            )
         status_lines.update(
             "\n".join(
                 [
                     tr("tui.status.line.command", command=command),
                     tr("tui.status.line.log", path=log_path),
                     tr("tui.status.line.runner", mode=self._runner_mode),
+                    structured_line,
                     tr(
                         "tui.status.line.counts",
                         running=len(self._running_actions),
@@ -585,6 +640,7 @@ class SiliciumTui(App):
         )
         badge_state.update(tr(f"tui.badge.{state_key}"))
         badge_state.set_class(state_key == "running", "badge--running")
+        badge_state.set_class(state_key == "failed", "badge--error")
         badge_exit.update(tr("tui.badge.exit", code=exit_code))
         badge_exit.set_class(exit_code not in ("-", "0"), "badge--error")
         badge_elapsed.update(tr("tui.badge.elapsed", value=format_duration(elapsed)))
@@ -621,6 +677,14 @@ class SiliciumTui(App):
         if not self._running_actions:
             return
         progress = self.query_one("#progress", ProgressBar)
+        selected = self._selected_action or self._current_action
+        if selected:
+            running_state = self._running_actions.get(selected.key)
+            if running_state:
+                structured = running_state.structured_tracker.snapshot()
+                if structured.has_events and structured.progress is not None:
+                    progress.update(progress=max(0, min(100, structured.progress)))
+                    return
         self._progress_value = (self._progress_value + 3) % 101
         progress.update(progress=self._progress_value)
 

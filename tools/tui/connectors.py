@@ -45,10 +45,14 @@ class InProcessConnector(ITuiConnector):
         cancel_event: threading.Event,
     ) -> int:
         cmd = action.command(runner_mode)
+        env = os.environ.copy()
+        env.setdefault("SILICIUM_CLI_STRUCTURED_LOG", str(log_path.with_suffix(".ndjson")))
+        env.setdefault("SILICIUM_WORKER_STRUCTURED_LOG", str(log_path.with_suffix(".worker.ndjson")))
         with log_path.open("w", encoding="utf-8") as handle:
             process = subprocess.Popen(
                 cmd,
                 cwd=REPO_ROOT,
+                env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
