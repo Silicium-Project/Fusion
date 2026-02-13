@@ -18,6 +18,9 @@ Budget file: `docs/performance-budgets.json`
 - `env`: extra environment variables injected only for that profile command.
 - `platforms`: optional allow-list (`windows`, `linux`, `darwin`); unsupported hosts are marked `SKIP`.
 
+For `check_worker_quick`, `CORE_CHECK_FORCE_EXECUTOR_REBUILD=0` keeps incremental executor builds by default.
+Set it to `1` only when you explicitly want a clean dependency rebuild.
+
 ## Profiles
 
 - `check_worker_quick`: quick worker-focused core check.

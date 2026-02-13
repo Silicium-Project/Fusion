@@ -51,6 +51,10 @@ class ProfileResult:
     skip_reason: str | None
 
 
+def host_os_name() -> str:
+    return os.name
+
+
 def parse_time_marker(stderr: str) -> dict[str, float] | None:
     parsed: dict[str, float] = {}
     for line in stderr.splitlines():
@@ -182,7 +186,7 @@ def check_budgets(metrics: dict[str, float | None], budgets: dict[str, float]) -
 
 
 def normalize_command_for_platform(command: list[str], repo_root: Path) -> list[str]:
-    if os.name != "nt" or not command:
+    if host_platform_tag() != "windows" or not command:
         return command
     head = command[0].replace("\\", "/")
     if head in {"./silicium", "silicium"}:
@@ -193,7 +197,7 @@ def normalize_command_for_platform(command: list[str], repo_root: Path) -> list[
 
 
 def host_platform_tag() -> str:
-    if os.name == "nt":
+    if host_os_name() == "nt":
         return "windows"
     if sys.platform.startswith("linux"):
         return "linux"

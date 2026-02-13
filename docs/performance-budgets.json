@@ -15,7 +15,7 @@
       ],
       "timeout_sec": 1500.0,
       "env": {
-        "CORE_CHECK_FORCE_EXECUTOR_REBUILD": "1"
+        "CORE_CHECK_FORCE_EXECUTOR_REBUILD": "0"
       },
       "budgets": {
         "wall_sec": 480.0,

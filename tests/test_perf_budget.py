@@ -123,7 +123,7 @@ def test_main_handles_internal_profile_error(tmp_path: Path, monkeypatch: pytest
 def test_normalize_command_for_platform_windows_silicium(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     script = tmp_path / "silicium"
     script.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
-    monkeypatch.setattr(perf_budget.os, "name", "nt")
+    monkeypatch.setattr(perf_budget, "host_platform_tag", lambda: "windows")
     command = perf_budget.normalize_command_for_platform(["./silicium", "budget", "--list"], tmp_path)
     assert command[0] == perf_budget.sys.executable
     assert Path(command[1]) == script
@@ -148,7 +148,7 @@ def test_run_profile_timeout() -> None:
 
 
 def test_run_profile_skips_when_platform_not_supported(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(perf_budget.os, "name", "nt")
+    monkeypatch.setattr(perf_budget, "host_platform_tag", lambda: "windows")
     profile = perf_budget.Profile(
         key="linux_only",
         description="linux profile",
