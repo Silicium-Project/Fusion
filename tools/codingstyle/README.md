@@ -7,6 +7,7 @@ This folder contains JSON-driven rules used by the coding style checker.
 - Run all rules: `python tools/style_check.py`
 - Treat warnings as errors: `python tools/style_check.py --warnings-as-errors`
 - Run a subset: `python tools/style_check.py --rules cpp.single_namespace_class --rules cpp.pragma_once_header`
+- Run on changed files only: `python tools/style_check.py --rules cpp.no_unsafe_allocation --changed-against <base_sha> --changed-head <head_sha>`
 
 ## Rules
 - `cpp.single_namespace_class`: Allow at most one namespace and one class/struct definition per file.
@@ -20,3 +21,5 @@ This folder contains JSON-driven rules used by the coding style checker.
 - `py.file_snake_case`: Python file names should be snake_case.
 - `py.function_snake_case`: Python function names should be snake_case.
 - `py.final_constant_upper_snake`: `Final`-annotated constants should be UPPER_SNAKE_CASE.
+
+Ownership gate policy and suppression workflow are documented in `docs/security/ownership-style-gate.md`.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path, PurePosixPath
 from typing import Iterable, List
@@ -49,6 +50,43 @@ def iter_files(root: Path, include: Iterable[str], exclude: Iterable[str]) -> It
         yield path
 
 
+def _git_changed_paths(root: Path, base_ref: str, head_ref: str) -> set[PurePosixPath]:
+    range_expr = f"{base_ref}..{head_ref}"
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "diff",
+            "--name-only",
+            "--diff-filter=ACMRTUXB",
+            range_expr,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"git diff failed for range '{range_expr}': {detail}")
+    changed: set[PurePosixPath] = set()
+    for line in (result.stdout or "").splitlines():
+        rel = line.strip().replace("\\", "/")
+        if rel:
+            changed.add(PurePosixPath(rel))
+    return changed
+
+
+def _resolve_explicit_paths(root: Path, values: Iterable[str]) -> list[Path]:
+    files: list[Path] = []
+    for value in values:
+        rel = PurePosixPath(value.replace("\\", "/"))
+        path = root / Path(rel.as_posix())
+        if path.is_file():
+            files.append(path)
+    return files
+
+
 def load_config(path: Path | None) -> dict:
     if not path:
         return {}
@@ -73,6 +111,21 @@ def main(argv: List[str]) -> int:
     parser.add_argument("--include", action="append", default=[], help="Include glob (repeatable)")
     parser.add_argument("--exclude", action="append", default=[], help="Exclude glob (repeatable)")
     parser.add_argument("--rules", action="append", default=[], help="Rule IDs to enable (repeatable)")
+    parser.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        help="Check only this repo-relative file path (repeatable).",
+    )
+    parser.add_argument(
+        "--changed-against",
+        help="Check only files changed between <base> and --changed-head (default HEAD).",
+    )
+    parser.add_argument(
+        "--changed-head",
+        default="HEAD",
+        help="Head ref used with --changed-against (default: HEAD).",
+    )
     parser.add_argument("--list-rules", action="store_true", help="List available rules")
     parser.add_argument(
         "--warnings-as-errors",
@@ -107,6 +160,13 @@ def main(argv: List[str]) -> int:
     include = args.include or config.get("include") or DEFAULT_INCLUDE
     exclude = args.exclude or config.get("exclude") or DEFAULT_EXCLUDE
     rule_ids = args.rules or config.get("rules") or []
+    explicit_paths = args.path or config.get("paths") or []
+    changed_against = args.changed_against or config.get("changed_against")
+    changed_head = args.changed_head or config.get("changed_head") or "HEAD"
+
+    if explicit_paths and changed_against:
+        print("--path cannot be combined with --changed-against", file=sys.stderr)
+        return 2
 
     try:
         rules = registry.resolve(rule_ids)
@@ -114,8 +174,32 @@ def main(argv: List[str]) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    target_files: list[Path]
+    if explicit_paths:
+        target_files = _resolve_explicit_paths(root, explicit_paths)
+    elif changed_against:
+        try:
+            changed = _git_changed_paths(root, str(changed_against), str(changed_head))
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        target_files = [
+            path
+            for path in iter_files(root, include, exclude)
+            if PurePosixPath(path.relative_to(root).as_posix()) in changed
+        ]
+    else:
+        target_files = list(iter_files(root, include, exclude))
+
+    if not target_files:
+        if args.format == "json":
+            print("[]")
+        else:
+            print("No matching files to check.")
+        return 0
+
     issues: List[Issue] = []
-    for path in iter_files(root, include, exclude):
+    for path in target_files:
         rel = PurePosixPath(path.relative_to(root).as_posix())
         try:
             content = path.read_text(encoding="utf-8-sig", errors="replace")

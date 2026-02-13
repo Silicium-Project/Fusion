@@ -68,6 +68,21 @@ jobs:
       - name: Validate C++ interface contract naming
         run: python tools/style_check.py --rules cpp.interface_contract_naming
 
+      - name: Validate C++ ownership safety (changed files)
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          BASE_SHA="${PR_BASE_SHA:-$PUSH_BASE_SHA}"
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="HEAD~1"
+          fi
+          python tools/style_check.py \
+            --rules cpp.no_unsafe_allocation \
+            --changed-against "$BASE_SHA" \
+            --changed-head "$HEAD_SHA"
+
       - name: Lint workload manifests
         run: ./silicium workload lint
 
