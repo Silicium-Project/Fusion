@@ -121,6 +121,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     ctx.accounts.vote.fragment = fragment.key();
     ctx.accounts.vote.verifier = ctx.accounts.verifier.key();
     ctx.accounts.vote.choice = choice;
+    ctx.accounts.vote.slashed = false;
     ctx.accounts.vote.bump = ctx.bumps.vote;
 
     if choice {
@@ -171,7 +172,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         // Mark fragment verified
         fragment.status = FragmentStatus::Verified;
 
-        // Update verifier stats (your Worker struct stores verifier totals)
+        // Update verifier stats
         verifier_worker.total_verified =
             verifier_worker.total_verified.saturating_add(1);
 

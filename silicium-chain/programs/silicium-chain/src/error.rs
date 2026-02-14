@@ -32,4 +32,10 @@ pub enum SiliciumError {
     SelfVoteForbidden,
     #[msg("Voting period is closed")]
     VotingClosed,
+    #[msg("Fragment not resolved yet")]
+    FragmentNotResolved,
+    #[msg("Vote already slashed")]
+    VoteAlreadySlashed,
+    #[msg("Nothing to slash")]
+    NothingToSlash,
 }

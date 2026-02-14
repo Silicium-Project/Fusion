@@ -18,6 +18,10 @@ use crate::instructions::register_worker::__client_accounts_register_worker;
 use crate::instructions::vote_fragment::__client_accounts_vote_fragment;
 #[allow(unused_imports)]
 use crate::instructions::stake_worker::__client_accounts_stake_worker;
+#[allow(unused_imports)]
+use crate::instructions::slash_vote::__client_accounts_slash_vote;
+#[allow(unused_imports)]
+use crate::instructions::init_treasury::__client_accounts_init_treasury;
 
 use crate::instructions::create_job::CreateJob;
 use crate::instructions::submit_fragment_result::SubmitFragmentResult;
@@ -26,6 +30,8 @@ use crate::instructions::cancel_job::CancelJob;
 use crate::instructions::register_worker::RegisterWorker;
 use crate::instructions::vote_fragment::VoteFragment;
 use crate::instructions::stake_worker::StakeWorker;
+use crate::instructions::slash_vote::SlashVote;
+use crate::instructions::init_treasury::InitTreasury;
 
 declare_id!("9fXMziZ32jdmisi7YgQPG6LWX884AWSs1efpNFrJg6wC");
 
@@ -87,5 +93,13 @@ pub mod silicium_chain {
 
     pub fn cancel_job(ctx: Context<CancelJob>) -> Result<()> {
         crate::instructions::cancel_job::handler(ctx)
+    }
+
+    pub fn init_treasury(ctx: Context<InitTreasury>) -> Result<()> {
+        crate::instructions::init_treasury::handler(ctx)
+    }
+
+    pub fn slash_vote(ctx: Context<SlashVote>) -> Result<()> {
+        crate::instructions::slash_vote::handler(ctx)
     }
 }

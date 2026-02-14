@@ -5,3 +5,5 @@ pub mod cancel_job;
 pub mod register_worker;
 pub mod vote_fragment;
 pub mod stake_worker;
+pub mod slash_vote;
+pub mod init_treasury;

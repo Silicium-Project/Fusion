@@ -17,6 +17,8 @@ This Solana program (built with Anchor) enables:
 - Management of **computation fragments**
 - **Per-fragment rewards** for workers
 - **Decentralized fragment validation (quorum-based)**
+- **Stake slashing** for incorrect votes (economic security)
+- A **Treasury** to collect slashed stake
 - Secure job **finalization or cancellation**
 
 This layer is fully functional and ready to be deployed on **devnet**.
@@ -29,7 +31,7 @@ This layer is fully functional and ready to be deployed on **devnet**.
 
 Represents a global computation task submitted by a client.
 
-### Main fields:
+### Main fields
 
 - `job_id`: logical job identifier  
 - `client`: job creator  
@@ -60,13 +62,13 @@ Silicium Chain is now **fully decentralized**:
 Represents **one unique fragment** of a job  
 (1 `fragment_index` = 1 on-chain fragment account).
 
-### Key guarantees:
+### Key guarantees
 
 - Only one fragment per `(job, fragment_index)`
 - A fragment cannot be verified more than once
 - Voting is strictly controlled on-chain
 
-### Main fields:
+### Main fields
 
 - `job`
 - `fragment_index`
@@ -88,10 +90,9 @@ Represents **one unique fragment** of a job
 Represents a registered participant in the network  
 (worker and/or verifier).
 
-Workers must be **explicitly registered on-chain** and may lock
-tokens as stake to participate in fragment verification.
+Workers must be **explicitly registered on-chain** and may lock tokens as stake to participate in fragment verification.
 
-### Main fields:
+### Main fields
 
 - `owner`: worker authority (signer)
 - `roles`: bitflags defining worker capabilities
@@ -120,10 +121,43 @@ Roles are enforced at instruction level.
 
 ## FragmentVote
 
-Prevents double voting.
+Prevents double voting and stores the verifier decision.
 
 - One `FragmentVote` PDA per `(fragment, verifier)`
 - Ensures strict **one vote per verifier per fragment**
+- Stores:
+  - `choice`: YES/NO
+  - `slashed`: whether the vote was already slashed (prevents double slashing)
+
+---
+
+## Treasury
+
+Collects slashed stake and centralizes economic penalties into an auditable pool.
+
+### Why it exists
+
+Without a treasury, slashed stake would have no deterministic destination (burning is possible, but not always desired).  
+With a treasury, the protocol can later decide how to use penalties:
+
+- fund verifiers / security incentives
+- reward honest participants
+- finance protocol operations (governance later)
+- potentially burn partially (future policy)
+
+### On-chain structure
+
+Two pieces:
+
+1) **Treasury state (`Treasury`)**: stores metadata  
+- `mint`: token mint used by the treasury  
+- `authority`: PDA that owns the treasury token account  
+- `admin`: optional admin key (future governance / withdrawals)  
+- `bump`: PDA bump  
+
+2) **Treasury token account (`TokenAccount`)**: holds slashed tokens  
+- `owner = treasury_authority PDA`
+- `mint = job.mint`
 
 ---
 
@@ -151,7 +185,7 @@ All financial flows are fully deterministic and auditable.
 
 Fragment validation is now **fully quorum-based**.
 
-### Voting Rules
+## Voting Rules
 
 A verifier must:
 
@@ -172,7 +206,7 @@ Payment is executed **exactly once**, when quorum is reached.
 
 ## Quorum Model
 
-Each job defines: fragment_quorum
+Each job defines: `fragment_quorum`
 
 This value determines how many YES votes are required for a fragment to be validated.
 
@@ -182,8 +216,43 @@ This allows:
 - Adaptation to network size
 - Progressive decentralization
 
-Example (majority model): fragment_quorum = total_verifiers / 2 + 1
+Example (majority model):  
+`fragment_quorum = total_verifiers / 2 + 1`
 
+---
+
+# Slashing Model (Economic Security)
+
+Silicium Chain includes **vote slashing** to penalize incorrect verification votes once a fragment is resolved.
+
+## What gets slashed?
+
+When a fragment is resolved:
+
+- If fragment is `Verified`, then **NO votes are wrong**
+- If fragment is `Rejected`, then **YES votes are wrong**
+
+A wrong vote can be slashed **once**.
+
+## How much is slashed?
+
+Current policy (configurable):
+
+- `SLASH_BPS = 1000` (10%)
+- `slash_amount = max(1, stake_amount * 10%)`
+- Clamped to vault balance
+
+## Where does slashed stake go?
+
+- Slashed tokens are transferred from the verifier `stake_vault`
+- Into the **Treasury token account** (owned by treasury PDA)
+
+## Why “permissionless”?
+
+`slash_vote` can be called by **anyone** (a “slasher”):
+
+- makes slashing enforceable even without a central actor
+- incentivizes future “watchers” / bots to execute it
 
 ---
 
@@ -227,9 +296,32 @@ Rules:
 
 ---
 
+## `init_treasury`
+
+Initializes the treasury for a given `mint`:
+
+- Creates `Treasury` state PDA
+- Creates the treasury token account (owned by treasury authority PDA)
+
+This must be done once per reward/stake mint.
+
+---
+
+## `slash_vote`
+
+Slashes a wrong-side vote after fragment resolution:
+
+- Requires fragment not `Submitted`
+- Requires `FragmentVote.slashed == false`
+- Transfers a fraction of stake from `stake_vault` → `treasury`
+- Marks `FragmentVote.slashed = true`
+- Decreases `Worker.stake_amount`
+
+---
+
 ## `finalize_job`
 
-Can be executed when: verified_fragments == expected_fragments
+Can be executed when: `verified_fragments == expected_fragments`
 
 Actions:
 
@@ -275,13 +367,15 @@ Required before:
 - Stake-based decentralized validation
 - Deterministic quorum model
 - Atomic reward execution
+- Permissionless slashing
+- Treasury-based penalty collection
 - Fully auditable financial logic
 
 ---
 
 # Current Limitations
 
-- No slashing yet (stake not penalized)
+- Treasury withdrawals policy not implemented yet (admin/governance later)
 - No weighted voting yet
 - No dynamic on-chain verifier counting
 - No unstake cooldown
@@ -294,6 +388,8 @@ Required before:
 - Centralized verification removed
 - Full quorum-based validation implemented
 - Escrow model stable
+- Slashing implemented
+- Treasury implemented
 - Security checks enforced
 - Ready for **devnet deployment**
 - Designed for progressive decentralization
@@ -304,7 +400,7 @@ Required before:
 
 Silicium Chain is now a:
 
-**Fully decentralized coordination and payment layer**  
+**Fully decentralized coordination, payment, and security layer**  
 for distributed computation.
 
 It is:
@@ -317,4 +413,3 @@ It is:
 - economically aligned  
 
 It provides the secure on-chain foundation of Silicium.
-
