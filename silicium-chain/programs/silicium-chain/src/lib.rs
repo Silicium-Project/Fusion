@@ -22,6 +22,8 @@ use crate::instructions::stake_worker::__client_accounts_stake_worker;
 use crate::instructions::slash_vote::__client_accounts_slash_vote;
 #[allow(unused_imports)]
 use crate::instructions::init_treasury::__client_accounts_init_treasury;
+#[allow(unused_imports)]
+use crate::instructions::resubmit_fragment_result::__client_accounts_resubmit_fragment_result;
 
 use crate::instructions::create_job::CreateJob;
 use crate::instructions::submit_fragment_result::SubmitFragmentResult;
@@ -32,8 +34,9 @@ use crate::instructions::vote_fragment::VoteFragment;
 use crate::instructions::stake_worker::StakeWorker;
 use crate::instructions::slash_vote::SlashVote;
 use crate::instructions::init_treasury::InitTreasury;
+use crate::instructions::resubmit_fragment_result::ResubmitFragmentResult;
 
-declare_id!("9fXMziZ32jdmisi7YgQPG6LWX884AWSs1efpNFrJg6wC");
+declare_id!("4LHNxzAoaumTaJC5zC8C4tRvR71Gwi48YjLraeuVMLsU");
 
 #[program]
 pub mod silicium_chain {
@@ -101,5 +104,19 @@ pub mod silicium_chain {
 
     pub fn slash_vote(ctx: Context<SlashVote>) -> Result<()> {
         crate::instructions::slash_vote::handler(ctx)
+    }
+
+    pub fn resubmit_fragment_result(
+        ctx: Context<ResubmitFragmentResult>,
+        fragment_index: u32,
+        result_hash: [u8; 32],
+        proof_ref: [u8; 32],
+    ) -> Result<()> {
+        crate::instructions::resubmit_fragment_result::handler(
+            ctx,
+            fragment_index,
+            result_hash,
+            proof_ref,
+        )
     }
 }

@@ -1,10 +1,11 @@
+// tests/slash_vote.test.ts
 import * as anchor from "@coral-xyz/anchor";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { assert } from "chai";
 import { getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
 
 import { setupTestEnv, createJobOnce } from "./helpers/setup";
-import { expectFail } from "./helpers/utils";
+import { expectFail, u16LE } from "./helpers/utils";
 
 describe("slash vote", () => {
   it("slashes wrong-side vote into treasury and prevents double slashing", async () => {
@@ -57,7 +58,7 @@ describe("slash vote", () => {
       .rpc();
 
     // -----------------------
-    // Register worker + submit fragment
+    // Register compute worker + submit fragment
     // -----------------------
     const workerPda = PublicKey.findProgramAddressSync(
       [Buffer.from("worker"), worker.publicKey.toBuffer()],
@@ -81,6 +82,7 @@ describe("slash vote", () => {
         workerAccount: workerPda,
         job: jobPda,
         fragment: fragment0Pda,
+        workerToken, // ✅ NEW (required by SubmitFragmentResult)
         systemProgram,
       })
       .signers([worker])
@@ -105,6 +107,7 @@ describe("slash vote", () => {
     const v2Pda = mkWorkerPda(v2.publicKey);
     const v3Pda = mkWorkerPda(v3.publicKey);
 
+    // Register verifiers + stake
     for (const entry of [
       { kp: v1, pda: v1Pda },
       { kp: v2, pda: v2Pda },
@@ -163,14 +166,22 @@ describe("slash vote", () => {
         .rpc();
     }
 
-    // vote PDA helper
-    const votePda = (fragmentPk: PublicKey, verifierPk: PublicKey) =>
+    // -----------------------
+    // Vote (round = 0) => v1 NO (wrong), v2 YES, v3 YES => Verified
+    // -----------------------
+    const votePda = (fragmentPk: PublicKey, verifierPk: PublicKey, round: number) =>
       PublicKey.findProgramAddressSync(
-        [Buffer.from("fragment_vote"), fragmentPk.toBuffer(), verifierPk.toBuffer()],
+        [
+          Buffer.from("fragment_vote"),
+          fragmentPk.toBuffer(),
+          verifierPk.toBuffer(),
+          u16LE(round),
+        ],
         program.programId
       )[0];
 
-    // Voting: v1 NO (wrong), v2 YES, v3 YES => Verified
+    const round0 = 0;
+
     await (program as any).methods
       .voteFragment(false)
       .accounts({
@@ -178,7 +189,7 @@ describe("slash vote", () => {
         job: jobPda,
         fragment: fragment0Pda,
         verifierWorker: v1Pda,
-        vote: votePda(fragment0Pda, v1.publicKey),
+        vote: votePda(fragment0Pda, v1.publicKey, round0),
         escrowAuth: escrowAuthPda,
         escrow: escrowKp.publicKey,
         workerToken,
@@ -195,7 +206,7 @@ describe("slash vote", () => {
         job: jobPda,
         fragment: fragment0Pda,
         verifierWorker: v2Pda,
-        vote: votePda(fragment0Pda, v2.publicKey),
+        vote: votePda(fragment0Pda, v2.publicKey, round0),
         escrowAuth: escrowAuthPda,
         escrow: escrowKp.publicKey,
         workerToken,
@@ -212,7 +223,7 @@ describe("slash vote", () => {
         job: jobPda,
         fragment: fragment0Pda,
         verifierWorker: v3Pda,
-        vote: votePda(fragment0Pda, v3.publicKey),
+        vote: votePda(fragment0Pda, v3.publicKey, round0),
         escrowAuth: escrowAuthPda,
         escrow: escrowKp.publicKey,
         workerToken,
@@ -225,7 +236,9 @@ describe("slash vote", () => {
     const frag: any = await (program as any).account.fragment.fetch(fragment0Pda);
     assert.notDeepEqual(frag.status, { submitted: {} });
 
-    // Slash v1 vote
+    // -----------------------
+    // Slash v1 vote (wrong side) into treasury
+    // -----------------------
     const v1StakeAuth = PublicKey.findProgramAddressSync(
       [Buffer.from("stake_auth"), v1Pda.toBuffer()],
       program.programId
@@ -245,9 +258,9 @@ describe("slash vote", () => {
         slasher: (provider.wallet as any).publicKey,
         job: jobPda,
         fragment: fragment0Pda,
-        vote: votePda(fragment0Pda, v1.publicKey),
+        vote: votePda(fragment0Pda, v1.publicKey, round0), // ✅ round included
         verifierWorker: v1Pda,
-        treasuryState: treasuryStatePda, // ✅ NEW
+        treasuryState: treasuryStatePda,
         stakeAuth: v1StakeAuth,
         stakeVault: v1StakeVault,
         treasuryAuth: treasuryAuthPda,
@@ -270,7 +283,7 @@ describe("slash vote", () => {
     );
 
     const voteAcc: any = await (program as any).account.fragmentVote.fetch(
-      votePda(fragment0Pda, v1.publicKey)
+      votePda(fragment0Pda, v1.publicKey, round0)
     );
     assert.equal(voteAcc.slashed, true);
 
@@ -282,7 +295,7 @@ describe("slash vote", () => {
           slasher: (provider.wallet as any).publicKey,
           job: jobPda,
           fragment: fragment0Pda,
-          vote: votePda(fragment0Pda, v1.publicKey),
+          vote: votePda(fragment0Pda, v1.publicKey, round0),
           verifierWorker: v1Pda,
           treasuryState: treasuryStatePda,
           stakeAuth: v1StakeAuth,

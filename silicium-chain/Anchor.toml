@@ -5,14 +5,17 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
+[programs.devnet]
 silicium_chain = "9fXMziZ32jdmisi7YgQPG6LWX884AWSs1efpNFrJg6wC"
+
+[programs.localnet]
+silicium_chain = "A4AWv6fzwTrhKxSSHd3ZCJwX7qDPzN1msy3ADroNqKGP"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "http://127.0.0.1:8900"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

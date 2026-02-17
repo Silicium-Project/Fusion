@@ -57,7 +57,8 @@ pub struct VoteFragment<'info> {
         seeds = [
             b"fragment_vote",
             fragment.key().as_ref(),
-            verifier.key().as_ref()
+            verifier.key().as_ref(),
+            &fragment.round.to_le_bytes()
         ],
         bump
     )]
@@ -75,8 +76,8 @@ pub struct VoteFragment<'info> {
 
     #[account(
         mut,
-        constraint = worker_token.owner == fragment.worker,
-        constraint = worker_token.mint == job.mint
+        constraint = worker_token.key() == fragment.worker_token_account @ SiliciumError::InvalidParams,
+        constraint = worker_token.mint == job.mint @ SiliciumError::InvalidParams
     )]
     pub worker_token: Account<'info, TokenAccount>,
 
@@ -121,6 +122,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     ctx.accounts.vote.fragment = fragment.key();
     ctx.accounts.vote.verifier = ctx.accounts.verifier.key();
     ctx.accounts.vote.choice = choice;
+    ctx.accounts.vote.round = fragment.round;
     ctx.accounts.vote.slashed = false;
     ctx.accounts.vote.bump = ctx.bumps.vote;
 

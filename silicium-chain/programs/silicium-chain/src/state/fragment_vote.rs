@@ -6,10 +6,11 @@ pub struct FragmentVote {
     pub verifier: Pubkey,
     pub choice: bool,
 
+    pub round: u16,
     pub slashed: bool,
     pub bump: u8,
 }
 
 impl FragmentVote {
-    pub const SPACE: usize = 8 + 32 + 32 + 1 + 1 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 1 + 2 + 1 + 1;
 }

@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::TokenAccount;
 
 use crate::{
     error::SiliciumError,
@@ -42,6 +43,12 @@ pub struct SubmitFragmentResult<'info> {
     )]
     pub fragment: Account<'info, Fragment>,
 
+    #[account(
+        constraint = worker_token.owner == worker.key() @ SiliciumError::NotAuthorized,
+        constraint = worker_token.mint == job.mint @ SiliciumError::InvalidParams
+    )]
+    pub worker_token: Account<'info, TokenAccount>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -62,7 +69,6 @@ pub fn handler(
     );
 
     let f = &mut ctx.accounts.fragment;
-
     let is_new = f.job == Pubkey::default();
 
     if !is_new {
@@ -82,7 +88,7 @@ pub fn handler(
 
         f.yes_votes = 0;
         f.no_votes = 0;
-
+        f.round = 0;
         f.required_quorum = ctx.accounts.job.fragment_quorum;
         f.voting_deadline_unix = ctx.accounts.job.deadline_unix;
     }
@@ -90,6 +96,9 @@ pub fn handler(
     f.job = ctx.accounts.job.key();
     f.fragment_index = fragment_index;
     f.worker = ctx.accounts.worker.key();
+
+    f.worker_token_account = ctx.accounts.worker_token.key();
+
     f.result_hash = result_hash;
     f.proof_ref = proof_ref;
     f.status = FragmentStatus::Submitted;

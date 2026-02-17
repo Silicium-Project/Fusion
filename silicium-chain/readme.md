@@ -66,7 +66,8 @@ Represents **one unique fragment** of a job
 
 - Only one fragment per `(job, fragment_index)`
 - A fragment cannot be verified more than once
-- Voting is strictly controlled on-chain
+- Voting and payment are strictly controlled on-chain
+- A rejected fragment can be **resubmitted** in a new **round**
 
 ### Main fields
 
@@ -80,6 +81,7 @@ Represents **one unique fragment** of a job
 - `no_votes`
 - `required_quorum`
 - `voting_deadline_unix`
+- `round` (increments when resubmitted)
 
 `required_quorum` is initialized from `job.fragment_quorum` when the fragment is first submitted.
 
@@ -121,13 +123,14 @@ Roles are enforced at instruction level.
 
 ## FragmentVote
 
-Prevents double voting and stores the verifier decision.
+Prevents double voting and stores a verifier decision.
 
-- One `FragmentVote` PDA per `(fragment, verifier)`
-- Ensures strict **one vote per verifier per fragment**
+- One `FragmentVote` PDA per `(fragment, verifier, round)`
+- Ensures strict **one vote per verifier per round**
 - Stores:
   - `choice`: YES/NO
-  - `slashed`: whether the vote was already slashed (prevents double slashing)
+  - `round`: current round of the fragment
+  - `slashed`: prevents double slashing for this vote
 
 ---
 
@@ -221,6 +224,21 @@ Example (majority model):
 
 ---
 
+
+# Resubmission Rounds
+
+When a fragment is rejected:
+
+- The fragment can be resubmitted via `resubmit_fragment_result`
+- `round` increments
+- votes reset (`yes_votes = 0`, `no_votes = 0`)
+- new compute worker can take over
+- new votes are recorded under new vote PDAs `(fragment, verifier, round)`
+
+This prevents vote collisions and keeps history slashable per round.
+
+---
+
 # Slashing Model (Economic Security)
 
 Silicium Chain includes **vote slashing** to penalize incorrect verification votes once a fragment is resolved.
@@ -281,6 +299,14 @@ Rules:
 
 ---
 
+## `resubmit_fragment_result`
+Only when fragment is `Rejected`:
+- increments `round`
+- resets votes
+- updates worker + worker_token_account + new hashes
+- sets status back to `Submitted`
+
+---
 ## `vote_fragment`
 
 Fully decentralized validation.

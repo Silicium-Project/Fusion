@@ -38,11 +38,13 @@ pub struct SlashVote<'info> {
         seeds = [
             b"fragment_vote",
             fragment.key().as_ref(),
-            vote.verifier.as_ref()
+            vote.verifier.as_ref(),
+            &vote.round.to_le_bytes()
         ],
         bump = vote.bump,
         constraint = vote.fragment == fragment.key() @ SiliciumError::InvalidParams
     )]
+
     pub vote: Box<Account<'info, FragmentVote>>,
 
     #[account(

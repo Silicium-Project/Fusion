@@ -7,3 +7,4 @@ pub mod vote_fragment;
 pub mod stake_worker;
 pub mod slash_vote;
 pub mod init_treasury;
+pub mod resubmit_fragment_result;

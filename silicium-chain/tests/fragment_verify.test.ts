@@ -1,7 +1,9 @@
+// tests/fragment_verify.test.ts
 import * as anchor from "@coral-xyz/anchor";
 import { setupTestEnv, createJobOnce, registerWorkerIfNeeded } from "./helpers/setup";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
+import { u16LE } from "./helpers/utils";
 
 describe("fragment verification (decentralized)", () => {
   it("vote fragment to quorum (replaces verify_fragment)", async () => {
@@ -33,6 +35,7 @@ describe("fragment verification (decentralized)", () => {
         workerAccount: workerPda,
         job: jobPda,
         fragment: fragment0Pda,
+        workerToken, // ✅ NEW (required by SubmitFragmentResult)
         systemProgram,
       })
       .signers([worker])
@@ -57,7 +60,7 @@ describe("fragment verification (decentralized)", () => {
       (program as any).programId
     )[0];
 
-    // --- Register verifiers as workers ---
+    // --- Register verifiers as workers + stake ---
     for (const v of [
       { kp: verifier1, pda: verifier1Pda },
       { kp: verifier2, pda: verifier2Pda },
@@ -117,12 +120,19 @@ describe("fragment verification (decentralized)", () => {
         .rpc();
     }
 
-    // --- Vote PDA helper (prevents double vote) ---
-    const votePda = (fragmentPk: PublicKey, verifierPk: PublicKey) =>
+    // --- Vote PDA helper (now includes round u16 LE) ---
+    const votePda = (fragmentPk: PublicKey, verifierPk: PublicKey, round: number) =>
       PublicKey.findProgramAddressSync(
-        [Buffer.from("fragment_vote"), fragmentPk.toBuffer(), verifierPk.toBuffer()],
+        [
+          Buffer.from("fragment_vote"),
+          fragmentPk.toBuffer(),
+          verifierPk.toBuffer(),
+          u16LE(round),
+        ],
         (program as any).programId
       )[0];
+
+    const round0 = 0;
 
     // --- Vote 1 ---
     await (program as any).methods
@@ -132,7 +142,7 @@ describe("fragment verification (decentralized)", () => {
         job: jobPda,
         fragment: fragment0Pda,
         verifierWorker: verifier1Pda,
-        vote: votePda(fragment0Pda, verifier1.publicKey),
+        vote: votePda(fragment0Pda, verifier1.publicKey, round0),
         escrowAuth: escrowAuthPda,
         escrow: escrowKp.publicKey,
         workerToken,
@@ -150,7 +160,7 @@ describe("fragment verification (decentralized)", () => {
         job: jobPda,
         fragment: fragment0Pda,
         verifierWorker: verifier2Pda,
-        vote: votePda(fragment0Pda, verifier2.publicKey),
+        vote: votePda(fragment0Pda, verifier2.publicKey, round0),
         escrowAuth: escrowAuthPda,
         escrow: escrowKp.publicKey,
         workerToken,
@@ -160,14 +170,11 @@ describe("fragment verification (decentralized)", () => {
       .signers([verifier2])
       .rpc();
 
-    // Optional: assert fragment status verified
+    // Optional: fetch fragment to ensure it left Submitted
     const frag: any = await (program as any).account.fragment.fetch(fragment0Pda);
-    // depending on Anchor enum shape: { verified: {} }
-    // If your enum is FragmentStatus { Submitted, Verified, Rejected }
-    // Anchor usually returns `{ verified: {} }`
-    if (frag?.status) {
-      // no hard assert to avoid enum-shape mismatch, but you can uncomment:
-      // expect(frag.status).to.deep.equal({ verified: {} });
-    }
+    // frag.status should now be { verified: {} } (Anchor enum shape)
+    // you can assert if you want:
+    // expect(frag.status).to.deep.equal({ verified: {} });
+    void frag;
   });
 });
