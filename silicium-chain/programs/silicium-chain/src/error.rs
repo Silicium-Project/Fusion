@@ -38,4 +38,6 @@ pub enum SiliciumError {
     VoteAlreadySlashed,
     #[msg("Nothing to slash")]
     NothingToSlash,
+    #[msg("Wrong treasury token account.")]
+    WrongTreasuryAccount,
 }

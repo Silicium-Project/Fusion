@@ -33,6 +33,7 @@ pub struct InitTreasury<'info> {
         payer = payer,
         token::mint = mint,
         token::authority = treasury_auth
+        
     )]
     pub treasury: Account<'info, TokenAccount>,
 
@@ -48,6 +49,6 @@ pub fn handler(ctx: Context<InitTreasury>) -> Result<()> {
     t.authority = ctx.accounts.treasury_auth.key();
     t.admin = ctx.accounts.payer.key();
     t.bump = ctx.bumps.treasury_state;
-
+    t.treasury_token_account = ctx.accounts.treasury.key();
     Ok(())
 }
