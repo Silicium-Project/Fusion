@@ -36,7 +36,7 @@ use crate::instructions::slash_vote::SlashVote;
 use crate::instructions::init_treasury::InitTreasury;
 use crate::instructions::resubmit_fragment_result::ResubmitFragmentResult;
 
-declare_id!("4LHNxzAoaumTaJC5zC8C4tRvR71Gwi48YjLraeuVMLsU");
+declare_id!("CyJ28ZoyxLU5jrFLpUo5Miix2rtAJ3dqdusXkDpZXd4J");
 
 #[program]
 pub mod silicium_chain {

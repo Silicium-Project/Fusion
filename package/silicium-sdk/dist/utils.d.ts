@@ -1,0 +1,11 @@
+import { BN } from "@coral-xyz/anchor";
+export declare function toBN(value: number | bigint | BN): BN;
+export declare function bigintFrom(value: unknown): bigint;
+export declare function numberFrom(value: unknown): number;
+export declare function normalize32(value: Uint8Array | number[]): number[];
+export declare function normalizeBytes(value: string | Uint8Array | number[]): number[];
+export declare function bytesToUtf8(bytes: number[]): string;
+export declare function bufferFromString(value: string): Buffer;
+export declare function bnToLeBuffer(value: number | bigint | BN, size: number): Buffer;
+export declare function u32ToLeBuffer(value: number): Buffer;
+export declare function u16ToLeBuffer(value: number): Buffer;
