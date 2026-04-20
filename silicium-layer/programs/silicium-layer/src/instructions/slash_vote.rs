@@ -90,7 +90,7 @@ pub struct SlashVote<'info> {
     #[account(
         mut,
         constraint = treasury.mint == job.mint @ SiliciumError::WrongStakeMint,
-        constraint = treasury.owner == treasury_auth.key() @ SiliciumError::NotAuthorized
+        constraint = treasury.owner == treasury_auth.key() @ SiliciumError::NotAuthorized,
         constraint = treasury.key() == treasury_state.treasury_token_account @ SiliciumError::WrongTreasuryAccount
     )]
     pub treasury: Box<Account<'info, TokenAccount>>,

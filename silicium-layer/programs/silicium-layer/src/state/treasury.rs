@@ -15,6 +15,6 @@ impl Treasury {
         + 32 // mint
         + 32 // authority
         + 32 // admin
-        + 1; // bump
+        + 1 // bump
         + 32; // treasury_token_account
 }

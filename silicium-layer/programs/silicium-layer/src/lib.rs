@@ -4,39 +4,9 @@ pub mod instructions;
 pub mod state;
 pub mod error;
 
-#[allow(unused_imports)]
-use crate::instructions::create_job::__client_accounts_create_job;
-#[allow(unused_imports)]
-use crate::instructions::submit_fragment_result::__client_accounts_submit_fragment_result;
-#[allow(unused_imports)]
-use crate::instructions::finalize_job::__client_accounts_finalize_job;
-#[allow(unused_imports)]
-use crate::instructions::cancel_job::__client_accounts_cancel_job;
-#[allow(unused_imports)]
-use crate::instructions::register_worker::__client_accounts_register_worker;
-#[allow(unused_imports)]
-use crate::instructions::vote_fragment::__client_accounts_vote_fragment;
-#[allow(unused_imports)]
-use crate::instructions::stake_worker::__client_accounts_stake_worker;
-#[allow(unused_imports)]
-use crate::instructions::slash_vote::__client_accounts_slash_vote;
-#[allow(unused_imports)]
-use crate::instructions::init_treasury::__client_accounts_init_treasury;
-#[allow(unused_imports)]
-use crate::instructions::resubmit_fragment_result::__client_accounts_resubmit_fragment_result;
+pub use instructions::*;
 
-use crate::instructions::create_job::CreateJob;
-use crate::instructions::submit_fragment_result::SubmitFragmentResult;
-use crate::instructions::finalize_job::FinalizeJob;
-use crate::instructions::cancel_job::CancelJob;
-use crate::instructions::register_worker::RegisterWorker;
-use crate::instructions::vote_fragment::VoteFragment;
-use crate::instructions::stake_worker::StakeWorker;
-use crate::instructions::slash_vote::SlashVote;
-use crate::instructions::init_treasury::InitTreasury;
-use crate::instructions::resubmit_fragment_result::ResubmitFragmentResult;
-
-declare_id!("CyJ28ZoyxLU5jrFLpUo5Miix2rtAJ3dqdusXkDpZXd4J");
+declare_id!("6JzNELoBgRVbPSPmPosoR1NMEpHheUPcPmBkHe22pimE");
 
 #[program]
 pub mod silicium_chain {
