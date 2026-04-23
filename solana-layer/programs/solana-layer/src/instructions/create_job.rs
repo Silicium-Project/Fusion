@@ -61,13 +61,20 @@ pub fn handler(
     require!(expected_fragments > 0, SiliciumError::InvalidParams);
     require!(reward_per_fragment > 0, SiliciumError::InvalidParams);
     require!(fragment_quorum > 0, SiliciumError::InvalidParams);
+    require!(
+        fragment_quorum <= expected_fragments as u16,
+        SiliciumError::InvalidParams);
 
     let now = Clock::get()?.unix_timestamp;
     require!(deadline_unix > now, SiliciumError::InvalidParams);
 
-    let total = (expected_fragments as u128)
-        .checked_mul(reward_per_fragment as u128)
-        .ok_or(SiliciumError::InvalidParams)? as u64;
+    let total_u128 = (expected_fragments as u128)
+    .checked_mul(reward_per_fragment as u128)
+    .ok_or(SiliciumError::InvalidParams)?;
+
+    require!(total_u128 <= u64::MAX as u128, SiliciumError::InvalidParams);
+    let total = total_u128 as u64;
+
 
     // Transfer funds to escrow
     let cpi_ctx = CpiContext::new(

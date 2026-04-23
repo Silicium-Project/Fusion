@@ -6,10 +6,10 @@ pub mod error;
 
 pub use instructions::*;
 
-declare_id!("6JzNELoBgRVbPSPmPosoR1NMEpHheUPcPmBkHe22pimE");
+declare_id!("2ni1Y5VUFZDoQVhsQEf6LyM8kKXEic3CSpckrcLJzaD4");
 
 #[program]
-pub mod silicium_chain {
+pub mod solana_layer {
     use super::*;
 
     pub fn create_job(
