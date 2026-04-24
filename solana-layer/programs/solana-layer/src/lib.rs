@@ -3,10 +3,12 @@ use anchor_lang::prelude::*;
 pub mod instructions;
 pub mod state;
 pub mod error;
+pub mod events;
+pub mod constants;
 
 pub use instructions::*;
 
-declare_id!("2ni1Y5VUFZDoQVhsQEf6LyM8kKXEic3CSpckrcLJzaD4");
+declare_id!("6sLKsnJXnbnVdxd5uF9yhA83mabi6KCQbkzxeD1ECTYe");
 
 #[program]
 pub mod solana_layer {

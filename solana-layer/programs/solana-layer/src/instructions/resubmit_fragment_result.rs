@@ -2,7 +2,9 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::TokenAccount;
 
 use crate::{
+    constants::MIN_COMPUTE_STAKE,
     error::SiliciumError,
+    events::FragmentSubmitted,
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
@@ -21,7 +23,8 @@ pub struct ResubmitFragmentResult<'info> {
         seeds = [b"worker", worker.key().as_ref()],
         bump = worker_account.bump,
         constraint = worker_account.owner == worker.key() @ SiliciumError::NotAuthorized,
-        constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized
+        constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
+        constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized
     )]
     pub worker_account: Account<'info, Worker>,
 
@@ -73,27 +76,31 @@ pub fn handler(
         SiliciumError::BadFragmentState
     );
 
-    // new try
     f.round = f.round.saturating_add(1);
-
-    // reset votes
     f.yes_votes = 0;
     f.no_votes = 0;
-
-    // resync quorum/deadline avec job
     f.required_quorum = ctx.accounts.job.fragment_quorum;
     f.voting_deadline_unix = ctx.accounts.job.deadline_unix;
 
-    // new worker + payout + content
     f.worker = ctx.accounts.worker.key();
     f.worker_token_account = ctx.accounts.worker_token.key();
     f.result_hash = result_hash;
     f.proof_ref = proof_ref;
-
     f.status = FragmentStatus::Submitted;
 
     ctx.accounts.worker_account.total_submitted =
         ctx.accounts.worker_account.total_submitted.saturating_add(1);
+
+    emit!(FragmentSubmitted {
+        job: f.job,
+        fragment: f.key(),
+        fragment_index: f.fragment_index,
+        worker: f.worker,
+        worker_token_account: f.worker_token_account,
+        round: f.round,
+        result_hash: f.result_hash,
+        proof_ref: f.proof_ref,
+    });
 
     Ok(())
 }

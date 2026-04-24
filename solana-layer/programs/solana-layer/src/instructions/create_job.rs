@@ -2,7 +2,9 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::{
+    constants::MIN_FRAGMENT_QUORUM,
     error::SiliciumError,
+    events::JobCreated,
     state::job::{Job, JobStatus},
 };
 
@@ -60,23 +62,27 @@ pub fn handler(
 ) -> Result<()> {
     require!(expected_fragments > 0, SiliciumError::InvalidParams);
     require!(reward_per_fragment > 0, SiliciumError::InvalidParams);
-    require!(fragment_quorum > 0, SiliciumError::InvalidParams);
+
+    require!(
+        fragment_quorum >= MIN_FRAGMENT_QUORUM,
+        SiliciumError::InvalidParams
+    );
+
     require!(
         fragment_quorum <= expected_fragments as u16,
-        SiliciumError::InvalidParams);
+        SiliciumError::InvalidParams
+    );
 
     let now = Clock::get()?.unix_timestamp;
     require!(deadline_unix > now, SiliciumError::InvalidParams);
 
     let total_u128 = (expected_fragments as u128)
-    .checked_mul(reward_per_fragment as u128)
-    .ok_or(SiliciumError::InvalidParams)?;
+        .checked_mul(reward_per_fragment as u128)
+        .ok_or(SiliciumError::InvalidParams)?;
 
     require!(total_u128 <= u64::MAX as u128, SiliciumError::InvalidParams);
     let total = total_u128 as u64;
 
-
-    // Transfer funds to escrow
     let cpi_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
         Transfer {
@@ -100,15 +106,28 @@ pub fn handler(
     job.deposited_amount = total;
     job.paid_amount = 0;
 
+    job.created_at_unix = now;
     job.deadline_unix = deadline_unix;
     job.status = JobStatus::Open;
 
     job.fragment_quorum = fragment_quorum;
-
     job.verified_at_unix = 0;
 
     job.bump = ctx.bumps.job;
     job.escrow_auth_bump = ctx.bumps.escrow_auth;
+
+    emit!(JobCreated {
+        job: job.key(),
+        client: job.client,
+        mint: job.mint,
+        escrow: job.escrow,
+        job_id: job.job_id,
+        expected_fragments: job.expected_fragments,
+        reward_per_fragment: job.reward_per_fragment,
+        deposited_amount: job.deposited_amount,
+        deadline_unix: job.deadline_unix,
+        fragment_quorum: job.fragment_quorum,
+    });
 
     Ok(())
 }

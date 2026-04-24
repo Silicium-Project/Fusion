@@ -3,6 +3,7 @@ use anchor_spl::token::{self, CloseAccount, Token, TokenAccount, Transfer};
 
 use crate::{
     error::SiliciumError,
+    events::JobFinalized,
     state::{
         job::{Job, JobStatus},
         result::JobResult,
@@ -58,10 +59,8 @@ pub fn handler(
     final_hash: [u8; 32],
     output_uri: Vec<u8>,
 ) -> Result<()> {
-
     require!(output_uri.len() <= URI_MAX_LEN, SiliciumError::UriTooLong);
 
-    // Must have all fragments verified
     require!(
         ctx.accounts.job.verified_fragments == ctx.accounts.job.expected_fragments,
         SiliciumError::NotReadyToFinalize
@@ -77,16 +76,15 @@ pub fn handler(
     r.uri_bytes = buf;
     r.bump = ctx.bumps.result;
 
-    // Refund remaining escrow
+    let job_key = ctx.accounts.job.key();
+    let bump = ctx.accounts.job.escrow_auth_bump;
+    let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
+    let signer_seeds: &[&[&[u8]]] = &[seeds];
+
     let remaining = ctx.accounts.escrow.amount;
 
     if remaining > 0 {
-        let job_key = ctx.accounts.job.key();
-        let bump = ctx.accounts.job.escrow_auth_bump;
-        let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
-        let signer_seeds: &[&[&[u8]]] = &[seeds];
-
-        let cpi_ctx = CpiContext::new_with_signer(
+        let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.escrow.to_account_info(),
@@ -96,22 +94,32 @@ pub fn handler(
             signer_seeds,
         );
 
-        token::transfer(cpi_ctx, remaining)?;
-
-        let close_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            CloseAccount {
-                account: ctx.accounts.escrow.to_account_info(),
-                destination: ctx.accounts.client.to_account_info(),
-                authority: ctx.accounts.escrow_auth.to_account_info(),
-            },
-            signer_seeds,
-        );
-
-        token::close_account(close_ctx)?;
+        token::transfer(transfer_ctx, remaining)?;
     }
 
+    let close_ctx = CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        CloseAccount {
+            account: ctx.accounts.escrow.to_account_info(),
+            destination: ctx.accounts.client.to_account_info(),
+            authority: ctx.accounts.escrow_auth.to_account_info(),
+        },
+        signer_seeds,
+    );
+
+    token::close_account(close_ctx)?;
+
     ctx.accounts.job.status = JobStatus::Finalized;
+
+    emit!(JobFinalized {
+        job: ctx.accounts.job.key(),
+        client: ctx.accounts.client.key(),
+        result: ctx.accounts.result.key(),
+        final_hash,
+        refunded_amount: remaining,
+        verified_fragments: ctx.accounts.job.verified_fragments,
+        expected_fragments: ctx.accounts.job.expected_fragments,
+    });
 
     Ok(())
 }

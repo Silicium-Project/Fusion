@@ -3,6 +3,7 @@ use anchor_spl::token::{self, CloseAccount, Token, TokenAccount, Transfer};
 
 use crate::{
     error::SiliciumError,
+    events::JobCancelled,
     state::job::{Job, JobStatus},
 };
 
@@ -47,14 +48,15 @@ pub fn handler(ctx: Context<CancelJob>) -> Result<()> {
 
     require!(nothing_started || deadline_passed, SiliciumError::JobNotCancellable);
 
-    let remaining = ctx.accounts.escrow.amount;
-    if remaining > 0 {
-        let job_key = ctx.accounts.job.key();
-        let bump = ctx.accounts.job.escrow_auth_bump;
-        let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
-        let signer_seeds: &[&[&[u8]]] = &[seeds];
+    let job_key = ctx.accounts.job.key();
+    let bump = ctx.accounts.job.escrow_auth_bump;
+    let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
+    let signer_seeds: &[&[&[u8]]] = &[seeds];
 
-        let cpi_ctx = CpiContext::new_with_signer(
+    let remaining = ctx.accounts.escrow.amount;
+
+    if remaining > 0 {
+        let transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.escrow.to_account_info(),
@@ -63,20 +65,27 @@ pub fn handler(ctx: Context<CancelJob>) -> Result<()> {
             },
             signer_seeds,
         );
-        token::transfer(cpi_ctx, remaining)?;
-
-        let close_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            CloseAccount {
-                account: ctx.accounts.escrow.to_account_info(),
-                destination: ctx.accounts.client.to_account_info(),
-                authority: ctx.accounts.escrow_auth.to_account_info(),
-            },
-            signer_seeds,
-        );
-        token::close_account(close_ctx)?;
+        token::transfer(transfer_ctx, remaining)?;
     }
 
+    let close_ctx = CpiContext::new_with_signer(
+        ctx.accounts.token_program.to_account_info(),
+        CloseAccount {
+            account: ctx.accounts.escrow.to_account_info(),
+            destination: ctx.accounts.client.to_account_info(),
+            authority: ctx.accounts.escrow_auth.to_account_info(),
+        },
+        signer_seeds,
+    );
+    token::close_account(close_ctx)?;
+
     ctx.accounts.job.status = JobStatus::Cancelled;
+
+    emit!(JobCancelled {
+        job: ctx.accounts.job.key(),
+        client: ctx.accounts.client.key(),
+        refunded_amount: remaining,
+    });
+
     Ok(())
 }

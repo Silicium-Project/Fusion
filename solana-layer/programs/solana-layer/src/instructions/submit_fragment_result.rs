@@ -2,7 +2,9 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::TokenAccount;
 
 use crate::{
+    constants::MIN_COMPUTE_STAKE,
     error::SiliciumError,
+    events::FragmentSubmitted,
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
@@ -21,7 +23,8 @@ pub struct SubmitFragmentResult<'info> {
         seeds = [b"worker", worker.key().as_ref()],
         bump = worker_account.bump,
         constraint = worker_account.owner == worker.key() @ SiliciumError::NotAuthorized,
-        constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized
+        constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
+        constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized
     )]
     pub worker_account: Account<'info, Worker>,
 
@@ -73,11 +76,11 @@ pub fn handler(
 
     if !is_new {
         require!(f.job == ctx.accounts.job.key(), SiliciumError::InvalidParams);
-        require!(f.status != FragmentStatus::Verified, SiliciumError::BadFragmentState);
-
-        if f.status == FragmentStatus::Submitted {
-            require!(f.worker == ctx.accounts.worker.key(), SiliciumError::NotAuthorized);
-        }
+        require!(
+            f.status == FragmentStatus::Submitted,
+            SiliciumError::BadFragmentState
+        );
+        require!(f.worker == ctx.accounts.worker.key(), SiliciumError::NotAuthorized);
     }
 
     if is_new {
@@ -96,9 +99,7 @@ pub fn handler(
     f.job = ctx.accounts.job.key();
     f.fragment_index = fragment_index;
     f.worker = ctx.accounts.worker.key();
-
     f.worker_token_account = ctx.accounts.worker_token.key();
-
     f.result_hash = result_hash;
     f.proof_ref = proof_ref;
     f.status = FragmentStatus::Submitted;
@@ -106,6 +107,17 @@ pub fn handler(
 
     ctx.accounts.worker_account.total_submitted =
         ctx.accounts.worker_account.total_submitted.saturating_add(1);
+
+    emit!(FragmentSubmitted {
+        job: f.job,
+        fragment: f.key(),
+        fragment_index: f.fragment_index,
+        worker: f.worker,
+        worker_token_account: f.worker_token_account,
+        round: f.round,
+        result_hash: f.result_hash,
+        proof_ref: f.proof_ref,
+    });
 
     Ok(())
 }
