@@ -66,6 +66,12 @@ pub fn handler(
         SiliciumError::NotReadyToFinalize
     );
 
+    require!(
+        ctx.accounts.job.claimed_verifier_rewards_total
+            == ctx.accounts.job.claimable_verifier_rewards_total,
+        SiliciumError::OutstandingVerifierClaims
+    );
+
     let r = &mut ctx.accounts.result;
     r.job = ctx.accounts.job.key();
     r.final_hash = final_hash;

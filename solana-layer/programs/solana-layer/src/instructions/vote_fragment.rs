@@ -7,6 +7,7 @@ use crate::{
     events::{FragmentRejected, FragmentVerified},
     state::{
         fragment::{Fragment, FragmentStatus},
+        fragment_resolution::FragmentResolution,
         fragment_vote::FragmentVote,
         job::{Job, JobStatus},
         worker::{Worker, WorkerStatus, ROLE_VERIFY},
@@ -59,6 +60,19 @@ pub struct VoteFragment<'info> {
     )]
     pub vote: Box<Account<'info, FragmentVote>>,
 
+    #[account(
+        init_if_needed,
+        payer = verifier,
+        space = FragmentResolution::SPACE,
+        seeds = [
+            b"fragment_resolution",
+            fragment.key().as_ref(),
+            &fragment.round.to_le_bytes()
+        ],
+        bump
+    )]
+    pub round_resolution: Box<Account<'info, FragmentResolution>>,
+
     /// CHECK: escrow authority PDA
     #[account(
         seeds = [b"escrow_auth", job.key().as_ref()],
@@ -84,6 +98,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     let fragment = &mut ctx.accounts.fragment;
     let job = &mut ctx.accounts.job;
     let verifier_worker = &mut ctx.accounts.verifier_worker;
+    let round_resolution = &mut ctx.accounts.round_resolution;
 
     require!(
         fragment.status == FragmentStatus::Submitted,
@@ -108,11 +123,31 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
 
     require!(fragment.required_quorum > 0, SiliciumError::InvalidParams);
 
+    if round_resolution.fragment == Pubkey::default() {
+        round_resolution.fragment = fragment.key();
+        round_resolution.round = fragment.round;
+        round_resolution.resolved = false;
+        round_resolution.winning_choice = false;
+        round_resolution.eligible_rewards = 0;
+        round_resolution.claimed_rewards = 0;
+        round_resolution.bump = ctx.bumps.round_resolution;
+    } else {
+        require!(
+            round_resolution.fragment == fragment.key(),
+            SiliciumError::InvalidParams
+        );
+        require!(
+            round_resolution.round == fragment.round,
+            SiliciumError::InvalidParams
+        );
+    }
+
     ctx.accounts.vote.fragment = fragment.key();
     ctx.accounts.vote.verifier = ctx.accounts.verifier.key();
     ctx.accounts.vote.choice = choice;
     ctx.accounts.vote.round = fragment.round;
     ctx.accounts.vote.slashed = false;
+    ctx.accounts.vote.reward_claimed = false;
     ctx.accounts.vote.bump = ctx.bumps.vote;
 
     if choice {
@@ -122,12 +157,30 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     }
 
     let quorum = fragment.required_quorum;
+    let round_verifier_claimable = (quorum as u64)
+        .checked_mul(job.verifier_reward_per_vote)
+        .ok_or(SiliciumError::InvalidParams)?;
 
     if fragment.yes_votes >= quorum {
-        let reward = job.reward_per_fragment;
+        require!(!round_resolution.resolved, SiliciumError::BadFragmentState);
+
+        let next_claimable_total = job
+            .claimable_verifier_rewards_total
+            .checked_add(round_verifier_claimable)
+            .ok_or(SiliciumError::InvalidParams)?;
 
         require!(
-            ctx.accounts.escrow.amount >= reward,
+            next_claimable_total <= job.verifier_reward_budget,
+            SiliciumError::InsufficientVerifierBudget
+        );
+
+        let worker_reward = job.reward_per_fragment;
+        let total_needed_now = worker_reward
+            .checked_add(round_verifier_claimable)
+            .ok_or(SiliciumError::InvalidParams)?;
+
+        require!(
+            ctx.accounts.escrow.amount >= total_needed_now,
             SiliciumError::InsufficientEscrow
         );
 
@@ -141,7 +194,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
         let signer_seeds: &[&[&[u8]]] = &[seeds];
 
-        let cpi_ctx = CpiContext::new_with_signer(
+        let worker_transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.escrow.to_account_info(),
@@ -150,13 +203,18 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             },
             signer_seeds,
         );
+        token::transfer(worker_transfer_ctx, worker_reward)?;
 
-        token::transfer(cpi_ctx, reward)?;
-
-        job.paid_amount = job.paid_amount.saturating_add(reward);
+        job.paid_amount = job.paid_amount.saturating_add(worker_reward);
+        job.claimable_verifier_rewards_total = next_claimable_total;
         job.verified_fragments = job.verified_fragments.saturating_add(1);
 
         fragment.status = FragmentStatus::Verified;
+
+        round_resolution.resolved = true;
+        round_resolution.winning_choice = true;
+        round_resolution.eligible_rewards = quorum;
+        round_resolution.claimed_rewards = 0;
 
         verifier_worker.total_verified =
             verifier_worker.total_verified.saturating_add(1);
@@ -171,14 +229,39 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             fragment_index: fragment.fragment_index,
             worker: fragment.worker,
             verifier: ctx.accounts.verifier.key(),
-            reward,
+            worker_reward,
+            verifier_reward_per_vote: job.verifier_reward_per_vote,
+            eligible_verifier_rewards: quorum,
             yes_votes: fragment.yes_votes,
             round: fragment.round,
             verified_fragments: job.verified_fragments,
             expected_fragments: job.expected_fragments,
         });
     } else if fragment.no_votes >= quorum {
+        require!(!round_resolution.resolved, SiliciumError::BadFragmentState);
+
+        let next_claimable_total = job
+            .claimable_verifier_rewards_total
+            .checked_add(round_verifier_claimable)
+            .ok_or(SiliciumError::InvalidParams)?;
+
+        require!(
+            next_claimable_total <= job.verifier_reward_budget,
+            SiliciumError::InsufficientVerifierBudget
+        );
+
+        require!(
+            ctx.accounts.escrow.amount >= round_verifier_claimable,
+            SiliciumError::InsufficientEscrow
+        );
+
+        job.claimable_verifier_rewards_total = next_claimable_total;
         fragment.status = FragmentStatus::Rejected;
+
+        round_resolution.resolved = true;
+        round_resolution.winning_choice = false;
+        round_resolution.eligible_rewards = quorum;
+        round_resolution.claimed_rewards = 0;
 
         verifier_worker.total_rejected =
             verifier_worker.total_rejected.saturating_add(1);
@@ -189,6 +272,8 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             fragment_index: fragment.fragment_index,
             worker: fragment.worker,
             verifier: ctx.accounts.verifier.key(),
+            verifier_reward_per_vote: job.verifier_reward_per_vote,
+            eligible_verifier_rewards: quorum,
             no_votes: fragment.no_votes,
             round: fragment.round,
         });

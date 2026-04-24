@@ -9,6 +9,8 @@ pub struct JobCreated {
     pub job_id: u64,
     pub expected_fragments: u32,
     pub reward_per_fragment: u64,
+    pub verifier_reward_per_vote: u64,
+    pub verifier_reward_budget: u64,
     pub deposited_amount: u64,
     pub deadline_unix: i64,
     pub fragment_quorum: u16,
@@ -33,7 +35,9 @@ pub struct FragmentVerified {
     pub fragment_index: u32,
     pub worker: Pubkey,
     pub verifier: Pubkey,
-    pub reward: u64,
+    pub worker_reward: u64,
+    pub verifier_reward_per_vote: u64,
+    pub eligible_verifier_rewards: u16,
     pub yes_votes: u16,
     pub round: u16,
     pub verified_fragments: u32,
@@ -47,8 +51,22 @@ pub struct FragmentRejected {
     pub fragment_index: u32,
     pub worker: Pubkey,
     pub verifier: Pubkey,
+    pub verifier_reward_per_vote: u64,
+    pub eligible_verifier_rewards: u16,
     pub no_votes: u16,
     pub round: u16,
+}
+
+#[event]
+pub struct VerifierRewardClaimed {
+    pub job: Pubkey,
+    pub fragment: Pubkey,
+    pub verifier: Pubkey,
+    pub vote: Pubkey,
+    pub round: u16,
+    pub amount: u64,
+    pub claimed_rewards: u16,
+    pub eligible_rewards: u16,
 }
 
 #[event]

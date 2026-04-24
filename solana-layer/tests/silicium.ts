@@ -1,5 +1,5 @@
 import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
+import { Program, BN } from "@coral-xyz/anchor";
 import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
 import { assert } from "chai";
 import {
@@ -12,99 +12,276 @@ import {
 const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
 
-const program = anchor.workspace.SolanaLayer as Program;
+const program = anchor.workspace.SolanaLayer as Program<any>;
+const payer = provider.wallet.payer as anchor.web3.Keypair;
+const client = provider.wallet.publicKey;
+
+const REWARD_PER_FRAGMENT = new BN(1_000_000);
+const VERIFIER_REWARD_PER_VOTE = new BN(100_000);
+const QUORUM = 2;
 
 let sharedWorkerToken: PublicKey;
 let sharedMint: PublicKey;
-let verifierKeypair: anchor.web3.Keypair;
 let sharedEscrow: PublicKey;
 
-let rejectedJobId = new anchor.BN(2);
+let verifierKeypair: anchor.web3.Keypair;
+let verifierToken: PublicKey;
+
+let rejectedJobId = new BN(2);
 let rejectedJob: PublicKey;
 let rejectedFragment: PublicKey;
 let rejectedEscrow: PublicKey;
 
-let finalizeJobId = new anchor.BN(3);
+let finalizeJobId = new BN(3);
 let finalizeJob: PublicKey;
 let finalizeEscrow: PublicKey;
 
-let slashJobId = new anchor.BN(4);
+let slashJobId = new BN(4);
+
+function u16le(value: number): Buffer {
+  const b = Buffer.alloc(2);
+  b.writeUInt16LE(value, 0);
+  return b;
+}
+
+function u32le(value: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeUInt32LE(value, 0);
+  return b;
+}
+
+function u64le(value: BN): Buffer {
+  return value.toArrayLike(Buffer, "le", 8);
+}
+
+function workerPda(owner: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("worker"), owner.toBuffer()],
+    program.programId
+  )[0];
+}
+
+function stakeAuthPda(workerAccount: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("stake_auth"), workerAccount.toBuffer()],
+    program.programId
+  )[0];
+}
+
+function stakeVaultPda(owner: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("stake_vault"), owner.toBuffer()],
+    program.programId
+  )[0];
+}
+
+function jobPda(clientPk: PublicKey, jobId: BN): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("job"), clientPk.toBuffer(), u64le(jobId)],
+    program.programId
+  )[0];
+}
+
+function escrowAuthPda(job: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("escrow_auth"), job.toBuffer()],
+    program.programId
+  )[0];
+}
+
+function fragmentPda(job: PublicKey, fragmentIndex: number): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("fragment"), job.toBuffer(), u32le(fragmentIndex)],
+    program.programId
+  )[0];
+}
+
+function votePda(fragment: PublicKey, verifier: PublicKey, round: number): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("fragment_vote"),
+      fragment.toBuffer(),
+      verifier.toBuffer(),
+      u16le(round),
+    ],
+    program.programId
+  )[0];
+}
+
+function resolutionPda(fragment: PublicKey, round: number): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("fragment_resolution"),
+      fragment.toBuffer(),
+      u16le(round),
+    ],
+    program.programId
+  )[0];
+}
+
+function resultPda(job: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("result"), job.toBuffer()],
+    program.programId
+  )[0];
+}
+
+function verifierBudget(expectedFragments: number): BN {
+  return new BN(
+    expectedFragments * QUORUM * VERIFIER_REWARD_PER_VOTE.toNumber()
+  );
+}
+
+async function airdrop(pk: PublicKey, amount = 2_000_000_000) {
+  await provider.connection.requestAirdrop(pk, amount);
+  await new Promise((r) => setTimeout(r, 1000));
+}
+
+async function registerVerifierAndStake(verifier: anchor.web3.Keypair) {
+  await airdrop(verifier.publicKey);
+
+  const verifierWorker = workerPda(verifier.publicKey);
+
+  await program.methods
+    .registerWorker()
+    .accounts({
+      worker: verifier.publicKey,
+      workerAccount: verifierWorker,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([verifier])
+    .rpc();
+
+  const token = await createAssociatedTokenAccount(
+    provider.connection,
+    payer,
+    sharedMint,
+    verifier.publicKey
+  );
+
+  await mintTo(
+    provider.connection,
+    payer,
+    sharedMint,
+    token,
+    client,
+    10_000_000
+  );
+
+  const stakeAuth = stakeAuthPda(verifierWorker);
+  const stakeVault = stakeVaultPda(verifier.publicKey);
+
+  await program.methods
+    .stakeWorker(new BN(1_000_000))
+    .accounts({
+      worker: verifier.publicKey,
+      workerAccount: verifierWorker,
+      mint: sharedMint,
+      workerToken: token,
+      stakeAuth,
+      stakeVault,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+      rent: SYSVAR_RENT_PUBKEY,
+    })
+    .signers([verifier])
+    .rpc();
+
+  return {
+    verifierWorker,
+    verifierToken: token,
+    stakeAuth,
+    stakeVault,
+  };
+}
+
+async function claimVerifierReward(
+  verifier: anchor.web3.Keypair,
+  job: PublicKey,
+  fragment: PublicKey,
+  verifierTokenPk: PublicKey,
+  round: number
+) {
+  const vote = votePda(fragment, verifier.publicKey, round);
+  const roundResolution = resolutionPda(fragment, round);
+  const verifierWorker = workerPda(verifier.publicKey);
+  const escrowAuth = escrowAuthPda(job);
+  const jobAccount = await program.account.job.fetch(job);
+
+  await program.methods
+    .claimVerifierReward()
+    .accounts({
+      verifier: verifier.publicKey,
+      job,
+      fragment,
+      roundResolution,
+      vote,
+      verifierWorker,
+      escrowAuth,
+      escrow: jobAccount.escrow,
+      verifierToken: verifierTokenPk,
+      tokenProgram: TOKEN_PROGRAM_ID,
+    })
+    .signers([verifier])
+    .rpc();
+}
 
 describe("silicium", () => {
   it("registers a worker", async () => {
-    const worker = provider.wallet.publicKey;
-
-    const [workerAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), worker.toBuffer()],
-      program.programId
-    );
+    const workerAccount = workerPda(client);
 
     await program.methods
       .registerWorker()
       .accounts({
-        worker,
+        worker: client,
         workerAccount,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
 
     const account = await program.account.worker.fetch(workerAccount);
-    assert.equal(account.owner.toBase58(), worker.toBase58());
+    assert.equal(account.owner.toBase58(), client.toBase58());
   });
 
   it("stakes SPL tokens for a worker", async () => {
-    const worker = provider.wallet.publicKey;
+    const workerAccount = workerPda(client);
 
-    const [workerAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), worker.toBuffer()],
-      program.programId
-    );
-
-    const mint = await createMint(
+    sharedMint = await createMint(
       provider.connection,
-      provider.wallet.payer,
-      worker,
+      payer,
+      client,
       null,
       6
     );
-    sharedMint = mint;
 
-    const workerToken = await createAssociatedTokenAccount(
+    sharedWorkerToken = await createAssociatedTokenAccount(
       provider.connection,
-      provider.wallet.payer,
-      mint,
-      worker
+      payer,
+      sharedMint,
+      client
     );
-    sharedWorkerToken = workerToken;
 
     await mintTo(
       provider.connection,
-      provider.wallet.payer,
-      mint,
-      workerToken,
-      worker,
+      payer,
+      sharedMint,
+      sharedWorkerToken,
+      client,
       1_000_000_000
     );
 
-    const [stakeAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_auth"), workerAccount.toBuffer()],
-      program.programId
-    );
+    const stakeAuth = stakeAuthPda(workerAccount);
+    const stakeVault = stakeVaultPda(client);
 
-    const [stakeVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_vault"), worker.toBuffer()],
-      program.programId
-    );
-
-    const amount = new anchor.BN(1_000_000);
+    const amount = new BN(1_000_000);
 
     await program.methods
       .stakeWorker(amount)
       .accounts({
-        worker,
+        worker: client,
         workerAccount,
-        mint,
-        workerToken,
+        mint: sharedMint,
+        workerToken: sharedWorkerToken,
         stakeAuth,
         stakeVault,
         tokenProgram: TOKEN_PROGRAM_ID,
@@ -116,54 +293,47 @@ describe("silicium", () => {
     const account = await program.account.worker.fetch(workerAccount);
 
     assert.equal(account.stakeAmount.toString(), amount.toString());
-    assert.equal(account.stakeMint.toBase58(), mint.toBase58());
+    assert.equal(account.stakeMint.toBase58(), sharedMint.toBase58());
     assert.equal(account.stakeVault.toBase58(), stakeVault.toBase58());
   });
 
-  it("creates a job and funds escrow", async () => {
-    const client = provider.wallet.publicKey;
-    const payer = provider.wallet.payer as anchor.web3.Keypair;
-
-    const jobId = new anchor.BN(1);
+  it("creates a job and funds escrow with verifier budget", async () => {
+    const jobId = new BN(1);
     const expectedFragments = 3;
-    const rewardPerFragment = new anchor.BN(1_000_000);
-    const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
-    const fragmentQuorum = 2;
-
-    const mint = sharedMint;
-    const clientToken = sharedWorkerToken;
+    const deadlineUnix = new BN(Math.floor(Date.now() / 1000) + 3600);
+    const budget = verifierBudget(expectedFragments);
 
     await mintTo(
       provider.connection,
       payer,
-      mint,
-      clientToken,
+      sharedMint,
+      sharedWorkerToken,
       client,
       10_000_000
     );
 
-    const [job] = PublicKey.findProgramAddressSync(
-      [Buffer.from("job"), client.toBuffer(), jobId.toArrayLike(Buffer, "le", 8)],
-      program.programId
-    );
-
-    const [escrowAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("escrow_auth"), job.toBuffer()],
-      program.programId
-    );
-
+    const job = jobPda(client, jobId);
+    const escrowAuth = escrowAuthPda(job);
     const escrow = anchor.web3.Keypair.generate();
     sharedEscrow = escrow.publicKey;
 
     await program.methods
-      .createJob(jobId, expectedFragments, rewardPerFragment, deadlineUnix, fragmentQuorum)
+      .createJob(
+        jobId,
+        expectedFragments,
+        REWARD_PER_FRAGMENT,
+        VERIFIER_REWARD_PER_VOTE,
+        budget,
+        deadlineUnix,
+        QUORUM
+      )
       .accounts({
         client,
-        mint,
+        mint: sharedMint,
         job,
         escrowAuth,
         escrow: escrow.publicKey,
-        clientToken,
+        clientToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         rent: SYSVAR_RENT_PUBKEY,
@@ -173,57 +343,45 @@ describe("silicium", () => {
 
     const jobAccount = await program.account.job.fetch(job);
 
+    const expectedDeposit =
+      expectedFragments * REWARD_PER_FRAGMENT.toNumber() + budget.toNumber();
+
     assert.equal(jobAccount.jobId.toString(), jobId.toString());
     assert.equal(jobAccount.client.toBase58(), client.toBase58());
-    assert.equal(jobAccount.mint.toBase58(), mint.toBase58());
+    assert.equal(jobAccount.mint.toBase58(), sharedMint.toBase58());
     assert.equal(jobAccount.escrow.toBase58(), escrow.publicKey.toBase58());
     assert.equal(jobAccount.expectedFragments, expectedFragments);
     assert.equal(jobAccount.verifiedFragments, 0);
-    assert.equal(jobAccount.rewardPerFragment.toString(), rewardPerFragment.toString());
-    assert.equal(jobAccount.depositedAmount.toString(), "3000000");
+    assert.equal(jobAccount.rewardPerFragment.toString(), REWARD_PER_FRAGMENT.toString());
+    assert.equal(
+      jobAccount.verifierRewardPerVote.toString(),
+      VERIFIER_REWARD_PER_VOTE.toString()
+    );
+    assert.equal(jobAccount.verifierRewardBudget.toString(), budget.toString());
+    assert.equal(jobAccount.depositedAmount.toString(), expectedDeposit.toString());
     assert.equal(jobAccount.paidAmount.toString(), "0");
-    assert.equal(jobAccount.fragmentQuorum, fragmentQuorum);
+    assert.equal(jobAccount.claimableVerifierRewardsTotal.toString(), "0");
+    assert.equal(jobAccount.claimedVerifierRewardsTotal.toString(), "0");
+    assert.equal(jobAccount.fragmentQuorum, QUORUM);
     assert.isAbove(Number(jobAccount.createdAtUnix.toString()), 0);
     assert.deepEqual(jobAccount.status, { open: {} });
   });
 
   it("submits a fragment result", async () => {
-    const worker = provider.wallet.publicKey;
-    const jobId = new anchor.BN(1);
-
-    const [workerAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), worker.toBuffer()],
-      program.programId
-    );
-
-    const [job] = PublicKey.findProgramAddressSync(
-      [Buffer.from("job"), worker.toBuffer(), jobId.toArrayLike(Buffer, "le", 8)],
-      program.programId
-    );
-
+    const jobId = new BN(1);
+    const workerAccount = workerPda(client);
+    const job = jobPda(client, jobId);
     const fragmentIndex = 0;
-
-    const [fragment] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment"),
-        job.toBuffer(),
-        Buffer.from(new Uint8Array(new Uint32Array([fragmentIndex]).buffer)),
-      ],
-      program.programId
-    );
-
-    const workerToken = sharedWorkerToken;
-    const resultHash = Array(32).fill(1);
-    const proofRef = Array(32).fill(2);
+    const fragment = fragmentPda(job, fragmentIndex);
 
     await program.methods
-      .submitFragmentResult(fragmentIndex, resultHash, proofRef)
+      .submitFragmentResult(fragmentIndex, Array(32).fill(1), Array(32).fill(2))
       .accounts({
-        worker,
+        worker: client,
         workerAccount,
         job,
         fragment,
-        workerToken,
+        workerToken: sharedWorkerToken,
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -233,121 +391,34 @@ describe("silicium", () => {
 
     assert.equal(fragmentAccount.job.toBase58(), job.toBase58());
     assert.equal(fragmentAccount.fragmentIndex, fragmentIndex);
-    assert.equal(fragmentAccount.worker.toBase58(), worker.toBase58());
+    assert.equal(fragmentAccount.worker.toBase58(), client.toBase58());
     assert.deepEqual(fragmentAccount.status, { submitted: {} });
     assert.equal(workerAccountData.totalSubmitted, 1);
   });
 
   it("registers and stakes a verifier", async () => {
     verifierKeypair = anchor.web3.Keypair.generate();
+    const setup = await registerVerifierAndStake(verifierKeypair);
+    verifierToken = setup.verifierToken;
 
-    await provider.connection.requestAirdrop(verifierKeypair.publicKey, 2_000_000_000);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    const [verifierWorker] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), verifierKeypair.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .registerWorker()
-      .accounts({
-        worker: verifierKeypair.publicKey,
-        workerAccount: verifierWorker,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([verifierKeypair])
-      .rpc();
-
-    const verifierToken = await createAssociatedTokenAccount(
-      provider.connection,
-      provider.wallet.payer as anchor.web3.Keypair,
-      sharedMint,
-      verifierKeypair.publicKey
-    );
-
-    await mintTo(
-      provider.connection,
-      provider.wallet.payer as anchor.web3.Keypair,
-      sharedMint,
-      verifierToken,
-      provider.wallet.publicKey,
-      10_000_000
-    );
-
-    const [stakeAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_auth"), verifierWorker.toBuffer()],
-      program.programId
-    );
-
-    const [stakeVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_vault"), verifierKeypair.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .stakeWorker(new anchor.BN(1_000_000))
-      .accounts({
-        worker: verifierKeypair.publicKey,
-        workerAccount: verifierWorker,
-        mint: sharedMint,
-        workerToken: verifierToken,
-        stakeAuth,
-        stakeVault,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      })
-      .signers([verifierKeypair])
-      .rpc();
-
-    const verifierAccount = await program.account.worker.fetch(verifierWorker);
+    const verifierAccount = await program.account.worker.fetch(setup.verifierWorker);
     assert.equal(verifierAccount.stakeAmount.toString(), "1000000");
   });
 
-  it("votes yes on a fragment and verifies it", async () => {
-    const client = provider.wallet.publicKey;
-    const jobId = new anchor.BN(1);
+  it("records a first yes vote without resolving the fragment", async () => {
+    const jobId = new BN(1);
     const fragmentIndex = 0;
 
-    const [job] = PublicKey.findProgramAddressSync(
-      [Buffer.from("job"), client.toBuffer(), jobId.toArrayLike(Buffer, "le", 8)],
-      program.programId
-    );
+    const job = jobPda(client, jobId);
+    const fragment = fragmentPda(job, fragmentIndex);
+    const verifierWorker = workerPda(verifierKeypair.publicKey);
 
-    const [fragment] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment"),
-        job.toBuffer(),
-        Buffer.from(new Uint8Array(new Uint32Array([fragmentIndex]).buffer)),
-      ],
-      program.programId
-    );
+    const fragmentBefore = await program.account.fragment.fetch(fragment);
+    const round = fragmentBefore.round;
 
-    const [verifierWorker] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), verifierKeypair.publicKey.toBuffer()],
-      program.programId
-    );
-
-    const fragmentAccountBefore = await program.account.fragment.fetch(fragment);
-
-    const roundBuffer = Buffer.alloc(2);
-    roundBuffer.writeUInt16LE(fragmentAccountBefore.round, 0);
-
-    const [vote] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment_vote"),
-        fragment.toBuffer(),
-        verifierKeypair.publicKey.toBuffer(),
-        roundBuffer,
-      ],
-      program.programId
-    );
-
-    const [escrowAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("escrow_auth"), job.toBuffer()],
-      program.programId
-    );
+    const vote = votePda(fragment, verifierKeypair.publicKey, round);
+    const roundResolution = resolutionPda(fragment, round);
+    const escrowAuth = escrowAuthPda(job);
 
     await program.methods
       .voteFragment(true)
@@ -357,6 +428,7 @@ describe("silicium", () => {
         fragment,
         verifierWorker,
         vote,
+        roundResolution,
         escrowAuth,
         escrow: sharedEscrow,
         workerToken: sharedWorkerToken,
@@ -366,120 +438,41 @@ describe("silicium", () => {
       .signers([verifierKeypair])
       .rpc();
 
-    const fragmentAccount = await program.account.fragment.fetch(fragment);
-    const jobAccount = await program.account.job.fetch(job);
+    const fragmentAfter = await program.account.fragment.fetch(fragment);
+    const jobAfter = await program.account.job.fetch(job);
     const verifierAccount = await program.account.worker.fetch(verifierWorker);
     const voteAccount = await program.account.fragmentVote.fetch(vote);
+    const resolutionAccount = await program.account.fragmentResolution.fetch(roundResolution);
 
     assert.equal(voteAccount.choice, true);
-    assert.equal(voteAccount.verifier.toBase58(), verifierKeypair.publicKey.toBase58());
-
-    assert.equal(fragmentAccount.yesVotes, 1);
-    assert.deepEqual(fragmentAccount.status, { submitted: {} });
-
-    assert.equal(jobAccount.verifiedFragments, 0);
+    assert.equal(voteAccount.rewardClaimed, false);
+    assert.equal(fragmentAfter.yesVotes, 1);
+    assert.deepEqual(fragmentAfter.status, { submitted: {} });
+    assert.equal(jobAfter.verifiedFragments, 0);
+    assert.equal(jobAfter.claimableVerifierRewardsTotal.toString(), "0");
     assert.equal(verifierAccount.totalVerified, 0);
+    assert.equal(resolutionAccount.resolved, false);
   });
 
-  it("reaches quorum and pays worker", async () => {
-    const client = provider.wallet.publicKey;
-    const jobId = new anchor.BN(1);
+  it("reaches quorum, pays worker, and reserves verifier rewards", async () => {
+    const jobId = new BN(1);
     const fragmentIndex = 0;
 
     const verifier2 = anchor.web3.Keypair.generate();
+    const {
+      verifierWorker: verifierWorker2,
+      verifierToken: verifierToken2,
+    } = await registerVerifierAndStake(verifier2);
 
-    await provider.connection.requestAirdrop(verifier2.publicKey, 2_000_000_000);
-    await new Promise((r) => setTimeout(r, 1000));
-
-    const [verifierWorker2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), verifier2.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .registerWorker()
-      .accounts({
-        worker: verifier2.publicKey,
-        workerAccount: verifierWorker2,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([verifier2])
-      .rpc();
-
-    const verifierToken2 = await createAssociatedTokenAccount(
-      provider.connection,
-      provider.wallet.payer as anchor.web3.Keypair,
-      sharedMint,
-      verifier2.publicKey
-    );
-
-    await mintTo(
-      provider.connection,
-      provider.wallet.payer as anchor.web3.Keypair,
-      sharedMint,
-      verifierToken2,
-      provider.wallet.publicKey,
-      10_000_000
-    );
-
-    const [stakeAuth2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_auth"), verifierWorker2.toBuffer()],
-      program.programId
-    );
-
-    const [stakeVault2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_vault"), verifier2.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .stakeWorker(new anchor.BN(1_000_000))
-      .accounts({
-        worker: verifier2.publicKey,
-        workerAccount: verifierWorker2,
-        mint: sharedMint,
-        workerToken: verifierToken2,
-        stakeAuth: stakeAuth2,
-        stakeVault: stakeVault2,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      })
-      .signers([verifier2])
-      .rpc();
-
-    const [job] = PublicKey.findProgramAddressSync(
-      [Buffer.from("job"), client.toBuffer(), jobId.toArrayLike(Buffer, "le", 8)],
-      program.programId
-    );
-
-    const indexBuffer = Buffer.alloc(4);
-    indexBuffer.writeUInt32LE(fragmentIndex, 0);
-
-    const [fragment] = PublicKey.findProgramAddressSync(
-      [Buffer.from("fragment"), job.toBuffer(), indexBuffer],
-      program.programId
-    );
+    const job = jobPda(client, jobId);
+    const fragment = fragmentPda(job, fragmentIndex);
 
     const fragmentBefore = await program.account.fragment.fetch(fragment);
+    const round = fragmentBefore.round;
 
-    const roundBuffer = Buffer.alloc(2);
-    roundBuffer.writeUInt16LE(fragmentBefore.round, 0);
-
-    const [vote2] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment_vote"),
-        fragment.toBuffer(),
-        verifier2.publicKey.toBuffer(),
-        roundBuffer,
-      ],
-      program.programId
-    );
-
-    const [escrowAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("escrow_auth"), job.toBuffer()],
-      program.programId
-    );
+    const vote2 = votePda(fragment, verifier2.publicKey, round);
+    const roundResolution = resolutionPda(fragment, round);
+    const escrowAuth = escrowAuthPda(job);
 
     const workerTokenBefore = await provider.connection.getTokenAccountBalance(sharedWorkerToken);
 
@@ -491,6 +484,7 @@ describe("silicium", () => {
         fragment,
         verifierWorker: verifierWorker2,
         vote: vote2,
+        roundResolution,
         escrowAuth,
         escrow: sharedEscrow,
         workerToken: sharedWorkerToken,
@@ -501,39 +495,82 @@ describe("silicium", () => {
       .rpc();
 
     const fragmentAfter = await program.account.fragment.fetch(fragment);
+    const resolutionAfter = await program.account.fragmentResolution.fetch(roundResolution);
     const jobAfter = await program.account.job.fetch(job);
     const workerTokenAfter = await provider.connection.getTokenAccountBalance(sharedWorkerToken);
 
     assert.deepEqual(fragmentAfter.status, { verified: {} });
     assert.equal(jobAfter.verifiedFragments, 1);
+    assert.equal(
+      jobAfter.claimableVerifierRewardsTotal.toString(),
+      (QUORUM * VERIFIER_REWARD_PER_VOTE.toNumber()).toString()
+    );
+    assert.equal(resolutionAfter.resolved, true);
+    assert.equal(resolutionAfter.winningChoice, true);
+    assert.equal(resolutionAfter.eligibleRewards, QUORUM);
+    assert.equal(resolutionAfter.claimedRewards, 0);
 
     const before = Number(workerTokenBefore.value.amount);
     const after = Number(workerTokenAfter.value.amount);
+    assert.equal(after - before, REWARD_PER_FRAGMENT.toNumber());
 
-    assert.equal(after - before, 1_000_000);
+    // stash for next claim test
+    (globalThis as any).__verifier2 = verifier2;
+    (globalThis as any).__verifier2Token = verifierToken2;
+    (globalThis as any).__round0 = round;
+  });
+
+  it("claims verifier rewards for the winning yes votes", async () => {
+    const job = jobPda(client, new BN(1));
+    const fragment = fragmentPda(job, 0);
+    const round = (globalThis as any).__round0 as number;
+    const verifier2 = (globalThis as any).__verifier2 as anchor.web3.Keypair;
+    const verifier2Token = (globalThis as any).__verifier2Token as PublicKey;
+
+    const before1 = await provider.connection.getTokenAccountBalance(verifierToken);
+    const before2 = await provider.connection.getTokenAccountBalance(verifier2Token);
+
+    await claimVerifierReward(verifierKeypair, job, fragment, verifierToken, round);
+    await claimVerifierReward(verifier2, job, fragment, verifier2Token, round);
+
+    const after1 = await provider.connection.getTokenAccountBalance(verifierToken);
+    const after2 = await provider.connection.getTokenAccountBalance(verifier2Token);
+
+    assert.equal(
+      Number(after1.value.amount) - Number(before1.value.amount),
+      VERIFIER_REWARD_PER_VOTE.toNumber()
+    );
+
+    assert.equal(
+      Number(after2.value.amount) - Number(before2.value.amount),
+      VERIFIER_REWARD_PER_VOTE.toNumber()
+    );
+
+    const vote1 = votePda(fragment, verifierKeypair.publicKey, round);
+    const vote2 = votePda(fragment, verifier2.publicKey, round);
+    const resolution = resolutionPda(fragment, round);
+    const jobAccount = await program.account.job.fetch(job);
+
+    const vote1Account = await program.account.fragmentVote.fetch(vote1);
+    const vote2Account = await program.account.fragmentVote.fetch(vote2);
+    const resolutionAccount = await program.account.fragmentResolution.fetch(resolution);
+
+    assert.equal(vote1Account.rewardClaimed, true);
+    assert.equal(vote2Account.rewardClaimed, true);
+    assert.equal(resolutionAccount.claimedRewards, QUORUM);
+    assert.equal(
+      jobAccount.claimedVerifierRewardsTotal.toString(),
+      (QUORUM * VERIFIER_REWARD_PER_VOTE.toNumber()).toString()
+    );
   });
 
   it("creates a rejected fragment", async () => {
-    const client = provider.wallet.publicKey;
-    const payer = provider.wallet.payer as anchor.web3.Keypair;
-
     const expectedFragments = 2;
-    const rewardPerFragment = new anchor.BN(1_000_000);
-    const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
-    const fragmentQuorum = 2;
+    const deadlineUnix = new BN(Math.floor(Date.now() / 1000) + 3600);
+    const budget = verifierBudget(expectedFragments);
 
-    const clientToken = sharedWorkerToken;
-
-    [rejectedJob] = PublicKey.findProgramAddressSync(
-      [Buffer.from("job"), client.toBuffer(), rejectedJobId.toArrayLike(Buffer, "le", 8)],
-      program.programId
-    );
-
-    const [escrowAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("escrow_auth"), rejectedJob.toBuffer()],
-      program.programId
-    );
-
+    rejectedJob = jobPda(client, rejectedJobId);
+    const escrowAuth = escrowAuthPda(rejectedJob);
     const escrow = anchor.web3.Keypair.generate();
     rejectedEscrow = escrow.publicKey;
 
@@ -541,18 +578,20 @@ describe("silicium", () => {
       provider.connection,
       payer,
       sharedMint,
-      clientToken,
+      sharedWorkerToken,
       client,
-      2_000_000
+      2_000_000 + budget.toNumber()
     );
 
     await program.methods
       .createJob(
         rejectedJobId,
         expectedFragments,
-        rewardPerFragment,
+        REWARD_PER_FRAGMENT,
+        VERIFIER_REWARD_PER_VOTE,
+        budget,
         deadlineUnix,
-        fragmentQuorum
+        QUORUM
       )
       .accounts({
         client,
@@ -560,7 +599,7 @@ describe("silicium", () => {
         job: rejectedJob,
         escrowAuth,
         escrow: rejectedEscrow,
-        clientToken,
+        clientToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
         rent: SYSVAR_RENT_PUBKEY,
@@ -568,23 +607,13 @@ describe("silicium", () => {
       .signers([escrow])
       .rpc();
 
-    const fragmentIndex = 0;
-    const indexBuffer = Buffer.alloc(4);
-    indexBuffer.writeUInt32LE(fragmentIndex, 0);
-
-    [rejectedFragment] = PublicKey.findProgramAddressSync(
-      [Buffer.from("fragment"), rejectedJob.toBuffer(), indexBuffer],
-      program.programId
-    );
+    rejectedFragment = fragmentPda(rejectedJob, 0);
 
     await program.methods
-      .submitFragmentResult(fragmentIndex, Array(32).fill(7), Array(32).fill(8))
+      .submitFragmentResult(0, Array(32).fill(7), Array(32).fill(8))
       .accounts({
         worker: client,
-        workerAccount: PublicKey.findProgramAddressSync(
-          [Buffer.from("worker"), client.toBuffer()],
-          program.programId
-        )[0],
+        workerAccount: workerPda(client),
         job: rejectedJob,
         fragment: rejectedFragment,
         workerToken: sharedWorkerToken,
@@ -593,153 +622,24 @@ describe("silicium", () => {
       .rpc();
 
     const rejectVerifier1 = anchor.web3.Keypair.generate();
-
-    await provider.connection.requestAirdrop(rejectVerifier1.publicKey, 2_000_000_000);
-    await new Promise((r) => setTimeout(r, 1000));
-
-    const [rejectVerifierWorker1] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), rejectVerifier1.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .registerWorker()
-      .accounts({
-        worker: rejectVerifier1.publicKey,
-        workerAccount: rejectVerifierWorker1,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([rejectVerifier1])
-      .rpc();
-
-    const rejectVerifierToken1 = await createAssociatedTokenAccount(
-      provider.connection,
-      payer,
-      sharedMint,
-      rejectVerifier1.publicKey
-    );
-
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      rejectVerifierToken1,
-      client,
-      10_000_000
-    );
-
-    const [stakeAuth1] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_auth"), rejectVerifierWorker1.toBuffer()],
-      program.programId
-    );
-
-    const [stakeVault1] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_vault"), rejectVerifier1.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .stakeWorker(new anchor.BN(1_000_000))
-      .accounts({
-        worker: rejectVerifier1.publicKey,
-        workerAccount: rejectVerifierWorker1,
-        mint: sharedMint,
-        workerToken: rejectVerifierToken1,
-        stakeAuth: stakeAuth1,
-        stakeVault: stakeVault1,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      })
-      .signers([rejectVerifier1])
-      .rpc();
-
     const rejectVerifier2 = anchor.web3.Keypair.generate();
 
-    await provider.connection.requestAirdrop(rejectVerifier2.publicKey, 2_000_000_000);
-    await new Promise((r) => setTimeout(r, 1000));
+    const {
+      verifierWorker: rejectVerifierWorker1,
+      verifierToken: rejectVerifierToken1,
+    } = await registerVerifierAndStake(rejectVerifier1);
 
-    const [rejectVerifierWorker2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), rejectVerifier2.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .registerWorker()
-      .accounts({
-        worker: rejectVerifier2.publicKey,
-        workerAccount: rejectVerifierWorker2,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([rejectVerifier2])
-      .rpc();
-
-    const rejectVerifierToken2 = await createAssociatedTokenAccount(
-      provider.connection,
-      payer,
-      sharedMint,
-      rejectVerifier2.publicKey
-    );
-
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      rejectVerifierToken2,
-      client,
-      10_000_000
-    );
-
-    const [stakeAuth2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_auth"), rejectVerifierWorker2.toBuffer()],
-      program.programId
-    );
-
-    const [stakeVault2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_vault"), rejectVerifier2.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .stakeWorker(new anchor.BN(1_000_000))
-      .accounts({
-        worker: rejectVerifier2.publicKey,
-        workerAccount: rejectVerifierWorker2,
-        mint: sharedMint,
-        workerToken: rejectVerifierToken2,
-        stakeAuth: stakeAuth2,
-        stakeVault: stakeVault2,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      })
-      .signers([rejectVerifier2])
-      .rpc();
+    const {
+      verifierWorker: rejectVerifierWorker2,
+      verifierToken: rejectVerifierToken2,
+    } = await registerVerifierAndStake(rejectVerifier2);
 
     const fragmentBefore = await program.account.fragment.fetch(rejectedFragment);
+    const round = fragmentBefore.round;
 
-    const roundBuffer = Buffer.alloc(2);
-    roundBuffer.writeUInt16LE(fragmentBefore.round, 0);
-
-    const [vote1] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment_vote"),
-        rejectedFragment.toBuffer(),
-        rejectVerifier1.publicKey.toBuffer(),
-        roundBuffer,
-      ],
-      program.programId
-    );
-
-    const [vote2] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment_vote"),
-        rejectedFragment.toBuffer(),
-        rejectVerifier2.publicKey.toBuffer(),
-        roundBuffer,
-      ],
-      program.programId
-    );
+    const vote1 = votePda(rejectedFragment, rejectVerifier1.publicKey, round);
+    const vote2 = votePda(rejectedFragment, rejectVerifier2.publicKey, round);
+    const roundResolution = resolutionPda(rejectedFragment, round);
 
     await program.methods
       .voteFragment(false)
@@ -749,6 +649,7 @@ describe("silicium", () => {
         fragment: rejectedFragment,
         verifierWorker: rejectVerifierWorker1,
         vote: vote1,
+        roundResolution,
         escrowAuth,
         escrow: rejectedEscrow,
         workerToken: sharedWorkerToken,
@@ -769,6 +670,7 @@ describe("silicium", () => {
         fragment: rejectedFragment,
         verifierWorker: rejectVerifierWorker2,
         vote: vote2,
+        roundResolution,
         escrowAuth,
         escrow: rejectedEscrow,
         workerToken: sharedWorkerToken,
@@ -779,25 +681,58 @@ describe("silicium", () => {
       .rpc();
 
     const fragmentAfter = await program.account.fragment.fetch(rejectedFragment);
+    const resolutionAfter = await program.account.fragmentResolution.fetch(roundResolution);
+    const jobAfter = await program.account.job.fetch(rejectedJob);
+
     assert.deepEqual(fragmentAfter.status, { rejected: {} });
+    assert.equal(resolutionAfter.resolved, true);
+    assert.equal(resolutionAfter.winningChoice, false);
+    assert.equal(resolutionAfter.eligibleRewards, QUORUM);
+    assert.equal(
+      jobAfter.claimableVerifierRewardsTotal.toString(),
+      (QUORUM * VERIFIER_REWARD_PER_VOTE.toNumber()).toString()
+    );
+
+    const before1 = await provider.connection.getTokenAccountBalance(rejectVerifierToken1);
+    const before2 = await provider.connection.getTokenAccountBalance(rejectVerifierToken2);
+
+    await claimVerifierReward(
+      rejectVerifier1,
+      rejectedJob,
+      rejectedFragment,
+      rejectVerifierToken1,
+      round
+    );
+
+    await claimVerifierReward(
+      rejectVerifier2,
+      rejectedJob,
+      rejectedFragment,
+      rejectVerifierToken2,
+      round
+    );
+
+    const after1 = await provider.connection.getTokenAccountBalance(rejectVerifierToken1);
+    const after2 = await provider.connection.getTokenAccountBalance(rejectVerifierToken2);
+
+    assert.equal(
+      Number(after1.value.amount) - Number(before1.value.amount),
+      VERIFIER_REWARD_PER_VOTE.toNumber()
+    );
+    assert.equal(
+      Number(after2.value.amount) - Number(before2.value.amount),
+      VERIFIER_REWARD_PER_VOTE.toNumber()
+    );
   });
 
   it("resubmits a rejected fragment", async () => {
-    const worker = provider.wallet.publicKey;
-    const fragmentIndex = 0;
-
-    const [workerAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), worker.toBuffer()],
-      program.programId
-    );
-
     const before = await program.account.fragment.fetch(rejectedFragment);
 
     await program.methods
-      .resubmitFragmentResult(fragmentIndex, Array(32).fill(9), Array(32).fill(10))
+      .resubmitFragmentResult(0, Array(32).fill(9), Array(32).fill(10))
       .accounts({
-        worker,
-        workerAccount,
+        worker: client,
+        workerAccount: workerPda(client),
         job: rejectedJob,
         fragment: rejectedFragment,
         workerToken: sharedWorkerToken,
@@ -805,7 +740,7 @@ describe("silicium", () => {
       .rpc();
 
     const after = await program.account.fragment.fetch(rejectedFragment);
-    const workerAfter = await program.account.worker.fetch(workerAccount);
+    const workerAfter = await program.account.worker.fetch(workerPda(client));
 
     assert.equal(after.round, before.round + 1);
     assert.equal(after.yesVotes, 0);
@@ -816,25 +751,13 @@ describe("silicium", () => {
     assert.equal(workerAfter.totalSubmitted, 3);
   });
 
-  it("creates, verifies, and finalizes a job", async () => {
-    const client = provider.wallet.publicKey;
-    const payer = provider.wallet.payer as anchor.web3.Keypair;
-
+  it("creates, verifies, claims, and finalizes a job", async () => {
     const expectedFragments = 2;
-    const rewardPerFragment = new anchor.BN(1_000_000);
-    const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
-    const fragmentQuorum = 2;
+    const deadlineUnix = new BN(Math.floor(Date.now() / 1000) + 3600);
+    const budget = verifierBudget(expectedFragments);
 
-    [finalizeJob] = PublicKey.findProgramAddressSync(
-      [Buffer.from("job"), client.toBuffer(), finalizeJobId.toArrayLike(Buffer, "le", 8)],
-      program.programId
-    );
-
-    const [escrowAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("escrow_auth"), finalizeJob.toBuffer()],
-      program.programId
-    );
-
+    finalizeJob = jobPda(client, finalizeJobId);
+    const escrowAuth = escrowAuthPda(finalizeJob);
     const escrow = anchor.web3.Keypair.generate();
     finalizeEscrow = escrow.publicKey;
 
@@ -844,16 +767,18 @@ describe("silicium", () => {
       sharedMint,
       sharedWorkerToken,
       client,
-      2_000_000
+      2_000_000 + budget.toNumber()
     );
 
     await program.methods
       .createJob(
         finalizeJobId,
         expectedFragments,
-        rewardPerFragment,
+        REWARD_PER_FRAGMENT,
+        VERIFIER_REWARD_PER_VOTE,
+        budget,
         deadlineUnix,
-        fragmentQuorum
+        QUORUM
       )
       .accounts({
         client,
@@ -869,19 +794,10 @@ describe("silicium", () => {
       .signers([escrow])
       .rpc();
 
-    const [workerAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), client.toBuffer()],
-      program.programId
-    );
+    const workerAccount = workerPda(client);
 
     const submitAndVerifyFragment = async (fragmentIndex: number) => {
-      const indexBuffer = Buffer.alloc(4);
-      indexBuffer.writeUInt32LE(fragmentIndex, 0);
-
-      const [fragment] = PublicKey.findProgramAddressSync(
-        [Buffer.from("fragment"), finalizeJob.toBuffer(), indexBuffer],
-        program.programId
-      );
+      const fragment = fragmentPda(finalizeJob, fragmentIndex);
 
       await program.methods
         .submitFragmentResult(
@@ -899,104 +815,64 @@ describe("silicium", () => {
         })
         .rpc();
 
-      const voteYesWithNewVerifier = async () => {
-        const verifier = anchor.web3.Keypair.generate();
+      const verifierA = anchor.web3.Keypair.generate();
+      const verifierB = anchor.web3.Keypair.generate();
 
-        await provider.connection.requestAirdrop(verifier.publicKey, 2_000_000_000);
-        await new Promise((r) => setTimeout(r, 1000));
+      const {
+        verifierWorker: verifierWorkerA,
+        verifierToken: verifierTokenA,
+      } = await registerVerifierAndStake(verifierA);
 
-        const [verifierWorker] = PublicKey.findProgramAddressSync(
-          [Buffer.from("worker"), verifier.publicKey.toBuffer()],
-          program.programId
-        );
+      const {
+        verifierWorker: verifierWorkerB,
+        verifierToken: verifierTokenB,
+      } = await registerVerifierAndStake(verifierB);
 
-        await program.methods
-          .registerWorker()
-          .accounts({
-            worker: verifier.publicKey,
-            workerAccount: verifierWorker,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([verifier])
-          .rpc();
+      const fragmentBefore = await program.account.fragment.fetch(fragment);
+      const round = fragmentBefore.round;
+      const roundResolution = resolutionPda(fragment, round);
 
-        const verifierToken = await createAssociatedTokenAccount(
-          provider.connection,
-          payer,
-          sharedMint,
-          verifier.publicKey
-        );
+      const voteA = votePda(fragment, verifierA.publicKey, round);
+      const voteB = votePda(fragment, verifierB.publicKey, round);
 
-        await mintTo(
-          provider.connection,
-          payer,
-          sharedMint,
-          verifierToken,
-          client,
-          10_000_000
-        );
+      await program.methods
+        .voteFragment(true)
+        .accounts({
+          verifier: verifierA.publicKey,
+          job: finalizeJob,
+          fragment,
+          verifierWorker: verifierWorkerA,
+          vote: voteA,
+          roundResolution,
+          escrowAuth,
+          escrow: finalizeEscrow,
+          workerToken: sharedWorkerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([verifierA])
+        .rpc();
 
-        const [stakeAuth] = PublicKey.findProgramAddressSync(
-          [Buffer.from("stake_auth"), verifierWorker.toBuffer()],
-          program.programId
-        );
+      await program.methods
+        .voteFragment(true)
+        .accounts({
+          verifier: verifierB.publicKey,
+          job: finalizeJob,
+          fragment,
+          verifierWorker: verifierWorkerB,
+          vote: voteB,
+          roundResolution,
+          escrowAuth,
+          escrow: finalizeEscrow,
+          workerToken: sharedWorkerToken,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([verifierB])
+        .rpc();
 
-        const [stakeVault] = PublicKey.findProgramAddressSync(
-          [Buffer.from("stake_vault"), verifier.publicKey.toBuffer()],
-          program.programId
-        );
-
-        await program.methods
-          .stakeWorker(new anchor.BN(1_000_000))
-          .accounts({
-            worker: verifier.publicKey,
-            workerAccount: verifierWorker,
-            mint: sharedMint,
-            workerToken: verifierToken,
-            stakeAuth,
-            stakeVault,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-            rent: SYSVAR_RENT_PUBKEY,
-          })
-          .signers([verifier])
-          .rpc();
-
-        const fragmentBefore = await program.account.fragment.fetch(fragment);
-
-        const roundBuffer = Buffer.alloc(2);
-        roundBuffer.writeUInt16LE(fragmentBefore.round, 0);
-
-        const [vote] = PublicKey.findProgramAddressSync(
-          [
-            Buffer.from("fragment_vote"),
-            fragment.toBuffer(),
-            verifier.publicKey.toBuffer(),
-            roundBuffer,
-          ],
-          program.programId
-        );
-
-        await program.methods
-          .voteFragment(true)
-          .accounts({
-            verifier: verifier.publicKey,
-            job: finalizeJob,
-            fragment,
-            verifierWorker,
-            vote,
-            escrowAuth,
-            escrow: finalizeEscrow,
-            workerToken: sharedWorkerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([verifier])
-          .rpc();
-      };
-
-      await voteYesWithNewVerifier();
-      await voteYesWithNewVerifier();
+      await claimVerifierReward(verifierA, finalizeJob, fragment, verifierTokenA, round);
+      await claimVerifierReward(verifierB, finalizeJob, fragment, verifierTokenB, round);
 
       const fragmentAfter = await program.account.fragment.fetch(fragment);
       assert.deepEqual(fragmentAfter.status, { verified: {} });
@@ -1007,12 +883,12 @@ describe("silicium", () => {
 
     const jobAfterVotes = await program.account.job.fetch(finalizeJob);
     assert.equal(jobAfterVotes.verifiedFragments, 2);
-
-    const [result] = PublicKey.findProgramAddressSync(
-      [Buffer.from("result"), finalizeJob.toBuffer()],
-      program.programId
+    assert.equal(
+      jobAfterVotes.claimedVerifierRewardsTotal.toString(),
+      (2 * QUORUM * VERIFIER_REWARD_PER_VOTE.toNumber()).toString()
     );
 
+    const result = resultPda(finalizeJob);
     const finalHash = Array(32).fill(42);
     const outputUri = Buffer.from("ipfs://silicium-result-3");
 
@@ -1045,8 +921,6 @@ describe("silicium", () => {
   });
 
   it("slashes a wrong vote", async () => {
-    const client = provider.wallet.publicKey;
-    const payer = provider.wallet.payer as anchor.web3.Keypair;
     const fragmentIndex = 0;
 
     const [treasuryState] = PublicKey.findProgramAddressSync(
@@ -1076,16 +950,9 @@ describe("silicium", () => {
       .signers([treasury])
       .rpc();
 
-    const [job] = PublicKey.findProgramAddressSync(
-      [Buffer.from("job"), client.toBuffer(), slashJobId.toArrayLike(Buffer, "le", 8)],
-      program.programId
-    );
-
-    const [escrowAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("escrow_auth"), job.toBuffer()],
-      program.programId
-    );
-
+    const budget = verifierBudget(2);
+    const job = jobPda(client, slashJobId);
+    const escrowAuth = escrowAuthPda(job);
     const escrow = anchor.web3.Keypair.generate();
 
     await mintTo(
@@ -1094,16 +961,18 @@ describe("silicium", () => {
       sharedMint,
       sharedWorkerToken,
       client,
-      2_000_000
+      2_000_000 + budget.toNumber()
     );
 
     await program.methods
       .createJob(
         slashJobId,
         2,
-        new anchor.BN(1_000_000),
-        new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
-        2
+        REWARD_PER_FRAGMENT,
+        VERIFIER_REWARD_PER_VOTE,
+        budget,
+        new BN(Math.floor(Date.now() / 1000) + 3600),
+        QUORUM
       )
       .accounts({
         client,
@@ -1119,18 +988,8 @@ describe("silicium", () => {
       .signers([escrow])
       .rpc();
 
-    const indexBuffer = Buffer.alloc(4);
-    indexBuffer.writeUInt32LE(fragmentIndex, 0);
-
-    const [fragment] = PublicKey.findProgramAddressSync(
-      [Buffer.from("fragment"), job.toBuffer(), indexBuffer],
-      program.programId
-    );
-
-    const [workerAccount] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), client.toBuffer()],
-      program.programId
-    );
+    const fragment = fragmentPda(job, fragmentIndex);
+    const workerAccount = workerPda(client);
 
     await program.methods
       .submitFragmentResult(fragmentIndex, Array(32).fill(1), Array(32).fill(2))
@@ -1145,80 +1004,33 @@ describe("silicium", () => {
       .rpc();
 
     const badVerifier = anchor.web3.Keypair.generate();
+    const goodVerifier1 = anchor.web3.Keypair.generate();
+    const goodVerifier2 = anchor.web3.Keypair.generate();
 
-    await provider.connection.requestAirdrop(badVerifier.publicKey, 2_000_000_000);
-    await new Promise((r) => setTimeout(r, 1000));
+    const {
+      verifierWorker: badVerifierWorker,
+      verifierToken: badVerifierToken,
+      stakeAuth,
+      stakeVault,
+    } = await registerVerifierAndStake(badVerifier);
 
-    const [badVerifierWorker] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), badVerifier.publicKey.toBuffer()],
-      program.programId
-    );
+    const {
+      verifierWorker: goodVerifierWorker1,
+      verifierToken: goodVerifierToken1,
+    } = await registerVerifierAndStake(goodVerifier1);
 
-    await program.methods
-      .registerWorker()
-      .accounts({
-        worker: badVerifier.publicKey,
-        workerAccount: badVerifierWorker,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([badVerifier])
-      .rpc();
-
-    const badVerifierToken = await createAssociatedTokenAccount(
-      provider.connection,
-      payer,
-      sharedMint,
-      badVerifier.publicKey
-    );
-
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      badVerifierToken,
-      client,
-      10_000_000
-    );
-
-    const [stakeAuth] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_auth"), badVerifierWorker.toBuffer()],
-      program.programId
-    );
-
-    const [stakeVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_vault"), badVerifier.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .stakeWorker(new anchor.BN(1_000_000))
-      .accounts({
-        worker: badVerifier.publicKey,
-        workerAccount: badVerifierWorker,
-        mint: sharedMint,
-        workerToken: badVerifierToken,
-        stakeAuth,
-        stakeVault,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      })
-      .signers([badVerifier])
-      .rpc();
+    const {
+      verifierWorker: goodVerifierWorker2,
+      verifierToken: goodVerifierToken2,
+    } = await registerVerifierAndStake(goodVerifier2);
 
     const fragmentBefore = await program.account.fragment.fetch(fragment);
-    const roundBuffer = Buffer.alloc(2);
-    roundBuffer.writeUInt16LE(fragmentBefore.round, 0);
+    const round = fragmentBefore.round;
+    const roundResolution = resolutionPda(fragment, round);
 
-    const [badVote] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment_vote"),
-        fragment.toBuffer(),
-        badVerifier.publicKey.toBuffer(),
-        roundBuffer,
-      ],
-      program.programId
-    );
+    const badVote = votePda(fragment, badVerifier.publicKey, round);
+    const goodVote1 = votePda(fragment, goodVerifier1.publicKey, round);
+    const goodVote2 = votePda(fragment, goodVerifier2.publicKey, round);
 
     await program.methods
       .voteFragment(false)
@@ -1228,6 +1040,7 @@ describe("silicium", () => {
         fragment,
         verifierWorker: badVerifierWorker,
         vote: badVote,
+        roundResolution,
         escrowAuth,
         escrow: escrow.publicKey,
         workerToken: sharedWorkerToken,
@@ -1237,81 +1050,6 @@ describe("silicium", () => {
       .signers([badVerifier])
       .rpc();
 
-    const goodVerifier1 = anchor.web3.Keypair.generate();
-    await provider.connection.requestAirdrop(goodVerifier1.publicKey, 2_000_000_000);
-    await new Promise((r) => setTimeout(r, 1000));
-
-    const [goodVerifierWorker1] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), goodVerifier1.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .registerWorker()
-      .accounts({
-        worker: goodVerifier1.publicKey,
-        workerAccount: goodVerifierWorker1,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([goodVerifier1])
-      .rpc();
-
-    const goodVerifierToken1 = await createAssociatedTokenAccount(
-      provider.connection,
-      payer,
-      sharedMint,
-      goodVerifier1.publicKey
-    );
-
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      goodVerifierToken1,
-      client,
-      10_000_000
-    );
-
-    const [goodStakeAuth1] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_auth"), goodVerifierWorker1.toBuffer()],
-      program.programId
-    );
-
-    const [goodStakeVault1] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_vault"), goodVerifier1.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .stakeWorker(new anchor.BN(1_000_000))
-      .accounts({
-        worker: goodVerifier1.publicKey,
-        workerAccount: goodVerifierWorker1,
-        mint: sharedMint,
-        workerToken: goodVerifierToken1,
-        stakeAuth: goodStakeAuth1,
-        stakeVault: goodStakeVault1,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      })
-      .signers([goodVerifier1])
-      .rpc();
-
-    let fragmentState = await program.account.fragment.fetch(fragment);
-    let roundBufferYes1 = Buffer.alloc(2);
-    roundBufferYes1.writeUInt16LE(fragmentState.round, 0);
-
-    const [goodVote1] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment_vote"),
-        fragment.toBuffer(),
-        goodVerifier1.publicKey.toBuffer(),
-        roundBufferYes1,
-      ],
-      program.programId
-    );
-
     await program.methods
       .voteFragment(true)
       .accounts({
@@ -1320,6 +1058,7 @@ describe("silicium", () => {
         fragment,
         verifierWorker: goodVerifierWorker1,
         vote: goodVote1,
+        roundResolution,
         escrowAuth,
         escrow: escrow.publicKey,
         workerToken: sharedWorkerToken,
@@ -1328,81 +1067,6 @@ describe("silicium", () => {
       })
       .signers([goodVerifier1])
       .rpc();
-
-    const goodVerifier2 = anchor.web3.Keypair.generate();
-    await provider.connection.requestAirdrop(goodVerifier2.publicKey, 2_000_000_000);
-    await new Promise((r) => setTimeout(r, 1000));
-
-    const [goodVerifierWorker2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("worker"), goodVerifier2.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .registerWorker()
-      .accounts({
-        worker: goodVerifier2.publicKey,
-        workerAccount: goodVerifierWorker2,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([goodVerifier2])
-      .rpc();
-
-    const goodVerifierToken2 = await createAssociatedTokenAccount(
-      provider.connection,
-      payer,
-      sharedMint,
-      goodVerifier2.publicKey
-    );
-
-    await mintTo(
-      provider.connection,
-      payer,
-      sharedMint,
-      goodVerifierToken2,
-      client,
-      10_000_000
-    );
-
-    const [goodStakeAuth2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_auth"), goodVerifierWorker2.toBuffer()],
-      program.programId
-    );
-
-    const [goodStakeVault2] = PublicKey.findProgramAddressSync(
-      [Buffer.from("stake_vault"), goodVerifier2.publicKey.toBuffer()],
-      program.programId
-    );
-
-    await program.methods
-      .stakeWorker(new anchor.BN(1_000_000))
-      .accounts({
-        worker: goodVerifier2.publicKey,
-        workerAccount: goodVerifierWorker2,
-        mint: sharedMint,
-        workerToken: goodVerifierToken2,
-        stakeAuth: goodStakeAuth2,
-        stakeVault: goodStakeVault2,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      })
-      .signers([goodVerifier2])
-      .rpc();
-
-    fragmentState = await program.account.fragment.fetch(fragment);
-    let roundBufferYes2 = Buffer.alloc(2);
-    roundBufferYes2.writeUInt16LE(fragmentState.round, 0);
-
-    const [goodVote2] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("fragment_vote"),
-        fragment.toBuffer(),
-        goodVerifier2.publicKey.toBuffer(),
-        roundBufferYes2,
-      ],
-      program.programId
-    );
 
     await program.methods
       .voteFragment(true)
@@ -1412,6 +1076,7 @@ describe("silicium", () => {
         fragment,
         verifierWorker: goodVerifierWorker2,
         vote: goodVote2,
+        roundResolution,
         escrowAuth,
         escrow: escrow.publicKey,
         workerToken: sharedWorkerToken,
@@ -1420,6 +1085,24 @@ describe("silicium", () => {
       })
       .signers([goodVerifier2])
       .rpc();
+
+    const beforeGood1 = await provider.connection.getTokenAccountBalance(goodVerifierToken1);
+    const beforeGood2 = await provider.connection.getTokenAccountBalance(goodVerifierToken2);
+
+    await claimVerifierReward(goodVerifier1, job, fragment, goodVerifierToken1, round);
+    await claimVerifierReward(goodVerifier2, job, fragment, goodVerifierToken2, round);
+
+    const afterGood1 = await provider.connection.getTokenAccountBalance(goodVerifierToken1);
+    const afterGood2 = await provider.connection.getTokenAccountBalance(goodVerifierToken2);
+
+    assert.equal(
+      Number(afterGood1.value.amount) - Number(beforeGood1.value.amount),
+      VERIFIER_REWARD_PER_VOTE.toNumber()
+    );
+    assert.equal(
+      Number(afterGood2.value.amount) - Number(beforeGood2.value.amount),
+      VERIFIER_REWARD_PER_VOTE.toNumber()
+    );
 
     const stakeBefore = await provider.connection.getTokenAccountBalance(stakeVault);
     const treasuryBefore = await provider.connection.getTokenAccountBalance(treasury.publicKey);
@@ -1447,6 +1130,7 @@ describe("silicium", () => {
     const treasuryAfter = await provider.connection.getTokenAccountBalance(treasury.publicKey);
 
     assert.equal(voteAfter.slashed, true);
+    assert.equal(voteAfter.rewardClaimed, false);
     assert.equal(workerAfter.stakeAmount.toString(), "900000");
 
     assert.equal(
@@ -1458,5 +1142,15 @@ describe("silicium", () => {
       Number(treasuryAfter.value.amount) - Number(treasuryBefore.value.amount),
       100000
     );
+
+    const badBefore = await provider.connection.getTokenAccountBalance(badVerifierToken);
+    try {
+      await claimVerifierReward(badVerifier, job, fragment, badVerifierToken, round);
+      assert.fail("bad verifier should not be able to claim");
+    } catch (_) {
+      // expected
+    }
+    const badAfter = await provider.connection.getTokenAccountBalance(badVerifierToken);
+    assert.equal(badAfter.value.amount, badBefore.value.amount);
   });
 });

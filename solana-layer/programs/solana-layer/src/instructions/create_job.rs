@@ -57,17 +57,17 @@ pub fn handler(
     job_id: u64,
     expected_fragments: u32,
     reward_per_fragment: u64,
+    verifier_reward_per_vote: u64,
+    verifier_reward_budget: u64,
     deadline_unix: i64,
     fragment_quorum: u16,
 ) -> Result<()> {
     require!(expected_fragments > 0, SiliciumError::InvalidParams);
     require!(reward_per_fragment > 0, SiliciumError::InvalidParams);
-
     require!(
         fragment_quorum >= MIN_FRAGMENT_QUORUM,
         SiliciumError::InvalidParams
     );
-
     require!(
         fragment_quorum <= expected_fragments as u16,
         SiliciumError::InvalidParams
@@ -76,8 +76,12 @@ pub fn handler(
     let now = Clock::get()?.unix_timestamp;
     require!(deadline_unix > now, SiliciumError::InvalidParams);
 
-    let total_u128 = (expected_fragments as u128)
+    let worker_total_u128 = (expected_fragments as u128)
         .checked_mul(reward_per_fragment as u128)
+        .ok_or(SiliciumError::InvalidParams)?;
+
+    let total_u128 = worker_total_u128
+        .checked_add(verifier_reward_budget as u128)
         .ok_or(SiliciumError::InvalidParams)?;
 
     require!(total_u128 <= u64::MAX as u128, SiliciumError::InvalidParams);
@@ -103,15 +107,21 @@ pub fn handler(
     job.verified_fragments = 0;
 
     job.reward_per_fragment = reward_per_fragment;
+    job.verifier_reward_per_vote = verifier_reward_per_vote;
+    job.verifier_reward_budget = verifier_reward_budget;
+
     job.deposited_amount = total;
     job.paid_amount = 0;
 
+    job.claimable_verifier_rewards_total = 0;
+    job.claimed_verifier_rewards_total = 0;
+
     job.created_at_unix = now;
     job.deadline_unix = deadline_unix;
-    job.status = JobStatus::Open;
+    job.verified_at_unix = 0;
 
     job.fragment_quorum = fragment_quorum;
-    job.verified_at_unix = 0;
+    job.status = JobStatus::Open;
 
     job.bump = ctx.bumps.job;
     job.escrow_auth_bump = ctx.bumps.escrow_auth;
@@ -124,6 +134,8 @@ pub fn handler(
         job_id: job.job_id,
         expected_fragments: job.expected_fragments,
         reward_per_fragment: job.reward_per_fragment,
+        verifier_reward_per_vote: job.verifier_reward_per_vote,
+        verifier_reward_budget: job.verifier_reward_budget,
         deposited_amount: job.deposited_amount,
         deadline_unix: job.deadline_unix,
         fragment_quorum: job.fragment_quorum,

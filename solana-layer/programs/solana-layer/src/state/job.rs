@@ -18,8 +18,14 @@ pub struct Job {
     pub verified_fragments: u32,
 
     pub reward_per_fragment: u64,
+    pub verifier_reward_per_vote: u64,
+    pub verifier_reward_budget: u64,
+
     pub deposited_amount: u64,
     pub paid_amount: u64,
+
+    pub claimable_verifier_rewards_total: u64,
+    pub claimed_verifier_rewards_total: u64,
 
     pub created_at_unix: i64,
     pub deadline_unix: i64,
@@ -42,13 +48,17 @@ impl Job {
         + 4                     // expected_fragments
         + 4                     // verified_fragments
         + 8                     // reward_per_fragment
+        + 8                     // verifier_reward_per_vote
+        + 8                     // verifier_reward_budget
         + 8                     // deposited_amount
         + 8                     // paid_amount
+        + 8                     // claimable_verifier_rewards_total
+        + 8                     // claimed_verifier_rewards_total
         + 8                     // created_at_unix
         + 8                     // deadline_unix
         + 8                     // verified_at_unix
         + 2                     // fragment_quorum
-        + 1                     // status enum
+        + 1                     // status
         + 1                     // bump
         + 1;                    // escrow_auth_bump
 }

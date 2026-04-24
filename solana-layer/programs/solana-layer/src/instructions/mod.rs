@@ -8,6 +8,7 @@ pub mod stake_worker;
 pub mod slash_vote;
 pub mod init_treasury;
 pub mod resubmit_fragment_result;
+pub mod claim_verifier_reward;
 
 pub use create_job::*;
 pub use submit_fragment_result::*;
@@ -19,3 +20,4 @@ pub use stake_worker::*;
 pub use slash_vote::*;
 pub use init_treasury::*;
 pub use resubmit_fragment_result::*;
+pub use claim_verifier_reward::*;

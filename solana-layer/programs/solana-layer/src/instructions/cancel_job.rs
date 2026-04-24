@@ -48,6 +48,12 @@ pub fn handler(ctx: Context<CancelJob>) -> Result<()> {
 
     require!(nothing_started || deadline_passed, SiliciumError::JobNotCancellable);
 
+    require!(
+        ctx.accounts.job.claimed_verifier_rewards_total
+            == ctx.accounts.job.claimable_verifier_rewards_total,
+        SiliciumError::OutstandingVerifierClaims
+    );
+
     let job_key = ctx.accounts.job.key();
     let bump = ctx.accounts.job.escrow_auth_bump;
     let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];

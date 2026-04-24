@@ -1,10 +1,10 @@
 use anchor_lang::prelude::*;
 
-pub mod instructions;
-pub mod state;
+pub mod constants;
 pub mod error;
 pub mod events;
-pub mod constants;
+pub mod instructions;
+pub mod state;
 
 pub use instructions::*;
 
@@ -19,6 +19,8 @@ pub mod solana_layer {
         job_id: u64,
         expected_fragments: u32,
         reward_per_fragment: u64,
+        verifier_reward_per_vote: u64,
+        verifier_reward_budget: u64,
         deadline_unix: i64,
         fragment_quorum: u16,
     ) -> Result<()> {
@@ -27,6 +29,8 @@ pub mod solana_layer {
             job_id,
             expected_fragments,
             reward_per_fragment,
+            verifier_reward_per_vote,
+            verifier_reward_budget,
             deadline_unix,
             fragment_quorum,
         )
@@ -56,6 +60,10 @@ pub mod solana_layer {
 
     pub fn vote_fragment(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         crate::instructions::vote_fragment::handler(ctx, choice)
+    }
+
+    pub fn claim_verifier_reward(ctx: Context<ClaimVerifierReward>) -> Result<()> {
+        crate::instructions::claim_verifier_reward::handler(ctx)
     }
 
     pub fn finalize_job(
