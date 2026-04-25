@@ -8,7 +8,7 @@ pub mod state;
 
 pub use instructions::*;
 
-declare_id!("6sLKsnJXnbnVdxd5uF9yhA83mabi6KCQbkzxeD1ECTYe");
+declare_id!("Ezt3UKgn7o1uoFmnG2zhKXW9NoygJMwJ3FErNUczy9jj");
 
 #[program]
 pub mod solana_layer {
@@ -98,5 +98,19 @@ pub mod solana_layer {
             result_hash,
             proof_ref,
         )
+    }
+
+    pub fn claim_fragment(
+        ctx: Context<ClaimFragment>,
+        fragment_index: u32,
+    ) -> Result<()> {
+        crate::instructions::claim_fragment::handler(ctx, fragment_index)
+    }
+
+    pub fn reclaim_fragment(
+        ctx: Context<ReclaimFragment>,
+        fragment_index: u32,
+    ) -> Result<()> {
+        crate::instructions::reclaim_fragment::handler(ctx, fragment_index)
     }
 }

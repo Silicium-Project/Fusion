@@ -1,7 +1,10 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
-use crate::state::treasury::Treasury;
+use crate::{
+    events::TreasuryInitialized,
+    state::treasury::Treasury,
+};
 
 #[derive(Accounts)]
 pub struct InitTreasury<'info> {
@@ -33,7 +36,6 @@ pub struct InitTreasury<'info> {
         payer = payer,
         token::mint = mint,
         token::authority = treasury_auth
-        
     )]
     pub treasury: Account<'info, TokenAccount>,
 
@@ -43,12 +45,27 @@ pub struct InitTreasury<'info> {
 }
 
 pub fn handler(ctx: Context<InitTreasury>) -> Result<()> {
+    let mint_key = ctx.accounts.mint.key();
+    let treasury_state_key = ctx.accounts.treasury_state.key();
+    let treasury_auth_key = ctx.accounts.treasury_auth.key();
+    let treasury_key = ctx.accounts.treasury.key();
+    let admin_key = ctx.accounts.payer.key();
+
     let t = &mut ctx.accounts.treasury_state;
 
-    t.mint = ctx.accounts.mint.key();
-    t.authority = ctx.accounts.treasury_auth.key();
-    t.admin = ctx.accounts.payer.key();
+    t.mint = mint_key;
+    t.authority = treasury_auth_key;
+    t.admin = admin_key;
     t.bump = ctx.bumps.treasury_state;
-    t.treasury_token_account = ctx.accounts.treasury.key();
+    t.treasury_token_account = treasury_key;
+
+    emit!(TreasuryInitialized {
+        mint: mint_key,
+        treasury_state: treasury_state_key,
+        treasury_auth: treasury_auth_key,
+        treasury: treasury_key,
+        admin: admin_key,
+    });
+
     Ok(())
 }

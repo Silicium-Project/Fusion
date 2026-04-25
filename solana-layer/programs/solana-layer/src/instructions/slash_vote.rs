@@ -100,7 +100,7 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
     let verifier_worker = &mut ctx.accounts.verifier_worker;
 
     require!(
-        fragment.status != FragmentStatus::Submitted,
+        matches!(fragment.status, FragmentStatus::Verified | FragmentStatus::Rejected),
         SiliciumError::FragmentNotResolved
     );
 
@@ -109,6 +109,8 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
     let wrong = match fragment.status {
         FragmentStatus::Verified => vote.choice == false,
         FragmentStatus::Rejected => vote.choice == true,
+        FragmentStatus::Available => false,
+        FragmentStatus::Claimed => false,
         FragmentStatus::Submitted => false,
     };
     require!(wrong, SiliciumError::NothingToSlash);
@@ -159,9 +161,11 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
         slash_amount,
         round: ctx.accounts.vote.round,
         fragment_status: match ctx.accounts.fragment.status {
-            FragmentStatus::Submitted => 0,
-            FragmentStatus::Verified => 1,
-            FragmentStatus::Rejected => 2,
+            FragmentStatus::Available => 0,
+            FragmentStatus::Claimed => 1,
+            FragmentStatus::Submitted => 2,
+            FragmentStatus::Verified => 3,
+            FragmentStatus::Rejected => 4,
         },
         treasury: ctx.accounts.treasury.key(),
     });

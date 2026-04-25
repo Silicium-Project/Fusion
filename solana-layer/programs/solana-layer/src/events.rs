@@ -17,6 +17,53 @@ pub struct JobCreated {
 }
 
 #[event]
+pub struct WorkerRegistered {
+    pub worker: Pubkey,
+    pub worker_account: Pubkey,
+    pub roles: u8,
+    pub status: u8,
+}
+
+#[event]
+pub struct WorkerStaked {
+    pub worker: Pubkey,
+    pub worker_account: Pubkey,
+    pub mint: Pubkey,
+    pub stake_vault: Pubkey,
+    pub amount: u64,
+    pub total_stake: u64,
+}
+
+#[event]
+pub struct TreasuryInitialized {
+    pub mint: Pubkey,
+    pub treasury_state: Pubkey,
+    pub treasury_auth: Pubkey,
+    pub treasury: Pubkey,
+    pub admin: Pubkey,
+}
+
+#[event]
+pub struct FragmentClaimed {
+    pub job: Pubkey,
+    pub fragment: Pubkey,
+    pub fragment_index: u32,
+    pub worker: Pubkey,
+    pub claim_deadline_unix: i64,
+    pub round: u16,
+}
+
+#[event]
+pub struct FragmentReclaimed {
+    pub job: Pubkey,
+    pub fragment: Pubkey,
+    pub fragment_index: u32,
+    pub previous_worker: Pubkey,
+    pub caller: Pubkey,
+    pub round: u16,
+}
+
+#[event]
 pub struct FragmentSubmitted {
     pub job: Pubkey,
     pub fragment: Pubkey,
@@ -26,6 +73,7 @@ pub struct FragmentSubmitted {
     pub round: u16,
     pub result_hash: [u8; 32],
     pub proof_ref: [u8; 32],
+    pub is_resubmission: bool,
 }
 
 #[event]

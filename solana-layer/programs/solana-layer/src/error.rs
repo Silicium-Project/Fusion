@@ -70,4 +70,16 @@ pub enum SiliciumError {
 
     #[msg("Outstanding verifier claims must be settled first.")]
     OutstandingVerifierClaims,
+
+    #[msg("Fragment is already claimed")]
+    FragmentAlreadyClaimed,
+
+    #[msg("Fragment claim is still active")]
+    ClaimStillActive,
+
+    #[msg("Fragment is not claimed")]
+    FragmentNotClaimed,
+
+    #[msg("Fragment claim has expired")]
+    ClaimExpired,
 }

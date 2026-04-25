@@ -34,15 +34,15 @@ pub struct SubmitFragmentResult<'info> {
     pub job: Account<'info, Job>,
 
     #[account(
-        init_if_needed,
-        payer = worker,
-        space = Fragment::SPACE,
+        mut,
         seeds = [
             b"fragment",
             job.key().as_ref(),
             &fragment_index.to_le_bytes()
         ],
-        bump
+        bump = fragment.bump,
+        constraint = fragment.job == job.key() @ SiliciumError::InvalidParams,
+        constraint = fragment.fragment_index == fragment_index @ SiliciumError::InvalidParams
     )]
     pub fragment: Account<'info, Fragment>,
 
@@ -51,8 +51,6 @@ pub struct SubmitFragmentResult<'info> {
         constraint = worker_token.mint == job.mint @ SiliciumError::InvalidParams
     )]
     pub worker_token: Account<'info, TokenAccount>,
-
-    pub system_program: Program<'info, System>,
 }
 
 pub fn handler(
@@ -71,52 +69,45 @@ pub fn handler(
         SiliciumError::MissingComputeRole
     );
 
+    let now = Clock::get()?.unix_timestamp;
+    let fragment_key = ctx.accounts.fragment.key();
+
     let f = &mut ctx.accounts.fragment;
-    let is_new = f.job == Pubkey::default();
 
-    if !is_new {
-        require!(f.job == ctx.accounts.job.key(), SiliciumError::InvalidParams);
-        require!(
-            f.status == FragmentStatus::Submitted,
-            SiliciumError::BadFragmentState
-        );
-        require!(f.worker == ctx.accounts.worker.key(), SiliciumError::NotAuthorized);
-    }
+    require!(
+        f.status == FragmentStatus::Claimed,
+        SiliciumError::FragmentNotClaimed
+    );
+    require!(
+        f.assigned_worker == ctx.accounts.worker.key(),
+        SiliciumError::NotAuthorized
+    );
+    require!(now <= f.claim_deadline_unix, SiliciumError::ClaimExpired);
 
-    if is_new {
-        require!(
-            ctx.accounts.job.fragment_quorum > 0,
-            SiliciumError::InvalidParams
-        );
-
-        f.yes_votes = 0;
-        f.no_votes = 0;
-        f.round = 0;
-        f.required_quorum = ctx.accounts.job.fragment_quorum;
-        f.voting_deadline_unix = ctx.accounts.job.deadline_unix;
-    }
-
-    f.job = ctx.accounts.job.key();
-    f.fragment_index = fragment_index;
     f.worker = ctx.accounts.worker.key();
     f.worker_token_account = ctx.accounts.worker_token.key();
     f.result_hash = result_hash;
     f.proof_ref = proof_ref;
     f.status = FragmentStatus::Submitted;
-    f.bump = ctx.bumps.fragment;
+
+    f.yes_votes = 0;
+    f.no_votes = 0;
+    f.required_quorum = ctx.accounts.job.fragment_quorum;
+    f.voting_deadline_unix = ctx.accounts.job.deadline_unix;
 
     ctx.accounts.worker_account.total_submitted =
         ctx.accounts.worker_account.total_submitted.saturating_add(1);
 
     emit!(FragmentSubmitted {
         job: f.job,
-        fragment: f.key(),
+        fragment: fragment_key,
         fragment_index: f.fragment_index,
         worker: f.worker,
         worker_token_account: f.worker_token_account,
         round: f.round,
         result_hash: f.result_hash,
         proof_ref: f.proof_ref,
+        is_resubmission: false,
     });
 
     Ok(())

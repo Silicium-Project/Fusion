@@ -64,6 +64,8 @@ pub fn handler(
         SiliciumError::MissingComputeRole
     );
 
+    let fragment_key = ctx.accounts.fragment.key();
+
     let f = &mut ctx.accounts.fragment;
 
     require!(
@@ -93,13 +95,14 @@ pub fn handler(
 
     emit!(FragmentSubmitted {
         job: f.job,
-        fragment: f.key(),
+        fragment: fragment_key,
         fragment_index: f.fragment_index,
         worker: f.worker,
         worker_token_account: f.worker_token_account,
         round: f.round,
         result_hash: f.result_hash,
         proof_ref: f.proof_ref,
+        is_resubmission: true,
     });
 
     Ok(())

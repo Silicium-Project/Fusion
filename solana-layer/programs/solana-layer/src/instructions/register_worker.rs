@@ -1,6 +1,9 @@
 use anchor_lang::prelude::*;
 
-use crate::state::worker::{Worker, WorkerStatus, ROLE_COMPUTE, ROLE_VERIFY};
+use crate::{
+    events::WorkerRegistered,
+    state::worker::{Worker, WorkerStatus, ROLE_COMPUTE, ROLE_VERIFY},
+};
 
 #[derive(Accounts)]
 pub struct RegisterWorker<'info> {
@@ -20,9 +23,12 @@ pub struct RegisterWorker<'info> {
 }
 
 pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
+    let worker_key = ctx.accounts.worker.key();
+    let worker_account_key = ctx.accounts.worker_account.key();
+
     let w = &mut ctx.accounts.worker_account;
 
-    w.owner = ctx.accounts.worker.key();
+    w.owner = worker_key;
 
     // stake (empty)
     w.stake_mint = Pubkey::default();
@@ -39,6 +45,13 @@ pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
 
     w.status = WorkerStatus::Active;
     w.bump = ctx.bumps.worker_account;
+
+    emit!(WorkerRegistered {
+        worker: worker_key,
+        worker_account: worker_account_key,
+        roles: w.roles,
+        status: w.status as u8,
+    });
 
     Ok(())
 }

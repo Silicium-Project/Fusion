@@ -3,6 +3,7 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::{
     error::SiliciumError,
+    events::WorkerStaked,
     state::worker::{Worker, WorkerStatus},
 };
 
@@ -54,18 +55,21 @@ pub struct StakeWorker<'info> {
 pub fn handler(ctx: Context<StakeWorker>, amount: u64) -> Result<()> {
     require!(amount > 0, SiliciumError::InvalidAmount);
 
-    // lock mint/vault on first stake
+    let worker_key = ctx.accounts.worker.key();
+    let worker_account_key = ctx.accounts.worker_account.key();
+    let mint_key = ctx.accounts.mint.key();
+    let stake_vault_key = ctx.accounts.stake_vault.key();
+
     let w = &mut ctx.accounts.worker_account;
 
     if w.stake_mint == Pubkey::default() {
-        w.stake_mint = ctx.accounts.mint.key();
-        w.stake_vault = ctx.accounts.stake_vault.key();
+        w.stake_mint = mint_key;
+        w.stake_vault = stake_vault_key;
     } else {
-        require!(w.stake_mint == ctx.accounts.mint.key(), SiliciumError::WrongStakeMint);
-        require!(w.stake_vault == ctx.accounts.stake_vault.key(), SiliciumError::WrongStakeVault);
+        require!(w.stake_mint == mint_key, SiliciumError::WrongStakeMint);
+        require!(w.stake_vault == stake_vault_key, SiliciumError::WrongStakeVault);
     }
 
-    // transfer worker_token -> stake_vault
     let cpi_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
         Transfer {
@@ -74,8 +78,19 @@ pub fn handler(ctx: Context<StakeWorker>, amount: u64) -> Result<()> {
             authority: ctx.accounts.worker.to_account_info(),
         },
     );
+
     token::transfer(cpi_ctx, amount)?;
 
     w.stake_amount = w.stake_amount.saturating_add(amount);
+
+    emit!(WorkerStaked {
+        worker: worker_key,
+        worker_account: worker_account_key,
+        mint: mint_key,
+        stake_vault: stake_vault_key,
+        amount,
+        total_stake: w.stake_amount,
+    });
+
     Ok(())
 }

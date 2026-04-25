@@ -9,6 +9,8 @@ pub mod slash_vote;
 pub mod init_treasury;
 pub mod resubmit_fragment_result;
 pub mod claim_verifier_reward;
+pub mod claim_fragment;
+pub mod reclaim_fragment;
 
 pub use create_job::*;
 pub use submit_fragment_result::*;
@@ -21,3 +23,5 @@ pub use slash_vote::*;
 pub use init_treasury::*;
 pub use resubmit_fragment_result::*;
 pub use claim_verifier_reward::*;
+pub use claim_fragment::*;
+pub use reclaim_fragment::*;
