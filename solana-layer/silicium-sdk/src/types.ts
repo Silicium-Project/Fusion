@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey, Signer } from "@solana/web3.js";
 
-export type IdlProgram = anchor.Program;
+export type IdlProgram = anchor.Program<any>;
 export type Amount = anchor.BN | number | bigint | string;
 export type Hash32 = number[] | Uint8Array;
 

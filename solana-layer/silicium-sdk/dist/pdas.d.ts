@@ -1,0 +1,16 @@
+import { PublicKey } from "@solana/web3.js";
+import * as anchor from "@coral-xyz/anchor";
+export declare function u32le(value: number): Buffer;
+export declare function u16le(value: number): Buffer;
+export declare function toBn(value: anchor.BN | number | bigint | string): anchor.BN;
+export declare function jobPda(programId: PublicKey, client: PublicKey, jobId: anchor.BN | number | bigint | string): PublicKey;
+export declare function fragmentPda(programId: PublicKey, job: PublicKey, fragmentIndex: number): PublicKey;
+export declare function workerPda(programId: PublicKey, worker: PublicKey): PublicKey;
+export declare function escrowAuthPda(programId: PublicKey, job: PublicKey): PublicKey;
+export declare function stakeAuthPda(programId: PublicKey, workerAccount: PublicKey): PublicKey;
+export declare function stakeVaultPda(programId: PublicKey, worker: PublicKey): PublicKey;
+export declare function votePda(programId: PublicKey, fragment: PublicKey, verifier: PublicKey, round: number): PublicKey;
+export declare function roundResolutionPda(programId: PublicKey, fragment: PublicKey, round: number): PublicKey;
+export declare function resultPda(programId: PublicKey, job: PublicKey): PublicKey;
+export declare function treasuryStatePda(programId: PublicKey, mint: PublicKey): PublicKey;
+export declare function treasuryAuthPda(programId: PublicKey, mint: PublicKey): PublicKey;

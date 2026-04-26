@@ -80,6 +80,14 @@ export class SiliciumLayerSdk {
     return this.provider.wallet.publicKey;
   }
 
+  private get methods(): any {
+    return this.program.methods as any;
+  }
+
+  private get accounts(): any {
+    return this.program.account as any;
+  }
+
   pdas = {
     job: (client: PublicKey, jobId: anchor.BN | number | bigint | string) => jobPda(this.programId, client, jobId),
     fragment: (job: PublicKey, fragmentIndex: number) => fragmentPda(this.programId, job, fragmentIndex),
@@ -98,7 +106,7 @@ export class SiliciumLayerSdk {
     const worker = params.worker ?? this.walletPubkey();
     const workerAccount = this.pdas.worker(worker);
 
-    const builder = this.program.methods
+    const builder = this.methods
       .registerWorker()
       .accounts({
         worker,
@@ -116,7 +124,7 @@ export class SiliciumLayerSdk {
     const stakeAuth = this.pdas.stakeAuth(workerAccount);
     const stakeVault = this.pdas.stakeVault(worker);
 
-    const builder = this.program.methods
+    const builder = this.methods
       .stakeWorker(toBn(params.amount))
       .accounts({
         worker,
@@ -139,7 +147,7 @@ export class SiliciumLayerSdk {
     const job = this.pdas.job(client, params.jobId);
     const escrowAuth = this.pdas.escrowAuth(job);
 
-    const builder = this.program.methods
+    const builder = this.methods
       .createJob(
         toBn(params.jobId),
         params.expectedFragments,
@@ -171,7 +179,7 @@ export class SiliciumLayerSdk {
     const workerAccount = this.pdas.worker(worker);
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
 
-    const builder = this.program.methods
+    const builder = this.methods
       .claimFragment(params.fragmentIndex)
       .accounts({
         worker,
@@ -191,7 +199,7 @@ export class SiliciumLayerSdk {
     const caller = params.caller ?? this.walletPubkey();
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
 
-    const signature = await this.program.methods
+    const signature = await this.methods
       .reclaimFragment(params.fragmentIndex)
       .accounts({
         caller,
@@ -216,7 +224,7 @@ export class SiliciumLayerSdk {
     const workerAccount = this.pdas.worker(worker);
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
 
-    const builder = this.program.methods[method](
+    const builder = this.methods[method](
       params.fragmentIndex,
       asHash32(params.resultHash),
       asHash32(params.proofRef),
@@ -236,14 +244,14 @@ export class SiliciumLayerSdk {
     const verifier = params.verifier ?? this.walletPubkey();
     const verifierWorker = this.pdas.worker(verifier);
     const fragmentAccount = params.round === undefined
-      ? await this.program.account.fragment.fetch(params.fragment)
+      ? await this.accounts.fragment.fetch(params.fragment)
       : undefined;
     const round = params.round ?? Number(fragmentAccount.round);
     const vote = this.pdas.vote(params.fragment, verifier, round);
     const roundResolution = this.pdas.roundResolution(params.fragment, round);
     const escrowAuth = this.pdas.escrowAuth(params.job);
 
-    const builder = this.program.methods
+    const builder = this.methods
       .voteFragment(params.choice)
       .accounts({
         verifier,
@@ -268,14 +276,14 @@ export class SiliciumLayerSdk {
     const verifier = params.verifier ?? this.walletPubkey();
     const verifierWorker = this.pdas.worker(verifier);
     const fragmentAccount = params.round === undefined
-      ? await this.program.account.fragment.fetch(params.fragment)
+      ? await this.accounts.fragment.fetch(params.fragment)
       : undefined;
     const round = params.round ?? Number(fragmentAccount.round);
     const vote = this.pdas.vote(params.fragment, verifier, round);
     const roundResolution = this.pdas.roundResolution(params.fragment, round);
     const escrowAuth = this.pdas.escrowAuth(params.job);
 
-    const builder = this.program.methods
+    const builder = this.methods
       .claimVerifierReward()
       .accounts({
         verifier,
@@ -299,7 +307,7 @@ export class SiliciumLayerSdk {
     const result = this.pdas.result(params.job);
     const escrowAuth = this.pdas.escrowAuth(params.job);
 
-    const signature = await this.program.methods
+    const signature = await this.methods
       .finalizeJob(asHash32(params.finalHash), asBytes(params.outputUri))
       .accounts({
         client,
@@ -320,7 +328,7 @@ export class SiliciumLayerSdk {
     const client = params.client ?? this.walletPubkey();
     const escrowAuth = this.pdas.escrowAuth(params.job);
 
-    return this.program.methods
+    return this.methods
       .cancelJob()
       .accounts({
         client,
@@ -338,7 +346,7 @@ export class SiliciumLayerSdk {
     const treasuryState = this.pdas.treasuryState(params.mint);
     const treasuryAuth = this.pdas.treasuryAuth(params.mint);
 
-    const signature = await this.program.methods
+    const signature = await this.methods
       .initTreasury()
       .accounts({
         payer,
@@ -364,7 +372,7 @@ export class SiliciumLayerSdk {
     const treasuryState = this.pdas.treasuryState(params.mint);
     const treasuryAuth = this.pdas.treasuryAuth(params.mint);
 
-    return this.program.methods
+    return this.methods
       .slashVote()
       .accounts({
         slasher,
@@ -383,27 +391,27 @@ export class SiliciumLayerSdk {
   }
 
   async fetchJob(job: PublicKey): Promise<unknown> {
-    return this.program.account.job.fetch(job);
+    return this.accounts.job.fetch(job);
   }
 
   async fetchFragment(fragment: PublicKey): Promise<unknown> {
-    return this.program.account.fragment.fetch(fragment);
+    return this.accounts.fragment.fetch(fragment);
   }
 
   async fetchWorker(workerOrWorkerAccount: PublicKey, isWorkerAccount = false): Promise<unknown> {
     const account = isWorkerAccount ? workerOrWorkerAccount : this.pdas.worker(workerOrWorkerAccount);
-    return this.program.account.worker.fetch(account);
+    return this.accounts.worker.fetch(account);
   }
 
   async fetchVote(vote: PublicKey): Promise<unknown> {
-    return this.program.account.fragmentVote.fetch(vote);
+    return this.accounts.fragmentVote.fetch(vote);
   }
 
   async fetchRoundResolution(roundResolution: PublicKey): Promise<unknown> {
-    return this.program.account.fragmentResolution.fetch(roundResolution);
+    return this.accounts.fragmentResolution.fetch(roundResolution);
   }
 
   async fetchResult(result: PublicKey): Promise<unknown> {
-    return this.program.account.jobResult.fetch(result);
+    return this.accounts.jobResult.fetch(result);
   }
 }
