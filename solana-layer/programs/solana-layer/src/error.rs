@@ -82,4 +82,7 @@ pub enum SiliciumError {
 
     #[msg("Fragment claim has expired")]
     ClaimExpired,
+
+    #[msg("Worker reputation is too low")]
+    ReputationTooLow,
 }

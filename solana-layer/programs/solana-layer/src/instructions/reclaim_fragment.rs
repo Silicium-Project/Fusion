@@ -6,6 +6,8 @@ use crate::{
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
+        reputation::record_claim_timeout,
+        worker::Worker,
     },
 };
 
@@ -32,6 +34,14 @@ pub struct ReclaimFragment<'info> {
         constraint = fragment.fragment_index == fragment_index @ SiliciumError::InvalidParams
     )]
     pub fragment: Account<'info, Fragment>,
+
+    #[account(
+        mut,
+        seeds = [b"worker", fragment.assigned_worker.as_ref()],
+        bump = previous_worker_account.bump,
+        constraint = previous_worker_account.owner == fragment.assigned_worker @ SiliciumError::NotAuthorized
+    )]
+    pub previous_worker_account: Account<'info, Worker>,
 }
 
 pub fn handler(ctx: Context<ReclaimFragment>, fragment_index: u32) -> Result<()> {
@@ -48,6 +58,8 @@ pub fn handler(ctx: Context<ReclaimFragment>, fragment_index: u32) -> Result<()>
 
     let previous_worker = f.assigned_worker;
     let round = f.round;
+
+    record_claim_timeout(&mut ctx.accounts.previous_worker_account);
 
     f.assigned_worker = Pubkey::default();
     f.claim_deadline_unix = 0;

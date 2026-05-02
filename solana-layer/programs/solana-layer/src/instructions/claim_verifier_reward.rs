@@ -9,6 +9,7 @@ use crate::{
         fragment_resolution::FragmentResolution,
         fragment_vote::FragmentVote,
         job::{Job, JobStatus},
+        reputation::record_vote_correct,
         worker::Worker,
     },
 };
@@ -61,6 +62,7 @@ pub struct ClaimVerifierReward<'info> {
     pub vote: Box<Account<'info, FragmentVote>>,
 
     #[account(
+        mut,
         seeds = [b"worker", verifier.key().as_ref()],
         bump = verifier_worker.bump,
         constraint = verifier_worker.owner == verifier.key() @ SiliciumError::NotAuthorized
@@ -91,6 +93,7 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
     let job = &mut ctx.accounts.job;
     let round_resolution = &mut ctx.accounts.round_resolution;
     let vote = &mut ctx.accounts.vote;
+    let verifier_worker = &mut ctx.accounts.verifier_worker;
 
     require!(round_resolution.resolved, SiliciumError::FragmentNotResolved);
     require!(!vote.reward_claimed, SiliciumError::RewardAlreadyClaimed);
@@ -134,6 +137,8 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
     job.claimed_verifier_rewards_total =
         job.claimed_verifier_rewards_total.saturating_add(reward);
     job.paid_amount = job.paid_amount.saturating_add(reward);
+
+    record_vote_correct(verifier_worker);
 
     emit!(VerifierRewardClaimed {
         job: job.key(),

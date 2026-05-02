@@ -2,7 +2,10 @@ use anchor_lang::prelude::*;
 
 use crate::{
     events::WorkerRegistered,
-    state::worker::{Worker, WorkerStatus, ROLE_COMPUTE, ROLE_VERIFY},
+    state::{
+        reputation::REPUTATION_START,
+        worker::{Worker, WorkerStatus, ROLE_COMPUTE, ROLE_VERIFY},
+    },
 };
 
 #[derive(Accounts)]
@@ -30,13 +33,11 @@ pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
 
     w.owner = worker_key;
 
-    // stake (empty)
     w.stake_mint = Pubkey::default();
     w.stake_vault = Pubkey::default();
     w.stake_amount = 0;
 
-    // stats
-    w.reputation = 0;
+    w.reputation = REPUTATION_START;
     w.total_submitted = 0;
     w.total_verified = 0;
     w.total_rejected = 0;

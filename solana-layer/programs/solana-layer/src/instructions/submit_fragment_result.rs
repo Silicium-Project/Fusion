@@ -8,6 +8,7 @@ use crate::{
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
+        reputation::MIN_COMPUTE_REPUTATION,
         worker::{Worker, WorkerStatus, ROLE_COMPUTE},
     },
 };
@@ -24,7 +25,8 @@ pub struct SubmitFragmentResult<'info> {
         bump = worker_account.bump,
         constraint = worker_account.owner == worker.key() @ SiliciumError::NotAuthorized,
         constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
-        constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized
+        constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized,
+        constraint = worker_account.reputation >= MIN_COMPUTE_REPUTATION @ SiliciumError::ReputationTooLow
     )]
     pub worker_account: Account<'info, Worker>,
 

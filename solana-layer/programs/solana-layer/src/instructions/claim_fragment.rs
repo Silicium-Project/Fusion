@@ -7,12 +7,13 @@ use crate::{
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
+        reputation::MIN_COMPUTE_REPUTATION,
         worker::{Worker, WorkerStatus, ROLE_COMPUTE},
     },
 };
 
 pub const MIN_COMPUTE_STAKE: u64 = 1;
-pub const CLAIM_TTL_SECS: i64 = 5; // test only
+pub const CLAIM_TTL_SECS: i64 = 5;
 
 #[derive(Accounts)]
 #[instruction(fragment_index: u32)]
@@ -26,7 +27,8 @@ pub struct ClaimFragment<'info> {
         bump = worker_account.bump,
         constraint = worker_account.owner == worker.key() @ SiliciumError::NotAuthorized,
         constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
-        constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized
+        constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized,
+        constraint = worker_account.reputation >= MIN_COMPUTE_REPUTATION @ SiliciumError::ReputationTooLow
     )]
     pub worker_account: Account<'info, Worker>,
 

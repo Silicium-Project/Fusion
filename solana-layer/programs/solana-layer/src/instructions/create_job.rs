@@ -8,6 +8,8 @@ use crate::{
     state::job::{Job, JobStatus},
 };
 
+pub const MAX_FRAGMENT_QUORUM: u16 = 10;
+
 #[derive(Accounts)]
 #[instruction(job_id: u64)]
 pub struct CreateJob<'info> {
@@ -69,8 +71,19 @@ pub fn handler(
         SiliciumError::InvalidParams
     );
     require!(
-        fragment_quorum <= expected_fragments as u16,
+        fragment_quorum <= MAX_FRAGMENT_QUORUM,
         SiliciumError::InvalidParams
+    );
+
+    let verifier_needed_u128 = (expected_fragments as u128)
+        .checked_mul(fragment_quorum as u128)
+        .ok_or(SiliciumError::InvalidParams)?
+        .checked_mul(verifier_reward_per_vote as u128)
+        .ok_or(SiliciumError::InvalidParams)?;
+
+    require!(
+        verifier_reward_budget as u128 >= verifier_needed_u128,
+        SiliciumError::InsufficientVerifierBudget
     );
 
     let now = Clock::get()?.unix_timestamp;

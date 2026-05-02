@@ -146,3 +146,13 @@ pub struct VoteSlashed {
     pub fragment_status: u8,
     pub treasury: Pubkey,
 }
+
+#[event]
+pub struct WorkerReputationUpdated {
+    pub worker: Pubkey,
+    pub old_reputation: i64,
+    pub new_reputation: i64,
+    pub delta: i64,
+    pub reason: u8,
+    pub status: u8,
+}

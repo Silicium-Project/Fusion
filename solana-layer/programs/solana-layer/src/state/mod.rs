@@ -5,3 +5,4 @@ pub mod worker;
 pub mod fragment_vote;
 pub mod treasury;
 pub mod fragment_resolution;
+pub mod reputation;

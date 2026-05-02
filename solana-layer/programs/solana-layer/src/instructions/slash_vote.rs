@@ -9,6 +9,7 @@ use crate::{
         fragment::{Fragment, FragmentStatus},
         fragment_vote::FragmentVote,
         job::Job,
+        reputation::{record_slash, record_vote_wrong},
         treasury::Treasury,
         worker::Worker,
     },
@@ -152,6 +153,9 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
 
     verifier_worker.stake_amount = verifier_worker.stake_amount.saturating_sub(slash_amount);
     vote.slashed = true;
+
+    record_vote_wrong(verifier_worker);
+    record_slash(verifier_worker);
 
     emit!(VoteSlashed {
         job: ctx.accounts.job.key(),
