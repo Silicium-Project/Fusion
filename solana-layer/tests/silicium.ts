@@ -38,6 +38,10 @@ let reclaimFragment: PublicKey;
 let reclaimEscrow: PublicKey;
 
 let slashJobId = new anchor.BN(5);
+let stakingPool: PublicKey;
+let stakingPoolAuth: PublicKey;
+let stakingStakeVault: PublicKey;
+let stakingRewardVault: PublicKey;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -199,6 +203,31 @@ async function stakeRegisteredWorker(
   return { stakeAuth, stakeVault };
 }
 
+function stakingPoolPda(mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("staking_pool"), mint.toBuffer()],
+    program.programId
+  )[0];
+}
+
+function stakingPoolAuthPda(mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("staking_pool_auth"), mint.toBuffer()],
+    program.programId
+  )[0];
+}
+
+function networkStakerPda(owner: PublicKey, mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("network_staker"),
+      owner.toBuffer(),
+      mint.toBuffer(),
+    ],
+    program.programId
+  )[0];
+}
+
 async function createTestJob(
   jobId: anchor.BN,
   expectedFragments = 1,
@@ -259,6 +288,23 @@ async function createTestJob(
     escrow: escrow.publicKey,
     escrowAuth,
   };
+}
+
+async function expectTxToFail(
+  fn: () => Promise<any>,
+  expectedMessage: string
+) {
+  try {
+    await fn();
+    assert.fail(`Expected transaction to fail with ${expectedMessage}`);
+  } catch (e: any) {
+    const msg = String(e);
+    assert.include(
+      msg,
+      expectedMessage,
+      `Expected error to include "${expectedMessage}", got: ${msg}`
+    );
+  }
 }
 
 async function createReadyWorker(amount = 1_000_000) {
@@ -1758,12 +1804,16 @@ await program.methods
     const stakeBefore = await provider.connection.getTokenAccountBalance(stakeVault);
     const treasuryBefore = await provider.connection.getTokenAccountBalance(treasury.publicKey);
 
+    const fragmentResolved = await program.account.fragment.fetch(fragment);
+    const slashRoundResolution = roundResolutionPda(fragment, fragmentResolved.round);
+
     await program.methods
       .slashVote()
       .accounts({
         slasher: client,
         job: job,
         fragment: fragment,
+        roundResolution: slashRoundResolution,
         vote: badVote,
         verifierWorker: badVerifierWorker,
         treasuryState: treasuryState,
@@ -1795,5 +1845,855 @@ await program.methods
       100000
     );
   });
-});
 
+
+  it("rejects a job with too many fragments", async () => {
+    const client = provider.wallet.publicKey;
+    const payer = provider.wallet.payer as anchor.web3.Keypair;
+
+    const jobId = new anchor.BN(200);
+    const job = jobPda(client, jobId);
+    const escrowAuth = escrowAuthPda(job);
+    const escrow = anchor.web3.Keypair.generate();
+
+    await mintTo(
+      provider.connection,
+      payer,
+      sharedMint,
+      sharedWorkerToken,
+      client,
+      10_000_000
+    );
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .createJob(
+            jobId,
+            1001,
+            new anchor.BN(1_000_000),
+            VERIFIER_REWARD_PER_VOTE,
+            new anchor.BN(300_000_000),
+            new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
+            2
+          )
+          .accounts({
+            client: client,
+            mint: sharedMint,
+            job: job,
+            escrowAuth: escrowAuth,
+            escrow: escrow.publicKey,
+            clientToken: sharedWorkerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY,
+          })
+          .signers([escrow])
+          .rpc();
+      },
+      "TooManyFragments"
+    );
+  });
+
+
+    it("rejects a job with an invalid short deadline", async () => {
+    const client = provider.wallet.publicKey;
+    const payer = provider.wallet.payer as anchor.web3.Keypair;
+
+    const jobId = new anchor.BN(201);
+    const job = jobPda(client, jobId);
+    const escrowAuth = escrowAuthPda(job);
+    const escrow = anchor.web3.Keypair.generate();
+
+    await mintTo(
+      provider.connection,
+      payer,
+      sharedMint,
+      sharedWorkerToken,
+      client,
+      10_000_000
+    );
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .createJob(
+            jobId,
+            1,
+            new anchor.BN(1_000_000),
+            VERIFIER_REWARD_PER_VOTE,
+            VERIFIER_REWARD_BUDGET,
+            new anchor.BN(Math.floor(Date.now() / 1000) + 10),
+            2
+          )
+          .accounts({
+            client: client,
+            mint: sharedMint,
+            job: job,
+            escrowAuth: escrowAuth,
+            escrow: escrow.publicKey,
+            clientToken: sharedWorkerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+            rent: SYSVAR_RENT_PUBKEY,
+          })
+          .signers([escrow])
+          .rpc();
+      },
+      "InvalidDeadline"
+    );
+  });
+  
+  
+  it("rejects claim from an unstaked worker", async () => {
+    const unstakedWorker = anchor.web3.Keypair.generate();
+    await airdrop(unstakedWorker.publicKey);
+
+    const unstakedWorkerAccount = await registerWorker(unstakedWorker);
+    const unstakedWorkerToken = await createAndFundWorkerToken(unstakedWorker.publicKey);
+
+    const jobId = new anchor.BN(202);
+    const { job } = await createTestJob(jobId, 1, 2);
+
+    const fragmentIndex = 0;
+    const fragment = fragmentPda(job, fragmentIndex);
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .claimFragment(fragmentIndex)
+          .accounts({
+            worker: unstakedWorker.publicKey,
+            workerAccount: unstakedWorkerAccount,
+            job: job,
+            fragment: fragment,
+            workerToken: unstakedWorkerToken,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([unstakedWorker])
+          .rpc();
+      },
+      "NotAuthorized"
+    );
+  });
+
+
+  it("rejects vote from an unstaked verifier", async () => {
+    const computeWorker = await createReadyWorker();
+
+    const unstakedVerifier = anchor.web3.Keypair.generate();
+    await airdrop(unstakedVerifier.publicKey);
+
+    const unstakedVerifierWorker = await registerWorker(unstakedVerifier);
+
+    const jobId = new anchor.BN(203);
+    const { job, escrow } = await createTestJob(jobId, 1, 2);
+
+    const fragment = await claimAndSubmitFragment(
+      computeWorker.keypair,
+      computeWorker.workerAccount,
+      computeWorker.workerToken,
+      job,
+      0,
+      61,
+      62
+    );
+
+    const fragmentBefore = await program.account.fragment.fetch(fragment);
+    const vote = votePda(fragment, unstakedVerifier.publicKey, fragmentBefore.round);
+    const roundResolution = roundResolutionPda(fragment, fragmentBefore.round);
+    const computeWorkerPda = workerPda(fragmentBefore.worker);
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .voteFragment(true)
+          .accounts({
+            verifier: unstakedVerifier.publicKey,
+            job: job,
+            fragment: fragment,
+            verifierWorker: unstakedVerifierWorker,
+            computeWorker: computeWorkerPda,
+            vote: vote,
+            roundResolution: roundResolution,
+            escrowAuth: escrowAuthPda(job),
+            escrow: escrow,
+            workerToken: computeWorker.workerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([unstakedVerifier])
+          .rpc();
+      },
+      "NotAuthorized"
+    );
+  });
+
+
+  it("rejects vote from the job client", async () => {
+    const computeWorker = await createReadyWorker();
+
+    const jobId = new anchor.BN(204);
+    const { job, escrow } = await createTestJob(jobId, 1, 2);
+
+    const fragment = await claimAndSubmitFragment(
+      computeWorker.keypair,
+      computeWorker.workerAccount,
+      computeWorker.workerToken,
+      job,
+      0,
+      71,
+      72
+    );
+
+    const client = provider.wallet.publicKey;
+    const clientWorker = workerPda(client);
+
+    const fragmentBefore = await program.account.fragment.fetch(fragment);
+    const vote = votePda(fragment, client, fragmentBefore.round);
+    const roundResolution = roundResolutionPda(fragment, fragmentBefore.round);
+    const computeWorkerPda = workerPda(fragmentBefore.worker);
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .voteFragment(true)
+          .accounts({
+            verifier: client,
+            job: job,
+            fragment: fragment,
+            verifierWorker: clientWorker,
+            computeWorker: computeWorkerPda,
+            vote: vote,
+            roundResolution: roundResolution,
+            escrowAuth: escrowAuthPda(job),
+            escrow: escrow,
+            workerToken: computeWorker.workerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+      },
+      "ClientCannotVerifyOwnJob"
+    );
+  });
+
+
+  it("rejects self vote from the compute worker", async () => {
+    const computeWorker = await createReadyWorker();
+
+    const jobId = new anchor.BN(205);
+    const { job, escrow } = await createTestJob(jobId, 1, 2);
+
+    const fragment = await claimAndSubmitFragment(
+      computeWorker.keypair,
+      computeWorker.workerAccount,
+      computeWorker.workerToken,
+      job,
+      0,
+      81,
+      82
+    );
+
+    const fragmentBefore = await program.account.fragment.fetch(fragment);
+    const vote = votePda(fragment, computeWorker.keypair.publicKey, fragmentBefore.round);
+    const roundResolution = roundResolutionPda(fragment, fragmentBefore.round);
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .voteFragment(true)
+          .accounts({
+            verifier: computeWorker.keypair.publicKey,
+            job: job,
+            fragment: fragment,
+            verifierWorker: computeWorker.workerAccount,
+            computeWorker: computeWorker.workerAccount,
+            vote: vote,
+            roundResolution: roundResolution,
+            escrowAuth: escrowAuthPda(job),
+            escrow: escrow,
+            workerToken: computeWorker.workerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([computeWorker.keypair])
+          .rpc();
+      },
+      "SelfVoteForbidden"
+    );
+  });
+
+
+  it("rejects double slashing the same wrong vote", async () => {
+    const client = provider.wallet.publicKey;
+
+    const [treasuryState] = PublicKey.findProgramAddressSync(
+      [Buffer.from("treasury"), sharedMint.toBuffer()],
+      program.programId
+    );
+
+    const [treasuryAuth] = PublicKey.findProgramAddressSync(
+      [Buffer.from("treasury_auth"), sharedMint.toBuffer()],
+      program.programId
+    );
+
+    let treasuryAccount: PublicKey;
+
+    try {
+      const existingTreasury = await program.account.treasury.fetch(treasuryState);
+      treasuryAccount = existingTreasury.treasuryTokenAccount;
+    } catch {
+      const treasury = anchor.web3.Keypair.generate();
+      treasuryAccount = treasury.publicKey;
+
+      await program.methods
+        .initTreasury()
+        .accounts({
+          payer: client,
+          mint: sharedMint,
+          treasuryState: treasuryState,
+          treasuryAuth: treasuryAuth,
+          treasury: treasury.publicKey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
+        })
+        .signers([treasury])
+        .rpc();
+    }
+
+    const computeWorker = await createReadyWorker();
+    const badVerifier = await createReadyWorker();
+    const goodVerifier1 = await createReadyWorker();
+    const goodVerifier2 = await createReadyWorker();
+
+    const jobId = new anchor.BN(208);
+    const { job, escrow } = await createTestJob(jobId, 1, 2);
+
+    const fragment = await claimAndSubmitFragment(
+      computeWorker.keypair,
+      computeWorker.workerAccount,
+      computeWorker.workerToken,
+      job,
+      0,
+      101,
+      102
+    );
+
+    const badVoteResult = await voteOnFragment(
+      badVerifier.keypair,
+      badVerifier.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      false
+    );
+
+    await voteOnFragment(
+      goodVerifier1.keypair,
+      goodVerifier1.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      true
+    );
+
+    await voteOnFragment(
+      goodVerifier2.keypair,
+      goodVerifier2.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      true
+    );
+
+    const fragmentResolved = await program.account.fragment.fetch(fragment);
+    const slashRoundResolution = roundResolutionPda(fragment, fragmentResolved.round);
+
+    await program.methods
+      .slashVote()
+      .accounts({
+        slasher: client,
+        job: job,
+        fragment: fragment,
+        roundResolution: slashRoundResolution,
+        vote: badVoteResult.vote,
+        verifierWorker: badVerifier.workerAccount,
+        treasuryState: treasuryState,
+        stakeAuth: badVerifier.stakeAuth,
+        stakeVault: badVerifier.stakeVault,
+        treasuryAuth: treasuryAuth,
+        treasury: treasuryAccount,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .slashVote()
+          .accounts({
+            slasher: client,
+            job: job,
+            fragment: fragment,
+            roundResolution: slashRoundResolution,
+            vote: badVoteResult.vote,
+            verifierWorker: badVerifier.workerAccount,
+            treasuryState: treasuryState,
+            stakeAuth: badVerifier.stakeAuth,
+            stakeVault: badVerifier.stakeVault,
+            treasuryAuth: treasuryAuth,
+            treasury: treasuryAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .rpc();
+      },
+      "VoteAlreadySlashed"
+    );
+  });
+
+
+    it("initializes a network staking pool", async () => {
+    const payer = provider.wallet.publicKey;
+
+    stakingPool = stakingPoolPda(sharedMint);
+    stakingPoolAuth = stakingPoolAuthPda(sharedMint);
+
+    const stakeVault = anchor.web3.Keypair.generate();
+    const rewardVault = anchor.web3.Keypair.generate();
+
+    stakingStakeVault = stakeVault.publicKey;
+    stakingRewardVault = rewardVault.publicKey;
+
+    await program.methods
+      .initStakingPool()
+      .accounts({
+        payer: payer,
+        mint: sharedMint,
+        pool: stakingPool,
+        poolAuth: stakingPoolAuth,
+        stakeVault: stakingStakeVault,
+        rewardVault: stakingRewardVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
+      })
+      .signers([stakeVault, rewardVault])
+      .rpc();
+
+    const poolAccount = await program.account.stakingPool.fetch(stakingPool);
+
+    assert.equal(poolAccount.mint.toBase58(), sharedMint.toBase58());
+    assert.equal(poolAccount.authority.toBase58(), stakingPoolAuth.toBase58());
+    assert.equal(poolAccount.stakeVault.toBase58(), stakingStakeVault.toBase58());
+    assert.equal(poolAccount.rewardVault.toBase58(), stakingRewardVault.toBase58());
+    assert.equal(poolAccount.totalStaked.toString(), "0");
+    assert.equal(poolAccount.accRewardPerShare.toString(), "0");
+  });
+
+  it("allows a passive user to stake on the network", async () => {
+    const staker = anchor.web3.Keypair.generate();
+    await airdrop(staker.publicKey);
+
+    const stakerToken = await createAndFundWorkerToken(staker.publicKey, 10_000_000);
+    const stakerAccount = networkStakerPda(staker.publicKey, sharedMint);
+
+    await program.methods
+      .stakeNetwork(new anchor.BN(2_000_000))
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        staker: stakerAccount,
+        ownerToken: stakerToken,
+        stakeVault: stakingStakeVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([staker])
+      .rpc();
+
+    const poolAccount = await program.account.stakingPool.fetch(stakingPool);
+    const stakerAccountData = await program.account.networkStaker.fetch(stakerAccount);
+    const vaultBalance = await provider.connection.getTokenAccountBalance(stakingStakeVault);
+
+    assert.equal(poolAccount.totalStaked.toString(), "2000000");
+    assert.equal(stakerAccountData.owner.toBase58(), staker.publicKey.toBase58());
+    assert.equal(stakerAccountData.mint.toBase58(), sharedMint.toBase58());
+    assert.equal(stakerAccountData.stakeAmount.toString(), "2000000");
+    assert.equal(stakerAccountData.pendingRewards.toString(), "0");
+    assert.equal(Number(vaultBalance.value.amount), 2_000_000);
+  });
+
+  it("rejects funding staking rewards when there are no stakers", async () => {
+    const client = provider.wallet.publicKey;
+    const payer = provider.wallet.payer as anchor.web3.Keypair;
+
+    const isolatedMint = await createMint(
+      provider.connection,
+      payer,
+      client,
+      null,
+      6
+    );
+
+    const isolatedPool = stakingPoolPda(isolatedMint);
+    const isolatedPoolAuth = stakingPoolAuthPda(isolatedMint);
+
+    const isolatedStakeVault = anchor.web3.Keypair.generate();
+    const isolatedRewardVault = anchor.web3.Keypair.generate();
+
+    const funderToken = await createAssociatedTokenAccount(
+      provider.connection,
+      payer,
+      isolatedMint,
+      client
+    );
+
+    await mintTo(
+      provider.connection,
+      payer,
+      isolatedMint,
+      funderToken,
+      client,
+      10_000_000
+    );
+
+    await program.methods
+      .initStakingPool()
+      .accounts({
+        payer: client,
+        mint: isolatedMint,
+        pool: isolatedPool,
+        poolAuth: isolatedPoolAuth,
+        stakeVault: isolatedStakeVault.publicKey,
+        rewardVault: isolatedRewardVault.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
+      })
+      .signers([isolatedStakeVault, isolatedRewardVault])
+      .rpc();
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .fundStakingRewards(new anchor.BN(1_000_000))
+          .accounts({
+            funder: client,
+            mint: isolatedMint,
+            pool: isolatedPool,
+            funderToken: funderToken,
+            rewardVault: isolatedRewardVault.publicKey,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .rpc();
+      },
+      "NoStakers"
+    );
+  });
+
+  it("funds staking rewards and lets a staker claim them", async () => {
+    const staker = anchor.web3.Keypair.generate();
+    await airdrop(staker.publicKey);
+
+    const stakerToken = await createAndFundWorkerToken(staker.publicKey, 10_000_000);
+    const stakerAccount = networkStakerPda(staker.publicKey, sharedMint);
+
+    await program.methods
+      .stakeNetwork(new anchor.BN(2_000_000))
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        staker: stakerAccount,
+        ownerToken: stakerToken,
+        stakeVault: stakingStakeVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([staker])
+      .rpc();
+
+    const funder = provider.wallet.publicKey;
+    const payer = provider.wallet.payer as anchor.web3.Keypair;
+
+    await mintTo(
+      provider.connection,
+      payer,
+      sharedMint,
+      sharedWorkerToken,
+      funder,
+      1_000_000
+    );
+
+    await program.methods
+      .fundStakingRewards(new anchor.BN(1_000_000))
+      .accounts({
+        funder: funder,
+        mint: sharedMint,
+        pool: stakingPool,
+        funderToken: sharedWorkerToken,
+        rewardVault: stakingRewardVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const beforeClaim = await provider.connection.getTokenAccountBalance(stakerToken);
+
+    await program.methods
+      .claimStakingReward()
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        poolAuth: stakingPoolAuth,
+        staker: stakerAccount,
+        rewardVault: stakingRewardVault,
+        ownerRewardToken: stakerToken,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([staker])
+      .rpc();
+
+    const afterClaim = await provider.connection.getTokenAccountBalance(stakerToken);
+    const stakerAfter = await program.account.networkStaker.fetch(stakerAccount);
+
+    const before = Number(beforeClaim.value.amount);
+    const after = Number(afterClaim.value.amount);
+
+    assert.isAbove(after - before, 0);
+    assert.equal(stakerAfter.pendingRewards.toString(), "0");
+  });
+
+  it("rejects claiming staking rewards when there are no rewards", async () => {
+    const staker = anchor.web3.Keypair.generate();
+    await airdrop(staker.publicKey);
+
+    const stakerToken = await createAndFundWorkerToken(staker.publicKey, 10_000_000);
+    const stakerAccount = networkStakerPda(staker.publicKey, sharedMint);
+
+    await program.methods
+      .stakeNetwork(new anchor.BN(1_000_000))
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        staker: stakerAccount,
+        ownerToken: stakerToken,
+        stakeVault: stakingStakeVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([staker])
+      .rpc();
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .claimStakingReward()
+          .accounts({
+            owner: staker.publicKey,
+            mint: sharedMint,
+            pool: stakingPool,
+            poolAuth: stakingPoolAuth,
+            staker: stakerAccount,
+            rewardVault: stakingRewardVault,
+            ownerRewardToken: stakerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([staker])
+          .rpc();
+      },
+      "NoStakingRewards"
+    );
+  });
+
+  it("requests unstake and rejects withdraw before cooldown", async () => {
+    const staker = anchor.web3.Keypair.generate();
+    await airdrop(staker.publicKey);
+
+    const stakerToken = await createAndFundWorkerToken(staker.publicKey, 10_000_000);
+    const stakerAccount = networkStakerPda(staker.publicKey, sharedMint);
+
+    await program.methods
+      .stakeNetwork(new anchor.BN(2_000_000))
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        staker: stakerAccount,
+        ownerToken: stakerToken,
+        stakeVault: stakingStakeVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([staker])
+      .rpc();
+
+    await program.methods
+      .requestUnstake(new anchor.BN(1_000_000))
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        staker: stakerAccount,
+      })
+      .signers([staker])
+      .rpc();
+
+    const stakerAfterRequest = await program.account.networkStaker.fetch(stakerAccount);
+
+    assert.equal(stakerAfterRequest.stakeAmount.toString(), "1000000");
+    assert.equal(stakerAfterRequest.unstakeRequestedAmount.toString(), "1000000");
+    assert.isAbove(Number(stakerAfterRequest.unstakeAvailableAt.toString()), 0);
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .withdrawUnstaked()
+          .accounts({
+            owner: staker.publicKey,
+            mint: sharedMint,
+            pool: stakingPool,
+            poolAuth: stakingPoolAuth,
+            staker: stakerAccount,
+            stakeVault: stakingStakeVault,
+            ownerToken: stakerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([staker])
+          .rpc();
+      },
+      "UnstakeCooldownActive"
+    );
+  });
+
+  it("withdraws unstaked tokens after cooldown", async () => {
+    const staker = anchor.web3.Keypair.generate();
+    await airdrop(staker.publicKey);
+
+    const stakerToken = await createAndFundWorkerToken(staker.publicKey, 10_000_000);
+    const stakerAccount = networkStakerPda(staker.publicKey, sharedMint);
+
+    await program.methods
+      .stakeNetwork(new anchor.BN(2_000_000))
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        staker: stakerAccount,
+        ownerToken: stakerToken,
+        stakeVault: stakingStakeVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([staker])
+      .rpc();
+
+    const beforeRequest = await provider.connection.getTokenAccountBalance(stakerToken);
+
+    await program.methods
+      .requestUnstake(new anchor.BN(1_000_000))
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        staker: stakerAccount,
+      })
+      .signers([staker])
+      .rpc();
+
+    let withdrawn = false;
+
+    for (let i = 0; i < 20; i++) {
+      try {
+        await program.methods
+          .withdrawUnstaked()
+          .accounts({
+            owner: staker.publicKey,
+            mint: sharedMint,
+            pool: stakingPool,
+            poolAuth: stakingPoolAuth,
+            staker: stakerAccount,
+            stakeVault: stakingStakeVault,
+            ownerToken: stakerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([staker])
+          .rpc();
+
+        withdrawn = true;
+        break;
+      } catch (e: any) {
+        const msg = String(e);
+
+        if (!msg.includes("UnstakeCooldownActive")) {
+          throw e;
+        }
+
+        await sleep(1000);
+      }
+    }
+
+    assert.equal(withdrawn, true);
+
+    const afterWithdraw = await provider.connection.getTokenAccountBalance(stakerToken);
+    const stakerAfter = await program.account.networkStaker.fetch(stakerAccount);
+
+    const before = Number(beforeRequest.value.amount);
+    const after = Number(afterWithdraw.value.amount);
+
+    assert.equal(after - before, 1_000_000);
+
+    assert.equal(stakerAfter.unstakeRequestedAmount.toString(), "0");
+    assert.equal(stakerAfter.unstakeAvailableAt.toString(), "0");
+  });
+
+  it("rejects withdrawing when there is nothing to withdraw", async () => {
+    const staker = anchor.web3.Keypair.generate();
+    await airdrop(staker.publicKey);
+
+    const stakerToken = await createAndFundWorkerToken(staker.publicKey, 10_000_000);
+    const stakerAccount = networkStakerPda(staker.publicKey, sharedMint);
+
+    await program.methods
+      .stakeNetwork(new anchor.BN(1_000_000))
+      .accounts({
+        owner: staker.publicKey,
+        mint: sharedMint,
+        pool: stakingPool,
+        staker: stakerAccount,
+        ownerToken: stakerToken,
+        stakeVault: stakingStakeVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([staker])
+      .rpc();
+
+    await expectTxToFail(
+      async () => {
+        await program.methods
+          .withdrawUnstaked()
+          .accounts({
+            owner: staker.publicKey,
+            mint: sharedMint,
+            pool: stakingPool,
+            poolAuth: stakingPoolAuth,
+            staker: stakerAccount,
+            stakeVault: stakingStakeVault,
+            ownerToken: stakerToken,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([staker])
+          .rpc();
+      },
+      "NothingToWithdraw"
+    );
+  });
+});

@@ -7,6 +7,7 @@ use crate::{
     events::VoteSlashed,
     state::{
         fragment::{Fragment, FragmentStatus},
+        fragment_resolution::FragmentResolution,
         fragment_vote::FragmentVote,
         job::Job,
         reputation::{record_slash, record_vote_wrong},
@@ -28,9 +29,22 @@ pub struct SlashVote<'info> {
             job.key().as_ref(),
             &fragment.fragment_index.to_le_bytes()
         ],
-        bump = fragment.bump
+        bump = fragment.bump,
+        constraint = fragment.job == job.key() @ SiliciumError::InvalidParams
     )]
     pub fragment: Box<Account<'info, Fragment>>,
+
+    #[account(
+        seeds = [
+            b"fragment_resolution",
+            fragment.key().as_ref(),
+            &vote.round.to_le_bytes()
+        ],
+        bump = round_resolution.bump,
+        constraint = round_resolution.fragment == fragment.key() @ SiliciumError::InvalidParams,
+        constraint = round_resolution.round == vote.round @ SiliciumError::InvalidParams
+    )]
+    pub round_resolution: Box<Account<'info, FragmentResolution>>,
 
     #[account(
         mut,
@@ -41,7 +55,8 @@ pub struct SlashVote<'info> {
             &vote.round.to_le_bytes()
         ],
         bump = vote.bump,
-        constraint = vote.fragment == fragment.key() @ SiliciumError::InvalidParams
+        constraint = vote.fragment == fragment.key() @ SiliciumError::InvalidParams,
+        constraint = vote.round == round_resolution.round @ SiliciumError::InvalidParams
     )]
     pub vote: Box<Account<'info, FragmentVote>>,
 
@@ -99,13 +114,32 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
     let fragment = &ctx.accounts.fragment;
     let vote = &mut ctx.accounts.vote;
     let verifier_worker = &mut ctx.accounts.verifier_worker;
+    let round_resolution = &ctx.accounts.round_resolution;
+
+    require!(
+        round_resolution.resolved,
+        SiliciumError::FragmentNotResolved
+    );
+
+    require!(
+        vote.round == round_resolution.round,
+        SiliciumError::InvalidParams
+    );
+
+    require!(
+        vote.choice != round_resolution.winning_choice,
+        SiliciumError::NothingToSlash
+    );
 
     require!(
         matches!(fragment.status, FragmentStatus::Verified | FragmentStatus::Rejected),
         SiliciumError::FragmentNotResolved
     );
 
-    require!(!vote.slashed, SiliciumError::VoteAlreadySlashed);
+    require!(
+        !vote.slashed,
+        SiliciumError::VoteAlreadySlashed
+    );
 
     let wrong = match fragment.status {
         FragmentStatus::Verified => vote.choice == false,
@@ -114,10 +148,15 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
         FragmentStatus::Claimed => false,
         FragmentStatus::Submitted => false,
     };
+
     require!(wrong, SiliciumError::NothingToSlash);
 
     let stake_amount = verifier_worker.stake_amount;
-    require!(stake_amount > 0, SiliciumError::NothingToSlash);
+
+    require!(
+        stake_amount > 0,
+        SiliciumError::NothingToSlash
+    );
 
     let mut slash_amount = stake_amount
         .saturating_mul(SLASH_BPS)
@@ -129,10 +168,15 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
     }
 
     let vault_amt = ctx.accounts.stake_vault.amount;
+
     if slash_amount > vault_amt {
         slash_amount = vault_amt;
     }
-    require!(slash_amount > 0, SiliciumError::NothingToSlash);
+
+    require!(
+        slash_amount > 0,
+        SiliciumError::NothingToSlash
+    );
 
     let verifier_worker_key = verifier_worker.key();
     let bump = ctx.bumps.stake_auth;
@@ -149,9 +193,12 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
         },
         signer_seeds,
     );
+
     token::transfer(cpi_ctx, slash_amount)?;
 
-    verifier_worker.stake_amount = verifier_worker.stake_amount.saturating_sub(slash_amount);
+    verifier_worker.stake_amount =
+        verifier_worker.stake_amount.saturating_sub(slash_amount);
+
     vote.slashed = true;
 
     record_vote_wrong(verifier_worker);

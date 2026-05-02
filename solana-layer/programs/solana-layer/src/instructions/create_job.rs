@@ -2,13 +2,14 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::{
-    constants::MIN_FRAGMENT_QUORUM,
+    constants::{
+        MAX_FRAGMENTS_PER_JOB, MAX_FRAGMENT_QUORUM, MAX_JOB_TTL_SECS, MIN_FRAGMENT_QUORUM,
+        MIN_JOB_DEPOSIT, MIN_JOB_TTL_SECS,
+    },
     error::SiliciumError,
     events::JobCreated,
     state::job::{Job, JobStatus},
 };
-
-pub const MAX_FRAGMENT_QUORUM: u16 = 10;
 
 #[derive(Accounts)]
 #[instruction(job_id: u64)]
@@ -65,14 +66,36 @@ pub fn handler(
     fragment_quorum: u16,
 ) -> Result<()> {
     require!(expected_fragments > 0, SiliciumError::InvalidParams);
+
+    require!(
+        expected_fragments <= MAX_FRAGMENTS_PER_JOB,
+        SiliciumError::TooManyFragments
+    );
+
     require!(reward_per_fragment > 0, SiliciumError::InvalidParams);
+
     require!(
         fragment_quorum >= MIN_FRAGMENT_QUORUM,
         SiliciumError::InvalidParams
     );
+
     require!(
         fragment_quorum <= MAX_FRAGMENT_QUORUM,
         SiliciumError::InvalidParams
+    );
+
+    let now = Clock::get()?.unix_timestamp;
+
+    let ttl = deadline_unix.saturating_sub(now);
+
+    require!(
+        ttl >= MIN_JOB_TTL_SECS,
+        SiliciumError::InvalidDeadline
+    );
+
+    require!(
+        ttl <= MAX_JOB_TTL_SECS,
+        SiliciumError::InvalidDeadline
     );
 
     let verifier_needed_u128 = (expected_fragments as u128)
@@ -86,9 +109,6 @@ pub fn handler(
         SiliciumError::InsufficientVerifierBudget
     );
 
-    let now = Clock::get()?.unix_timestamp;
-    require!(deadline_unix > now, SiliciumError::InvalidParams);
-
     let worker_total_u128 = (expected_fragments as u128)
         .checked_mul(reward_per_fragment as u128)
         .ok_or(SiliciumError::InvalidParams)?;
@@ -98,7 +118,13 @@ pub fn handler(
         .ok_or(SiliciumError::InvalidParams)?;
 
     require!(total_u128 <= u64::MAX as u128, SiliciumError::InvalidParams);
+
     let total = total_u128 as u64;
+
+    require!(
+        total >= MIN_JOB_DEPOSIT,
+        SiliciumError::DepositTooSmall
+    );
 
     let cpi_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
@@ -108,9 +134,11 @@ pub fn handler(
             authority: ctx.accounts.client.to_account_info(),
         },
     );
+
     token::transfer(cpi_ctx, total)?;
 
     let job = &mut ctx.accounts.job;
+
     job.job_id = job_id;
     job.client = ctx.accounts.client.key();
     job.mint = ctx.accounts.mint.key();

@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::TokenAccount;
 
 use crate::{
+    constants::MAX_ACTIVE_CLAIMS_PER_WORKER,
     error::SiliciumError,
     events::FragmentClaimed,
     state::{
@@ -70,6 +71,11 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
         SiliciumError::MissingComputeRole
     );
 
+    require!(
+        ctx.accounts.worker_account.active_claims < MAX_ACTIVE_CLAIMS_PER_WORKER,
+        SiliciumError::TooManyActiveClaims
+    );
+
     let now = Clock::get()?.unix_timestamp;
     let job_key = ctx.accounts.job.key();
     let fragment_key = ctx.accounts.fragment.key();
@@ -128,6 +134,9 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
     f.claim_deadline_unix = now.saturating_add(CLAIM_TTL_SECS);
     f.required_quorum = job.fragment_quorum;
     f.status = FragmentStatus::Claimed;
+
+    ctx.accounts.worker_account.active_claims =
+        ctx.accounts.worker_account.active_claims.saturating_add(1);
 
     emit!(FragmentClaimed {
         job: job_key,

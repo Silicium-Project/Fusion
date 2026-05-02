@@ -6,3 +6,5 @@ pub mod fragment_vote;
 pub mod treasury;
 pub mod fragment_resolution;
 pub mod reputation;
+pub mod staking_pool;
+pub mod network_staker;

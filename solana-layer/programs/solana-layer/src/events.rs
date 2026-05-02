@@ -156,3 +156,57 @@ pub struct WorkerReputationUpdated {
     pub reason: u8,
     pub status: u8,
 }
+
+#[event]
+pub struct StakingPoolInitialized {
+    pub pool: Pubkey,
+    pub mint: Pubkey,
+    pub authority: Pubkey,
+    pub stake_vault: Pubkey,
+    pub reward_vault: Pubkey,
+}
+
+#[event]
+pub struct NetworkStakeDeposited {
+    pub pool: Pubkey,
+    pub staker: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+    pub total_staked: u64,
+    pub user_stake_amount: u64,
+}
+
+#[event]
+pub struct StakingRewardsFunded {
+    pub pool: Pubkey,
+    pub funder: Pubkey,
+    pub amount: u64,
+    pub total_staked: u64,
+    pub acc_reward_per_share: u128,
+}
+
+#[event]
+pub struct StakingRewardClaimed {
+    pub pool: Pubkey,
+    pub staker: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+}
+
+#[event]
+pub struct NetworkUnstakeRequested {
+    pub pool: Pubkey,
+    pub staker: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+    pub remaining_stake: u64,
+    pub available_at: i64,
+}
+
+#[event]
+pub struct NetworkUnstakeWithdrawn {
+    pub pool: Pubkey,
+    pub staker: Pubkey,
+    pub owner: Pubkey,
+    pub amount: u64,
+}

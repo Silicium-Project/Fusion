@@ -8,7 +8,7 @@ pub mod state;
 
 pub use instructions::*;
 
-declare_id!("9wuEBw5quCa5nxwAuwbb344Hks4o5TnKC5EyKq7jtgDu");
+declare_id!("5LGYhzFjWhUB36SEe2YYkk8oGYUYhAtUvXWPvgfP4WJN");
 
 #[program]
 pub mod solana_layer {
@@ -112,5 +112,29 @@ pub mod solana_layer {
         fragment_index: u32,
     ) -> Result<()> {
         crate::instructions::reclaim_fragment::handler(ctx, fragment_index)
+    }
+    
+    pub fn init_staking_pool(ctx: Context<InitStakingPool>) -> Result<()> {
+        instructions::init_staking_pool::handler(ctx)
+    }
+
+    pub fn stake_network(ctx: Context<StakeNetwork>, amount: u64) -> Result<()> {
+        instructions::stake_network::handler(ctx, amount)
+    }
+
+    pub fn fund_staking_rewards(ctx: Context<FundStakingRewards>, amount: u64) -> Result<()> {
+        instructions::fund_staking_rewards::handler(ctx, amount)
+    }
+
+    pub fn claim_staking_reward(ctx: Context<ClaimStakingReward>) -> Result<()> {
+        instructions::claim_staking_reward::handler(ctx)
+    }
+
+    pub fn request_unstake(ctx: Context<RequestUnstake>, amount: u64) -> Result<()> {
+        instructions::request_unstake::handler(ctx, amount)
+    }
+
+    pub fn withdraw_unstaked(ctx: Context<WithdrawUnstaked>) -> Result<()> {
+        instructions::withdraw_unstaked::handler(ctx)
     }
 }

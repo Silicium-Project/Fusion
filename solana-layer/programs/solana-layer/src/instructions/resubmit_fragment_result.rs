@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::TokenAccount;
 
 use crate::{
-    constants::MIN_COMPUTE_STAKE,
+    constants::{MIN_COMPUTE_STAKE, VOTING_TTL_SECS},
     error::SiliciumError,
     events::FragmentSubmitted,
     state::{
@@ -66,7 +66,13 @@ pub fn handler(
         SiliciumError::MissingComputeRole
     );
 
+    let now = Clock::get()?.unix_timestamp;
     let fragment_key = ctx.accounts.fragment.key();
+
+    require!(
+        now <= ctx.accounts.job.deadline_unix,
+        SiliciumError::JobExpired
+    );
 
     let f = &mut ctx.accounts.fragment;
 
@@ -84,7 +90,7 @@ pub fn handler(
     f.yes_votes = 0;
     f.no_votes = 0;
     f.required_quorum = ctx.accounts.job.fragment_quorum;
-    f.voting_deadline_unix = ctx.accounts.job.deadline_unix;
+    f.voting_deadline_unix = now.saturating_add(VOTING_TTL_SECS);
 
     f.worker = ctx.accounts.worker.key();
     f.worker_token_account = ctx.accounts.worker_token.key();

@@ -85,4 +85,37 @@ pub enum SiliciumError {
 
     #[msg("Worker reputation is too low")]
     ReputationTooLow,
+
+    #[msg("Job deposit is too small")]
+    DepositTooSmall,
+
+    #[msg("Too many fragments for one job")]
+    TooManyFragments,
+
+    #[msg("Invalid job deadline")]
+    InvalidDeadline,
+
+    #[msg("Job has expired")]
+    JobExpired,
+
+    #[msg("Worker has too many active claims")]
+    TooManyActiveClaims,
+
+    #[msg("Client cannot verify their own job")]
+    ClientCannotVerifyOwnJob,
+
+    #[msg("No stakers in the staking pool")]
+    NoStakers,
+
+    #[msg("No staking rewards to claim")]
+    NoStakingRewards,
+
+    #[msg("Insufficient staked amount")]
+    InsufficientStakedAmount,
+
+    #[msg("Unstake cooldown is still active")]
+    UnstakeCooldownActive,
+
+    #[msg("Nothing to withdraw")]
+    NothingToWithdraw,
 }

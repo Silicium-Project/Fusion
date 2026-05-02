@@ -31,7 +31,8 @@ pub struct ClaimVerifierReward<'info> {
             job.key().as_ref(),
             &fragment.fragment_index.to_le_bytes()
         ],
-        bump = fragment.bump
+        bump = fragment.bump,
+        constraint = fragment.job == job.key() @ SiliciumError::InvalidParams
     )]
     pub fragment: Box<Account<'info, Fragment>>,
 
@@ -43,7 +44,8 @@ pub struct ClaimVerifierReward<'info> {
             &vote.round.to_le_bytes()
         ],
         bump = round_resolution.bump,
-        constraint = round_resolution.fragment == fragment.key() @ SiliciumError::InvalidParams
+        constraint = round_resolution.fragment == fragment.key() @ SiliciumError::InvalidParams,
+        constraint = round_resolution.round == vote.round @ SiliciumError::InvalidParams
     )]
     pub round_resolution: Box<Account<'info, FragmentResolution>>,
 
@@ -57,7 +59,8 @@ pub struct ClaimVerifierReward<'info> {
         ],
         bump = vote.bump,
         constraint = vote.fragment == fragment.key() @ SiliciumError::InvalidParams,
-        constraint = vote.verifier == verifier.key() @ SiliciumError::NotAuthorized
+        constraint = vote.verifier == verifier.key() @ SiliciumError::NotAuthorized,
+        constraint = vote.round == round_resolution.round @ SiliciumError::InvalidParams
     )]
     pub vote: Box<Account<'info, FragmentVote>>,
 
@@ -76,7 +79,11 @@ pub struct ClaimVerifierReward<'info> {
     )]
     pub escrow_auth: UncheckedAccount<'info>,
 
-    #[account(mut, constraint = escrow.key() == job.escrow)]
+    #[account(
+        mut,
+        constraint = escrow.key() == job.escrow @ SiliciumError::InvalidParams,
+        constraint = escrow.mint == job.mint @ SiliciumError::InvalidParams
+    )]
     pub escrow: Box<Account<'info, TokenAccount>>,
 
     #[account(
@@ -95,22 +102,38 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
     let vote = &mut ctx.accounts.vote;
     let verifier_worker = &mut ctx.accounts.verifier_worker;
 
-    require!(round_resolution.resolved, SiliciumError::FragmentNotResolved);
-    require!(!vote.reward_claimed, SiliciumError::RewardAlreadyClaimed);
     require!(
-        round_resolution.claimed_rewards < round_resolution.eligible_rewards,
-        SiliciumError::VoteNotEligibleForReward
+        round_resolution.resolved,
+        SiliciumError::FragmentNotResolved
     );
+
     require!(
         vote.round == round_resolution.round,
         SiliciumError::InvalidParams
     );
+
+    require!(
+        vote.fragment == ctx.accounts.fragment.key(),
+        SiliciumError::InvalidParams
+    );
+
+    require!(
+        !vote.reward_claimed,
+        SiliciumError::RewardAlreadyClaimed
+    );
+
+    require!(
+        round_resolution.claimed_rewards < round_resolution.eligible_rewards,
+        SiliciumError::VoteNotEligibleForReward
+    );
+
     require!(
         vote.choice == round_resolution.winning_choice,
         SiliciumError::VoteNotEligibleForReward
     );
 
     let reward = job.verifier_reward_per_vote;
+
     require!(
         ctx.accounts.escrow.amount >= reward,
         SiliciumError::InsufficientEscrow
@@ -130,12 +153,17 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
         },
         signer_seeds,
     );
+
     token::transfer(cpi_ctx, reward)?;
 
     vote.reward_claimed = true;
-    round_resolution.claimed_rewards = round_resolution.claimed_rewards.saturating_add(1);
+
+    round_resolution.claimed_rewards =
+        round_resolution.claimed_rewards.saturating_add(1);
+
     job.claimed_verifier_rewards_total =
         job.claimed_verifier_rewards_total.saturating_add(reward);
+
     job.paid_amount = job.paid_amount.saturating_add(reward);
 
     record_vote_correct(verifier_worker);

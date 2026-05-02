@@ -35,7 +35,8 @@ pub struct VoteFragment<'info> {
             job.key().as_ref(),
             &fragment.fragment_index.to_le_bytes()
         ],
-        bump = fragment.bump
+        bump = fragment.bump,
+        constraint = fragment.job == job.key() @ SiliciumError::InvalidParams
     )]
     pub fragment: Box<Account<'info, Fragment>>,
 
@@ -98,6 +99,7 @@ pub struct VoteFragment<'info> {
     #[account(
         mut,
         constraint = worker_token.key() == fragment.worker_token_account @ SiliciumError::InvalidParams,
+        constraint = worker_token.owner == fragment.worker @ SiliciumError::NotAuthorized,
         constraint = worker_token.mint == job.mint @ SiliciumError::InvalidParams
     )]
     pub worker_token: Box<Account<'info, TokenAccount>>,
@@ -114,6 +116,11 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     let round_resolution = &mut ctx.accounts.round_resolution;
 
     require!(
+        fragment.job == job.key(),
+        SiliciumError::InvalidParams
+    );
+
+    require!(
         fragment.status == FragmentStatus::Submitted,
         SiliciumError::BadFragmentState
     );
@@ -121,6 +128,11 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     require!(
         ctx.accounts.verifier.key() != fragment.worker,
         SiliciumError::SelfVoteForbidden
+    );
+
+    require!(
+        ctx.accounts.verifier.key() != job.client,
+        SiliciumError::ClientCannotVerifyOwnJob
     );
 
     require!(
@@ -133,13 +145,27 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         SiliciumError::NotAuthorized
     );
 
+    require!(
+        fragment.worker_token_account == ctx.accounts.worker_token.key(),
+        SiliciumError::InvalidParams
+    );
+
     let now = Clock::get()?.unix_timestamp;
+
     require!(
         now <= fragment.voting_deadline_unix,
         SiliciumError::VotingClosed
     );
 
-    require!(fragment.required_quorum > 0, SiliciumError::InvalidParams);
+    require!(
+        now <= job.deadline_unix,
+        SiliciumError::JobExpired
+    );
+
+    require!(
+        fragment.required_quorum > 0,
+        SiliciumError::InvalidParams
+    );
 
     if round_resolution.fragment == Pubkey::default() {
         round_resolution.fragment = fragment.key();
@@ -154,11 +180,17 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             round_resolution.fragment == fragment.key(),
             SiliciumError::InvalidParams
         );
+
         require!(
             round_resolution.round == fragment.round,
             SiliciumError::InvalidParams
         );
     }
+
+    require!(
+        !round_resolution.resolved,
+        SiliciumError::BadFragmentState
+    );
 
     ctx.accounts.vote.fragment = fragment.key();
     ctx.accounts.vote.verifier = ctx.accounts.verifier.key();
@@ -175,13 +207,12 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     }
 
     let quorum = fragment.required_quorum;
+
     let round_verifier_claimable = (quorum as u64)
         .checked_mul(job.verifier_reward_per_vote)
         .ok_or(SiliciumError::InvalidParams)?;
 
     if fragment.yes_votes >= quorum {
-        require!(!round_resolution.resolved, SiliciumError::BadFragmentState);
-
         let next_claimable_total = job
             .claimable_verifier_rewards_total
             .checked_add(round_verifier_claimable)
@@ -193,6 +224,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         );
 
         let worker_reward = job.reward_per_fragment;
+
         let total_needed_now = worker_reward
             .checked_add(round_verifier_claimable)
             .ok_or(SiliciumError::InvalidParams)?;
@@ -221,6 +253,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             },
             signer_seeds,
         );
+
         token::transfer(worker_transfer_ctx, worker_reward)?;
 
         job.paid_amount = job.paid_amount.saturating_add(worker_reward);
@@ -255,8 +288,6 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             expected_fragments: job.expected_fragments,
         });
     } else if fragment.no_votes >= quorum {
-        require!(!round_resolution.resolved, SiliciumError::BadFragmentState);
-
         let next_claimable_total = job
             .claimable_verifier_rewards_total
             .checked_add(round_verifier_claimable)
@@ -273,6 +304,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         );
 
         job.claimable_verifier_rewards_total = next_claimable_total;
+
         fragment.status = FragmentStatus::Rejected;
 
         round_resolution.resolved = true;

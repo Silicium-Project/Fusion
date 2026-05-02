@@ -53,13 +53,23 @@ pub fn handler(ctx: Context<ReclaimFragment>, fragment_index: u32) -> Result<()>
 
     let f = &mut ctx.accounts.fragment;
 
-    require!(f.status == FragmentStatus::Claimed, SiliciumError::BadFragmentState);
-    require!(now >= f.claim_deadline_unix, SiliciumError::ClaimStillActive);
+    require!(
+        f.status == FragmentStatus::Claimed,
+        SiliciumError::BadFragmentState
+    );
+
+    require!(
+        now >= f.claim_deadline_unix,
+        SiliciumError::ClaimStillActive
+    );
 
     let previous_worker = f.assigned_worker;
     let round = f.round;
 
     record_claim_timeout(&mut ctx.accounts.previous_worker_account);
+
+    ctx.accounts.previous_worker_account.active_claims =
+        ctx.accounts.previous_worker_account.active_claims.saturating_sub(1);
 
     f.assigned_worker = Pubkey::default();
     f.claim_deadline_unix = 0;
