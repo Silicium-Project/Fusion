@@ -42,3 +42,14 @@ infra/docker/reverse-proxy/certs/*.csr
 
 # WireGuard peer configuration
 infra/secure-stack/wireguard/config/
+
+
+# Anchor / Solana / Rust
+**/target/
+.target/
+Cargo.lock
+.anchor/
+node_modules/
+.yarn/
+.yarn-cache/
+.yarn-install-state.gz

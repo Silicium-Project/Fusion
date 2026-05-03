@@ -32,6 +32,7 @@ services:
     command: ["silicium-node", "start", "--network", "silicium"]
     ports:
       - "8900:8899"
+      - "8901:8900"
       - "8100-8120:8000-8020"
     volumes:
       - *workspace-volume
