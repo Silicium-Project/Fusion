@@ -55,6 +55,7 @@ export interface VoteFragmentParams {
     workerToken: PublicKey;
     choice: boolean;
     round?: number;
+    computeWorker?: PublicKey;
     signers?: Signer[];
 }
 export interface ClaimVerifierRewardParams {
@@ -98,5 +99,49 @@ export interface ReclaimFragmentParams {
     caller?: PublicKey;
     job: PublicKey;
     fragmentIndex: number;
+    signers?: Signer[];
 }
-export type SdkEventName = "jobCreated" | "workerRegistered" | "workerStaked" | "treasuryInitialized" | "fragmentClaimed" | "fragmentReclaimed" | "fragmentSubmitted" | "fragmentVerified" | "fragmentRejected" | "verifierRewardClaimed" | "jobFinalized" | "jobCancelled" | "voteSlashed";
+export interface InitStakingPoolParams {
+    payer?: PublicKey;
+    mint: PublicKey;
+    stakeVault: Signer;
+    rewardVault: Signer;
+}
+export interface StakeNetworkParams {
+    owner?: PublicKey;
+    mint: PublicKey;
+    ownerToken: PublicKey;
+    amount: Amount;
+    stakeVault?: PublicKey;
+    signers?: Signer[];
+}
+export interface FundStakingRewardsParams {
+    funder?: PublicKey;
+    mint: PublicKey;
+    funderToken: PublicKey;
+    amount: Amount;
+    rewardVault?: PublicKey;
+    signers?: Signer[];
+}
+export interface ClaimStakingRewardParams {
+    owner?: PublicKey;
+    mint: PublicKey;
+    ownerRewardToken: PublicKey;
+    rewardVault?: PublicKey;
+    signers?: Signer[];
+}
+export interface RequestUnstakeParams {
+    owner?: PublicKey;
+    mint: PublicKey;
+    amount: Amount;
+    signers?: Signer[];
+}
+export interface WithdrawUnstakedParams {
+    owner?: PublicKey;
+    mint: PublicKey;
+    ownerToken: PublicKey;
+    stakeVault?: PublicKey;
+    signers?: Signer[];
+}
+export type SdkEventName = "jobCreated" | "workerRegistered" | "workerStaked" | "treasuryInitialized" | "fragmentClaimed" | "fragmentReclaimed" | "fragmentSubmitted" | "fragmentVerified" | "fragmentRejected" | "verifierRewardClaimed" | "jobFinalized" | "jobCancelled" | "voteSlashed" | "workerReputationUpdated" | "stakingPoolInitialized" | "networkStakeDeposited" | "stakingRewardsFunded" | "stakingRewardClaimed" | "networkUnstakeRequested" | "networkUnstakeWithdrawn";
+export declare const SDK_EVENT_NAMES: SdkEventName[];

@@ -47,6 +47,9 @@ exports.roundResolutionPda = roundResolutionPda;
 exports.resultPda = resultPda;
 exports.treasuryStatePda = treasuryStatePda;
 exports.treasuryAuthPda = treasuryAuthPda;
+exports.stakingPoolPda = stakingPoolPda;
+exports.stakingPoolAuthPda = stakingPoolAuthPda;
+exports.networkStakerPda = networkStakerPda;
 const web3_js_1 = require("@solana/web3.js");
 const anchor = __importStar(require("@coral-xyz/anchor"));
 function u32le(value) {
@@ -97,4 +100,13 @@ function treasuryStatePda(programId, mint) {
 }
 function treasuryAuthPda(programId, mint) {
     return web3_js_1.PublicKey.findProgramAddressSync([Buffer.from("treasury_auth"), mint.toBuffer()], programId)[0];
+}
+function stakingPoolPda(programId, mint) {
+    return web3_js_1.PublicKey.findProgramAddressSync([Buffer.from("staking_pool"), mint.toBuffer()], programId)[0];
+}
+function stakingPoolAuthPda(programId, mint) {
+    return web3_js_1.PublicKey.findProgramAddressSync([Buffer.from("staking_pool_auth"), mint.toBuffer()], programId)[0];
+}
+function networkStakerPda(programId, owner, mint) {
+    return web3_js_1.PublicKey.findProgramAddressSync([Buffer.from("network_staker"), owner.toBuffer(), mint.toBuffer()], programId)[0];
 }

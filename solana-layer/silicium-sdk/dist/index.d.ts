@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey, TransactionSignature } from "@solana/web3.js";
 import { SiliciumEventClient } from "./events";
-import type { CancelJobParams, ClaimFragmentParams, ClaimVerifierRewardParams, CreateJobParams, CreateSdkParams, FinalizeJobParams, IdlProgram, InitTreasuryParams, ReclaimFragmentParams, RegisterWorkerParams, SlashVoteParams, StakeWorkerParams, SubmitFragmentResultParams, VoteFragmentParams } from "./types";
+import type { CancelJobParams, ClaimFragmentParams, ClaimStakingRewardParams, ClaimVerifierRewardParams, CreateJobParams, CreateSdkParams, FinalizeJobParams, FundStakingRewardsParams, IdlProgram, InitStakingPoolParams, InitTreasuryParams, ReclaimFragmentParams, RegisterWorkerParams, RequestUnstakeParams, SlashVoteParams, StakeNetworkParams, StakeWorkerParams, SubmitFragmentResultParams, VoteFragmentParams, WithdrawUnstakedParams } from "./types";
 export * from "./pdas";
 export * from "./events";
 export * from "./types";
@@ -28,6 +28,9 @@ export declare class SiliciumLayerSdk {
         result: (job: PublicKey) => anchor.web3.PublicKey;
         treasuryState: (mint: PublicKey) => anchor.web3.PublicKey;
         treasuryAuth: (mint: PublicKey) => anchor.web3.PublicKey;
+        stakingPool: (mint: PublicKey) => anchor.web3.PublicKey;
+        stakingPoolAuth: (mint: PublicKey) => anchor.web3.PublicKey;
+        networkStaker: (owner: PublicKey, mint: PublicKey) => anchor.web3.PublicKey;
     };
     registerWorker(params?: RegisterWorkerParams): Promise<TransactionSignature>;
     stakeWorker(params: StakeWorkerParams): Promise<TransactionSignature>;
@@ -64,10 +67,33 @@ export declare class SiliciumLayerSdk {
         treasuryAuth: PublicKey;
     }>;
     slashVote(params: SlashVoteParams): Promise<TransactionSignature>;
+    initStakingPool(params: InitStakingPoolParams): Promise<{
+        signature: TransactionSignature;
+        pool: PublicKey;
+        poolAuth: PublicKey;
+        stakeVault: PublicKey;
+        rewardVault: PublicKey;
+    }>;
+    stakeNetwork(params: StakeNetworkParams): Promise<{
+        signature: TransactionSignature;
+        pool: PublicKey;
+        staker: PublicKey;
+    }>;
+    fundStakingRewards(params: FundStakingRewardsParams): Promise<TransactionSignature>;
+    claimStakingReward(params: ClaimStakingRewardParams): Promise<TransactionSignature>;
+    requestUnstake(params: RequestUnstakeParams): Promise<{
+        signature: TransactionSignature;
+        pool: PublicKey;
+        staker: PublicKey;
+    }>;
+    withdrawUnstaked(params: WithdrawUnstakedParams): Promise<TransactionSignature>;
     fetchJob(job: PublicKey): Promise<unknown>;
     fetchFragment(fragment: PublicKey): Promise<unknown>;
     fetchWorker(workerOrWorkerAccount: PublicKey, isWorkerAccount?: boolean): Promise<unknown>;
     fetchVote(vote: PublicKey): Promise<unknown>;
     fetchRoundResolution(roundResolution: PublicKey): Promise<unknown>;
     fetchResult(result: PublicKey): Promise<unknown>;
+    fetchTreasuryState(treasuryState: PublicKey): Promise<unknown>;
+    fetchStakingPool(pool: PublicKey): Promise<unknown>;
+    fetchNetworkStaker(stakerOrOwner: PublicKey, mint?: PublicKey): Promise<unknown>;
 }

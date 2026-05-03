@@ -14,3 +14,6 @@ export declare function roundResolutionPda(programId: PublicKey, fragment: Publi
 export declare function resultPda(programId: PublicKey, job: PublicKey): PublicKey;
 export declare function treasuryStatePda(programId: PublicKey, mint: PublicKey): PublicKey;
 export declare function treasuryAuthPda(programId: PublicKey, mint: PublicKey): PublicKey;
+export declare function stakingPoolPda(programId: PublicKey, mint: PublicKey): PublicKey;
+export declare function stakingPoolAuthPda(programId: PublicKey, mint: PublicKey): PublicKey;
+export declare function networkStakerPda(programId: PublicKey, owner: PublicKey, mint: PublicKey): PublicKey;

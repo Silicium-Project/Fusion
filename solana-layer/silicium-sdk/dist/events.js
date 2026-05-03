@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SiliciumEventClient = void 0;
 exports.pubkey = pubkey;
 const web3_js_1 = require("@solana/web3.js");
+const types_1 = require("./types");
 class SiliciumEventClient {
     constructor(program) {
         this.program = program;
@@ -18,22 +19,7 @@ class SiliciumEventClient {
         };
     }
     onAll(callback) {
-        const names = [
-            "jobCreated",
-            "workerRegistered",
-            "workerStaked",
-            "treasuryInitialized",
-            "fragmentClaimed",
-            "fragmentReclaimed",
-            "fragmentSubmitted",
-            "fragmentVerified",
-            "fragmentRejected",
-            "verifierRewardClaimed",
-            "jobFinalized",
-            "jobCancelled",
-            "voteSlashed",
-        ];
-        return names.map((name) => this.on(name, (event, slot, signature) => callback(name, event, slot, signature)));
+        return types_1.SDK_EVENT_NAMES.map((name) => this.on(name, (event, slot, signature) => callback(name, event, slot, signature)));
     }
     async remove(subscription) {
         await this.program.removeEventListener(subscription.listenerId);

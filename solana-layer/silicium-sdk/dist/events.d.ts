@@ -9,7 +9,7 @@ export interface EventSubscription {
 }
 export declare class SiliciumEventClient {
     private readonly program;
-    constructor(program: anchor.Program);
+    constructor(program: anchor.Program<any>);
     on<T = unknown>(eventName: SdkEventName, callback: EventCallback<T>): EventSubscription;
     onAll(callback: (name: SdkEventName, event: unknown, slot: number, signature: string) => void): EventSubscription[];
     remove(subscription: EventSubscription): Promise<void>;

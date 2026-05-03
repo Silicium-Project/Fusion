@@ -95,3 +95,24 @@ export function treasuryAuthPda(programId: PublicKey, mint: PublicKey): PublicKe
     programId,
   )[0];
 }
+
+export function stakingPoolPda(programId: PublicKey, mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("staking_pool"), mint.toBuffer()],
+    programId,
+  )[0];
+}
+
+export function stakingPoolAuthPda(programId: PublicKey, mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("staking_pool_auth"), mint.toBuffer()],
+    programId,
+  )[0];
+}
+
+export function networkStakerPda(programId: PublicKey, owner: PublicKey, mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("network_staker"), owner.toBuffer(), mint.toBuffer()],
+    programId,
+  )[0];
+}

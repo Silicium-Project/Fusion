@@ -1,6 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
-import { SdkEventName } from "./types";
+import { SDK_EVENT_NAMES, SdkEventName } from "./types";
 
 export type EventCallback<T = unknown> = (event: T, slot: number, signature: string) => void;
 
@@ -11,7 +11,7 @@ export interface EventSubscription {
 }
 
 export class SiliciumEventClient {
-  constructor(private readonly program: anchor.Program) {}
+  constructor(private readonly program: anchor.Program<any>) {}
 
   on<T = unknown>(eventName: SdkEventName, callback: EventCallback<T>): EventSubscription {
     const listenerId = this.program.addEventListener(
@@ -29,23 +29,7 @@ export class SiliciumEventClient {
   }
 
   onAll(callback: (name: SdkEventName, event: unknown, slot: number, signature: string) => void): EventSubscription[] {
-    const names: SdkEventName[] = [
-      "jobCreated",
-      "workerRegistered",
-      "workerStaked",
-      "treasuryInitialized",
-      "fragmentClaimed",
-      "fragmentReclaimed",
-      "fragmentSubmitted",
-      "fragmentVerified",
-      "fragmentRejected",
-      "verifierRewardClaimed",
-      "jobFinalized",
-      "jobCancelled",
-      "voteSlashed",
-    ];
-
-    return names.map((name) => this.on(name, (event, slot, signature) => callback(name, event, slot, signature)));
+    return SDK_EVENT_NAMES.map((name) => this.on(name, (event, slot, signature) => callback(name, event, slot, signature)));
   }
 
   async remove(subscription: EventSubscription): Promise<void> {

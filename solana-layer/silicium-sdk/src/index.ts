@@ -3,7 +3,6 @@ import {
   PublicKey,
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
-  Signer,
   TransactionSignature,
 } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
@@ -13,10 +12,13 @@ import {
   escrowAuthPda,
   fragmentPda,
   jobPda,
+  networkStakerPda,
   resultPda,
   roundResolutionPda,
   stakeAuthPda,
   stakeVaultPda,
+  stakingPoolAuthPda,
+  stakingPoolPda,
   toBn,
   treasuryAuthPda,
   treasuryStatePda,
@@ -26,26 +28,33 @@ import {
 import type {
   CancelJobParams,
   ClaimFragmentParams,
+  ClaimStakingRewardParams,
   ClaimVerifierRewardParams,
   CreateJobParams,
   CreateSdkParams,
   FinalizeJobParams,
+  FundStakingRewardsParams,
   Hash32,
   IdlProgram,
+  InitStakingPoolParams,
   InitTreasuryParams,
   ReclaimFragmentParams,
   RegisterWorkerParams,
+  RequestUnstakeParams,
   SlashVoteParams,
+  StakeNetworkParams,
   StakeWorkerParams,
   SubmitFragmentResultParams,
   VoteFragmentParams,
+  WithdrawUnstakedParams,
 } from "./types";
 
 export * from "./pdas";
 export * from "./events";
 export * from "./types";
 
-export const SOLANA_LAYER_PROGRAM_ID = new PublicKey("Ezt3UKgn7o1uoFmnG2zhKXW9NoygJMwJ3FErNUczy9jj");
+// Must match declare_id! in programs/solana-layer/src/lib.rs
+export const SOLANA_LAYER_PROGRAM_ID = new PublicKey("CDT49q3RJaPfm8qn5ahrNaezgVaGEhpFScxk8XQr4xfM");
 
 function asHash32(value: Hash32): number[] {
   const arr = Array.from(value);
@@ -57,6 +66,10 @@ function asHash32(value: Hash32): number[] {
 
 function asBytes(value: string | Uint8Array | Buffer): Buffer {
   return typeof value === "string" ? Buffer.from(value) : Buffer.from(value);
+}
+
+function appendSigners<T extends { signers(signers: any[]): T }>(builder: T, signers?: any[]): T {
+  return signers?.length ? builder.signers(signers) : builder;
 }
 
 export class SiliciumLayerSdk {
@@ -100,13 +113,16 @@ export class SiliciumLayerSdk {
     result: (job: PublicKey) => resultPda(this.programId, job),
     treasuryState: (mint: PublicKey) => treasuryStatePda(this.programId, mint),
     treasuryAuth: (mint: PublicKey) => treasuryAuthPda(this.programId, mint),
+    stakingPool: (mint: PublicKey) => stakingPoolPda(this.programId, mint),
+    stakingPoolAuth: (mint: PublicKey) => stakingPoolAuthPda(this.programId, mint),
+    networkStaker: (owner: PublicKey, mint: PublicKey) => networkStakerPda(this.programId, owner, mint),
   };
 
   async registerWorker(params: RegisterWorkerParams = {}): Promise<TransactionSignature> {
     const worker = params.worker ?? this.walletPubkey();
     const workerAccount = this.pdas.worker(worker);
 
-    const builder = this.methods
+    let builder = this.methods
       .registerWorker()
       .accounts({
         worker,
@@ -114,7 +130,7 @@ export class SiliciumLayerSdk {
         systemProgram: SystemProgram.programId,
       });
 
-    if (params.signers?.length) builder.signers(params.signers);
+    builder = appendSigners(builder, params.signers);
     return builder.rpc();
   }
 
@@ -124,7 +140,7 @@ export class SiliciumLayerSdk {
     const stakeAuth = this.pdas.stakeAuth(workerAccount);
     const stakeVault = this.pdas.stakeVault(worker);
 
-    const builder = this.methods
+    let builder = this.methods
       .stakeWorker(toBn(params.amount))
       .accounts({
         worker,
@@ -138,7 +154,7 @@ export class SiliciumLayerSdk {
         rent: SYSVAR_RENT_PUBKEY,
       });
 
-    if (params.signers?.length) builder.signers(params.signers);
+    builder = appendSigners(builder, params.signers);
     return builder.rpc();
   }
 
@@ -179,7 +195,7 @@ export class SiliciumLayerSdk {
     const workerAccount = this.pdas.worker(worker);
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
 
-    const builder = this.methods
+    let builder = this.methods
       .claimFragment(params.fragmentIndex)
       .accounts({
         worker,
@@ -190,7 +206,7 @@ export class SiliciumLayerSdk {
         systemProgram: SystemProgram.programId,
       });
 
-    if (params.signers?.length) builder.signers(params.signers);
+    builder = appendSigners(builder, params.signers);
     const signature = await builder.rpc();
     return { signature, fragment };
   }
@@ -199,15 +215,12 @@ export class SiliciumLayerSdk {
     const caller = params.caller ?? this.walletPubkey();
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
 
-    const signature = await this.methods
+    let builder = this.methods
       .reclaimFragment(params.fragmentIndex)
-      .accounts({
-        caller,
-        job: params.job,
-        fragment,
-      })
-      .rpc();
+      .accounts({ caller, job: params.job, fragment });
 
+    builder = appendSigners(builder, params.signers);
+    const signature = await builder.rpc();
     return { signature, fragment };
   }
 
@@ -224,7 +237,7 @@ export class SiliciumLayerSdk {
     const workerAccount = this.pdas.worker(worker);
     const fragment = this.pdas.fragment(params.job, params.fragmentIndex);
 
-    const builder = this.methods[method](
+    let builder = this.methods[method](
       params.fragmentIndex,
       asHash32(params.resultHash),
       asHash32(params.proofRef),
@@ -236,28 +249,29 @@ export class SiliciumLayerSdk {
       workerToken: params.workerToken,
     });
 
-    if (params.signers?.length) builder.signers(params.signers);
+    builder = appendSigners(builder, params.signers);
     return builder.rpc();
   }
 
   async voteFragment(params: VoteFragmentParams): Promise<{ signature: TransactionSignature; vote: PublicKey; roundResolution: PublicKey }> {
     const verifier = params.verifier ?? this.walletPubkey();
     const verifierWorker = this.pdas.worker(verifier);
-    const fragmentAccount = params.round === undefined
-      ? await this.accounts.fragment.fetch(params.fragment)
-      : undefined;
+    const fragmentAccount = await this.accounts.fragment.fetch(params.fragment);
     const round = params.round ?? Number(fragmentAccount.round);
+    const computeWorkerOwner: PublicKey = params.computeWorker ?? fragmentAccount.worker;
+    const computeWorker = this.pdas.worker(computeWorkerOwner);
     const vote = this.pdas.vote(params.fragment, verifier, round);
     const roundResolution = this.pdas.roundResolution(params.fragment, round);
     const escrowAuth = this.pdas.escrowAuth(params.job);
 
-    const builder = this.methods
+    let builder = this.methods
       .voteFragment(params.choice)
       .accounts({
         verifier,
         job: params.job,
         fragment: params.fragment,
         verifierWorker,
+        computeWorker,
         vote,
         roundResolution,
         escrowAuth,
@@ -267,7 +281,7 @@ export class SiliciumLayerSdk {
         systemProgram: SystemProgram.programId,
       });
 
-    if (params.signers?.length) builder.signers(params.signers);
+    builder = appendSigners(builder, params.signers);
     const signature = await builder.rpc();
     return { signature, vote, roundResolution };
   }
@@ -283,7 +297,7 @@ export class SiliciumLayerSdk {
     const roundResolution = this.pdas.roundResolution(params.fragment, round);
     const escrowAuth = this.pdas.escrowAuth(params.job);
 
-    const builder = this.methods
+    let builder = this.methods
       .claimVerifierReward()
       .accounts({
         verifier,
@@ -298,7 +312,7 @@ export class SiliciumLayerSdk {
         tokenProgram: TOKEN_PROGRAM_ID,
       });
 
-    if (params.signers?.length) builder.signers(params.signers);
+    builder = appendSigners(builder, params.signers);
     return builder.rpc();
   }
 
@@ -390,6 +404,148 @@ export class SiliciumLayerSdk {
       .rpc();
   }
 
+  async initStakingPool(params: InitStakingPoolParams): Promise<{
+    signature: TransactionSignature;
+    pool: PublicKey;
+    poolAuth: PublicKey;
+    stakeVault: PublicKey;
+    rewardVault: PublicKey;
+  }> {
+    const payer = params.payer ?? this.walletPubkey();
+    const pool = this.pdas.stakingPool(params.mint);
+    const poolAuth = this.pdas.stakingPoolAuth(params.mint);
+
+    const signature = await this.methods
+      .initStakingPool()
+      .accounts({
+        payer,
+        mint: params.mint,
+        pool,
+        poolAuth,
+        stakeVault: params.stakeVault.publicKey,
+        rewardVault: params.rewardVault.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
+      })
+      .signers([params.stakeVault, params.rewardVault])
+      .rpc();
+
+    return {
+      signature,
+      pool,
+      poolAuth,
+      stakeVault: params.stakeVault.publicKey,
+      rewardVault: params.rewardVault.publicKey,
+    };
+  }
+
+  async stakeNetwork(params: StakeNetworkParams): Promise<{ signature: TransactionSignature; pool: PublicKey; staker: PublicKey }> {
+    const owner = params.owner ?? this.walletPubkey();
+    const pool = this.pdas.stakingPool(params.mint);
+    const staker = this.pdas.networkStaker(owner, params.mint);
+    const stakeVault = params.stakeVault ?? (await this.fetchStakingPool(pool) as any).stakeVault;
+
+    let builder = this.methods
+      .stakeNetwork(toBn(params.amount))
+      .accounts({
+        owner,
+        mint: params.mint,
+        pool,
+        staker,
+        ownerToken: params.ownerToken,
+        stakeVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      });
+
+    builder = appendSigners(builder, params.signers);
+    const signature = await builder.rpc();
+    return { signature, pool, staker };
+  }
+
+  async fundStakingRewards(params: FundStakingRewardsParams): Promise<TransactionSignature> {
+    const funder = params.funder ?? this.walletPubkey();
+    const pool = this.pdas.stakingPool(params.mint);
+    const rewardVault = params.rewardVault ?? (await this.fetchStakingPool(pool) as any).rewardVault;
+
+    let builder = this.methods
+      .fundStakingRewards(toBn(params.amount))
+      .accounts({
+        funder,
+        mint: params.mint,
+        pool,
+        funderToken: params.funderToken,
+        rewardVault,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      });
+
+    builder = appendSigners(builder, params.signers);
+    return builder.rpc();
+  }
+
+  async claimStakingReward(params: ClaimStakingRewardParams): Promise<TransactionSignature> {
+    const owner = params.owner ?? this.walletPubkey();
+    const pool = this.pdas.stakingPool(params.mint);
+    const poolAuth = this.pdas.stakingPoolAuth(params.mint);
+    const staker = this.pdas.networkStaker(owner, params.mint);
+    const rewardVault = params.rewardVault ?? (await this.fetchStakingPool(pool) as any).rewardVault;
+
+    let builder = this.methods
+      .claimStakingReward()
+      .accounts({
+        owner,
+        mint: params.mint,
+        pool,
+        poolAuth,
+        staker,
+        rewardVault,
+        ownerRewardToken: params.ownerRewardToken,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      });
+
+    builder = appendSigners(builder, params.signers);
+    return builder.rpc();
+  }
+
+  async requestUnstake(params: RequestUnstakeParams): Promise<{ signature: TransactionSignature; pool: PublicKey; staker: PublicKey }> {
+    const owner = params.owner ?? this.walletPubkey();
+    const pool = this.pdas.stakingPool(params.mint);
+    const staker = this.pdas.networkStaker(owner, params.mint);
+
+    let builder = this.methods
+      .requestUnstake(toBn(params.amount))
+      .accounts({ owner, mint: params.mint, pool, staker });
+
+    builder = appendSigners(builder, params.signers);
+    const signature = await builder.rpc();
+    return { signature, pool, staker };
+  }
+
+  async withdrawUnstaked(params: WithdrawUnstakedParams): Promise<TransactionSignature> {
+    const owner = params.owner ?? this.walletPubkey();
+    const pool = this.pdas.stakingPool(params.mint);
+    const poolAuth = this.pdas.stakingPoolAuth(params.mint);
+    const staker = this.pdas.networkStaker(owner, params.mint);
+    const stakeVault = params.stakeVault ?? (await this.fetchStakingPool(pool) as any).stakeVault;
+
+    let builder = this.methods
+      .withdrawUnstaked()
+      .accounts({
+        owner,
+        mint: params.mint,
+        pool,
+        poolAuth,
+        staker,
+        stakeVault,
+        ownerToken: params.ownerToken,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      });
+
+    builder = appendSigners(builder, params.signers);
+    return builder.rpc();
+  }
+
   async fetchJob(job: PublicKey): Promise<unknown> {
     return this.accounts.job.fetch(job);
   }
@@ -413,5 +569,18 @@ export class SiliciumLayerSdk {
 
   async fetchResult(result: PublicKey): Promise<unknown> {
     return this.accounts.jobResult.fetch(result);
+  }
+
+  async fetchTreasuryState(treasuryState: PublicKey): Promise<unknown> {
+    return this.accounts.treasury.fetch(treasuryState);
+  }
+
+  async fetchStakingPool(pool: PublicKey): Promise<unknown> {
+    return this.accounts.stakingPool.fetch(pool);
+  }
+
+  async fetchNetworkStaker(stakerOrOwner: PublicKey, mint?: PublicKey): Promise<unknown> {
+    const staker = mint ? this.pdas.networkStaker(stakerOrOwner, mint) : stakerOrOwner;
+    return this.accounts.networkStaker.fetch(staker);
   }
 }
