@@ -49,6 +49,8 @@ pub struct FragmentClaimed {
     pub fragment: Pubkey,
     pub fragment_index: u32,
     pub worker: Pubkey,
+    // V2: utile pour tracer le compte de paiement du worker.
+    pub worker_token_account: Pubkey,
     pub claim_deadline_unix: i64,
     pub round: u16,
 }
@@ -155,6 +157,84 @@ pub struct WorkerReputationUpdated {
     pub delta: i64,
     pub reason: u8,
     pub status: u8,
+}
+
+// V2: event détaillé pour auditer la mémoire bayésienne court terme / long terme.
+#[event]
+pub struct BayesianReputationUpdated {
+    pub worker: Pubkey,
+    pub reason: u8,
+    pub reputation: i64,
+    pub reliability_score: u32,
+    pub compute_alpha_long: u64,
+    pub compute_beta_long: u64,
+    pub compute_alpha_short: u64,
+    pub compute_beta_short: u64,
+    pub verify_alpha_long: u64,
+    pub verify_beta_long: u64,
+    pub verify_alpha_short: u64,
+    pub verify_beta_short: u64,
+    pub fraud_strikes: u16,
+    pub error_strikes: u16,
+}
+
+// V2: events de sous-fragmentation.
+#[event]
+pub struct FragmentSplitProposed {
+    pub job: Pubkey,
+    pub parent_fragment: Pubkey,
+    pub parent_fragment_index: u32,
+    pub proposal: Pubkey,
+    pub splitter_worker: Pubkey,
+    pub manifest_hash: [u8; 32],
+    pub child_count: u16,
+    pub depth: u8,
+    pub complexity_score: u32,
+}
+
+#[event]
+pub struct FragmentSplitApproved {
+    pub job: Pubkey,
+    pub parent_fragment: Pubkey,
+    pub parent_fragment_index: u32,
+    pub proposal: Pubkey,
+    pub authority: Pubkey,
+    pub child_count: u16,
+    pub new_expected_fragments: u32,
+    pub total_fragments_created: u32,
+}
+
+#[event]
+pub struct FragmentSplitRejected {
+    pub job: Pubkey,
+    pub parent_fragment: Pubkey,
+    pub parent_fragment_index: u32,
+    pub proposal: Pubkey,
+    pub authority: Pubkey,
+}
+
+#[event]
+pub struct SubFragmentCreated {
+    pub job: Pubkey,
+    pub parent_fragment: Pubkey,
+    pub child_fragment: Pubkey,
+    pub child_fragment_index: u32,
+    pub depth: u8,
+    pub required_reputation: i64,
+    pub required_stake: u64,
+    pub complexity_score: u32,
+    pub input_hash: [u8; 32],
+    pub created_children: u16,
+    pub child_count: u16,
+}
+
+#[event]
+pub struct FragmentSplitCompleted {
+    pub job: Pubkey,
+    pub parent_fragment: Pubkey,
+    pub parent_fragment_index: u32,
+    pub proposal: Pubkey,
+    pub child_count: u16,
 }
 
 #[event]

@@ -12,7 +12,11 @@ if [ ! -f "$ANCHOR_WALLET" ]; then
   solana-keygen new --outfile "$ANCHOR_WALLET" --no-bip39-passphrase
 fi
 
-VALIDATOR_LOG="/tmp/silicium-solana-test-validator.log"
+LOG_DIR="${SILICIUM_LOG_DIR:-/tmp}"
+mkdir -p "$LOG_DIR"
+
+TIMESTAMP="$(date +"%Y%m%d-%H%M%S")"
+VALIDATOR_LOG="${VALIDATOR_LOG:-$LOG_DIR/silicium-solana-test-validator-$TIMESTAMP.log}"
 VALIDATOR_PID=""
 
 cleanup() {
