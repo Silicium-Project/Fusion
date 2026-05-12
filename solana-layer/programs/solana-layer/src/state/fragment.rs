@@ -7,6 +7,9 @@ pub enum FragmentStatus {
     Submitted,
     Verified,
     Rejected,
+    SplitPending,
+    SplitApproved,
+    SplitParent,
 }
 
 #[account]
@@ -31,6 +34,21 @@ pub struct Fragment {
     pub voting_deadline_unix: i64,
 
     pub round: u16,
+
+    // V2: arbre de sous-fragments.
+    pub parent_fragment: Pubkey,
+    pub depth: u8,
+    pub children_count: u16,
+    pub max_children: u16,
+    pub split_manifest_hash: [u8; 32],
+    pub splitter_worker: Pubkey,
+    pub is_leaf: bool,
+
+    // V2: sélection darwinienne.
+    pub required_reputation: i64,
+    pub required_stake: u64,
+    pub complexity_score: u32,
+
     pub bump: u8,
 }
 
@@ -51,5 +69,15 @@ impl Fragment {
         + 8  // claim_deadline_unix
         + 8  // voting_deadline_unix
         + 2  // round
+        + 32 // parent_fragment
+        + 1  // depth
+        + 2  // children_count
+        + 2  // max_children
+        + 32 // split_manifest_hash
+        + 32 // splitter_worker
+        + 1  // is_leaf
+        + 8  // required_reputation
+        + 8  // required_stake
+        + 4  // complexity_score
         + 1; // bump
 }

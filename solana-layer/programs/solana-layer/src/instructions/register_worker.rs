@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::{
     events::WorkerRegistered,
     state::{
-        reputation::REPUTATION_START,
+        reputation::init_bayesian_reputation,
         worker::{Worker, WorkerStatus, ROLE_COMPUTE, ROLE_VERIFY},
     },
 };
@@ -37,17 +37,16 @@ pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
     w.stake_vault = Pubkey::default();
     w.stake_amount = 0;
 
-    w.reputation = REPUTATION_START;
     w.total_submitted = 0;
     w.total_verified = 0;
     w.total_rejected = 0;
 
     w.active_claims = 0;
-
     w.roles = ROLE_COMPUTE | ROLE_VERIFY;
-
     w.status = WorkerStatus::Active;
     w.bump = ctx.bumps.worker_account;
+
+    init_bayesian_reputation(w);
 
     emit!(WorkerRegistered {
         worker: worker_key,

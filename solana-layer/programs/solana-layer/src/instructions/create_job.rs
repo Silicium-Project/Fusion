@@ -11,6 +11,9 @@ use crate::{
     state::job::{Job, JobStatus},
 };
 
+pub const DEFAULT_MAX_FRAGMENT_DEPTH: u8 = 4;
+pub const DEFAULT_MAX_FRAGMENT_MULTIPLIER: u32 = 8;
+
 #[derive(Accounts)]
 #[instruction(job_id: u64)]
 pub struct CreateJob<'info> {
@@ -85,18 +88,10 @@ pub fn handler(
     );
 
     let now = Clock::get()?.unix_timestamp;
-
     let ttl = deadline_unix.saturating_sub(now);
 
-    require!(
-        ttl >= MIN_JOB_TTL_SECS,
-        SiliciumError::InvalidDeadline
-    );
-
-    require!(
-        ttl <= MAX_JOB_TTL_SECS,
-        SiliciumError::InvalidDeadline
-    );
+    require!(ttl >= MIN_JOB_TTL_SECS, SiliciumError::InvalidDeadline);
+    require!(ttl <= MAX_JOB_TTL_SECS, SiliciumError::InvalidDeadline);
 
     let verifier_needed_u128 = (expected_fragments as u128)
         .checked_mul(fragment_quorum as u128)
@@ -120,11 +115,7 @@ pub fn handler(
     require!(total_u128 <= u64::MAX as u128, SiliciumError::InvalidParams);
 
     let total = total_u128 as u64;
-
-    require!(
-        total >= MIN_JOB_DEPOSIT,
-        SiliciumError::DepositTooSmall
-    );
+    require!(total >= MIN_JOB_DEPOSIT, SiliciumError::DepositTooSmall);
 
     let cpi_ctx = CpiContext::new(
         ctx.accounts.token_program.to_account_info(),
@@ -144,6 +135,7 @@ pub fn handler(
     job.mint = ctx.accounts.mint.key();
     job.escrow = ctx.accounts.escrow.key();
 
+    // V2: expected_fragments = nombre de fragments leaf attendus.
     job.expected_fragments = expected_fragments;
     job.verified_fragments = 0;
 
@@ -162,6 +154,14 @@ pub fn handler(
     job.verified_at_unix = 0;
 
     job.fragment_quorum = fragment_quorum;
+
+    job.max_fragments = expected_fragments
+        .saturating_mul(DEFAULT_MAX_FRAGMENT_MULTIPLIER)
+        .max(expected_fragments);
+    job.total_fragments_created = expected_fragments;
+    job.max_fragment_depth = DEFAULT_MAX_FRAGMENT_DEPTH;
+    job.split_authority = ctx.accounts.client.key();
+
     job.status = JobStatus::Open;
 
     job.bump = ctx.bumps.job;

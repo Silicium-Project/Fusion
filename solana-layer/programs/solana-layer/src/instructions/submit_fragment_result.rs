@@ -62,7 +62,7 @@ pub fn handler(
     proof_ref: [u8; 32],
 ) -> Result<()> {
     require!(
-        fragment_index < ctx.accounts.job.expected_fragments,
+        fragment_index < ctx.accounts.job.max_fragments,
         SiliciumError::InvalidParams
     );
 
@@ -80,6 +80,11 @@ pub fn handler(
     );
 
     let f = &mut ctx.accounts.fragment;
+
+    require!(
+        f.is_leaf,
+        SiliciumError::BadFragmentState
+    );
 
     require!(
         f.status == FragmentStatus::Claimed,

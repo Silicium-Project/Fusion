@@ -11,7 +11,8 @@ use crate::{
         fragment_vote::FragmentVote,
         job::{Job, JobStatus},
         reputation::{
-            record_compute_failure, record_compute_success, MIN_VERIFY_REPUTATION,
+            update_compute_reputation, update_verify_reputation, MIN_VERIFY_REPUTATION,
+            ReputationEvent,
         },
         worker::{Worker, WorkerStatus, ROLE_VERIFY},
     },
@@ -111,13 +112,18 @@ pub struct VoteFragment<'info> {
 pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
     let fragment = &mut ctx.accounts.fragment;
     let job = &mut ctx.accounts.job;
-    let verifier_worker = &ctx.accounts.verifier_worker;
+    let verifier_worker = &mut ctx.accounts.verifier_worker;
     let compute_worker = &mut ctx.accounts.compute_worker;
     let round_resolution = &mut ctx.accounts.round_resolution;
 
     require!(
         fragment.job == job.key(),
         SiliciumError::InvalidParams
+    );
+
+    require!(
+        fragment.is_leaf,
+        SiliciumError::BadFragmentState
     );
 
     require!(
@@ -267,7 +273,8 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         round_resolution.eligible_rewards = quorum;
         round_resolution.claimed_rewards = 0;
 
-        record_compute_success(compute_worker);
+        update_compute_reputation(compute_worker, ReputationEvent::ComputeSuccess);
+        update_verify_reputation(verifier_worker, ReputationEvent::VerificationSuccess);
 
         if job.verified_fragments == job.expected_fragments {
             job.verified_at_unix = now;
@@ -312,7 +319,8 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         round_resolution.eligible_rewards = quorum;
         round_resolution.claimed_rewards = 0;
 
-        record_compute_failure(compute_worker);
+        update_compute_reputation(compute_worker, ReputationEvent::MajorComputeError);
+        update_verify_reputation(verifier_worker, ReputationEvent::VerificationSuccess);
 
         emit!(FragmentRejected {
             job: job.key(),

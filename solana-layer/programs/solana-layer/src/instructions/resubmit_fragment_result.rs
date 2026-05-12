@@ -82,6 +82,11 @@ pub fn handler(
     );
 
     require!(
+        f.is_leaf,
+        SiliciumError::BadFragmentState
+    );
+
+    require!(
         f.status == FragmentStatus::Rejected,
         SiliciumError::BadFragmentState
     );
