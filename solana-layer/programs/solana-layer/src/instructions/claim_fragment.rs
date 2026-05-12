@@ -118,10 +118,43 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
     }
 
     require!(f.is_leaf, SiliciumError::BadFragmentState);
-    require!(f.status == FragmentStatus::Available, SiliciumError::BadFragmentState);
+    require!(now <= ctx.accounts.job.deadline_unix, SiliciumError::JobExpired);
+
+    match f.status {
+        FragmentStatus::Available => {}
+        FragmentStatus::Rejected => {
+            // Compatibilité V1 : un fragment rejeté peut être repris sur un nouveau round.
+            f.round = f.round.saturating_add(1);
+            f.yes_votes = 0;
+            f.no_votes = 0;
+            f.result_hash = [0u8; 32];
+            f.proof_ref = [0u8; 32];
+            f.worker = Pubkey::default();
+            f.worker_token_account = Pubkey::default();
+            f.voting_deadline_unix = 0;
+        }
+        FragmentStatus::Claimed => {
+            require!(now > f.claim_deadline_unix, SiliciumError::FragmentAlreadyClaimed);
+            f.round = f.round.saturating_add(1);
+            f.yes_votes = 0;
+            f.no_votes = 0;
+            f.result_hash = [0u8; 32];
+            f.proof_ref = [0u8; 32];
+            f.worker = Pubkey::default();
+            f.worker_token_account = Pubkey::default();
+            f.voting_deadline_unix = 0;
+        }
+        FragmentStatus::Submitted
+        | FragmentStatus::Verified
+        | FragmentStatus::SplitPending
+        | FragmentStatus::SplitApproved
+        | FragmentStatus::SplitParent => {
+            return err!(SiliciumError::BadFragmentState);
+        }
+    }
+
     require!(ctx.accounts.worker_account.reputation >= f.required_reputation, SiliciumError::ReputationTooLow);
     require!(ctx.accounts.worker_account.stake_amount >= f.required_stake, SiliciumError::NotAuthorized);
-    require!(now <= ctx.accounts.job.deadline_unix, SiliciumError::JobExpired);
 
     f.assigned_worker = worker_key;
     f.worker = Pubkey::default();

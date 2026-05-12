@@ -43,16 +43,17 @@ pub enum ReputationEvent {
 }
 
 pub fn init_bayesian_reputation(worker: &mut Worker) {
-    // Prior volontairement correct mais pas premium: 8 / 10 = 80%.
-    worker.compute_alpha_long = 8;
-    worker.compute_beta_long = 2;
-    worker.compute_alpha_short = 8;
-    worker.compute_beta_short = 2;
+    // Prior neutre : 5 / 10 = 50%.
+    // Important : cela garde la mémoire bayésienne cohérente avec REPUTATION_START = 5_000.
+    worker.compute_alpha_long = 5;
+    worker.compute_beta_long = 5;
+    worker.compute_alpha_short = 5;
+    worker.compute_beta_short = 5;
 
-    worker.verify_alpha_long = 8;
-    worker.verify_beta_long = 2;
-    worker.verify_alpha_short = 8;
-    worker.verify_beta_short = 2;
+    worker.verify_alpha_long = 5;
+    worker.verify_beta_long = 5;
+    worker.verify_alpha_short = 5;
+    worker.verify_beta_short = 5;
 
     worker.fraud_strikes = 0;
     worker.error_strikes = 0;

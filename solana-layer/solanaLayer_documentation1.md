@@ -1,6 +1,6 @@
 # Technical Documentation — Silicium Solana Layer
 
-Version: 0.2  
+Version: 0.3  
 Project: **Silicium / EIP**  
 Anchor program: `solana-layer`  
 Current Program ID used in the latest local tests: `9wuEBw5quCa5nxwAuwbb344Hks4o5TnKC5EyKq7jtgDu`
@@ -20,7 +20,10 @@ The program is responsible for:
 - registering workers and verifiers;
 - staking SPL tokens before participating as an active worker or verifier;
 - creating jobs funded through an escrow token account;
-- splitting jobs into fragments;
+- splitting jobs into root fragments;
+- allowing high-reputation workers to propose controlled sub-fragmentation;
+- recording split manifests through hashes;
+- creating sub-fragments linked to parent fragments;
 - allowing workers to claim fragments;
 - limiting how many fragments a worker can claim in parallel;
 - allowing workers to submit fragment results;
@@ -29,6 +32,7 @@ The program is responsible for:
 - paying workers when a fragment reaches a positive quorum;
 - making verifier rewards claimable after a winning vote;
 - updating worker/verifier reputation after important actions;
+- maintaining Bayesian double-memory reputation for short-term and long-term behavior;
 - rejecting and resubmitting fragments;
 - reclaiming expired fragment claims;
 - finalizing or cancelling jobs;
@@ -39,13 +43,14 @@ The program is responsible for:
 
 ## 2. High-Level Architecture
 
-The Solana Layer is built around five main domains:
+The Solana Layer is built around six main domains:
 
 1. **Jobs** — computation tasks submitted by a client and funded in advance.
-2. **Fragments** — smaller units of work derived from a job.
-3. **Votes and resolutions** — verifier decisions on submitted fragment results.
-4. **Workers and reputation** — active participants who compute or verify.
-5. **Passive network staking** — non-worker users who stake tokens to support the network and receive reward distributions.
+2. **Fragments and sub-fragments** — units of work derived from a job, optionally organized as a parent/child tree.
+3. **Split proposals** — controlled requests to replace a complex parent fragment with multiple child fragments.
+4. **Votes and resolutions** — verifier decisions on submitted fragment results.
+5. **Workers and Bayesian reputation** — active participants who compute, verify, and gain or lose trust through long-term and short-term memory.
+6. **Passive network staking** — non-worker users who stake tokens to support the network and receive reward distributions.
 
 Main computation flow:
 
@@ -61,6 +66,23 @@ Client
                                       └── NO quorum  => fragment rejected + compute reputation decreases
                                             └── resubmit_fragment_result possible
 ```
+
+Adaptive sub-fragmentation flow:
+
+```text
+Client / backend
+  └── create_job with root fragments
+        └── worker claim_fragment(parent)
+              └── trusted worker propose_fragment_split
+                    └── approver approve_fragment_split
+                          └── create_sub_fragment child 0
+                          └── create_sub_fragment child 1
+                          └── create_sub_fragment child N
+                                └── parent becomes SplitParent
+                                      └── child fragments follow the normal claim/submit/vote flow
+```
+
+The V2 split system is hybrid: the actual computation split is prepared off-chain in a manifest, while Solana stores the manifest hash, parent/child relationships, access-control checks, status transitions, and economic consequences.
 
 Passive staking flow:
 
@@ -160,6 +182,23 @@ Passive stakers are separate from active workers. They do not need a `Worker` ac
 
 ---
 
+### 3.6 Split Approver / Scheduler
+
+The split approver is the authority that validates whether a proposed sub-fragmentation should be accepted.
+
+In the current V2 test/local architecture, the approver can be a scheduler/backend authority. In a later version, this can evolve toward verifier quorum approval or governance-controlled approval.
+
+The split approver can:
+
+- review the off-chain split manifest;
+- approve a proposed split;
+- indirectly allow creation of child fragments;
+- prevent low-quality or abusive splits from increasing job complexity.
+
+The split approver should not perform the actual computation. Its role is to validate that the proposed structure is safe, bounded, and economically coherent.
+
+---
+
 ## 4. Constants
 
 The current layer uses the following important constants.
@@ -180,6 +219,37 @@ The current layer uses the following important constants.
 
 Production note: `UNSTAKE_COOLDOWN_SECS` is intentionally short for local tests. For beta/mainnet, a value such as `3 * 24 * 60 * 60` is more realistic.
 
+### 4.1 V2 Sub-Fragmentation Constants
+
+| Constant | Purpose | Local test value | Beta/mainnet recommendation |
+|---|---|---:|---:|
+| `MAX_FRAGMENT_DEPTH` | Maximum parent/child depth for fragment trees | `4` | `3` to `5` |
+| `MAX_CHILDREN_PER_SPLIT` | Maximum children created from one parent split | `8` | `4` to `8` |
+| `SPLIT_MIN_REPUTATION` | Minimum worker reputation required to propose a split | `5_000` for tests | `8_500` |
+| `SPLIT_MIN_STAKE` | Minimum active stake required to propose a split | project-defined | high enough to slash abuse |
+| `SPLIT_MIN_COMPLEXITY` | Minimum parent complexity required before split is allowed | `1_000` for tests | `6_000` |
+| `SPLITTER_REWARD_BPS` | Optional splitter reward in basis points | `300` | `200` to `500` |
+| `MAX_SPLITTER_REWARD_BPS` | Hard cap for splitter reward | `500` | `500` |
+
+Important: the local test values are intentionally permissive so a newly registered worker with `5_000` reputation can exercise the split flow. For beta or mainnet, `SPLIT_MIN_REPUTATION` should be raised to `8_500` or above.
+
+### 4.2 Bayesian Reputation Constants
+
+| Constant | Purpose | Typical value |
+|---|---|---:|
+| `REPUTATION_SCALE` | Fixed reputation scale | `10_000` |
+| `BAYESIAN_ALPHA_START` | Initial success memory | `5` |
+| `BAYESIAN_BETA_START` | Initial failure memory | `5` |
+| `LONG_MEMORY_WEIGHT` | Weight of stable historical behavior | `65` |
+| `SHORT_MEMORY_WEIGHT` | Weight of recent behavior | `25` |
+| `EFFICIENCY_WEIGHT` | Weight of performance/efficiency | `10` |
+| `SHORT_MEMORY_DECAY_NUMERATOR` | Short-memory decay numerator | `9` |
+| `SHORT_MEMORY_DECAY_DENOMINATOR` | Short-memory decay denominator | `10` |
+| `FRAUD_BETA_SHORT` | Short-term fraud penalty | `25` |
+| `FRAUD_BETA_LONG` | Long-term fraud penalty | `10` |
+
+The Bayesian model is designed so ordinary errors reduce reputation moderately, while confirmed fraud strongly damages both short-term and long-term trust.
+
 ---
 
 ## 5. Main Accounts
@@ -194,7 +264,7 @@ The `Job` account stores the global state of a computation task.
 | `client` | Job creator |
 | `mint` | SPL mint used for payments |
 | `escrow` | Token account funded by the client |
-| `expected_fragments` | Total number of fragments required |
+| `expected_fragments` | Total number of currently required leaf fragments. When a leaf is split, this value is updated as `old - 1 + child_count`. |
 | `verified_fragments` | Number of fragments already verified |
 | `reward_per_fragment` | Worker reward per verified fragment |
 | `verifier_reward_per_vote` | Reward per winning verifier vote |
@@ -230,7 +300,7 @@ The `Fragment` account represents one unit of work belonging to a job.
 | `worker_token_account` | Token account paid if the fragment is verified |
 | `result_hash` | Submitted result hash |
 | `proof_ref` | Reference to an off-chain proof or artifact |
-| `status` | `Available`, `Claimed`, `Submitted`, `Verified`, or `Rejected` |
+| `status` | `Available`, `Claimed`, `Submitted`, `Verified`, `Rejected`, `SplitPending`, `SplitApproved`, or `SplitParent` |
 | `yes_votes` | Positive votes in the current round |
 | `no_votes` | Negative votes in the current round |
 | `required_quorum` | Required vote quorum |
@@ -238,6 +308,16 @@ The `Fragment` account represents one unit of work belonging to a job.
 | `voting_deadline_unix` | Vote deadline for the submitted result |
 | `round` | Current fragment round |
 | `bump` | Fragment PDA bump |
+| `parent_fragment` | Parent fragment public key. Default/zero for root fragments. |
+| `depth` | Depth in the fragment tree. Root fragments use `0`. |
+| `children_count` | Number of children already created from this fragment. |
+| `max_children` | Maximum children allowed for this fragment. |
+| `split_manifest_hash` | Hash of the off-chain manifest describing the split. |
+| `splitter_worker` | Worker that proposed the split. |
+| `is_leaf` | Whether this fragment is a claimable/calculable leaf. |
+| `required_reputation` | Minimum reputation required to claim this fragment. |
+| `required_stake` | Minimum stake required to claim this fragment. |
+| `complexity_score` | Estimated complexity used by scheduler and split rules. |
 
 PDA:
 
@@ -245,7 +325,33 @@ PDA:
 [b"fragment", job, fragment_index_le_u32]
 ```
 
-### 5.3 `Worker`
+
+### 5.3 `SplitProposal`
+
+The `SplitProposal` account stores a request to replace one parent fragment with multiple child fragments.
+
+| Field | Description |
+|---|---|
+| `job` | Job that owns the parent fragment |
+| `parent_fragment` | Fragment being split |
+| `splitter_worker` | Worker that proposed the split |
+| `manifest_hash` | Hash of the off-chain split manifest |
+| `child_count` | Number of child fragments requested |
+| `depth` | Depth of the parent at proposal time |
+| `approved` | Whether the split has been approved |
+| `rejected` | Whether the split has been rejected |
+| `created_children` | Number of child accounts already created |
+| `bump` | Split proposal PDA bump |
+
+PDA:
+
+```text
+[b"split_proposal", parent_fragment]
+```
+
+The manifest itself remains off-chain. It should describe each child fragment input reference, input hash, complexity score, and any domain-specific split metadata. Only its hash is stored on-chain.
+
+### 5.4 `Worker`
 
 The `Worker` account stores the identity, role, stake, reputation, and active claim state of a worker or verifier.
 
@@ -263,6 +369,20 @@ The `Worker` account stores the identity, role, stake, reputation, and active cl
 | `roles` | Compute and/or verify role flags |
 | `status` | `Active`, `Suspended`, or `Banned` |
 | `bump` | Worker PDA bump |
+| `compute_alpha_long` | Bayesian long-term compute success memory |
+| `compute_beta_long` | Bayesian long-term compute failure memory |
+| `compute_alpha_short` | Bayesian short-term compute success memory |
+| `compute_beta_short` | Bayesian short-term compute failure memory |
+| `verify_alpha_long` | Bayesian long-term verifier success memory |
+| `verify_beta_long` | Bayesian long-term verifier failure memory |
+| `verify_alpha_short` | Bayesian short-term verifier success memory |
+| `verify_beta_short` | Bayesian short-term verifier failure memory |
+| `fraud_strikes` | Number of confirmed fraud/malicious events |
+| `error_strikes` | Number of non-fraud major errors |
+| `last_reputation_update` | Last reputation update timestamp |
+| `performance_score` | Worker performance score from `0` to `10_000` |
+| `efficiency_score` | Worker efficiency / PoE score from `0` to `10_000` |
+| `reliability_score` | Derived reliability score from Bayesian memory |
 
 PDA:
 
@@ -277,7 +397,7 @@ ROLE_COMPUTE = 1
 ROLE_VERIFY  = 2
 ```
 
-### 5.4 `FragmentVote`
+### 5.5 `FragmentVote`
 
 The `FragmentVote` account stores one verifier vote for one fragment and one round.
 
@@ -299,7 +419,7 @@ PDA:
 
 This PDA prevents a verifier from voting more than once per fragment per round.
 
-### 5.5 `FragmentResolution`
+### 5.6 `FragmentResolution`
 
 The `FragmentResolution` account stores the final result of a voting round.
 
@@ -319,7 +439,7 @@ PDA:
 [b"fragment_resolution", fragment, round_le_u16]
 ```
 
-### 5.6 `JobResult`
+### 5.7 `JobResult`
 
 The `JobResult` account is created when a job is finalized.
 
@@ -341,7 +461,7 @@ The current maximum output URI length is:
 128 bytes
 ```
 
-### 5.7 `Treasury`
+### 5.8 `Treasury`
 
 The `Treasury` account stores the treasury configuration used to receive slashed tokens.
 
@@ -357,7 +477,7 @@ Treasury authority PDA:
 [b"treasury_auth", mint]
 ```
 
-### 5.8 `StakingPool`
+### 5.9 `StakingPool`
 
 The `StakingPool` account stores the global passive staking state for one SPL mint.
 
@@ -384,7 +504,7 @@ Pool authority PDA:
 [b"staking_pool_auth", mint]
 ```
 
-### 5.9 `NetworkStaker`
+### 5.10 `NetworkStaker`
 
 The `NetworkStaker` account stores the passive staking state of one user for one mint.
 
@@ -414,6 +534,7 @@ PDA:
 | Job | `[b"job", client, job_id_le_u64]` |
 | Escrow authority | `[b"escrow_auth", job]` |
 | Fragment | `[b"fragment", job, fragment_index_le_u32]` |
+| Split proposal | `[b"split_proposal", parent_fragment]` |
 | Worker | `[b"worker", worker]` |
 | Stake authority | `[b"stake_auth", worker_account]` |
 | Stake vault | `[b"stake_vault", worker]` |
@@ -428,13 +549,20 @@ PDA:
 
 ---
 
-## 7. Reputation System
+## 7. Bayesian Double-Memory Reputation System
 
-A functional reputation system was added during this session.
+The V2 reputation model replaces fixed deltas as the primary source of truth with a Bayesian double-memory model.
 
-The model is intentionally simple and deterministic so that it remains easy to test on-chain.
+The public `worker.reputation` field is still kept for compatibility and access-control checks, but it becomes a derived score calculated from:
 
-### 7.1 Reputation Bounds
+- long-term compute behavior;
+- short-term compute behavior;
+- long-term verification behavior;
+- short-term verification behavior;
+- performance and efficiency scores;
+- fraud and error penalties.
+
+### 7.1 Reputation Scale
 
 ```text
 REPUTATION_MIN   = 0
@@ -444,42 +572,78 @@ REPUTATION_START = 5_000
 
 Workers start with a neutral reputation of `5_000`.
 
-### 7.2 Role Thresholds
+### 7.2 Bayesian Memory
 
-| Threshold | Purpose |
-|---|---:|
-| `MIN_COMPUTE_REPUTATION` | Minimum reputation required to claim/submit compute work |
-| `MIN_VERIFY_REPUTATION` | Minimum reputation required to vote as verifier |
-| `AUTO_SUSPEND_REPUTATION` | If reputation falls below this value, worker is suspended |
+Each worker has separate compute and verification memory:
 
-### 7.3 Reputation Deltas
+```text
+compute_alpha_long / compute_beta_long
+compute_alpha_short / compute_beta_short
+verify_alpha_long  / verify_beta_long
+verify_alpha_short / verify_beta_short
+```
 
-| Event | Effect |
-|---|---:|
-| Compute fragment verified | `+80` |
-| Compute fragment rejected | `-250` |
-| Claimed fragment expired | `-120` |
-| Correct verifier reward claimed | `+40` |
-| Wrong vote | `-180` |
-| Slash extra penalty | `-300` |
+The estimated reliability of one memory is:
 
-### 7.4 Current Reputation Behavior
+```text
+score = alpha / (alpha + beta)
+```
 
-Reputation is updated when:
+The value is scaled to `0..10_000`.
 
-- a fragment reaches YES quorum and the compute worker is rewarded;
-- a fragment reaches NO quorum and the compute worker is penalized;
-- a verifier claims a reward for a correct vote;
-- a wrong verifier vote is slashed;
-- a worker lets a claim expire and the fragment is reclaimed.
+### 7.3 Long-Term and Short-Term Meaning
 
-Reputation is used as an access-control condition:
+Long-term memory changes slowly and protects reliable workers from being destroyed by a single honest mistake.
 
-- a worker with too little reputation cannot claim or submit compute work;
-- a verifier with too little reputation cannot vote;
-- a worker can be automatically suspended if reputation becomes too low.
+Short-term memory changes quickly and is used to detect recent degradation, outages, or malicious behavior.
 
-### 7.5 Reputation Event
+A typical final score weighting is:
+
+```text
+65% long-term memory
+25% short-term memory
+10% efficiency/performance
+```
+
+### 7.4 Event Severity
+
+| Event | Reputation effect |
+|---|---|
+| Compute success | Increases short and long compute alpha |
+| Minor compute error | Slightly increases short compute beta |
+| Major compute error | Moderately increases short beta and slightly increases long beta |
+| Late submission / expired claim | Penalizes short memory |
+| Fraud confirmed | Strongly increases short and long beta, increments `fraud_strikes` |
+| Verification success | Increases short and long verification alpha |
+| Wrong verification | Moderately penalizes verifier memory |
+| Malicious verification | Strongly penalizes verifier memory and increments `fraud_strikes` |
+
+This distinction is important: ordinary calculation mistakes should hurt reputation, but confirmed cheating should hurt much more.
+
+### 7.5 Darwinian Task Allocation
+
+The scheduler should prefer workers according to a derived selection score, for example:
+
+```text
+selection_score =
+  reliability_score * 0.45
++ performance_score  * 0.25
++ efficiency_score   * 0.15
++ stake_score        * 0.10
++ availability_score * 0.05
+```
+
+The on-chain program does not sort all workers. Instead:
+
+- the off-chain scheduler selects candidates;
+- the on-chain program enforces minimum reputation and stake thresholds;
+- highly reliable workers naturally receive heavy or critical fragments;
+- new or weaker workers receive micro-fragments and redundant verification work;
+- suspicious workers are restricted to low-risk work or excluded.
+
+### 7.6 Reputation Events
+
+The legacy event remains useful for generic reputation updates:
 
 ```rust
 WorkerReputationUpdated {
@@ -492,16 +656,22 @@ WorkerReputationUpdated {
 }
 ```
 
-Reason codes:
+V2 also emits a more detailed event:
 
-| Code | Reason |
-|---:|---|
-| `1` | Compute success |
-| `2` | Compute failure |
-| `3` | Claim timeout |
-| `4` | Vote correct |
-| `5` | Vote wrong |
-| `6` | Slash |
+```rust
+BayesianReputationUpdated {
+    worker,
+    old_reputation,
+    new_reputation,
+    compute_score,
+    verify_score,
+    fraud_strikes,
+    error_strikes,
+    reason,
+}
+```
+
+Reason codes should be kept stable for SDK/indexer compatibility.
 
 ---
 
@@ -824,7 +994,84 @@ Effects:
 - applies extra slash reputation penalty;
 - emits `VoteSlashed`.
 
-### 8.14 `init_staking_pool`
+### 8.14 `propose_fragment_split(manifest_hash, child_count)`
+
+Allows a high-reputation worker to propose replacing one complex leaf fragment with several child fragments.
+
+Requirements:
+
+- job is open;
+- parent fragment belongs to the job;
+- parent fragment is still a leaf;
+- parent fragment is not already a split parent;
+- worker has compute role;
+- worker is active;
+- worker has at least `SPLIT_MIN_REPUTATION`;
+- worker has at least `SPLIT_MIN_STAKE`;
+- parent `depth < MAX_FRAGMENT_DEPTH`;
+- `child_count > 1`;
+- `child_count <= MAX_CHILDREN_PER_SPLIT`;
+- parent `complexity_score >= SPLIT_MIN_COMPLEXITY`.
+
+Effects:
+
+- creates a `SplitProposal` PDA;
+- stores the `manifest_hash` and requested child count;
+- marks the parent fragment as `SplitPending`;
+- emits `FragmentSplitProposed`.
+
+The instruction does not create children. It only records the proposal.
+
+### 8.15 `approve_fragment_split()`
+
+Approves a pending split proposal.
+
+Requirements:
+
+- split proposal exists;
+- proposal is not already approved or rejected;
+- parent fragment matches the proposal;
+- approver is authorized by the current V2 policy;
+- parent fragment is in `SplitPending`.
+
+Effects:
+
+- sets `split_proposal.approved = true`;
+- moves parent status to `SplitApproved`;
+- stores the split manifest hash on the parent fragment;
+- emits `FragmentSplitApproved`.
+
+### 8.16 `create_sub_fragment(child_index, input_hash, proof_ref, complexity_score)`
+
+Creates one child fragment from an approved split proposal.
+
+Requirements:
+
+- job is open;
+- split proposal is approved;
+- proposal is not rejected;
+- parent fragment is `SplitApproved` or already becoming `SplitParent`;
+- `child_index` is within the proposed child range;
+- parent `children_count < child_count`;
+- child fragment PDA does not already exist;
+- child depth is `parent.depth + 1` and does not exceed `MAX_FRAGMENT_DEPTH`.
+
+Effects:
+
+- creates a normal `Fragment` account for the child;
+- links it to `parent_fragment`;
+- sets `depth = parent.depth + 1`;
+- sets `is_leaf = true`;
+- sets `status = Available`;
+- sets child reputation/stake requirements from complexity policy;
+- increments `parent.children_count`;
+- updates `job.expected_fragments` as `old - 1 + child_count` once the split is completed;
+- turns the parent into `SplitParent` when all children are created;
+- emits `SubFragmentCreated` and then `FragmentSplitCompleted` when the last child is created.
+
+A `SplitParent` cannot be claimed or submitted directly. Only leaf fragments are claimable.
+
+### 8.17 `init_staking_pool`
 
 Initializes passive network staking for one SPL mint.
 
@@ -841,7 +1088,7 @@ Effects:
 - sets `acc_reward_per_share = 0`;
 - emits `StakingPoolInitialized`.
 
-### 8.15 `stake_network(amount)`
+### 8.18 `stake_network(amount)`
 
 Allows a passive user to stake tokens in the network pool.
 
@@ -863,7 +1110,7 @@ Effects:
 - refreshes `reward_debt`;
 - emits `NetworkStakeDeposited`.
 
-### 8.16 `fund_staking_rewards(amount)`
+### 8.19 `fund_staking_rewards(amount)`
 
 Funds passive staking rewards.
 
@@ -888,7 +1135,7 @@ Formula:
 acc_reward_per_share += amount * REWARD_SCALE / total_staked
 ```
 
-### 8.17 `claim_staking_reward`
+### 8.20 `claim_staking_reward`
 
 Claims passive staking rewards.
 
@@ -906,7 +1153,7 @@ Effects:
 - refreshes `reward_debt`;
 - emits `StakingRewardClaimed`.
 
-### 8.18 `request_unstake(amount)`
+### 8.21 `request_unstake(amount)`
 
 Starts the passive unstake process.
 
@@ -926,7 +1173,7 @@ Effects:
 - refreshes `reward_debt`;
 - emits `NetworkUnstakeRequested`.
 
-### 8.19 `withdraw_unstaked`
+### 8.22 `withdraw_unstaked`
 
 Withdraws passive stake after the cooldown.
 
@@ -959,6 +1206,8 @@ A finalized or cancelled job cannot be used for new fragment submissions or vote
 
 ### 9.2 Fragment Lifecycle
 
+Simple leaf fragment lifecycle:
+
 ```text
 Available
    └── Claimed
@@ -969,7 +1218,19 @@ Available
          └── Available again through reclaim_fragment if claim expired
 ```
 
-The `round` field increases when a rejected fragment is resubmitted.
+Split lifecycle:
+
+```text
+Available / Claimed
+   └── SplitPending
+         └── SplitApproved
+               ├── child fragments created as Available leaves
+               └── SplitParent
+```
+
+A `SplitParent` is no longer claimable. Its children are normal leaf fragments and follow the normal claim, submit, vote, verify/reject lifecycle.
+
+The `round` field increases when a rejected leaf fragment is resubmitted.
 
 ### 9.3 Passive Staker Lifecycle
 
@@ -995,8 +1256,14 @@ The SDK and backend indexer should consume Anchor events instead of constantly r
 | `WorkerRegistered` | A worker or verifier identity was created |
 | `WorkerStaked` | A worker added active stake |
 | `WorkerReputationUpdated` | A worker/verifier reputation changed |
+| `BayesianReputationUpdated` | Detailed Bayesian reputation fields changed |
 | `TreasuryInitialized` | Treasury was initialized for a mint |
 | `FragmentClaimed` | A worker claimed a fragment |
+| `FragmentSplitProposed` | A worker proposed sub-fragmentation for a parent fragment |
+| `FragmentSplitApproved` | A split proposal was approved |
+| `FragmentSplitRejected` | A split proposal was rejected |
+| `SubFragmentCreated` | A child fragment was created from a parent split |
+| `FragmentSplitCompleted` | All child fragments for a parent split were created |
 | `FragmentReclaimed` | An expired claim was released |
 | `FragmentSubmitted` | A fragment result was submitted or resubmitted |
 | `FragmentVerified` | A fragment reached YES quorum |
@@ -1020,8 +1287,14 @@ Recommended TypeScript SDK event names:
 | `WorkerRegistered` | `workerRegistered` |
 | `WorkerStaked` | `workerStaked` |
 | `WorkerReputationUpdated` | `workerReputationUpdated` |
+| `BayesianReputationUpdated` | `bayesianReputationUpdated` |
 | `TreasuryInitialized` | `treasuryInitialized` |
 | `FragmentClaimed` | `fragmentClaimed` |
+| `FragmentSplitProposed` | `fragmentSplitProposed` |
+| `FragmentSplitApproved` | `fragmentSplitApproved` |
+| `FragmentSplitRejected` | `fragmentSplitRejected` |
+| `SubFragmentCreated` | `subFragmentCreated` |
+| `FragmentSplitCompleted` | `fragmentSplitCompleted` |
 | `FragmentReclaimed` | `fragmentReclaimed` |
 | `FragmentSubmitted` | `fragmentSubmitted` |
 | `FragmentVerified` | `fragmentVerified` |
@@ -1090,6 +1363,9 @@ sdk.stakeWorker(amount, mint, workerToken)
 sdk.initTreasury(mint)
 sdk.createJob(params)
 sdk.claimFragment(job, fragmentIndex, workerToken)
+sdk.proposeFragmentSplit(job, parentFragment, manifestHash, childCount)
+sdk.approveFragmentSplit(splitProposal)
+sdk.createSubFragment(splitProposal, childIndex, inputHash, proofRef, complexityScore)
 sdk.reclaimFragment(job, fragmentIndex, previousWorkerAccount)
 sdk.submitFragmentResult(job, fragmentIndex, resultHash, proofRef, workerToken)
 sdk.resubmitFragmentResult(job, fragmentIndex, resultHash, proofRef, workerToken)
@@ -1131,6 +1407,7 @@ Recommended helpers:
 sdk.pdas.job(client, jobId)
 sdk.pdas.escrowAuth(job)
 sdk.pdas.fragment(job, fragmentIndex)
+sdk.pdas.splitProposal(parentFragment)
 sdk.pdas.worker(owner)
 sdk.pdas.stakeAuth(workerAccount)
 sdk.pdas.stakeVault(worker)
@@ -1210,7 +1487,45 @@ await sdk.claimVerifierReward({
 await sdk.finalizeJob(jobPda, finalHash, "ipfs://output-uri");
 ```
 
-### 12.7 Passive Network Staking Flow
+### 12.7 Adaptive Sub-Fragmentation Flow
+
+```ts
+const parentFragment = sdk.pdas.fragment(jobPda, 0);
+const splitProposal = sdk.pdas.splitProposal(parentFragment);
+
+await sdk.claimFragment(jobPda, 0, splitterWorkerTokenAccount);
+
+await sdk.proposeFragmentSplit({
+  job: jobPda,
+  parentFragment,
+  manifestHash,
+  childCount: 4,
+});
+
+await sdk.approveFragmentSplit({
+  job: jobPda,
+  parentFragment,
+  splitProposal,
+});
+
+for (let childIndex = 0; childIndex < 4; childIndex++) {
+  await sdk.createSubFragment({
+    job: jobPda,
+    parentFragment,
+    splitProposal,
+    childIndex,
+    inputHash: childInputHashes[childIndex],
+    proofRef: childProofRefs[childIndex],
+    complexityScore: childComplexities[childIndex],
+  });
+}
+
+// Children now behave like normal fragments.
+await sdk.claimFragment(jobPda, childFragmentIndex, workerTokenAccount);
+await sdk.submitFragmentResult(jobPda, childFragmentIndex, resultHash, proofRef, workerTokenAccount);
+```
+
+### 12.8 Passive Network Staking Flow
 
 ```ts
 await sdk.initStakingPool(mint);
@@ -1257,7 +1572,7 @@ The backend should listen to events and maintain a database projection of the pr
 | `job_pubkey` | `JobCreated.job` |
 | `client` | `JobCreated.client` |
 | `mint` | `JobCreated.mint` |
-| `expected_fragments` | `JobCreated.expected_fragments` |
+| `expected_fragments` | `JobCreated.expected_fragments`, `FragmentSplitCompleted` |
 | `verified_fragments` | `FragmentVerified.verified_fragments` |
 | `status` | `JobCreated`, `JobFinalized`, `JobCancelled` |
 | `deadline_unix` | `JobCreated.deadline_unix` |
@@ -1274,6 +1589,25 @@ The backend should listen to events and maintain a database projection of the pr
 | `round` | fragment events |
 | `result_hash` | `FragmentSubmitted` |
 | `proof_ref` | `FragmentSubmitted` |
+| `parent_fragment` | `SubFragmentCreated`, account fetch |
+| `depth` | `SubFragmentCreated`, account fetch |
+| `is_leaf` | account fetch |
+| `complexity_score` | `SubFragmentCreated`, account fetch |
+| `split_manifest_hash` | `FragmentSplitApproved`, account fetch |
+
+### `split_proposals`
+
+| Column | Source |
+|---|---|
+| `split_proposal` | `FragmentSplitProposed` |
+| `job_pubkey` | `FragmentSplitProposed` |
+| `parent_fragment` | `FragmentSplitProposed` |
+| `splitter_worker` | `FragmentSplitProposed` |
+| `manifest_hash` | `FragmentSplitProposed` |
+| `child_count` | `FragmentSplitProposed` |
+| `approved` | `FragmentSplitApproved` |
+| `rejected` | `FragmentSplitRejected` |
+| `created_children` | `SubFragmentCreated`, `FragmentSplitCompleted` |
 
 ### `workers`
 
@@ -1284,7 +1618,10 @@ The backend should listen to events and maintain a database projection of the pr
 | `roles` | `WorkerRegistered.roles` |
 | `status` | `WorkerRegistered.status`, `WorkerReputationUpdated.status` |
 | `stake_amount` | `WorkerStaked.total_stake`, account fetch after slash |
-| `reputation` | `WorkerReputationUpdated.new_reputation` |
+| `reputation` | `WorkerReputationUpdated.new_reputation`, `BayesianReputationUpdated.new_reputation` |
+| `reliability_score` | account fetch or `BayesianReputationUpdated` |
+| `fraud_strikes` | `BayesianReputationUpdated`, account fetch |
+| `error_strikes` | `BayesianReputationUpdated`, account fetch |
 | `active_claims` | account fetch after claim, submit, or reclaim |
 
 ### `votes`
@@ -1400,13 +1737,36 @@ fragment.voting_deadline_unix = submission_time + VOTING_TTL_SECS
 
 This prevents a submitted fragment from staying votable for the full job lifetime.
 
-### 14.10 Passive Staking Accounting
+### 14.10 Split Safety
+
+Sub-fragmentation is safe only if the following invariants hold:
+
+- only leaf fragments can be split;
+- only workers above `SPLIT_MIN_REPUTATION` and `SPLIT_MIN_STAKE` can propose splits;
+- split depth cannot exceed `MAX_FRAGMENT_DEPTH`;
+- child count cannot exceed `MAX_CHILDREN_PER_SPLIT`;
+- the parent becomes non-claimable after split completion;
+- all child fragments remain normal leaf fragments;
+- `job.expected_fragments` tracks leaf fragments, not historical parent fragments;
+- the manifest hash must match the off-chain manifest used by workers and verifiers.
+
+### 14.11 Reputation Safety
+
+The Bayesian reputation system should preserve these invariants:
+
+- normal calculation errors should not be treated as fraud;
+- confirmed fraud should strongly damage both short-term and long-term reputation;
+- short memory should decay over time;
+- long memory should retain historical trust information;
+- on-chain constraints should enforce minimum reputation and stake even if the off-chain scheduler makes a bad assignment.
+
+### 14.12 Passive Staking Accounting
 
 Passive staking uses accumulated reward-per-share accounting.
 
 This avoids looping over all stakers and allows proportional reward distribution with O(1) account updates.
 
-### 14.11 Passive Unstake Cooldown
+### 14.13 Passive Unstake Cooldown
 
 Passive stakers cannot withdraw immediately after requesting unstake.
 
@@ -1423,6 +1783,11 @@ The current test suite covers:
 - job creation and escrow funding;
 - fragment claim;
 - fragment result submission;
+- V2 split proposal;
+- V2 split approval;
+- V2 child fragment creation;
+- V2 prevention of claiming a split parent;
+- V2 child fragment claim/submit/vote flow;
 - verifier registration and staking;
 - voting before quorum;
 - YES quorum and worker payment;
@@ -1430,9 +1795,9 @@ The current test suite covers:
 - fragment resubmission after rejection;
 - job finalization;
 - expired claim reclaim;
-- reputation initialization;
-- reputation increase on verified compute;
-- reputation decrease on rejected compute;
+- Bayesian reputation initialization;
+- Bayesian reputation increase on verified compute;
+- Bayesian reputation decrease on rejected compute;
 - verifier reputation increase on reward claim;
 - reputation decrease on expired claim;
 - incorrect vote slashing;
@@ -1478,9 +1843,9 @@ Workers are currently registered with compute and verify roles by default. For p
 
 ### 16.4 Reputation Separation
 
-The current reputation model uses one score for both compute and verify behavior.
+The V2 model already stores separate compute and verification Bayesian memory. The public `reputation` field remains a global derived score for compatibility.
 
-A future version should split it into:
+A future version can expose separate public fields:
 
 ```text
 compute_reputation
@@ -1488,21 +1853,36 @@ verify_reputation
 global_reputation
 ```
 
-### 16.5 Verifier Reward Claims
+This would make scheduler decisions and dashboard explanations easier without changing the underlying memory model.
+
+### 16.5 Split Parameters
+
+The local test configuration may use permissive values such as `SPLIT_MIN_REPUTATION = 5_000` and `SPLIT_MIN_COMPLEXITY = 1_000`.
+
+For beta or mainnet, use stricter values such as:
+
+```text
+SPLIT_MIN_REPUTATION = 8_500
+SPLIT_MIN_COMPLEXITY = 6_000
+```
+
+Only trusted workers should be able to propose sub-fragmentation, because a bad split can increase cost, verification complexity, and job finalization risk.
+
+### 16.6 Verifier Reward Claims
 
 Verifier rewards are claimed individually. For better UX, the SDK or backend can provide batched reward claiming.
 
-### 16.6 Worker Reward Payment Timing
+### 16.7 Worker Reward Payment Timing
 
 The current MVP pays a worker immediately when a YES quorum is reached.
 
 A more advanced architecture could make worker rewards claimable separately through a `claim_worker_reward` instruction, enabling challenge periods before payment.
 
-### 16.7 Challenge Period
+### 16.8 Challenge Period
 
 The current MVP finalizes a fragment immediately after quorum. A future version could add a challenge window before a fragment becomes fully verified.
 
-### 16.8 Slashing
+### 16.9 Slashing
 
 The slashing flow should be audited carefully. The project should define:
 
@@ -1513,17 +1893,17 @@ The slashing flow should be audited carefully. The project should define:
 - how reputation changes after slashing;
 - whether delegated stake should ever be slashable.
 
-### 16.9 Passive Staking Risk Model
+### 16.10 Passive Staking Risk Model
 
 Passive stakers are not slashable in the current V1 because they do not compute or verify.
 
 A future delegation model could let stakers delegate to verifiers, with partial slash risk if the delegated verifier misbehaves.
 
-### 16.10 Final Result Storage
+### 16.11 Final Result Storage
 
 The on-chain program stores only a final hash and a short output URI. Large outputs should remain off-chain, for example in IPFS, Arweave, S3, or another storage layer.
 
-### 16.11 Program ID Sync
+### 16.12 Program ID Sync
 
 If Anchor reports a mismatch such as:
 
@@ -1590,6 +1970,13 @@ yarn install
 yarn build
 ```
 
+### Check Split Constants
+
+```bash
+grep -R "SPLIT_MIN_REPUTATION" -n programs/solana-layer/src
+grep -R "MAX_FRAGMENT_DEPTH" -n programs/solana-layer/src
+```
+
 ---
 
 ## 18. Project Integration Summary
@@ -1597,10 +1984,11 @@ yarn build
 For the rest of the Silicium project, the Solana Layer should be treated as the source of truth for:
 
 - job creation and funding;
-- fragment lifecycle state;
+- fragment and sub-fragment lifecycle state;
 - worker and verifier economic guarantees;
-- worker reputation;
+- Bayesian worker/verifier reputation;
 - result validation;
+- split proposal approval state;
 - worker payments;
 - verifier rewards;
 - slashing;
@@ -1647,3 +2035,34 @@ During this work session, the Solana Layer was upgraded with:
 11. Passive unstake request and cooldown withdrawal.
 12. Additional tests for reputation, security invariants, slashing, and passive staking.
 
+
+
+### 19.1 V2 Sub-Fragmentation Additions
+
+The latest V2 update adds:
+
+1. Controlled parent/child fragment trees.
+2. `SplitProposal` accounts.
+3. `propose_fragment_split` instruction.
+4. `approve_fragment_split` instruction.
+5. `create_sub_fragment` instruction.
+6. `SplitPending`, `SplitApproved`, and `SplitParent` fragment states.
+7. Leaf-fragment accounting through `job.expected_fragments`.
+8. Split manifest hashing for off-chain split descriptions.
+9. Split events for indexers and SDK listeners.
+10. Tests for the V2 sub-fragment flow.
+
+### 19.2 V2 Bayesian Reputation Additions
+
+The latest V2 update also adds:
+
+1. Long-term compute memory.
+2. Short-term compute memory.
+3. Long-term verification memory.
+4. Short-term verification memory.
+5. Separate fraud and error strike counters.
+6. Derived reliability score.
+7. More nuanced penalties: small for normal errors, large for confirmed fraud.
+8. Reputation-compatible task allocation for the scheduler.
+9. Detailed `BayesianReputationUpdated` event.
+10. Reputation-based split authorization.
