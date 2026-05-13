@@ -44,6 +44,7 @@ exports.stakeAuthPda = stakeAuthPda;
 exports.stakeVaultPda = stakeVaultPda;
 exports.votePda = votePda;
 exports.roundResolutionPda = roundResolutionPda;
+exports.splitProposalPda = splitProposalPda;
 exports.resultPda = resultPda;
 exports.treasuryStatePda = treasuryStatePda;
 exports.treasuryAuthPda = treasuryAuthPda;
@@ -91,6 +92,9 @@ function votePda(programId, fragment, verifier, round) {
 }
 function roundResolutionPda(programId, fragment, round) {
     return web3_js_1.PublicKey.findProgramAddressSync([Buffer.from("fragment_resolution"), fragment.toBuffer(), u16le(round)], programId)[0];
+}
+function splitProposalPda(programId, parentFragment, round) {
+    return web3_js_1.PublicKey.findProgramAddressSync([Buffer.from("split_proposal"), parentFragment.toBuffer(), u16le(round)], programId)[0];
 }
 function resultPda(programId, job) {
     return web3_js_1.PublicKey.findProgramAddressSync([Buffer.from("result"), job.toBuffer()], programId)[0];

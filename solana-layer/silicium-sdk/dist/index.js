@@ -23,7 +23,7 @@ __exportStar(require("./pdas"), exports);
 __exportStar(require("./events"), exports);
 __exportStar(require("./types"), exports);
 // Must match declare_id! in programs/solana-layer/src/lib.rs
-exports.SOLANA_LAYER_PROGRAM_ID = new web3_js_1.PublicKey("5LGYhzFjWhUB36SEe2YYkk8oGYUYhAtUvXWPvgfP4WJN");
+exports.SOLANA_LAYER_PROGRAM_ID = new web3_js_1.PublicKey("5g4mk68TpaReH4oYRz75TekS9fHkTkbdkR4cxnn6e3jN");
 function asHash32(value) {
     const arr = Array.from(value);
     if (arr.length !== 32) {
@@ -48,6 +48,7 @@ class SiliciumLayerSdk {
             stakeVault: (worker) => (0, pdas_1.stakeVaultPda)(this.programId, worker),
             vote: (fragment, verifier, round) => (0, pdas_1.votePda)(this.programId, fragment, verifier, round),
             roundResolution: (fragment, round) => (0, pdas_1.roundResolutionPda)(this.programId, fragment, round),
+            splitProposal: (parentFragment, round) => (0, pdas_1.splitProposalPda)(this.programId, parentFragment, round),
             result: (job) => (0, pdas_1.resultPda)(this.programId, job),
             treasuryState: (mint) => (0, pdas_1.treasuryStatePda)(this.programId, mint),
             treasuryAuth: (mint) => (0, pdas_1.treasuryAuthPda)(this.programId, mint),
@@ -154,6 +155,68 @@ class SiliciumLayerSdk {
         builder = appendSigners(builder, params.signers);
         const signature = await builder.rpc();
         return { signature, fragment };
+    }
+    async resolveParentFragmentAndRound(params) {
+        const parentFragment = params.parentFragment ?? this.pdas.fragment(params.job, params.parentFragmentIndex);
+        if (params.round !== undefined) {
+            return { parentFragment, round: params.round };
+        }
+        const parentAccount = await this.accounts.fragment.fetch(parentFragment);
+        return { parentFragment, round: Number(parentAccount.round) };
+    }
+    async proposeFragmentSplit(params) {
+        const splitter = params.splitter ?? this.walletPubkey();
+        const splitterWorker = this.pdas.worker(splitter);
+        const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
+        const splitProposal = this.pdas.splitProposal(parentFragment, round);
+        let builder = this.methods
+            .proposeFragmentSplit(asHash32(params.manifestHash), params.childCount)
+            .accounts({
+            splitter,
+            splitterWorker,
+            job: params.job,
+            parentFragment,
+            splitProposal,
+            systemProgram: web3_js_1.SystemProgram.programId,
+        });
+        builder = appendSigners(builder, params.signers);
+        const signature = await builder.rpc();
+        return { signature, parentFragment, splitProposal };
+    }
+    async approveFragmentSplit(params) {
+        const authority = params.authority ?? this.walletPubkey();
+        const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
+        const splitProposal = params.splitProposal ?? this.pdas.splitProposal(parentFragment, round);
+        let builder = this.methods
+            .approveFragmentSplit(params.approve)
+            .accounts({
+            authority,
+            job: params.job,
+            parentFragment,
+            splitProposal,
+        });
+        builder = appendSigners(builder, params.signers);
+        const signature = await builder.rpc();
+        return { signature, parentFragment, splitProposal };
+    }
+    async createSubFragment(params) {
+        const payer = params.payer ?? this.walletPubkey();
+        const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
+        const splitProposal = params.splitProposal ?? this.pdas.splitProposal(parentFragment, round);
+        const childFragment = this.pdas.fragment(params.job, params.childFragmentIndex);
+        let builder = this.methods
+            .createSubFragment(params.childFragmentIndex, (0, pdas_1.toBn)(params.requiredReputation), (0, pdas_1.toBn)(params.requiredStake), params.complexityScore, asHash32(params.inputHash))
+            .accounts({
+            payer,
+            job: params.job,
+            parentFragment,
+            splitProposal,
+            childFragment,
+            systemProgram: web3_js_1.SystemProgram.programId,
+        });
+        builder = appendSigners(builder, params.signers);
+        const signature = await builder.rpc();
+        return { signature, parentFragment, childFragment, splitProposal };
     }
     async submitFragmentResult(params) {
         return this.sendSubmitLike("submitFragmentResult", params);
@@ -449,6 +512,9 @@ class SiliciumLayerSdk {
     }
     async fetchTreasuryState(treasuryState) {
         return this.accounts.treasury.fetch(treasuryState);
+    }
+    async fetchSplitProposal(splitProposal) {
+        return this.accounts.splitProposal.fetch(splitProposal);
     }
     async fetchStakingPool(pool) {
         return this.accounts.stakingPool.fetch(pool);
