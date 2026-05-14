@@ -1,5 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import {
+  Connection,
   PublicKey,
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
@@ -58,7 +59,26 @@ export * from "./events";
 export * from "./types";
 
 // Must match declare_id! in programs/solana-layer/src/lib.rs
-export const SOLANA_LAYER_PROGRAM_ID = new PublicKey("5g4mk68TpaReH4oYRz75TekS9fHkTkbdkR4cxnn6e3jN");
+export type SolanaLayerCluster = "devnet" | "localnet";
+
+export const SOLANA_LAYER_DEVNET_PROGRAM_ID = new PublicKey("4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP");
+export const SOLANA_LAYER_LOCALNET_PROGRAM_ID = new PublicKey("4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP");
+export const SOLANA_LAYER_PROGRAM_ID = SOLANA_LAYER_DEVNET_PROGRAM_ID;
+
+export const SOLANA_LAYER_DEVNET_RPC_URL = "https://api.devnet.solana.com";
+export const SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
+
+export function getSolanaLayerProgramId(cluster: SolanaLayerCluster = "devnet"): PublicKey {
+  return cluster === "localnet" ? SOLANA_LAYER_LOCALNET_PROGRAM_ID : SOLANA_LAYER_DEVNET_PROGRAM_ID;
+}
+
+export function getSolanaLayerRpcUrl(cluster: SolanaLayerCluster = "devnet"): string {
+  return cluster === "localnet" ? SOLANA_LAYER_LOCALNET_RPC_URL : SOLANA_LAYER_DEVNET_RPC_URL;
+}
+
+export function createSolanaLayerConnection(cluster: SolanaLayerCluster = "devnet", commitment: anchor.web3.Commitment = "confirmed"): Connection {
+  return new Connection(getSolanaLayerRpcUrl(cluster), commitment);
+}
 
 function asHash32(value: Hash32): number[] {
   const arr = Array.from(value);
