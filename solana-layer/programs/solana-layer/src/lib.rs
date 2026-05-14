@@ -8,7 +8,7 @@ pub mod state;
 
 pub use instructions::*;
 
-declare_id!("4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP");
+declare_id!("HaAd4SR4nF3dNwrhRBcks8RDMiibHjkq7XLAg9GevMSG");
 
 #[program]
 pub mod solana_layer {

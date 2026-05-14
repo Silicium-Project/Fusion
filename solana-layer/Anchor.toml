@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-solana_layer = "4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP"
+solana_layer = "HaAd4SR4nF3dNwrhRBcks8RDMiibHjkq7XLAg9GevMSG"
 
 [programs.localnet]
 solana_layer = "4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP"
@@ -15,7 +15,7 @@ solana_layer = "4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Devnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
