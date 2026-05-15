@@ -1,5 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import {
+  Connection,
   PublicKey,
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
@@ -15,6 +16,7 @@ import {
   networkStakerPda,
   resultPda,
   roundResolutionPda,
+  splitProposalPda,
   stakeAuthPda,
   stakeVaultPda,
   stakingPoolAuthPda,
@@ -38,6 +40,9 @@ import type {
   IdlProgram,
   InitStakingPoolParams,
   InitTreasuryParams,
+  ProposeFragmentSplitParams,
+  ApproveFragmentSplitParams,
+  CreateSubFragmentParams,
   ReclaimFragmentParams,
   RegisterWorkerParams,
   RequestUnstakeParams,
@@ -54,7 +59,26 @@ export * from "./events";
 export * from "./types";
 
 // Must match declare_id! in programs/solana-layer/src/lib.rs
-export const SOLANA_LAYER_PROGRAM_ID = new PublicKey("CDT49q3RJaPfm8qn5ahrNaezgVaGEhpFScxk8XQr4xfM");
+export type SolanaLayerCluster = "devnet" | "localnet";
+
+export const SOLANA_LAYER_DEVNET_PROGRAM_ID = new PublicKey("4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP");
+export const SOLANA_LAYER_LOCALNET_PROGRAM_ID = new PublicKey("4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP");
+export const SOLANA_LAYER_PROGRAM_ID = SOLANA_LAYER_DEVNET_PROGRAM_ID;
+
+export const SOLANA_LAYER_DEVNET_RPC_URL = "https://api.devnet.solana.com";
+export const SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
+
+export function getSolanaLayerProgramId(cluster: SolanaLayerCluster = "devnet"): PublicKey {
+  return cluster === "localnet" ? SOLANA_LAYER_LOCALNET_PROGRAM_ID : SOLANA_LAYER_DEVNET_PROGRAM_ID;
+}
+
+export function getSolanaLayerRpcUrl(cluster: SolanaLayerCluster = "devnet"): string {
+  return cluster === "localnet" ? SOLANA_LAYER_LOCALNET_RPC_URL : SOLANA_LAYER_DEVNET_RPC_URL;
+}
+
+export function createSolanaLayerConnection(cluster: SolanaLayerCluster = "devnet", commitment: anchor.web3.Commitment = "confirmed"): Connection {
+  return new Connection(getSolanaLayerRpcUrl(cluster), commitment);
+}
 
 function asHash32(value: Hash32): number[] {
   const arr = Array.from(value);
@@ -110,6 +134,7 @@ export class SiliciumLayerSdk {
     stakeVault: (worker: PublicKey) => stakeVaultPda(this.programId, worker),
     vote: (fragment: PublicKey, verifier: PublicKey, round: number) => votePda(this.programId, fragment, verifier, round),
     roundResolution: (fragment: PublicKey, round: number) => roundResolutionPda(this.programId, fragment, round),
+    splitProposal: (parentFragment: PublicKey, round: number) => splitProposalPda(this.programId, parentFragment, round),
     result: (job: PublicKey) => resultPda(this.programId, job),
     treasuryState: (mint: PublicKey) => treasuryStatePda(this.programId, mint),
     treasuryAuth: (mint: PublicKey) => treasuryAuthPda(this.programId, mint),
@@ -222,6 +247,91 @@ export class SiliciumLayerSdk {
     builder = appendSigners(builder, params.signers);
     const signature = await builder.rpc();
     return { signature, fragment };
+  }
+
+  private async resolveParentFragmentAndRound(params: {
+    job: PublicKey;
+    parentFragment?: PublicKey;
+    parentFragmentIndex: number;
+    round?: number;
+  }): Promise<{ parentFragment: PublicKey; round: number }> {
+    const parentFragment = params.parentFragment ?? this.pdas.fragment(params.job, params.parentFragmentIndex);
+
+    if (params.round !== undefined) {
+      return { parentFragment, round: params.round };
+    }
+
+    const parentAccount = await this.accounts.fragment.fetch(parentFragment);
+    return { parentFragment, round: Number(parentAccount.round) };
+  }
+
+  async proposeFragmentSplit(params: ProposeFragmentSplitParams): Promise<{ signature: TransactionSignature; parentFragment: PublicKey; splitProposal: PublicKey }> {
+    const splitter = params.splitter ?? this.walletPubkey();
+    const splitterWorker = this.pdas.worker(splitter);
+    const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
+    const splitProposal = this.pdas.splitProposal(parentFragment, round);
+
+    let builder = this.methods
+      .proposeFragmentSplit(asHash32(params.manifestHash), params.childCount)
+      .accounts({
+        splitter,
+        splitterWorker,
+        job: params.job,
+        parentFragment,
+        splitProposal,
+        systemProgram: SystemProgram.programId,
+      });
+
+    builder = appendSigners(builder, params.signers);
+    const signature = await builder.rpc();
+    return { signature, parentFragment, splitProposal };
+  }
+
+  async approveFragmentSplit(params: ApproveFragmentSplitParams): Promise<{ signature: TransactionSignature; parentFragment: PublicKey; splitProposal: PublicKey }> {
+    const authority = params.authority ?? this.walletPubkey();
+    const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
+    const splitProposal = params.splitProposal ?? this.pdas.splitProposal(parentFragment, round);
+
+    let builder = this.methods
+      .approveFragmentSplit(params.approve)
+      .accounts({
+        authority,
+        job: params.job,
+        parentFragment,
+        splitProposal,
+      });
+
+    builder = appendSigners(builder, params.signers);
+    const signature = await builder.rpc();
+    return { signature, parentFragment, splitProposal };
+  }
+
+  async createSubFragment(params: CreateSubFragmentParams): Promise<{ signature: TransactionSignature; parentFragment: PublicKey; childFragment: PublicKey; splitProposal: PublicKey }> {
+    const payer = params.payer ?? this.walletPubkey();
+    const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
+    const splitProposal = params.splitProposal ?? this.pdas.splitProposal(parentFragment, round);
+    const childFragment = this.pdas.fragment(params.job, params.childFragmentIndex);
+
+    let builder = this.methods
+      .createSubFragment(
+        params.childFragmentIndex,
+        toBn(params.requiredComputeReputation),
+        toBn(params.requiredStake),
+        params.complexityScore,
+        asHash32(params.inputHash),
+      )
+      .accounts({
+        payer,
+        job: params.job,
+        parentFragment,
+        splitProposal,
+        childFragment,
+        systemProgram: SystemProgram.programId,
+      });
+
+    builder = appendSigners(builder, params.signers);
+    const signature = await builder.rpc();
+    return { signature, parentFragment, childFragment, splitProposal };
   }
 
   async submitFragmentResult(params: SubmitFragmentResultParams): Promise<TransactionSignature> {
@@ -559,6 +669,31 @@ export class SiliciumLayerSdk {
     return this.accounts.worker.fetch(account);
   }
 
+  async fetchWorkerReputation(workerOrWorkerAccount: PublicKey, isWorkerAccount = false): Promise<{
+    computeReputation: anchor.BN;
+    verifyReputation: anchor.BN;
+    globalReputation: anchor.BN;
+    reliabilityScore?: number;
+  }> {
+    const worker = await this.fetchWorker(workerOrWorkerAccount, isWorkerAccount) as any;
+    return {
+      computeReputation: worker.computeReputation,
+      verifyReputation: worker.verifyReputation,
+      globalReputation: worker.globalReputation,
+      reliabilityScore: worker.reliabilityScore,
+    };
+  }
+
+  async fetchAllWorkers(): Promise<unknown[]> {
+    return this.accounts.worker.all();
+  }
+
+  async fetchFragmentsForJob(job: PublicKey): Promise<unknown[]> {
+    return this.accounts.fragment.all([
+      { memcmp: { offset: 8, bytes: job.toBase58() } },
+    ]);
+  }
+
   async fetchVote(vote: PublicKey): Promise<unknown> {
     return this.accounts.fragmentVote.fetch(vote);
   }
@@ -573,6 +708,10 @@ export class SiliciumLayerSdk {
 
   async fetchTreasuryState(treasuryState: PublicKey): Promise<unknown> {
     return this.accounts.treasury.fetch(treasuryState);
+  }
+
+  async fetchSplitProposal(splitProposal: PublicKey): Promise<unknown> {
+    return this.accounts.splitProposal.fetch(splitProposal);
   }
 
   async fetchStakingPool(pool: PublicKey): Promise<unknown> {

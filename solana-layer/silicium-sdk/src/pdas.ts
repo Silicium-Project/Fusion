@@ -75,6 +75,13 @@ export function roundResolutionPda(programId: PublicKey, fragment: PublicKey, ro
   )[0];
 }
 
+export function splitProposalPda(programId: PublicKey, parentFragment: PublicKey, round: number): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("split_proposal"), parentFragment.toBuffer(), u16le(round)],
+    programId,
+  )[0];
+}
+
 export function resultPda(programId: PublicKey, job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("result"), job.toBuffer()],

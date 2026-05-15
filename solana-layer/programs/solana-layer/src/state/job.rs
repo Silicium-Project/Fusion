@@ -14,6 +14,7 @@ pub struct Job {
     pub mint: Pubkey,
     pub escrow: Pubkey,
 
+    /// En V2, ceci représente le nombre de fragments leaf attendus.
     pub expected_fragments: u32,
     pub verified_fragments: u32,
 
@@ -32,6 +33,12 @@ pub struct Job {
     pub verified_at_unix: i64,
 
     pub fragment_quorum: u16,
+
+    // V2: garde-fous de sous-fragmentation.
+    pub max_fragments: u32,
+    pub total_fragments_created: u32,
+    pub max_fragment_depth: u8,
+    pub split_authority: Pubkey,
 
     pub status: JobStatus,
 
@@ -58,6 +65,10 @@ impl Job {
         + 8                     // deadline_unix
         + 8                     // verified_at_unix
         + 2                     // fragment_quorum
+        + 4                     // max_fragments
+        + 4                     // total_fragments_created
+        + 1                     // max_fragment_depth
+        + 32                    // split_authority
         + 1                     // status
         + 1                     // bump
         + 1;                    // escrow_auth_bump

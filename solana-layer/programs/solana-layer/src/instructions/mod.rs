@@ -17,6 +17,9 @@ pub mod fund_staking_rewards;
 pub mod claim_staking_reward;
 pub mod request_unstake;
 pub mod withdraw_unstaked;
+pub mod approve_fragment_split;
+pub mod propose_fragment_split;
+pub mod create_sub_fragment;
 
 pub use create_job::*;
 pub use submit_fragment_result::*;
@@ -37,3 +40,6 @@ pub use fund_staking_rewards::*;
 pub use claim_staking_reward::*;
 pub use request_unstake::*;
 pub use withdraw_unstaked::*;
+pub use approve_fragment_split::*;
+pub use propose_fragment_split::*;
+pub use create_sub_fragment::*;

@@ -9,7 +9,7 @@ use crate::{
         fragment_resolution::FragmentResolution,
         fragment_vote::FragmentVote,
         job::{Job, JobStatus},
-        reputation::record_vote_correct,
+        reputation::{update_verify_reputation, ReputationEvent},
         worker::Worker,
     },
 };
@@ -166,7 +166,7 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
 
     job.paid_amount = job.paid_amount.saturating_add(reward);
 
-    record_vote_correct(verifier_worker);
+    update_verify_reputation(verifier_worker, ReputationEvent::VerificationSuccess);
 
     emit!(VerifierRewardClaimed {
         job: job.key(),

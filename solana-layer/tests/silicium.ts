@@ -1372,7 +1372,9 @@ await program.methods
     const workerAccount = await registerWorker(worker);
     const account = await program.account.worker.fetch(workerAccount);
 
-    assert.equal(reputationToNumber(account.reputation), 5000);
+    assert.equal(reputationToNumber(account.computeReputation), 5000);
+    assert.equal(reputationToNumber(account.verifyReputation), 5000);
+    assert.equal(reputationToNumber(account.globalReputation), 5000);
     assert.deepEqual(account.status, { active: {} });
     assert.equal(account.totalSubmitted, 0);
     assert.equal(account.totalVerified, 0);
@@ -1388,7 +1390,7 @@ await program.methods
     const { job, escrow } = await createTestJob(jobId, 1, 2);
 
     const before = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(before.reputation), 5000);
+    assert.equal(reputationToNumber(before.computeReputation), 5000);
 
     const fragment = await claimAndSubmitFragment(
       computeWorker.keypair,
@@ -1411,7 +1413,7 @@ await program.methods
     );
 
     const mid = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(mid.reputation), 5000);
+    assert.equal(reputationToNumber(mid.computeReputation), 5000);
 
     await voteOnFragment(
       verifier2.keypair,
@@ -1427,7 +1429,15 @@ await program.methods
     const fragmentAfter = await program.account.fragment.fetch(fragment);
 
     assert.deepEqual(fragmentAfter.status, { verified: {} });
-    assert.equal(reputationToNumber(after.reputation), 5080);
+    assert.isAbove(
+      reputationToNumber(after.computeReputation),
+      reputationToNumber(before.computeReputation)
+    );
+
+    assert.equal(
+      reputationToNumber(after.verifyReputation),
+      reputationToNumber(before.verifyReputation)
+    );
     assert.equal(after.totalVerified, 1);
   });
 
@@ -1440,7 +1450,7 @@ await program.methods
     const { job, escrow } = await createTestJob(jobId, 1, 2);
 
     const before = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(before.reputation), 5000);
+    assert.equal(reputationToNumber(before.computeReputation), 5000);
 
     const fragment = await claimAndSubmitFragment(
       computeWorker.keypair,
@@ -1463,7 +1473,7 @@ await program.methods
     );
 
     const mid = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(mid.reputation), 5000);
+    assert.equal(reputationToNumber(mid.computeReputation), 5000);
 
     await voteOnFragment(
       verifier2.keypair,
@@ -1479,7 +1489,15 @@ await program.methods
     const fragmentAfter = await program.account.fragment.fetch(fragment);
 
     assert.deepEqual(fragmentAfter.status, { rejected: {} });
-    assert.equal(reputationToNumber(after.reputation), 4750);
+    assert.isBelow(
+      reputationToNumber(after.computeReputation),
+      reputationToNumber(before.computeReputation)
+    );
+
+    assert.equal(
+      reputationToNumber(after.verifyReputation),
+      reputationToNumber(before.verifyReputation)
+    );
     assert.equal(after.totalRejected, 1);
   });
 
@@ -1522,7 +1540,7 @@ await program.methods
     );
 
     const beforeClaim = await program.account.worker.fetch(verifier1.workerAccount);
-    assert.equal(reputationToNumber(beforeClaim.reputation), 5000);
+    assert.equal(reputationToNumber(beforeClaim.verifyReputation), 5000);
 
     const fragmentAfter = await program.account.fragment.fetch(fragment);
     const roundResolution = roundResolutionPda(fragment, fragmentAfter.round);
@@ -1546,7 +1564,15 @@ await program.methods
 
     const afterClaim = await program.account.worker.fetch(verifier1.workerAccount);
 
-    assert.equal(reputationToNumber(afterClaim.reputation), 5040);
+    assert.isAbove(
+      reputationToNumber(afterClaim.verifyReputation),
+      reputationToNumber(beforeClaim.verifyReputation)
+    );
+
+    assert.equal(
+      reputationToNumber(afterClaim.computeReputation),
+      reputationToNumber(beforeClaim.computeReputation)
+    );
     assert.equal(afterClaim.totalVerified, 1);
   });
 
@@ -1560,7 +1586,7 @@ await program.methods
     const fragment = fragmentPda(job, fragmentIndex);
 
     const before = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(before.reputation), 5000);
+    assert.equal(reputationToNumber(before.computeReputation), 5000);
 
     await program.methods
       .claimFragment(fragmentIndex)
@@ -1608,7 +1634,15 @@ await program.methods
     const fragmentAfter = await program.account.fragment.fetch(fragment);
 
     assert.deepEqual(fragmentAfter.status, { available: {} });
-    assert.equal(reputationToNumber(after.reputation), 4880);
+    assert.isBelow(
+      reputationToNumber(after.computeReputation),
+      reputationToNumber(before.computeReputation)
+    );
+
+    assert.equal(
+      reputationToNumber(after.verifyReputation),
+      reputationToNumber(before.verifyReputation)
+    );
   });
 
   it("slashes a wrong vote", async () => {
@@ -1832,7 +1866,10 @@ await program.methods
 
     assert.equal(voteAfter.slashed, true);
     assert.equal(workerAfter.stakeAmount.toString(), "900000");
-    assert.equal(reputationToNumber(workerAfter.reputation), 4520);
+    assert.isBelow(
+      reputationToNumber(workerAfter.verifyReputation),
+      5000
+    );
     assert.equal(workerAfter.totalRejected, 1);
 
     assert.equal(
@@ -1945,7 +1982,7 @@ await program.methods
   });
   
   
-  it("rejects claim from an unstaked worker", async () => {
+  it("allows an unstaked registered worker to claim a zero-stake bootstrap fragment", async () => {
     const unstakedWorker = anchor.web3.Keypair.generate();
     await airdrop(unstakedWorker.publicKey);
 
@@ -1958,27 +1995,29 @@ await program.methods
     const fragmentIndex = 0;
     const fragment = fragmentPda(job, fragmentIndex);
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .claimFragment(fragmentIndex)
-          .accounts({
-            worker: unstakedWorker.publicKey,
-            workerAccount: unstakedWorkerAccount,
-            job: job,
-            fragment: fragment,
-            workerToken: unstakedWorkerToken,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([unstakedWorker])
-          .rpc();
-      },
-      "NotAuthorized"
-    );
+    await program.methods
+      .claimFragment(fragmentIndex)
+      .accounts({
+        worker: unstakedWorker.publicKey,
+        workerAccount: unstakedWorkerAccount,
+        job: job,
+        fragment: fragment,
+        workerToken: unstakedWorkerToken,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([unstakedWorker])
+      .rpc();
+
+    const fragmentAccount = await program.account.fragment.fetch(fragment);
+    const workerAccount = await program.account.worker.fetch(unstakedWorkerAccount);
+
+    assert.equal(fragmentAccount.assignedWorker.toBase58(), unstakedWorker.publicKey.toBase58());
+    assert.deepEqual(fragmentAccount.status, { claimed: {} });
+    assert.equal(workerAccount.stakeAmount.toString(), "0");
   });
 
 
-  it("rejects vote from an unstaked verifier", async () => {
+  it("allows an unstaked registered verifier to vote on a bootstrap fragment", async () => {
     const computeWorker = await createReadyWorker();
 
     const unstakedVerifier = anchor.web3.Keypair.generate();
@@ -2004,29 +2043,31 @@ await program.methods
     const roundResolution = roundResolutionPda(fragment, fragmentBefore.round);
     const computeWorkerPda = workerPda(fragmentBefore.worker);
 
-    await expectTxToFail(
-      async () => {
-        await program.methods
-          .voteFragment(true)
-          .accounts({
-            verifier: unstakedVerifier.publicKey,
-            job: job,
-            fragment: fragment,
-            verifierWorker: unstakedVerifierWorker,
-            computeWorker: computeWorkerPda,
-            vote: vote,
-            roundResolution: roundResolution,
-            escrowAuth: escrowAuthPda(job),
-            escrow: escrow,
-            workerToken: computeWorker.workerToken,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([unstakedVerifier])
-          .rpc();
-      },
-      "NotAuthorized"
-    );
+    await program.methods
+      .voteFragment(true)
+      .accounts({
+        verifier: unstakedVerifier.publicKey,
+        job: job,
+        fragment: fragment,
+        verifierWorker: unstakedVerifierWorker,
+        computeWorker: computeWorkerPda,
+        vote: vote,
+        roundResolution: roundResolution,
+        escrowAuth: escrowAuthPda(job),
+        escrow: escrow,
+        workerToken: computeWorker.workerToken,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([unstakedVerifier])
+      .rpc();
+
+    const voteAccount = await program.account.fragmentVote.fetch(vote);
+    const verifierAccount = await program.account.worker.fetch(unstakedVerifierWorker);
+
+    assert.equal(voteAccount.verifier.toBase58(), unstakedVerifier.publicKey.toBase58());
+    assert.equal(voteAccount.choice, true);
+    assert.equal(verifierAccount.stakeAmount.toString(), "0");
   });
 
 

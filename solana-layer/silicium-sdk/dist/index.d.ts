@@ -1,11 +1,19 @@
 import * as anchor from "@coral-xyz/anchor";
-import { PublicKey, TransactionSignature } from "@solana/web3.js";
+import { Connection, PublicKey, TransactionSignature } from "@solana/web3.js";
 import { SiliciumEventClient } from "./events";
-import type { CancelJobParams, ClaimFragmentParams, ClaimStakingRewardParams, ClaimVerifierRewardParams, CreateJobParams, CreateSdkParams, FinalizeJobParams, FundStakingRewardsParams, IdlProgram, InitStakingPoolParams, InitTreasuryParams, ReclaimFragmentParams, RegisterWorkerParams, RequestUnstakeParams, SlashVoteParams, StakeNetworkParams, StakeWorkerParams, SubmitFragmentResultParams, VoteFragmentParams, WithdrawUnstakedParams } from "./types";
+import type { CancelJobParams, ClaimFragmentParams, ClaimStakingRewardParams, ClaimVerifierRewardParams, CreateJobParams, CreateSdkParams, FinalizeJobParams, FundStakingRewardsParams, IdlProgram, InitStakingPoolParams, InitTreasuryParams, ProposeFragmentSplitParams, ApproveFragmentSplitParams, CreateSubFragmentParams, ReclaimFragmentParams, RegisterWorkerParams, RequestUnstakeParams, SlashVoteParams, StakeNetworkParams, StakeWorkerParams, SubmitFragmentResultParams, VoteFragmentParams, WithdrawUnstakedParams } from "./types";
 export * from "./pdas";
 export * from "./events";
 export * from "./types";
+export type SolanaLayerCluster = "devnet" | "localnet";
+export declare const SOLANA_LAYER_DEVNET_PROGRAM_ID: anchor.web3.PublicKey;
+export declare const SOLANA_LAYER_LOCALNET_PROGRAM_ID: anchor.web3.PublicKey;
 export declare const SOLANA_LAYER_PROGRAM_ID: anchor.web3.PublicKey;
+export declare const SOLANA_LAYER_DEVNET_RPC_URL = "https://api.devnet.solana.com";
+export declare const SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
+export declare function getSolanaLayerProgramId(cluster?: SolanaLayerCluster): PublicKey;
+export declare function getSolanaLayerRpcUrl(cluster?: SolanaLayerCluster): string;
+export declare function createSolanaLayerConnection(cluster?: SolanaLayerCluster, commitment?: anchor.web3.Commitment): Connection;
 export declare class SiliciumLayerSdk {
     readonly provider: anchor.AnchorProvider;
     readonly program: IdlProgram;
@@ -25,6 +33,7 @@ export declare class SiliciumLayerSdk {
         stakeVault: (worker: PublicKey) => anchor.web3.PublicKey;
         vote: (fragment: PublicKey, verifier: PublicKey, round: number) => anchor.web3.PublicKey;
         roundResolution: (fragment: PublicKey, round: number) => anchor.web3.PublicKey;
+        splitProposal: (parentFragment: PublicKey, round: number) => anchor.web3.PublicKey;
         result: (job: PublicKey) => anchor.web3.PublicKey;
         treasuryState: (mint: PublicKey) => anchor.web3.PublicKey;
         treasuryAuth: (mint: PublicKey) => anchor.web3.PublicKey;
@@ -46,6 +55,23 @@ export declare class SiliciumLayerSdk {
     reclaimFragment(params: ReclaimFragmentParams): Promise<{
         signature: TransactionSignature;
         fragment: PublicKey;
+    }>;
+    private resolveParentFragmentAndRound;
+    proposeFragmentSplit(params: ProposeFragmentSplitParams): Promise<{
+        signature: TransactionSignature;
+        parentFragment: PublicKey;
+        splitProposal: PublicKey;
+    }>;
+    approveFragmentSplit(params: ApproveFragmentSplitParams): Promise<{
+        signature: TransactionSignature;
+        parentFragment: PublicKey;
+        splitProposal: PublicKey;
+    }>;
+    createSubFragment(params: CreateSubFragmentParams): Promise<{
+        signature: TransactionSignature;
+        parentFragment: PublicKey;
+        childFragment: PublicKey;
+        splitProposal: PublicKey;
     }>;
     submitFragmentResult(params: SubmitFragmentResultParams): Promise<TransactionSignature>;
     resubmitFragmentResult(params: SubmitFragmentResultParams): Promise<TransactionSignature>;
@@ -90,10 +116,19 @@ export declare class SiliciumLayerSdk {
     fetchJob(job: PublicKey): Promise<unknown>;
     fetchFragment(fragment: PublicKey): Promise<unknown>;
     fetchWorker(workerOrWorkerAccount: PublicKey, isWorkerAccount?: boolean): Promise<unknown>;
+    fetchWorkerReputation(workerOrWorkerAccount: PublicKey, isWorkerAccount?: boolean): Promise<{
+        computeReputation: anchor.BN;
+        verifyReputation: anchor.BN;
+        globalReputation: anchor.BN;
+        reliabilityScore?: number;
+    }>;
+    fetchAllWorkers(): Promise<unknown[]>;
+    fetchFragmentsForJob(job: PublicKey): Promise<unknown[]>;
     fetchVote(vote: PublicKey): Promise<unknown>;
     fetchRoundResolution(roundResolution: PublicKey): Promise<unknown>;
     fetchResult(result: PublicKey): Promise<unknown>;
     fetchTreasuryState(treasuryState: PublicKey): Promise<unknown>;
+    fetchSplitProposal(splitProposal: PublicKey): Promise<unknown>;
     fetchStakingPool(pool: PublicKey): Promise<unknown>;
     fetchNetworkStaker(stakerOrOwner: PublicKey, mint?: PublicKey): Promise<unknown>;
 }

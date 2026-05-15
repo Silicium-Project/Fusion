@@ -6,7 +6,7 @@ use crate::{
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
-        reputation::record_claim_timeout,
+        reputation::{update_compute_reputation, ReputationEvent},
         worker::Worker,
     },
 };
@@ -66,7 +66,10 @@ pub fn handler(ctx: Context<ReclaimFragment>, fragment_index: u32) -> Result<()>
     let previous_worker = f.assigned_worker;
     let round = f.round;
 
-    record_claim_timeout(&mut ctx.accounts.previous_worker_account);
+    update_compute_reputation(
+        &mut ctx.accounts.previous_worker_account,
+        ReputationEvent::LateSubmission,
+    );
 
     ctx.accounts.previous_worker_account.active_claims =
         ctx.accounts.previous_worker_account.active_claims.saturating_sub(1);

@@ -10,6 +10,25 @@ export interface CreateSdkParams {
   program: IdlProgram;
 }
 
+export interface WorkerReputationSnapshot {
+  computeReputation: anchor.BN;
+  verifyReputation: anchor.BN;
+  globalReputation: anchor.BN;
+  reliabilityScore?: number;
+  computeAlphaLong?: anchor.BN;
+  computeBetaLong?: anchor.BN;
+  computeAlphaShort?: anchor.BN;
+  computeBetaShort?: anchor.BN;
+  verifyAlphaLong?: anchor.BN;
+  verifyBetaLong?: anchor.BN;
+  verifyAlphaShort?: anchor.BN;
+  verifyBetaShort?: anchor.BN;
+  computeFraudStrikes?: number;
+  verifyFraudStrikes?: number;
+  fraudStrikes?: number;
+  errorStrikes?: number;
+}
+
 export interface CreateJobParams {
   client?: PublicKey;
   mint: PublicKey;
@@ -164,6 +183,44 @@ export interface WithdrawUnstakedParams {
   signers?: Signer[];
 }
 
+
+export interface ProposeFragmentSplitParams {
+  splitter?: PublicKey;
+  job: PublicKey;
+  parentFragment?: PublicKey;
+  parentFragmentIndex: number;
+  manifestHash: Hash32;
+  childCount: number;
+  round?: number;
+  signers?: Signer[];
+}
+
+export interface ApproveFragmentSplitParams {
+  authority?: PublicKey;
+  job: PublicKey;
+  parentFragment?: PublicKey;
+  parentFragmentIndex: number;
+  splitProposal?: PublicKey;
+  round?: number;
+  approve: boolean;
+  signers?: Signer[];
+}
+
+export interface CreateSubFragmentParams {
+  payer?: PublicKey;
+  job: PublicKey;
+  parentFragment?: PublicKey;
+  parentFragmentIndex: number;
+  splitProposal?: PublicKey;
+  round?: number;
+  childFragmentIndex: number;
+  requiredComputeReputation: Amount;
+  requiredStake: Amount;
+  complexityScore: number;
+  inputHash: Hash32;
+  signers?: Signer[];
+}
+
 export type SdkEventName =
   | "jobCreated"
   | "workerRegistered"
@@ -178,7 +235,13 @@ export type SdkEventName =
   | "jobFinalized"
   | "jobCancelled"
   | "voteSlashed"
-  | "workerReputationUpdated"
+  | "dualReputationUpdated"
+  | "bayesianReputationUpdated"
+  | "fragmentSplitProposed"
+  | "fragmentSplitApproved"
+  | "fragmentSplitRejected"
+  | "subFragmentCreated"
+  | "fragmentSplitCompleted"
   | "stakingPoolInitialized"
   | "networkStakeDeposited"
   | "stakingRewardsFunded"
@@ -200,7 +263,13 @@ export const SDK_EVENT_NAMES: SdkEventName[] = [
   "jobFinalized",
   "jobCancelled",
   "voteSlashed",
-  "workerReputationUpdated",
+  "dualReputationUpdated",
+  "bayesianReputationUpdated",
+  "fragmentSplitProposed",
+  "fragmentSplitApproved",
+  "fragmentSplitRejected",
+  "subFragmentCreated",
+  "fragmentSplitCompleted",
   "stakingPoolInitialized",
   "networkStakeDeposited",
   "stakingRewardsFunded",

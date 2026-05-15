@@ -16,5 +16,8 @@
   },
   "devDependencies": {
     "typescript": "^5.8.3"
+  },
+  "resolutions": {
+    "serialize-javascript": "^7.0.5"
   }
 }

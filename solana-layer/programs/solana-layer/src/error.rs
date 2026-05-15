@@ -86,6 +86,12 @@ pub enum SiliciumError {
     #[msg("Worker reputation is too low")]
     ReputationTooLow,
 
+    #[msg("Compute reputation is too low")]
+    ComputeReputationTooLow,
+
+    #[msg("Verifier reputation is too low")]
+    VerifierReputationTooLow,
+
     #[msg("Job deposit is too small")]
     DepositTooSmall,
 
@@ -118,4 +124,50 @@ pub enum SiliciumError {
 
     #[msg("Nothing to withdraw")]
     NothingToWithdraw,
+
+    // V2: erreurs dédiées au split et à la sélection réputation/stake.
+    #[msg("Worker stake is too low for this fragment")]
+    StakeTooLow,
+
+    #[msg("This fragment is not a leaf fragment")]
+    NotLeafFragment,
+
+    #[msg("Parent fragment must be a leaf before split")]
+    ParentFragmentNotLeaf,
+
+    #[msg("This fragment has already been split")]
+    FragmentAlreadySplit,
+
+    #[msg("Split is not allowed for this fragment")]
+    SplitNotAllowed,
+
+    #[msg("Split depth limit exceeded")]
+    SplitDepthExceeded,
+
+    #[msg("Split child limit exceeded")]
+    SplitChildLimitExceeded,
+
+    #[msg("Fragment complexity is too low to justify a split")]
+    SplitComplexityTooLow,
+
+    #[msg("Invalid split manifest hash")]
+    InvalidSplitManifest,
+
+    #[msg("Split proposal already exists or is already resolved")]
+    SplitAlreadyResolved,
+
+    #[msg("Split proposal is not approved")]
+    SplitNotApproved,
+
+    #[msg("Split authority is invalid")]
+    InvalidSplitAuthority,
+
+    #[msg("Invalid child fragment index")]
+    InvalidChildFragmentIndex,
+
+    #[msg("Parent fragment is not approved for child creation")]
+    ParentNotSplitApproved,
+
+    #[msg("Split children are not fully created yet")]
+    SplitChildrenIncomplete,
 }

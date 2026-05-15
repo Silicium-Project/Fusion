@@ -10,7 +10,7 @@ use crate::{
         fragment_resolution::FragmentResolution,
         fragment_vote::FragmentVote,
         job::Job,
-        reputation::{record_slash, record_vote_wrong},
+        reputation::{update_verify_reputation, ReputationEvent},
         treasury::Treasury,
         worker::Worker,
     },
@@ -147,6 +147,9 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
         FragmentStatus::Available => false,
         FragmentStatus::Claimed => false,
         FragmentStatus::Submitted => false,
+        FragmentStatus::SplitPending => false,
+        FragmentStatus::SplitApproved => false,
+        FragmentStatus::SplitParent => false,
     };
 
     require!(wrong, SiliciumError::NothingToSlash);
@@ -201,8 +204,7 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
 
     vote.slashed = true;
 
-    record_vote_wrong(verifier_worker);
-    record_slash(verifier_worker);
+    update_verify_reputation(verifier_worker, ReputationEvent::MaliciousVerification);
 
     emit!(VoteSlashed {
         job: ctx.accounts.job.key(),
@@ -217,6 +219,9 @@ pub fn handler(ctx: Context<SlashVote>) -> Result<()> {
             FragmentStatus::Submitted => 2,
             FragmentStatus::Verified => 3,
             FragmentStatus::Rejected => 4,
+            FragmentStatus::SplitPending => 5,
+            FragmentStatus::SplitApproved => 6,
+            FragmentStatus::SplitParent => 7,
         },
         treasury: ctx.accounts.treasury.key(),
     });

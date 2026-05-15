@@ -11,6 +11,7 @@ export declare function stakeAuthPda(programId: PublicKey, workerAccount: Public
 export declare function stakeVaultPda(programId: PublicKey, worker: PublicKey): PublicKey;
 export declare function votePda(programId: PublicKey, fragment: PublicKey, verifier: PublicKey, round: number): PublicKey;
 export declare function roundResolutionPda(programId: PublicKey, fragment: PublicKey, round: number): PublicKey;
+export declare function splitProposalPda(programId: PublicKey, parentFragment: PublicKey, round: number): PublicKey;
 export declare function resultPda(programId: PublicKey, job: PublicKey): PublicKey;
 export declare function treasuryStatePda(programId: PublicKey, mint: PublicKey): PublicKey;
 export declare function treasuryAuthPda(programId: PublicKey, mint: PublicKey): PublicKey;

@@ -1,44 +1,36 @@
 # Silicium Solana Layer SDK
 
-TypeScript SDK for interacting with the Silicium Solana Layer Anchor program.
+TypeScript SDK for interacting with the **Silicium Solana Layer** Anchor program.
 
-The SDK wraps the Anchor program instructions, PDA derivation helpers, account fetch helpers, and program event listeners so the rest of the Silicium backend, frontend, worker nodes, verifier nodes, and off-chain orchestration services can interact with the Solana layer without manually rebuilding every Anchor transaction.
+Current Devnet Program ID:
 
-This SDK is the bridge between:
+```txt
+48Bdt8Dg9FW8n6Mpvvdh6dgTXrsBvBfqMrwhnWQ2WQm1
+```
 
-- the on-chain Solana program;
-- the off-chain Silicium backend;
-- worker nodes;
-- verifier nodes;
-- frontend dashboards;
-- future indexers and orchestration services.
+Keep this value aligned between `Anchor.toml`, `programs/solana-layer/src/lib.rs`, the generated IDL, SDK configuration, smoke tests and dashboard configuration.
 
 ---
 
-## What this SDK does
+## 1. Purpose
 
-The SDK provides a clean TypeScript interface for the on-chain Silicium workflow:
+The SDK wraps the Anchor program instructions, PDA derivation helpers, account fetch helpers and event listeners. It gives the backend, frontend, worker nodes, verifier nodes, dashboard and future indexers a stable TypeScript interface for the Solana layer.
 
-- Register compute/verifier workers.
-- Stake SPL tokens for workers.
-- Create distributed computation jobs.
-- Claim fragments.
-- Reclaim expired fragments.
-- Submit and resubmit fragment results.
-- Vote on fragment validity.
-- Claim verifier rewards.
-- Finalize jobs.
-- Cancel jobs.
-- Initialize the treasury.
-- Slash wrong verifier votes.
-- Initialize the network staking pool.
-- Stake tokens into the network pool.
-- Fund network staking rewards.
-- Claim network staking rewards.
-- Request unstake from the network pool.
-- Withdraw unstaked tokens after cooldown.
-- Fetch all important on-chain accounts.
-- Listen to all program events.
+The SDK supports:
+
+- worker and verifier registration;
+- optional active worker staking;
+- job creation and escrow funding;
+- fragment claim, submit, resubmit and reclaim;
+- verifier voting;
+- verifier reward claiming;
+- controlled sub-fragmentation;
+- job finalization and cancellation;
+- treasury initialization;
+- vote slashing;
+- passive network staking;
+- account fetching;
+- Anchor event subscriptions.
 
 Main class:
 
@@ -46,7 +38,7 @@ Main class:
 SiliciumLayerSdk
 ```
 
-Main entrypoint:
+Typical import:
 
 ```ts
 import { SiliciumLayerSdk } from "./src";
@@ -54,9 +46,9 @@ import { SiliciumLayerSdk } from "./src";
 
 ---
 
-## Recommended project structure
+## 2. Project structure
 
-The SDK is expected to live inside the Anchor project root:
+Recommended location inside the Anchor project:
 
 ```txt
 solana-layer/
@@ -64,7 +56,8 @@ solana-layer/
 ├── programs/
 │   └── solana-layer/
 ├── scripts/
-│   └── dev-local-sdk.sh
+│   ├── devnet_smoke_test.ts
+│   └── devnet_minimal_job_flow.ts
 ├── target/
 │   ├── idl/
 │   │   └── solana_layer.json
@@ -78,302 +71,139 @@ solana-layer/
     │   ├── pdas.ts
     │   └── types.ts
     ├── examples/
-    │   ├── test-sdk.ts
-    │   ├── listen-events.ts
-    │   └── full-flow.ts
     ├── package.json
     ├── tsconfig.json
     └── README.md
 ```
 
-This location is recommended because the SDK depends on the Anchor workspace, the generated IDL, and the deployed local program.
+The SDK should stay close to the Anchor project because it depends on the generated IDL and Anchor account names.
 
 ---
 
-## Requirements
+## 3. Requirements
 
 - Node.js
-- npm or Yarn
+- Yarn or npm
 - Solana CLI
 - Anchor CLI
-- A built and deployed `solana-layer` Anchor program
-- A local wallet configured for Anchor
+- A built Anchor program
+- A wallet configured for Localnet or Devnet
 
 Install dependencies from the SDK folder:
 
 ```bash
-cd /home/thomas/eip/Network/solana-layer/silicium-sdk
-npm install
-```
-
-or:
-
-```bash
+cd silicium-sdk
 yarn install
 ```
 
 Build the SDK:
 
 ```bash
-npm run build
+yarn build
 ```
 
-or:
+After on-chain changes, rebuild the Anchor program first:
 
 ```bash
-yarn build
+cd ../
+anchor build
 ```
 
 ---
 
-## Anchor setup
+## 4. Devnet setup
 
-Before using the SDK, build the Anchor program from the project root:
+Check the deployed program:
 
 ```bash
-cd /home/thomas/eip/Network/solana-layer
+solana program show 48Bdt8Dg9FW8n6Mpvvdh6dgTXrsBvBfqMrwhnWQ2WQm1 --url devnet
+```
+
+Check that local files match:
+
+```bash
+grep -R "declare_id" programs/solana-layer/src/lib.rs
+grep -n "solana_layer" Anchor.toml
+solana address -k target/deploy/solana_layer-keypair.json
+```
+
+If Anchor reports a Program ID mismatch:
+
+```bash
 anchor keys sync
 anchor build
 ```
 
-`anchor keys sync` is recommended before `anchor build` because it makes sure the `declare_id!(...)` in the Rust program matches the local program keypair.
+---
 
-For local testing, run a local validator and deploy the program:
+## 5. Localnet setup
+
+Start a local validator:
 
 ```bash
 solana-test-validator --reset
 ```
 
-Then in another terminal:
+In another terminal:
 
 ```bash
-cd /home/thomas/eip/Network/solana-layer
-
-export ANCHOR_WALLET=~/.config/solana/id.json
-export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
-
-solana config set --url localhost
+cd ~/eip/Network/solana-layer
+solana config set --url http://127.0.0.1:8899
 solana airdrop 10
-
-anchor keys sync
+anchor keys sync --provider.cluster localnet
 anchor build
-anchor deploy
+anchor program deploy target/deploy/solana_layer.so --provider.cluster localnet
 ```
 
-Anchor may show:
-
-```txt
-Warning: 'anchor deploy' is deprecated. Use 'anchor program deploy' instead.
-```
-
-For local development, `anchor deploy` still works, but `anchor program deploy` can also be used.
-
-Set the local Anchor environment variables:
+Set environment variables when using `AnchorProvider.env()`:
 
 ```bash
 export ANCHOR_WALLET=~/.config/solana/id.json
 export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
 ```
 
-If the wallet does not exist yet:
+---
+
+## 6. Smoke tests
+
+Read-only Devnet smoke test:
 
 ```bash
-solana-keygen new --outfile ~/.config/solana/id.json
+cd ~/eip/Network/solana-layer
+anchor build
+npx ts-node scripts/devnet_smoke_test.ts
 ```
 
-Airdrop local SOL:
+Write Devnet smoke test:
 
 ```bash
-solana airdrop 10 --url http://127.0.0.1:8899
+npx ts-node scripts/devnet_smoke_test.ts --write
+```
+
+Minimal Devnet job flow:
+
+```bash
+npx ts-node scripts/devnet_minimal_job_flow.ts
+```
+
+The minimal job flow uses:
+
+```txt
+fresh compute worker
+fresh verifier 1
+fresh verifier 2
+fragment_quorum = 2
+verifier_reward_budget >= verifier_reward_per_vote * 2
 ```
 
 ---
 
-## One-command local SDK test
-
-The project includes a helper script:
-
-```bash
-scripts/dev-local-sdk.sh
-```
-
-Run it from the Anchor project root:
-
-```bash
-cd /home/thomas/eip/Network/solana-layer
-./scripts/dev-local-sdk.sh
-```
-
-The script does the full local setup:
-
-```txt
-1. Starts solana-test-validator --reset.
-2. Configures Solana localnet.
-3. Airdrops SOL to the local wallet.
-4. Runs anchor keys sync.
-5. Builds the Anchor program.
-6. Deploys the Anchor program.
-7. Installs SDK dependencies if needed.
-8. Runs silicium-sdk/examples/full-flow.ts.
-9. Stops the local validator when finished.
-```
-
-The script should be launched from the Anchor project root:
-
-```txt
-/home/thomas/eip/Network/solana-layer
-```
-
-not from inside `silicium-sdk/`.
-
----
-
-## Included examples
-
-### `test-sdk.ts`
-
-Minimal connection test.
-
-It checks that the SDK can:
-
-- load the Anchor provider;
-- load the Solana program;
-- derive the worker PDA;
-- register a worker if it does not already exist;
-- fetch the worker account.
-
-Run:
-
-```bash
-cd /home/thomas/eip/Network/solana-layer
-
-export ANCHOR_WALLET=~/.config/solana/id.json
-export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
-
-npx ts-node silicium-sdk/examples/test-sdk.ts
-```
-
-Expected result:
-
-```txt
-SDK loaded
-Wallet: <wallet public key>
-Program: <program id>
-Expected worker PDA: <worker PDA>
-Worker data: ...
-```
-
----
-
-### `listen-events.ts`
-
-Event listener for the Solana layer.
-
-It subscribes to all supported Anchor events through:
+## 7. SDK initialization
 
 ```ts
-sdk.events.onAll(...)
-```
+import * as anchor from "@coral-xyz/anchor";
+import { SiliciumLayerSdk } from "./src";
 
-Run it in one terminal:
-
-```bash
-cd /home/thomas/eip/Network/solana-layer
-
-export ANCHOR_WALLET=~/.config/solana/id.json
-export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
-
-npx ts-node silicium-sdk/examples/listen-events.ts
-```
-
-Then trigger transactions from another terminal, for example:
-
-```bash
-npx ts-node silicium-sdk/examples/test-sdk.ts
-```
-
-You should see logs like:
-
-```txt
-================ EVENT ================
-name: workerRegistered
-slot: ...
-signature: ...
-...
-=======================================
-```
-
-This file is the recommended starting point for a future backend indexer.
-
----
-
-### `full-flow.ts`
-
-Complete local integration flow.
-
-It validates the main Solana layer workflow:
-
-```txt
-register compute worker
-register verifier 1
-register verifier 2
-stake compute worker
-stake verifier 1
-stake verifier 2
-create job
-claim fragment
-submit fragment result
-vote verifier 1
-vote verifier 2
-fragment verified
-claim verifier 1 reward
-claim verifier 2 reward
-finalize job
-init staking pool
-stake network
-fund staking rewards
-claim staking reward
-request unstake
-withdraw unstaked if cooldown allows it
-fetch final on-chain accounts
-```
-
-Run:
-
-```bash
-cd /home/thomas/eip/Network/solana-layer
-./scripts/dev-local-sdk.sh
-```
-
-or, if localnet is already running and the program is deployed:
-
-```bash
-cd /home/thomas/eip/Network/solana-layer
-
-export ANCHOR_WALLET=~/.config/solana/id.json
-export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
-
-npx ts-node silicium-sdk/examples/full-flow.ts
-```
-
-Important local test amounts used by the full flow:
-
-```txt
-job reward per fragment: 1_000_000
-verifier reward per vote: 100_000
-fragment quorum: 2
-network stake amount: 1_000_000
-```
-
-These values are intentionally high enough to pass the on-chain minimum deposit and minimum staking checks in local tests.
-
----
-
-## SDK initialization
-
-The SDK is initialized from an Anchor provider and an Anchor program instance:
-
-```ts
 const provider = anchor.AnchorProvider.env();
 anchor.setProvider(provider);
 
@@ -381,7 +211,7 @@ const program = anchor.workspace.SolanaLayer;
 const sdk = SiliciumLayerSdk.fromWorkspace(provider, program);
 ```
 
-The SDK stores:
+The SDK exposes:
 
 ```ts
 sdk.provider
@@ -391,7 +221,7 @@ sdk.events
 sdk.pdas
 ```
 
-The connected wallet can be accessed with:
+Wallet:
 
 ```ts
 const wallet = sdk.walletPubkey();
@@ -399,13 +229,51 @@ const wallet = sdk.walletPubkey();
 
 ---
 
-## PDA helpers
+## 8. Worker reputation fields
+
+A worker account exposes three role-specific reputation values:
+
+```ts
+worker.computeReputation
+worker.verifyReputation
+worker.globalReputation
+```
+
+Recommended fetch helper:
+
+```ts
+const workerAccount = sdk.pdas.worker(owner);
+const worker = await sdk.fetchWorker(workerAccount, true);
+
+console.log(worker.computeReputation.toString());
+console.log(worker.verifyReputation.toString());
+console.log(worker.globalReputation.toString());
+```
+
+Or:
+
+```ts
+const reputation = await sdk.fetchWorkerReputation(owner);
+```
+
+Neutral bootstrap values:
+
+```txt
+compute_reputation = 5000
+verify_reputation  = 5000
+global_reputation  = 5000
+```
+
+---
+
+## 9. PDA helpers
 
 The SDK exposes PDA helpers through `sdk.pdas`:
 
 ```ts
 const job = sdk.pdas.job(client, jobId);
 const fragment = sdk.pdas.fragment(job, fragmentIndex);
+const splitProposal = sdk.pdas.splitProposal(parentFragment);
 const worker = sdk.pdas.worker(workerPublicKey);
 const escrowAuth = sdk.pdas.escrowAuth(job);
 const stakeAuth = sdk.pdas.stakeAuth(workerAccount);
@@ -420,21 +288,21 @@ const stakingPoolAuth = sdk.pdas.stakingPoolAuth(mint);
 const networkStaker = sdk.pdas.networkStaker(owner, mint);
 ```
 
-These helpers should be used by the backend/frontend instead of manually deriving addresses everywhere.
+Use PDA helpers instead of manually rebuilding seeds in frontend/backend code.
 
 ---
 
-## Main instructions
+## 10. Main instruction helpers
 
 ### Register a worker
 
-Registers a wallet as a worker with compute and verify roles.
+Registers the signer as both compute-capable and verify-capable by default.
 
 ```ts
-const sig = await sdk.registerWorker();
+await sdk.registerWorker();
 ```
 
-Or register another signer:
+Another signer:
 
 ```ts
 await sdk.registerWorker({
@@ -443,30 +311,17 @@ await sdk.registerWorker({
 });
 ```
 
-Fetch the worker account:
+The worker starts with neutral role-specific reputation:
 
-```ts
-const workerAccount = sdk.pdas.worker(wallet.publicKey);
-const worker = await sdk.fetchWorker(workerAccount, true);
+```txt
+compute = 5000
+verify  = 5000
+global  = 5000
 ```
-
-You can also fetch by owner wallet directly:
-
-```ts
-const worker = await sdk.fetchWorker(wallet.publicKey);
-```
-
-Important: if you already pass the worker PDA, use:
-
-```ts
-await sdk.fetchWorker(workerAccount, true);
-```
-
----
 
 ### Stake worker tokens
 
-Stakes SPL tokens for a registered worker.
+Active worker staking is optional for bootstrap fragments and useful for higher-risk fragments, split proposal eligibility and economic security.
 
 ```ts
 await sdk.stakeWorker({
@@ -475,30 +330,8 @@ await sdk.stakeWorker({
   amount: 1_000_000,
 });
 ```
-
-Or stake for another signer:
-
-```ts
-await sdk.stakeWorker({
-  worker: workerKeypair.publicKey,
-  workerToken,
-  mint,
-  amount: 1_000_000,
-  signers: [workerKeypair],
-});
-```
-
-The SDK derives:
-
-- worker account PDA;
-- stake authority PDA;
-- stake vault PDA.
-
----
 
 ### Create a job
-
-Creates a distributed computation job and funds the escrow.
 
 ```ts
 const escrow = Keypair.generate();
@@ -517,31 +350,14 @@ const created = await sdk.createJob({
 });
 ```
 
-The SDK returns useful addresses:
-
-```ts
-created.signature
-created.job
-```
-
-The SDK derives:
-
-- job PDA;
-- escrow authority PDA.
-
-The total escrow deposit is:
+Requirements:
 
 ```txt
-expectedFragments * rewardPerFragment + verifierRewardBudget
+fragmentQuorum >= 2
+verifierRewardBudget >= expectedFragments * fragmentQuorum * verifierRewardPerVote
 ```
 
-Make sure this amount is greater than the on-chain `MIN_JOB_DEPOSIT`.
-
----
-
 ### Claim a fragment
-
-Claims an available fragment for a worker.
 
 ```ts
 const claimed = await sdk.claimFragment({
@@ -553,38 +369,9 @@ const claimed = await sdk.claimFragment({
 });
 ```
 
-The SDK returns:
+Access control uses `computeReputation` plus the fragment's `requiredComputeReputation` and `requiredStake` policy.
 
-```ts
-claimed.signature
-claimed.fragment
-```
-
-The SDK derives:
-
-- fragment PDA;
-- worker account PDA.
-
----
-
-### Reclaim an expired fragment
-
-Makes an expired claimed fragment available again.
-
-```ts
-await sdk.reclaimFragment({
-  job,
-  fragmentIndex: 0,
-});
-```
-
-This is useful for backend schedulers that detect abandoned work.
-
----
-
-### Submit a fragment result
-
-Submits a result hash and proof reference for a claimed fragment.
+### Submit a result
 
 ```ts
 await sdk.submitFragmentResult({
@@ -598,20 +385,9 @@ await sdk.submitFragmentResult({
 });
 ```
 
-`resultHash` and `proofRef` must be 32-byte values.
+`resultHash` and `proofRef` are 32-byte values. The heavy result stays off-chain.
 
-Example:
-
-```ts
-const resultHash = new Uint8Array(32);
-const proofRef = new Uint8Array(32);
-```
-
----
-
-### Resubmit a rejected fragment result
-
-Resubmits a result after the previous one was rejected.
+### Resubmit a rejected result
 
 ```ts
 await sdk.resubmitFragmentResult({
@@ -625,20 +401,10 @@ await sdk.resubmitFragmentResult({
 });
 ```
 
-The emitted `fragmentSubmitted` event includes:
-
-```ts
-isResubmission: true
-```
-
----
-
 ### Vote on a fragment
 
-A verifier votes on a submitted fragment.
-
 ```ts
-const voteResult = await sdk.voteFragment({
+await sdk.voteFragment({
   verifier: verifier.publicKey,
   job,
   fragment,
@@ -649,18 +415,9 @@ const voteResult = await sdk.voteFragment({
 });
 ```
 
-The vote can trigger one of two outcomes depending on quorum:
-
-- `fragmentVerified`
-- `fragmentRejected`
-
-For the local full flow, `fragmentQuorum` is set to `2`, so two verifiers must vote `true` before the fragment is verified.
-
----
+Access control uses `verifyReputation`. A verifier must not be the submitting worker or the job client.
 
 ### Claim verifier reward
-
-Claims the verifier reward for an eligible vote.
 
 ```ts
 await sdk.claimVerifierReward({
@@ -673,16 +430,12 @@ await sdk.claimVerifierReward({
 });
 ```
 
-A verifier can only claim if the vote is part of the winning resolution.
-
----
+A correct winning verifier reward increases `verifyReputation`.
 
 ### Finalize a job
 
-Finalizes a job once all fragments are verified and eligible verifier rewards have been claimed.
-
 ```ts
-const finalized = await sdk.finalizeJob({
+await sdk.finalizeJob({
   job,
   escrow,
   clientToken,
@@ -691,20 +444,9 @@ const finalized = await sdk.finalizeJob({
 });
 ```
 
-The SDK returns:
-
-```ts
-finalized.signature
-finalized.result
-```
-
-The SDK derives the job result PDA.
-
----
+`outputUri` points to the off-chain final result. The client verifies it with `finalHash`.
 
 ### Cancel a job
-
-Cancels a job and refunds the remaining escrow amount to the client.
 
 ```ts
 await sdk.cancelJob({
@@ -716,143 +458,71 @@ await sdk.cancelJob({
 
 ---
 
-### Initialize treasury
+## 11. Split and sub-fragment helpers
 
-Initializes the treasury accounts for a mint.
-
-```ts
-await sdk.initTreasury({
-  mint,
-  treasury,
-});
-```
-
-The SDK derives:
-
-- treasury state PDA;
-- treasury authority PDA.
-
----
-
-### Slash a wrong vote
-
-Slashes a verifier for a wrong vote.
+### Propose a split
 
 ```ts
-await sdk.slashVote({
+await sdk.proposeFragmentSplit({
+  splitter: splitter.publicKey,
   job,
-  fragment,
-  vote,
-  verifierWorker,
-  verifierStakeVault,
-  treasuryState,
-  treasury,
+  parentFragment,
+  manifestHash,
+  childCount: 4,
+  signers: [splitter],
 });
 ```
 
----
+The manifest itself stays off-chain. Only the 32-byte `manifestHash` is stored on-chain.
 
-## Network staking instructions
-
-The SDK also exposes the network-level staking flow.
-
-This is different from worker staking:
-
-- worker staking secures compute/verifier behavior;
-- network staking participates in the staking pool and can receive staking rewards.
-
----
-
-### Initialize staking pool
+### Approve a split
 
 ```ts
-const stakeVault = Keypair.generate();
-const rewardVault = Keypair.generate();
-
-const poolCreated = await sdk.initStakingPool({
-  mint,
-  stakeVault,
-  rewardVault,
+await sdk.approveFragmentSplit({
+  job,
+  parentFragment,
+  splitProposal,
 });
 ```
 
-The SDK returns:
+### Create a sub-fragment
 
 ```ts
-poolCreated.signature
-poolCreated.pool
-```
-
----
-
-### Stake into the network pool
-
-```ts
-await sdk.stakeNetwork({
-  mint,
-  ownerToken,
-  amount: 1_000_000,
+await sdk.createSubFragment({
+  job,
+  parentFragment,
+  splitProposal,
+  childIndex,
+  inputHash,
+  proofRef,
+  complexityScore,
+  requiredComputeReputation,
+  requiredStake,
 });
 ```
 
-The amount must be greater than or equal to the on-chain `MIN_NETWORK_STAKE`.
-
-For local tests, `1_000_000` is recommended.
+A `SplitParent` cannot be claimed directly. Only leaf fragments can be claimed and submitted.
 
 ---
 
-### Fund staking rewards
+## 12. Passive network staking helpers
+
+Passive staking is separate from worker/verifier active participation.
 
 ```ts
-await sdk.fundStakingRewards({
-  mint,
-  funderToken,
-  amount: 100_000,
-});
+await sdk.initStakingPool({ mint, stakeVault, rewardVault });
+await sdk.stakeNetwork({ mint, ownerToken, amount: 1_000_000 });
+await sdk.fundStakingRewards({ mint, funderToken, amount: 100_000 });
+await sdk.claimStakingReward({ mint, ownerRewardToken });
+await sdk.requestUnstake({ mint, amount: 500_000 });
+await sdk.withdrawUnstaked({ mint, ownerToken });
 ```
+
+Passive stakers do not need a `Worker` account.
 
 ---
 
-### Claim staking reward
-
-```ts
-await sdk.claimStakingReward({
-  mint,
-  ownerRewardToken,
-});
-```
-
----
-
-### Request unstake
-
-```ts
-await sdk.requestUnstake({
-  mint,
-  amount: 500_000,
-});
-```
-
----
-
-### Withdraw unstaked tokens
-
-```ts
-await sdk.withdrawUnstaked({
-  mint,
-  ownerToken,
-});
-```
-
-This may fail if the unstake cooldown is still active.
-
-For local tests, either wait for the cooldown or reduce `UNSTAKE_COOLDOWN_SECS` in the on-chain program.
-
----
-
-## Account fetch helpers
-
-The SDK exposes helpers to fetch Anchor accounts:
+## 13. Account fetch helpers
 
 ```ts
 const jobData = await sdk.fetchJob(job);
@@ -865,6 +535,8 @@ const resultData = await sdk.fetchResult(result);
 const treasuryData = await sdk.fetchTreasuryState(mint);
 const stakingPoolData = await sdk.fetchStakingPool(pool);
 const networkStakerData = await sdk.fetchNetworkStaker(owner, mint);
+const allWorkers = await sdk.fetchAllWorkers();
+const jobFragments = await sdk.fetchFragmentsForJob(job);
 ```
 
 `fetchWorker` has two modes:
@@ -874,49 +546,40 @@ await sdk.fetchWorker(workerOwnerPublicKey);
 await sdk.fetchWorker(workerAccountPda, true);
 ```
 
-Use the second form when you already derived the worker PDA.
+Use the second form when you already have the worker PDA.
 
 ---
 
-## Event listeners
-
-The SDK wraps Anchor event listeners with `sdk.events`.
+## 14. Event listeners
 
 Listen to one event:
 
 ```ts
-const sub = sdk.events.on("workerRegistered", (event, slot, signature) => {
-  console.log("workerRegistered", event, slot, signature);
+const sub = sdk.events.on("dualReputationUpdated", (event, slot, signature) => {
+  console.log(event.newComputeReputation.toString());
 });
-```
-
-Remove a listener:
-
-```ts
-await sub.remove();
 ```
 
 Listen to all events:
 
 ```ts
 const subscriptions = sdk.events.onAll((name, event, slot, signature) => {
-  console.log("event", name, event, slot, signature);
+  console.log(name, event, slot, signature);
 });
 ```
 
-Remove all listeners:
+Remove all:
 
 ```ts
 await Promise.all(subscriptions.map((sub) => sub.remove()));
 ```
 
-Supported events:
+Supported SDK event names:
 
 ```txt
 jobCreated
 workerRegistered
 workerStaked
-workerReputationUpdated
 treasuryInitialized
 fragmentClaimed
 fragmentReclaimed
@@ -927,6 +590,13 @@ verifierRewardClaimed
 jobFinalized
 jobCancelled
 voteSlashed
+dualReputationUpdated
+bayesianReputationUpdated
+fragmentSplitProposed
+fragmentSplitApproved
+fragmentSplitRejected
+subFragmentCreated
+fragmentSplitCompleted
 stakingPoolInitialized
 networkStakeDeposited
 stakingRewardsFunded
@@ -935,232 +605,120 @@ networkUnstakeRequested
 networkUnstakeWithdrawn
 ```
 
-The current SDK listens to 20 program events through `onAll()`.
-
 ---
 
-## Typical backend flow
-
-A backend service can use the SDK like this:
+## 15. Typical backend flow
 
 ```txt
 1. Listen to jobCreated.
 2. Fetch the job account.
 3. Store the job in the off-chain database.
-4. Assign or expose available fragments.
+4. Expose available fragments to workers.
 5. Workers call claimFragment.
 6. Backend listens to fragmentClaimed.
 7. Workers execute the real computation off-chain.
-8. Workers submit resultHash and proofRef with submitFragmentResult.
+8. Workers submit resultHash and proofRef.
 9. Backend listens to fragmentSubmitted.
-10. Verifiers fetch the result/proof off-chain and vote with voteFragment.
+10. Verifiers fetch the off-chain result/proof and call voteFragment.
 11. Backend listens to fragmentVerified / fragmentRejected.
-12. Verifiers claim rewards with claimVerifierReward.
-13. Once all fragments are verified and rewards are claimed, call finalizeJob.
-14. Backend indexes jobFinalized for frontend/API users.
+12. Verifiers claim rewards.
+13. When all fragments and verifier rewards are complete, finalizeJob.
+14. Backend indexes jobFinalized for users.
 ```
-
-The event system lets your backend avoid constant polling while still keeping an indexed database in sync with the Solana layer.
 
 ---
 
-## Typical worker node flow
-
-A worker node can use the SDK like this:
+## 16. Typical worker node flow
 
 ```txt
-1. Register itself with registerWorker.
-2. Stake SPL tokens with stakeWorker.
-3. Listen for available jobs from the backend/indexer.
-4. Claim a fragment with claimFragment.
-5. Execute the computation off-chain.
-6. Store output/proof off-chain.
-7. Submit resultHash and proofRef with submitFragmentResult.
-8. Wait for fragmentVerified or fragmentRejected.
-9. If rejected and allowed, resubmit with resubmitFragmentResult.
+1. registerWorker
+2. optionally stakeWorker for better/higher-risk tasks
+3. read available fragments from backend/indexer
+4. claimFragment
+5. compute off-chain
+6. upload result/proof off-chain
+7. submitFragmentResult(resultHash, proofRef)
+8. wait for fragmentVerified or fragmentRejected
+9. resubmit if rejected and allowed
 ```
+
+A worker that calculates well increases `computeReputation`.
 
 ---
 
-## Typical verifier node flow
-
-A verifier node can use the SDK like this:
+## 17. Typical verifier node flow
 
 ```txt
-1. Register itself with registerWorker.
-2. Stake SPL tokens with stakeWorker.
-3. Listen to fragmentSubmitted events.
-4. Fetch the off-chain result/proof using proofRef.
-5. Verify the computation off-chain.
-6. Vote with voteFragment.
-7. If the vote is part of the winning outcome, call claimVerifierReward.
+1. registerWorker
+2. optionally stakeWorker for higher-risk verification work
+3. listen to fragmentSubmitted
+4. fetch off-chain proof/result
+5. verify computation
+6. voteFragment(true/false)
+7. if vote wins, claimVerifierReward
 ```
+
+A verifier that votes correctly and claims rewards increases `verifyReputation`.
 
 ---
 
-## Typical frontend flow
+## 18. Typical frontend flow
 
 A frontend can use the SDK to:
 
 ```txt
-1. Connect a wallet.
-2. Register the wallet as a worker.
-3. Show worker status, reputation and stake amount.
-4. Let a client create a job.
-5. Display job and fragment state.
-6. Subscribe to live program events.
-7. Display staking pool and network staking state.
-```
-
-For production frontend use, the SDK should be bundled with the generated IDL or initialized with an Anchor `Program` created from the IDL.
-
----
-
-## Local testing checklist
-
-From the Anchor project root:
-
-```bash
-export ANCHOR_WALLET=~/.config/solana/id.json
-export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
-```
-
-Run the full local flow:
-
-```bash
-./scripts/dev-local-sdk.sh
-```
-
-Or run steps manually:
-
-```bash
-solana-test-validator --reset
-```
-
-In another terminal:
-
-```bash
-cd /home/thomas/eip/Network/solana-layer
-
-export ANCHOR_WALLET=~/.config/solana/id.json
-export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
-
-solana config set --url localhost
-solana airdrop 10
-anchor keys sync
-anchor build
-anchor deploy
-
-npx ts-node silicium-sdk/examples/full-flow.ts
-```
-
-Run only the connection test:
-
-```bash
-npx ts-node silicium-sdk/examples/test-sdk.ts
-```
-
-Run only the event listener:
-
-```bash
-npx ts-node silicium-sdk/examples/listen-events.ts
+1. connect wallet;
+2. register user as worker/verifier;
+3. show compute / verify / global reputation;
+4. show active stake and passive network stake;
+5. create jobs;
+6. display job and fragment status;
+7. display sub-fragment trees;
+8. listen to live events;
+9. show final output_uri and final_hash.
 ```
 
 ---
 
-## Common errors
+## 19. Hash handling
 
-### `expected environment variable ANCHOR_WALLET is not set`
-
-Set:
-
-```bash
-export ANCHOR_WALLET=~/.config/solana/id.json
-```
-
-Also set:
-
-```bash
-export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
-```
-
----
-
-### `anchor.workspace.SolanaLayer is undefined`
-
-Run the script from the Anchor project root, not from inside the SDK folder:
-
-```bash
-cd /home/thomas/eip/Network/solana-layer
-npx ts-node silicium-sdk/examples/test-sdk.ts
-```
-
----
-
-### Program ID mismatch
-
-Example:
+The SDK should treat hashes as integrity commitments. Heavy data stays off-chain.
 
 ```txt
-Program ID mismatch detected for program 'solana_layer'
-Keypair file has: <program id A>
-Source code has:  <program id B>
+on-chain  = hash + state + payments + votes
+off-chain = files + inputs + outputs + proofs
 ```
 
-Fix from the Anchor project root:
+Recommended pattern:
 
-```bash
-cd /home/thomas/eip/Network/solana-layer
-anchor keys sync
-anchor build
+```ts
+import { createHash } from "crypto";
+
+export function sha256Bytes(data: Buffer | Uint8Array | string): number[] {
+  const buffer = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  return Array.from(createHash("sha256").update(buffer).digest());
+}
 ```
 
-Verify:
-
-```bash
-anchor keys list
-grep -R "declare_id" programs/solana-layer/src/lib.rs
-```
-
-The program ID used by the SDK must match the deployed program ID.
+Do not rely on `hash(uri)` to prove file contents. Use `hash(file_content)` or a canonical manifest containing the URI, content hash, size and MIME type.
 
 ---
 
-### `Account does not exist or has no data`
-
-Make sure you are fetching the correct PDA.
-
-For workers:
-
-```ts
-await sdk.fetchWorker(wallet.publicKey);
-```
-
-or:
-
-```ts
-const workerAccount = sdk.pdas.worker(wallet.publicKey);
-await sdk.fetchWorker(workerAccount, true);
-```
-
-Do not pass a worker PDA without the second argument `true`, otherwise the SDK will derive a PDA from the PDA and fetch the wrong address.
-
----
+## 20. Common errors
 
 ### `InvalidParams` in `create_job.rs`
-
-This usually means one of the job parameters is below an on-chain minimum.
 
 Common causes:
 
 ```txt
-fragmentQuorum too low
+fragmentQuorum < 2
 expectedFragments invalid
-deadline too short or invalid
-verifierRewardBudget inconsistent
+verifierRewardBudget too small
+deadline too short or too long
+total deposit below MIN_JOB_DEPOSIT
 ```
 
-For local full-flow tests, use:
+Safe test values:
 
 ```ts
 const expectedFragments = 1;
@@ -1170,106 +728,95 @@ const fragmentQuorum = 2;
 const verifierRewardBudget = expectedFragments * fragmentQuorum * verifierRewardPerVote;
 ```
 
+### Program ID mismatch
+
+Run:
+
+```bash
+anchor keys sync
+anchor build
+```
+
+Then verify:
+
+```bash
+grep -R "declare_id" programs/solana-layer/src/lib.rs
+grep -n "solana_layer" Anchor.toml
+```
+
+### Devnet deploy runs out of SOL
+
+Close failed deploy buffers:
+
+```bash
+solana program show --buffers --url devnet
+solana program close BUFFER_ADDRESS --url devnet
+```
+
 ---
 
-### `DepositTooSmall` in `create_job.rs`
+## 21. Production notes
 
-The total job deposit is below the on-chain minimum.
+Before production:
 
-The deposit is:
+- use a dedicated RPC provider;
+- avoid hardcoding Program IDs in build artifacts;
+- keep IDL and SDK versions aligned;
+- add an event indexer;
+- store job inputs/outputs/proofs in durable off-chain storage;
+- audit all slashing and reward logic;
+- make split thresholds stricter than local test values;
+- increase cooldown and TTL constants;
+- keep bootstrap stake low, but restrict high-risk fragments by `requiredStake` and `requiredComputeReputation`.
+
+---
+
+## 22. Validation status
+
+Validated locally:
 
 ```txt
-expectedFragments * rewardPerFragment + verifierRewardBudget
-```
-
-Use larger test values, for example:
-
-```ts
-const rewardPerFragment = 1_000_000;
-const verifierRewardPerVote = 100_000;
-const fragmentQuorum = 2;
-const verifierRewardBudget = 200_000;
-```
-
-Make sure the client token account has enough tokens.
-
----
-
-### `InvalidAmount` in `stake_network.rs`
-
-The network stake amount is below the on-chain `MIN_NETWORK_STAKE`.
-
-Use a larger amount in local tests:
-
-```ts
-await sdk.stakeNetwork({
-  mint,
-  ownerToken: clientToken,
-  amount: 1_000_000,
-});
-```
-
----
-
-### `withdrawUnstaked` fails
-
-The unstake cooldown is probably still active.
-
-This is expected in local tests unless you wait for the cooldown or reduce the cooldown constant in the on-chain program.
-
----
-
-### `Type instantiation is excessively deep and possibly infinite`
-
-This is a TypeScript/Anchor typing issue. The SDK avoids it internally by casting Anchor `methods` and `account` namespaces where needed.
-
----
-
-## Notes for production
-
-Before using this SDK in production, consider:
-
-- Replace test TTL values in the on-chain program with production values.
-- Use stricter generated Anchor types instead of `any` where possible.
-- Add integration tests for every SDK method.
-- Add retry/confirmation helpers around important transactions.
-- Add structured error mapping for Anchor errors.
-- Add backend indexing for all events.
-- Store off-chain job inputs, outputs and proofs in a durable storage layer.
-- Validate `proofRef` and `resultHash` consistently across worker/verifier nodes.
-- Pin package versions for Anchor, Solana Web3, and SPL Token.
-- Avoid hardcoding program IDs in production builds.
-- Keep the SDK program ID aligned with `anchor keys list` and `declare_id!(...)`.
-
----
-
-## Current local validation status
-
-The following flow has been validated locally through the SDK:
-
-```txt
-SDK initialization OK
-Anchor event listener OK
 registerWorker OK
+bootstrap participation without active stake OK
 stakeWorker OK
-createJob OK
+createJob quorum 2 OK
 claimFragment OK
 submitFragmentResult OK
-voteFragment with quorum 2 OK
+voteFragment with 2 verifiers OK
 fragmentVerified OK
-claimVerifierReward OK
+fragmentRejected OK
+resubmit after rejection OK
+reclaim expired claim OK
+computeReputation increase/decrease OK
+verifyReputation increase/decrease OK
+weighted verifier penalty OK
+split proposal / approval / child creation OK
+SplitParent cannot be claimed OK
+passive staking OK
+slash wrong vote OK
 finalizeJob OK
-initStakingPool OK
-stakeNetwork OK
-fundStakingRewards OK
-claimStakingReward OK
-requestUnstake OK
 ```
-
-`withdrawUnstaked` depends on the unstake cooldown and may require waiting or lowering the cooldown for local tests.
 
 ---
 
-## License
+## 23. Milestones
 
-Internal project SDK for the Silicium Solana Layer.
+Milestones are planned for the validation layer after the current hash/proof-ref workflow.
+
+Current validation uses:
+
+```txt
+result_hash
+proof_ref
+vote_fragment(choice)
+```
+
+A future milestone workflow can add:
+
+```txt
+milestone_root
+milestone_count
+challenge_seed
+validate_fragment / submit_milestone_check
+```
+

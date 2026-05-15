@@ -12,7 +12,11 @@ if [ ! -f "$ANCHOR_WALLET" ]; then
   solana-keygen new --outfile "$ANCHOR_WALLET" --no-bip39-passphrase
 fi
 
-VALIDATOR_LOG="/tmp/silicium-solana-test-validator.log"
+LOG_DIR="${SILICIUM_LOG_DIR:-/tmp}"
+mkdir -p "$LOG_DIR"
+
+TIMESTAMP="$(date +"%Y%m%d-%H%M%S")"
+VALIDATOR_LOG="${VALIDATOR_LOG:-$LOG_DIR/silicium-solana-test-validator-$TIMESTAMP.log}"
 VALIDATOR_PID=""
 
 cleanup() {
@@ -41,14 +45,14 @@ echo "Airdropping SOL to local wallet..."
 solana airdrop 20 >/dev/null || true
 
 echo "Syncing Anchor keys..."
-anchor keys sync
+anchor keys sync --provider.cluster localnet
 
 echo "Building Anchor program..."
 anchor build
 
 echo "Deploying Anchor program..."
 if command -v anchor >/dev/null 2>&1; then
-  anchor program deploy target/deploy/solana_layer.so
+  anchor program deploy target/deploy/solana_layer.so --provider.cluster localnet
 else
   echo "Anchor command not found. Install Anchor first."
   exit 1
