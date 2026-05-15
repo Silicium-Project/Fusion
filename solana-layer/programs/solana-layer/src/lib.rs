@@ -8,7 +8,7 @@ pub mod state;
 
 pub use instructions::*;
 
-declare_id!("HaAd4SR4nF3dNwrhRBcks8RDMiibHjkq7XLAg9GevMSG");
+declare_id!("7njCqLPBYycdWfzSDKuSbh4xU9FWtCW5BBdTALJB8s69");
 
 #[program]
 pub mod solana_layer {
@@ -157,7 +157,7 @@ pub mod solana_layer {
     pub fn create_sub_fragment(
         ctx: Context<CreateSubFragment>,
         child_fragment_index: u32,
-        required_reputation: i64,
+        required_compute_reputation: i64,
         required_stake: u64,
         complexity_score: u32,
         input_hash: [u8; 32],
@@ -165,7 +165,7 @@ pub mod solana_layer {
         crate::instructions::create_sub_fragment::handler(
             ctx,
             child_fragment_index,
-            required_reputation,
+            required_compute_reputation,
             required_stake,
             complexity_score,
             input_hash,

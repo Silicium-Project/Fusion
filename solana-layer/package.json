@@ -2,7 +2,9 @@
   "license": "ISC",
   "scripts": {
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
-    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
+    "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check",
+    "docs:doxygen": "doxygen docs/doxygen/Doxyfile",
+    "docs:open": "xdg-open docs/generated/doxygen/html/index.html"
   },
   "dependencies": {
     "@anchor-lang/core": "^0.32.1",

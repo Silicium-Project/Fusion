@@ -23,7 +23,7 @@ pub struct ProposeFragmentSplit<'info> {
         bump = splitter_worker.bump,
         constraint = splitter_worker.owner == splitter.key() @ SiliciumError::NotAuthorized,
         constraint = splitter_worker.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
-        constraint = splitter_worker.reputation >= SPLIT_MIN_REPUTATION @ SiliciumError::ReputationTooLow,
+        constraint = splitter_worker.compute_reputation >= SPLIT_MIN_REPUTATION @ SiliciumError::ComputeReputationTooLow,
         constraint = splitter_worker.stake_amount >= SPLIT_MIN_STAKE @ SiliciumError::StakeTooLow
     )]
     pub splitter_worker: Account<'info, Worker>,

@@ -128,6 +128,14 @@ function reputationToNumber(value: any): number {
   return Number(value.toString());
 }
 
+function workerRep(account: any, field: "computeReputation" | "verifyReputation" | "globalReputation"): number {
+  if (account[field] === undefined || account[field] === null) {
+    throw new Error(`Missing worker field ${field}. Did you rebuild the IDL after V2.5?`);
+  }
+
+  return reputationToNumber(account[field]);
+}
+
 async function airdrop(pubkey: PublicKey, lamports = 2_000_000_000) {
   await provider.connection.requestAirdrop(pubkey, lamports);
   await sleep(1000);
@@ -1364,7 +1372,7 @@ await program.methods
   });
 
 
-  it("initializes worker reputation at 5000", async () => {
+  it("initializes worker role-specific reputations at 5000", async () => {
     const worker = anchor.web3.Keypair.generate();
 
     await airdrop(worker.publicKey);
@@ -1372,7 +1380,9 @@ await program.methods
     const workerAccount = await registerWorker(worker);
     const account = await program.account.worker.fetch(workerAccount);
 
-    assert.equal(reputationToNumber(account.reputation), 5000);
+    assert.equal(workerRep(account, "computeReputation"), 5000);
+    assert.equal(workerRep(account, "verifyReputation"), 5000);
+    assert.equal(workerRep(account, "globalReputation"), 5000);
     assert.deepEqual(account.status, { active: {} });
     assert.equal(account.totalSubmitted, 0);
     assert.equal(account.totalVerified, 0);
@@ -1388,7 +1398,8 @@ await program.methods
     const { job, escrow } = await createTestJob(jobId, 1, 2);
 
     const before = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(before.reputation), 5000);
+    assert.equal(workerRep(before, "computeReputation"), 5000);
+    assert.equal(workerRep(before, "verifyReputation"), 5000);
 
     const fragment = await claimAndSubmitFragment(
       computeWorker.keypair,
@@ -1411,7 +1422,7 @@ await program.methods
     );
 
     const mid = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(mid.reputation), 5000);
+    assert.equal(workerRep(mid, "computeReputation"), 5000);
 
     await voteOnFragment(
       verifier2.keypair,
@@ -1427,7 +1438,9 @@ await program.methods
     const fragmentAfter = await program.account.fragment.fetch(fragment);
 
     assert.deepEqual(fragmentAfter.status, { verified: {} });
-    assert.isAbove(reputationToNumber(after.reputation), reputationToNumber(before.reputation));
+    assert.isAbove(workerRep(after, "computeReputation"), workerRep(before, "computeReputation"));
+    assert.equal(workerRep(after, "verifyReputation"), workerRep(before, "verifyReputation"));
+    assert.isAbove(workerRep(after, "globalReputation"), workerRep(before, "globalReputation"));
     assert.equal(after.totalVerified, 1);
   });
 
@@ -1440,7 +1453,8 @@ await program.methods
     const { job, escrow } = await createTestJob(jobId, 1, 2);
 
     const before = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(before.reputation), 5000);
+    assert.equal(workerRep(before, "computeReputation"), 5000);
+    assert.equal(workerRep(before, "verifyReputation"), 5000);
 
     const fragment = await claimAndSubmitFragment(
       computeWorker.keypair,
@@ -1463,7 +1477,7 @@ await program.methods
     );
 
     const mid = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(mid.reputation), 5000);
+    assert.equal(workerRep(mid, "computeReputation"), 5000);
 
     await voteOnFragment(
       verifier2.keypair,
@@ -1479,7 +1493,9 @@ await program.methods
     const fragmentAfter = await program.account.fragment.fetch(fragment);
 
     assert.deepEqual(fragmentAfter.status, { rejected: {} });
-    assert.isBelow(reputationToNumber(after.reputation), reputationToNumber(before.reputation));
+    assert.isBelow(workerRep(after, "computeReputation"), workerRep(before, "computeReputation"));
+    assert.equal(workerRep(after, "verifyReputation"), workerRep(before, "verifyReputation"));
+    assert.isBelow(workerRep(after, "globalReputation"), workerRep(before, "globalReputation"));
     assert.equal(after.totalRejected, 1);
   });
 
@@ -1522,7 +1538,8 @@ await program.methods
     );
 
     const beforeClaim = await program.account.worker.fetch(verifier1.workerAccount);
-    assert.equal(reputationToNumber(beforeClaim.reputation), 5000);
+    assert.equal(workerRep(beforeClaim, "verifyReputation"), 5000);
+    assert.equal(workerRep(beforeClaim, "computeReputation"), 5000);
 
     const fragmentAfter = await program.account.fragment.fetch(fragment);
     const roundResolution = roundResolutionPda(fragment, fragmentAfter.round);
@@ -1546,7 +1563,9 @@ await program.methods
 
     const afterClaim = await program.account.worker.fetch(verifier1.workerAccount);
 
-    assert.isAbove(reputationToNumber(afterClaim.reputation), reputationToNumber(beforeClaim.reputation));
+    assert.isAbove(workerRep(afterClaim, "verifyReputation"), workerRep(beforeClaim, "verifyReputation"));
+    assert.equal(workerRep(afterClaim, "computeReputation"), workerRep(beforeClaim, "computeReputation"));
+    assert.isAbove(workerRep(afterClaim, "globalReputation"), workerRep(beforeClaim, "globalReputation"));
     assert.equal(afterClaim.totalVerified, 1);
   });
 
@@ -1560,7 +1579,7 @@ await program.methods
     const fragment = fragmentPda(job, fragmentIndex);
 
     const before = await program.account.worker.fetch(computeWorker.workerAccount);
-    assert.equal(reputationToNumber(before.reputation), 5000);
+    assert.equal(workerRep(before, "computeReputation"), 5000);
 
     await program.methods
       .claimFragment(fragmentIndex)
@@ -1608,7 +1627,7 @@ await program.methods
     const fragmentAfter = await program.account.fragment.fetch(fragment);
 
     assert.deepEqual(fragmentAfter.status, { available: {} });
-    assert.isBelow(reputationToNumber(after.reputation), reputationToNumber(before.reputation));
+    assert.isBelow(workerRep(after, "computeReputation"), workerRep(before, "computeReputation"));
   });
 
   it("slashes a wrong vote", async () => {
@@ -1832,7 +1851,8 @@ await program.methods
 
     assert.equal(voteAfter.slashed, true);
     assert.equal(workerAfter.stakeAmount.toString(), "900000");
-    assert.isBelow(reputationToNumber(workerAfter.reputation), 5000);
+    assert.isBelow(workerRep(workerAfter, "verifyReputation"), 5000);
+    assert.isBelow(workerRep(workerAfter, "globalReputation"), 5000);
     assert.equal(workerAfter.totalRejected, 1);
 
     assert.equal(

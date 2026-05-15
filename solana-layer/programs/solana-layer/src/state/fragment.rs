@@ -45,7 +45,7 @@ pub struct Fragment {
     pub is_leaf: bool,
 
     // V2: sélection darwinienne.
-    pub required_reputation: i64,
+    pub required_compute_reputation: i64,
     pub required_stake: u64,
     pub complexity_score: u32,
 
@@ -76,7 +76,7 @@ impl Fragment {
         + 32 // split_manifest_hash
         + 32 // splitter_worker
         + 1  // is_leaf
-        + 8  // required_reputation
+        + 8  // required_compute_reputation
         + 8  // required_stake
         + 4  // complexity_score
         + 1; // bump

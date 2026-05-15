@@ -36,7 +36,10 @@ pub const DEFAULT_MAX_FRAGMENT_DEPTH: u8 = 4;
 pub const DEFAULT_MAX_FRAGMENT_MULTIPLIER: u32 = 8;
 pub const DEFAULT_MAX_CHILDREN_PER_FRAGMENT: u16 = 8;
 pub const MAX_CHILDREN_PER_SPLIT: u16 = 8;
-pub const SPLIT_MIN_REPUTATION: i64 = 5_000; // test local: remettre 8_500 en beta/mainnet
+pub const SPLIT_MIN_REPUTATION: i64 = 5_000;
 pub const SPLIT_MIN_STAKE: u64 = 1_000;
-pub const SPLIT_MIN_COMPLEXITY: u32 = 1_000; // test local: remettre 6_000 en beta/mainnet
+pub const SPLIT_MIN_COMPLEXITY: u32 = 1_000;
 pub const DEFAULT_ROOT_COMPLEXITY_SCORE: u32 = 1_000;
+
+// V2.5: role-specific reputation thresholds are implemented in state/reputation.rs.
+// `compute_reputation` gates compute actions and `verify_reputation` gates votes.

@@ -68,7 +68,7 @@ pub struct CreateSubFragment<'info> {
 pub fn handler(
     ctx: Context<CreateSubFragment>,
     child_fragment_index: u32,
-    required_reputation: i64,
+    required_compute_reputation: i64,
     required_stake: u64,
     complexity_score: u32,
     input_hash: [u8; 32],
@@ -80,7 +80,7 @@ pub fn handler(
     require!(child_fragment_index < ctx.accounts.job.max_fragments, SiliciumError::InvalidChildFragmentIndex);
     require!(parent.status == FragmentStatus::SplitApproved, SiliciumError::ParentNotSplitApproved);
     require!(proposal.created_children < proposal.child_count, SiliciumError::SplitChildLimitExceeded);
-    require!(required_reputation >= 0, SiliciumError::InvalidParams);
+    require!(required_compute_reputation >= 0, SiliciumError::InvalidParams);
     require!(input_hash != [0u8; 32], SiliciumError::InvalidParams);
 
     child.job = ctx.accounts.job.key();
@@ -105,7 +105,7 @@ pub fn handler(
     child.split_manifest_hash = [0u8; 32];
     child.splitter_worker = Pubkey::default();
     child.is_leaf = true;
-    child.required_reputation = required_reputation;
+    child.required_compute_reputation = required_compute_reputation;
     child.required_stake = required_stake;
     child.complexity_score = complexity_score;
     child.bump = ctx.bumps.child_fragment;
@@ -118,7 +118,7 @@ pub fn handler(
         child_fragment: child.key(),
         child_fragment_index,
         depth: child.depth,
-        required_reputation,
+        required_compute_reputation,
         required_stake,
         complexity_score,
         input_hash,

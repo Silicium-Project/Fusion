@@ -86,6 +86,12 @@ pub enum SiliciumError {
     #[msg("Worker reputation is too low")]
     ReputationTooLow,
 
+    #[msg("Compute reputation is too low")]
+    ComputeReputationTooLow,
+
+    #[msg("Verifier reputation is too low")]
+    VerifierReputationTooLow,
+
     #[msg("Job deposit is too small")]
     DepositTooSmall,
 

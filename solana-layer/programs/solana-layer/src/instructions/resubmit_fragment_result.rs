@@ -26,14 +26,14 @@ pub struct ResubmitFragmentResult<'info> {
         constraint = worker_account.owner == worker.key() @ SiliciumError::NotAuthorized,
         constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
         constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized,
-        constraint = worker_account.reputation >= MIN_COMPUTE_REPUTATION @ SiliciumError::ReputationTooLow
+        constraint = worker_account.compute_reputation >= MIN_COMPUTE_REPUTATION @ SiliciumError::ComputeReputationTooLow
     )]
-    pub worker_account: Account<'info, Worker>,
+    pub worker_account: Box<Account<'info, Worker>>,
 
     #[account(
         constraint = job.status == JobStatus::Open @ SiliciumError::JobFinalized
     )]
-    pub job: Account<'info, Job>,
+    pub job: Box<Account<'info, Job>>,
 
     #[account(
         mut,
@@ -46,13 +46,13 @@ pub struct ResubmitFragmentResult<'info> {
         constraint = fragment.job == job.key() @ SiliciumError::InvalidParams,
         constraint = fragment.fragment_index == fragment_index @ SiliciumError::InvalidParams
     )]
-    pub fragment: Account<'info, Fragment>,
+    pub fragment: Box<Account<'info, Fragment>>,
 
     #[account(
         constraint = worker_token.owner == worker.key() @ SiliciumError::NotAuthorized,
         constraint = worker_token.mint == job.mint @ SiliciumError::InvalidParams
     )]
-    pub worker_token: Account<'info, TokenAccount>,
+    pub worker_token: Box<Account<'info, TokenAccount>>,
 }
 
 pub fn handler(
@@ -81,10 +81,7 @@ pub fn handler(
         SiliciumError::InvalidParams
     );
 
-    require!(
-        f.is_leaf,
-        SiliciumError::BadFragmentState
-    );
+    require!(f.is_leaf, SiliciumError::BadFragmentState);
 
     require!(
         f.status == FragmentStatus::Rejected,
@@ -97,6 +94,7 @@ pub fn handler(
     f.required_quorum = ctx.accounts.job.fragment_quorum;
     f.voting_deadline_unix = now.saturating_add(VOTING_TTL_SECS);
 
+    f.assigned_worker = ctx.accounts.worker.key();
     f.worker = ctx.accounts.worker.key();
     f.worker_token_account = ctx.accounts.worker_token.key();
     f.result_hash = result_hash;

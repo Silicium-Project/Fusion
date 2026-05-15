@@ -45,14 +45,14 @@ echo "Airdropping SOL to local wallet..."
 solana airdrop 20 >/dev/null || true
 
 echo "Syncing Anchor keys..."
-anchor keys sync
+anchor keys sync --provider.cluster localnet
 
 echo "Building Anchor program..."
 anchor build
 
 echo "Deploying Anchor program..."
 if command -v anchor >/dev/null 2>&1; then
-  anchor program deploy target/deploy/solana_layer.so
+  anchor program deploy target/deploy/solana_layer.so --provider.cluster localnet
 else
   echo "Anchor command not found. Install Anchor first."
   exit 1

@@ -15,7 +15,7 @@ use crate::{
 
 pub const MIN_COMPUTE_STAKE: u64 = 1;
 pub const CLAIM_TTL_SECS: i64 = 5;
-pub const DEFAULT_ROOT_REQUIRED_REPUTATION: i64 = MIN_COMPUTE_REPUTATION;
+pub const DEFAULT_ROOT_REQUIRED_COMPUTE_REPUTATION: i64 = MIN_COMPUTE_REPUTATION;
 pub const DEFAULT_ROOT_COMPLEXITY_SCORE: u32 = 1_000;
 pub const DEFAULT_MAX_CHILDREN: u16 = 8;
 
@@ -32,14 +32,14 @@ pub struct ClaimFragment<'info> {
         constraint = worker_account.owner == worker.key() @ SiliciumError::NotAuthorized,
         constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
         constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized,
-        constraint = worker_account.reputation >= MIN_COMPUTE_REPUTATION @ SiliciumError::ReputationTooLow
+        constraint = worker_account.compute_reputation >= MIN_COMPUTE_REPUTATION @ SiliciumError::ComputeReputationTooLow
     )]
-    pub worker_account: Account<'info, Worker>,
+    pub worker_account: Box<Account<'info, Worker>>,
 
     #[account(
         constraint = job.status == JobStatus::Open @ SiliciumError::JobFinalized
     )]
-    pub job: Account<'info, Job>,
+    pub job: Box<Account<'info, Job>>,
 
     #[account(
         init_if_needed,
@@ -52,13 +52,13 @@ pub struct ClaimFragment<'info> {
         ],
         bump
     )]
-    pub fragment: Account<'info, Fragment>,
+    pub fragment: Box<Account<'info, Fragment>>,
 
     #[account(
         constraint = worker_token.owner == worker.key() @ SiliciumError::NotAuthorized,
         constraint = worker_token.mint == job.mint @ SiliciumError::InvalidParams
     )]
-    pub worker_token: Account<'info, TokenAccount>,
+    pub worker_token: Box<Account<'info, TokenAccount>>,
 
     pub system_program: Program<'info, System>,
 }
@@ -66,7 +66,10 @@ pub struct ClaimFragment<'info> {
 pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
     require!(fragment_index < ctx.accounts.job.max_fragments, SiliciumError::InvalidParams);
 
-    require!(ctx.accounts.worker_account.has_role(ROLE_COMPUTE), SiliciumError::MissingComputeRole);
+    require!(
+        ctx.accounts.worker_account.has_role(ROLE_COMPUTE),
+        SiliciumError::MissingComputeRole
+    );
 
     require!(
         ctx.accounts.worker_account.active_claims < MAX_ACTIVE_CLAIMS_PER_WORKER,
@@ -82,8 +85,11 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
     let is_new = f.job == Pubkey::default();
 
     if is_new {
-        // Les fragments créés paresseusement par claim_fragment sont des fragments racine V1/V2.
-        require!(fragment_index < ctx.accounts.job.expected_fragments, SiliciumError::InvalidParams);
+        // Lazy root fragment creation. Child/sub-fragments are created by create_sub_fragment.
+        require!(
+            fragment_index < ctx.accounts.job.expected_fragments,
+            SiliciumError::InvalidParams
+        );
 
         f.job = job_key;
         f.fragment_index = fragment_index;
@@ -107,7 +113,7 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
         f.split_manifest_hash = [0u8; 32];
         f.splitter_worker = Pubkey::default();
         f.is_leaf = true;
-        f.required_reputation = DEFAULT_ROOT_REQUIRED_REPUTATION;
+        f.required_compute_reputation = DEFAULT_ROOT_REQUIRED_COMPUTE_REPUTATION;
         f.required_stake = MIN_COMPUTE_STAKE;
         f.complexity_score = DEFAULT_ROOT_COMPLEXITY_SCORE;
 
@@ -118,12 +124,12 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
     }
 
     require!(f.is_leaf, SiliciumError::BadFragmentState);
-    require!(now <= ctx.accounts.job.deadline_unix, SiliciumError::JobExpired);
 
     match f.status {
         FragmentStatus::Available => {}
         FragmentStatus::Rejected => {
-            // Compatibilité V1 : un fragment rejeté peut être repris sur un nouveau round.
+            // Backward-compatible V1 flow: a rejected fragment can be claimed again,
+            // then submitted with submit_fragment_result.
             f.round = f.round.saturating_add(1);
             f.yes_votes = 0;
             f.no_votes = 0;
@@ -135,36 +141,33 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
         }
         FragmentStatus::Claimed => {
             require!(now > f.claim_deadline_unix, SiliciumError::FragmentAlreadyClaimed);
-            f.round = f.round.saturating_add(1);
-            f.yes_votes = 0;
-            f.no_votes = 0;
-            f.result_hash = [0u8; 32];
-            f.proof_ref = [0u8; 32];
-            f.worker = Pubkey::default();
-            f.worker_token_account = Pubkey::default();
-            f.voting_deadline_unix = 0;
         }
-        FragmentStatus::Submitted
-        | FragmentStatus::Verified
-        | FragmentStatus::SplitPending
-        | FragmentStatus::SplitApproved
-        | FragmentStatus::SplitParent => {
+        _ => {
             return err!(SiliciumError::BadFragmentState);
         }
     }
 
-    require!(ctx.accounts.worker_account.reputation >= f.required_reputation, SiliciumError::ReputationTooLow);
-    require!(ctx.accounts.worker_account.stake_amount >= f.required_stake, SiliciumError::NotAuthorized);
+    require!(
+        ctx.accounts.worker_account.compute_reputation >= f.required_compute_reputation,
+        SiliciumError::ComputeReputationTooLow
+    );
+    require!(
+        ctx.accounts.worker_account.stake_amount >= f.required_stake,
+        SiliciumError::NotAuthorized
+    );
+    require!(now <= ctx.accounts.job.deadline_unix, SiliciumError::JobExpired);
 
     f.assigned_worker = worker_key;
     f.worker = Pubkey::default();
     f.worker_token_account = ctx.accounts.worker_token.key();
     f.status = FragmentStatus::Claimed;
     f.claim_deadline_unix = now.saturating_add(CLAIM_TTL_SECS);
+    f.required_quorum = ctx.accounts.job.fragment_quorum;
     f.yes_votes = 0;
     f.no_votes = 0;
 
-    ctx.accounts.worker_account.active_claims = ctx.accounts.worker_account.active_claims.saturating_add(1);
+    ctx.accounts.worker_account.active_claims =
+        ctx.accounts.worker_account.active_claims.saturating_add(1);
 
     emit!(FragmentClaimed {
         job: f.job,

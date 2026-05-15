@@ -11,7 +11,7 @@ use crate::{
         fragment_vote::FragmentVote,
         job::{Job, JobStatus},
         reputation::{
-            update_compute_reputation, update_verify_reputation, MIN_VERIFY_REPUTATION,
+            update_compute_reputation, update_compute_reputation_weighted, MIN_VERIFY_REPUTATION,
             ReputationEvent,
         },
         worker::{Worker, WorkerStatus, ROLE_VERIFY},
@@ -48,7 +48,7 @@ pub struct VoteFragment<'info> {
         constraint = verifier_worker.owner == verifier.key() @ SiliciumError::NotAuthorized,
         constraint = verifier_worker.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
         constraint = verifier_worker.stake_amount >= MIN_VERIFIER_STAKE @ SiliciumError::NotAuthorized,
-        constraint = verifier_worker.reputation >= MIN_VERIFY_REPUTATION @ SiliciumError::ReputationTooLow
+        constraint = verifier_worker.verify_reputation >= MIN_VERIFY_REPUTATION @ SiliciumError::VerifierReputationTooLow
     )]
     pub verifier_worker: Box<Account<'info, Worker>>,
 
@@ -274,7 +274,6 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         round_resolution.claimed_rewards = 0;
 
         update_compute_reputation(compute_worker, ReputationEvent::ComputeSuccess);
-        update_verify_reputation(verifier_worker, ReputationEvent::VerificationSuccess);
 
         if job.verified_fragments == job.expected_fragments {
             job.verified_at_unix = now;
@@ -319,8 +318,11 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         round_resolution.eligible_rewards = quorum;
         round_resolution.claimed_rewards = 0;
 
-        update_compute_reputation(compute_worker, ReputationEvent::MajorComputeError);
-        update_verify_reputation(verifier_worker, ReputationEvent::VerificationSuccess);
+        update_compute_reputation_weighted(
+            compute_worker,
+            ReputationEvent::MajorComputeError,
+            verifier_worker.verify_reputation,
+        );
 
         emit!(FragmentRejected {
             job: job.key(),

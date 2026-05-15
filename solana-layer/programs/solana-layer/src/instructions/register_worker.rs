@@ -4,7 +4,7 @@ use crate::{
     events::WorkerRegistered,
     state::{
         reputation::init_bayesian_reputation,
-        worker::{Worker, WorkerStatus, ROLE_COMPUTE, ROLE_VERIFY},
+        worker::{Worker, WorkerStatus, ROLE_AUTO, ROLE_COMPUTE, ROLE_VERIFY},
     },
 };
 
@@ -43,6 +43,7 @@ pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
 
     w.active_claims = 0;
     w.roles = ROLE_COMPUTE | ROLE_VERIFY;
+    w.preferred_role = ROLE_AUTO;
     w.status = WorkerStatus::Active;
     w.bump = ctx.bumps.worker_account;
 

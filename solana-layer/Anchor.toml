@@ -9,13 +9,13 @@ skip-lint = false
 solana_layer = "HaAd4SR4nF3dNwrhRBcks8RDMiibHjkq7XLAg9GevMSG"
 
 [programs.localnet]
-solana_layer = "4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP"
+solana_layer = "7njCqLPBYycdWfzSDKuSbh4xU9FWtCW5BBdTALJB8s69"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
