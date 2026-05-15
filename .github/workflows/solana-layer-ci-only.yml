@@ -40,13 +40,12 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry and target
+      - name: Cache Cargo registry
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            solana-layer/target
           key: ${{ runner.os }}-cargo-solana-layer-${{ hashFiles('solana-layer/Cargo.lock', 'solana-layer/programs/**/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-cargo-solana-layer-
@@ -59,8 +58,8 @@ jobs:
       - name: Install Anchor CLI
         run: |
           cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-          avm install 0.31.1
-          avm use 0.31.1
+          avm install 0.32.1
+          avm use 0.32.1
           echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
 
       - name: Install JavaScript dependencies
@@ -73,11 +72,17 @@ jobs:
           solana config set --url localhost
           solana address
 
-      - name: Sync Anchor program IDs
-        run: anchor keys sync
+      - name: Sync Anchor program IDs for localnet
+        run: anchor keys sync --provider.cluster localnet
+
+      - name: Check program ID alignment
+        run: |
+          anchor keys list
+          grep -R "declare_id" programs/solana-layer/src/lib.rs
+          grep -n "solana_layer" Anchor.toml
 
       - name: Build Anchor program
-        run: anchor build
+        run: anchor build --provider.cluster localnet
 
       - name: Run Anchor tests on localnet
         run: anchor test --provider.cluster localnet
