@@ -1,22 +1,14 @@
 /**
- * Silicium Solana Layer — Devnet smoke test
+ * Silicium Solana Layer — Devnet smoke test V2.5
  *
  * Put this file in:
  *   solana-layer/scripts/devnet_smoke_test.ts
  *
- * Read-only smoke test:
+ * Read-only:
  *   npx ts-node scripts/devnet_smoke_test.ts
  *
- * Optional write smoke test, creates/registers your Worker PDA if missing:
+ * Write smoke:
  *   npx ts-node scripts/devnet_smoke_test.ts --write
- *
- * What it checks:
- * - RPC is reachable
- * - deployed program account exists on Devnet
- * - program is executable
- * - program data length matches a real deployed program
- * - local Anchor IDL exists and can instantiate the Program client
- * - optional: calls registerWorker on Devnet if the worker PDA is not already initialized
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -27,7 +19,7 @@ import path from "path";
 
 const DEVNET_RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const PROGRAM_ID = new PublicKey(
-  process.env.SOLANA_LAYER_PROGRAM_ID ?? "4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP",
+  process.env.SOLANA_LAYER_PROGRAM_ID ?? "48Bdt8Dg9FW8n6Mpvvdh6dgTXrsBvBfqMrwhnWQ2WQm1",
 );
 const WRITE_MODE = process.argv.includes("--write");
 
@@ -39,10 +31,7 @@ function readKeypair(filePath: string): Keypair {
   const resolved = filePath.startsWith("~")
     ? path.join(os.homedir(), filePath.slice(1))
     : filePath;
-
-  const raw = fs.readFileSync(resolved, "utf8");
-  const secret = Uint8Array.from(JSON.parse(raw));
-  return Keypair.fromSecretKey(secret);
+  return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(resolved, "utf8"))));
 }
 
 function loadIdl(): any {
@@ -54,15 +43,12 @@ function loadIdl(): any {
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
       const idl = JSON.parse(fs.readFileSync(candidate, "utf8"));
-      // Anchor 0.30+ Program constructor reads the address from IDL metadata/address.
       idl.address = PROGRAM_ID.toBase58();
       return idl;
     }
   }
 
-  throw new Error(
-    "IDL not found. Run `anchor build` first from solana-layer/, then retry.",
-  );
+  throw new Error("IDL not found. Run `anchor build` from solana-layer/ first.");
 }
 
 function workerPda(owner: PublicKey): PublicKey {
@@ -70,6 +56,21 @@ function workerPda(owner: PublicKey): PublicKey {
     [Buffer.from("worker"), owner.toBuffer()],
     PROGRAM_ID,
   )[0];
+}
+
+function rep(value: any): number {
+  return Number(value?.toString?.() ?? value ?? 0);
+}
+
+function formatWorker(workerState: any) {
+  return {
+    owner: workerState.owner?.toBase58?.() ?? String(workerState.owner),
+    computeReputation: rep(workerState.computeReputation),
+    verifyReputation: rep(workerState.verifyReputation),
+    globalReputation: rep(workerState.globalReputation),
+    stakeAmount: rep(workerState.stakeAmount),
+    status: workerState.status,
+  };
 }
 
 async function main() {
@@ -83,9 +84,7 @@ async function main() {
 
   logStep("Program account");
   const programInfo = await connection.getAccountInfo(PROGRAM_ID, "confirmed");
-  if (!programInfo) {
-    throw new Error(`Program not found on Devnet: ${PROGRAM_ID.toBase58()}`);
-  }
+  if (!programInfo) throw new Error(`Program not found on Devnet: ${PROGRAM_ID.toBase58()}`);
 
   console.log("programId:", PROGRAM_ID.toBase58());
   console.log("owner:", programInfo.owner.toBase58());
@@ -93,13 +92,8 @@ async function main() {
   console.log("dataLength:", programInfo.data.length);
   console.log("lamports:", programInfo.lamports);
 
-  if (!programInfo.executable) {
-    throw new Error("Program account exists but is not executable.");
-  }
-
-  if (programInfo.data.length === 0) {
-    throw new Error("Program account has empty data.");
-  }
+  if (!programInfo.executable) throw new Error("Program account exists but is not executable.");
+  if (programInfo.data.length === 0) throw new Error("Program account has empty data.");
 
   logStep("IDL and Anchor client");
   const idl = loadIdl();
@@ -115,8 +109,8 @@ async function main() {
     commitment: "confirmed",
     preflightCommitment: "confirmed",
   });
-
   anchor.setProvider(provider);
+
   const program = new (anchor as any).Program(idl, provider) as any;
   console.log("wallet:", wallet.publicKey.toBase58());
   console.log("client program:", program.programId.toBase58());
@@ -131,6 +125,10 @@ async function main() {
   console.log("worker exists:", Boolean(workerInfo));
 
   if (!WRITE_MODE) {
+    if (workerInfo) {
+      const workerState = await program.account.worker.fetch(workerAccount);
+      console.log("worker V2.5 reputation:", formatWorker(workerState));
+    }
     console.log("\n✅ Read-only Devnet smoke test passed");
     console.log("Run with `--write` to also call registerWorker if needed.");
     return;
@@ -143,12 +141,7 @@ async function main() {
 
   if (workerInfo) {
     const workerState = await program.account.worker.fetch(workerAccount);
-    console.log("worker already registered:", {
-      owner: workerState.owner?.toBase58?.() ?? String(workerState.owner),
-      reputation: Number(workerState.reputation?.toString?.() ?? workerState.reputation),
-      stakeAmount: Number(workerState.stakeAmount?.toString?.() ?? workerState.stakeAmount),
-      status: workerState.status,
-    });
+    console.log("worker already registered:", formatWorker(workerState));
   } else {
     const sig = await program.methods
       .registerWorker()
@@ -161,12 +154,7 @@ async function main() {
 
     console.log("registerWorker tx:", sig);
     const workerState = await program.account.worker.fetch(workerAccount);
-    console.log("worker registered:", {
-      owner: workerState.owner?.toBase58?.() ?? String(workerState.owner),
-      reputation: Number(workerState.reputation?.toString?.() ?? workerState.reputation),
-      stakeAmount: Number(workerState.stakeAmount?.toString?.() ?? workerState.stakeAmount),
-      status: workerState.status,
-    });
+    console.log("worker registered:", formatWorker(workerState));
   }
 
   console.log("\n✅ Devnet write smoke test passed");

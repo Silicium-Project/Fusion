@@ -1,5 +1,5 @@
 /**
- * Silicium Solana Layer — Devnet minimal write flow
+ * Silicium Solana Layer — Devnet minimal V2.5 write flow
  *
  * Put this file in:
  *   solana-layer/scripts/devnet_minimal_job_flow.ts
@@ -10,17 +10,14 @@
  * What it does on Devnet:
  * - loads local IDL
  * - checks deployed program
- * - creates a test SPL mint
- * - creates/mints token accounts
- * - creates/registers/stakes a fresh compute worker keypair
- * - creates/registers/stakes two verifier keypairs
- * - creates a 1-fragment job
- * - claims fragment 0
- * - submits a result
- * - verifier votes YES
- * - verifier claims reward
- *
- * It intentionally does not finalize the job, to keep the flow light.
+ * - creates a fresh test SPL mint
+ * - creates a fresh compute worker and two fresh verifiers
+ * - registers/stakes all active participants
+ * - creates a 1-fragment job with quorum = 2
+ * - compute worker claims/submits fragment 0
+ * - both verifiers vote YES
+ * - both verifiers claim rewards
+ * - prints V2.5 compute/verify/global reputation state
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -45,13 +42,14 @@ import path from "path";
 
 const DEVNET_RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const PROGRAM_ID = new PublicKey(
-  process.env.SOLANA_LAYER_PROGRAM_ID ?? "4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP",
+  process.env.SOLANA_LAYER_PROGRAM_ID ?? "48Bdt8Dg9FW8n6Mpvvdh6dgTXrsBvBfqMrwhnWQ2WQm1",
 );
 
 const STAKE_AMOUNT = new anchor.BN(1_000_000);
 const REWARD_PER_FRAGMENT = new anchor.BN(1_000_000);
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(100_000);
 const VERIFIER_REWARD_BUDGET = new anchor.BN(200_000);
+const FRAGMENT_QUORUM = 2;
 
 function logStep(title: string) {
   console.log(`\n=== ${title} ===`);
@@ -62,8 +60,7 @@ function readKeypair(filePath: string): Keypair {
     ? path.join(os.homedir(), filePath.slice(1))
     : filePath;
 
-  const raw = fs.readFileSync(resolved, "utf8");
-  return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(raw)));
+  return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(resolved, "utf8"))));
 }
 
 function loadIdl(): any {
@@ -151,6 +148,36 @@ function roundResolutionPda(fragment: PublicKey, round: number): PublicKey {
   )[0];
 }
 
+function rep(value: any): number {
+  return Number(value?.toString?.() ?? value ?? 0);
+}
+
+function workerSummary(state: any) {
+  return {
+    computeReputation: rep(state.computeReputation),
+    verifyReputation: rep(state.verifyReputation),
+    globalReputation: rep(state.globalReputation),
+    stakeAmount: rep(state.stakeAmount),
+    totalSubmitted: rep(state.totalSubmitted),
+    totalVerified: rep(state.totalVerified),
+    totalRejected: rep(state.totalRejected),
+    activeClaims: rep(state.activeClaims),
+    status: state.status,
+  };
+}
+
+async function fundParticipant(provider: anchor.AnchorProvider, to: PublicKey, label: string) {
+  const tx = new anchor.web3.Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: provider.wallet.publicKey,
+      toPubkey: to,
+      lamports: 80_000_000,
+    }),
+  );
+  const sig = await provider.sendAndConfirm(tx, []);
+  console.log(`${label} fund tx:`, sig);
+}
+
 async function ensureWorkerRegistered(program: any, owner: Keypair, label: string): Promise<PublicKey> {
   const workerAccount = workerPda(owner.publicKey);
   const info = await program.provider.connection.getAccountInfo(workerAccount, "confirmed");
@@ -159,8 +186,7 @@ async function ensureWorkerRegistered(program: any, owner: Keypair, label: strin
     const state = await program.account.worker.fetch(workerAccount);
     console.log(`${label} worker already registered:`, {
       workerAccount: workerAccount.toBase58(),
-      reputation: Number(state.reputation?.toString?.() ?? state.reputation),
-      stakeAmount: Number(state.stakeAmount?.toString?.() ?? state.stakeAmount),
+      ...workerSummary(state),
     });
     return workerAccount;
   }
@@ -231,7 +257,7 @@ async function main() {
     throw new Error(`Program not found or not executable on Devnet: ${PROGRAM_ID.toBase58()}`);
   }
 
-  if ((await connection.getBalance(wallet.publicKey)) < 0.25 * LAMPORTS_PER_SOL) {
+  if ((await connection.getBalance(wallet.publicKey)) < 0.5 * LAMPORTS_PER_SOL) {
     throw new Error("Wallet balance is low. Add Devnet SOL before running this write flow.");
   }
 
@@ -239,80 +265,45 @@ async function main() {
   const mint = await createMint(connection, payer, wallet.publicKey, null, 6);
   console.log("mint:", mint.toBase58());
 
-  const clientToken = await createAssociatedTokenAccount(
-    connection,
-    payer,
-    mint,
-    wallet.publicKey,
-  );
+  const clientToken = await createAssociatedTokenAccount(connection, payer, mint, wallet.publicKey);
+  await mintTo(connection, payer, mint, clientToken, wallet.publicKey, 30_000_000);
   console.log("client token:", clientToken.toBase58());
-
-  await mintTo(connection, payer, mint, clientToken, wallet.publicKey, 20_000_000);
-  console.log("minted 20 tokens to client token account");
+  console.log("minted 30 tokens to client token account");
 
   const computeWorker = Keypair.generate();
-  const verifier = Keypair.generate();
+  const verifier1 = Keypair.generate();
   const verifier2 = Keypair.generate();
 
-  async function fundParticipant(label: string, recipient: PublicKey) {
-    const lamports = 80_000_000;
-    const tx = new anchor.web3.Transaction().add(
-      SystemProgram.transfer({
-        fromPubkey: wallet.publicKey,
-        toPubkey: recipient,
-        lamports,
-      }),
-    );
-    const sig = await provider.sendAndConfirm(tx, []);
-    console.log(`${label} SOL fund tx:`, sig);
-  }
+  await fundParticipant(provider, computeWorker.publicKey, "compute worker");
+  await fundParticipant(provider, verifier1.publicKey, "verifier 1");
+  await fundParticipant(provider, verifier2.publicKey, "verifier 2");
 
-  await fundParticipant("compute worker", computeWorker.publicKey);
-  await fundParticipant("verifier 1", verifier.publicKey);
-  await fundParticipant("verifier 2", verifier2.publicKey);
+  const computeToken = await createAssociatedTokenAccount(connection, payer, mint, computeWorker.publicKey);
+  const verifier1Token = await createAssociatedTokenAccount(connection, payer, mint, verifier1.publicKey);
+  const verifier2Token = await createAssociatedTokenAccount(connection, payer, mint, verifier2.publicKey);
 
-  const computeWorkerToken = await createAssociatedTokenAccount(
-    connection,
-    payer,
-    mint,
-    computeWorker.publicKey,
-  );
-  await mintTo(connection, payer, mint, computeWorkerToken, wallet.publicKey, 5_000_000);
-
-  const verifierToken = await createAssociatedTokenAccount(
-    connection,
-    payer,
-    mint,
-    verifier.publicKey,
-  );
-  await mintTo(connection, payer, mint, verifierToken, wallet.publicKey, 5_000_000);
-
-  const verifier2Token = await createAssociatedTokenAccount(
-    connection,
-    payer,
-    mint,
-    verifier2.publicKey,
-  );
+  await mintTo(connection, payer, mint, computeToken, wallet.publicKey, 5_000_000);
+  await mintTo(connection, payer, mint, verifier1Token, wallet.publicKey, 5_000_000);
   await mintTo(connection, payer, mint, verifier2Token, wallet.publicKey, 5_000_000);
 
   console.log("compute worker:", computeWorker.publicKey.toBase58());
-  console.log("compute worker token:", computeWorkerToken.toBase58());
-  console.log("verifier 1:", verifier.publicKey.toBase58());
-  console.log("verifier 1 token:", verifierToken.toBase58());
+  console.log("compute token:", computeToken.toBase58());
+  console.log("verifier 1:", verifier1.publicKey.toBase58());
+  console.log("verifier 1 token:", verifier1Token.toBase58());
   console.log("verifier 2:", verifier2.publicKey.toBase58());
   console.log("verifier 2 token:", verifier2Token.toBase58());
 
-  logStep("Register and stake compute worker + verifiers");
-  const computeWorkerAccount = await ensureWorkerRegistered(program, computeWorker, "compute worker");
-  await stakeWorker(program, computeWorker, computeWorkerAccount, mint, computeWorkerToken, "compute worker");
+  logStep("Register and stake compute worker + two verifiers");
+  const computeWorkerAccount = await ensureWorkerRegistered(program, computeWorker, "compute");
+  await stakeWorker(program, computeWorker, computeWorkerAccount, mint, computeToken, "compute");
 
-  const verifierWorkerAccount = await ensureWorkerRegistered(program, verifier, "verifier 1");
-  await stakeWorker(program, verifier, verifierWorkerAccount, mint, verifierToken, "verifier 1");
+  const verifier1WorkerAccount = await ensureWorkerRegistered(program, verifier1, "verifier 1");
+  await stakeWorker(program, verifier1, verifier1WorkerAccount, mint, verifier1Token, "verifier 1");
 
   const verifier2WorkerAccount = await ensureWorkerRegistered(program, verifier2, "verifier 2");
   await stakeWorker(program, verifier2, verifier2WorkerAccount, mint, verifier2Token, "verifier 2");
 
-  logStep("Create one-fragment job");
+  logStep("Create one-fragment job with quorum = 2");
   const jobId = new anchor.BN(Date.now());
   const job = jobPda(wallet.publicKey, jobId);
   const escrowAuth = escrowAuthPda(job);
@@ -327,7 +318,7 @@ async function main() {
       VERIFIER_REWARD_PER_VOTE,
       VERIFIER_REWARD_BUDGET,
       deadlineUnix,
-      2,
+      FRAGMENT_QUORUM,
     )
     .accounts({
       client: wallet.publicKey,
@@ -357,7 +348,7 @@ async function main() {
       workerAccount: computeWorkerAccount,
       job,
       fragment,
-      workerToken: computeWorkerToken,
+      workerToken: computeToken,
       systemProgram: SystemProgram.programId,
     })
     .signers([computeWorker])
@@ -372,41 +363,41 @@ async function main() {
       workerAccount: computeWorkerAccount,
       job,
       fragment,
-      workerToken: computeWorkerToken,
+      workerToken: computeToken,
     })
     .signers([computeWorker])
     .rpc();
 
   console.log("submitFragmentResult tx:", submitSig);
 
-  logStep("Verifiers vote YES until quorum 2");
+  logStep("Two verifiers vote YES");
   const fragmentBeforeVote = await program.account.fragment.fetch(fragment);
   const round = Number(fragmentBeforeVote.round?.toString?.() ?? fragmentBeforeVote.round);
-  const vote = votePda(fragment, verifier.publicKey, round);
-  const vote2 = votePda(fragment, verifier2.publicKey, round);
   const resolution = roundResolutionPda(fragment, round);
 
-  const voteSig = await program.methods
+  const vote1 = votePda(fragment, verifier1.publicKey, round);
+  const vote1Sig = await program.methods
     .voteFragment(true)
     .accounts({
-      verifier: verifier.publicKey,
+      verifier: verifier1.publicKey,
       job,
       fragment,
-      verifierWorker: verifierWorkerAccount,
+      verifierWorker: verifier1WorkerAccount,
       computeWorker: computeWorkerAccount,
-      vote,
+      vote: vote1,
       roundResolution: resolution,
       escrowAuth,
       escrow: escrow.publicKey,
-      workerToken: computeWorkerToken,
+      workerToken: computeToken,
       tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
-    .signers([verifier])
+    .signers([verifier1])
     .rpc();
 
-  console.log("voteFragment YES verifier 1 tx:", voteSig);
+  console.log("verifier 1 vote YES tx:", vote1Sig);
 
+  const vote2 = votePda(fragment, verifier2.publicKey, round);
   const vote2Sig = await program.methods
     .voteFragment(true)
     .accounts({
@@ -419,34 +410,34 @@ async function main() {
       roundResolution: resolution,
       escrowAuth,
       escrow: escrow.publicKey,
-      workerToken: computeWorkerToken,
+      workerToken: computeToken,
       tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
     .signers([verifier2])
     .rpc();
 
-  console.log("voteFragment YES verifier 2 tx:", vote2Sig);
+  console.log("verifier 2 vote YES tx:", vote2Sig);
 
   logStep("Claim verifier rewards");
-  const claimRewardSig = await program.methods
+  const claimReward1Sig = await program.methods
     .claimVerifierReward()
     .accounts({
-      verifier: verifier.publicKey,
+      verifier: verifier1.publicKey,
       job,
       fragment,
       roundResolution: resolution,
-      vote,
-      verifierWorker: verifierWorkerAccount,
+      vote: vote1,
+      verifierWorker: verifier1WorkerAccount,
       escrowAuth,
       escrow: escrow.publicKey,
-      verifierToken,
+      verifierToken: verifier1Token,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
-    .signers([verifier])
+    .signers([verifier1])
     .rpc();
 
-  console.log("claimVerifierReward verifier 1 tx:", claimRewardSig);
+  console.log("verifier 1 claimVerifierReward tx:", claimReward1Sig);
 
   const claimReward2Sig = await program.methods
     .claimVerifierReward()
@@ -465,49 +456,42 @@ async function main() {
     .signers([verifier2])
     .rpc();
 
-  console.log("claimVerifierReward verifier 2 tx:", claimReward2Sig);
+  console.log("verifier 2 claimVerifierReward tx:", claimReward2Sig);
 
   logStep("Final state");
   const jobState = await program.account.job.fetch(job);
   const fragmentState = await program.account.fragment.fetch(fragment);
   const computeState = await program.account.worker.fetch(computeWorkerAccount);
-  const verifierState = await program.account.worker.fetch(verifierWorkerAccount);
+  const verifier1State = await program.account.worker.fetch(verifier1WorkerAccount);
   const verifier2State = await program.account.worker.fetch(verifier2WorkerAccount);
-  const computeTokenAfter = await getAccount(connection, computeWorkerToken);
-  const verifierTokenAfter = await getAccount(connection, verifierToken);
+  const clientTokenAfter = await getAccount(connection, clientToken);
+  const computeTokenAfter = await getAccount(connection, computeToken);
+  const verifier1TokenAfter = await getAccount(connection, verifier1Token);
   const verifier2TokenAfter = await getAccount(connection, verifier2Token);
 
   console.log("job:", {
-    expectedFragments: Number(jobState.expectedFragments?.toString?.() ?? jobState.expectedFragments),
-    verifiedFragments: Number(jobState.verifiedFragments?.toString?.() ?? jobState.verifiedFragments),
+    expectedFragments: rep(jobState.expectedFragments),
+    verifiedFragments: rep(jobState.verifiedFragments),
     status: jobState.status,
   });
   console.log("fragment:", {
     status: fragmentState.status,
-    yesVotes: Number(fragmentState.yesVotes?.toString?.() ?? fragmentState.yesVotes),
-    noVotes: Number(fragmentState.noVotes?.toString?.() ?? fragmentState.noVotes),
+    yesVotes: rep(fragmentState.yesVotes),
+    noVotes: rep(fragmentState.noVotes),
   });
-  console.log("compute worker:", {
-    reputation: Number(computeState.reputation?.toString?.() ?? computeState.reputation),
-    stakeAmount: Number(computeState.stakeAmount?.toString?.() ?? computeState.stakeAmount),
-  });
-  console.log("verifier 1 worker:", {
-    reputation: Number(verifierState.reputation?.toString?.() ?? verifierState.reputation),
-    stakeAmount: Number(verifierState.stakeAmount?.toString?.() ?? verifierState.stakeAmount),
-  });
-  console.log("verifier 2 worker:", {
-    reputation: Number(verifier2State.reputation?.toString?.() ?? verifier2State.reputation),
-    stakeAmount: Number(verifier2State.stakeAmount?.toString?.() ?? verifier2State.stakeAmount),
-  });
+  console.log("compute worker:", workerSummary(computeState));
+  console.log("verifier 1 worker:", workerSummary(verifier1State));
+  console.log("verifier 2 worker:", workerSummary(verifier2State));
+  console.log("client token amount:", clientTokenAfter.amount.toString());
   console.log("compute token amount:", computeTokenAfter.amount.toString());
-  console.log("verifier 1 token amount:", verifierTokenAfter.amount.toString());
+  console.log("verifier 1 token amount:", verifier1TokenAfter.amount.toString());
   console.log("verifier 2 token amount:", verifier2TokenAfter.amount.toString());
 
-  console.log("\n✅ Devnet minimal job flow passed");
+  console.log("\n✅ Devnet minimal V2.5 job flow passed");
 }
 
 main().catch((error) => {
-  console.error("\n❌ Devnet minimal job flow failed");
+  console.error("\n❌ Devnet minimal V2.5 job flow failed");
   console.error(error);
   process.exit(1);
 });
