@@ -13,9 +13,9 @@ use crate::{
     },
 };
 
-pub const MIN_COMPUTE_STAKE: u64 = 1;
+pub const DEFAULT_ROOT_REQUIRED_STAKE: u64 = 0;
 pub const CLAIM_TTL_SECS: i64 = 5;
-pub const DEFAULT_ROOT_REQUIRED_COMPUTE_REPUTATION: i64 = MIN_COMPUTE_REPUTATION;
+pub const DEFAULT_ROOT_REQUIRED_REPUTATION: i64 = MIN_COMPUTE_REPUTATION;
 pub const DEFAULT_ROOT_COMPLEXITY_SCORE: u32 = 1_000;
 pub const DEFAULT_MAX_CHILDREN: u16 = 8;
 
@@ -31,7 +31,6 @@ pub struct ClaimFragment<'info> {
         bump = worker_account.bump,
         constraint = worker_account.owner == worker.key() @ SiliciumError::NotAuthorized,
         constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
-        constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized,
         constraint = worker_account.compute_reputation >= MIN_COMPUTE_REPUTATION @ SiliciumError::ComputeReputationTooLow
     )]
     pub worker_account: Box<Account<'info, Worker>>,
@@ -113,8 +112,8 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
         f.split_manifest_hash = [0u8; 32];
         f.splitter_worker = Pubkey::default();
         f.is_leaf = true;
-        f.required_compute_reputation = DEFAULT_ROOT_REQUIRED_COMPUTE_REPUTATION;
-        f.required_stake = MIN_COMPUTE_STAKE;
+        f.required_compute_reputation = DEFAULT_ROOT_REQUIRED_REPUTATION;
+        f.required_stake = DEFAULT_ROOT_REQUIRED_STAKE;
         f.complexity_score = DEFAULT_ROOT_COMPLEXITY_SCORE;
 
         f.bump = ctx.bumps.fragment;
@@ -153,7 +152,7 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
     );
     require!(
         ctx.accounts.worker_account.stake_amount >= f.required_stake,
-        SiliciumError::NotAuthorized
+        SiliciumError::StakeTooLow
     );
     require!(now <= ctx.accounts.job.deadline_unix, SiliciumError::JobExpired);
 

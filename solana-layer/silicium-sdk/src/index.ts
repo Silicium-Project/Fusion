@@ -315,7 +315,7 @@ export class SiliciumLayerSdk {
     let builder = this.methods
       .createSubFragment(
         params.childFragmentIndex,
-        toBn(params.requiredReputation),
+        toBn(params.requiredComputeReputation),
         toBn(params.requiredStake),
         params.complexityScore,
         asHash32(params.inputHash),
@@ -667,6 +667,31 @@ export class SiliciumLayerSdk {
   async fetchWorker(workerOrWorkerAccount: PublicKey, isWorkerAccount = false): Promise<unknown> {
     const account = isWorkerAccount ? workerOrWorkerAccount : this.pdas.worker(workerOrWorkerAccount);
     return this.accounts.worker.fetch(account);
+  }
+
+  async fetchWorkerReputation(workerOrWorkerAccount: PublicKey, isWorkerAccount = false): Promise<{
+    computeReputation: anchor.BN;
+    verifyReputation: anchor.BN;
+    globalReputation: anchor.BN;
+    reliabilityScore?: number;
+  }> {
+    const worker = await this.fetchWorker(workerOrWorkerAccount, isWorkerAccount) as any;
+    return {
+      computeReputation: worker.computeReputation,
+      verifyReputation: worker.verifyReputation,
+      globalReputation: worker.globalReputation,
+      reliabilityScore: worker.reliabilityScore,
+    };
+  }
+
+  async fetchAllWorkers(): Promise<unknown[]> {
+    return this.accounts.worker.all();
+  }
+
+  async fetchFragmentsForJob(job: PublicKey): Promise<unknown[]> {
+    return this.accounts.fragment.all([
+      { memcmp: { offset: 8, bytes: job.toBase58() } },
+    ]);
   }
 
   async fetchVote(vote: PublicKey): Promise<unknown> {

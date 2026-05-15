@@ -2,7 +2,6 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::{
-    constants::MIN_VERIFIER_STAKE,
     error::SiliciumError,
     events::{FragmentRejected, FragmentVerified},
     state::{
@@ -47,7 +46,6 @@ pub struct VoteFragment<'info> {
         bump = verifier_worker.bump,
         constraint = verifier_worker.owner == verifier.key() @ SiliciumError::NotAuthorized,
         constraint = verifier_worker.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
-        constraint = verifier_worker.stake_amount >= MIN_VERIFIER_STAKE @ SiliciumError::NotAuthorized,
         constraint = verifier_worker.verify_reputation >= MIN_VERIFY_REPUTATION @ SiliciumError::VerifierReputationTooLow
     )]
     pub verifier_worker: Box<Account<'info, Worker>>,

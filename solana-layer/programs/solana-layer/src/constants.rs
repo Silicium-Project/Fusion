@@ -3,8 +3,10 @@ use anchor_lang::prelude::*;
 #[constant]
 pub const SEED: &str = "anchor";
 
-pub const MIN_COMPUTE_STAKE: u64 = 1;
-pub const MIN_VERIFIER_STAKE: u64 = 1;
+// Bootstrap access: newly registered workers/verifiers can participate in low-risk tasks without active stake.
+// Per-fragment `required_stake` and high-risk actions such as split still enforce stake when needed.
+pub const MIN_COMPUTE_STAKE: u64 = 0;
+pub const MIN_VERIFIER_STAKE: u64 = 0;
 
 pub const MIN_FRAGMENT_QUORUM: u16 = 2;
 
@@ -40,6 +42,3 @@ pub const SPLIT_MIN_REPUTATION: i64 = 5_000;
 pub const SPLIT_MIN_STAKE: u64 = 1_000;
 pub const SPLIT_MIN_COMPLEXITY: u32 = 1_000;
 pub const DEFAULT_ROOT_COMPLEXITY_SCORE: u32 = 1_000;
-
-// V2.5: role-specific reputation thresholds are implemented in state/reputation.rs.
-// `compute_reputation` gates compute actions and `verify_reputation` gates votes.

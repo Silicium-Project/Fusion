@@ -10,6 +10,25 @@ export interface CreateSdkParams {
   program: IdlProgram;
 }
 
+export interface WorkerReputationSnapshot {
+  computeReputation: anchor.BN;
+  verifyReputation: anchor.BN;
+  globalReputation: anchor.BN;
+  reliabilityScore?: number;
+  computeAlphaLong?: anchor.BN;
+  computeBetaLong?: anchor.BN;
+  computeAlphaShort?: anchor.BN;
+  computeBetaShort?: anchor.BN;
+  verifyAlphaLong?: anchor.BN;
+  verifyBetaLong?: anchor.BN;
+  verifyAlphaShort?: anchor.BN;
+  verifyBetaShort?: anchor.BN;
+  computeFraudStrikes?: number;
+  verifyFraudStrikes?: number;
+  fraudStrikes?: number;
+  errorStrikes?: number;
+}
+
 export interface CreateJobParams {
   client?: PublicKey;
   mint: PublicKey;
@@ -195,7 +214,7 @@ export interface CreateSubFragmentParams {
   splitProposal?: PublicKey;
   round?: number;
   childFragmentIndex: number;
-  requiredReputation: Amount;
+  requiredComputeReputation: Amount;
   requiredStake: Amount;
   complexityScore: number;
   inputHash: Hash32;
@@ -216,7 +235,7 @@ export type SdkEventName =
   | "jobFinalized"
   | "jobCancelled"
   | "voteSlashed"
-  | "workerReputationUpdated"
+  | "dualReputationUpdated"
   | "bayesianReputationUpdated"
   | "fragmentSplitProposed"
   | "fragmentSplitApproved"
@@ -244,7 +263,7 @@ export const SDK_EVENT_NAMES: SdkEventName[] = [
   "jobFinalized",
   "jobCancelled",
   "voteSlashed",
-  "workerReputationUpdated",
+  "dualReputationUpdated",
   "bayesianReputationUpdated",
   "fragmentSplitProposed",
   "fragmentSplitApproved",

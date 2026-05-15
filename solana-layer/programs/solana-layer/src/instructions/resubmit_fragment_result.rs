@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::TokenAccount;
 
 use crate::{
-    constants::{MIN_COMPUTE_STAKE, VOTING_TTL_SECS},
+    constants::VOTING_TTL_SECS,
     error::SiliciumError,
     events::FragmentSubmitted,
     state::{
@@ -25,7 +25,6 @@ pub struct ResubmitFragmentResult<'info> {
         bump = worker_account.bump,
         constraint = worker_account.owner == worker.key() @ SiliciumError::NotAuthorized,
         constraint = worker_account.status == WorkerStatus::Active @ SiliciumError::NotAuthorized,
-        constraint = worker_account.stake_amount >= MIN_COMPUTE_STAKE @ SiliciumError::NotAuthorized,
         constraint = worker_account.compute_reputation >= MIN_COMPUTE_REPUTATION @ SiliciumError::ComputeReputationTooLow
     )]
     pub worker_account: Box<Account<'info, Worker>>,

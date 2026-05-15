@@ -47,7 +47,7 @@ export interface SubFragmentCreatedEvent {
   childFragment: PublicKey;
   childFragmentIndex: number;
   depth: number;
-  requiredReputation: anchor.BN;
+  requiredComputeReputation: anchor.BN;
   requiredStake: anchor.BN;
   complexityScore: number;
   inputHash: number[];
@@ -63,10 +63,23 @@ export interface FragmentSplitCompletedEvent {
   childCount: number;
 }
 
+export interface DualReputationUpdatedEvent {
+  worker: PublicKey;
+  oldComputeReputation: anchor.BN;
+  newComputeReputation: anchor.BN;
+  oldVerifyReputation: anchor.BN;
+  newVerifyReputation: anchor.BN;
+  globalReputation: anchor.BN;
+  reason: number;
+  status: number;
+}
+
 export interface BayesianReputationUpdatedEvent {
   worker: PublicKey;
   reason: number;
-  reputation: anchor.BN;
+  computeReputation: anchor.BN;
+  verifyReputation: anchor.BN;
+  globalReputation: anchor.BN;
   reliabilityScore: number;
   computeAlphaLong: anchor.BN;
   computeBetaLong: anchor.BN;
@@ -76,6 +89,8 @@ export interface BayesianReputationUpdatedEvent {
   verifyBetaLong: anchor.BN;
   verifyAlphaShort: anchor.BN;
   verifyBetaShort: anchor.BN;
+  computeFraudStrikes: number;
+  verifyFraudStrikes: number;
   fraudStrikes: number;
   errorStrikes: number;
 }
@@ -94,7 +109,7 @@ export interface SiliciumEventMap {
   jobFinalized: unknown;
   jobCancelled: unknown;
   voteSlashed: unknown;
-  workerReputationUpdated: unknown;
+  dualReputationUpdated: DualReputationUpdatedEvent;
   bayesianReputationUpdated: BayesianReputationUpdatedEvent;
   fragmentSplitProposed: FragmentSplitProposedEvent;
   fragmentSplitApproved: FragmentSplitApprovedEvent;

@@ -15,7 +15,7 @@ exports.SDK_EVENT_NAMES = [
     "jobFinalized",
     "jobCancelled",
     "voteSlashed",
-    "workerReputationUpdated",
+    "dualReputationUpdated",
     "bayesianReputationUpdated",
     "fragmentSplitProposed",
     "fragmentSplitApproved",
