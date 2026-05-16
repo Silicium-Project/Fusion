@@ -126,6 +126,16 @@
         </div>
       </div>
 
+      <!-- Charts Section -->
+      <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div class="bg-[#1f2029] rounded-2xl p-6">
+          <highcharts :options="userGrowthOptions" />
+        </div>
+        <div class="bg-[#1f2029] rounded-2xl p-6">
+          <highcharts :options="deviceTypesOptions" />
+        </div>
+      </div>
+
       <!-- Soumettre une tâche Button -->
       <button @click="isModalOpen = true" class="fixed bottom-10 right-10 bg-gradient-to-r from-purple-400 to-blue-400 text-white font-bold py-3 px-6 rounded-full shadow-lg transform hover:scale-105 transition-transform">
         Soumettre une tâche
@@ -171,6 +181,38 @@ const user = ref(null);
 const solBalance = ref(null);
 const config = useRuntimeConfig();
 const apiBase = config.public.apiBase;
+
+const userGrowthOptions = ref({
+  chart: { type: 'line', backgroundColor: 'transparent' },
+  title: { text: 'Evolution des utilisateurs', style: { color: '#ffffff' } },
+  xAxis: { categories: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'], labels: { style: { color: '#ffffff' } } },
+  yAxis: { title: { text: 'Nombre d\'utilisateurs', style: { color: '#ffffff' } }, labels: { style: { color: '#ffffff' } } },
+  series: [{ name: 'Utilisateurs', data: [120, 250, 400, 580, 800, 1050], color: '#8b5cf6' }],
+  legend: { itemStyle: { color: '#ffffff' } },
+});
+
+const deviceTypesOptions = ref({
+  chart: { type: 'pie', backgroundColor: 'transparent' },
+  title: { text: 'Types d\'appareils connectés', style: { color: '#ffffff' } },
+  tooltip: { pointFormat: '{series.name}: <b>{point.percentage:.1f}%</b>' },
+  plotOptions: {
+    pie: {
+      allowPointSelect: true,
+      cursor: 'pointer',
+      dataLabels: { enabled: true, format: '<b>{point.name}</b>: {point.percentage:.1f} %', style: { color: 'white' } }
+    }
+  },
+  series: [{
+    name: 'Types',
+    colorByPoint: true,
+    data: [
+      { name: 'CPU', y: 70, color: '#8b5cf6' },
+      { name: 'GPU', y: 20, color: '#3b82f6' },
+      { name: 'ASIC', y: 10, color: '#10b981' }
+    ]
+  }],
+  legend: { itemStyle: { color: '#ffffff' } },
+});
 
 onMounted(async () => {
   const token = Cookies.get('auth_token');
