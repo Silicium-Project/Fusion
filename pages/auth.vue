@@ -38,6 +38,8 @@ import { jwtDecode } from 'jwt-decode';
 
 const isLogin = ref(true);
 const router = useRouter();
+const config = useRuntimeConfig();
+const apiBase = config.public.apiBase;
 
 const form = reactive({
   firstName: '',
@@ -57,10 +59,10 @@ const handleSubmit = async () => {
 
 const login = async () => {
   try {
-    const response = await $fetch(`http://185.157.245.42:8080/login/`, {
+    const response = await $fetch(`${apiBase}/login`, {
       method: 'POST',
       body: {
-        login: form.email,
+        email: form.email,
         password: form.password,
       }
     });
@@ -84,7 +86,7 @@ const login = async () => {
 
 const register = async () => {
   try {
-    await $fetch(`http://185.157.245.42:8080/register/`, {
+    await $fetch(`${apiBase}/register`, {
       method: 'POST',
       body: {
         username: form.username,

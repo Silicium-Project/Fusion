@@ -4,6 +4,8 @@ services:
         context: .
         dockerfile: Dockerfile
       container_name: silicium_frontend
+      environment:
+        NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
       ports:
         - "3000:3000"
       networks:
