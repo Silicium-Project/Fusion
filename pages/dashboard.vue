@@ -48,12 +48,16 @@
     <!-- Main Content -->
     <main class="flex-1 p-10 relative">
       <!-- Profile section -->
-      <div class="absolute top-10 right-10">
+      <div class="absolute top-10 right-10 bg-black/20 rounded-lg p-2 flex items-center space-x-4">
+        <div v-if="solBalance !== null" class="text-white font-semibold pl-2">
+          {{ solBalance.toFixed(4) }} SOL
+        </div>
+        <span v-if="solBalance !== null" class="text-white/30">|</span>
         <NuxtLink to="/profile" class="flex items-center space-x-3">
           <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-400 to-blue-400 flex items-center justify-center font-bold text-xl">
             {{ user ? (user.username || user.email)?.[0].toUpperCase() : '' }}
           </div>
-          <span class="text-white font-semibold">{{ user?.username || user?.email }}</span>
+          <span class="text-white font-semibold pr-2">{{ user?.username || user?.email }}</span>
         </NuxtLink>
       </div>
 
@@ -161,9 +165,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import Cookies from 'js-cookie';
+import * as web3 from '@solana/web3.js';
 
 const isModalOpen = ref(false);
 const user = ref(null);
+const solBalance = ref(null);
 const config = useRuntimeConfig();
 const apiBase = config.public.apiBase;
 
@@ -177,6 +183,14 @@ onMounted(async () => {
         }
       });
       user.value = fetchedUser;
+
+      if (fetchedUser.walletAddress) {
+        const connection = new web3.Connection(web3.clusterApiUrl('devnet'));
+        const publicKey = new web3.PublicKey(fetchedUser.walletAddress);
+        const balance = await connection.getBalance(publicKey);
+        solBalance.value = balance / web3.LAMPORTS_PER_SOL;
+      }
+
     } catch (error) {
       console.error("Failed to fetch user data:", error);
       // Handle error, e.g., by redirecting to login

@@ -18,6 +18,11 @@
             <p class="text-white/50 text-sm">Wallet Address</p>
             <p class="font-mono text-sm break-all">{{ user?.walletAddress || 'Not connected' }}</p>
           </div>
+          <div class="w-full mt-4">
+            <button @click="connectWallet" :disabled="!!user?.walletAddress" class="w-full h-12 rounded-lg bg-purple-500/20 text-purple-400 font-bold hover:bg-purple-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {{ user?.walletAddress ? 'Wallet Connected' : 'Connect Phantom Wallet' }}
+            </button>
+          </div>
           <div class="w-full mt-auto pt-8">
             <button @click="logout" class="w-full h-12 rounded-lg bg-red-500/20 text-red-400 font-bold hover:bg-red-500/40 transition-colors">
               Logout
@@ -99,6 +104,7 @@
 import { ref, onMounted, reactive } from 'vue';
 import Cookies from 'js-cookie';
 import { useRouter } from '#vue-router';
+import * as web3 from '@solana/web3.js';
 
 const user = ref(null);
 const config = useRuntimeConfig();
@@ -117,6 +123,35 @@ const passwordForm = reactive({
   newPassword: '',
   confirmPassword: '',
 });
+
+const connectWallet = async () => {
+  if (window.solana) {
+    try {
+      const resp = await window.solana.connect();
+      const publicKey = resp.publicKey.toString();
+      
+      const token = Cookies.get('auth_token');
+      if (!token) return;
+
+      await $fetch(`${apiBase}/user/wallet`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: { walletAddress: publicKey }
+      });
+      
+      if (user.value) {
+        user.value.walletAddress = publicKey;
+      }
+      alert('Wallet connected successfully!');
+
+    } catch (err) {
+      console.error("Failed to connect wallet:", err);
+      alert('Failed to connect wallet.');
+    }
+  } else {
+    alert('Phantom wallet not found. Please install it.');
+  }
+};
 
 const handleUpdateProfile = async () => {
   const token = Cookies.get('auth_token');
