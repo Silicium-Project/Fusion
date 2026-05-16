@@ -43,20 +43,20 @@
           </a>
         </li>
       </ul>
-      <div class="mt-auto">
-        <a href="/profile" class="flex items-center text-lg text-white/80 hover:text-white mb-4 hover-gradient-underline">
-          <span class="w-6 h-6 mr-4"></span> <!-- Icon Placeholder -->
-          Profil
-        </a>
-        <a href="#" class="flex items-center text-lg text-white/80 hover:text-white hover-gradient-underline">
-          <span class="w-6 h-6 mr-4"></span> <!-- Icon Placeholder -->
-          Paramètre
-        </a>
-      </div>
     </nav>
 
     <!-- Main Content -->
     <main class="flex-1 p-10 relative">
+      <!-- Profile section -->
+      <div class="absolute top-10 right-10">
+        <NuxtLink to="/profile" class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-400 to-blue-400 flex items-center justify-center font-bold text-xl">
+            {{ user ? (user.username || user.email)?.[0].toUpperCase() : '' }}
+          </div>
+          <span class="text-white font-semibold">{{ user?.username || user?.email }}</span>
+        </NuxtLink>
+      </div>
+
       <h2 class="text-4xl font-bold mb-2">Tableau de bord</h2>
       <p class="text-lg text-white/50 mb-10">Bienvenue dans Silicium, votre plateforme de calcul distribué</p>
 
@@ -159,7 +159,28 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
+import Cookies from 'js-cookie';
 
 const isModalOpen = ref(false);
+const user = ref(null);
+const config = useRuntimeConfig();
+const apiBase = config.public.apiBase;
+
+onMounted(async () => {
+  const token = Cookies.get('auth_token');
+  if (token) {
+    try {
+      const fetchedUser = await $fetch(`${apiBase}/user`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      user.value = fetchedUser;
+    } catch (error) {
+      console.error("Failed to fetch user data:", error);
+      // Handle error, e.g., by redirecting to login
+    }
+  }
+});
 </script>

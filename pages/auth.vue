@@ -74,9 +74,7 @@ const login = async () => {
 
     const decodedToken = jwtDecode(response.token) as { role: string };
 
-    if (decodedToken.role === 'admin') {
-      await router.push('/admin/users');
-    } else if (decodedToken.role === 'user') {
+    if (decodedToken.role === 'user') {
       await router.push('/dashboard');
     }
   } catch (error) {
