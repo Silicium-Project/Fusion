@@ -8,6 +8,9 @@ pub enum SiliciumError {
     #[msg("Invalid amount.")]
     InvalidAmount,
 
+    #[msg("Invalid storage hash.")]
+    InvalidStorageHash,
+
     #[msg("Not authorized.")]
     NotAuthorized,
 

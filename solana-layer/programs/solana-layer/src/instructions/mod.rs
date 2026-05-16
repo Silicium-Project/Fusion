@@ -1,4 +1,5 @@
 pub mod create_job;
+pub mod declare_job_storage;
 pub mod submit_fragment_result;
 pub mod finalize_job;
 pub mod cancel_job;
@@ -22,6 +23,7 @@ pub mod propose_fragment_split;
 pub mod create_sub_fragment;
 
 pub use create_job::*;
+pub use declare_job_storage::*;
 pub use submit_fragment_result::*;
 pub use finalize_job::*;
 pub use cancel_job::*;

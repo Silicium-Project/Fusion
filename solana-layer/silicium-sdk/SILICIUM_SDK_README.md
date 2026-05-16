@@ -21,6 +21,7 @@ The SDK supports:
 - worker and verifier registration;
 - optional active worker staking;
 - job creation and escrow funding;
+- job storage declaration for P2P/off-chain task metadata;
 - fragment claim, submit, resubmit and reclaim;
 - verifier voting;
 - verifier reward claiming;
@@ -46,7 +47,60 @@ import { SiliciumLayerSdk } from "./src";
 
 ---
 
-## 2. Project structure
+## 2. Architecture: SDK, Solana Layer and Storage
+
+The SDK is the integration layer between applications and the on-chain program.
+
+```txt
+Frontend / Dashboard / Backend / Worker node / Verifier node
+        ↓
+Silicium TypeScript SDK
+        ↓
+Solana Layer Anchor Program
+        ↓
+Events / accounts / escrow / reputation / votes
+```
+
+The SDK does not store large task files itself. Heavy data is stored off-chain or in a P2P storage layer. The on-chain program stores only integrity commitments and state.
+
+```txt
+Solana Layer
+→ jobs, fragments, votes, reputation, payments, storage hashes
+
+P2P / off-chain storage
+→ task manifests, fragment inputs, outputs, proofs, final artifacts
+
+SDK
+→ creates transactions, derives PDAs, fetches accounts, listens to events, helps apps connect the two layers
+```
+
+The normal task data flow is:
+
+```txt
+Client/backend creates task files
+  ↓
+Uploads manifest and inputs to P2P/off-chain storage
+  ↓
+Computes manifest_hash, input_root_hash, storage_ref_hash
+  ↓
+createJob(...)
+  ↓
+declareJobStorage(...)
+  ↓
+Workers fetch JobStorage and download manifest
+  ↓
+Workers verify checksums and compute
+  ↓
+Workers submit resultHash + proofRef
+  ↓
+Verifiers download output/proof and verify checksums
+  ↓
+Verifiers vote
+```
+
+---
+
+## 3. Project structure
 
 Recommended location inside the Anchor project:
 
@@ -80,7 +134,7 @@ The SDK should stay close to the Anchor project because it depends on the genera
 
 ---
 
-## 3. Requirements
+## 4. Requirements
 
 - Node.js
 - Yarn or npm
@@ -111,7 +165,7 @@ anchor build
 
 ---
 
-## 4. Devnet setup
+## 5. Devnet setup
 
 Check the deployed program:
 
@@ -136,7 +190,7 @@ anchor build
 
 ---
 
-## 5. Localnet setup
+## 6. Localnet setup
 
 Start a local validator:
 
@@ -164,7 +218,7 @@ export ANCHOR_PROVIDER_URL=http://127.0.0.1:8899
 
 ---
 
-## 6. Smoke tests
+## 7. Smoke tests
 
 Read-only Devnet smoke test:
 
@@ -198,7 +252,7 @@ verifier_reward_budget >= verifier_reward_per_vote * 2
 
 ---
 
-## 7. SDK initialization
+## 8. SDK initialization
 
 ```ts
 import * as anchor from "@coral-xyz/anchor";
@@ -229,7 +283,7 @@ const wallet = sdk.walletPubkey();
 
 ---
 
-## 8. Worker reputation fields
+## 9. Worker reputation fields
 
 A worker account exposes three role-specific reputation values:
 
@@ -266,12 +320,13 @@ global_reputation  = 5000
 
 ---
 
-## 9. PDA helpers
+## 10. PDA helpers
 
 The SDK exposes PDA helpers through `sdk.pdas`:
 
 ```ts
 const job = sdk.pdas.job(client, jobId);
+const jobStorage = sdk.pdas.jobStorage(job);
 const fragment = sdk.pdas.fragment(job, fragmentIndex);
 const splitProposal = sdk.pdas.splitProposal(parentFragment);
 const worker = sdk.pdas.worker(workerPublicKey);
@@ -292,7 +347,7 @@ Use PDA helpers instead of manually rebuilding seeds in frontend/backend code.
 
 ---
 
-## 10. Main instruction helpers
+## 11. Main instruction helpers
 
 ### Register a worker
 
@@ -355,6 +410,49 @@ Requirements:
 ```txt
 fragmentQuorum >= 2
 verifierRewardBudget >= expectedFragments * fragmentQuorum * verifierRewardPerVote
+```
+
+### Declare job storage
+
+After creating a job and uploading task metadata to the P2P/off-chain storage layer, declare the on-chain storage commitments:
+
+```ts
+const declared = await sdk.declareJobStorage({
+  job,
+  manifestHash,
+  inputRootHash,
+  storageRefHash,
+  encryptionRefHash, // optional; defaults to 32 zero bytes if your SDK helper supports it
+});
+
+console.log(declared.signature);
+console.log(declared.jobStorage.toBase58());
+```
+
+The SDK derives:
+
+```txt
+[b"job_storage", job]
+```
+
+Recommended 32-byte fields:
+
+```txt
+manifestHash       = sha256(canonical task manifest JSON)
+inputRootHash      = sha256 or Merkle root of all fragment input hashes
+storageRefHash     = sha256(canonical storage reference manifest)
+encryptionRefHash  = sha256(canonical encryption metadata), or [0; 32] when unused
+```
+
+Fetch later:
+
+```ts
+const storage = await sdk.fetchJobStorage(job);
+
+console.log(storage.manifestHash);
+console.log(storage.inputRootHash);
+console.log(storage.storageRefHash);
+console.log(storage.encryptionRefHash);
 ```
 
 ### Claim a fragment
@@ -458,7 +556,179 @@ await sdk.cancelJob({
 
 ---
 
-## 11. Split and sub-fragment helpers
+## 12. Storage and P2P workflow
+
+The SDK exposes only the on-chain storage commitments. Downloading files from IPFS, Arweave, libp2p, S3 or a Silicium storage gateway is handled by the application or storage module.
+
+### 12.1 Canonical task manifest
+
+Use a canonical JSON format for task manifests so every participant hashes the same bytes.
+
+Example:
+
+```json
+{
+  "version": 1,
+  "job_type": "render_3d",
+  "job_id": "example-job",
+  "fragments": [
+    {
+      "fragment_index": 0,
+      "input_uri": "ipfs://bafy...",
+      "input_sha256": "abc...",
+      "size": 123456,
+      "mime": "application/octet-stream"
+    },
+    {
+      "fragment_index": 1,
+      "input_uri": "ipfs://bafy...",
+      "input_sha256": "def...",
+      "size": 789012,
+      "mime": "application/octet-stream"
+    }
+  ]
+}
+```
+
+Compute:
+
+```ts
+const manifestHash = sha256Bytes(canonicalManifestBytes);
+```
+
+### 12.2 Storage reference manifest
+
+Use a separate storage reference manifest when the manifest itself has several retrieval options.
+
+```json
+{
+  "protocol": "ipfs",
+  "manifest_uri": "ipfs://bafyManifest...",
+  "mirrors": [
+    "https://gateway.example/ipfs/bafyManifest...",
+    "https://storage.silicium.network/jobs/example-job/manifest.json"
+  ]
+}
+```
+
+Compute:
+
+```ts
+const storageRefHash = sha256Bytes(canonicalStorageRefBytes);
+```
+
+### 12.3 Declare storage after job creation
+
+```ts
+const { job } = await sdk.createJob({
+  jobId,
+  expectedFragments,
+  rewardPerFragment,
+  verifierRewardPerVote,
+  verifierRewardBudget,
+  deadlineUnix,
+  fragmentQuorum: 2,
+  mint,
+  escrow,
+  clientToken,
+});
+
+await sdk.declareJobStorage({
+  job,
+  manifestHash,
+  inputRootHash,
+  storageRefHash,
+});
+```
+
+### 12.4 Worker download and checksum
+
+A worker should verify storage before computing:
+
+```ts
+const storage = await sdk.fetchJobStorage(job);
+const storageRef = await p2p.downloadStorageRef(storage.storageRefHash);
+
+assertBytesEqual(sha256Bytes(storageRef.bytes), storage.storageRefHash);
+
+const manifest = await p2p.downloadManifest(storageRef.manifestUri);
+assertBytesEqual(sha256Bytes(manifest.bytes), storage.manifestHash);
+
+const fragmentInput = manifest.fragments.find((f) => f.fragment_index === fragmentIndex);
+const inputBytes = await p2p.download(fragmentInput.input_uri);
+
+assertHexEqual(sha256Hex(inputBytes), fragmentInput.input_sha256);
+```
+
+Then the worker computes, uploads output/proof, and submits:
+
+```ts
+const resultHash = sha256Bytes(outputBytes);
+const proofRef = sha256Bytes(canonicalProofManifestBytes);
+
+await sdk.submitFragmentResult({
+  worker,
+  job,
+  fragmentIndex,
+  workerToken,
+  resultHash,
+  proofRef,
+  signers: [workerKeypair],
+});
+```
+
+### 12.5 Verifier download and checksum
+
+A verifier should check the same commitments before voting:
+
+```ts
+const storage = await sdk.fetchJobStorage(job);
+const fragmentAccount = await sdk.fetchFragment(fragment);
+
+const resultBytes = await p2p.download(resultManifest.output_uri);
+assertBytesEqual(sha256Bytes(resultBytes), fragmentAccount.resultHash);
+
+const proofManifestBytes = await p2p.download(resultManifest.proof_uri);
+assertBytesEqual(sha256Bytes(proofManifestBytes), fragmentAccount.proofRef);
+
+const valid = await verifyComputation({
+  inputBytes,
+  resultBytes,
+  proofManifestBytes,
+});
+
+await sdk.voteFragment({
+  verifier,
+  job,
+  fragment,
+  escrow,
+  workerToken,
+  choice: valid,
+  signers: [verifierKeypair],
+});
+```
+
+### 12.6 Encryption metadata
+
+When inputs are encrypted, `encryptionRefHash` commits to the encryption metadata manifest.
+
+Example:
+
+```json
+{
+  "version": 1,
+  "algorithm": "aes-256-gcm",
+  "key_policy": "worker-specific",
+  "key_commitment": "...",
+  "nonce_commitment": "..."
+}
+```
+
+The SDK does not manage private keys directly. Key exchange, access control, or threshold decryption should live in the storage/orchestration layer.
+
+---
+
+## 13. Split and sub-fragment helpers
 
 ### Propose a split
 
@@ -505,7 +775,7 @@ A `SplitParent` cannot be claimed directly. Only leaf fragments can be claimed a
 
 ---
 
-## 12. Passive network staking helpers
+## 14. Passive network staking helpers
 
 Passive staking is separate from worker/verifier active participation.
 
@@ -522,10 +792,11 @@ Passive stakers do not need a `Worker` account.
 
 ---
 
-## 13. Account fetch helpers
+## 15. Account fetch helpers
 
 ```ts
 const jobData = await sdk.fetchJob(job);
+const jobStorageData = await sdk.fetchJobStorage(job);
 const fragmentData = await sdk.fetchFragment(fragment);
 const workerData = await sdk.fetchWorker(workerPublicKey);
 const workerDataFromPda = await sdk.fetchWorker(workerAccountPda, true);
@@ -550,9 +821,18 @@ Use the second form when you already have the worker PDA.
 
 ---
 
-## 14. Event listeners
+## 16. Event listeners
 
 Listen to one event:
+
+```ts
+const sub = sdk.events.on("jobStorageDeclared", (event, slot, signature) => {
+  console.log(event.job.toBase58());
+  console.log(event.manifestHash);
+});
+```
+
+Listen to reputation updates:
 
 ```ts
 const sub = sdk.events.on("dualReputationUpdated", (event, slot, signature) => {
@@ -578,6 +858,7 @@ Supported SDK event names:
 
 ```txt
 jobCreated
+jobStorageDeclared
 workerRegistered
 workerStaked
 treasuryInitialized
@@ -607,62 +888,90 @@ networkUnstakeWithdrawn
 
 ---
 
-## 15. Typical backend flow
+## 17. Typical backend flow
 
 ```txt
-1. Listen to jobCreated.
-2. Fetch the job account.
-3. Store the job in the off-chain database.
-4. Expose available fragments to workers.
-5. Workers call claimFragment.
-6. Backend listens to fragmentClaimed.
-7. Workers execute the real computation off-chain.
-8. Workers submit resultHash and proofRef.
-9. Backend listens to fragmentSubmitted.
-10. Verifiers fetch the off-chain result/proof and call voteFragment.
-11. Backend listens to fragmentVerified / fragmentRejected.
-12. Verifiers claim rewards.
-13. When all fragments and verifier rewards are complete, finalizeJob.
-14. Backend indexes jobFinalized for users.
+1. Upload task files and manifest to P2P/off-chain storage.
+2. Compute manifest_hash, input_root_hash, storage_ref_hash.
+3. Call createJob.
+4. Call declareJobStorage.
+5. Listen to jobCreated and jobStorageDeclared.
+6. Fetch the job and JobStorage accounts.
+7. Store the job and storage commitments in the off-chain database.
+8. Expose available fragments to workers.
+9. Workers call claimFragment.
+10. Backend listens to fragmentClaimed.
+11. Workers execute computation off-chain.
+12. Workers submit resultHash and proofRef.
+13. Backend listens to fragmentSubmitted.
+14. Verifiers fetch the off-chain result/proof and call voteFragment.
+15. Backend listens to fragmentVerified / fragmentRejected.
+16. Verifiers claim rewards.
+17. When all fragments and verifier rewards are complete, finalizeJob.
+18. Backend indexes jobFinalized for users.
+```
+
+Recommended indexer table for storage:
+
+```txt
+job_storage
+- job_storage_pubkey
+- job_pubkey
+- manifest_hash
+- input_root_hash
+- storage_ref_hash
+- encryption_ref_hash
+- declared_by
+- created_at_unix
+- slot
+- signature
 ```
 
 ---
 
-## 16. Typical worker node flow
+## 18. Typical worker node flow
 
 ```txt
 1. registerWorker
 2. optionally stakeWorker for better/higher-risk tasks
 3. read available fragments from backend/indexer
-4. claimFragment
-5. compute off-chain
-6. upload result/proof off-chain
-7. submitFragmentResult(resultHash, proofRef)
-8. wait for fragmentVerified or fragmentRejected
-9. resubmit if rejected and allowed
+4. fetch JobStorage for the job
+5. download storage reference manifest
+6. download task manifest
+7. verify manifest_hash
+8. download assigned fragment input
+9. verify input checksum
+10. claimFragment
+11. compute off-chain
+12. upload result/proof off-chain
+13. submitFragmentResult(resultHash, proofRef)
+14. wait for fragmentVerified or fragmentRejected
+15. resubmit if rejected and allowed
 ```
 
 A worker that calculates well increases `computeReputation`.
 
 ---
 
-## 17. Typical verifier node flow
+## 19. Typical verifier node flow
 
 ```txt
 1. registerWorker
 2. optionally stakeWorker for higher-risk verification work
 3. listen to fragmentSubmitted
-4. fetch off-chain proof/result
-5. verify computation
-6. voteFragment(true/false)
-7. if vote wins, claimVerifierReward
+4. fetch JobStorage and Fragment
+5. download manifest, input, output and proof metadata
+6. verify all checksums against JobStorage and Fragment hashes
+7. verify computation
+8. voteFragment(true/false)
+9. if vote wins, claimVerifierReward
 ```
 
 A verifier that votes correctly and claims rewards increases `verifyReputation`.
 
 ---
 
-## 18. Typical frontend flow
+## 20. Typical frontend flow
 
 A frontend can use the SDK to:
 
@@ -672,15 +981,17 @@ A frontend can use the SDK to:
 3. show compute / verify / global reputation;
 4. show active stake and passive network stake;
 5. create jobs;
-6. display job and fragment status;
-7. display sub-fragment trees;
-8. listen to live events;
-9. show final output_uri and final_hash.
+6. declare job storage commitments;
+7. display job and fragment status;
+8. display sub-fragment trees;
+9. show storage manifest status and checksum status;
+10. listen to live events;
+11. show final output_uri and final_hash.
 ```
 
 ---
 
-## 19. Hash handling
+## 21. Hash handling
 
 The SDK should treat hashes as integrity commitments. Heavy data stays off-chain.
 
@@ -700,11 +1011,31 @@ export function sha256Bytes(data: Buffer | Uint8Array | string): number[] {
 }
 ```
 
+For hex:
+
+```ts
+export function sha256Hex(data: Buffer | Uint8Array | string): string {
+  const buffer = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  return createHash("sha256").update(buffer).digest("hex");
+}
+```
+
 Do not rely on `hash(uri)` to prove file contents. Use `hash(file_content)` or a canonical manifest containing the URI, content hash, size and MIME type.
+
+Recommended flow:
+
+```txt
+manifest bytes       -> manifestHash
+all input checksums  -> inputRootHash
+storage ref manifest -> storageRefHash
+worker output        -> resultHash
+proof manifest       -> proofRef
+final output         -> finalHash
+```
 
 ---
 
-## 20. Common errors
+## 22. Common errors
 
 ### `InvalidParams` in `create_job.rs`
 
@@ -753,9 +1084,42 @@ solana program show --buffers --url devnet
 solana program close BUFFER_ADDRESS --url devnet
 ```
 
+### Missing JobStorage account
+
+Create and declare job storage after creating the job:
+
+```ts
+await sdk.declareJobStorage({
+  job,
+  manifestHash,
+  inputRootHash,
+  storageRefHash,
+});
+```
+
+Then fetch:
+
+```ts
+const storage = await sdk.fetchJobStorage(job);
+```
+
+### Checksum mismatch
+
+A checksum mismatch means one of these is wrong:
+
+```txt
+manifest bytes are not canonicalized the same way
+input file differs from the declared checksum
+storage ref manifest differs from storage_ref_hash
+result/proof file differs from submitted resultHash/proofRef
+wrong job or wrong fragment index was used
+```
+
+Workers and verifiers should refuse to compute or vote when checksum verification fails.
+
 ---
 
-## 21. Production notes
+## 23. Production notes
 
 Before production:
 
@@ -764,14 +1128,17 @@ Before production:
 - keep IDL and SDK versions aligned;
 - add an event indexer;
 - store job inputs/outputs/proofs in durable off-chain storage;
+- pin or replicate P2P files to avoid unavailable tasks;
+- define canonical JSON serialization for manifests;
 - audit all slashing and reward logic;
 - make split thresholds stricter than local test values;
 - increase cooldown and TTL constants;
-- keep bootstrap stake low, but restrict high-risk fragments by `requiredStake` and `requiredComputeReputation`.
+- keep bootstrap stake low, but restrict high-risk fragments by `requiredStake` and `requiredComputeReputation`;
+- add monitoring for `jobStorageDeclared`, `fragmentSubmitted`, and checksum failures.
 
 ---
 
-## 22. Validation status
+## 24. Validation status
 
 Validated locally:
 
@@ -780,6 +1147,9 @@ registerWorker OK
 bootstrap participation without active stake OK
 stakeWorker OK
 createJob quorum 2 OK
+declareJobStorage OK
+jobStorageDeclared event OK
+fetchJobStorage OK
 claimFragment OK
 submitFragmentResult OK
 voteFragment with 2 verifiers OK
@@ -799,7 +1169,7 @@ finalizeJob OK
 
 ---
 
-## 23. Milestones
+## 25. Milestones
 
 Milestones are planned for the validation layer after the current hash/proof-ref workflow.
 
@@ -820,3 +1190,4 @@ challenge_seed
 validate_fragment / submit_milestone_check
 ```
 
+The storage layer is compatible with milestones: the task manifest can include milestone metadata, and the layer can later commit to `milestone_root` without storing large files on-chain.

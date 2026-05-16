@@ -16,6 +16,19 @@ pub struct JobCreated {
     pub fragment_quorum: u16,
 }
 
+
+#[event]
+pub struct JobStorageDeclared {
+    pub job: Pubkey,
+    pub job_storage: Pubkey,
+    pub client: Pubkey,
+    pub manifest_hash: [u8; 32],
+    pub input_root_hash: [u8; 32],
+    pub storage_ref_hash: [u8; 32],
+    pub encryption_ref_hash: [u8; 32],
+    pub created_at_unix: i64,
+}
+
 #[event]
 pub struct WorkerRegistered {
     pub worker: Pubkey,

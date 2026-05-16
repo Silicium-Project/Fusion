@@ -43,6 +43,17 @@ export interface CreateJobParams {
   fragmentQuorum: number;
 }
 
+
+export interface DeclareJobStorageParams {
+  client?: PublicKey;
+  job: PublicKey;
+  manifestHash: Hash32;
+  inputRootHash: Hash32;
+  storageRefHash: Hash32;
+  encryptionRefHash?: Hash32;
+  signers?: Signer[];
+}
+
 export interface RegisterWorkerParams {
   worker?: PublicKey;
   signers?: Signer[];
@@ -223,6 +234,7 @@ export interface CreateSubFragmentParams {
 
 export type SdkEventName =
   | "jobCreated"
+  | "jobStorageDeclared"
   | "workerRegistered"
   | "workerStaked"
   | "treasuryInitialized"
@@ -251,6 +263,7 @@ export type SdkEventName =
 
 export const SDK_EVENT_NAMES: SdkEventName[] = [
   "jobCreated",
+  "jobStorageDeclared",
   "workerRegistered",
   "workerStaked",
   "treasuryInitialized",

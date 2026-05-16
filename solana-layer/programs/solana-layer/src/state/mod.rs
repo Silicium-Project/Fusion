@@ -9,3 +9,4 @@ pub mod reputation;
 pub mod staking_pool;
 pub mod network_staker;
 pub mod split_proposal;
+pub mod job_storage;

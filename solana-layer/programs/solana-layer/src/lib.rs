@@ -8,7 +8,7 @@ pub mod state;
 
 pub use instructions::*;
 
-declare_id!("48Bdt8Dg9FW8n6Mpvvdh6dgTXrsBvBfqMrwhnWQ2WQm1");
+declare_id!("Fv18qaEX7EKA1SaXNFFB9gCc5G6fuffWJkjTjhaEQLot");
 
 #[program]
 pub mod solana_layer {
@@ -36,6 +36,22 @@ pub mod solana_layer {
         )
     }
 
+
+    pub fn declare_job_storage(
+        ctx: Context<DeclareJobStorage>,
+        manifest_hash: [u8; 32],
+        input_root_hash: [u8; 32],
+        storage_ref_hash: [u8; 32],
+        encryption_ref_hash: [u8; 32],
+    ) -> Result<()> {
+        crate::instructions::declare_job_storage::handler(
+            ctx,
+            manifest_hash,
+            input_root_hash,
+            storage_ref_hash,
+            encryption_ref_hash,
+        )
+    }
     pub fn submit_fragment_result(
         ctx: Context<SubmitFragmentResult>,
         fragment_index: u32,

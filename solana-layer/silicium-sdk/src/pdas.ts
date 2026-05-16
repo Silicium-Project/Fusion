@@ -26,6 +26,13 @@ export function jobPda(programId: PublicKey, client: PublicKey, jobId: anchor.BN
   )[0];
 }
 
+export function jobStoragePda(programId: PublicKey, job: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("job_storage"), job.toBuffer()],
+    programId,
+  )[0];
+}
+
 export function fragmentPda(programId: PublicKey, job: PublicKey, fragmentIndex: number): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("fragment"), job.toBuffer(), u32le(fragmentIndex)],

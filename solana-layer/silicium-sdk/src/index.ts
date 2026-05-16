@@ -13,6 +13,7 @@ import {
   escrowAuthPda,
   fragmentPda,
   jobPda,
+  jobStoragePda,
   networkStakerPda,
   resultPda,
   roundResolutionPda,
@@ -33,6 +34,7 @@ import type {
   ClaimStakingRewardParams,
   ClaimVerifierRewardParams,
   CreateJobParams,
+  DeclareJobStorageParams,
   CreateSdkParams,
   FinalizeJobParams,
   FundStakingRewardsParams,
@@ -127,6 +129,7 @@ export class SiliciumLayerSdk {
 
   pdas = {
     job: (client: PublicKey, jobId: anchor.BN | number | bigint | string) => jobPda(this.programId, client, jobId),
+    jobStorage: (job: PublicKey) => jobStoragePda(this.programId, job),
     fragment: (job: PublicKey, fragmentIndex: number) => fragmentPda(this.programId, job, fragmentIndex),
     worker: (worker: PublicKey) => workerPda(this.programId, worker),
     escrowAuth: (job: PublicKey) => escrowAuthPda(this.programId, job),
@@ -213,6 +216,31 @@ export class SiliciumLayerSdk {
 
     const signature = await builder.rpc();
     return { signature, job, escrowAuth };
+  }
+
+
+  async declareJobStorage(params: DeclareJobStorageParams): Promise<{ signature: TransactionSignature; jobStorage: PublicKey }> {
+    const client = params.client ?? this.walletPubkey();
+    const jobStorage = this.pdas.jobStorage(params.job);
+    const encryptionRefHash = params.encryptionRefHash ?? new Uint8Array(32);
+
+    let builder = this.methods
+      .declareJobStorage(
+        asHash32(params.manifestHash),
+        asHash32(params.inputRootHash),
+        asHash32(params.storageRefHash),
+        asHash32(encryptionRefHash),
+      )
+      .accounts({
+        client,
+        job: params.job,
+        jobStorage,
+        systemProgram: SystemProgram.programId,
+      });
+
+    builder = appendSigners(builder, params.signers);
+    const signature = await builder.rpc();
+    return { signature, jobStorage };
   }
 
   async claimFragment(params: ClaimFragmentParams): Promise<{ signature: TransactionSignature; fragment: PublicKey }> {
@@ -658,6 +686,11 @@ export class SiliciumLayerSdk {
 
   async fetchJob(job: PublicKey): Promise<unknown> {
     return this.accounts.job.fetch(job);
+  }
+
+  async fetchJobStorage(jobOrJobStorage: PublicKey, isJobStorageAccount = false): Promise<unknown> {
+    const account = isJobStorageAccount ? jobOrJobStorage : this.pdas.jobStorage(jobOrJobStorage);
+    return this.accounts.jobStorage.fetch(account);
   }
 
   async fetchFragment(fragment: PublicKey): Promise<unknown> {
