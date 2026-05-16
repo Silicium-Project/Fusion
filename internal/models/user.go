@@ -15,6 +15,7 @@ type User struct {
 	PasswordHash  string    `gorm:"not null" json:"-"` // Omit from JSON responses
 	Username      *string   `gorm:"unique" json:"username,omitempty"`
 	WalletAddress *string   `gorm:"unique" json:"walletAddress,omitempty"`
+	Role          string    `gorm:"not null;default:'user'" json:"role"`
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 }

@@ -26,6 +26,12 @@ func init() {
 	jwtKey = []byte(key)
 }
 
+// JWTClaims includes the user role along with registered claims
+type JWTClaims struct {
+	Role string `json:"role"`
+	jwt.RegisteredClaims
+}
+
 type RegisterRequest struct {
 	Email     string  `json:"email"`
 	Password  string  `json:"password"`
@@ -44,7 +50,9 @@ type ConnectWalletRequest struct {
 }
 
 type UpdateUserRequest struct {
-	Username *string `json:"username,omitempty"`
+	Username  *string `json:"username,omitempty"`
+	FirstName *string `json:"firstName,omitempty"`
+	LastName  *string `json:"lastName,omitempty"`
 }
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +74,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		Username:     req.Username,
 		FirstName:    req.FirstName,
 		LastName:     req.LastName,
+		Role:         "user", // Default role
 	}
 
 	// The BeforeSave hook will hash the password
@@ -97,9 +106,12 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expirationTime := time.Now().Add(24 * time.Hour)
-	claims := &jwt.RegisteredClaims{
-		Subject:   strconv.FormatUint(uint64(user.ID), 10),
-		ExpiresAt: jwt.NewNumericDate(expirationTime),
+	claims := &JWTClaims{
+		Role: user.Role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   strconv.FormatUint(uint64(user.ID), 10),
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -111,6 +123,24 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+}
+
+func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
+	userIDStr, ok := r.Context().Value(contextkeys.UserIDKey).(string)
+	if !ok {
+		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	var user models.User
+	if result := h.DB.First(&user, userIDStr); result.Error != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(user)
 }
 
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -135,6 +165,12 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	if req.Username != nil {
 		user.Username = req.Username
 	}
+	if req.FirstName != nil {
+		user.FirstName = req.FirstName
+	}
+	if req.LastName != nil {
+		user.LastName = req.LastName
+	}
 
 	if result := h.DB.Save(&user); result.Error != nil {
 		http.Error(w, "Could not update user", http.StatusInternalServerError)
@@ -144,6 +180,51 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(user)
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userIDStr, ok := r.Context().Value(contextkeys.UserIDKey).(string)
+	if !ok {
+		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.NewPassword == "" || req.CurrentPassword == "" {
+		http.Error(w, "Both current and new password are required", http.StatusBadRequest)
+		return
+	}
+
+	var user models.User
+	if result := h.DB.First(&user, userIDStr); result.Error != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	if !user.CheckPassword(req.CurrentPassword) {
+		http.Error(w, "Invalid current password", http.StatusUnauthorized)
+		return
+	}
+
+	// The BeforeSave hook will hash the new password
+	user.PasswordHash = req.NewPassword
+	if result := h.DB.Save(&user); result.Error != nil {
+		http.Error(w, "Could not update password", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Password updated successfully"})
 }
 
 func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {

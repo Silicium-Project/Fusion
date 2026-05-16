@@ -17,7 +17,9 @@ func RegisterUserRoutes(router *mux.Router, h handler.Handler) {
 	authRouter.Use(middleware.JwtMiddleware)
 
 	// Protected routes
+	authRouter.HandleFunc("", h.GetUser).Methods("GET")
 	authRouter.HandleFunc("", h.UpdateUser).Methods("PUT", "PATCH")
 	authRouter.HandleFunc("", h.DeleteUser).Methods("DELETE")
+	authRouter.HandleFunc("/password", h.ChangePassword).Methods("PUT")
 	authRouter.HandleFunc("/wallet", h.ConnectWallet).Methods("POST")
 }
