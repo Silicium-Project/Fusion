@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS users (
     -- An optional, user-chosen display name.
     username VARCHAR(50) UNIQUE,
 
+    -- The user's associated wallet address, must be unique.
+    wallet_address TEXT UNIQUE,
+
     -- Timestamps for tracking account creation and updates.
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
