@@ -1,11 +1,17 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from "@solana/web3.js";
+import {
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  SystemProgram,
+  SYSVAR_RENT_PUBKEY,
+  Transaction,
+} from "@solana/web3.js";
 import { assert } from "chai";
 import {
   TOKEN_PROGRAM_ID,
-  createMint,
   createAssociatedTokenAccount,
+  createMint,
   mintTo,
 } from "@solana/spl-token";
 
@@ -86,7 +92,12 @@ function stakeVaultPda(worker: PublicKey): PublicKey {
 
 function votePda(fragment: PublicKey, verifier: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("fragment_vote"), fragment.toBuffer(), verifier.toBuffer(), u16le(round)],
+    [
+      Buffer.from("fragment_vote"),
+      fragment.toBuffer(),
+      verifier.toBuffer(),
+      u16le(round),
+    ],
     program.programId
   )[0];
 }
@@ -113,6 +124,10 @@ function treasuryAuthPda(mintPk: PublicKey): PublicKey {
 }
 
 function rep(value: any): number {
+  if (value === undefined || value === null) {
+    throw new Error("Missing reputation value. Did you rebuild the IDL?");
+  }
+
   return Number(value.toString());
 }
 
@@ -128,19 +143,49 @@ function workerRep(
 }
 
 function assertComputeUnchanged(before: any, after: any) {
-  assert.equal(workerRep(after, "computeReputation"), workerRep(before, "computeReputation"));
+  assert.equal(
+    workerRep(after, "computeReputation"),
+    workerRep(before, "computeReputation")
+  );
 }
 
 function assertVerifyUnchanged(before: any, after: any) {
-  assert.equal(workerRep(after, "verifyReputation"), workerRep(before, "verifyReputation"));
+  assert.equal(
+    workerRep(after, "verifyReputation"),
+    workerRep(before, "verifyReputation")
+  );
 }
 
-async function airdrop(pubkey: PublicKey, lamports = 1_000_000_000) {
-  await provider.connection.requestAirdrop(pubkey, lamports);
-  await sleep(500);
+/**
+ * Important for CI:
+ * Generated Keypairs have 0 SOL.
+ * registerWorker creates the Worker PDA with `worker` as payer, so the worker keypair
+ * must have lamports before calling registerWorker.
+ */
+async function fundKeypair(
+  keypair: anchor.web3.Keypair,
+  solAmount = 0.1
+): Promise<void> {
+  const currentBalance = await provider.connection.getBalance(keypair.publicKey);
+
+  if (currentBalance >= 0.02 * LAMPORTS_PER_SOL) {
+    return;
+  }
+
+  const tx = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: provider.wallet.publicKey,
+      toPubkey: keypair.publicKey,
+      lamports: Math.floor(solAmount * LAMPORTS_PER_SOL),
+    })
+  );
+
+  await provider.sendAndConfirm(tx, []);
 }
 
 async function registerWorker(workerKeypair: anchor.web3.Keypair): Promise<PublicKey> {
+  await fundKeypair(workerKeypair);
+
   const workerAccount = workerPda(workerKeypair.publicKey);
 
   await program.methods
@@ -156,11 +201,26 @@ async function registerWorker(workerKeypair: anchor.web3.Keypair): Promise<Publi
   return workerAccount;
 }
 
-async function createAndFundWorkerToken(owner: PublicKey, amount = 10_000_000): Promise<PublicKey> {
+async function createAndFundWorkerToken(
+  owner: PublicKey,
+  amount = 10_000_000
+): Promise<PublicKey> {
   const payer = provider.wallet.payer as anchor.web3.Keypair;
-  const token = await createAssociatedTokenAccount(provider.connection, payer, mint, owner);
+  const token = await createAssociatedTokenAccount(
+    provider.connection,
+    payer,
+    mint,
+    owner
+  );
 
-  await mintTo(provider.connection, payer, mint, token, provider.wallet.publicKey, amount);
+  await mintTo(
+    provider.connection,
+    payer,
+    mint,
+    token,
+    provider.wallet.publicKey,
+    amount
+  );
 
   return token;
 }
@@ -195,11 +255,17 @@ async function stakeRegisteredWorker(
 
 async function createReadyWorker(amount = 1_000_000) {
   const keypair = anchor.web3.Keypair.generate();
-  await airdrop(keypair.publicKey);
+
+  await fundKeypair(keypair);
 
   const workerAccount = await registerWorker(keypair);
   const workerToken = await createAndFundWorkerToken(keypair.publicKey);
-  const stake = await stakeRegisteredWorker(keypair, workerAccount, workerToken, amount);
+  const stake = await stakeRegisteredWorker(
+    keypair,
+    workerAccount,
+    workerToken,
+    amount
+  );
 
   return {
     keypair,
@@ -281,7 +347,11 @@ async function claimAndSubmitFragment(
     .rpc();
 
   await program.methods
-    .submitFragmentResult(fragmentIndex, Array(32).fill(resultByte), Array(32).fill(proofByte))
+    .submitFragmentResult(
+      fragmentIndex,
+      Array(32).fill(resultByte),
+      Array(32).fill(proofByte)
+    )
     .accounts({
       worker: worker.publicKey,
       workerAccount,
@@ -411,7 +481,10 @@ async function completeVerifiedFragmentAndClaimFirstVerifierReward() {
   return { computeWorker, verifier1, verifier2, job, escrow, fragment };
 }
 
-async function boostVerifierReputation(verifier: Awaited<ReturnType<typeof createReadyWorker>>, rounds = 3) {
+async function boostVerifierReputation(
+  verifier: Awaited<ReturnType<typeof createReadyWorker>>,
+  rounds = 3
+) {
   for (let i = 0; i < rounds; i++) {
     const computeWorker = await createReadyWorker();
     const coVerifier = await createReadyWorker();
@@ -465,9 +538,21 @@ describe("silicium v2.5 dual reputation", () => {
     const authority = provider.wallet.publicKey;
 
     mint = await createMint(provider.connection, payer, authority, null, 6);
-    clientToken = await createAssociatedTokenAccount(provider.connection, payer, mint, authority);
+    clientToken = await createAssociatedTokenAccount(
+      provider.connection,
+      payer,
+      mint,
+      authority
+    );
 
-    await mintTo(provider.connection, payer, mint, clientToken, authority, 100_000_000);
+    await mintTo(
+      provider.connection,
+      payer,
+      mint,
+      clientToken,
+      authority,
+      100_000_000
+    );
   });
 
   it("initializes compute, verify and global reputation at 5000", async () => {
@@ -498,14 +583,39 @@ describe("silicium v2.5 dual reputation", () => {
       22
     );
 
-    await voteOnFragment(verifier1.keypair, verifier1.workerAccount, job, fragment, escrow, computeWorker.workerToken, true);
-    await voteOnFragment(verifier2.keypair, verifier2.workerAccount, job, fragment, escrow, computeWorker.workerToken, true);
+    await voteOnFragment(
+      verifier1.keypair,
+      verifier1.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      true
+    );
+
+    await voteOnFragment(
+      verifier2.keypair,
+      verifier2.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      true
+    );
 
     const after = await program.account.worker.fetch(computeWorker.workerAccount);
 
-    assert.isAbove(workerRep(after, "computeReputation"), workerRep(before, "computeReputation"));
+    assert.isAbove(
+      workerRep(after, "computeReputation"),
+      workerRep(before, "computeReputation")
+    );
+
     assertVerifyUnchanged(before, after);
-    assert.isAbove(workerRep(after, "globalReputation"), workerRep(before, "globalReputation"));
+
+    assert.isAbove(
+      workerRep(after, "globalReputation"),
+      workerRep(before, "globalReputation")
+    );
   });
 
   it("compute rejection decreases only compute reputation and keeps verify reputation unchanged", async () => {
@@ -526,14 +636,39 @@ describe("silicium v2.5 dual reputation", () => {
       32
     );
 
-    await voteOnFragment(verifier1.keypair, verifier1.workerAccount, job, fragment, escrow, computeWorker.workerToken, false);
-    await voteOnFragment(verifier2.keypair, verifier2.workerAccount, job, fragment, escrow, computeWorker.workerToken, false);
+    await voteOnFragment(
+      verifier1.keypair,
+      verifier1.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      false
+    );
+
+    await voteOnFragment(
+      verifier2.keypair,
+      verifier2.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      false
+    );
 
     const after = await program.account.worker.fetch(computeWorker.workerAccount);
 
-    assert.isBelow(workerRep(after, "computeReputation"), workerRep(before, "computeReputation"));
+    assert.isBelow(
+      workerRep(after, "computeReputation"),
+      workerRep(before, "computeReputation")
+    );
+
     assertVerifyUnchanged(before, after);
-    assert.isBelow(workerRep(after, "globalReputation"), workerRep(before, "globalReputation"));
+
+    assert.isBelow(
+      workerRep(after, "globalReputation"),
+      workerRep(before, "globalReputation")
+    );
   });
 
   it("claiming a correct verifier reward increases only verify reputation", async () => {
@@ -561,15 +696,46 @@ describe("silicium v2.5 dual reputation", () => {
       42
     );
 
-    const vote1 = await voteOnFragment(verifier1.keypair, verifier1.workerAccount, job, fragment, escrow, computeWorker.workerToken, true);
-    await voteOnFragment(verifier2.keypair, verifier2.workerAccount, job, fragment, escrow, computeWorker.workerToken, true);
+    const vote1 = await voteOnFragment(
+      verifier1.keypair,
+      verifier1.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      true
+    );
+
+    await voteOnFragment(
+      verifier2.keypair,
+      verifier2.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      true
+    );
 
     const beforeClaim = await program.account.worker.fetch(verifier1.workerAccount);
-    await claimVerifierReward(verifier1.keypair, verifier1.workerAccount, verifier1.workerToken, job, fragment, escrow, vote1.vote);
+
+    await claimVerifierReward(
+      verifier1.keypair,
+      verifier1.workerAccount,
+      verifier1.workerToken,
+      job,
+      fragment,
+      escrow,
+      vote1.vote
+    );
+
     const afterClaim = await program.account.worker.fetch(verifier1.workerAccount);
 
     assertComputeUnchanged(beforeClaim, afterClaim);
-    assert.isAbove(workerRep(afterClaim, "verifyReputation"), workerRep(beforeClaim, "verifyReputation"));
+
+    assert.isAbove(
+      workerRep(afterClaim, "verifyReputation"),
+      workerRep(beforeClaim, "verifyReputation")
+    );
   });
 
   it("an expired claim penalizes compute reputation but not verify reputation", async () => {
@@ -606,12 +772,14 @@ describe("silicium v2.5 dual reputation", () => {
             previousWorkerAccount: computeWorker.workerAccount,
           })
           .rpc();
+
         reclaimed = true;
         break;
       } catch (e: any) {
         if (!String(e).includes("ClaimStillActive")) {
           throw e;
         }
+
         await sleep(1000);
       }
     }
@@ -620,20 +788,21 @@ describe("silicium v2.5 dual reputation", () => {
 
     const after = await program.account.worker.fetch(computeWorker.workerAccount);
 
-    assert.isBelow(workerRep(after, "computeReputation"), workerRep(before, "computeReputation"));
+    assert.isBelow(
+      workerRep(after, "computeReputation"),
+      workerRep(before, "computeReputation")
+    );
+
     assertVerifyUnchanged(before, after);
   });
 
   it("slashing a wrong vote decreases verify reputation but not compute reputation", async () => {
     const client = provider.wallet.publicKey;
-    const payer = provider.wallet.payer as anchor.web3.Keypair;
 
     const treasuryState = treasuryPda(mint);
     const treasuryAuth = treasuryAuthPda(mint);
     const treasury = anchor.web3.Keypair.generate();
 
-    // Treasury is a PDA per mint. If another test already initialized it, this test can still
-    // use the existing state, but the associated token account is unique in this isolated file.
     try {
       await program.methods
         .initTreasury()
@@ -650,7 +819,10 @@ describe("silicium v2.5 dual reputation", () => {
         .signers([treasury])
         .rpc();
     } catch (e: any) {
-      if (!String(e).includes("already in use") && !String(e).includes("already been processed")) {
+      if (
+        !String(e).includes("already in use") &&
+        !String(e).includes("already been processed")
+      ) {
         throw e;
       }
     }
@@ -681,8 +853,25 @@ describe("silicium v2.5 dual reputation", () => {
       false
     );
 
-    await voteOnFragment(goodVerifier1.keypair, goodVerifier1.workerAccount, job, fragment, escrow, computeWorker.workerToken, true);
-    await voteOnFragment(goodVerifier2.keypair, goodVerifier2.workerAccount, job, fragment, escrow, computeWorker.workerToken, true);
+    await voteOnFragment(
+      goodVerifier1.keypair,
+      goodVerifier1.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      true
+    );
+
+    await voteOnFragment(
+      goodVerifier2.keypair,
+      goodVerifier2.workerAccount,
+      job,
+      fragment,
+      escrow,
+      computeWorker.workerToken,
+      true
+    );
 
     const beforeSlash = await program.account.worker.fetch(badVerifier.workerAccount);
     const fragmentResolved = await program.account.fragment.fetch(fragment);
@@ -709,8 +898,16 @@ describe("silicium v2.5 dual reputation", () => {
     const afterSlash = await program.account.worker.fetch(badVerifier.workerAccount);
 
     assertComputeUnchanged(beforeSlash, afterSlash);
-    assert.isBelow(workerRep(afterSlash, "verifyReputation"), workerRep(beforeSlash, "verifyReputation"));
-    assert.isBelow(workerRep(afterSlash, "globalReputation"), workerRep(beforeSlash, "globalReputation"));
+
+    assert.isBelow(
+      workerRep(afterSlash, "verifyReputation"),
+      workerRep(beforeSlash, "verifyReputation")
+    );
+
+    assert.isBelow(
+      workerRep(afterSlash, "globalReputation"),
+      workerRep(beforeSlash, "globalReputation")
+    );
   });
 
   it("a higher verify reputation causes a stronger compute penalty on rejection", async () => {
@@ -719,10 +916,16 @@ describe("silicium v2.5 dual reputation", () => {
 
     await boostVerifierReputation(highVerifier, 3);
 
-    const highVerifierAfterBoost = await program.account.worker.fetch(highVerifier.workerAccount);
+    const highVerifierAfterBoost = await program.account.worker.fetch(
+      highVerifier.workerAccount
+    );
+
     assert.isAbove(workerRep(highVerifierAfterBoost, "verifyReputation"), 5000);
 
-    async function rejectedBySecondVerifier(secondVerifier: Awaited<ReturnType<typeof createReadyWorker>>) {
+    async function rejectedBySecondVerifier(
+      secondVerifier: Awaited<ReturnType<typeof createReadyWorker>>,
+      resultByte: number
+    ) {
       const computeWorker = await createReadyWorker();
       const neutralVerifier = await createReadyWorker();
       const { job, escrow } = await createTestJob(1, 2);
@@ -734,20 +937,37 @@ describe("silicium v2.5 dual reputation", () => {
         computeWorker.workerToken,
         job,
         0,
-        81,
-        82
+        resultByte,
+        resultByte + 1
       );
 
-      await voteOnFragment(neutralVerifier.keypair, neutralVerifier.workerAccount, job, fragment, escrow, computeWorker.workerToken, false);
-      await voteOnFragment(secondVerifier.keypair, secondVerifier.workerAccount, job, fragment, escrow, computeWorker.workerToken, false);
+      await voteOnFragment(
+        neutralVerifier.keypair,
+        neutralVerifier.workerAccount,
+        job,
+        fragment,
+        escrow,
+        computeWorker.workerToken,
+        false
+      );
+
+      await voteOnFragment(
+        secondVerifier.keypair,
+        secondVerifier.workerAccount,
+        job,
+        fragment,
+        escrow,
+        computeWorker.workerToken,
+        false
+      );
 
       const after = await program.account.worker.fetch(computeWorker.workerAccount);
 
       return workerRep(before, "computeReputation") - workerRep(after, "computeReputation");
     }
 
-    const lowPenalty = await rejectedBySecondVerifier(lowVerifier);
-    const highPenalty = await rejectedBySecondVerifier(highVerifier);
+    const lowPenalty = await rejectedBySecondVerifier(lowVerifier, 81);
+    const highPenalty = await rejectedBySecondVerifier(highVerifier, 91);
 
     assert.isAbove(
       highPenalty,
