@@ -9,6 +9,8 @@ import (
 // User corresponds to the 'users' table in the database
 type User struct {
 	ID            uint      `gorm:"primaryKey" json:"id"`
+	FirstName     *string   `json:"firstName,omitempty"`
+	LastName      *string   `json:"lastName,omitempty"`
 	Email         string    `gorm:"unique;not null" json:"email"`
 	PasswordHash  string    `gorm:"not null" json:"-"` // Omit from JSON responses
 	Username      *string   `gorm:"unique" json:"username,omitempty"`

@@ -27,9 +27,11 @@ func init() {
 }
 
 type RegisterRequest struct {
-	Email    string  `json:"email"`
-	Password string  `json:"password"`
-	Username *string `json:"username,omitempty"`
+	Email     string  `json:"email"`
+	Password  string  `json:"password"`
+	Username  *string `json:"username,omitempty"`
+	FirstName *string `json:"first_name,omitempty"`
+	LastName  *string `json:"last_name,omitempty"`
 }
 
 type LoginRequest struct {
@@ -62,6 +64,8 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		Email:        req.Email,
 		PasswordHash: req.Password, // The hook in user.go will hash this
 		Username:     req.Username,
+		FirstName:    req.FirstName,
+		LastName:     req.LastName,
 	}
 
 	// The BeforeSave hook will hash the password
