@@ -41,7 +41,11 @@
           </li>
         </ul>
       </div>
-      <!-- You can add a bottom section here if needed, for example a help link or settings -->
+      <div class="p-4">
+        <button @click="isModalOpen = true" class="w-full h-12 rounded-xl bg-gradient-to-r from-purple-400 to-blue-400 text-white font-bold text-lg hover:from-purple-500 hover:to-blue-500 transition-shadow shadow-lg transform hover:scale-105">
+          Soumettre une tâche
+        </button>
+      </div>
     </nav>
 
     <!-- Main Content -->
@@ -135,11 +139,6 @@
           <highcharts :options="deviceTypesOptions" />
         </div>
       </div>
-
-      <!-- Soumettre une tâche Button -->
-      <button @click="isModalOpen = true" class="fixed bottom-10 right-10 bg-gradient-to-r from-purple-400 to-blue-400 text-white font-bold py-3 px-6 rounded-full shadow-lg transform hover:scale-105 transition-transform">
-        Soumettre une tâche
-      </button>
 
       <!-- Modal -->
       <div v-if="isModalOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 transition-opacity duration-300" :class="isModalOpen ? 'opacity-100' : 'opacity-0'">
