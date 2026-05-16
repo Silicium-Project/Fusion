@@ -1,52 +1,51 @@
 <template>
   <div class="bg-[#131419] text-white min-h-screen flex">
     <!-- Vertical Navbar -->
-    <nav class="w-64 bg-[#1f2029] p-6 flex flex-col">
-      <h1 class="text-3xl font-extrabold text-white mb-10">
-        <span class="text-transparent bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text">Silicium</span>
-      </h1>
-      <ul class="space-y-4">
-        <li>
-          <a href="#" class="flex items-center text-lg text-white/80 hover:text-white hover-gradient-underline">
-            <img src="~assets/icons/Users.svg" alt="Users-Icon" class="w-6 h-6 mr-4" />
-            Tableau de bord
-          </a>
-        </li>
-        <li>
-          <a href="#" class="flex items-center text-lg text-white/80 hover:text-white hover-gradient-underline">
-            <img src="~assets/icons/Products.svg" alt="Products-Icon" class="w-6 h-6 mr-4" />
-            Mes appareils
-          </a>
-        </li>
-        <li>
-          <a href="#" class="flex items-center text-lg text-white/80 hover:text-white hover-gradient-underline">
-            <img src="~assets/icons/Receipt.svg" alt="Receipt-Icon" class="w-6 h-6 mr-4" />
-            Calculs
-          </a>
-        </li>
-        <li>
-          <a href="#" class="flex items-center text-lg text-white/80 hover:text-white hover-gradient-underline">
-            <img src="~assets/icons/Transactions.svg" alt="Transactions-Icon" class="w-6 h-6 mr-4" />
-            Transactions
-          </a>
-        </li>
-        <li>
-          <a href="#" class="flex items-center text-lg text-white/80 hover:text-white hover-gradient-underline">
-            <span class="w-6 h-6 mr-4"></span> <!-- Icon Placeholder -->
-            Impact écologique
-          </a>
-        </li>
-        <li>
-          <a href="#" class="flex items-center text-lg text-white/80 hover:text-white hover-gradient-underline">
-            <img src="~assets/icons/Users.svg" alt="Users-Icon" class="w-6 h-6 mr-4" />
-            Communauté
-          </a>
-        </li>
-      </ul>
+    <nav class="w-64 bg-[#1f2029] p-4 flex flex-col justify-between rounded-tr-2xl rounded-br-2xl border-r border-black/20">
+      <div>
+        <div class="p-4 mb-4">
+          <h1 class="text-3xl font-extrabold text-white">
+            <span class="text-transparent bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text">Silicium</span>
+          </h1>
+        </div>
+        <ul class="space-y-2">
+          <li>
+            <a href="#" class="flex items-center text-lg text-white font-semibold p-3 rounded-xl bg-gradient-to-r from-purple-500/20 to-blue-500/20">
+              <img src="~assets/icons/Users.svg" alt="Dashboard-Icon" class="w-6 h-6 mr-4" />
+              Tableau de bord
+            </a>
+          </li>
+          <li>
+            <a href="#" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors duration-200">
+              <img src="~assets/icons/Products.svg" alt="Devices-Icon" class="w-6 h-6 mr-4" />
+              Mes appareils
+            </a>
+          </li>
+          <li>
+            <a href="#" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors duration-200">
+              <img src="~assets/icons/Receipt.svg" alt="Calculations-Icon" class="w-6 h-6 mr-4" />
+              Calculs
+            </a>
+          </li>
+          <li>
+            <a href="#" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors duration-200">
+              <img src="~assets/icons/Transactions.svg" alt="Transactions-Icon" class="w-6 h-6 mr-4" />
+              Transactions
+            </a>
+          </li>
+          <li>
+            <a href="#" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors duration-200">
+              <img src="~assets/icons/Users.svg" alt="Community-Icon" class="w-6 h-6 mr-4" />
+              Communauté
+            </a>
+          </li>
+        </ul>
+      </div>
+      <!-- You can add a bottom section here if needed, for example a help link or settings -->
     </nav>
 
     <!-- Main Content -->
-    <main class="flex-1 p-10 relative">
+    <main class="flex-1 p-10 relative select-none">
       <!-- Profile section -->
       <div class="absolute top-10 right-10 bg-black/20 rounded-lg p-2 flex items-center space-x-4">
         <div v-if="solBalance !== null" class="text-white font-semibold pl-2">
