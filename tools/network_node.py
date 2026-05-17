@@ -11,6 +11,7 @@ publishes stable result/log resources back into the export directory.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import hmac
 import http.server
@@ -20,6 +21,7 @@ import platform
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
@@ -120,6 +122,108 @@ class NodeConfig:
     peer_sync_interval_s: int
     peer_event_limit: int
     peer_stale_after_s: int
+    relay_enable: bool
+    relay_hops: int
+    identity_key_path: str
+    reputation_score: float
+    replication_factor: int
+    replication_quorum: int
+
+
+def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
+    disk = shutil.disk_usage(config.export_dir)
+    return {
+        "node_id": config.node_id,
+        "roles": sorted(config.roles),
+        "platform": platform.platform(),
+        "python": platform.python_version(),
+        "cpu_count": os.cpu_count() or 1,
+        "disk_free_bytes": disk.free,
+        "disk_total_bytes": disk.total,
+        "solana_enabled": config.solana_enable,
+        "worker_binary": config.worker_binary,
+        "worker_mode": config.worker_mode,
+    }
+
+
+class NodeIdentity:
+    def __init__(self, config: NodeConfig) -> None:
+        default_key = config.state_dir / "peer_identity_ed25519.pem"
+        self.private_key_path = Path(config.identity_key_path).expanduser() if str(config.identity_key_path).strip() else default_key
+        self.public_key_path = self.private_key_path.with_suffix(".pub.pem")
+        self.private_key_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_keypair()
+        public_pem = self.public_key_path.read_bytes()
+        self.public_key_b64 = base64.b64encode(public_pem).decode("ascii")
+        self.identity_id = sha256_bytes(public_pem)[:32]
+
+    def sign_bytes(self, data: bytes) -> str:
+        with tempfile.TemporaryDirectory(prefix="silicium-sign-") as tmpdir:
+            msg_path = Path(tmpdir) / "message.bin"
+            sig_path = Path(tmpdir) / "signature.bin"
+            msg_path.write_bytes(data)
+            completed = subprocess.run(
+                ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(f"openssl_sign_failed:{completed.stderr.strip()}")
+            return sig_path.read_bytes().hex()
+
+    @staticmethod
+    def verify_bytes(data: bytes, signature_hex: str, public_key_b64: str) -> bool:
+        if not signature_hex or not public_key_b64:
+            return False
+        try:
+            public_pem = base64.b64decode(public_key_b64.encode("ascii"))
+            signature = bytes.fromhex(signature_hex)
+        except Exception:
+            return False
+        identity_id = sha256_bytes(public_pem)[:32]
+        with tempfile.TemporaryDirectory(prefix=f"silicium-verify-{identity_id}-") as tmpdir:
+            msg_path = Path(tmpdir) / "message.bin"
+            sig_path = Path(tmpdir) / "signature.bin"
+            pub_path = Path(tmpdir) / "public.pem"
+            msg_path.write_bytes(data)
+            sig_path.write_bytes(signature)
+            pub_path.write_bytes(public_pem)
+            completed = subprocess.run(
+                ["openssl", "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return completed.returncode == 0
+
+    @staticmethod
+    def identity_id_for_key(public_key_b64: str) -> str:
+        try:
+            public_pem = base64.b64decode(public_key_b64.encode("ascii"))
+        except Exception:
+            return ""
+        return sha256_bytes(public_pem)[:32]
+
+    def _ensure_keypair(self) -> None:
+        if not self.private_key_path.exists():
+            completed = subprocess.run(
+                ["openssl", "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(f"openssl_identity_generate_failed:{completed.stderr.strip()}")
+        if not self.public_key_path.exists():
+            completed = subprocess.run(
+                ["openssl", "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(f"openssl_identity_pubout_failed:{completed.stderr.strip()}")
 
 
 class QueueState:
@@ -174,13 +278,16 @@ class P2PClient:
             if self.peer_network is None:
                 raise ValueError("peer_network_not_configured")
             data, peer_meta = self.peer_network.fetch_content(content_id, str(p2p_ref.get("peer_id", "")).strip())
-            return data, {
+            meta = {
                 "source": "silicium-peer",
                 "content_id": content_id,
                 "peer_id": peer_meta.get("node_id", ""),
                 "peer_url": peer_meta.get("http_base_url", ""),
                 "size_bytes": len(data),
             }
+            if peer_meta.get("relayed_via"):
+                meta["relayed_via"] = peer_meta.get("relayed_via", "")
+            return data, meta
 
         if protocol in {"http", "https"}:
             with urllib.request.urlopen(content_id, timeout=15) as response:
@@ -205,25 +312,45 @@ class P2PClient:
         # Unknown P2P protocols remain content-addressed references for now.
         return stable_json(p2p_ref).encode("utf-8"), {"source": protocol, "content_id": content_id}
 
-    def put_local(self, data: bytes) -> dict[str, Any]:
+    def put_local(
+        self,
+        data: bytes,
+        *,
+        replication_factor: int = 0,
+        replication_quorum: int = 0,
+        replication_roles: Iterable[str] | None = None,
+    ) -> dict[str, Any]:
         digest = sha256_bytes(data)
         path = self.export_dir / "p2p" / digest
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             path.write_bytes(data)
         shared_ref = {"protocol": "silicium", "content_id": digest, "hash": "sha256:" + digest}
+        replication: dict[str, Any] = {"attempted": 0, "stored": 0, "quorum": 0, "satisfied": True, "peers": []}
         if self.peer_network is not None:
             shared_ref["peer_id"] = self.peer_network.node_id
             self.peer_network.publish(
                 "content_available",
                 {"content_id": digest, "hash": "sha256:" + digest, "size_bytes": len(data)},
             )
+            target_factor = max(0, int(replication_factor or 0))
+            target_quorum = max(0, int(replication_quorum or 0))
+            if target_factor > 0:
+                replication = self.peer_network.replicate_content(
+                    digest,
+                    data,
+                    target_factor=target_factor,
+                    required_quorum=target_quorum or target_factor,
+                    required_roles=replication_roles or {"storage"},
+                )
+                shared_ref["replication"] = replication
         return {
             "protocol": "file",
             "content_id": str(path),
             "hash": "sha256:" + digest,
             "size_bytes": len(data),
             "shared_ref": shared_ref,
+            "replication": replication,
         }
 
     def pin(self, p2p_ref: Any) -> dict[str, Any]:
@@ -248,19 +375,7 @@ class RoleRuntime:
         self.p2p = p2p
 
     def capacity(self) -> dict[str, Any]:
-        disk = shutil.disk_usage(self.config.export_dir)
-        return {
-            "node_id": self.config.node_id,
-            "roles": sorted(self.config.roles),
-            "platform": platform.platform(),
-            "python": platform.python_version(),
-            "cpu_count": os.cpu_count() or 1,
-            "disk_free_bytes": disk.free,
-            "disk_total_bytes": disk.total,
-            "solana_enabled": self.config.solana_enable,
-            "worker_binary": self.config.worker_binary,
-            "worker_mode": self.config.worker_mode,
-        }
+        return build_capacity_snapshot(self.config)
 
     def run_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
         roles = {str(role).lower() for role in envelope.get("required_roles", [])}
@@ -318,13 +433,21 @@ class RoleRuntime:
         }
 
     def run_storage_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
-        stored_ref = self.p2p.put_local(p2p_data if p2p_data else stable_json(task).encode("utf-8"))
+        replication_factor = int(task.get("replication_factor", self.config.replication_factor) or self.config.replication_factor)
+        replication_quorum = int(task.get("replication_quorum", self.config.replication_quorum) or self.config.replication_quorum)
+        stored_ref = self.p2p.put_local(
+            p2p_data if p2p_data else stable_json(task).encode("utf-8"),
+            replication_factor=replication_factor,
+            replication_quorum=replication_quorum,
+            replication_roles={"storage"},
+        )
         manifest = {
             "task_id": envelope.get("task_id", ""),
             "kind": "storage",
             "source": p2p_meta,
             "stored_ref": stored_ref,
-            "replication_factor": int(task.get("replication_factor", 1) or 1),
+            "replication_factor": replication_factor,
+            "replication_quorum": replication_quorum,
         }
         manifest_ref = self.p2p.put_local(stable_json(manifest).encode("utf-8"))
         return {
@@ -332,6 +455,7 @@ class RoleRuntime:
             "input": p2p_meta,
             "input_hash": sha256_bytes(p2p_data),
             "stored_ref": stored_ref,
+            "replication": stored_ref.get("replication", {}),
             "manifest_ref": manifest_ref,
             "manifest_hash": sha256_json(manifest),
             "result_hash": sha256_json({"stored_ref": stored_ref, "manifest_ref": manifest_ref}),
@@ -366,11 +490,17 @@ class RoleRuntime:
         if kind in {"health", "resource"}:
             return {"request_result": kind, "capacity": self.capacity(), "choice": True}
         if kind in {"pin", "replicate"}:
-            return {"request_result": kind, "storage": self.p2p.pin(envelope.get("p2p_ref") or request.get("p2p_ref")), "choice": True}
+            storage = self.p2p.pin(envelope.get("p2p_ref") or request.get("p2p_ref"))
+            return {"request_result": kind, "storage": storage, "choice": True}
         if kind == "unpin":
             return {"request_result": kind, "storage": self.p2p.unpin(envelope.get("p2p_ref") or request.get("p2p_ref")), "choice": True}
         if kind == "retrieve":
-            stored = self.p2p.put_local(p2p_data)
+            stored = self.p2p.put_local(
+                p2p_data,
+                replication_factor=self.config.replication_factor,
+                replication_quorum=self.config.replication_quorum,
+                replication_roles={"storage"},
+            )
             return {"request_result": kind, "retrieved_ref": stored, "choice": True}
         expected = str(request.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
         actual = sha256_bytes(p2p_data)
@@ -389,6 +519,7 @@ class PeerNetwork:
         self.config = config
         self.export_dir = export_dir
         self.node_id = safe_id(config.node_id)
+        self.identity = NodeIdentity(config)
         self.peers_path = export_dir / f"node.{self.node_id}.peers.json"
         self.gossip_events_path = export_dir / "gossip.events.ndjson"
         self._peers: dict[str, dict[str, Any]] = {}
@@ -404,6 +535,8 @@ class PeerNetwork:
         self.advertised_http_base_url = ""
         self.gossip_target = ""
         self.mesh_post_url = ""
+        self.local_capacity = build_capacity_snapshot(config)
+        self.local_reputation_score = float(config.reputation_score)
 
     def start(self) -> None:
         self._start_http_server()
@@ -446,6 +579,13 @@ class PeerNetwork:
         atomic_write_json(self.peers_path, payload)
         return payload
 
+    def set_local_profile(self, *, capacity: dict[str, Any] | None = None, reputation_score: float | None = None) -> None:
+        if capacity is not None:
+            self.local_capacity = capacity
+        if reputation_score is not None:
+            self.local_reputation_score = float(reputation_score)
+        self._record_self_peer()
+
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
         message = {
             "message_type": "gossip_event",
@@ -464,11 +604,16 @@ class PeerNetwork:
         message = {
             "message_type": "peer_announce",
             "node_id": self.node_id,
+            "identity_id": self.identity.identity_id,
+            "public_key": self.identity.public_key_b64,
             "roles": sorted(self.config.roles),
             "http_base_url": self.advertised_http_base_url,
             "mesh_post_url": self.mesh_post_url,
             "gossip_bind": self._advertised_gossip_host(),
             "gossip_port": self._advertised_gossip_port(),
+            "relay_capable": bool(self.config.relay_enable),
+            "capacity": self.local_capacity,
+            "reputation_score": self.local_reputation_score,
             "timestamp_utc": utc_now(),
         }
         self._sign_message(message)
@@ -482,27 +627,29 @@ class PeerNetwork:
             candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) == preferred_peer_id])
         candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) != preferred_peer_id])
         for peer in candidates:
-            base_url = str(peer.get("http_base_url", "")).rstrip("/")
-            if not base_url:
-                continue
-            url = f"{base_url}/p2p/{quote(content_id, safe='')}"
-            try:
-                request = urllib.request.Request(url, headers=self._peer_headers())
-                with urllib.request.urlopen(request, timeout=5) as response:
-                    return response.read(), peer
-            except urllib.error.URLError:
-                continue
+            data = self._fetch_direct_from_peer(peer, content_id)
+            if data is not None:
+                return data, peer
+        relayed = self._fetch_via_relays(content_id, preferred_peer_id, candidates)
+        if relayed is not None:
+            return relayed
         raise FileNotFoundError(f"peer_content_not_found:{content_id}")
 
     def _record_self_peer(self) -> None:
         with self._lock:
             self._peers[self.node_id] = {
                 "node_id": self.node_id,
+                "identity_id": self.identity.identity_id,
+                "public_key": self.identity.public_key_b64,
                 "roles": sorted(self.config.roles),
                 "http_base_url": self.advertised_http_base_url,
                 "mesh_post_url": self.mesh_post_url,
                 "gossip_bind": self._advertised_gossip_host(),
                 "gossip_port": self._advertised_gossip_port(),
+                "relay_capable": bool(self.config.relay_enable),
+                "capacity": self.local_capacity,
+                "reputation_score": self.local_reputation_score,
+                "last_seen_unix": int(time.time()),
                 "updated_utc": utc_now(),
                 "self": True,
             }
@@ -517,16 +664,21 @@ class PeerNetwork:
             current = dict(self._peers.get(node_id, {}))
             merged = {
                 "node_id": node_id,
+                "identity_id": str(message.get("identity_id", "")),
+                "public_key": str(message.get("public_key", "")),
                 "roles": list(message.get("roles", [])),
                 "http_base_url": str(message.get("http_base_url", "")),
                 "mesh_post_url": str(message.get("mesh_post_url", "")),
                 "gossip_bind": str(message.get("gossip_bind", "")),
                 "gossip_port": int(message.get("gossip_port", 0) or 0),
+                "relay_capable": bool(message.get("relay_capable", False)),
+                "capacity": message.get("capacity", {}) if isinstance(message.get("capacity"), dict) else {},
+                "reputation_score": float(message.get("reputation_score", 0.0) or 0.0),
                 "updated_utc": str(message.get("timestamp_utc", utc_now())),
                 "last_seen_unix": int(time.time()),
                 "self": node_id == self.node_id,
             }
-            changed = any(current.get(key) != value for key, value in merged.items() if key != "updated_utc")
+            changed = any(current.get(key) != value for key, value in merged.items() if key not in {"updated_utc", "last_seen_unix"})
             current.update(merged)
             self._peers[node_id] = current
         self.peers_snapshot()
@@ -592,12 +744,113 @@ class PeerNetwork:
     def _send_http(self, base_url: str, message: dict[str, Any]) -> None:
         url = base_url.rstrip("/") + "/mesh"
         data = json.dumps(message, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-        req = urllib.request.Request(url, data=data, method="POST", headers=self._peer_headers({"Content-Type": "application/json"}))
+        req = urllib.request.Request(url, data=data, method="POST", headers=self._signed_headers("POST", "/mesh", data, {"Content-Type": "application/json"}))
         try:
             with urllib.request.urlopen(req, timeout=5):
                 return
         except urllib.error.URLError:
             return
+
+    def _fetch_direct_from_peer(self, peer: dict[str, Any], content_id: str) -> bytes | None:
+        base_url = str(peer.get("http_base_url", "")).rstrip("/")
+        if not base_url:
+            return None
+        path = f"/p2p/{quote(content_id, safe='')}"
+        request = urllib.request.Request(base_url + path, headers=self._signed_headers("GET", path, b""))
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return response.read()
+        except urllib.error.URLError:
+            return None
+
+    def _fetch_via_relays(self, content_id: str, preferred_peer_id: str, candidates: list[dict[str, Any]]) -> tuple[bytes, dict[str, Any]] | None:
+        target_peer_id = preferred_peer_id or str(next((peer.get("node_id", "") for peer in candidates if peer.get("node_id")), ""))
+        if not target_peer_id:
+            return None
+        for relay in self.select_peers(required_roles=set(), limit=max(1, self.config.relay_hops), require_relay=True, exclude={target_peer_id}):
+            relay_url = str(relay.get("http_base_url", "")).rstrip("/")
+            if not relay_url:
+                continue
+            path = f"/relay/fetch?peer_id={quote(target_peer_id, safe='')}&content_id={quote(content_id, safe='')}"
+            request = urllib.request.Request(relay_url + path, headers=self._signed_headers("GET", path, b""))
+            try:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    return response.read(), {"node_id": target_peer_id, "http_base_url": relay_url, "relayed_via": relay.get("node_id", "")}
+            except urllib.error.URLError:
+                continue
+        return None
+
+    def replicate_content(
+        self,
+        content_id: str,
+        data: bytes,
+        *,
+        target_factor: int,
+        required_quorum: int,
+        required_roles: Iterable[str] | None = None,
+    ) -> dict[str, Any]:
+        peers = self.select_peers(required_roles=set(required_roles or {"storage"}), limit=max(0, target_factor), exclude={self.node_id})
+        report = {"attempted": 0, "stored": 0, "quorum": max(0, required_quorum), "satisfied": True, "peers": []}
+        for peer in peers:
+            report["attempted"] += 1
+            ok = self._push_replica(peer, content_id, data)
+            report["peers"].append({"node_id": peer.get("node_id", ""), "ok": ok})
+            if ok:
+                report["stored"] += 1
+        report["satisfied"] = report["stored"] >= max(0, required_quorum)
+        if report["stored"] > 0:
+            self.publish("content_replicated", {"content_id": content_id, "stored": report["stored"], "quorum": report["quorum"]})
+        return report
+
+    def select_peers(
+        self,
+        *,
+        required_roles: set[str] | None = None,
+        limit: int = 0,
+        require_relay: bool = False,
+        exclude: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        exclude_ids = exclude or set()
+        required_roles = required_roles or set()
+        candidates: list[dict[str, Any]] = []
+        for peer in self.peers_snapshot().get("peers", []):
+            node_id = str(peer.get("node_id", ""))
+            if not node_id or node_id in exclude_ids or peer.get("self"):
+                continue
+            peer_roles = {str(role).lower() for role in peer.get("roles", [])}
+            if required_roles and not required_roles.intersection(peer_roles):
+                continue
+            if require_relay and not bool(peer.get("relay_capable", False)):
+                continue
+            candidates.append(peer)
+        candidates.sort(key=self._peer_score, reverse=True)
+        if limit > 0:
+            return candidates[:limit]
+        return candidates
+
+    def _peer_score(self, peer: dict[str, Any]) -> tuple[float, float, float]:
+        capacity = peer.get("capacity", {}) if isinstance(peer.get("capacity"), dict) else {}
+        reputation = float(peer.get("reputation_score", 0.0) or 0.0)
+        cpu = float(capacity.get("cpu_count", 0) or 0)
+        disk_free = float(capacity.get("disk_free_bytes", 0) or 0)
+        return (reputation, cpu, disk_free)
+
+    def _push_replica(self, peer: dict[str, Any], content_id: str, data: bytes) -> bool:
+        base_url = str(peer.get("http_base_url", "")).rstrip("/")
+        if not base_url:
+            return False
+        path = f"/p2p/ingest?content_id={quote(content_id, safe='')}"
+        request = urllib.request.Request(
+            base_url + path,
+            data=data,
+            method="POST",
+            headers=self._signed_headers("POST", path, data, {"Content-Type": "application/octet-stream"}),
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status == 200
+        except urllib.error.URLError:
+            return False
 
     def _start_udp_listener(self) -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -713,8 +966,11 @@ class PeerNetwork:
         return sorted(targets)
 
     def _sync_peer_table(self, base_url: str) -> None:
+        path = "/peers"
         try:
-            with urllib.request.urlopen(urllib.request.Request(base_url.rstrip("/") + "/peers", headers=self._peer_headers()), timeout=5) as response:
+            with urllib.request.urlopen(
+                urllib.request.Request(base_url.rstrip("/") + path, headers=self._signed_headers("GET", path, b"")), timeout=5
+            ) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception:
             return
@@ -726,9 +982,10 @@ class PeerNetwork:
                 self._record_peer(peer)
 
     def _sync_recent_events(self, base_url: str) -> None:
-        url = f"{base_url.rstrip('/')}/events/recent?limit={max(1, self.config.peer_event_limit)}"
+        path = f"/events/recent?limit={max(1, self.config.peer_event_limit)}"
+        url = f"{base_url.rstrip('/')}{path}"
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=self._peer_headers()), timeout=5) as response:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=self._signed_headers("GET", path, b"")), timeout=5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception:
             return
@@ -796,36 +1053,91 @@ class PeerNetwork:
             return "", 0
         return host.strip(), port
 
-    def _peer_headers(self, extra: dict[str, str] | None = None) -> dict[str, str]:
+    def _signed_headers(self, method: str, path: str, body: bytes, extra: dict[str, str] | None = None) -> dict[str, str]:
         headers = dict(extra or {})
         if self.config.mesh_key:
             headers["Authorization"] = f"Bearer {self.config.mesh_key}"
+        timestamp = str(int(time.time()))
+        body_hash = sha256_bytes(body)
+        signing_payload = "\n".join([method.upper(), path, timestamp, body_hash, self.node_id, self.identity.identity_id]).encode("utf-8")
+        headers.update(
+            {
+                "X-Silicium-Node-Id": self.node_id,
+                "X-Silicium-Identity-Id": self.identity.identity_id,
+                "X-Silicium-Public-Key": self.identity.public_key_b64,
+                "X-Silicium-Timestamp": timestamp,
+                "X-Silicium-Body-Hash": body_hash,
+                "X-Silicium-Signature": self.identity.sign_bytes(signing_payload),
+            }
+        )
         return headers
 
     def _sign_message(self, message: dict[str, Any]) -> None:
-        if not self.config.mesh_key:
-            return
         unsigned = dict(message)
+        unsigned["identity_id"] = self.identity.identity_id
+        unsigned["public_key"] = self.identity.public_key_b64
+        unsigned["node_id"] = self.node_id
+        if self.config.mesh_key:
+            unsigned.pop("mesh_mac", None)
+            unsigned["mesh_mac"] = hmac.new(self.config.mesh_key.encode("utf-8"), stable_json(unsigned).encode("utf-8"), hashlib.sha256).hexdigest()
         unsigned.pop("mesh_mac", None)
-        mac = hmac.new(self.config.mesh_key.encode("utf-8"), stable_json(unsigned).encode("utf-8"), hashlib.sha256).hexdigest()
-        message["mesh_mac"] = mac
+        unsigned.pop("signature", None)
+        message.update(unsigned)
+        message["signature"] = self.identity.sign_bytes(stable_json(unsigned).encode("utf-8"))
+        if self.config.mesh_key:
+            message["mesh_mac"] = hmac.new(self.config.mesh_key.encode("utf-8"), stable_json(unsigned).encode("utf-8"), hashlib.sha256).hexdigest()
 
     def _verify_message(self, message: dict[str, Any]) -> bool:
-        if not self.config.mesh_key:
-            return True
-        received = str(message.get("mesh_mac", "")).strip()
-        if not received:
+        public_key = str(message.get("public_key", "")).strip()
+        signature = str(message.get("signature", "")).strip()
+        identity_id = str(message.get("identity_id", "")).strip()
+        if public_key and signature:
+            if NodeIdentity.identity_id_for_key(public_key) != identity_id:
+                return False
+            unsigned = dict(message)
+            unsigned.pop("signature", None)
+            unsigned.pop("mesh_mac", None)
+            if not NodeIdentity.verify_bytes(stable_json(unsigned).encode("utf-8"), signature, public_key):
+                return False
+        elif self.config.mesh_key:
             return False
-        unsigned = dict(message)
-        unsigned.pop("mesh_mac", None)
-        expected = hmac.new(self.config.mesh_key.encode("utf-8"), stable_json(unsigned).encode("utf-8"), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(received, expected)
+        if self.config.mesh_key:
+            received = str(message.get("mesh_mac", "")).strip()
+            if not received:
+                return False
+            unsigned = dict(message)
+            unsigned.pop("signature", None)
+            unsigned.pop("mesh_mac", None)
+            expected = hmac.new(self.config.mesh_key.encode("utf-8"), stable_json(unsigned).encode("utf-8"), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(received, expected):
+                return False
+        return True
 
-    def _authorize_peer_request(self, handler: http.server.BaseHTTPRequestHandler) -> bool:
-        if not self.config.mesh_key:
-            return True
-        auth = str(handler.headers.get("Authorization", "")).strip()
-        return auth == f"Bearer {self.config.mesh_key}"
+    def _authorize_peer_request(self, handler: http.server.BaseHTTPRequestHandler, body: bytes = b"") -> bool:
+        if self.config.mesh_key:
+            auth = str(handler.headers.get("Authorization", "")).strip()
+            if auth == f"Bearer {self.config.mesh_key}":
+                return True
+        public_key = str(handler.headers.get("X-Silicium-Public-Key", "")).strip()
+        signature = str(handler.headers.get("X-Silicium-Signature", "")).strip()
+        identity_id = str(handler.headers.get("X-Silicium-Identity-Id", "")).strip()
+        timestamp = str(handler.headers.get("X-Silicium-Timestamp", "")).strip()
+        body_hash = str(handler.headers.get("X-Silicium-Body-Hash", "")).strip()
+        node_id = str(handler.headers.get("X-Silicium-Node-Id", "")).strip()
+        if not public_key or not signature or not identity_id or not timestamp or not node_id:
+            return False
+        if NodeIdentity.identity_id_for_key(public_key) != identity_id:
+            return False
+        try:
+            ts = int(timestamp)
+        except ValueError:
+            return False
+        if abs(int(time.time()) - ts) > 300:
+            return False
+        if body_hash != sha256_bytes(body):
+            return False
+        signing_payload = "\n".join([handler.command.upper(), handler.path, timestamp, body_hash, node_id, identity_id]).encode("utf-8")
+        return NodeIdentity.verify_bytes(signing_payload, signature, public_key)
 
     def _start_http_server(self) -> None:
         peer_network = self
@@ -883,35 +1195,100 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(raw)
                     return
+                if self.path.startswith("/relay/fetch"):
+                    if not peer_network.config.relay_enable or not peer_network._authorize_peer_request(self):
+                        self.send_error(403)
+                        return
+                    query = parse_qs(urlparse(self.path).query)
+                    peer_id = str((query.get("peer_id") or [""])[0]).strip()
+                    content_id = str((query.get("content_id") or [""])[0]).strip()
+                    if not peer_id or not content_id:
+                        self.send_error(400)
+                        return
+                    target_peer = peer_network._peers.get(peer_id)
+                    if not isinstance(target_peer, dict):
+                        self.send_error(404)
+                        return
+                    data = peer_network._fetch_direct_from_peer(target_peer, content_id)
+                    if data is None:
+                        self.send_error(404)
+                        return
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
                 self.send_error(404)
 
             def do_POST(self) -> None:  # noqa: N802
-                if self.path != "/mesh":
-                    self.send_error(404)
-                    return
-                if not peer_network._authorize_peer_request(self):
-                    self.send_error(403)
-                    return
                 try:
                     size = int(self.headers.get("Content-Length", "0") or 0)
                 except ValueError:
                     size = 0
                 raw = self.rfile.read(max(0, size))
-                try:
-                    payload = json.loads(raw.decode("utf-8"))
-                except Exception:
-                    self.send_error(400)
+                if not peer_network._authorize_peer_request(self, raw):
+                    self.send_error(403)
                     return
-                if not isinstance(payload, dict):
-                    self.send_error(400)
+                if self.path == "/mesh":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    peer_network._handle_network_message(payload, self.client_address[0])
+                    body = b'{"ok":true}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
                     return
-                peer_network._handle_network_message(payload, self.client_address[0])
-                body = b'{"ok":true}'
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                if self.path.startswith("/p2p/ingest"):
+                    query = parse_qs(urlparse(self.path).query)
+                    content_id = str((query.get("content_id") or [""])[0]).strip() or sha256_bytes(raw)
+                    target = peer_network.export_dir / "p2p" / content_id
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if not target.exists():
+                        target.write_bytes(raw)
+                    peer_network.publish("content_available", {"content_id": content_id, "hash": "sha256:" + sha256_bytes(raw), "size_bytes": len(raw)})
+                    body = stable_json({"ok": True, "content_id": content_id}).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path.startswith("/relay/mesh"):
+                    if not peer_network.config.relay_enable:
+                        self.send_error(403)
+                        return
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    target_peer_id = str(payload.get("peer_id", "")).strip()
+                    message = payload.get("message")
+                    target_peer = peer_network._peers.get(target_peer_id)
+                    if not target_peer_id or not isinstance(message, dict) or not isinstance(target_peer, dict):
+                        self.send_error(400)
+                        return
+                    peer_network._send_http(str(target_peer.get("http_base_url", "")).rstrip("/"), message)
+                    body = b'{"ok":true}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                self.send_error(404)
 
             def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
                 return
@@ -981,6 +1358,7 @@ class NetworkNode:
         self.heartbeat_path = config.export_dir / f"node.{safe_id(config.node_id)}.heartbeat.json"
         self.metrics_path = config.export_dir / f"node.{safe_id(config.node_id)}.metrics.json"
         self.metrics = read_json(self.metrics_path, {"schema_version": 1, "handled": 0, "failed": 0, "retried": 0, "dead_lettered": 0})
+        self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.config.reputation_score)
 
     def run(self) -> None:
         self.peer_network.start()
@@ -1015,6 +1393,8 @@ class NetworkNode:
         )
 
     def write_heartbeat(self) -> None:
+        capacity = self.runtime.capacity()
+        self.peer_network.set_local_profile(capacity=capacity, reputation_score=self.config.reputation_score)
         atomic_write_json(
             self.heartbeat_path,
             {
@@ -1022,13 +1402,16 @@ class NetworkNode:
                 "node_id": self.config.node_id,
                 "timestamp_utc": utc_now(),
                 "roles": sorted(self.config.roles),
-                "capacity": self.runtime.capacity(),
+                "capacity": capacity,
+                "reputation_score": self.config.reputation_score,
                 "peer_http_base_url": self.peer_network.http_base_url,
                 "peer_public_base_url": self.peer_network.advertised_http_base_url,
                 "peer_count": int(self.peer_network.peers_snapshot().get("count", 0)),
                 "gossip_enabled": self.config.gossip_enable,
                 "peer_sync_interval_s": self.config.peer_sync_interval_s,
                 "mesh_auth_enabled": bool(self.config.mesh_key),
+                "identity_id": self.peer_network.identity.identity_id,
+                "relay_enabled": self.config.relay_enable,
             },
         )
 
@@ -1449,6 +1832,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", "15")))
     parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
     parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", "300")))
+    parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
+    parser.add_argument("--relay-hops", type=int, default=int(os.environ.get("SILICIUM_RELAY_HOPS", "2")))
+    parser.add_argument("--identity-key-path", default=os.environ.get("SILICIUM_IDENTITY_KEY_PATH", ""))
+    parser.add_argument("--reputation-score", type=float, default=float(os.environ.get("SILICIUM_REPUTATION_SCORE", "0")))
+    parser.add_argument("--replication-factor", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_FACTOR", "0")))
+    parser.add_argument("--replication-quorum", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_QUORUM", "0")))
     return parser
 
 
@@ -1489,6 +1878,12 @@ def main(argv: list[str] | None = None) -> int:
         peer_sync_interval_s=max(0, int(args.peer_sync_interval_s)),
         peer_event_limit=max(1, int(args.peer_event_limit)),
         peer_stale_after_s=max(0, int(args.peer_stale_after_s)),
+        relay_enable=bool(args.relay_enable),
+        relay_hops=max(1, int(args.relay_hops)),
+        identity_key_path=str(args.identity_key_path),
+        reputation_score=float(args.reputation_score),
+        replication_factor=max(0, int(args.replication_factor)),
+        replication_quorum=max(0, int(args.replication_quorum)),
     )
     export_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)

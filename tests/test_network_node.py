@@ -44,6 +44,10 @@ def _config(
     gossip_enable: bool = True,
     mesh_key: str = "",
     peer_sync_interval_s: int = 1,
+    relay_enable: bool = False,
+    reputation_score: float = 0.0,
+    replication_factor: int = 0,
+    replication_quorum: int = 0,
 ) -> network_node.NodeConfig:
     state_dir = export_dir / "state"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -81,6 +85,12 @@ def _config(
         peer_sync_interval_s=peer_sync_interval_s,
         peer_event_limit=64,
         peer_stale_after_s=60,
+        relay_enable=relay_enable,
+        relay_hops=2,
+        identity_key_path="",
+        reputation_score=reputation_score,
+        replication_factor=replication_factor,
+        replication_quorum=replication_quorum,
     )
 
 
@@ -379,11 +389,10 @@ def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
         peer_a.stop()
 
 
-def test_peer_network_syncs_over_http_and_requires_mesh_auth(tmp_path: Path) -> None:
+def test_peer_network_syncs_over_http_with_public_identity(tmp_path: Path) -> None:
     export_a = tmp_path / "a"
     export_b = tmp_path / "b"
-    mesh_key = "mesh-secret"
-    config_a = _config(export_a, "node-a", gossip_enable=False, mesh_key=mesh_key)
+    config_a = _config(export_a, "node-a", gossip_enable=False)
     peer_a = network_node.PeerNetwork(config_a, export_a)
     p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
     peer_a.start()
@@ -399,7 +408,6 @@ def test_peer_network_syncs_over_http_and_requires_mesh_auth(tmp_path: Path) -> 
             export_b,
             "node-b",
             gossip_enable=False,
-            mesh_key=mesh_key,
             seed_peers=[peer_a.http_base_url],
             peer_sync_interval_s=1,
         )
@@ -435,3 +443,87 @@ def test_peer_network_syncs_over_http_and_requires_mesh_auth(tmp_path: Path) -> 
             peer_b.stop()
     finally:
         peer_a.stop()
+
+
+def test_peer_network_relay_fetches_unreachable_peer_content(tmp_path: Path) -> None:
+    export_a = tmp_path / "relay-a"
+    export_b = tmp_path / "relay-b"
+    export_c = tmp_path / "relay-c"
+    config_a = _config(export_a, "node-a", gossip_enable=False)
+    peer_a = network_node.PeerNetwork(config_a, export_a)
+    p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
+    peer_a.start()
+    try:
+        config_c = _config(export_c, "node-c", gossip_enable=False, relay_enable=True, seed_peers=[peer_a.http_base_url], peer_sync_interval_s=1)
+        peer_c = network_node.PeerNetwork(config_c, export_c)
+        peer_c.start()
+        try:
+            config_b = _config(export_b, "node-b", gossip_enable=False, relay_enable=True, seed_peers=[peer_c.http_base_url], peer_sync_interval_s=1)
+            peer_b = network_node.PeerNetwork(config_b, export_b)
+            p2p_b = network_node.P2PClient(config_b.p2p_gateway, export_b, peer_b)
+            peer_b.start()
+            try:
+                deadline = time.time() + 3.0
+                while time.time() < deadline:
+                    peer_b.sync_once()
+                    peer_c.sync_once()
+                    if peer_b.peers_snapshot()["count"] >= 3:
+                        break
+                    time.sleep(0.05)
+                assert peer_b.peers_snapshot()["count"] >= 3
+
+                stored = p2p_a.put_local(b"relay-path")
+                peer_b._peers["node-a"]["http_base_url"] = "http://127.0.0.1:9"
+                data, meta = p2p_b.fetch(stored["shared_ref"])
+                assert data == b"relay-path"
+                assert meta["relayed_via"] == "node-c"
+            finally:
+                peer_b.stop()
+        finally:
+            peer_c.stop()
+    finally:
+        peer_a.stop()
+
+
+def test_storage_replication_meets_quorum(tmp_path: Path) -> None:
+    export_a = tmp_path / "replica-a"
+    export_b = tmp_path / "replica-b"
+    export_c = tmp_path / "replica-c"
+    config_b = _config(export_b, "node-b", gossip_enable=False, roles="storage", reputation_score=2.0)
+    config_c = _config(export_c, "node-c", gossip_enable=False, roles="storage", reputation_score=1.0)
+    peer_b = network_node.PeerNetwork(config_b, export_b)
+    peer_c = network_node.PeerNetwork(config_c, export_c)
+    peer_b.start()
+    peer_c.start()
+    try:
+        config_a = _config(
+            export_a,
+            "node-a",
+            gossip_enable=False,
+            roles="storage",
+            seed_peers=[peer_b.http_base_url, peer_c.http_base_url],
+            peer_sync_interval_s=1,
+            replication_factor=2,
+            replication_quorum=2,
+        )
+        peer_a = network_node.PeerNetwork(config_a, export_a)
+        p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
+        peer_a.start()
+        try:
+            deadline = time.time() + 3.0
+            while time.time() < deadline:
+                peer_a.sync_once()
+                if peer_a.peers_snapshot()["count"] >= 3:
+                    break
+                time.sleep(0.05)
+            stored = p2p_a.put_local(b"replicated-bytes", replication_factor=2, replication_quorum=2, replication_roles={"storage"})
+            digest = stored["shared_ref"]["content_id"]
+            assert stored["replication"]["satisfied"] is True
+            assert stored["replication"]["stored"] == 2
+            assert (export_b / "p2p" / digest).exists()
+            assert (export_c / "p2p" / digest).exists()
+        finally:
+            peer_a.stop()
+    finally:
+        peer_b.stop()
+        peer_c.stop()

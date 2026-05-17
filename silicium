@@ -3000,6 +3000,12 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", "15")))
     parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
     parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", "300")))
+    parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
+    parser.add_argument("--relay-hops", type=int, default=int(os.environ.get("SILICIUM_RELAY_HOPS", "2")))
+    parser.add_argument("--identity-key-path", default=os.environ.get("SILICIUM_IDENTITY_KEY_PATH", ""))
+    parser.add_argument("--reputation-score", type=float, default=float(os.environ.get("SILICIUM_REPUTATION_SCORE", "0")))
+    parser.add_argument("--replication-factor", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_FACTOR", "0")))
+    parser.add_argument("--replication-quorum", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_QUORUM", "0")))
 
 
 def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
@@ -3063,6 +3069,16 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.peer_event_limit),
         "--peer-stale-after-s",
         str(args.peer_stale_after_s),
+        "--relay-hops",
+        str(args.relay_hops),
+        "--identity-key-path",
+        str(args.identity_key_path),
+        "--reputation-score",
+        str(args.reputation_score),
+        "--replication-factor",
+        str(args.replication_factor),
+        "--replication-quorum",
+        str(args.replication_quorum),
     ]
     if args.solana_enable:
         argv.append("--solana-enable")
@@ -3070,6 +3086,8 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         argv.append("--bootstrap-worker")
     if args.gossip_enable:
         argv.append("--gossip-enable")
+    if args.relay_enable:
+        argv.append("--relay-enable")
     if args.state_dir:
         argv.extend(["--state-dir", str(args.state_dir)])
     if args.once:
