@@ -128,6 +128,11 @@ class NodeConfig:
     reputation_score: float
     replication_factor: int
     replication_quorum: int
+    discovery_seeds: list[str]
+    discovery_sync_interval_s: int
+    remote_dispatch_enable: bool
+    remote_dispatch_limit: int
+    nat_punch_enable: bool
 
 
 def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
@@ -250,6 +255,60 @@ class QueueState:
         # Keep the state bounded while preserving recent idempotency.
         items = list(self._processed.items())[-5000:]
         atomic_write_json(self._processed_path, dict(items))
+
+
+class ReputationStore:
+    def __init__(self, path: Path, initial_score: float = 0.0) -> None:
+        self._path = path
+        self._lock = threading.Lock()
+        loaded = read_json(path, {})
+        self._payload = loaded if isinstance(loaded, dict) else {}
+        self._payload.setdefault("schema_version", 1)
+        self._payload.setdefault("local_score", float(initial_score))
+        self._payload.setdefault("peer_scores", {})
+        self._payload.setdefault("history", [])
+        self.save()
+
+    def local_score(self) -> float:
+        with self._lock:
+            return float(self._payload.get("local_score", 0.0) or 0.0)
+
+    def peer_score(self, node_id: str, default: float = 0.0) -> float:
+        with self._lock:
+            peers = self._payload.get("peer_scores", {})
+            if not isinstance(peers, dict):
+                return float(default)
+            return float(peers.get(node_id, default) or default)
+
+    def adjust_local(self, delta: float, reason: str) -> float:
+        with self._lock:
+            score = float(self._payload.get("local_score", 0.0) or 0.0) + float(delta)
+            self._payload["local_score"] = score
+            history = self._payload.get("history", [])
+            if not isinstance(history, list):
+                history = []
+            history.append({"timestamp_utc": utc_now(), "delta": float(delta), "reason": reason})
+            self._payload["history"] = history[-512:]
+        self.save()
+        return score
+
+    def set_peer_score(self, node_id: str, score: float) -> None:
+        if not node_id:
+            return
+        with self._lock:
+            peers = self._payload.get("peer_scores", {})
+            if not isinstance(peers, dict):
+                peers = {}
+            peers[node_id] = float(score)
+            self._payload["peer_scores"] = peers
+        self.save()
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return json.loads(json.dumps(self._payload, separators=(",", ":"), ensure_ascii=True))
+
+    def save(self) -> None:
+        atomic_write_json(self._path, self.snapshot())
 
 
 class P2PClient:
@@ -522,6 +581,7 @@ class PeerNetwork:
         self.identity = NodeIdentity(config)
         self.peers_path = export_dir / f"node.{self.node_id}.peers.json"
         self.gossip_events_path = export_dir / "gossip.events.ndjson"
+        self.discovery_registry_path = export_dir / "mesh.discovery.json"
         self._peers: dict[str, dict[str, Any]] = {}
         self._seen_events: set[str] = set()
         self._lock = threading.Lock()
@@ -531,6 +591,7 @@ class PeerNetwork:
         self._udp_thread: threading.Thread | None = None
         self._sync_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._peer_score_sink: Any = None
         self.http_base_url = ""
         self.advertised_http_base_url = ""
         self.gossip_target = ""
@@ -577,6 +638,7 @@ class PeerNetwork:
             peers = sorted(self._peers.values(), key=lambda item: str(item.get("node_id", "")))
         payload = {"schema_version": 1, "node_id": self.node_id, "count": len(peers), "peers": peers, "updated_utc": utc_now()}
         atomic_write_json(self.peers_path, payload)
+        atomic_write_json(self.discovery_registry_path, payload)
         return payload
 
     def set_local_profile(self, *, capacity: dict[str, Any] | None = None, reputation_score: float | None = None) -> None:
@@ -585,6 +647,9 @@ class PeerNetwork:
         if reputation_score is not None:
             self.local_reputation_score = float(reputation_score)
         self._record_self_peer()
+
+    def set_peer_score_sink(self, callback: Any) -> None:
+        self._peer_score_sink = callback
 
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
         message = {
@@ -630,6 +695,15 @@ class PeerNetwork:
             data = self._fetch_direct_from_peer(peer, content_id)
             if data is not None:
                 return data, peer
+        if preferred_peer_id:
+            self.request_udp_punch(preferred_peer_id)
+            time.sleep(0.1)
+            for peer in candidates:
+                if str(peer.get("node_id", "")) != preferred_peer_id:
+                    continue
+                data = self._fetch_direct_from_peer(peer, content_id)
+                if data is not None:
+                    return data, peer
         relayed = self._fetch_via_relays(content_id, preferred_peer_id, candidates)
         if relayed is not None:
             return relayed
@@ -682,6 +756,11 @@ class PeerNetwork:
             current.update(merged)
             self._peers[node_id] = current
         self.peers_snapshot()
+        if node_id != self.node_id and self._peer_score_sink is not None:
+            try:
+                self._peer_score_sink(node_id, float(merged.get("reputation_score", 0.0) or 0.0))
+            except Exception:
+                pass
         return changed
 
     def _record_event(self, message: dict[str, Any]) -> bool:
@@ -802,6 +881,29 @@ class PeerNetwork:
             self.publish("content_replicated", {"content_id": content_id, "stored": report["stored"], "quorum": report["quorum"]})
         return report
 
+    def request_udp_punch(self, target_peer_id: str) -> bool:
+        if not self.config.nat_punch_enable:
+            return False
+        for relay in self.select_peers(required_roles=set(), limit=max(1, self.config.relay_hops), require_relay=True, exclude={target_peer_id}):
+            relay_url = str(relay.get("http_base_url", "")).rstrip("/")
+            if not relay_url:
+                continue
+            payload = {"target_peer_id": target_peer_id}
+            raw = stable_json(payload).encode("utf-8")
+            path = "/relay/punch"
+            request = urllib.request.Request(
+                relay_url + path,
+                data=raw,
+                method="POST",
+                headers=self._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    return response.status == 200
+            except urllib.error.URLError:
+                continue
+        return False
+
     def select_peers(
         self,
         *,
@@ -886,6 +988,28 @@ class PeerNetwork:
             if changed and safe_id(str(message.get("node_id", ""))) != self.node_id:
                 self.announce()
             return
+        if message_type == "punch_probe":
+            target_host = str(message.get("target_host", "")).strip()
+            target_port = int(message.get("target_port", 0) or 0)
+            if target_host and target_port > 0:
+                probe = {
+                    "message_type": "peer_announce",
+                    "node_id": self.node_id,
+                    "identity_id": self.identity.identity_id,
+                    "public_key": self.identity.public_key_b64,
+                    "roles": sorted(self.config.roles),
+                    "http_base_url": self.advertised_http_base_url,
+                    "mesh_post_url": self.mesh_post_url,
+                    "gossip_bind": self._advertised_gossip_host(),
+                    "gossip_port": self._advertised_gossip_port(),
+                    "relay_capable": bool(self.config.relay_enable),
+                    "capacity": self.local_capacity,
+                    "reputation_score": self.local_reputation_score,
+                    "timestamp_utc": utc_now(),
+                }
+                self._sign_message(probe)
+                self._send_udp(f"{target_host}:{target_port}", target_host, target_port, probe)
+            return
         if message_type != "gossip_event":
             return
         if not self._record_event(message):
@@ -914,6 +1038,7 @@ class PeerNetwork:
         for base_url in targets:
             self._sync_peer_table(base_url)
             self._sync_recent_events(base_url)
+        self._sync_discovery()
 
     def recent_events(self, limit: int) -> list[dict[str, Any]]:
         if limit <= 0 or not self.gossip_events_path.exists():
@@ -949,6 +1074,59 @@ class PeerNetwork:
                 loaded["node_id"] = node_id
                 loaded["last_seen_unix"] = int(peer.get("last_seen_unix", now))
                 self._peers[node_id] = loaded
+
+    def _sync_discovery(self) -> None:
+        seeds = [seed for seed in self.config.discovery_seeds if seed.strip()]
+        for seed in seeds:
+            base_url = self._normalize_http_target(seed)
+            if not base_url:
+                continue
+            self._register_with_discovery(base_url)
+            self._fetch_discovery_snapshot(base_url)
+
+    def _register_with_discovery(self, base_url: str) -> None:
+        payload = {
+            "node_id": self.node_id,
+            "identity_id": self.identity.identity_id,
+            "public_key": self.identity.public_key_b64,
+            "roles": sorted(self.config.roles),
+            "http_base_url": self.advertised_http_base_url,
+            "mesh_post_url": self.mesh_post_url,
+            "gossip_bind": self._advertised_gossip_host(),
+            "gossip_port": self._advertised_gossip_port(),
+            "relay_capable": bool(self.config.relay_enable),
+            "capacity": self.local_capacity,
+            "reputation_score": self.local_reputation_score,
+            "timestamp_utc": utc_now(),
+        }
+        raw = stable_json(payload).encode("utf-8")
+        path = "/discovery/register"
+        request = urllib.request.Request(
+            base_url.rstrip("/") + path,
+            data=raw,
+            method="POST",
+            headers=self._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5):
+                return
+        except Exception:
+            return
+
+    def _fetch_discovery_snapshot(self, base_url: str) -> None:
+        path = "/discovery/snapshot"
+        request = urllib.request.Request(base_url.rstrip("/") + path, headers=self._signed_headers("GET", path, b""))
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            return
+        peers = payload.get("peers") if isinstance(payload, dict) else None
+        if not isinstance(peers, list):
+            return
+        for peer in peers:
+            if isinstance(peer, dict):
+                self._record_peer(peer)
 
     def _sync_targets(self) -> list[str]:
         targets: set[str] = set()
@@ -1163,6 +1341,17 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(raw)
                     return
+                if self.path == "/discovery/snapshot":
+                    if not peer_network._authorize_peer_request(self):
+                        self.send_error(403)
+                        return
+                    raw = stable_json(read_json(peer_network.discovery_registry_path, peer_network.peers_snapshot())).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
                 if self.path.startswith("/events/recent"):
                     if not peer_network._authorize_peer_request(self):
                         self.send_error(403)
@@ -1247,6 +1436,23 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(body)
                     return
+                if self.path == "/discovery/register":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    peer_network._record_peer(payload)
+                    body = b'{"ok":true}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 if self.path.startswith("/p2p/ingest"):
                     query = parse_qs(urlparse(self.path).query)
                     content_id = str((query.get("content_id") or [""])[0]).strip() or sha256_bytes(raw)
@@ -1257,6 +1463,40 @@ class PeerNetwork:
                     peer_network.publish("content_available", {"content_id": content_id, "hash": "sha256:" + sha256_bytes(raw), "size_bytes": len(raw)})
                     body = stable_json({"ok": True, "content_id": content_id}).encode("utf-8")
                     self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/tasks/dispatch":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    enqueue_task_envelope(peer_network.export_dir, payload)
+                    body = b'{"ok":true}'
+                    self.send_response(202)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/requests/dispatch":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    enqueue_request_envelope(peer_network.export_dir, payload)
+                    body = b'{"ok":true}'
+                    self.send_response(202)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
@@ -1281,6 +1521,58 @@ class PeerNetwork:
                         self.send_error(400)
                         return
                     peer_network._send_http(str(target_peer.get("http_base_url", "")).rstrip("/"), message)
+                    body = b'{"ok":true}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/relay/punch":
+                    if not peer_network.config.relay_enable:
+                        self.send_error(403)
+                        return
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    target_peer_id = str(payload.get("target_peer_id", "")).strip()
+                    requester_peer = peer_network._peers.get(str(self.headers.get("X-Silicium-Node-Id", "")).strip(), {})
+                    target_peer = peer_network._peers.get(target_peer_id, {})
+                    if not isinstance(requester_peer, dict) or not isinstance(target_peer, dict):
+                        self.send_error(404)
+                        return
+                    requester_host = str(requester_peer.get("gossip_bind", "")).strip()
+                    requester_port = int(requester_peer.get("gossip_port", 0) or 0)
+                    target_host = str(target_peer.get("gossip_bind", "")).strip()
+                    target_port = int(target_peer.get("gossip_port", 0) or 0)
+                    if requester_host and requester_port > 0 and target_host and target_port > 0:
+                        probe_to_target = {
+                            "message_type": "punch_probe",
+                            "node_id": peer_network.node_id,
+                            "identity_id": peer_network.identity.identity_id,
+                            "public_key": peer_network.identity.public_key_b64,
+                            "target_host": requester_host,
+                            "target_port": requester_port,
+                            "timestamp_utc": utc_now(),
+                        }
+                        peer_network._sign_message(probe_to_target)
+                        peer_network._send_udp(f"{target_host}:{target_port}", target_host, target_port, probe_to_target)
+                        probe_to_requester = {
+                            "message_type": "punch_probe",
+                            "node_id": peer_network.node_id,
+                            "identity_id": peer_network.identity.identity_id,
+                            "public_key": peer_network.identity.public_key_b64,
+                            "target_host": target_host,
+                            "target_port": target_port,
+                            "timestamp_utc": utc_now(),
+                        }
+                        peer_network._sign_message(probe_to_requester)
+                        peer_network._send_udp(f"{requester_host}:{requester_port}", requester_host, requester_port, probe_to_requester)
                     body = b'{"ok":true}'
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -1346,19 +1638,74 @@ class SolanaBridge:
         return payload
 
 
+def enqueue_task_envelope(export_dir: Path, envelope: dict[str, Any]) -> None:
+    task_id = safe_id(str(envelope.get("task_id", "")))
+    if not task_id:
+        raise ValueError("missing_task_id")
+    payload = dict(envelope)
+    payload["task_id"] = task_id
+    payload["envelope_kind"] = "task"
+    encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+    tasks_dir = export_dir / "tasks"
+    tasks_dir.mkdir(parents=True, exist_ok=True)
+    final_path = tasks_dir / f"{task_id}.json"
+    tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+    tmp_path.write_text(encoded, encoding="utf-8")
+    tmp_path.replace(final_path)
+    with (export_dir / "tasks.queue.ndjson").open("a", encoding="utf-8") as queue:
+        queue.write(encoded + "\n")
+    roles = envelope.get("required_roles", ["compute"])
+    if isinstance(roles, list) and roles:
+        with (export_dir / f"tasks.{str(roles[0]).lower()}.queue.ndjson").open("a", encoding="utf-8") as queue:
+            queue.write(encoded + "\n")
+
+
+def enqueue_request_envelope(export_dir: Path, envelope: dict[str, Any]) -> None:
+    request_id = safe_id(str(envelope.get("request_id", "")))
+    if not request_id:
+        raise ValueError("missing_request_id")
+    payload = dict(envelope)
+    payload["request_id"] = request_id
+    payload["envelope_kind"] = "request"
+    encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+    requests_dir = export_dir / "requests"
+    requests_dir.mkdir(parents=True, exist_ok=True)
+    final_path = requests_dir / f"{request_id}.json"
+    tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+    tmp_path.write_text(encoded, encoding="utf-8")
+    tmp_path.replace(final_path)
+    with (export_dir / "requests.queue.ndjson").open("a", encoding="utf-8") as queue:
+        queue.write(encoded + "\n")
+    priority = str(envelope.get("priority", "normal")).lower()
+    if priority in {"high", "urgent"}:
+        with (export_dir / "requests.urgent.ndjson").open("a", encoding="utf-8") as queue:
+            queue.write(encoded + "\n")
+    roles = envelope.get("target_roles", ["resource"])
+    if isinstance(roles, list):
+        for role in roles:
+            with (export_dir / f"requests.{str(role).lower()}.queue.ndjson").open("a", encoding="utf-8") as queue:
+                queue.write(encoded + "\n")
+
+
 class NetworkNode:
     def __init__(self, config: NodeConfig) -> None:
         self.config = config
         self.state = QueueState(config.state_dir)
+        self.reputation = ReputationStore(config.export_dir / f"node.{safe_id(config.node_id)}.reputation.json", initial_score=config.reputation_score)
+        self.config.reputation_score = self.reputation.local_score()
         self.peer_network = PeerNetwork(config, config.export_dir)
+        self.peer_network.set_peer_score_sink(self.reputation.set_peer_score)
         self.p2p = P2PClient(config.p2p_gateway, config.export_dir, self.peer_network)
         self.solana = SolanaBridge(config)
         self.runtime = RoleRuntime(config, self.p2p)
         self.events_path = config.export_dir / "node.events.ndjson"
         self.heartbeat_path = config.export_dir / f"node.{safe_id(config.node_id)}.heartbeat.json"
         self.metrics_path = config.export_dir / f"node.{safe_id(config.node_id)}.metrics.json"
-        self.metrics = read_json(self.metrics_path, {"schema_version": 1, "handled": 0, "failed": 0, "retried": 0, "dead_lettered": 0})
-        self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.config.reputation_score)
+        self.metrics = read_json(
+            self.metrics_path,
+            {"schema_version": 1, "handled": 0, "failed": 0, "retried": 0, "dead_lettered": 0, "dispatched": 0, "dispatch_failed": 0},
+        )
+        self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.reputation.local_score())
 
     def run(self) -> None:
         self.peer_network.start()
@@ -1369,6 +1716,7 @@ class NetworkNode:
                 handled = self.sweep()
                 self.state.save()
                 self.write_metrics()
+                self.write_heartbeat()
                 if self.config.once:
                     return
                 if handled == 0:
@@ -1394,7 +1742,9 @@ class NetworkNode:
 
     def write_heartbeat(self) -> None:
         capacity = self.runtime.capacity()
-        self.peer_network.set_local_profile(capacity=capacity, reputation_score=self.config.reputation_score)
+        current_reputation = self.reputation.local_score()
+        self.config.reputation_score = current_reputation
+        self.peer_network.set_local_profile(capacity=capacity, reputation_score=current_reputation)
         atomic_write_json(
             self.heartbeat_path,
             {
@@ -1403,7 +1753,7 @@ class NetworkNode:
                 "timestamp_utc": utc_now(),
                 "roles": sorted(self.config.roles),
                 "capacity": capacity,
-                "reputation_score": self.config.reputation_score,
+                "reputation_score": current_reputation,
                 "peer_http_base_url": self.peer_network.http_base_url,
                 "peer_public_base_url": self.peer_network.advertised_http_base_url,
                 "peer_count": int(self.peer_network.peers_snapshot().get("count", 0)),
@@ -1427,6 +1777,13 @@ class NetworkNode:
                 if self.state.seen(key):
                     continue
                 if not self.accepts(envelope):
+                    if self.try_remote_dispatch(envelope):
+                        self.state.mark_seen(key)
+                        handled += 1
+                        if self.config.max_items > 0 and handled >= self.config.max_items:
+                            return handled
+                        continue
+                    self.schedule_retry_or_dead_letter(envelope, "no_local_role_and_dispatch_failed")
                     self.state.mark_seen(key)
                     continue
                 self.handle(envelope)
@@ -1549,6 +1906,7 @@ class NetworkNode:
                     "proof_ref": result.get("proof_ref", {}),
                 },
             )
+        self.update_reputation(ok, kind, result)
 
     def schedule_retry_or_dead_letter(self, envelope: dict[str, Any], error: str) -> None:
         attempt = int(envelope.get("attempt", 0) or 0)
@@ -1564,6 +1922,74 @@ class NetworkNode:
         next_envelope["status"] = "dead_lettered"
         append_jsonl(self.config.export_dir / "dead_letters.ndjson", next_envelope)
         self.metrics["dead_lettered"] = int(self.metrics.get("dead_lettered", 0) or 0) + 1
+
+    def update_reputation(self, ok: bool, kind: str, result: dict[str, Any]) -> None:
+        if ok:
+            delta = 0.25
+            if kind == "request" and bool(result.get("choice", True)):
+                delta += 0.1
+            if kind == "task" and isinstance(result.get("replication"), dict) and result["replication"].get("satisfied") is True:
+                delta += 0.15
+            score = self.reputation.adjust_local(delta, f"{kind}_success")
+        else:
+            score = self.reputation.adjust_local(-0.5, f"{kind}_failure")
+        self.config.reputation_score = score  # keep announced score aligned
+
+    def try_remote_dispatch(self, envelope: dict[str, Any]) -> bool:
+        if not self.config.remote_dispatch_enable:
+            return False
+        dispatch_hops = int(envelope.get("dispatch_hops", 0) or 0)
+        if dispatch_hops >= max(1, self.config.remote_dispatch_limit):
+            return False
+        kind = str(envelope.get("envelope_kind") or "task")
+        required_roles = envelope.get("target_roles", []) if kind == "request" else envelope.get("required_roles", [])
+        if not isinstance(required_roles, list):
+            required_roles = []
+        peer = self.peer_network.select_peers(required_roles={str(role).lower() for role in required_roles}, limit=1, exclude={self.config.node_id})
+        if not peer:
+            self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
+            return False
+        payload = dict(envelope)
+        payload["dispatch_hops"] = dispatch_hops + 1
+        payload["dispatched_by"] = self.config.node_id
+        payload["dispatched_utc"] = utc_now()
+        base_url = str(peer[0].get("http_base_url", "")).rstrip("/")
+        if not base_url:
+            self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
+            return False
+        path = "/requests/dispatch" if kind == "request" else "/tasks/dispatch"
+        raw = stable_json(payload).encode("utf-8")
+        request = urllib.request.Request(
+            base_url + path,
+            data=raw,
+            method="POST",
+            headers=self.peer_network._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                ok = response.status in {200, 202}
+        except urllib.error.URLError:
+            ok = False
+        if ok:
+            self.metrics["dispatched"] = int(self.metrics.get("dispatched", 0) or 0) + 1
+            item_id = str(envelope.get("request_id") or envelope.get("task_id") or "unknown")
+            safe_item = safe_id(item_id)
+            self.update_envelope_status(envelope, "dispatched", {"result_hash": "", "dispatched_to": peer[0].get("node_id", "")})
+            append_jsonl(
+                self.events_path,
+                {
+                    "schema_version": 1,
+                    "timestamp_utc": utc_now(),
+                    "node_id": self.config.node_id,
+                    "kind": "dispatch",
+                    "item_id": safe_item,
+                    "target_peer": peer[0].get("node_id", ""),
+                    "roles": required_roles,
+                },
+            )
+            return True
+        self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
+        return False
 
     def handle_task(self, envelope: dict[str, Any]) -> dict[str, Any]:
         task = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
@@ -1838,6 +2264,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reputation-score", type=float, default=float(os.environ.get("SILICIUM_REPUTATION_SCORE", "0")))
     parser.add_argument("--replication-factor", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_FACTOR", "0")))
     parser.add_argument("--replication-quorum", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_QUORUM", "0")))
+    parser.add_argument("--discovery-seeds", default=os.environ.get("SILICIUM_DISCOVERY_SEEDS", ""))
+    parser.add_argument("--discovery-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_DISCOVERY_SYNC_INTERVAL_S", "30")))
+    parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
+    parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
+    parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
     return parser
 
 
@@ -1884,6 +2315,11 @@ def main(argv: list[str] | None = None) -> int:
         reputation_score=float(args.reputation_score),
         replication_factor=max(0, int(args.replication_factor)),
         replication_quorum=max(0, int(args.replication_quorum)),
+        discovery_seeds=[item.strip() for item in str(args.discovery_seeds).split(",") if item.strip()],
+        discovery_sync_interval_s=max(0, int(args.discovery_sync_interval_s)),
+        remote_dispatch_enable=bool(args.remote_dispatch_enable),
+        remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
+        nat_punch_enable=bool(args.nat_punch_enable),
     )
     export_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)

@@ -48,6 +48,10 @@ def _config(
     reputation_score: float = 0.0,
     replication_factor: int = 0,
     replication_quorum: int = 0,
+    discovery_seeds: list[str] | None = None,
+    remote_dispatch_enable: bool = False,
+    remote_dispatch_limit: int = 3,
+    nat_punch_enable: bool = False,
 ) -> network_node.NodeConfig:
     state_dir = export_dir / "state"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -91,6 +95,11 @@ def _config(
         reputation_score=reputation_score,
         replication_factor=replication_factor,
         replication_quorum=replication_quorum,
+        discovery_seeds=discovery_seeds or [],
+        discovery_sync_interval_s=1,
+        remote_dispatch_enable=remote_dispatch_enable,
+        remote_dispatch_limit=remote_dispatch_limit,
+        nat_punch_enable=nat_punch_enable,
     )
 
 
@@ -527,3 +536,102 @@ def test_storage_replication_meets_quorum(tmp_path: Path) -> None:
     finally:
         peer_b.stop()
         peer_c.stop()
+
+
+def test_peer_network_discovers_peers_via_public_seed_registry(tmp_path: Path) -> None:
+    export_seed = tmp_path / "seed"
+    export_b = tmp_path / "discover-b"
+    export_c = tmp_path / "discover-c"
+    seed = network_node.PeerNetwork(_config(export_seed, "seed-node", gossip_enable=False), export_seed)
+    seed.start()
+    try:
+        peer_b = network_node.PeerNetwork(
+            _config(export_b, "node-b", gossip_enable=False, discovery_seeds=[seed.http_base_url], peer_sync_interval_s=1),
+            export_b,
+        )
+        peer_c = network_node.PeerNetwork(
+            _config(export_c, "node-c", gossip_enable=False, discovery_seeds=[seed.http_base_url], peer_sync_interval_s=1),
+            export_c,
+        )
+        peer_b.start()
+        peer_c.start()
+        try:
+            deadline = time.time() + 3.0
+            while time.time() < deadline:
+                peer_b.sync_once()
+                peer_c.sync_once()
+                if peer_b.peers_snapshot()["count"] >= 3 and peer_c.peers_snapshot()["count"] >= 3:
+                    break
+                time.sleep(0.05)
+            assert peer_b.peers_snapshot()["count"] >= 3
+            assert peer_c.peers_snapshot()["count"] >= 3
+        finally:
+            peer_b.stop()
+            peer_c.stop()
+    finally:
+        seed.stop()
+
+
+def test_network_node_dispatches_task_to_remote_peer(tmp_path: Path) -> None:
+    export_a = tmp_path / "dispatch-a"
+    export_b = tmp_path / "dispatch-b"
+    export_a.mkdir()
+    export_b.mkdir()
+    peer_b = network_node.PeerNetwork(_config(export_b, "node-b", gossip_enable=False, roles="compute"), export_b)
+    peer_b.start()
+    try:
+        task = {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": "compute:remote",
+            "status": "queued",
+            "required_roles": ["compute"],
+            "task": {"kind": "compute"},
+        }
+        _write_jsonl(export_a / "tasks.queue.ndjson", task)
+        code = network_node.main(
+            [
+                "--export-dir",
+                str(export_a),
+                "--roles",
+                "storage",
+                "--node-id",
+                "node-a",
+                "--once",
+                "--remote-dispatch-enable",
+                "--seed-peers",
+                peer_b.http_base_url,
+            ]
+        )
+        assert code == 0
+        dispatched = json.loads((export_a / "tasks" / "compute:remote.json").read_text(encoding="utf-8"))
+        assert dispatched["status"] == "dispatched"
+        remote_task = json.loads((export_b / "tasks" / "compute:remote.json").read_text(encoding="utf-8"))
+        assert remote_task["task_id"] == "compute:remote"
+        metrics = json.loads((export_a / "node.node-a.metrics.json").read_text(encoding="utf-8"))
+        assert metrics["dispatched"] == 1
+    finally:
+        peer_b.stop()
+
+
+def test_network_node_persists_reputation_updates(tmp_path: Path) -> None:
+    export_dir = tmp_path / "rep-score"
+    export_dir.mkdir()
+    (export_dir / "p2p").mkdir()
+    (export_dir / "p2p" / "compute-input").write_bytes(b"payload")
+    task = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": "compute:rep",
+        "status": "queued",
+        "required_roles": ["compute"],
+        "p2p_ref": {"protocol": "ipfs", "content_id": "compute-input"},
+        "task": {"kind": "compute"},
+    }
+    _write_jsonl(export_dir / "tasks.compute.queue.ndjson", task)
+    code = network_node.main(["--export-dir", str(export_dir), "--roles", "compute", "--node-id", "node-a", "--once"])
+    assert code == 0
+    reputation = json.loads((export_dir / "node.node-a.reputation.json").read_text(encoding="utf-8"))
+    assert reputation["local_score"] > 0
+    heartbeat = json.loads((export_dir / "node.node-a.heartbeat.json").read_text(encoding="utf-8"))
+    assert heartbeat["reputation_score"] == reputation["local_score"]

@@ -3006,6 +3006,11 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--reputation-score", type=float, default=float(os.environ.get("SILICIUM_REPUTATION_SCORE", "0")))
     parser.add_argument("--replication-factor", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_FACTOR", "0")))
     parser.add_argument("--replication-quorum", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_QUORUM", "0")))
+    parser.add_argument("--discovery-seeds", default=os.environ.get("SILICIUM_DISCOVERY_SEEDS", ""))
+    parser.add_argument("--discovery-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_DISCOVERY_SYNC_INTERVAL_S", "30")))
+    parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
+    parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
+    parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
 
 
 def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
@@ -3079,6 +3084,12 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.replication_factor),
         "--replication-quorum",
         str(args.replication_quorum),
+        "--discovery-seeds",
+        str(args.discovery_seeds),
+        "--discovery-sync-interval-s",
+        str(args.discovery_sync_interval_s),
+        "--remote-dispatch-limit",
+        str(args.remote_dispatch_limit),
     ]
     if args.solana_enable:
         argv.append("--solana-enable")
@@ -3088,6 +3099,10 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         argv.append("--gossip-enable")
     if args.relay_enable:
         argv.append("--relay-enable")
+    if args.remote_dispatch_enable:
+        argv.append("--remote-dispatch-enable")
+    if args.nat_punch_enable:
+        argv.append("--nat-punch-enable")
     if args.state_dir:
         argv.extend(["--state-dir", str(args.state_dir)])
     if args.once:
