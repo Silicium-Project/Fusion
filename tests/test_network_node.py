@@ -1,5 +1,7 @@
 import json
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from tools import network_node
@@ -33,7 +35,16 @@ process.stdin.on("end", () => {
     return path
 
 
-def _config(export_dir: Path, node_id: str, *, roles: str = "compute", seed_peers: list[str] | None = None) -> network_node.NodeConfig:
+def _config(
+    export_dir: Path,
+    node_id: str,
+    *,
+    roles: str = "compute",
+    seed_peers: list[str] | None = None,
+    gossip_enable: bool = True,
+    mesh_key: str = "",
+    peer_sync_interval_s: int = 1,
+) -> network_node.NodeConfig:
     state_dir = export_dir / "state"
     export_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -56,12 +67,20 @@ def _config(export_dir: Path, node_id: str, *, roles: str = "compute", seed_peer
         worker_binary="missing-worker",
         worker_mode="emu",
         bootstrap_worker=False,
-        gossip_enable=True,
+        gossip_enable=gossip_enable,
         gossip_bind="127.0.0.1",
         gossip_port=0,
         peer_http_bind="127.0.0.1",
         peer_http_port=0,
+        peer_advertise_host="",
+        peer_advertise_port=0,
+        gossip_advertise_host="",
+        gossip_advertise_port=0,
         seed_peers=seed_peers or [],
+        mesh_key=mesh_key,
+        peer_sync_interval_s=peer_sync_interval_s,
+        peer_event_limit=64,
+        peer_stale_after_s=60,
     )
 
 
@@ -346,6 +365,64 @@ def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
 
             peer_a.publish("fragment_result", {"result_hash": "sha256:test", "proof_ref": shared_ref})
             deadline = time.time() + 2.0
+            while time.time() < deadline:
+                if (export_b / "gossip.events.ndjson").exists():
+                    lines = (export_b / "gossip.events.ndjson").read_text(encoding="utf-8").splitlines()
+                    if any('"topic":"fragment_result"' in line for line in lines):
+                        break
+                time.sleep(0.05)
+            assert (export_b / "gossip.events.ndjson").exists()
+            assert '"topic":"fragment_result"' in (export_b / "gossip.events.ndjson").read_text(encoding="utf-8")
+        finally:
+            peer_b.stop()
+    finally:
+        peer_a.stop()
+
+
+def test_peer_network_syncs_over_http_and_requires_mesh_auth(tmp_path: Path) -> None:
+    export_a = tmp_path / "a"
+    export_b = tmp_path / "b"
+    mesh_key = "mesh-secret"
+    config_a = _config(export_a, "node-a", gossip_enable=False, mesh_key=mesh_key)
+    peer_a = network_node.PeerNetwork(config_a, export_a)
+    p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
+    peer_a.start()
+    try:
+        unauthorized = urllib.request.Request(peer_a.http_base_url + "/peers")
+        try:
+            urllib.request.urlopen(unauthorized, timeout=2)
+            raise AssertionError("expected mesh auth failure")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 403
+
+        config_b = _config(
+            export_b,
+            "node-b",
+            gossip_enable=False,
+            mesh_key=mesh_key,
+            seed_peers=[peer_a.http_base_url],
+            peer_sync_interval_s=1,
+        )
+        peer_b = network_node.PeerNetwork(config_b, export_b)
+        p2p_b = network_node.P2PClient(config_b.p2p_gateway, export_b, peer_b)
+        peer_b.start()
+        try:
+            deadline = time.time() + 3.0
+            while time.time() < deadline:
+                peer_b.sync_once()
+                if peer_b.peers_snapshot()["count"] >= 2 and peer_a.peers_snapshot()["count"] >= 2:
+                    break
+                time.sleep(0.05)
+            assert peer_b.peers_snapshot()["count"] >= 2
+            assert peer_a.peers_snapshot()["count"] >= 2
+
+            stored = p2p_a.put_local(b"hello-http-mesh")
+            data, meta = p2p_b.fetch(stored["shared_ref"])
+            assert data == b"hello-http-mesh"
+            assert meta["source"] == "silicium-peer"
+
+            peer_a.publish("fragment_result", {"result_hash": "sha256:http", "proof_ref": stored["shared_ref"]})
+            deadline = time.time() + 3.0
             while time.time() < deadline:
                 if (export_b / "gossip.events.ndjson").exists():
                     lines = (export_b / "gossip.events.ndjson").read_text(encoding="utf-8").splitlines()

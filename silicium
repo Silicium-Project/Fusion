@@ -2991,7 +2991,15 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gossip-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_PORT", "0")))
     parser.add_argument("--peer-http-bind", default=os.environ.get("SILICIUM_PEER_HTTP_BIND", "127.0.0.1"))
     parser.add_argument("--peer-http-port", type=int, default=int(os.environ.get("SILICIUM_PEER_HTTP_PORT", "0")))
+    parser.add_argument("--peer-advertise-host", default=os.environ.get("SILICIUM_PEER_ADVERTISE_HOST", ""))
+    parser.add_argument("--peer-advertise-port", type=int, default=int(os.environ.get("SILICIUM_PEER_ADVERTISE_PORT", "0")))
+    parser.add_argument("--gossip-advertise-host", default=os.environ.get("SILICIUM_GOSSIP_ADVERTISE_HOST", ""))
+    parser.add_argument("--gossip-advertise-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_ADVERTISE_PORT", "0")))
     parser.add_argument("--seed-peers", default=os.environ.get("SILICIUM_SEED_PEERS", ""))
+    parser.add_argument("--mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", ""))
+    parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", "15")))
+    parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
+    parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", "300")))
 
 
 def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
@@ -3037,8 +3045,24 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.peer_http_bind),
         "--peer-http-port",
         str(args.peer_http_port),
+        "--peer-advertise-host",
+        str(args.peer_advertise_host),
+        "--peer-advertise-port",
+        str(args.peer_advertise_port),
+        "--gossip-advertise-host",
+        str(args.gossip_advertise_host),
+        "--gossip-advertise-port",
+        str(args.gossip_advertise_port),
         "--seed-peers",
         str(args.seed_peers),
+        "--mesh-key",
+        str(args.mesh_key),
+        "--peer-sync-interval-s",
+        str(args.peer_sync_interval_s),
+        "--peer-event-limit",
+        str(args.peer_event_limit),
+        "--peer-stale-after-s",
+        str(args.peer_stale_after_s),
     ]
     if args.solana_enable:
         argv.append("--solana-enable")
