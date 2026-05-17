@@ -3011,6 +3011,11 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
+    parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
+    parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
+    parser.add_argument("--scheduler-onchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_ONCHAIN_WEIGHT", "10")))
+    parser.add_argument("--scheduler-offchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_OFFCHAIN_WEIGHT", "1")))
+    parser.add_argument("--scheduler-capacity-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_CAPACITY_WEIGHT", "0.01")))
 
 
 def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
@@ -3090,6 +3095,14 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.discovery_sync_interval_s),
         "--remote-dispatch-limit",
         str(args.remote_dispatch_limit),
+        "--solana-reputation-refresh-s",
+        str(args.solana_reputation_refresh_s),
+        "--scheduler-onchain-weight",
+        str(args.scheduler_onchain_weight),
+        "--scheduler-offchain-weight",
+        str(args.scheduler_offchain_weight),
+        "--scheduler-capacity-weight",
+        str(args.scheduler_capacity_weight),
     ]
     if args.solana_enable:
         argv.append("--solana-enable")
@@ -3103,6 +3116,8 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         argv.append("--remote-dispatch-enable")
     if args.nat_punch_enable:
         argv.append("--nat-punch-enable")
+    if args.solana_reputation_enable:
+        argv.append("--solana-reputation-enable")
     if args.state_dir:
         argv.extend(["--state-dir", str(args.state_dir)])
     if args.once:

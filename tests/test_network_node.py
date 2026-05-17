@@ -21,6 +21,22 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => data += chunk);
 process.stdin.on("end", () => {
   const request = JSON.parse(data || "{}");
+  if (request.op === "fetch_worker") {
+    const owner = String((request.params || {}).owner || "");
+    const score = owner.endsWith("A") ? 8000 : owner.endsWith("B") ? 9000 : 5000;
+    process.stdout.write(JSON.stringify({
+      ok: true,
+      op: request.op,
+      account: {
+        owner,
+        globalReputation: score,
+        computeReputation: score,
+        verifyReputation: score
+      },
+      accounts: { owner, worker: "worker-" + owner }
+    }) + "\\n");
+    return;
+  }
   process.stdout.write(JSON.stringify({
     ok: true,
     op: request.op,
@@ -52,6 +68,10 @@ def _config(
     remote_dispatch_enable: bool = False,
     remote_dispatch_limit: int = 3,
     nat_punch_enable: bool = False,
+    solana_enable: bool = False,
+    solana_bridge: Path | None = None,
+    solana_wallet: str | None = None,
+    solana_reputation_enable: bool = False,
 ) -> network_node.NodeConfig:
     state_dir = export_dir / "state"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -65,11 +85,11 @@ def _config(
         max_items=0,
         p2p_gateway="http://127.0.0.1:5001",
         state_dir=state_dir,
-        solana_enable=False,
+        solana_enable=solana_enable,
         solana_rpc="https://api.devnet.solana.com",
         solana_program_id="HyXT83SzHsEPxNZ5zQPvkLwQ7JwFHh2veAE5PuGUgoiQ",
-        solana_wallet=str(export_dir / "wallet.json"),
-        solana_bridge=export_dir / "bridge.cjs",
+        solana_wallet=str(solana_wallet or (export_dir / "wallet.json")),
+        solana_bridge=solana_bridge or (export_dir / "bridge.cjs"),
         solana_timeout_s=10,
         max_retries=0,
         worker_binary="missing-worker",
@@ -100,6 +120,11 @@ def _config(
         remote_dispatch_enable=remote_dispatch_enable,
         remote_dispatch_limit=remote_dispatch_limit,
         nat_punch_enable=nat_punch_enable,
+        solana_reputation_enable=solana_reputation_enable,
+        solana_reputation_refresh_s=1,
+        scheduler_onchain_weight=10.0,
+        scheduler_offchain_weight=1.0,
+        scheduler_capacity_weight=0.01,
     )
 
 
@@ -635,3 +660,45 @@ def test_network_node_persists_reputation_updates(tmp_path: Path) -> None:
     assert reputation["local_score"] > 0
     heartbeat = json.loads((export_dir / "node.node-a.heartbeat.json").read_text(encoding="utf-8"))
     assert heartbeat["reputation_score"] == reputation["local_score"]
+
+
+def test_scheduler_prefers_verified_onchain_reputation(tmp_path: Path) -> None:
+    export_dir = tmp_path / "sched"
+    export_dir.mkdir()
+    bridge = _fake_solana_bridge(tmp_path / "fake_bridge.cjs")
+    wallet_path = tmp_path / "wallet.json"
+    wallet_path.write_text(json.dumps([0] * 64), encoding="utf-8")
+    config = _config(
+        export_dir,
+        "node-a",
+        roles="storage",
+        solana_enable=True,
+        solana_bridge=bridge,
+        solana_wallet=str(wallet_path),
+        solana_reputation_enable=True,
+    )
+    node = network_node.NetworkNode(config)
+    node.peer_network.update_peer_metadata(
+        "peer-low-offchain-high-onchain",
+        {
+            "node_id": "peer-low-offchain-high-onchain",
+            "roles": ["storage"],
+            "capacity": {"cpu_count": 1, "disk_free_bytes": 1},
+            "reputation_score": 10.0,
+            "solana_owner": "ownerB",
+        },
+    )
+    node.peer_network.update_peer_metadata(
+        "peer-high-offchain-low-onchain",
+        {
+            "node_id": "peer-high-offchain-low-onchain",
+            "roles": ["storage"],
+            "capacity": {"cpu_count": 8, "disk_free_bytes": 999999999},
+            "reputation_score": 1000.0,
+            "solana_owner": "ownerA",
+        },
+    )
+    node.refresh_known_peer_onchain_reputations()
+    selected = node.peer_network.select_peers(required_roles={"storage"}, limit=2)
+    assert selected[0]["node_id"] == "peer-low-offchain-high-onchain"
+    assert selected[0]["onchain_reputation"] == 9000

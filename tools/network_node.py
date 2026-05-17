@@ -66,6 +66,25 @@ def fragment_status_name(fragment_account: dict[str, Any] | Any) -> str:
     return str(status or "unknown")
 
 
+def reputation_value(account: dict[str, Any] | Any, field: str) -> float:
+    value: Any
+    if isinstance(account, dict):
+        value = account.get(field)
+    else:
+        value = getattr(account, field, None)
+    if value is None:
+        return 0.0
+    if hasattr(value, "toString"):
+        try:
+            value = value.toString()
+        except Exception:
+            pass
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
 def read_json(path: Path, default: Any) -> Any:
     try:
         if not path.exists():
@@ -133,6 +152,11 @@ class NodeConfig:
     remote_dispatch_enable: bool
     remote_dispatch_limit: int
     nat_punch_enable: bool
+    solana_reputation_enable: bool
+    solana_reputation_refresh_s: int
+    scheduler_onchain_weight: float
+    scheduler_offchain_weight: float
+    scheduler_capacity_weight: float
 
 
 def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
@@ -598,6 +622,9 @@ class PeerNetwork:
         self.mesh_post_url = ""
         self.local_capacity = build_capacity_snapshot(config)
         self.local_reputation_score = float(config.reputation_score)
+        self.local_onchain_reputation = 0.0
+        self.local_solana_owner = ""
+        self.local_solana_worker = ""
 
     def start(self) -> None:
         self._start_http_server()
@@ -641,15 +668,41 @@ class PeerNetwork:
         atomic_write_json(self.discovery_registry_path, payload)
         return payload
 
-    def set_local_profile(self, *, capacity: dict[str, Any] | None = None, reputation_score: float | None = None) -> None:
+    def set_local_profile(
+        self,
+        *,
+        capacity: dict[str, Any] | None = None,
+        reputation_score: float | None = None,
+        onchain_reputation: float | None = None,
+        solana_owner: str | None = None,
+        solana_worker: str | None = None,
+    ) -> None:
         if capacity is not None:
             self.local_capacity = capacity
         if reputation_score is not None:
             self.local_reputation_score = float(reputation_score)
+        if onchain_reputation is not None:
+            self.local_onchain_reputation = float(onchain_reputation)
+        if solana_owner is not None:
+            self.local_solana_owner = str(solana_owner)
+        if solana_worker is not None:
+            self.local_solana_worker = str(solana_worker)
         self._record_self_peer()
 
     def set_peer_score_sink(self, callback: Any) -> None:
         self._peer_score_sink = callback
+
+    def update_peer_metadata(self, node_id: str, updates: dict[str, Any]) -> None:
+        if not node_id:
+            return
+        with self._lock:
+            current = dict(self._peers.get(node_id, {}))
+            current.update(dict(updates))
+            current.setdefault("node_id", node_id)
+            current.setdefault("last_seen_unix", int(time.time()))
+            current.setdefault("updated_utc", utc_now())
+            self._peers[node_id] = current
+        self.peers_snapshot()
 
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
         message = {
@@ -679,6 +732,9 @@ class PeerNetwork:
             "relay_capable": bool(self.config.relay_enable),
             "capacity": self.local_capacity,
             "reputation_score": self.local_reputation_score,
+            "onchain_reputation": self.local_onchain_reputation,
+            "solana_owner": self.local_solana_owner,
+            "solana_worker": self.local_solana_worker,
             "timestamp_utc": utc_now(),
         }
         self._sign_message(message)
@@ -723,6 +779,9 @@ class PeerNetwork:
                 "relay_capable": bool(self.config.relay_enable),
                 "capacity": self.local_capacity,
                 "reputation_score": self.local_reputation_score,
+                "onchain_reputation": self.local_onchain_reputation,
+                "solana_owner": self.local_solana_owner,
+                "solana_worker": self.local_solana_worker,
                 "last_seen_unix": int(time.time()),
                 "updated_utc": utc_now(),
                 "self": True,
@@ -748,6 +807,9 @@ class PeerNetwork:
                 "relay_capable": bool(message.get("relay_capable", False)),
                 "capacity": message.get("capacity", {}) if isinstance(message.get("capacity"), dict) else {},
                 "reputation_score": float(message.get("reputation_score", 0.0) or 0.0),
+                "onchain_reputation": float(message.get("onchain_reputation", 0.0) or 0.0),
+                "solana_owner": str(message.get("solana_owner", "")),
+                "solana_worker": str(message.get("solana_worker", "")),
                 "updated_utc": str(message.get("timestamp_utc", utc_now())),
                 "last_seen_unix": int(time.time()),
                 "self": node_id == self.node_id,
@@ -933,9 +995,15 @@ class PeerNetwork:
     def _peer_score(self, peer: dict[str, Any]) -> tuple[float, float, float]:
         capacity = peer.get("capacity", {}) if isinstance(peer.get("capacity"), dict) else {}
         reputation = float(peer.get("reputation_score", 0.0) or 0.0)
+        onchain_reputation = float(peer.get("onchain_reputation", 0.0) or 0.0)
         cpu = float(capacity.get("cpu_count", 0) or 0)
         disk_free = float(capacity.get("disk_free_bytes", 0) or 0)
-        return (reputation, cpu, disk_free)
+        onchain_component = onchain_reputation * max(0.0, float(self.config.scheduler_onchain_weight))
+        offchain_component = reputation * max(0.0, float(self.config.scheduler_offchain_weight))
+        capacity_component = (cpu + (disk_free / max(1.0, 1024.0 * 1024.0 * 1024.0))) * max(
+            0.0, float(self.config.scheduler_capacity_weight)
+        )
+        return (onchain_component, offchain_component, capacity_component)
 
     def _push_replica(self, peer: dict[str, Any], content_id: str, data: bytes) -> bool:
         base_url = str(peer.get("http_base_url", "")).rstrip("/")
@@ -1705,12 +1773,18 @@ class NetworkNode:
             self.metrics_path,
             {"schema_version": 1, "handled": 0, "failed": 0, "retried": 0, "dead_lettered": 0, "dispatched": 0, "dispatch_failed": 0},
         )
+        self._last_reputation_refresh_unix = 0.0
+        self._last_peer_reputation_refresh_unix = 0.0
+        self._solana_owner = ""
+        self._solana_worker = ""
+        self._solana_onchain_reputation = 0.0
         self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.reputation.local_score())
 
     def run(self) -> None:
         self.peer_network.start()
         try:
             self.bootstrap()
+            self.refresh_local_onchain_profile(force=True)
             while True:
                 self.write_heartbeat()
                 handled = self.sweep()
@@ -1740,7 +1814,93 @@ class NetworkNode:
             },
         )
 
+    def solana_owner_pubkey(self) -> str:
+        if self._solana_owner:
+            return self._solana_owner
+        try:
+            secret = json.loads(Path(self.config.solana_wallet).expanduser().read_text(encoding="utf-8"))
+            completed = subprocess.run(
+                [
+                    "node",
+                    "-e",
+                    (
+                        "const {Keypair}=require('@solana/web3.js');"
+                        "const kp=Keypair.fromSecretKey(Uint8Array.from(JSON.parse(process.argv[1])));"
+                        "console.log(kp.publicKey.toBase58());"
+                    ),
+                    json.dumps(secret),
+                ],
+                cwd=str(Path(__file__).resolve().parents[1] / "solana-layer"),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode == 0:
+                self._solana_owner = completed.stdout.strip()
+        except Exception:
+            self._solana_owner = ""
+        return self._solana_owner
+
+    def refresh_local_onchain_profile(self, *, force: bool = False) -> None:
+        if not self.config.solana_enable or not self.config.solana_reputation_enable:
+            return
+        now = time.time()
+        if not force and (now - self._last_reputation_refresh_unix) < max(1, self.config.solana_reputation_refresh_s):
+            return
+        owner = self.solana_owner_pubkey()
+        if not owner:
+            return
+        try:
+            snapshot = self.solana.call("fetch_worker", {"owner": owner})
+        except Exception:
+            return
+        account = snapshot.get("account", {}) if isinstance(snapshot, dict) else {}
+        accounts = snapshot.get("accounts", {}) if isinstance(snapshot, dict) else {}
+        onchain_reputation = reputation_value(account, "globalReputation") or reputation_value(account, "global_reputation")
+        self._solana_owner = str(accounts.get("owner", owner))
+        self._solana_worker = str(accounts.get("worker", ""))
+        self._solana_onchain_reputation = onchain_reputation
+        self._last_reputation_refresh_unix = now
+        self.peer_network.set_local_profile(
+            capacity=self.runtime.capacity(),
+            reputation_score=self.reputation.local_score(),
+            onchain_reputation=onchain_reputation,
+            solana_owner=self._solana_owner,
+            solana_worker=self._solana_worker,
+        )
+
+    def refresh_known_peer_onchain_reputations(self) -> None:
+        if not self.config.solana_enable or not self.config.solana_reputation_enable:
+            return
+        if (time.time() - self._last_peer_reputation_refresh_unix) < max(1, self.config.solana_reputation_refresh_s):
+            return
+        for peer in self.peer_network.peers_snapshot().get("peers", []):
+            if not isinstance(peer, dict) or peer.get("self"):
+                continue
+            owner = str(peer.get("solana_owner", "")).strip()
+            if not owner:
+                continue
+            try:
+                snapshot = self.solana.call("fetch_worker", {"owner": owner})
+            except Exception:
+                continue
+            account = snapshot.get("account", {}) if isinstance(snapshot, dict) else {}
+            accounts = snapshot.get("accounts", {}) if isinstance(snapshot, dict) else {}
+            onchain_reputation = reputation_value(account, "globalReputation") or reputation_value(account, "global_reputation")
+            self.peer_network.update_peer_metadata(
+                str(peer.get("node_id", "")),
+                {
+                    "onchain_reputation": onchain_reputation,
+                    "solana_worker": str(accounts.get("worker", peer.get("solana_worker", ""))),
+                    "solana_owner": str(accounts.get("owner", owner)),
+                    "onchain_verified_utc": utc_now(),
+                },
+            )
+        self._last_peer_reputation_refresh_unix = time.time()
+
     def write_heartbeat(self) -> None:
+        self.refresh_local_onchain_profile()
+        self.refresh_known_peer_onchain_reputations()
         capacity = self.runtime.capacity()
         current_reputation = self.reputation.local_score()
         self.config.reputation_score = current_reputation
@@ -1762,6 +1922,9 @@ class NetworkNode:
                 "mesh_auth_enabled": bool(self.config.mesh_key),
                 "identity_id": self.peer_network.identity.identity_id,
                 "relay_enabled": self.config.relay_enable,
+                "solana_owner": self._solana_owner,
+                "solana_worker": self._solana_worker,
+                "onchain_reputation": self._solana_onchain_reputation,
             },
         )
 
@@ -2269,6 +2432,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
+    parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
+    parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
+    parser.add_argument("--scheduler-onchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_ONCHAIN_WEIGHT", "10")))
+    parser.add_argument("--scheduler-offchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_OFFCHAIN_WEIGHT", "1")))
+    parser.add_argument("--scheduler-capacity-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_CAPACITY_WEIGHT", "0.01")))
     return parser
 
 
@@ -2320,6 +2488,11 @@ def main(argv: list[str] | None = None) -> int:
         remote_dispatch_enable=bool(args.remote_dispatch_enable),
         remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
         nat_punch_enable=bool(args.nat_punch_enable),
+        solana_reputation_enable=bool(args.solana_reputation_enable),
+        solana_reputation_refresh_s=max(1, int(args.solana_reputation_refresh_s)),
+        scheduler_onchain_weight=float(args.scheduler_onchain_weight),
+        scheduler_offchain_weight=float(args.scheduler_offchain_weight),
+        scheduler_capacity_weight=float(args.scheduler_capacity_weight),
     )
     export_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)

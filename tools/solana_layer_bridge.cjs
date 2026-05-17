@@ -40,6 +40,10 @@ function readKeypair(filePath) {
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(resolved, "utf8"))));
 }
 
+function readKeypairPubkey(filePath) {
+  return readKeypair(filePath).publicKey;
+}
+
 function loadIdl(programId) {
   const candidates = [
     path.join(solanaLayerDir, "target", "idl", "solana_layer.json"),
@@ -234,6 +238,15 @@ async function handle(request) {
       : layer.pdas.fragment(publicKey(params.job, "job"), Number(params.fragment_index ?? params.fragmentIndex));
     const account = await program.account.fragment.fetch(fragment);
     return { account: JSON.parse(JSON.stringify(account)), accounts: { fragment: fragment.toBase58() } };
+  }
+
+  if (request.op === "fetch_worker") {
+    const owner = params.owner ? publicKey(params.owner, "owner") : readKeypairPubkey(request.wallet_path);
+    const worker = params.worker_account
+      ? publicKey(params.worker_account, "worker_account")
+      : layer.pdas.worker(owner);
+    const account = await program.account.worker.fetch(worker);
+    return { account: JSON.parse(JSON.stringify(account)), accounts: { worker: worker.toBase58(), owner: owner.toBase58() } };
   }
 
   throw new Error(`unsupported_op:${request.op}`);
