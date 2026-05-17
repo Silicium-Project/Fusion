@@ -65,6 +65,8 @@ def test_mcp_server_reads_resources_and_tools(tmp_path: Path) -> None:
     (export_dir / "reports.recent.json").write_text('{"tasks":[]}', encoding="utf-8")
     (export_dir / "result.func_1_main.json").write_text('{"success":true}', encoding="utf-8")
     (export_dir / "logs.func_1_main.json").write_text('{"stdout":"hi"}', encoding="utf-8")
+    (export_dir / "node.node-a.heartbeat.json").write_text('{"node_id":"node-a","roles":["compute"]}', encoding="utf-8")
+    (export_dir / "node.node-a.metrics.json").write_text('{"handled":1}', encoding="utf-8")
 
     port = _find_free_port()
     env = os.environ.copy()
@@ -89,6 +91,10 @@ def test_mcp_server_reads_resources_and_tools(tmp_path: Path) -> None:
         assert code == 200
         assert json.loads(body)["ok"] is True
 
+        code, body = _http_get(base + "/resources?uri=resources://silicium/nodes/heartbeat/node-a")
+        assert code == 200
+        assert json.loads(body)["node_id"] == "node-a"
+
         code, body = _http_post(
             base + "/tools",
             {"name": "tools.silicium.run_action", "args": {"action": "read_task_result", "task_id": "func_1_main"}},
@@ -101,6 +107,130 @@ def test_mcp_server_reads_resources_and_tools(tmp_path: Path) -> None:
         code, _ = _http_post(base + "/tools", {"name": "tools.silicium.interrupt_action", "args": {}})
         assert code == 200
         assert (export_dir / "control.request.json").exists()
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_mcp_server_submits_and_reads_tasks(tmp_path: Path) -> None:
+    export_dir = tmp_path / "mcp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "status.current.json").write_text('{"ok":true}', encoding="utf-8")
+    (export_dir / "reports.recent.json").write_text('{"tasks":[]}', encoding="utf-8")
+
+    port = _find_free_port()
+    env = os.environ.copy()
+    env["SILICIUM_MCP_EXPORT_DIR"] = str(export_dir)
+    proc = subprocess.Popen(
+        [sys.executable, "tools/mcp_server.py", "--port", str(port), "--enable-tools"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"http://127.0.0.1:{port}"
+        _wait_ready(base)
+
+        code, body = _http_post(
+            base + "/tasks",
+            {
+                "task_id": "render:tile/1",
+                "task": {"kind": "render", "partition_id": "tile_1"},
+                "on_chain": {"job": "job-pubkey", "fragment_index": 1, "worker_token": "token-account"},
+            },
+        )
+        assert code == 202
+        accepted = json.loads(body)
+        assert accepted["ok"] is True
+        assert accepted["task_id"] == "render:tile_1"
+        assert (export_dir / "tasks.queue.ndjson").exists()
+
+        code, body = _http_get(base + "/tasks/render:tile_1")
+        assert code == 200
+        task = json.loads(body)
+        assert task["status"] == "queued"
+        assert task["task"]["partition_id"] == "tile_1"
+        assert task["required_roles"] == ["compute"]
+        assert task["on_chain"]["job"] == "job-pubkey"
+
+        code, body = _http_post(
+            base + "/tools",
+            {"name": "tools.silicium.get_task", "args": {"task_id": "render:tile_1"}},
+        )
+        assert code == 200
+        wrapped = json.loads(body)
+        assert json.loads(wrapped["result_json"])["task"]["kind"] == "render"
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+def test_mcp_server_submits_role_aware_requests(tmp_path: Path) -> None:
+    export_dir = tmp_path / "mcp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "status.current.json").write_text('{"ok":true}', encoding="utf-8")
+    (export_dir / "reports.recent.json").write_text('{"tasks":[]}', encoding="utf-8")
+
+    port = _find_free_port()
+    env = os.environ.copy()
+    env["SILICIUM_MCP_EXPORT_DIR"] = str(export_dir)
+    proc = subprocess.Popen(
+        [sys.executable, "tools/mcp_server.py", "--port", str(port), "--enable-tools"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"http://127.0.0.1:{port}"
+        _wait_ready(base)
+
+        code, body = _http_post(
+            base + "/requests",
+            {
+                "request_id": "audit/job-1/frag-0",
+                "kind": "audit",
+                "priority": "urgent",
+                "target_roles": ["audit", "verify"],
+                "job_id": "job-1",
+                "fragment_id": "job-1:0",
+                "p2p_ref": {"protocol": "ipfs", "cid": "bafybeiaudit", "hash": "sha256:abc"},
+                "request": {"sample": "full"},
+                "on_chain": {"job": "job-pubkey", "fragment": "fragment-pubkey", "escrow": "escrow-pubkey", "worker_token": "token-account"},
+            },
+        )
+        assert code == 202
+        accepted = json.loads(body)
+        assert accepted["ok"] is True
+        assert accepted["request_id"] == "audit_job-1_frag-0"
+        assert accepted["target_roles"] == ["audit", "verify"]
+        assert (export_dir / "requests.queue.ndjson").exists()
+        assert (export_dir / "requests.urgent.ndjson").exists()
+        assert (export_dir / "requests.audit.queue.ndjson").exists()
+        assert (export_dir / "requests.verify.queue.ndjson").exists()
+
+        code, body = _http_get(base + "/requests/audit_job-1_frag-0")
+        assert code == 200
+        request = json.loads(body)
+        assert request["kind"] == "audit"
+        assert request["priority_rank"] == 100
+        assert request["p2p_ref"]["content_id"] == "bafybeiaudit"
+        assert request["on_chain"]["fragment"] == "fragment-pubkey"
+
+        code, body = _http_post(
+            base + "/tools",
+            {"name": "tools.silicium.get_request", "args": {"request_id": "audit_job-1_frag-0"}},
+        )
+        assert code == 200
+        wrapped = json.loads(body)
+        assert json.loads(wrapped["result_json"])["target_roles"] == ["audit", "verify"]
     finally:
         proc.terminate()
         try:

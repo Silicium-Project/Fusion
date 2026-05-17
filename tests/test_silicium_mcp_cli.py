@@ -21,7 +21,7 @@ def _find_free_port() -> int:
 
 
 def _wait_health(url: str, token: str) -> None:
-    deadline = time.time() + 5.0
+    deadline = time.time() + 10.0
     last = None
     while time.time() < deadline:
         req = urllib.request.Request(url + "/healthz", headers={"Authorization": f"Bearer {token}"})
@@ -34,6 +34,36 @@ def _wait_health(url: str, token: str) -> None:
             last = str(exc)
         time.sleep(0.05)
     raise AssertionError(f"server not ready: {last}")
+
+
+def _fake_solana_bridge(path: Path) -> Path:
+    path.write_text(
+        """
+let data = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => data += chunk);
+process.stdin.on("end", () => {
+  const request = JSON.parse(data || "{}");
+  if (request.op === "create_job") {
+    process.stdout.write(JSON.stringify({
+      ok: true,
+      op: request.op,
+      signatures: ["sig-create-job"],
+      accounts: { job: "job-pubkey", escrowAuth: "escrow-auth-pubkey" }
+    }) + "\\n");
+    return;
+  }
+  process.stdout.write(JSON.stringify({
+    ok: true,
+    op: request.op,
+    signatures: ["sig-" + request.op],
+    accounts: { worker: "worker-pubkey" }
+  }) + "\\n");
+});
+""".strip(),
+        encoding="utf-8",
+    )
+    return path
 
 
 def test_silicium_mcp_print_config_json(tmp_path: Path) -> None:
@@ -111,3 +141,132 @@ def test_silicium_mcp_serve_starts_server(tmp_path: Path) -> None:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+def test_silicium_node_submit_and_get_task(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(json.dumps({"mcp": {"export_dir": str(export_dir), "enable_tools": True}}), encoding="utf-8")
+    env = os.environ.copy()
+    env["SILICIUM_CONFIG"] = str(cfg_path)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SILICIUM),
+            "node",
+            "submit-task",
+            "--task-id",
+            "cli:1",
+            "--task",
+            '{"kind":"storage","path":"object.bin"}',
+            "--roles",
+            "storage",
+            "--p2p-ref",
+            '{"protocol":"file","content_id":"/tmp/object.bin"}',
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    accepted = json.loads(result.stdout)
+    assert accepted["task_id"] == "cli:1"
+
+    result = subprocess.run(
+        [sys.executable, str(SILICIUM), "node", "get-task", "cli:1"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    task = json.loads(result.stdout)
+    assert task["required_roles"] == ["storage"]
+
+
+def test_silicium_node_create_job_and_enqueue_task(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(json.dumps({"mcp": {"export_dir": str(export_dir), "enable_tools": True}}), encoding="utf-8")
+    bridge = _fake_solana_bridge(tmp_path / "fake_bridge.cjs")
+    env = os.environ.copy()
+    env["SILICIUM_CONFIG"] = str(cfg_path)
+    env["SILICIUM_SOLANA_BRIDGE"] = str(bridge)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SILICIUM),
+            "node",
+            "create-job",
+            "--mint",
+            "11111111111111111111111111111111",
+            "--client-token",
+            "11111111111111111111111111111111",
+            "--escrow-keypair-path",
+            str(tmp_path / "escrow.json"),
+            "--job-id",
+            "42",
+            "--expected-fragments",
+            "1",
+            "--reward-per-fragment",
+            "10",
+            "--deadline-unix",
+            "1893456000",
+            "--task-id",
+            "job:42",
+            "--task",
+            '{"kind":"compute"}',
+            "--worker-token",
+            "11111111111111111111111111111111",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["job"]["accounts"]["job"] == "job-pubkey"
+    assert payload["task"]["task_id"] == "job:42"
+
+    task = json.loads((export_dir / "tasks" / "job:42.json").read_text(encoding="utf-8"))
+    assert task["on_chain"]["job"] == "job-pubkey"
+
+
+def test_silicium_node_get_heartbeat_and_metrics(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    (export_dir / "node.node-a.heartbeat.json").write_text('{"node_id":"node-a"}', encoding="utf-8")
+    (export_dir / "node.node-a.metrics.json").write_text('{"handled":2}', encoding="utf-8")
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(json.dumps({"mcp": {"export_dir": str(export_dir)}}), encoding="utf-8")
+    env = os.environ.copy()
+    env["SILICIUM_CONFIG"] = str(cfg_path)
+
+    heartbeat = subprocess.run(
+        [sys.executable, str(SILICIUM), "node", "get-heartbeat", "--node-id", "node-a"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert heartbeat.returncode == 0, heartbeat.stderr
+    assert json.loads(heartbeat.stdout)["node_id"] == "node-a"
+
+    metrics = subprocess.run(
+        [sys.executable, str(SILICIUM), "node", "get-metrics", "--node-id", "node-a"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert metrics.returncode == 0, metrics.stderr
+    assert json.loads(metrics.stdout)["handled"] == 2

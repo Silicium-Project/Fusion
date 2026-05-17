@@ -36,6 +36,10 @@ RESOURCE_STATUS_CURRENT = "resources://silicium/status/current"
 RESOURCE_REPORTS_RECENT = "resources://silicium/reports/recent"
 RESOURCE_RESULT_PREFIX = "resources://silicium/results/by-task/"
 RESOURCE_LOGS_PREFIX = "resources://silicium/logs/by-task/"
+RESOURCE_TASK_PREFIX = "resources://silicium/tasks/by-id/"
+RESOURCE_REQUEST_PREFIX = "resources://silicium/requests/by-id/"
+RESOURCE_NODE_HEARTBEAT_PREFIX = "resources://silicium/nodes/heartbeat/"
+RESOURCE_NODE_METRICS_PREFIX = "resources://silicium/nodes/metrics/"
 
 MCP_JSONRPC_VERSION = "2.0"
 MCP_DEFAULT_PROTOCOL_VERSION = "2024-11-05"
@@ -44,12 +48,20 @@ TOOL_RUN_ACTION = "tools.silicium.run_action"
 TOOL_INTERRUPT_ACTION = "tools.silicium.interrupt_action"
 TOOL_SELECT_RUNNER_MODE = "tools.silicium.select_runner_mode"
 TOOL_GET_HEALTH = "tools.silicium.get_health"
+TOOL_SUBMIT_TASK = "tools.silicium.submit_task"
+TOOL_GET_TASK = "tools.silicium.get_task"
+TOOL_SUBMIT_REQUEST = "tools.silicium.submit_request"
+TOOL_GET_REQUEST = "tools.silicium.get_request"
 
 SUPPORTED_RESOURCES = (
     RESOURCE_STATUS_CURRENT,
     RESOURCE_REPORTS_RECENT,
     "resources://silicium/results/by-task/{task_id}",
     "resources://silicium/logs/by-task/{task_id}",
+    "resources://silicium/tasks/by-id/{task_id}",
+    "resources://silicium/requests/by-id/{request_id}",
+    "resources://silicium/nodes/heartbeat/{node_id}",
+    "resources://silicium/nodes/metrics/{node_id}",
 )
 
 SUPPORTED_TOOLS = (
@@ -57,9 +69,17 @@ SUPPORTED_TOOLS = (
     TOOL_INTERRUPT_ACTION,
     TOOL_SELECT_RUNNER_MODE,
     TOOL_GET_HEALTH,
+    TOOL_SUBMIT_TASK,
+    TOOL_GET_TASK,
+    TOOL_SUBMIT_REQUEST,
+    TOOL_GET_REQUEST,
 )
 
 _SAFE_TASK_ID_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
+_NETWORK_ROLES = frozenset({"compute", "verify", "storage", "audit", "resource"})
+_REQUEST_KINDS = frozenset({"audit", "resource", "challenge", "replicate", "retrieve", "pin", "unpin", "health"})
+_PRIORITIES = frozenset({"low", "normal", "high", "urgent"})
+_P2P_PROTOCOLS = frozenset({"ipfs", "ipns", "libp2p", "http", "https", "file"})
 
 METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 OAUTH_DISCOVERY_PATHS = (
@@ -207,6 +227,26 @@ class McpExportStore:
             if not task_id:
                 raise FileNotFoundError("missing_task_id")
             return self._read_text(self._export_dir / f"logs.{task_id}.json")
+        if uri.startswith(RESOURCE_TASK_PREFIX):
+            task_id = _sanitize_task_id(uri[len(RESOURCE_TASK_PREFIX) :])
+            if not task_id:
+                raise FileNotFoundError("missing_task_id")
+            return self._read_text(self._export_dir / "tasks" / f"{task_id}.json")
+        if uri.startswith(RESOURCE_REQUEST_PREFIX):
+            request_id = _sanitize_task_id(uri[len(RESOURCE_REQUEST_PREFIX) :])
+            if not request_id:
+                raise FileNotFoundError("missing_request_id")
+            return self._read_text(self._export_dir / "requests" / f"{request_id}.json")
+        if uri.startswith(RESOURCE_NODE_HEARTBEAT_PREFIX):
+            node_id = _sanitize_task_id(uri[len(RESOURCE_NODE_HEARTBEAT_PREFIX) :])
+            if not node_id:
+                raise FileNotFoundError("missing_node_id")
+            return self._read_text(self._export_dir / f"node.{node_id}.heartbeat.json")
+        if uri.startswith(RESOURCE_NODE_METRICS_PREFIX):
+            node_id = _sanitize_task_id(uri[len(RESOURCE_NODE_METRICS_PREFIX) :])
+            if not node_id:
+                raise FileNotFoundError("missing_node_id")
+            return self._read_text(self._export_dir / f"node.{node_id}.metrics.json")
         raise ValueError("unsupported_resource")
 
     def _read_text(self, path: Path) -> str:
@@ -400,6 +440,249 @@ class McpControlPlane:
             tmp = self._path.with_suffix(self._path.suffix + ".tmp")
             tmp.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
             tmp.replace(self._path)
+
+
+def _priority_rank(priority: str) -> int:
+    return {"low": 10, "normal": 50, "high": 80, "urgent": 100}.get(priority, 50)
+
+
+def _normalized_priority(value: Any) -> str:
+    priority = str(value or "normal").strip().lower()
+    if priority not in _PRIORITIES:
+        raise ValueError("unsupported_priority")
+    return priority
+
+
+def _normalized_roles(value: Any, default: list[str] | None = None) -> list[str]:
+    if value is None:
+        return list(default or ["compute"])
+    if isinstance(value, str):
+        roles = _csv_values(value)
+    elif isinstance(value, list):
+        roles = [str(item).strip().lower() for item in value if str(item).strip()]
+    else:
+        raise ValueError("roles_not_array")
+    roles = sorted(set(roles))
+    if not roles:
+        raise ValueError("roles_empty")
+    unsupported = [role for role in roles if role not in _NETWORK_ROLES]
+    if unsupported:
+        raise ValueError("unsupported_role:" + ",".join(unsupported))
+    return roles
+
+
+def _validate_p2p_ref(value: Any, *, required: bool = False) -> dict[str, Any] | None:
+    if value is None:
+        if required:
+            raise ValueError("missing_p2p_ref")
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("p2p_ref_not_object")
+    protocol = str(value.get("protocol", "ipfs")).strip().lower()
+    if protocol not in _P2P_PROTOCOLS:
+        raise ValueError("unsupported_p2p_protocol")
+    content_id = str(value.get("cid") or value.get("content_id") or value.get("url") or "").strip()
+    if not content_id:
+        raise ValueError("missing_p2p_content_id")
+    normalized: dict[str, Any] = {"protocol": protocol, "content_id": content_id}
+    for key in ("hash", "size_bytes", "mime_type"):
+        if key in value:
+            normalized[key] = value[key]
+    return normalized
+
+
+def _validate_on_chain(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("on_chain_not_object")
+    return dict(value)
+
+
+def _default_task_roles(task: Mapping[str, Any]) -> list[str]:
+    kind = str(task.get("kind", task.get("type", "compute"))).strip().lower()
+    aliases = {
+        "compute": "compute",
+        "calculation": "compute",
+        "calcul": "compute",
+        "verification": "verify",
+        "verify": "verify",
+        "storage": "storage",
+        "store": "storage",
+        "audit": "audit",
+        "resource": "resource",
+    }
+    return [aliases.get(kind, "compute")]
+
+
+class McpTaskStore:
+    """
+    Durable ingress for network-submitted tasks.
+
+    The HTTP/MCP server owns acceptance and persistence. Workers can consume
+    tasks.queue.ndjson without needing clients to launch ad-hoc runner scripts.
+    """
+
+    def __init__(self, export_dir: Path) -> None:
+        self._tasks_dir = export_dir / "tasks"
+        self._queue_path = export_dir / "tasks.queue.ndjson"
+        self._lock = threading.Lock()
+        self._tasks_dir.mkdir(parents=True, exist_ok=True)
+
+    def submit(self, args: Any) -> dict[str, Any]:
+        if not isinstance(args, dict):
+            raise ValueError("args_not_object")
+        raw_task_id = args.get("task_id")
+        task_id = _sanitize_task_id(str(raw_task_id)) if raw_task_id is not None else ""
+        if not task_id:
+            task_id = uuid.uuid4().hex
+
+        task = args.get("task", args)
+        if not isinstance(task, dict):
+            raise ValueError("task_not_object")
+
+        required_roles = _normalized_roles(
+            args.get("required_roles", task.get("required_roles")),
+            default=_default_task_roles(task),
+        )
+        priority = _normalized_priority(args.get("priority", task.get("priority")))
+        p2p_ref = _validate_p2p_ref(args.get("p2p_ref", task.get("p2p_ref")), required=False)
+        on_chain = _validate_on_chain(args.get("on_chain", task.get("on_chain")))
+        response_mode = str(args.get("response_mode", task.get("response_mode", "p2p_ref"))).strip().lower()
+        if response_mode not in ("p2p_ref", "inline", "on_chain_ref"):
+            raise ValueError("unsupported_response_mode")
+
+        payload = {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": task_id,
+            "status": "queued",
+            "submitted_utc": _utc_now(),
+            "priority": priority,
+            "priority_rank": _priority_rank(priority),
+            "required_roles": required_roles,
+            "p2p_ref": p2p_ref,
+            "response_mode": response_mode,
+            "task": task,
+        }
+        if on_chain is not None:
+            payload["on_chain"] = on_chain
+        encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+        if len(encoded.encode("utf-8")) > 256 * 1024:
+            raise ValueError("task_too_large")
+
+        with self._lock:
+            final_path = self._tasks_dir / f"{task_id}.json"
+            tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+            tmp_path.write_text(encoded, encoding="utf-8")
+            tmp_path.replace(final_path)
+            with self._queue_path.open("a", encoding="utf-8") as queue:
+                queue.write(encoded + "\n")
+            role_queue_path = self._queue_path.with_name(f"tasks.{required_roles[0]}.queue.ndjson")
+            with role_queue_path.open("a", encoding="utf-8") as role_queue:
+                role_queue.write(encoded + "\n")
+
+        return {
+            "status": "queued",
+            "task_id": task_id,
+            "priority": priority,
+            "required_roles": required_roles,
+            "resource": RESOURCE_TASK_PREFIX + task_id,
+            "queue": str(self._queue_path),
+        }
+
+    def read(self, task_id: str) -> str:
+        safe_task_id = _sanitize_task_id(task_id)
+        if not safe_task_id:
+            raise FileNotFoundError("missing_task_id")
+        return (self._tasks_dir / f"{safe_task_id}.json").read_text(encoding="utf-8")
+
+
+class McpRequestStore:
+    """
+    Fast post-job request inbox for audits, resource retrieval, replication,
+    challenges, and other role-targeted messages.
+    """
+
+    def __init__(self, export_dir: Path) -> None:
+        self._requests_dir = export_dir / "requests"
+        self._queue_path = export_dir / "requests.queue.ndjson"
+        self._urgent_path = export_dir / "requests.urgent.ndjson"
+        self._lock = threading.Lock()
+        self._requests_dir.mkdir(parents=True, exist_ok=True)
+
+    def submit(self, args: Any) -> dict[str, Any]:
+        if not isinstance(args, dict):
+            raise ValueError("args_not_object")
+        request = args.get("request", args)
+        if not isinstance(request, dict):
+            raise ValueError("request_not_object")
+
+        raw_request_id = args.get("request_id", request.get("request_id"))
+        request_id = _sanitize_task_id(str(raw_request_id)) if raw_request_id is not None else ""
+        if not request_id:
+            request_id = uuid.uuid4().hex
+
+        kind = str(args.get("kind", request.get("kind", ""))).strip().lower()
+        if kind not in _REQUEST_KINDS:
+            raise ValueError("unsupported_request_kind")
+        priority = _normalized_priority(args.get("priority", request.get("priority", "high")))
+        target_roles = _normalized_roles(args.get("target_roles", request.get("target_roles")), default=["audit" if kind == "audit" else "resource"])
+        p2p_ref = _validate_p2p_ref(args.get("p2p_ref", request.get("p2p_ref")), required=kind in {"audit", "resource", "challenge", "replicate", "retrieve"})
+        on_chain = _validate_on_chain(args.get("on_chain", request.get("on_chain")))
+
+        payload = {
+            "schema_version": 1,
+            "envelope_kind": "request",
+            "request_id": request_id,
+            "kind": kind,
+            "status": "queued",
+            "submitted_utc": _utc_now(),
+            "priority": priority,
+            "priority_rank": _priority_rank(priority),
+            "target_roles": target_roles,
+            "target_worker": str(args.get("target_worker", request.get("target_worker", ""))).strip(),
+            "job_id": str(args.get("job_id", request.get("job_id", ""))).strip(),
+            "fragment_id": str(args.get("fragment_id", request.get("fragment_id", ""))).strip(),
+            "p2p_ref": p2p_ref,
+            "request": request,
+        }
+        if on_chain is not None:
+            payload["on_chain"] = on_chain
+        encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+        if len(encoded.encode("utf-8")) > 256 * 1024:
+            raise ValueError("request_too_large")
+
+        with self._lock:
+            final_path = self._requests_dir / f"{request_id}.json"
+            tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+            tmp_path.write_text(encoded, encoding="utf-8")
+            tmp_path.replace(final_path)
+            with self._queue_path.open("a", encoding="utf-8") as queue:
+                queue.write(encoded + "\n")
+            if priority in {"high", "urgent"}:
+                with self._urgent_path.open("a", encoding="utf-8") as urgent:
+                    urgent.write(encoded + "\n")
+            for role in target_roles:
+                role_queue_path = self._queue_path.with_name(f"requests.{role}.queue.ndjson")
+                with role_queue_path.open("a", encoding="utf-8") as role_queue:
+                    role_queue.write(encoded + "\n")
+
+        return {
+            "status": "queued",
+            "request_id": request_id,
+            "kind": kind,
+            "priority": priority,
+            "target_roles": target_roles,
+            "resource": RESOURCE_REQUEST_PREFIX + request_id,
+            "queue": str(self._queue_path),
+        }
+
+    def read(self, request_id: str) -> str:
+        safe_request_id = _sanitize_task_id(request_id)
+        if not safe_request_id:
+            raise FileNotFoundError("missing_request_id")
+        return (self._requests_dir / f"{safe_request_id}.json").read_text(encoding="utf-8")
 
 
 def _utc_now() -> str:
@@ -674,6 +957,42 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             if path == "/tools/list":
                 _json_response(self, HTTPStatus.OK, {"tools": self._app.list_tools()})
                 return
+            if path.startswith("/tasks/"):
+                task_id = path[len("/tasks/") :]
+                resource_uri = RESOURCE_TASK_PREFIX + task_id
+                if not self._app.access_policy.resource_allowed(resource_uri):
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "forbidden_resource"})
+                    return
+                try:
+                    body = self._app.task_store.read(task_id)
+                except FileNotFoundError:
+                    _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+                    return
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                raw = body.encode("utf-8")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
+            if path.startswith("/requests/"):
+                request_id = path[len("/requests/") :]
+                resource_uri = RESOURCE_REQUEST_PREFIX + request_id
+                if not self._app.access_policy.resource_allowed(resource_uri):
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "forbidden_resource"})
+                    return
+                try:
+                    body = self._app.request_store.read(request_id)
+                except FileNotFoundError:
+                    _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+                    return
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                raw = body.encode("utf-8")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+                return
             if path == "/snapshots/list":
                 if self._app.snapshot_store is None:
                     _json_response(self, HTTPStatus.NOT_FOUND, {"error": "snapshots_disabled"})
@@ -761,7 +1080,7 @@ class McpHttpHandler(BaseHTTPRequestHandler):
         if method == "resources/list":
             resources: list[dict[str, Any]] = []
             for uri in self._app.list_resources():
-                if "{task_id}" in uri:
+                if "{task_id}" in uri or "{request_id}" in uri or "{node_id}" in uri:
                     continue
                 resources.append({"uri": uri, "name": uri.rsplit("/", 1)[-1], "mimeType": "application/json"})
             # Include template URIs as discoverable patterns.
@@ -769,6 +1088,14 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                 resources.append({"uri": "resources://silicium/results/by-task/{task_id}", "name": "result_by_task", "mimeType": "application/json"})
             if self._app.access_policy.resource_allowed("resources://silicium/logs/by-task/{task_id}"):
                 resources.append({"uri": "resources://silicium/logs/by-task/{task_id}", "name": "logs_by_task", "mimeType": "application/json"})
+            if self._app.access_policy.resource_allowed("resources://silicium/tasks/by-id/{task_id}"):
+                resources.append({"uri": "resources://silicium/tasks/by-id/{task_id}", "name": "task_by_id", "mimeType": "application/json"})
+            if self._app.access_policy.resource_allowed("resources://silicium/requests/by-id/{request_id}"):
+                resources.append({"uri": "resources://silicium/requests/by-id/{request_id}", "name": "request_by_id", "mimeType": "application/json"})
+            if self._app.access_policy.resource_allowed("resources://silicium/nodes/heartbeat/{node_id}"):
+                resources.append({"uri": "resources://silicium/nodes/heartbeat/{node_id}", "name": "node_heartbeat", "mimeType": "application/json"})
+            if self._app.access_policy.resource_allowed("resources://silicium/nodes/metrics/{node_id}"):
+                resources.append({"uri": "resources://silicium/nodes/metrics/{node_id}", "name": "node_metrics", "mimeType": "application/json"})
             return {"resources": resources}
 
         if method == "resources/read":
@@ -811,6 +1138,56 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                         "type": "object",
                         "properties": {"mode": {"type": "string", "enum": ["auto", "emu", "native", "dynamo"]}},
                         "required": ["mode"],
+                        "additionalProperties": False,
+                    },
+                },
+                {
+                    "name": TOOL_SUBMIT_TASK,
+                    "description": "Submit a task into the Silicium network ingress queue.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "task_id": {"type": "string"},
+                            "task": {"type": "object"},
+                        },
+                        "required": ["task"],
+                        "additionalProperties": True,
+                    },
+                },
+                {
+                    "name": TOOL_GET_TASK,
+                    "description": "Read a submitted task envelope by task_id.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"task_id": {"type": "string"}},
+                        "required": ["task_id"],
+                        "additionalProperties": False,
+                    },
+                },
+                {
+                    "name": TOOL_SUBMIT_REQUEST,
+                    "description": "Submit a high-priority post-job request such as audit, resource retrieval, or challenge.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "request_id": {"type": "string"},
+                            "kind": {"type": "string", "enum": sorted(_REQUEST_KINDS)},
+                            "target_roles": {"type": "array", "items": {"type": "string", "enum": sorted(_NETWORK_ROLES)}},
+                            "priority": {"type": "string", "enum": sorted(_PRIORITIES)},
+                            "p2p_ref": {"type": "object"},
+                            "request": {"type": "object"},
+                        },
+                        "required": ["kind"],
+                        "additionalProperties": True,
+                    },
+                },
+                {
+                    "name": TOOL_GET_REQUEST,
+                    "description": "Read a submitted network request envelope by request_id.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"request_id": {"type": "string"}},
+                        "required": ["request_id"],
                         "additionalProperties": False,
                     },
                 },
@@ -858,6 +1235,72 @@ class McpHttpHandler(BaseHTTPRequestHandler):
         self._obs_begin(parsed.path or "/")
         try:
             if not self._require_auth():
+                return
+            if parsed.path == "/tasks":
+                if not self._app.enable_tools:
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "tools_disabled"})
+                    return
+                if not self._app.access_policy.tool_allowed(TOOL_SUBMIT_TASK):
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "forbidden_tool"})
+                    return
+                try:
+                    req = _read_json_request(self)
+                except ValueError as exc:
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+                started = time.monotonic()
+                try:
+                    result = self._app.task_store.submit(req)
+                except ValueError as exc:
+                    self._observe_tool_call(
+                        name=TOOL_SUBMIT_TASK,
+                        ok=False,
+                        duration_s=time.monotonic() - started,
+                        transport="http_tasks",
+                        error="ValueError",
+                    )
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "bad_request", "detail": str(exc)})
+                    return
+                self._observe_tool_call(
+                    name=TOOL_SUBMIT_TASK,
+                    ok=True,
+                    duration_s=time.monotonic() - started,
+                    transport="http_tasks",
+                )
+                _json_response(self, HTTPStatus.ACCEPTED, {"ok": True, **result})
+                return
+            if parsed.path == "/requests":
+                if not self._app.enable_tools:
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "tools_disabled"})
+                    return
+                if not self._app.access_policy.tool_allowed(TOOL_SUBMIT_REQUEST):
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "forbidden_tool"})
+                    return
+                try:
+                    req = _read_json_request(self)
+                except ValueError as exc:
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+                started = time.monotonic()
+                try:
+                    result = self._app.request_store.submit(req)
+                except ValueError as exc:
+                    self._observe_tool_call(
+                        name=TOOL_SUBMIT_REQUEST,
+                        ok=False,
+                        duration_s=time.monotonic() - started,
+                        transport="http_requests",
+                        error="ValueError",
+                    )
+                    _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "bad_request", "detail": str(exc)})
+                    return
+                self._observe_tool_call(
+                    name=TOOL_SUBMIT_REQUEST,
+                    ok=True,
+                    duration_s=time.monotonic() - started,
+                    transport="http_requests",
+                )
+                _json_response(self, HTTPStatus.ACCEPTED, {"ok": True, **result})
                 return
             if parsed.path == "/snapshots/import":
                 if self._app.snapshot_store is None:
@@ -1031,6 +1474,8 @@ class McpHttpApp:
         self.snapshot_store = snapshot_store
         self.store = McpExportStore(export_dir, snapshot_store=snapshot_store)
         self.control = McpControlPlane(export_dir)
+        self.task_store = McpTaskStore(export_dir)
+        self.request_store = McpRequestStore(export_dir)
         self.enable_tools = enable_tools
         self.token = token or ""
         self.obs = obs
@@ -1053,8 +1498,34 @@ class McpHttpApp:
         if name == TOOL_GET_HEALTH:
             return self.read_resource(RESOURCE_STATUS_CURRENT)
 
+        if name == TOOL_GET_TASK:
+            if not isinstance(args, dict):
+                raise ValueError("args_not_object")
+            task_id = args.get("task_id")
+            if not isinstance(task_id, str) or not task_id:
+                raise ValueError("missing_task_id")
+            if not self.access_policy.resource_allowed(RESOURCE_TASK_PREFIX + task_id):
+                raise PermissionError("resource_denied")
+            return self.task_store.read(task_id)
+
+        if name == TOOL_GET_REQUEST:
+            if not isinstance(args, dict):
+                raise ValueError("args_not_object")
+            request_id = args.get("request_id")
+            if not isinstance(request_id, str) or not request_id:
+                raise ValueError("missing_request_id")
+            if not self.access_policy.resource_allowed(RESOURCE_REQUEST_PREFIX + request_id):
+                raise PermissionError("resource_denied")
+            return self.request_store.read(request_id)
+
         if not self.enable_tools:
             raise PermissionError("tools_disabled")
+
+        if name == TOOL_SUBMIT_TASK:
+            return self.task_store.submit(args)
+
+        if name == TOOL_SUBMIT_REQUEST:
+            return self.request_store.submit(args)
 
         if name == TOOL_RUN_ACTION:
             if not isinstance(args, dict):
@@ -1071,6 +1542,20 @@ class McpHttpApp:
                 if not isinstance(task_id, str) or not task_id:
                     raise ValueError("missing_task_id")
                 return self.read_resource(RESOURCE_RESULT_PREFIX + task_id)
+            if action == "read_submitted_task":
+                task_id = args.get("task_id")
+                if not isinstance(task_id, str) or not task_id:
+                    raise ValueError("missing_task_id")
+                if not self.access_policy.resource_allowed(RESOURCE_TASK_PREFIX + task_id):
+                    raise PermissionError("resource_denied")
+                return self.task_store.read(task_id)
+            if action == "read_submitted_request":
+                request_id = args.get("request_id")
+                if not isinstance(request_id, str) or not request_id:
+                    raise ValueError("missing_request_id")
+                if not self.access_policy.resource_allowed(RESOURCE_REQUEST_PREFIX + request_id):
+                    raise PermissionError("resource_denied")
+                return self.request_store.read(request_id)
             raise ValueError("action_not_allowed")
 
         if name == TOOL_INTERRUPT_ACTION:
