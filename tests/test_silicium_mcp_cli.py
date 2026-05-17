@@ -270,3 +270,27 @@ def test_silicium_node_get_heartbeat_and_metrics(tmp_path: Path) -> None:
     )
     assert metrics.returncode == 0, metrics.stderr
     assert json.loads(metrics.stdout)["handled"] == 2
+
+
+def test_silicium_node_get_peers(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    (export_dir / "node.node-a.peers.json").write_text(
+        '{"node_id":"node-a","count":2,"peers":[{"node_id":"node-a"},{"node_id":"node-b"}]}',
+        encoding="utf-8",
+    )
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text(json.dumps({"mcp": {"export_dir": str(export_dir)}}), encoding="utf-8")
+    env = os.environ.copy()
+    env["SILICIUM_CONFIG"] = str(cfg_path)
+
+    peers = subprocess.run(
+        [sys.executable, str(SILICIUM), "node", "get-peers", "--node-id", "node-a"],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=20,
+    )
+    assert peers.returncode == 0, peers.stderr
+    assert json.loads(peers.stdout)["count"] == 2

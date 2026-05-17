@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 from tools import network_node
@@ -30,6 +31,38 @@ process.stdin.on("end", () => {
         encoding="utf-8",
     )
     return path
+
+
+def _config(export_dir: Path, node_id: str, *, roles: str = "compute", seed_peers: list[str] | None = None) -> network_node.NodeConfig:
+    state_dir = export_dir / "state"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return network_node.NodeConfig(
+        export_dir=export_dir,
+        roles=network_node.parse_roles(roles),
+        node_id=node_id,
+        idle_ms=10,
+        once=True,
+        max_items=0,
+        p2p_gateway="http://127.0.0.1:5001",
+        state_dir=state_dir,
+        solana_enable=False,
+        solana_rpc="https://api.devnet.solana.com",
+        solana_program_id="HyXT83SzHsEPxNZ5zQPvkLwQ7JwFHh2veAE5PuGUgoiQ",
+        solana_wallet=str(export_dir / "wallet.json"),
+        solana_bridge=export_dir / "bridge.cjs",
+        solana_timeout_s=10,
+        max_retries=0,
+        worker_binary="missing-worker",
+        worker_mode="emu",
+        bootstrap_worker=False,
+        gossip_enable=True,
+        gossip_bind="127.0.0.1",
+        gossip_port=0,
+        peer_http_bind="127.0.0.1",
+        peer_http_port=0,
+        seed_peers=seed_peers or [],
+    )
 
 
 def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
@@ -283,3 +316,45 @@ def test_network_node_retries_then_dead_letters_failures(tmp_path: Path) -> None
     assert (export_dir / "dead_letters.ndjson").exists()
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
     assert metrics["dead_lettered"] == 1
+
+
+def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
+    export_a = tmp_path / "a"
+    export_b = tmp_path / "b"
+    config_a = _config(export_a, "node-a")
+    peer_a = network_node.PeerNetwork(config_a, export_a)
+    p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
+    peer_a.start()
+    try:
+        config_b = _config(export_b, "node-b", seed_peers=[f"127.0.0.1:{config_a.gossip_port}"])
+        peer_b = network_node.PeerNetwork(config_b, export_b)
+        p2p_b = network_node.P2PClient(config_b.p2p_gateway, export_b, peer_b)
+        peer_b.start()
+        try:
+            deadline = time.time() + 2.0
+            while time.time() < deadline:
+                if peer_b.peers_snapshot()["count"] >= 2:
+                    break
+                time.sleep(0.05)
+
+            stored = p2p_a.put_local(b"hello-peers")
+            shared_ref = stored["shared_ref"]
+            data, meta = p2p_b.fetch(shared_ref)
+            assert data == b"hello-peers"
+            assert meta["source"] == "silicium-peer"
+            assert meta["peer_id"] == "node-a"
+
+            peer_a.publish("fragment_result", {"result_hash": "sha256:test", "proof_ref": shared_ref})
+            deadline = time.time() + 2.0
+            while time.time() < deadline:
+                if (export_b / "gossip.events.ndjson").exists():
+                    lines = (export_b / "gossip.events.ndjson").read_text(encoding="utf-8").splitlines()
+                    if any('"topic":"fragment_result"' in line for line in lines):
+                        break
+                time.sleep(0.05)
+            assert (export_b / "gossip.events.ndjson").exists()
+            assert '"topic":"fragment_result"' in (export_b / "gossip.events.ndjson").read_text(encoding="utf-8")
+        finally:
+            peer_b.stop()
+    finally:
+        peer_a.stop()

@@ -124,7 +124,7 @@ SUBCOMMANDS = {
     "clean": ["cache", "ledgers", "all"],
     "workload": ["list", "show", "queue", "lint", "fixtures", "alignment", "golden"],
     "mcp": ["serve", "print-config"],
-    "node": ["start", "submit-task", "get-task", "get-result", "submit-request", "get-request", "create-job", "fetch-job", "fetch-fragment", "bootstrap-worker", "get-heartbeat", "get-metrics"],
+    "node": ["start", "submit-task", "get-task", "get-result", "submit-request", "get-request", "create-job", "fetch-job", "fetch-fragment", "bootstrap-worker", "get-heartbeat", "get-metrics", "get-peers"],
 }
 SETUP_TARGET_CHOICES = ["localnet", "devnet", "testnet", "mainnet", "proxy"]
 SETUP_DEFAULT_TARGETS = ["localnet", "proxy"]
@@ -2986,6 +2986,12 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--worker-binary", default=os.environ.get("SILICIUM_WORKER_BINARY", str(REPO_ROOT / "experimental" / "worker" / "worker")))
     parser.add_argument("--worker-mode", default=os.environ.get("SILICIUM_WORKER_MODE", "emu"))
     parser.add_argument("--bootstrap-worker", action="store_true", default=os.environ.get("SILICIUM_BOOTSTRAP_WORKER", "0") == "1")
+    parser.add_argument("--gossip-enable", action="store_true", default=os.environ.get("SILICIUM_GOSSIP_ENABLE", "0") == "1")
+    parser.add_argument("--gossip-bind", default=os.environ.get("SILICIUM_GOSSIP_BIND", "127.0.0.1"))
+    parser.add_argument("--gossip-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_PORT", "0")))
+    parser.add_argument("--peer-http-bind", default=os.environ.get("SILICIUM_PEER_HTTP_BIND", "127.0.0.1"))
+    parser.add_argument("--peer-http-port", type=int, default=int(os.environ.get("SILICIUM_PEER_HTTP_PORT", "0")))
+    parser.add_argument("--seed-peers", default=os.environ.get("SILICIUM_SEED_PEERS", ""))
 
 
 def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
@@ -3023,11 +3029,23 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.worker_binary),
         "--worker-mode",
         str(args.worker_mode),
+        "--gossip-bind",
+        str(args.gossip_bind),
+        "--gossip-port",
+        str(args.gossip_port),
+        "--peer-http-bind",
+        str(args.peer_http_bind),
+        "--peer-http-port",
+        str(args.peer_http_port),
+        "--seed-peers",
+        str(args.seed_peers),
     ]
     if args.solana_enable:
         argv.append("--solana-enable")
     if args.bootstrap_worker:
         argv.append("--bootstrap-worker")
+    if args.gossip_enable:
+        argv.append("--gossip-enable")
     if args.state_dir:
         argv.extend(["--state-dir", str(args.state_dir)])
     if args.once:
@@ -3169,6 +3187,12 @@ def cmd_node_get_metrics(args: argparse.Namespace, ctx: Context) -> None:
     (void := ctx)
     settings = _resolve_mcp_settings(args)
     print((_node_export_dir(settings) / f"node.{args.node_id}.metrics.json").read_text(encoding="utf-8"))
+
+
+def cmd_node_get_peers(args: argparse.Namespace, ctx: Context) -> None:
+    (void := ctx)
+    settings = _resolve_mcp_settings(args)
+    print((_node_export_dir(settings) / f"node.{args.node_id}.peers.json").read_text(encoding="utf-8"))
 
 
 def configure_node_solana_common(parser: argparse.ArgumentParser) -> None:
@@ -3986,6 +4010,7 @@ def build_registry() -> CommandRegistry:
                 CommandSpec("bootstrap-worker", "Register the current Solana worker on-chain", configure_node_bootstrap_worker, cmd_node_bootstrap_worker),
                 CommandSpec("get-heartbeat", "Read the latest local node heartbeat", configure_node_get_local_file, cmd_node_get_heartbeat),
                 CommandSpec("get-metrics", "Read the latest local node metrics", configure_node_get_local_file, cmd_node_get_metrics),
+                CommandSpec("get-peers", "Read the latest local node peer snapshot", configure_node_get_local_file, cmd_node_get_peers),
             ],
         )
     )

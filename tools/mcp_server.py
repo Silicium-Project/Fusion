@@ -40,6 +40,7 @@ RESOURCE_TASK_PREFIX = "resources://silicium/tasks/by-id/"
 RESOURCE_REQUEST_PREFIX = "resources://silicium/requests/by-id/"
 RESOURCE_NODE_HEARTBEAT_PREFIX = "resources://silicium/nodes/heartbeat/"
 RESOURCE_NODE_METRICS_PREFIX = "resources://silicium/nodes/metrics/"
+RESOURCE_NODE_PEERS_PREFIX = "resources://silicium/nodes/peers/"
 
 MCP_JSONRPC_VERSION = "2.0"
 MCP_DEFAULT_PROTOCOL_VERSION = "2024-11-05"
@@ -62,6 +63,7 @@ SUPPORTED_RESOURCES = (
     "resources://silicium/requests/by-id/{request_id}",
     "resources://silicium/nodes/heartbeat/{node_id}",
     "resources://silicium/nodes/metrics/{node_id}",
+    "resources://silicium/nodes/peers/{node_id}",
 )
 
 SUPPORTED_TOOLS = (
@@ -247,6 +249,11 @@ class McpExportStore:
             if not node_id:
                 raise FileNotFoundError("missing_node_id")
             return self._read_text(self._export_dir / f"node.{node_id}.metrics.json")
+        if uri.startswith(RESOURCE_NODE_PEERS_PREFIX):
+            node_id = _sanitize_task_id(uri[len(RESOURCE_NODE_PEERS_PREFIX) :])
+            if not node_id:
+                raise FileNotFoundError("missing_node_id")
+            return self._read_text(self._export_dir / f"node.{node_id}.peers.json")
         raise ValueError("unsupported_resource")
 
     def _read_text(self, path: Path) -> str:
@@ -1096,6 +1103,8 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                 resources.append({"uri": "resources://silicium/nodes/heartbeat/{node_id}", "name": "node_heartbeat", "mimeType": "application/json"})
             if self._app.access_policy.resource_allowed("resources://silicium/nodes/metrics/{node_id}"):
                 resources.append({"uri": "resources://silicium/nodes/metrics/{node_id}", "name": "node_metrics", "mimeType": "application/json"})
+            if self._app.access_policy.resource_allowed("resources://silicium/nodes/peers/{node_id}"):
+                resources.append({"uri": "resources://silicium/nodes/peers/{node_id}", "name": "node_peers", "mimeType": "application/json"})
             return {"resources": resources}
 
         if method == "resources/read":

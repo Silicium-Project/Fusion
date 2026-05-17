@@ -67,6 +67,7 @@ def test_mcp_server_reads_resources_and_tools(tmp_path: Path) -> None:
     (export_dir / "logs.func_1_main.json").write_text('{"stdout":"hi"}', encoding="utf-8")
     (export_dir / "node.node-a.heartbeat.json").write_text('{"node_id":"node-a","roles":["compute"]}', encoding="utf-8")
     (export_dir / "node.node-a.metrics.json").write_text('{"handled":1}', encoding="utf-8")
+    (export_dir / "node.node-a.peers.json").write_text('{"node_id":"node-a","count":2}', encoding="utf-8")
 
     port = _find_free_port()
     env = os.environ.copy()
@@ -94,6 +95,10 @@ def test_mcp_server_reads_resources_and_tools(tmp_path: Path) -> None:
         code, body = _http_get(base + "/resources?uri=resources://silicium/nodes/heartbeat/node-a")
         assert code == 200
         assert json.loads(body)["node_id"] == "node-a"
+
+        code, body = _http_get(base + "/resources?uri=resources://silicium/nodes/peers/node-a")
+        assert code == 200
+        assert json.loads(body)["count"] == 2
 
         code, body = _http_post(
             base + "/tools",

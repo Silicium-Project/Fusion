@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.server
 import json
 import os
 import platform
 import shutil
+import socket
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -24,6 +27,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import quote, unquote
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
@@ -70,7 +74,7 @@ def read_json(path: Path, default: Any) -> Any:
 
 def atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
     tmp.replace(path)
 
@@ -101,6 +105,12 @@ class NodeConfig:
     worker_binary: str
     worker_mode: str
     bootstrap_worker: bool
+    gossip_enable: bool
+    gossip_bind: str
+    gossip_port: int
+    peer_http_bind: str
+    peer_http_port: int
+    seed_peers: list[str]
 
 
 class QueueState:
@@ -130,9 +140,10 @@ class QueueState:
 
 
 class P2PClient:
-    def __init__(self, gateway: str, export_dir: Path) -> None:
+    def __init__(self, gateway: str, export_dir: Path, peer_network: "PeerNetwork | None" = None) -> None:
         self.gateway = gateway.rstrip("/")
         self.export_dir = export_dir
+        self.peer_network = peer_network
 
     def fetch(self, p2p_ref: Any) -> tuple[bytes, dict[str, Any]]:
         if not p2p_ref:
@@ -149,6 +160,18 @@ class P2PClient:
             path = Path(content_id).expanduser()
             data = path.read_bytes()
             return data, {"source": "file", "path": str(path), "size_bytes": len(data)}
+
+        if protocol == "silicium":
+            if self.peer_network is None:
+                raise ValueError("peer_network_not_configured")
+            data, peer_meta = self.peer_network.fetch_content(content_id, str(p2p_ref.get("peer_id", "")).strip())
+            return data, {
+                "source": "silicium-peer",
+                "content_id": content_id,
+                "peer_id": peer_meta.get("node_id", ""),
+                "peer_url": peer_meta.get("http_base_url", ""),
+                "size_bytes": len(data),
+            }
 
         if protocol in {"http", "https"}:
             with urllib.request.urlopen(content_id, timeout=15) as response:
@@ -179,11 +202,19 @@ class P2PClient:
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             path.write_bytes(data)
+        shared_ref = {"protocol": "silicium", "content_id": digest, "hash": "sha256:" + digest}
+        if self.peer_network is not None:
+            shared_ref["peer_id"] = self.peer_network.node_id
+            self.peer_network.publish(
+                "content_available",
+                {"content_id": digest, "hash": "sha256:" + digest, "size_bytes": len(data)},
+            )
         return {
             "protocol": "file",
             "content_id": str(path),
             "hash": "sha256:" + digest,
             "size_bytes": len(data),
+            "shared_ref": shared_ref,
         }
 
     def pin(self, p2p_ref: Any) -> dict[str, Any]:
@@ -344,6 +375,262 @@ class RoleRuntime:
         }
 
 
+class PeerNetwork:
+    def __init__(self, config: NodeConfig, export_dir: Path) -> None:
+        self.config = config
+        self.export_dir = export_dir
+        self.node_id = safe_id(config.node_id)
+        self.peers_path = export_dir / f"node.{self.node_id}.peers.json"
+        self.gossip_events_path = export_dir / "gossip.events.ndjson"
+        self._peers: dict[str, dict[str, Any]] = {}
+        self._seen_events: set[str] = set()
+        self._lock = threading.Lock()
+        self._http_server: http.server.ThreadingHTTPServer | None = None
+        self._http_thread: threading.Thread | None = None
+        self._udp_socket: socket.socket | None = None
+        self._udp_thread: threading.Thread | None = None
+        self.http_base_url = ""
+
+    def start(self) -> None:
+        self._start_http_server()
+        if self.config.gossip_enable:
+            self._start_udp_listener()
+        self._record_self_peer()
+        self.announce()
+
+    def stop(self) -> None:
+        if self._http_server is not None:
+            self._http_server.shutdown()
+            self._http_server.server_close()
+            self._http_server = None
+        if self._http_thread is not None:
+            self._http_thread.join(timeout=1)
+            self._http_thread = None
+        if self._udp_socket is not None:
+            try:
+                self._udp_socket.close()
+            except OSError:
+                pass
+            self._udp_socket = None
+        if self._udp_thread is not None:
+            self._udp_thread.join(timeout=1)
+            self._udp_thread = None
+
+    def peers_snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            peers = sorted(self._peers.values(), key=lambda item: str(item.get("node_id", "")))
+        payload = {"schema_version": 1, "node_id": self.node_id, "count": len(peers), "peers": peers, "updated_utc": utc_now()}
+        atomic_write_json(self.peers_path, payload)
+        return payload
+
+    def publish(self, topic: str, payload: dict[str, Any]) -> None:
+        message = {
+            "message_type": "gossip_event",
+            "event_id": uuid.uuid4().hex,
+            "node_id": self.node_id,
+            "topic": topic,
+            "payload": payload,
+            "timestamp_utc": utc_now(),
+            "hops": 0,
+        }
+        self._record_event(message)
+        self._broadcast(message)
+
+    def announce(self) -> None:
+        message = {
+            "message_type": "peer_announce",
+            "node_id": self.node_id,
+            "roles": sorted(self.config.roles),
+            "http_base_url": self.http_base_url,
+            "gossip_bind": self.config.gossip_bind,
+            "gossip_port": self.config.gossip_port,
+            "timestamp_utc": utc_now(),
+        }
+        self._record_self_peer()
+        self._broadcast(message)
+
+    def fetch_content(self, content_id: str, preferred_peer_id: str = "") -> tuple[bytes, dict[str, Any]]:
+        peers = self.peers_snapshot().get("peers", [])
+        candidates = []
+        if preferred_peer_id:
+            candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) == preferred_peer_id])
+        candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) != preferred_peer_id])
+        for peer in candidates:
+            base_url = str(peer.get("http_base_url", "")).rstrip("/")
+            if not base_url:
+                continue
+            url = f"{base_url}/p2p/{quote(content_id, safe='')}"
+            try:
+                with urllib.request.urlopen(url, timeout=5) as response:
+                    return response.read(), peer
+            except urllib.error.URLError:
+                continue
+        raise FileNotFoundError(f"peer_content_not_found:{content_id}")
+
+    def _record_self_peer(self) -> None:
+        with self._lock:
+            self._peers[self.node_id] = {
+                "node_id": self.node_id,
+                "roles": sorted(self.config.roles),
+                "http_base_url": self.http_base_url,
+                "gossip_bind": self.config.gossip_bind,
+                "gossip_port": self.config.gossip_port,
+                "updated_utc": utc_now(),
+                "self": True,
+            }
+        self.peers_snapshot()
+
+    def _record_peer(self, message: dict[str, Any]) -> None:
+        node_id = safe_id(str(message.get("node_id", "")))
+        if not node_id:
+            return
+        with self._lock:
+            current = dict(self._peers.get(node_id, {}))
+            current.update(
+                {
+                    "node_id": node_id,
+                    "roles": list(message.get("roles", [])),
+                    "http_base_url": str(message.get("http_base_url", "")),
+                    "gossip_bind": str(message.get("gossip_bind", "")),
+                    "gossip_port": int(message.get("gossip_port", 0) or 0),
+                    "updated_utc": str(message.get("timestamp_utc", utc_now())),
+                    "self": node_id == self.node_id,
+                }
+            )
+            self._peers[node_id] = current
+        self.peers_snapshot()
+
+    def _record_event(self, message: dict[str, Any]) -> bool:
+        event_id = str(message.get("event_id", "")).strip()
+        if not event_id:
+            return False
+        with self._lock:
+            if event_id in self._seen_events:
+                return False
+            self._seen_events.add(event_id)
+        append_jsonl(self.gossip_events_path, message)
+        return True
+
+    def _broadcast(self, message: dict[str, Any], exclude: str = "") -> None:
+        targets = set(self.config.seed_peers)
+        with self._lock:
+            for peer in self._peers.values():
+                bind = str(peer.get("gossip_bind", "")).strip()
+                port = int(peer.get("gossip_port", 0) or 0)
+                if bind and port:
+                    targets.add(f"{bind}:{port}")
+        for target in sorted(targets):
+            host, _, port_raw = target.partition(":")
+            try:
+                port = int(port_raw)
+            except ValueError:
+                continue
+            if not host or port <= 0:
+                continue
+            if exclude and target == exclude:
+                continue
+            self._send_udp(target, host, port, message)
+
+    def _send_udp(self, target: str, host: str, port: int, message: dict[str, Any]) -> None:
+        payload = json.dumps(message, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.sendto(payload, (host, port))
+        finally:
+            sock.close()
+
+    def _start_udp_listener(self) -> None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((self.config.gossip_bind, self.config.gossip_port))
+        sock.settimeout(0.5)
+        self._udp_socket = sock
+        self.config.gossip_port = int(sock.getsockname()[1])
+
+        def _loop() -> None:
+            while self._udp_socket is sock:
+                try:
+                    payload, addr = sock.recvfrom(65536)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                try:
+                    message = json.loads(payload.decode("utf-8"))
+                except Exception:
+                    continue
+                self._handle_udp_message(message, f"{addr[0]}:{addr[1]}")
+
+        self._udp_thread = threading.Thread(target=_loop, name=f"silicium-gossip-{self.node_id}", daemon=True)
+        self._udp_thread.start()
+
+    def _handle_udp_message(self, message: dict[str, Any], sender: str) -> None:
+        message_type = str(message.get("message_type", ""))
+        if message_type == "peer_announce":
+            self._record_peer(message)
+            if safe_id(str(message.get("node_id", ""))) != self.node_id:
+                self.announce()
+            return
+        if message_type != "gossip_event":
+            return
+        if not self._record_event(message):
+            return
+        hops = int(message.get("hops", 0) or 0)
+        if hops >= 2:
+            return
+        forwarded = dict(message)
+        forwarded["hops"] = hops + 1
+        self._broadcast(forwarded, exclude=sender)
+
+    def _start_http_server(self) -> None:
+        peer_network = self
+
+        class _PeerHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                if self.path == "/healthz":
+                    raw = b'{"ok":true}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                if self.path == "/peers":
+                    raw = stable_json(peer_network.peers_snapshot()).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                if self.path.startswith("/p2p/"):
+                    content_id = unquote(self.path[len("/p2p/") :]).strip()
+                    target = peer_network.export_dir / "p2p" / content_id
+                    if not target.exists():
+                        self.send_error(404)
+                        return
+                    raw = target.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                self.send_error(404)
+
+            def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+                return
+
+        server = http.server.ThreadingHTTPServer((self.config.peer_http_bind, self.config.peer_http_port), _PeerHandler)
+        self._http_server = server
+        bind_host, bind_port = server.server_address[:2]
+        public_host = "127.0.0.1" if bind_host in {"0.0.0.0", ""} else str(bind_host)
+        self.http_base_url = f"http://{public_host}:{bind_port}"
+
+        self._http_thread = threading.Thread(target=server.serve_forever, name=f"silicium-peer-http-{self.node_id}", daemon=True)
+        self._http_thread.start()
+
+
 class SolanaBridge:
     def __init__(self, config: NodeConfig) -> None:
         self.config = config
@@ -388,7 +675,8 @@ class NetworkNode:
     def __init__(self, config: NodeConfig) -> None:
         self.config = config
         self.state = QueueState(config.state_dir)
-        self.p2p = P2PClient(config.p2p_gateway, config.export_dir)
+        self.peer_network = PeerNetwork(config, config.export_dir)
+        self.p2p = P2PClient(config.p2p_gateway, config.export_dir, self.peer_network)
         self.solana = SolanaBridge(config)
         self.runtime = RoleRuntime(config, self.p2p)
         self.events_path = config.export_dir / "node.events.ndjson"
@@ -397,16 +685,20 @@ class NetworkNode:
         self.metrics = read_json(self.metrics_path, {"schema_version": 1, "handled": 0, "failed": 0, "retried": 0, "dead_lettered": 0})
 
     def run(self) -> None:
-        self.bootstrap()
-        while True:
-            self.write_heartbeat()
-            handled = self.sweep()
-            self.state.save()
-            self.write_metrics()
-            if self.config.once:
-                return
-            if handled == 0:
-                time.sleep(max(0, self.config.idle_ms) / 1000.0)
+        self.peer_network.start()
+        try:
+            self.bootstrap()
+            while True:
+                self.write_heartbeat()
+                handled = self.sweep()
+                self.state.save()
+                self.write_metrics()
+                if self.config.once:
+                    return
+                if handled == 0:
+                    time.sleep(max(0, self.config.idle_ms) / 1000.0)
+        finally:
+            self.peer_network.stop()
 
     def bootstrap(self) -> None:
         if not self.config.bootstrap_worker:
@@ -433,6 +725,9 @@ class NetworkNode:
                 "timestamp_utc": utc_now(),
                 "roles": sorted(self.config.roles),
                 "capacity": self.runtime.capacity(),
+                "peer_http_base_url": self.peer_network.http_base_url,
+                "peer_count": int(self.peer_network.peers_snapshot().get("count", 0)),
+                "gossip_enabled": self.config.gossip_enable,
             },
         )
 
@@ -561,6 +856,15 @@ class NetworkNode:
                 "duration_ms": duration_ms,
             },
         )
+        if ok and kind == "task":
+            self.peer_network.publish(
+                "fragment_result",
+                {
+                    "item_id": safe_item,
+                    "result_hash": result.get("result_hash", ""),
+                    "proof_ref": result.get("proof_ref", {}),
+                },
+            )
 
     def schedule_retry_or_dead_letter(self, envelope: dict[str, Any], error: str) -> None:
         attempt = int(envelope.get("attempt", 0) or 0)
@@ -830,6 +1134,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--worker-binary", default=os.environ.get("SILICIUM_WORKER_BINARY", str(Path("experimental/worker/worker"))))
     parser.add_argument("--worker-mode", default=os.environ.get("SILICIUM_WORKER_MODE", "emu"))
     parser.add_argument("--bootstrap-worker", action="store_true", default=os.environ.get("SILICIUM_BOOTSTRAP_WORKER", "0") == "1")
+    parser.add_argument("--gossip-enable", action="store_true", default=os.environ.get("SILICIUM_GOSSIP_ENABLE", "0") == "1")
+    parser.add_argument("--gossip-bind", default=os.environ.get("SILICIUM_GOSSIP_BIND", "127.0.0.1"))
+    parser.add_argument("--gossip-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_PORT", "0")))
+    parser.add_argument("--peer-http-bind", default=os.environ.get("SILICIUM_PEER_HTTP_BIND", "127.0.0.1"))
+    parser.add_argument("--peer-http-port", type=int, default=int(os.environ.get("SILICIUM_PEER_HTTP_PORT", "0")))
+    parser.add_argument("--seed-peers", default=os.environ.get("SILICIUM_SEED_PEERS", ""))
     return parser
 
 
@@ -856,6 +1166,12 @@ def main(argv: list[str] | None = None) -> int:
         worker_binary=str(args.worker_binary),
         worker_mode=str(args.worker_mode),
         bootstrap_worker=bool(args.bootstrap_worker),
+        gossip_enable=bool(args.gossip_enable),
+        gossip_bind=str(args.gossip_bind),
+        gossip_port=int(args.gossip_port),
+        peer_http_bind=str(args.peer_http_bind),
+        peer_http_port=int(args.peer_http_port),
+        seed_peers=[item.strip() for item in str(args.seed_peers).split(",") if item.strip()],
     )
     export_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
