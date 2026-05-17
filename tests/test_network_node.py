@@ -23,15 +23,22 @@ process.stdin.on("end", () => {
   const request = JSON.parse(data || "{}");
   if (request.op === "fetch_worker") {
     const owner = String((request.params || {}).owner || "");
-    const score = owner.endsWith("A") ? 8000 : owner.endsWith("B") ? 9000 : 5000;
+    const profile = owner.endsWith("A")
+      ? { compute: 9000, verify: 6000, storage: 7000, global: 7000, stake: 2500, status: "active" }
+      : owner.endsWith("B")
+        ? { compute: 6000, verify: 9500, storage: 8500, global: 9000, stake: 5000, status: "active" }
+        : { compute: 5000, verify: 5000, storage: 5000, global: 5000, stake: 1000, status: "active" };
     process.stdout.write(JSON.stringify({
       ok: true,
       op: request.op,
       account: {
         owner,
-        globalReputation: score,
-        computeReputation: score,
-        verifyReputation: score
+        globalReputation: profile.global,
+        computeReputation: profile.compute,
+        verifyReputation: profile.verify,
+        storageReputation: profile.storage,
+        stakeAmount: profile.stake,
+        status: profile.status
       },
       accounts: { owner, worker: "worker-" + owner }
     }) + "\\n");
@@ -702,3 +709,101 @@ def test_scheduler_prefers_verified_onchain_reputation(tmp_path: Path) -> None:
     selected = node.peer_network.select_peers(required_roles={"storage"}, limit=2)
     assert selected[0]["node_id"] == "peer-low-offchain-high-onchain"
     assert selected[0]["onchain_reputation"] == 9000
+
+
+def test_scheduler_prefers_role_specific_onchain_reputation(tmp_path: Path) -> None:
+    export_dir = tmp_path / "sched-role"
+    export_dir.mkdir()
+    bridge = _fake_solana_bridge(tmp_path / "fake_bridge.cjs")
+    wallet_path = tmp_path / "wallet.json"
+    wallet_path.write_text(json.dumps([0] * 64), encoding="utf-8")
+    config = _config(
+        export_dir,
+        "node-a",
+        roles="verify",
+        solana_enable=True,
+        solana_bridge=bridge,
+        solana_wallet=str(wallet_path),
+        solana_reputation_enable=True,
+    )
+    node = network_node.NetworkNode(config)
+    node.peer_network.update_peer_metadata(
+        "peer-compute",
+        {
+            "node_id": "peer-compute",
+            "roles": ["verify"],
+            "capacity": {"cpu_count": 8, "disk_free_bytes": 999999999},
+            "reputation_score": 200.0,
+            "solana_owner": "ownerA",
+        },
+    )
+    node.peer_network.update_peer_metadata(
+        "peer-verify",
+        {
+            "node_id": "peer-verify",
+            "roles": ["verify"],
+            "capacity": {"cpu_count": 1, "disk_free_bytes": 1},
+            "reputation_score": 10.0,
+            "solana_owner": "ownerB",
+        },
+    )
+    node.refresh_known_peer_onchain_reputations()
+    selected = node.peer_network.select_peers(required_roles={"verify"}, limit=2)
+    assert selected[0]["node_id"] == "peer-verify"
+    assert selected[0]["onchain_verify_reputation"] == 9500
+
+
+def test_remote_dispatch_filters_peers_with_onchain_thresholds(tmp_path: Path) -> None:
+    export_a = tmp_path / "dispatch-threshold-a"
+    export_b = tmp_path / "dispatch-threshold-b"
+    export_c = tmp_path / "dispatch-threshold-c"
+    export_a.mkdir()
+    export_b.mkdir()
+    export_c.mkdir()
+    bridge = _fake_solana_bridge(tmp_path / "fake_bridge.cjs")
+    wallet_path = tmp_path / "wallet.json"
+    wallet_path.write_text(json.dumps([0] * 64), encoding="utf-8")
+
+    peer_b = network_node.PeerNetwork(_config(export_b, "node-b", gossip_enable=False, roles="compute"), export_b)
+    peer_c = network_node.PeerNetwork(_config(export_c, "node-c", gossip_enable=False, roles="compute"), export_c)
+    peer_b.set_local_profile(solana_owner="ownerA")
+    peer_c.set_local_profile(solana_owner="ownerB")
+    peer_b.start()
+    peer_c.start()
+    try:
+        task = {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": "compute:threshold",
+            "status": "queued",
+            "required_roles": ["compute"],
+            "task": {"kind": "compute", "required_compute_reputation": 8500},
+        }
+        _write_jsonl(export_a / "tasks.queue.ndjson", task)
+        code = network_node.main(
+            [
+                "--export-dir",
+                str(export_a),
+                "--roles",
+                "storage",
+                "--node-id",
+                "node-a",
+                "--once",
+                "--remote-dispatch-enable",
+                "--seed-peers",
+                ",".join([peer_b.http_base_url, peer_c.http_base_url]),
+                "--solana-enable",
+                "--solana-bridge",
+                str(bridge),
+                "--solana-wallet",
+                str(wallet_path),
+                "--solana-reputation-enable",
+            ]
+        )
+        assert code == 0
+        remote_task = json.loads((export_b / "tasks" / "compute:threshold.json").read_text(encoding="utf-8"))
+        assert remote_task["task_id"] == "compute:threshold"
+        assert not (export_c / "tasks" / "compute:threshold.json").exists()
+    finally:
+        peer_b.stop()
+        peer_c.stop()

@@ -29,7 +29,7 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
@@ -172,6 +172,32 @@ def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
         "solana_enabled": config.solana_enable,
         "worker_binary": config.worker_binary,
         "worker_mode": config.worker_mode,
+    }
+
+
+def _peer_constraints(body: Mapping[str, Any] | None, envelope: Mapping[str, Any] | None = None) -> dict[str, float]:
+    body = body or {}
+    envelope = envelope or {}
+    on_chain = envelope.get("on_chain") if isinstance(envelope.get("on_chain"), dict) else {}
+    if not isinstance(on_chain, dict):
+        on_chain = {}
+
+    def _float_value(*keys: str) -> float:
+        for source in (body, envelope, on_chain):
+            for key in keys:
+                if key in source and source.get(key) not in (None, ""):
+                    try:
+                        return float(source.get(key))
+                    except Exception:
+                        continue
+        return 0.0
+
+    return {
+        "min_global_reputation": _float_value("min_global_reputation", "required_global_reputation", "global_reputation_threshold"),
+        "min_compute_reputation": _float_value("min_compute_reputation", "required_compute_reputation", "compute_reputation_threshold"),
+        "min_verify_reputation": _float_value("min_verify_reputation", "required_verify_reputation", "verify_reputation_threshold"),
+        "min_storage_reputation": _float_value("min_storage_reputation", "required_storage_reputation", "storage_reputation_threshold"),
+        "min_stake_amount": _float_value("min_stake_amount", "required_stake", "stake_threshold"),
     }
 
 
@@ -402,6 +428,7 @@ class P2PClient:
         replication_factor: int = 0,
         replication_quorum: int = 0,
         replication_roles: Iterable[str] | None = None,
+        constraints: dict[str, float] | None = None,
     ) -> dict[str, Any]:
         digest = sha256_bytes(data)
         path = self.export_dir / "p2p" / digest
@@ -425,6 +452,7 @@ class P2PClient:
                     target_factor=target_factor,
                     required_quorum=target_quorum or target_factor,
                     required_roles=replication_roles or {"storage"},
+                    constraints=constraints,
                 )
                 shared_ref["replication"] = replication
         return {
@@ -523,6 +551,7 @@ class RoleRuntime:
             replication_factor=replication_factor,
             replication_quorum=replication_quorum,
             replication_roles={"storage"},
+            constraints=_peer_constraints(task, envelope),
         )
         manifest = {
             "task_id": envelope.get("task_id", ""),
@@ -583,6 +612,7 @@ class RoleRuntime:
                 replication_factor=self.config.replication_factor,
                 replication_quorum=self.config.replication_quorum,
                 replication_roles={"storage"},
+                constraints=_peer_constraints(request, envelope),
             )
             return {"request_result": kind, "retrieved_ref": stored, "choice": True}
         expected = str(request.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
@@ -623,6 +653,12 @@ class PeerNetwork:
         self.local_capacity = build_capacity_snapshot(config)
         self.local_reputation_score = float(config.reputation_score)
         self.local_onchain_reputation = 0.0
+        self.local_onchain_global_reputation = 0.0
+        self.local_onchain_compute_reputation = 0.0
+        self.local_onchain_verify_reputation = 0.0
+        self.local_onchain_storage_reputation = 0.0
+        self.local_onchain_stake_amount = 0.0
+        self.local_onchain_status = ""
         self.local_solana_owner = ""
         self.local_solana_worker = ""
 
@@ -674,6 +710,12 @@ class PeerNetwork:
         capacity: dict[str, Any] | None = None,
         reputation_score: float | None = None,
         onchain_reputation: float | None = None,
+        onchain_global_reputation: float | None = None,
+        onchain_compute_reputation: float | None = None,
+        onchain_verify_reputation: float | None = None,
+        onchain_storage_reputation: float | None = None,
+        onchain_stake_amount: float | None = None,
+        onchain_status: str | None = None,
         solana_owner: str | None = None,
         solana_worker: str | None = None,
     ) -> None:
@@ -683,6 +725,18 @@ class PeerNetwork:
             self.local_reputation_score = float(reputation_score)
         if onchain_reputation is not None:
             self.local_onchain_reputation = float(onchain_reputation)
+        if onchain_global_reputation is not None:
+            self.local_onchain_global_reputation = float(onchain_global_reputation)
+        if onchain_compute_reputation is not None:
+            self.local_onchain_compute_reputation = float(onchain_compute_reputation)
+        if onchain_verify_reputation is not None:
+            self.local_onchain_verify_reputation = float(onchain_verify_reputation)
+        if onchain_storage_reputation is not None:
+            self.local_onchain_storage_reputation = float(onchain_storage_reputation)
+        if onchain_stake_amount is not None:
+            self.local_onchain_stake_amount = float(onchain_stake_amount)
+        if onchain_status is not None:
+            self.local_onchain_status = str(onchain_status)
         if solana_owner is not None:
             self.local_solana_owner = str(solana_owner)
         if solana_worker is not None:
@@ -733,6 +787,12 @@ class PeerNetwork:
             "capacity": self.local_capacity,
             "reputation_score": self.local_reputation_score,
             "onchain_reputation": self.local_onchain_reputation,
+            "onchain_global_reputation": self.local_onchain_global_reputation,
+            "onchain_compute_reputation": self.local_onchain_compute_reputation,
+            "onchain_verify_reputation": self.local_onchain_verify_reputation,
+            "onchain_storage_reputation": self.local_onchain_storage_reputation,
+            "onchain_stake_amount": self.local_onchain_stake_amount,
+            "onchain_status": self.local_onchain_status,
             "solana_owner": self.local_solana_owner,
             "solana_worker": self.local_solana_worker,
             "timestamp_utc": utc_now(),
@@ -780,6 +840,12 @@ class PeerNetwork:
                 "capacity": self.local_capacity,
                 "reputation_score": self.local_reputation_score,
                 "onchain_reputation": self.local_onchain_reputation,
+                "onchain_global_reputation": self.local_onchain_global_reputation,
+                "onchain_compute_reputation": self.local_onchain_compute_reputation,
+                "onchain_verify_reputation": self.local_onchain_verify_reputation,
+                "onchain_storage_reputation": self.local_onchain_storage_reputation,
+                "onchain_stake_amount": self.local_onchain_stake_amount,
+                "onchain_status": self.local_onchain_status,
                 "solana_owner": self.local_solana_owner,
                 "solana_worker": self.local_solana_worker,
                 "last_seen_unix": int(time.time()),
@@ -808,6 +874,12 @@ class PeerNetwork:
                 "capacity": message.get("capacity", {}) if isinstance(message.get("capacity"), dict) else {},
                 "reputation_score": float(message.get("reputation_score", 0.0) or 0.0),
                 "onchain_reputation": float(message.get("onchain_reputation", 0.0) or 0.0),
+                "onchain_global_reputation": float(message.get("onchain_global_reputation", 0.0) or 0.0),
+                "onchain_compute_reputation": float(message.get("onchain_compute_reputation", 0.0) or 0.0),
+                "onchain_verify_reputation": float(message.get("onchain_verify_reputation", 0.0) or 0.0),
+                "onchain_storage_reputation": float(message.get("onchain_storage_reputation", 0.0) or 0.0),
+                "onchain_stake_amount": float(message.get("onchain_stake_amount", 0.0) or 0.0),
+                "onchain_status": str(message.get("onchain_status", "")),
                 "solana_owner": str(message.get("solana_owner", "")),
                 "solana_worker": str(message.get("solana_worker", "")),
                 "updated_utc": str(message.get("timestamp_utc", utc_now())),
@@ -929,8 +1001,14 @@ class PeerNetwork:
         target_factor: int,
         required_quorum: int,
         required_roles: Iterable[str] | None = None,
+        constraints: dict[str, float] | None = None,
     ) -> dict[str, Any]:
-        peers = self.select_peers(required_roles=set(required_roles or {"storage"}), limit=max(0, target_factor), exclude={self.node_id})
+        peers = self.select_peers(
+            required_roles=set(required_roles or {"storage"}),
+            limit=max(0, target_factor),
+            exclude={self.node_id},
+            constraints=constraints,
+        )
         report = {"attempted": 0, "stored": 0, "quorum": max(0, required_quorum), "satisfied": True, "peers": []}
         for peer in peers:
             report["attempted"] += 1
@@ -973,9 +1051,11 @@ class PeerNetwork:
         limit: int = 0,
         require_relay: bool = False,
         exclude: set[str] | None = None,
+        constraints: dict[str, float] | None = None,
     ) -> list[dict[str, Any]]:
         exclude_ids = exclude or set()
         required_roles = required_roles or set()
+        constraints = constraints or {}
         candidates: list[dict[str, Any]] = []
         for peer in self.peers_snapshot().get("peers", []):
             node_id = str(peer.get("node_id", ""))
@@ -986,16 +1066,46 @@ class PeerNetwork:
                 continue
             if require_relay and not bool(peer.get("relay_capable", False)):
                 continue
+            if not self._peer_meets_constraints(peer, required_roles, constraints):
+                continue
             candidates.append(peer)
-        candidates.sort(key=self._peer_score, reverse=True)
+        candidates.sort(key=lambda peer: self._peer_score(peer, required_roles), reverse=True)
         if limit > 0:
             return candidates[:limit]
         return candidates
 
-    def _peer_score(self, peer: dict[str, Any]) -> tuple[float, float, float]:
+    def _peer_meets_constraints(self, peer: dict[str, Any], required_roles: set[str], constraints: dict[str, float]) -> bool:
+        status = str(peer.get("onchain_status", "")).strip().lower()
+        if status and status not in {"active", "1", "workerstatus.active"}:
+            return False
+        checks = {
+            "min_global_reputation": float(peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0)) or 0.0),
+            "min_compute_reputation": float(peer.get("onchain_compute_reputation", 0.0) or 0.0),
+            "min_verify_reputation": float(peer.get("onchain_verify_reputation", 0.0) or 0.0),
+            "min_storage_reputation": float(peer.get("onchain_storage_reputation", 0.0) or 0.0),
+            "min_stake_amount": float(peer.get("onchain_stake_amount", 0.0) or 0.0),
+        }
+        if "compute" in required_roles and checks["min_compute_reputation"] <= 0 and self.config.solana_reputation_enable:
+            return False
+        if "verify" in required_roles and checks["min_verify_reputation"] <= 0 and self.config.solana_reputation_enable:
+            return False
+        if "storage" in required_roles and checks["min_storage_reputation"] <= 0 and self.config.solana_reputation_enable:
+            return False
+        for key, actual in checks.items():
+            minimum = float(constraints.get(key, 0.0) or 0.0)
+            if minimum > 0 and actual < minimum:
+                return False
+        return True
+
+    def _peer_score(self, peer: dict[str, Any], required_roles: set[str]) -> tuple[float, float, float]:
         capacity = peer.get("capacity", {}) if isinstance(peer.get("capacity"), dict) else {}
         reputation = float(peer.get("reputation_score", 0.0) or 0.0)
-        onchain_reputation = float(peer.get("onchain_reputation", 0.0) or 0.0)
+        if "verify" in required_roles:
+            onchain_reputation = float(peer.get("onchain_verify_reputation", peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0))) or 0.0)
+        elif "storage" in required_roles:
+            onchain_reputation = float(peer.get("onchain_storage_reputation", peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0))) or 0.0)
+        else:
+            onchain_reputation = float(peer.get("onchain_compute_reputation", peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0))) or 0.0)
         cpu = float(capacity.get("cpu_count", 0) or 0)
         disk_free = float(capacity.get("disk_free_bytes", 0) or 0)
         onchain_component = onchain_reputation * max(0.0, float(self.config.scheduler_onchain_weight))
@@ -1778,6 +1888,11 @@ class NetworkNode:
         self._solana_owner = ""
         self._solana_worker = ""
         self._solana_onchain_reputation = 0.0
+        self._solana_onchain_compute_reputation = 0.0
+        self._solana_onchain_verify_reputation = 0.0
+        self._solana_onchain_storage_reputation = 0.0
+        self._solana_onchain_stake_amount = 0.0
+        self._solana_onchain_status = ""
         self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.reputation.local_score())
 
     def run(self) -> None:
@@ -1856,15 +1971,31 @@ class NetworkNode:
             return
         account = snapshot.get("account", {}) if isinstance(snapshot, dict) else {}
         accounts = snapshot.get("accounts", {}) if isinstance(snapshot, dict) else {}
-        onchain_reputation = reputation_value(account, "globalReputation") or reputation_value(account, "global_reputation")
+        onchain_global = reputation_value(account, "globalReputation") or reputation_value(account, "global_reputation")
+        onchain_compute = reputation_value(account, "computeReputation") or reputation_value(account, "compute_reputation")
+        onchain_verify = reputation_value(account, "verifyReputation") or reputation_value(account, "verify_reputation")
+        onchain_storage = reputation_value(account, "storageReputation") or reputation_value(account, "storage_reputation")
+        onchain_stake = reputation_value(account, "stakeAmount") or reputation_value(account, "stake_amount")
+        onchain_status = str(account.get("status", "")) if isinstance(account, dict) else str(getattr(account, "status", ""))
         self._solana_owner = str(accounts.get("owner", owner))
         self._solana_worker = str(accounts.get("worker", ""))
-        self._solana_onchain_reputation = onchain_reputation
+        self._solana_onchain_reputation = onchain_global
+        self._solana_onchain_compute_reputation = onchain_compute
+        self._solana_onchain_verify_reputation = onchain_verify
+        self._solana_onchain_storage_reputation = onchain_storage
+        self._solana_onchain_stake_amount = onchain_stake
+        self._solana_onchain_status = onchain_status
         self._last_reputation_refresh_unix = now
         self.peer_network.set_local_profile(
             capacity=self.runtime.capacity(),
             reputation_score=self.reputation.local_score(),
-            onchain_reputation=onchain_reputation,
+            onchain_reputation=onchain_global,
+            onchain_global_reputation=onchain_global,
+            onchain_compute_reputation=onchain_compute,
+            onchain_verify_reputation=onchain_verify,
+            onchain_storage_reputation=onchain_storage,
+            onchain_stake_amount=onchain_stake,
+            onchain_status=onchain_status,
             solana_owner=self._solana_owner,
             solana_worker=self._solana_worker,
         )
@@ -1886,11 +2017,22 @@ class NetworkNode:
                 continue
             account = snapshot.get("account", {}) if isinstance(snapshot, dict) else {}
             accounts = snapshot.get("accounts", {}) if isinstance(snapshot, dict) else {}
-            onchain_reputation = reputation_value(account, "globalReputation") or reputation_value(account, "global_reputation")
+            onchain_global = reputation_value(account, "globalReputation") or reputation_value(account, "global_reputation")
+            onchain_compute = reputation_value(account, "computeReputation") or reputation_value(account, "compute_reputation")
+            onchain_verify = reputation_value(account, "verifyReputation") or reputation_value(account, "verify_reputation")
+            onchain_storage = reputation_value(account, "storageReputation") or reputation_value(account, "storage_reputation")
+            onchain_stake = reputation_value(account, "stakeAmount") or reputation_value(account, "stake_amount")
+            onchain_status = str(account.get("status", "")) if isinstance(account, dict) else str(getattr(account, "status", ""))
             self.peer_network.update_peer_metadata(
                 str(peer.get("node_id", "")),
                 {
-                    "onchain_reputation": onchain_reputation,
+                    "onchain_reputation": onchain_global,
+                    "onchain_global_reputation": onchain_global,
+                    "onchain_compute_reputation": onchain_compute,
+                    "onchain_verify_reputation": onchain_verify,
+                    "onchain_storage_reputation": onchain_storage,
+                    "onchain_stake_amount": onchain_stake,
+                    "onchain_status": onchain_status,
                     "solana_worker": str(accounts.get("worker", peer.get("solana_worker", ""))),
                     "solana_owner": str(accounts.get("owner", owner)),
                     "onchain_verified_utc": utc_now(),
@@ -1904,7 +2046,19 @@ class NetworkNode:
         capacity = self.runtime.capacity()
         current_reputation = self.reputation.local_score()
         self.config.reputation_score = current_reputation
-        self.peer_network.set_local_profile(capacity=capacity, reputation_score=current_reputation)
+        self.peer_network.set_local_profile(
+            capacity=capacity,
+            reputation_score=current_reputation,
+            onchain_reputation=self._solana_onchain_reputation,
+            onchain_global_reputation=self._solana_onchain_reputation,
+            onchain_compute_reputation=getattr(self, "_solana_onchain_compute_reputation", 0.0),
+            onchain_verify_reputation=getattr(self, "_solana_onchain_verify_reputation", 0.0),
+            onchain_storage_reputation=getattr(self, "_solana_onchain_storage_reputation", 0.0),
+            onchain_stake_amount=getattr(self, "_solana_onchain_stake_amount", 0.0),
+            onchain_status=getattr(self, "_solana_onchain_status", ""),
+            solana_owner=self._solana_owner,
+            solana_worker=self._solana_worker,
+        )
         atomic_write_json(
             self.heartbeat_path,
             {
@@ -1925,6 +2079,11 @@ class NetworkNode:
                 "solana_owner": self._solana_owner,
                 "solana_worker": self._solana_worker,
                 "onchain_reputation": self._solana_onchain_reputation,
+                "onchain_compute_reputation": self._solana_onchain_compute_reputation,
+                "onchain_verify_reputation": self._solana_onchain_verify_reputation,
+                "onchain_storage_reputation": self._solana_onchain_storage_reputation,
+                "onchain_stake_amount": self._solana_onchain_stake_amount,
+                "onchain_status": self._solana_onchain_status,
             },
         )
 
@@ -2070,6 +2229,8 @@ class NetworkNode:
                 },
             )
         self.update_reputation(ok, kind, result)
+        if ok and result.get("on_chain"):
+            self.refresh_local_onchain_profile(force=True)
 
     def schedule_retry_or_dead_letter(self, envelope: dict[str, Any], error: str) -> None:
         attempt = int(envelope.get("attempt", 0) or 0)
@@ -2108,7 +2269,15 @@ class NetworkNode:
         required_roles = envelope.get("target_roles", []) if kind == "request" else envelope.get("required_roles", [])
         if not isinstance(required_roles, list):
             required_roles = []
-        peer = self.peer_network.select_peers(required_roles={str(role).lower() for role in required_roles}, limit=1, exclude={self.config.node_id})
+        body = envelope.get("request") if kind == "request" and isinstance(envelope.get("request"), dict) else {}
+        if kind != "request":
+            body = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
+        peer = self.peer_network.select_peers(
+            required_roles={str(role).lower() for role in required_roles},
+            limit=1,
+            exclude={self.config.node_id},
+            constraints=_peer_constraints(body, envelope),
+        )
         if not peer:
             self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
             return False
