@@ -313,3 +313,47 @@ def test_cmd_start_emits_dispatch_target_event(monkeypatch, tmp_path: Path) -> N
     assert payload["action"] == "compose_up"
     assert payload["target"] == "localnet"
     assert payload["service"] == "silicium-localnet"
+
+
+def test_world_mode_defaults_enable_mesh_bootstrap(monkeypatch) -> None:
+    cli = _load_silicium_module()
+    parser = argparse.ArgumentParser()
+    cli.configure_node_start(parser)
+    args = parser.parse_args(["--world", "--world-name", "team-eu"])
+
+    monkeypatch.setattr(cli, "_guess_world_advertise_host", lambda: "100.70.0.12")
+    resolved = cli._apply_world_mode_defaults(args, node_id="france-1")
+
+    assert resolved.gossip_enable is True
+    assert resolved.relay_enable is True
+    assert resolved.remote_dispatch_enable is True
+    assert resolved.nat_punch_enable is True
+    assert resolved.solana_reputation_enable is True
+    assert resolved.gossip_bind == "0.0.0.0"
+    assert resolved.peer_http_bind == "0.0.0.0"
+    assert resolved.gossip_port == cli.WORLD_DEFAULT_GOSSIP_PORT
+    assert resolved.peer_http_port == cli.WORLD_DEFAULT_PEER_HTTP_PORT
+    assert resolved.gossip_advertise_host == "100.70.0.12"
+    assert resolved.peer_advertise_host == "100.70.0.12"
+    assert resolved.mesh_key.startswith("world:team-eu:")
+    assert "world-identities/france-1/ed25519.pem" in resolved.identity_key_path
+
+
+def test_world_mode_merges_discovery_seeds(monkeypatch) -> None:
+    cli = _load_silicium_module()
+    parser = argparse.ArgumentParser()
+    cli.configure_node_start(parser)
+    args = parser.parse_args(
+        [
+            "--world",
+            "--world-seeds",
+            "https://seed-a.example,http://seed-b.example",
+            "--discovery-seeds",
+            "https://seed-a.example,http://seed-c.example",
+        ]
+    )
+
+    monkeypatch.setattr(cli, "_guess_world_advertise_host", lambda: "100.70.0.12")
+    resolved = cli._apply_world_mode_defaults(args, node_id="croatia-1")
+
+    assert resolved.discovery_seeds == "https://seed-a.example,http://seed-c.example,http://seed-b.example"

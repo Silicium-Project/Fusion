@@ -13,6 +13,7 @@ import json
 import os
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
 import string
@@ -178,6 +179,102 @@ TUI_FRONTENDS = {"textual", "curses", "headless"}
 TUI_CONNECTORS = {"inprocess", "stdio", "http"}
 
 MCP_DEFAULT_BIND = "127.0.0.1"
+WORLD_DEFAULT_GOSSIP_PORT = 46000
+WORLD_DEFAULT_PEER_HTTP_PORT = 46001
+WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
+WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
+
+
+def _split_csv(value: str) -> list[str]:
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def _merge_csv(*values: str) -> str:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in _split_csv(value):
+            if item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+    return ",".join(merged)
+
+
+def _guess_world_advertise_host() -> str:
+    for env_name in ("SILICIUM_WORLD_ADVERTISE_HOST", "TAILSCALE_IP", "TS_IP"):
+        candidate = os.environ.get(env_name, "").strip()
+        if candidate:
+            return candidate
+    try:
+        for family, _, _, _, sockaddr in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            if family != socket.AF_INET:
+                continue
+            host = str(sockaddr[0]).strip()
+            if host and not host.startswith("127."):
+                return host
+    except OSError:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 80))
+            host = str(sock.getsockname()[0]).strip()
+            if host and not host.startswith("127."):
+                return host
+    except OSError:
+        pass
+    return "127.0.0.1"
+
+
+def _derive_world_mesh_key(world_name: str) -> str:
+    normalized = str(world_name or "").strip().lower()
+    if not normalized:
+        return ""
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
+    return f"world:{normalized}:{digest}"
+
+
+def _apply_world_mode_defaults(args: argparse.Namespace, *, node_id: str) -> argparse.Namespace:
+    if not bool(getattr(args, "world", False)):
+        return args
+    advertise_host = _guess_world_advertise_host()
+    if not str(getattr(args, "gossip_bind", "") or "").strip() or str(args.gossip_bind).strip() == "127.0.0.1":
+        args.gossip_bind = "0.0.0.0"
+    if not str(getattr(args, "peer_http_bind", "") or "").strip() or str(args.peer_http_bind).strip() == "127.0.0.1":
+        args.peer_http_bind = "0.0.0.0"
+    if int(getattr(args, "gossip_port", 0) or 0) <= 0:
+        args.gossip_port = WORLD_DEFAULT_GOSSIP_PORT
+    if int(getattr(args, "peer_http_port", 0) or 0) <= 0:
+        args.peer_http_port = WORLD_DEFAULT_PEER_HTTP_PORT
+    if not str(getattr(args, "peer_advertise_host", "") or "").strip():
+        args.peer_advertise_host = advertise_host
+    if not str(getattr(args, "gossip_advertise_host", "") or "").strip():
+        args.gossip_advertise_host = advertise_host
+    if int(getattr(args, "peer_advertise_port", 0) or 0) <= 0:
+        args.peer_advertise_port = int(args.peer_http_port)
+    if int(getattr(args, "gossip_advertise_port", 0) or 0) <= 0:
+        args.gossip_advertise_port = int(args.gossip_port)
+    if not str(getattr(args, "mesh_key", "") or "").strip():
+        args.mesh_key = _derive_world_mesh_key(str(getattr(args, "world_name", "")))
+    args.discovery_seeds = _merge_csv(
+        str(getattr(args, "discovery_seeds", "") or ""),
+        str(getattr(args, "world_seeds", "") or ""),
+        os.environ.get("SILICIUM_WORLD_SEEDS", ""),
+    )
+    args.gossip_enable = True
+    args.relay_enable = True
+    args.remote_dispatch_enable = True
+    args.nat_punch_enable = True
+    args.solana_reputation_enable = True
+    args.peer_sync_interval_s = max(int(getattr(args, "peer_sync_interval_s", 0) or 0), WORLD_DEFAULT_PEER_SYNC_INTERVAL_S)
+    args.discovery_sync_interval_s = max(
+        int(getattr(args, "discovery_sync_interval_s", 0) or 0),
+        WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S,
+    )
+    if not str(getattr(args, "identity_key_path", "") or "").strip():
+        safe_node_id = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in str(node_id)) or "node"
+        args.identity_key_path = str(LOCAL_STATE_DIR / "world-identities" / safe_node_id / "ed25519.pem")
+    return args
 MCP_DEFAULT_PORT = 9765
 MCP_DEFAULT_EXPORT_DIR = LOCAL_STATE_DIR / "mcp" / "export"
 MCP_DEFAULT_TOKEN_FILE = LOCAL_STATE_DIR / "mcp" / "token"
@@ -2963,6 +3060,22 @@ def cmd_mcp_print_config(args: argparse.Namespace, ctx: Context) -> None:
 def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--export-dir", default="", help="MCP/network export directory (default: MCP config).")
     parser.add_argument(
+        "--world",
+        action="store_true",
+        default=os.environ.get("SILICIUM_WORLD_MODE", "0") == "1",
+        help="Enable one-command wide-area mesh defaults (gossip, relay, dispatch, NAT punch, advertised endpoints).",
+    )
+    parser.add_argument(
+        "--world-name",
+        default=os.environ.get("SILICIUM_WORLD_NAME", ""),
+        help="Shared world namespace used to derive a deterministic mesh key when --mesh-key is omitted.",
+    )
+    parser.add_argument(
+        "--world-seeds",
+        default=os.environ.get("SILICIUM_WORLD_SEEDS", ""),
+        help="Comma-separated discovery seed URLs used by --world mode.",
+    )
+    parser.add_argument(
         "--roles",
         default=os.environ.get("SILICIUM_NODE_ROLES", "compute,verify,storage,audit,resource"),
         help="Comma-separated node roles: compute,verify,storage,audit,resource.",
@@ -3024,6 +3137,7 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
     from tools import network_node
 
     node_id = args.node_id or f"node-{secrets.token_hex(4)}"
+    args = _apply_world_mode_defaults(args, node_id=node_id)
     argv = [
         "--export-dir",
         str(args.export_dir or settings["export_dir"]),

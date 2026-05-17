@@ -36,6 +36,10 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
 NETWORK_ROLES = frozenset({"compute", "verify", "storage", "audit", "resource"})
 REQUEST_ROLES = frozenset({"audit", "resource", "verify", "storage", "compute"})
+WORLD_DEFAULT_GOSSIP_PORT = 46000
+WORLD_DEFAULT_PEER_HTTP_PORT = 46001
+WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
+WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 
 
 def utc_now() -> str:
@@ -51,12 +55,61 @@ def stable_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
+def split_csv(value: str) -> list[str]:
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def merge_csv(*values: str) -> str:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        for item in split_csv(value):
+            if item in seen:
+                continue
+            seen.add(item)
+            merged.append(item)
+    return ",".join(merged)
+
+
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
 def sha256_json(value: Any) -> str:
     return sha256_bytes(stable_json(value).encode("utf-8"))
+
+
+def guess_world_advertise_host() -> str:
+    for env_name in ("SILICIUM_WORLD_ADVERTISE_HOST", "TAILSCALE_IP", "TS_IP"):
+        candidate = os.environ.get(env_name, "").strip()
+        if candidate:
+            return candidate
+    try:
+        for family, _, _, _, sockaddr in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            if family != socket.AF_INET:
+                continue
+            host = str(sockaddr[0]).strip()
+            if host and not host.startswith("127."):
+                return host
+    except OSError:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 80))
+            host = str(sock.getsockname()[0]).strip()
+            if host and not host.startswith("127."):
+                return host
+    except OSError:
+        pass
+    return "127.0.0.1"
+
+
+def derive_world_mesh_key(world_name: str) -> str:
+    normalized = str(world_name or "").strip().lower()
+    if not normalized:
+        return ""
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
+    return f"world:{normalized}:{digest}"
 
 
 def fragment_status_name(fragment_account: dict[str, Any] | Any) -> str:
@@ -2556,6 +2609,9 @@ def parse_roles(raw: str) -> set[str]:
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="network_node")
     parser.add_argument("--export-dir", default=str(DEFAULT_EXPORT_DIR))
+    parser.add_argument("--world", action="store_true", default=os.environ.get("SILICIUM_WORLD_MODE", "0") == "1")
+    parser.add_argument("--world-name", default=os.environ.get("SILICIUM_WORLD_NAME", ""))
+    parser.add_argument("--world-seeds", default=os.environ.get("SILICIUM_WORLD_SEEDS", ""))
     parser.add_argument("--roles", default=os.environ.get("SILICIUM_NODE_ROLES", "compute,verify,storage,audit,resource"))
     parser.add_argument("--node-id", default=os.environ.get("SILICIUM_NODE_ID", "node-" + uuid.uuid4().hex[:8]))
     parser.add_argument("--idle-ms", type=int, default=int(os.environ.get("SILICIUM_NODE_IDLE_MS", "250")))
@@ -2611,6 +2667,36 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    if bool(args.world):
+        advertise_host = guess_world_advertise_host()
+        if not str(args.gossip_bind).strip() or str(args.gossip_bind).strip() == "127.0.0.1":
+            args.gossip_bind = "0.0.0.0"
+        if not str(args.peer_http_bind).strip() or str(args.peer_http_bind).strip() == "127.0.0.1":
+            args.peer_http_bind = "0.0.0.0"
+        if int(args.gossip_port or 0) <= 0:
+            args.gossip_port = WORLD_DEFAULT_GOSSIP_PORT
+        if int(args.peer_http_port or 0) <= 0:
+            args.peer_http_port = WORLD_DEFAULT_PEER_HTTP_PORT
+        if not str(args.peer_advertise_host).strip():
+            args.peer_advertise_host = advertise_host
+        if not str(args.gossip_advertise_host).strip():
+            args.gossip_advertise_host = advertise_host
+        if int(args.peer_advertise_port or 0) <= 0:
+            args.peer_advertise_port = int(args.peer_http_port)
+        if int(args.gossip_advertise_port or 0) <= 0:
+            args.gossip_advertise_port = int(args.gossip_port)
+        if not str(args.mesh_key).strip():
+            args.mesh_key = derive_world_mesh_key(str(args.world_name))
+        args.discovery_seeds = merge_csv(str(args.discovery_seeds), str(args.world_seeds), os.environ.get("SILICIUM_WORLD_SEEDS", ""))
+        args.gossip_enable = True
+        args.relay_enable = True
+        args.remote_dispatch_enable = True
+        args.nat_punch_enable = True
+        args.solana_reputation_enable = True
+        args.peer_sync_interval_s = max(int(args.peer_sync_interval_s or 0), WORLD_DEFAULT_PEER_SYNC_INTERVAL_S)
+        args.discovery_sync_interval_s = max(int(args.discovery_sync_interval_s or 0), WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S)
+        if not str(args.identity_key_path).strip():
+            args.identity_key_path = str(Path(".silicium") / "world-identities" / safe_id(str(args.node_id)) / "ed25519.pem")
     export_dir = Path(args.export_dir).expanduser().resolve()
     state_dir = Path(args.state_dir).expanduser().resolve() if args.state_dir else export_dir / "node-state" / safe_id(args.node_id)
     config = NodeConfig(
