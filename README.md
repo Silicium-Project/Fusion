@@ -229,8 +229,8 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 | `infra/bin/run-with-proxy.sh` | Lance un service Silicium + le proxy TLS, génère un certificat auto-signé et attend `/healthz`. |
 | `infra/secure-stack/` | Docker Compose + scripts pour un RPC Solana confiné derrière un VPN WireGuard. |
 | `catalog/workloads/` | Catalogue des manifests calcul/vérification. |
-| `splitter/` | Partitionneur de fragments (pipeline C++). |
-| `executor/` | Exécuteur de fragments (émulation/natif). |
+| `experimental/splitter/` | Partitionneur de fragments historique, maintenant relégué en expérimental. |
+| `experimental/executor/` | Exécuteur de fragments historique, maintenant relégué en expérimental. |
 | `viewer/` | Visualiseur Qt des fragments/partitions. |
 | `worker/` | Prototype de worker local qui consomme des partitions générées par `splitter`. |
 | `demo/` | Programmes de démonstration consommés par `splitter`/`worker`. |
@@ -244,6 +244,18 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 
 Voir docs/network-schema.md pour les diagrammes Mermaid (compute + network).
 Spec MCP (connecteur LLM) : `docs/mcp-connector-spec.md`.
+
+## Stack Docker headless (reseau + calcul)
+
+Pour executer uniquement les daemons reseau/calcul sous Docker (sans desktop/viewer), voir :
+
+- `docs/headless-network-compute-docker.md`
+
+Commande rapide depuis `infra/` :
+
+```bash
+./bin/headless-compute-stack.sh up
+```
 
 ---
 
@@ -375,8 +387,11 @@ docker compose build --no-cache # rebuild complet (après changement d'entrypoin
 | Testnet | `silicium-node` | `docker compose up -d silicium-node` | `8899:8899`, `8000-8020` | `https://api.testnet.solana.com` | Pré-production |
 | Mainnet | `silicium-mainnet` (profil `mainnet`) | `docker compose --profile mainnet up -d silicium-mainnet` | `8920:8899`, `8300-8320` | `https://api.mainnet-beta.solana.com` | Production / observateur |
 | Reverse proxy TLS (Caddy) | `silicium-proxy` (profil `proxy`) | `docker compose --profile proxy up -d silicium-proxy` | `9443:443` (modifiable) | `https://<host>:9443` | Terminaison TLS + protections HTTP devant le RPC |
+| World mesh node | `infra/docker-compose.world.yml` | `docker compose -f infra/docker-compose.world.yml up --build` | `46000/udp`, `46001/tcp` | Mesh P2P + discovery | Tests inter-machines / world mode |
 
 > Activez un profil en ajoutant `--profile devnet` ou `--profile mainnet` à toutes les commandes Compose (ou définissez `COMPOSE_PROFILES=devnet` dans votre shell).
+>
+> Pour le mesh inter-machines en mode `--world`, utilisez le compose dédié documenté dans [docs/world-mesh-docker.md](/home/luisfernandes/Bureau/Silicium/Network/docs/world-mesh-docker.md).
 
 ---
 

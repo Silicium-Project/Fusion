@@ -1,0 +1,44 @@
+services:
+  silicium-world-node:
+    build:
+      context: ..
+      dockerfile: infra/docker/world-node.Dockerfile
+    image: ${SILICIUM_WORLD_IMAGE:-silicium/world-node:local}
+    working_dir: /workspace
+    command:
+      - node
+      - start
+      - --world
+      - --world-name
+      - ${SILICIUM_WORLD_NAME:-team-europe}
+      - --world-seeds
+      - ${SILICIUM_WORLD_SEEDS:-}
+      - --node-id
+      - ${SILICIUM_NODE_ID:-node-1}
+      - --roles
+      - ${SILICIUM_NODE_ROLES:-compute,verify,storage,audit,resource}
+      - --export-dir
+      - /state/export
+      - --state-dir
+      - /state/node-state
+      - --gossip-port
+      - "46000"
+      - --peer-http-port
+      - "46001"
+    environment:
+      SILICIUM_WORLD_ADVERTISE_HOST: ${SILICIUM_WORLD_ADVERTISE_HOST:-}
+      SILICIUM_MESH_KEY: ${SILICIUM_MESH_KEY:-}
+      SILICIUM_SOLANA_ENABLE: ${SILICIUM_SOLANA_ENABLE:-0}
+      SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://api.devnet.solana.com}
+      SILICIUM_SOLANA_PROGRAM_ID: ${SILICIUM_SOLANA_PROGRAM_ID:-HyXT83SzHsEPxNZ5zQPvkLwQ7JwFHh2veAE5PuGUgoiQ}
+      SILICIUM_SOLANA_WALLET: ${SILICIUM_SOLANA_WALLET:-/state/solana/id.json}
+      SILICIUM_P2P_GATEWAY: ${SILICIUM_P2P_GATEWAY:-http://127.0.0.1:5001}
+    ports:
+      - "${SILICIUM_WORLD_GOSSIP_PORT:-46000}:46000/udp"
+      - "${SILICIUM_WORLD_HTTP_PORT:-46001}:46001/tcp"
+    volumes:
+      - ..:/workspace
+      - ${SILICIUM_WORLD_STATE_DIR:-../.silicium-world}:/state
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
