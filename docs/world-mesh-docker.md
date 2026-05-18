@@ -13,6 +13,58 @@ From the repository root:
 docker compose -f infra/docker-compose.world.yml up --build
 ```
 
+## One-command wrapper
+
+For day-to-day use, prefer the Python wrapper. It keeps the Docker Compose
+environment, Solana program id, wallet path, and smoke-test commands in one
+place.
+
+France node:
+
+```bash
+python3 tools/world_node.py up \
+  --node-id france-1 \
+  --seed http://100.112.48.71:46001 \
+  --advertise-host 100.112.48.71 \
+  --roles verify,storage,audit \
+  --solana
+```
+
+Croatia node on Windows PowerShell:
+
+```powershell
+py tools\world_node.py up `
+  --node-id croatia-1 `
+  --seed http://100.112.48.71:46001 `
+  --advertise-host 100.100.81.27 `
+  --roles compute,verify,storage,audit,resource `
+  --solana
+```
+
+Useful follow-up commands:
+
+```bash
+python3 tools/world_solana_docker.py pubkey
+python3 tools/world_solana_docker.py balance
+python3 tools/world_node.py bootstrap-worker --node-id france-1 --solana
+python3 tools/world_node.py peers --node-id france-1 --solana
+python3 tools/world_node.py chain-smoke --node-id france-1 --solana
+```
+
+Windows PowerShell equivalents:
+
+```powershell
+py tools\world_solana_docker.py pubkey
+py tools\world_solana_docker.py balance
+py tools\world_node.py bootstrap-worker --node-id croatia-1 --solana
+py tools\world_node.py peers --node-id croatia-1 --solana
+py tools\world_node.py chain-smoke --node-id croatia-1 --solana
+```
+
+`chain-smoke` runs the Devnet minimal compute flow inside the world container,
+so teammates do not need host-level Solana or Anchor installs for the normal
+demo path.
+
 ## Recommended environment
 
 ```bash
