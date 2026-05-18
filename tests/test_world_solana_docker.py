@@ -6,6 +6,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_ROOT / "tools" / "world_solana_docker.py"
+BRIDGE_PATH = REPO_ROOT / "tools" / "solana_layer_bridge.cjs"
 
 
 def _load_module():
@@ -61,3 +62,12 @@ def test_parser_defaults_keep_wallet_inside_state_volume() -> None:
 
     assert args.wallet == "/state/solana/id.json"
     assert args.rpc == "https://api.devnet.solana.com"
+
+
+def test_solana_bridge_register_worker_is_idempotent() -> None:
+    text = BRIDGE_PATH.read_text(encoding="utf-8")
+
+    assert 'request.op === "register_worker"' in text
+    assert 'getAccountInfo(worker, "confirmed")' in text
+    assert "already_registered: true" in text
+    assert "already_registered: false" in text

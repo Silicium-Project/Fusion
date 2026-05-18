@@ -137,9 +137,14 @@ async function handle(request) {
   let accounts = {};
 
   if (request.op === "register_worker") {
+    const worker = layer.pdas.worker(layer.walletPubkey());
+    accounts.worker = worker.toBase58();
+    const existing = await program.provider.connection.getAccountInfo(worker, "confirmed");
+    if (existing) {
+      return { signatures, accounts, already_registered: true };
+    }
     signatures.push(await layer.registerWorker({}));
-    accounts.worker = layer.pdas.worker(layer.walletPubkey()).toBase58();
-    return { signatures, accounts };
+    return { signatures, accounts, already_registered: false };
   }
 
   if (request.op === "create_job") {
