@@ -1733,6 +1733,27 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(body)
                     return
+                if self.path == "/results/dispatch":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    try:
+                        peer_network.node.ingest_dispatched_result(payload)
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    body = b'{"ok":true}'
+                    self.send_response(202)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 if self.path.startswith("/relay/mesh"):
                     if not peer_network.config.relay_enable:
                         self.send_error(403)
@@ -1925,6 +1946,7 @@ class NetworkNode:
         self.reputation = ReputationStore(config.export_dir / f"node.{safe_id(config.node_id)}.reputation.json", initial_score=config.reputation_score)
         self.config.reputation_score = self.reputation.local_score()
         self.peer_network = PeerNetwork(config, config.export_dir)
+        self.peer_network.node = self
         self.peer_network.set_peer_score_sink(self.reputation.set_peer_score)
         self.p2p = P2PClient(config.p2p_gateway, config.export_dir, self.peer_network)
         self.solana = SolanaBridge(config)
@@ -2248,11 +2270,9 @@ class NetworkNode:
             }
         )
         safe_item = safe_id(item_id)
+        log_payload = {"schema_version": 1, "item_id": safe_item, "ok": ok, "error": error, "duration_ms": duration_ms}
         atomic_write_json(self.config.export_dir / f"result.{safe_item}.json", result)
-        atomic_write_json(
-            self.config.export_dir / f"logs.{safe_item}.json",
-            {"schema_version": 1, "item_id": safe_item, "ok": ok, "error": error, "duration_ms": duration_ms},
-        )
+        atomic_write_json(self.config.export_dir / f"logs.{safe_item}.json", log_payload)
         self.update_envelope_status(envelope, "completed" if ok else "failed", result)
         if ok:
             self.metrics["handled"] = int(self.metrics.get("handled", 0) or 0) + 1
@@ -2280,10 +2300,11 @@ class NetworkNode:
                     "result_hash": result.get("result_hash", ""),
                     "proof_ref": result.get("proof_ref", {}),
                 },
-            )
+        )
         self.update_reputation(ok, kind, result)
         if ok and result.get("on_chain"):
             self.refresh_local_onchain_profile(force=True)
+        self.return_dispatched_result(envelope, result, log_payload)
 
     def schedule_retry_or_dead_letter(self, envelope: dict[str, Any], error: str) -> None:
         attempt = int(envelope.get("attempt", 0) or 0)
@@ -2338,6 +2359,7 @@ class NetworkNode:
         payload["dispatch_hops"] = dispatch_hops + 1
         payload["dispatched_by"] = self.config.node_id
         payload["dispatched_utc"] = utc_now()
+        payload["result_return_url"] = self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
         base_url = str(peer[0].get("http_base_url", "")).rstrip("/")
         if not base_url:
             self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
@@ -2375,6 +2397,84 @@ class NetworkNode:
             return True
         self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
         return False
+
+    def return_dispatched_result(self, envelope: dict[str, Any], result: dict[str, Any], log_payload: dict[str, Any]) -> None:
+        return_url = str(envelope.get("result_return_url", "")).strip()
+        origin_node_id = str(envelope.get("dispatched_by", "")).strip()
+        if not return_url or not origin_node_id or origin_node_id == self.config.node_id:
+            return
+        item_id = str(envelope.get("request_id") or envelope.get("task_id") or "")
+        if not item_id:
+            return
+        safe_item = safe_id(item_id)
+        payload = {
+            "schema_version": 1,
+            "item_id": safe_item,
+            "envelope_kind": str(envelope.get("envelope_kind") or "task"),
+            "result": result,
+            "log": log_payload,
+            "handled_by": self.config.node_id,
+            "status": "completed" if bool(result.get("success", True)) else "failed",
+        }
+        raw = stable_json(payload).encode("utf-8")
+        path = urlparse(return_url).path or "/results/dispatch"
+        request = urllib.request.Request(
+            return_url,
+            data=raw,
+            method="POST",
+            headers=self.peer_network._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                ok = response.status in {200, 202}
+        except urllib.error.URLError:
+            ok = False
+        append_jsonl(
+            self.events_path,
+            {
+                "schema_version": 1,
+                "timestamp_utc": utc_now(),
+                "node_id": self.config.node_id,
+                "kind": "result_return",
+                "item_id": safe_item,
+                "target_node": origin_node_id,
+                "ok": ok,
+            },
+        )
+
+    def ingest_dispatched_result(self, payload: dict[str, Any]) -> None:
+        item_id = safe_id(str(payload.get("item_id", "")))
+        if not item_id:
+            raise ValueError("missing_item_id")
+        result = payload.get("result")
+        log_payload = payload.get("log")
+        if not isinstance(result, dict) or not isinstance(log_payload, dict):
+            raise ValueError("missing_result_payload")
+        kind = str(payload.get("envelope_kind") or "task")
+        atomic_write_json(self.config.export_dir / f"result.{item_id}.json", result)
+        atomic_write_json(self.config.export_dir / f"logs.{item_id}.json", log_payload)
+        target_dir = self.config.export_dir / ("requests" if kind == "request" else "tasks")
+        envelope_path = target_dir / f"{item_id}.json"
+        current = read_json(envelope_path, {})
+        if not isinstance(current, dict):
+            current = {}
+        current["status"] = str(payload.get("status", "completed"))
+        current["handled_by"] = str(payload.get("handled_by", result.get("node_id", "")))
+        current["handled_utc"] = utc_now()
+        current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
+        current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
+        atomic_write_json(envelope_path, current)
+        append_jsonl(
+            self.events_path,
+            {
+                "schema_version": 1,
+                "timestamp_utc": utc_now(),
+                "node_id": self.config.node_id,
+                "kind": "result_ingest",
+                "item_id": item_id,
+                "source_node": str(payload.get("handled_by", result.get("node_id", ""))),
+            },
+        )
 
     def handle_task(self, envelope: dict[str, Any]) -> dict[str, Any]:
         task = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}

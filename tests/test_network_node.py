@@ -646,6 +646,56 @@ def test_network_node_dispatches_task_to_remote_peer(tmp_path: Path) -> None:
         peer_b.stop()
 
 
+def test_network_node_ingests_remote_result_back_to_origin(tmp_path: Path) -> None:
+    export_a = tmp_path / "dispatch-return-a"
+    export_b = tmp_path / "dispatch-return-b"
+    config_a = _config(export_a, "node-a", roles="storage", gossip_enable=False, remote_dispatch_enable=True)
+    node_a = network_node.NetworkNode(config_a)
+    node_b = network_node.NetworkNode(_config(export_b, "node-b", roles="compute", gossip_enable=False))
+    node_b.peer_network.start()
+    node_a.peer_network.start()
+    try:
+        node_a.write_heartbeat()
+        node_b.write_heartbeat()
+        node_a.peer_network.update_peer_metadata(
+            "node-b",
+            {
+                "node_id": "node-b",
+                "roles": ["compute"],
+                "http_base_url": node_b.peer_network.http_base_url,
+                "mesh_post_url": node_b.peer_network.mesh_post_url,
+                "gossip_bind": "127.0.0.1",
+                "gossip_port": 0,
+                "relay_capable": True,
+                "capacity": node_b.runtime.capacity(),
+                "reputation_score": 0.0,
+            },
+        )
+        task = {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": "compute:return",
+            "status": "queued",
+            "required_roles": ["compute"],
+            "task": {"kind": "compute"},
+        }
+        _write_jsonl(export_a / "tasks.queue.ndjson", task)
+        handled_a = node_a.sweep()
+        assert handled_a == 1
+        dispatched = json.loads((export_a / "tasks" / "compute:return.json").read_text(encoding="utf-8"))
+        assert dispatched["status"] == "dispatched"
+        handled_b = node_b.sweep()
+        assert handled_b == 1
+        result = json.loads((export_a / "result.compute:return.json").read_text(encoding="utf-8"))
+        assert result["node_id"] == "node-b"
+        origin_task = json.loads((export_a / "tasks" / "compute:return.json").read_text(encoding="utf-8"))
+        assert origin_task["status"] == "completed"
+        assert origin_task["handled_by"] == "node-b"
+    finally:
+        node_a.peer_network.stop()
+        node_b.peer_network.stop()
+
+
 def test_network_node_persists_reputation_updates(tmp_path: Path) -> None:
     export_dir = tmp_path / "rep-score"
     export_dir.mkdir()
