@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -17,6 +18,21 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 WORLD_NODE = REPO_ROOT / "tools" / "world_node.py"
 WORLD_SOLANA = REPO_ROOT / "tools" / "world_solana_docker.py"
 DEFAULT_PORT = 8765
+PROFILES = {
+    "france": {
+        "node_id": "france-1",
+        "advertise_host": "100.112.48.71",
+        "seed": "http://100.112.48.71:46001",
+        "roles": "verify,storage,audit",
+    },
+    "croatia": {
+        "node_id": "croatia-1",
+        "advertise_host": "100.100.81.27",
+        "seed": "http://100.112.48.71:46001",
+        "roles": "compute,verify,storage,audit,resource",
+    },
+}
+DEFAULTS = dict(PROFILES["france"])
 
 
 def _run(cmd: Sequence[str]) -> tuple[int, str]:
@@ -34,13 +50,13 @@ def _run(cmd: Sequence[str]) -> tuple[int, str]:
 def _base_world_args(form: dict[str, list[str]]) -> list[str]:
     args = [
         "--node-id",
-        _value(form, "node_id", "france-1"),
+        _value(form, "node_id", DEFAULTS["node_id"]),
         "--seed",
-        _value(form, "seed", "http://100.112.48.71:46001"),
+        _value(form, "seed", DEFAULTS["seed"]),
         "--advertise-host",
-        _value(form, "advertise_host", "100.112.48.71"),
+        _value(form, "advertise_host", DEFAULTS["advertise_host"]),
         "--roles",
-        _value(form, "roles", "verify,storage,audit"),
+        _value(form, "roles", DEFAULTS["roles"]),
     ]
     if _value(form, "solana", "1") == "1":
         args.append("--solana")
@@ -50,6 +66,61 @@ def _base_world_args(form: dict[str, list[str]]) -> list[str]:
 def _value(form: dict[str, list[str]], key: str, default: str) -> str:
     values = form.get(key)
     return values[0] if values else default
+
+
+def set_profile(profile: str) -> None:
+    DEFAULTS.clear()
+    DEFAULTS.update(PROFILES.get(profile, PROFILES["france"]))
+
+
+def _extract_json(output: str) -> object | None:
+    raw = (output or "").strip()
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(raw):
+        if char not in "[{":
+            continue
+        try:
+            parsed, end = decoder.raw_decode(raw[index:])
+        except json.JSONDecodeError:
+            continue
+        if raw[index + end :].strip():
+            continue
+        return parsed
+    return None
+
+
+def _json_html(value: object) -> str:
+    if isinstance(value, dict):
+        rows = []
+        for key, item in value.items():
+            rows.append(
+                '<div class="json-row">'
+                f'<span class="json-key">{html.escape(str(key))}</span>'
+                f'<span class="json-value">{_json_html(item)}</span>'
+                "</div>"
+            )
+        return '<div class="json-object">' + "".join(rows) + "</div>"
+    if isinstance(value, list):
+        return (
+            '<div class="json-array">'
+            + "".join(f'<div class="json-item">{_json_html(item)}</div>' for item in value)
+            + "</div>"
+        )
+    if isinstance(value, bool):
+        return f'<span class="json-bool">{str(value).lower()}</span>'
+    if value is None:
+        return '<span class="json-null">null</span>'
+    if isinstance(value, (int, float)):
+        return f'<span class="json-number">{value}</span>'
+    return f'<span class="json-string">{html.escape(str(value))}</span>'
+
+
+def render_output(output: str) -> str:
+    parsed = _extract_json(output)
+    if parsed is not None:
+        pretty = html.escape(json.dumps(parsed, indent=2, sort_keys=True))
+        return f'<div class="json-panel">{_json_html(parsed)}</div><details><summary>Raw JSON</summary><pre>{pretty}</pre></details>'
+    return f"<pre>{html.escape(output or 'No output yet.')}</pre>"
 
 
 class AppState:
@@ -131,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def render_page(title: str, code: int, output: str) -> str:
     safe_title = html.escape(title)
-    safe_output = html.escape(output or "No output yet.")
+    rendered_output = render_output(output)
     status = "OK" if code == 0 else f"Exit {code}"
     return f"""<!doctype html>
 <html lang="en">
@@ -158,8 +229,21 @@ def render_page(title: str, code: int, output: str) -> str:
     button {{ border: 1px solid #1b5f75; background: #1b6f87; color: white; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; }}
     button.secondary {{ background: #ffffff; color: #1b5f75; }}
     section {{ margin-top: 22px; }}
-    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #11181c; color: #e7f3f6; padding: 16px; border-radius: 6px; min-height: 220px; }}
+    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #11181c; color: #e7f3f6; padding: 16px; border-radius: 6px; min-height: 160px; }}
     .status {{ font-weight: 800; color: #1b6f87; }}
+    .json-panel {{ display: grid; gap: 8px; background: #ffffff; border: 1px solid #d7e0e3; border-radius: 6px; padding: 14px; }}
+    .json-object, .json-array {{ display: grid; gap: 7px; }}
+    .json-row {{ display: grid; grid-template-columns: minmax(120px, 220px) minmax(0, 1fr); gap: 12px; align-items: start; border-bottom: 1px solid #eef2f3; padding-bottom: 7px; }}
+    .json-row:last-child {{ border-bottom: 0; padding-bottom: 0; }}
+    .json-key {{ color: #52646c; font-size: 12px; font-weight: 800; text-transform: uppercase; overflow-wrap: anywhere; }}
+    .json-value {{ overflow-wrap: anywhere; }}
+    .json-string {{ color: #163d4a; }}
+    .json-number {{ color: #8b3f00; font-weight: 750; }}
+    .json-bool {{ color: #14643a; font-weight: 800; }}
+    .json-null {{ color: #7a5d72; font-style: italic; }}
+    .json-item {{ border-left: 3px solid #d7e0e3; padding-left: 10px; }}
+    details {{ margin-top: 12px; }}
+    summary {{ cursor: pointer; font-weight: 800; color: #1b5f75; }}
     @media (max-width: 760px) {{ .grid {{ grid-template-columns: 1fr; }} main {{ padding: 18px; }} }}
   </style>
 </head>
@@ -168,10 +252,10 @@ def render_page(title: str, code: int, output: str) -> str:
     <h1>Silicium World</h1>
     <form method="post">
       <div class="grid">
-        <label>Node ID <input name="node_id" value="france-1"></label>
-        <label>Advertise host <input name="advertise_host" value="100.112.48.71"></label>
-        <label>Seed <input name="seed" value="http://100.112.48.71:46001"></label>
-        <label>Roles <input name="roles" value="verify,storage,audit"></label>
+        <label>Node ID <input name="node_id" value="{html.escape(DEFAULTS["node_id"])}"></label>
+        <label>Advertise host <input name="advertise_host" value="{html.escape(DEFAULTS["advertise_host"])}"></label>
+        <label>Seed <input name="seed" value="{html.escape(DEFAULTS["seed"])}"></label>
+        <label>Roles <input name="roles" value="{html.escape(DEFAULTS["roles"])}"></label>
       </div>
       <input type="hidden" name="solana" value="1">
       <label>Chain task JSON <textarea name="task">{{"kind":"compute","payload":"hello-chain"}}</textarea></label>
@@ -187,7 +271,7 @@ def render_page(title: str, code: int, output: str) -> str:
     </form>
     <section>
       <div><strong>{safe_title}</strong> <span class="status">{html.escape(status)}</span></div>
-      <pre>{safe_output}</pre>
+      {rendered_output}
     </section>
   </main>
 </body>
@@ -198,8 +282,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = __import__("argparse").ArgumentParser(description="Local Silicium world GUI.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--profile", choices=sorted(PROFILES), default=os.environ.get("SILICIUM_WORLD_GUI_PROFILE", "france"))
     parser.add_argument("--no-open", action="store_true")
     args = parser.parse_args(argv)
+    set_profile(args.profile)
 
     url = f"http://{args.host}:{args.port}"
     server = ThreadingHTTPServer((args.host, args.port), Handler)

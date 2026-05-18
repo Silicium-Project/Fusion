@@ -69,31 +69,11 @@ def cmd_ps(args: argparse.Namespace) -> int:
 
 
 def cmd_peers(args: argparse.Namespace) -> int:
-    return _run(
-        node_command(
-            "node",
-            "get-peers",
-            "--export-dir",
-            "/state/export",
-            "--node-id",
-            args.node_id,
-        ),
-        env=_base_env(args),
-    )
+    return _cat_state_json(args, f"node.{_safe_node_id(args.node_id)}.peers.json", "peers_not_ready")
 
 
 def cmd_heartbeat(args: argparse.Namespace) -> int:
-    return _run(
-        node_command(
-            "node",
-            "get-heartbeat",
-            "--export-dir",
-            "/state/export",
-            "--node-id",
-            args.node_id,
-        ),
-        env=_base_env(args),
-    )
+    return _cat_state_json(args, f"node.{_safe_node_id(args.node_id)}.heartbeat.json", "heartbeat_not_ready")
 
 
 def cmd_bootstrap_worker(args: argparse.Namespace) -> int:
@@ -129,6 +109,29 @@ def cmd_chain_smoke(args: argparse.Namespace) -> int:
 
 def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _safe_node_id(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(value or ""))
+
+
+def _cat_state_json(args: argparse.Namespace, filename: str, reason: str) -> int:
+    path = f"/state/export/{filename}"
+    missing = json.dumps(
+        {
+            "ok": False,
+            "reason": reason,
+            "node_id": args.node_id,
+            "path": path,
+            "hint": "Start the node and wait a few seconds for the first state snapshot.",
+        },
+        separators=(",", ":"),
+    )
+    shell = (
+        f"path={_shell_quote(path)}; "
+        f"if [ -f \"$path\" ]; then cat \"$path\"; else printf '%s\\n' {_shell_quote(missing)}; exit 2; fi"
+    )
+    return _run(compose_command("exec", NODE_SERVICE, "sh", "-lc", shell), env=_base_env(args))
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:

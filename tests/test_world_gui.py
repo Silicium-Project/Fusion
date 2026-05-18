@@ -26,6 +26,7 @@ def test_gui_renders_primary_actions() -> None:
     assert 'value="bootstrap"' in html
     assert 'value="chain_task"' in html
     assert "Chain task JSON" in html
+    assert "No output yet." in html
 
 
 def test_gui_base_world_args_are_cross_platform_strings() -> None:
@@ -51,3 +52,35 @@ def test_gui_base_world_args_are_cross_platform_strings() -> None:
         "compute,verify,storage,audit,resource",
         "--solana",
     ]
+
+
+def test_gui_croatia_profile_sets_windows_defaults() -> None:
+    module = _load_module()
+    module.set_profile("croatia")
+
+    html = module.render_page("Ready", 0, "")
+
+    assert 'value="croatia-1"' in html
+    assert 'value="100.100.81.27"' in html
+    assert 'value="compute,verify,storage,audit,resource"' in html
+
+    module.set_profile("france")
+
+
+def test_gui_renders_json_as_css_panel() -> None:
+    module = _load_module()
+
+    html = module.render_output('{"count":2,"peers":[{"node_id":"croatia-1"}]}')
+
+    assert "json-panel" in html
+    assert "json-key" in html
+    assert "croatia-1" in html
+    assert "Raw JSON" in html
+
+
+def test_gui_extracts_json_after_compose_noise() -> None:
+    module = _load_module()
+
+    parsed = module._extract_json('warning line\n{"ok":true,"reason":"peers_not_ready"}')
+
+    assert parsed == {"ok": True, "reason": "peers_not_ready"}

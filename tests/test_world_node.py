@@ -46,6 +46,26 @@ def test_node_command_executes_silicium_inside_world_node() -> None:
     ]
 
 
+def test_peers_command_returns_friendly_json_when_snapshot_is_missing(monkeypatch) -> None:
+    module = _load_module()
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, *, env=None):
+        captured["cmd"] = list(cmd)
+        return 0
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    parser = module.build_parser()
+    args = parser.parse_args(["peers", "--node-id", "croatia-1", "--solana"])
+
+    assert module.cmd_peers(args) == 0
+
+    cmd = captured["cmd"]
+    assert cmd[:6] == ["docker", "compose", "-f", str(module.WORLD_COMPOSE), "exec", module.NODE_SERVICE]
+    assert "node.croatia-1.peers.json" in cmd[-1]
+    assert "peers_not_ready" in cmd[-1]
+
+
 def test_up_parser_builds_self_contained_world_env() -> None:
     module = _load_module()
     parser = module.build_parser()

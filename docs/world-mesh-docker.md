@@ -79,12 +79,14 @@ python3 tools/world_gui.py
 On Windows PowerShell:
 
 ```powershell
-py tools\world_gui.py
+py tools\world_gui.py --profile croatia
 ```
 
 It opens a local page at `http://127.0.0.1:8765` with buttons for starting the
 node, checking wallet status, bootstrapping the worker, listing peers, and
-running a Devnet chain task.
+running a Devnet chain task. Use `--profile france` or `--profile croatia` to
+pre-fill the right node id, roles, and Tailscale host for each machine. JSON
+responses are rendered as structured panels, with raw JSON still available below.
 
 ## Recommended environment
 
