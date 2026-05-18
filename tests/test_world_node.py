@@ -92,5 +92,6 @@ def test_chain_smoke_command_runs_devnet_flow_in_container(monkeypatch) -> None:
 
     cmd = captured["cmd"]
     assert cmd[:6] == ["docker", "compose", "-f", str(module.WORLD_COMPOSE), "exec", module.NODE_SERVICE]
+    assert f"NODE_OPTIONS=--require={module.NODE_UUID_SHIM}" in cmd[-1]
     assert "scripts/devnet_minimal_job_flow.ts" in cmd[-1]
     assert module.DEFAULT_PROGRAM_ID in cmd[-1]

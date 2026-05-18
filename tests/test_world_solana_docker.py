@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_ROOT / "tools" / "world_solana_docker.py"
 BRIDGE_PATH = REPO_ROOT / "tools" / "solana_layer_bridge.cjs"
+UUID_SHIM_PATH = REPO_ROOT / "tools" / "node_uuid_cjs_shim.cjs"
 
 
 def _load_module():
@@ -71,3 +72,12 @@ def test_solana_bridge_register_worker_is_idempotent() -> None:
     assert 'getAccountInfo(worker, "confirmed")' in text
     assert "already_registered: true" in text
     assert "already_registered: false" in text
+
+
+def test_solana_bridge_uses_shared_uuid_cjs_shim() -> None:
+    bridge = BRIDGE_PATH.read_text(encoding="utf-8")
+    shim = UUID_SHIM_PATH.read_text(encoding="utf-8")
+
+    assert 'require(path.join(__dirname, "node_uuid_cjs_shim.cjs"))' in bridge
+    assert "request === \"uuid\"" in shim
+    assert "crypto.randomUUID" in shim

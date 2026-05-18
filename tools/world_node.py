@@ -16,6 +16,7 @@ DEFAULT_RPC = "https://api.devnet.solana.com"
 DEFAULT_PROGRAM_ID = "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2"
 DEFAULT_WALLET = "/state/solana/id.json"
 NODE_SERVICE = "silicium-world-node"
+NODE_UUID_SHIM = "/workspace/tools/node_uuid_cjs_shim.cjs"
 
 
 def _base_env(args: argparse.Namespace) -> dict[str, str]:
@@ -113,6 +114,7 @@ def cmd_bootstrap_worker(args: argparse.Namespace) -> int:
 def cmd_chain_smoke(args: argparse.Namespace) -> int:
     shell = (
         "cd /workspace/solana-layer && "
+        f"NODE_OPTIONS=--require={NODE_UUID_SHIM} "
         f"ANCHOR_WALLET={args.wallet} "
         f"SOLANA_RPC_URL={args.rpc} "
         f"SOLANA_LAYER_PROGRAM_ID={args.program_id} "

@@ -62,8 +62,9 @@ py tools\world_node.py chain-smoke --node-id croatia-1 --solana
 ```
 
 `chain-smoke` runs the Devnet minimal compute flow inside the world container,
-so teammates do not need host-level Solana or Anchor installs for the normal
-demo path.
+preloading the repo's Node compatibility shim for the current `uuid`/CommonJS
+dependency mismatch. Teammates do not need host-level Solana or Anchor installs
+for the normal demo path.
 
 ## Recommended environment
 
