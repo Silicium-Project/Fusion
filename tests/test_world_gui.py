@@ -27,6 +27,8 @@ def test_gui_renders_primary_actions() -> None:
     assert 'value="up"' in html
     assert 'value="bootstrap"' in html
     assert 'value="chain_task"' in html
+    assert 'name="task_id"' in html
+    assert "demo-tile-0" in html
     assert "Chain task JSON" in html
     assert "No output yet." in html
 
@@ -124,3 +126,33 @@ def test_gui_renders_tile_grid() -> None:
     assert "tile-grid" in html
     assert "#1" in html
     assert "croatia-1" in html
+
+
+def test_gui_chain_task_dispatch_passes_task_id(monkeypatch) -> None:
+    module = _load_module()
+    handler = module.Handler.__new__(module.Handler)
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd):
+        captured["cmd"] = list(cmd)
+        return 0, "ok"
+
+    monkeypatch.setattr(module, "_run", fake_run)
+
+    code, output = handler._dispatch(
+        "chain_task",
+        {
+            "node_id": ["france-1"],
+            "seed": ["http://100.112.48.71:46001"],
+            "advertise_host": ["100.112.48.71"],
+            "roles": ["verify,storage,audit"],
+            "solana": ["1"],
+            "task_id": ["tile-seven"],
+            "task": ['{"kind":"compute","tile_index":7}'],
+        },
+    )
+
+    assert code == 0
+    assert output == "ok"
+    assert "--task-id" in captured["cmd"]
+    assert "tile-seven" in captured["cmd"]

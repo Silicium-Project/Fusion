@@ -19,6 +19,7 @@ WORLD_NODE = REPO_ROOT / "tools" / "world_node.py"
 WORLD_SOLANA = REPO_ROOT / "tools" / "world_solana_docker.py"
 DEFAULT_PORT = 8765
 DEFAULT_STATE_DIR = REPO_ROOT / ".silicium-world" / "export"
+DEFAULT_TASK_JSON = '{"task_id":"demo-tile-0","kind":"compute","payload":"hello-chain","tile_index":0,"tile_region":{"x":0,"y":0,"width":1,"height":1}}'
 PROFILES = {
     "france": {
         "node_id": "france-1",
@@ -408,9 +409,15 @@ class Handler(BaseHTTPRequestHandler):
         if action == "bootstrap":
             return _run([py, str(WORLD_NODE), "bootstrap-worker", *_base_world_args(form)])
         if action == "chain_task":
-            task = _value(form, "task", '{"kind":"compute","payload":"hello-chain"}')
-            json.loads(task)
-            return _run([py, str(WORLD_NODE), "run-chain-task", *_base_world_args(form), "--task", task])
+            task = _value(form, "task", DEFAULT_TASK_JSON)
+            parsed = json.loads(task)
+            task_id = _value(form, "task_id", "")
+            if not task_id and isinstance(parsed, dict):
+                task_id = str(parsed.get("task_id") or parsed.get("id") or "")
+            args = [py, str(WORLD_NODE), "run-chain-task", *_base_world_args(form), "--task", task]
+            if task_id:
+                args.extend(["--task-id", task_id])
+            return _run(args)
         if action == "pubkey":
             return _run([py, str(WORLD_SOLANA), "pubkey"])
         if action == "balance":
@@ -508,7 +515,8 @@ def render_page(title: str, code: int, output: str) -> str:
         <label>Roles <input name="roles" value="{html.escape(DEFAULTS["roles"])}"></label>
       </div>
       <input type="hidden" name="solana" value="1">
-      <label>Chain task JSON <textarea name="task">{{"kind":"compute","payload":"hello-chain"}}</textarea></label>
+      <label>Task ID <input name="task_id" value="demo-tile-0"></label>
+      <label>Chain task JSON <textarea name="task">{html.escape(DEFAULT_TASK_JSON)}</textarea></label>
       <div class="actions">
         <button name="action" value="up">Start Node</button>
         <button class="secondary" name="action" value="pubkey">Wallet Pubkey</button>

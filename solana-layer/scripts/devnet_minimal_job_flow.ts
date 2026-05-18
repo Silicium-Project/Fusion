@@ -170,6 +170,20 @@ function hash32(value: any): number[] {
   return Array.from(crypto.createHash("sha256").update(stableStringify(value)).digest());
 }
 
+function hashHex(bytes: number[]): string {
+  return Buffer.from(bytes).toString("hex");
+}
+
+function writeChainResult(summary: any) {
+  const outputPath = process.env.SILICIUM_CHAIN_RESULT_PATH;
+  if (!outputPath) {
+    return;
+  }
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, JSON.stringify(summary, null, 2), "utf8");
+  console.log("chain result:", outputPath);
+}
+
 function workerSummary(state: any) {
   return {
     computeReputation: rep(state.computeReputation),
@@ -271,7 +285,18 @@ async function main() {
   console.log("balance:", (await connection.getBalance(wallet.publicKey)) / LAMPORTS_PER_SOL, "SOL");
 
   const taskPayload = JSON.parse(process.env.SILICIUM_CHAIN_TASK_JSON ?? '{"kind":"compute","payload":"hello-chain"}');
+  const taskId = process.env.SILICIUM_CHAIN_TASK_ID ?? `chain-task-${Date.now()}`;
+  const tileIndex = Number(process.env.SILICIUM_CHAIN_TILE_INDEX ?? taskPayload.tile_index ?? taskPayload.tileIndex ?? 0);
+  const tileRegion = taskPayload.tile_region ?? taskPayload.tileRegion ?? {
+    x: 0,
+    y: 0,
+    width: 1,
+    height: 1,
+  };
   const resultPayload = {
+    task_id: taskId,
+    tile_index: tileIndex,
+    tile_region: tileRegion,
     task: taskPayload,
     result: {
       mode: "deterministic-devnet-flow",
@@ -519,6 +544,44 @@ async function main() {
   console.log("compute token amount:", computeTokenAfter.amount.toString());
   console.log("verifier 1 token amount:", verifier1TokenAfter.amount.toString());
   console.log("verifier 2 token amount:", verifier2TokenAfter.amount.toString());
+
+  writeChainResult({
+    schema_version: 1,
+    success: true,
+    role_result: "compute",
+    task_id: taskId,
+    kind: "compute",
+    node_id: "devnet-chain-flow",
+    tile_index: tileIndex,
+    tile_region: tileRegion,
+    task: taskPayload,
+    result_hash: `sha256:${hashHex(resultHash)}`,
+    proof_ref: `sha256:${hashHex(proofRef)}`,
+    on_chain: {
+      program: PROGRAM_ID.toBase58(),
+      wallet: wallet.publicKey.toBase58(),
+      mint: mint.toBase58(),
+      job: job.toBase58(),
+      escrow: escrow.publicKey.toBase58(),
+      fragment: fragment.toBase58(),
+      compute_worker: computeWorker.publicKey.toBase58(),
+      compute_worker_account: computeWorkerAccount.toBase58(),
+      verifier_workers: [
+        verifier1WorkerAccount.toBase58(),
+        verifier2WorkerAccount.toBase58(),
+      ],
+      signatures: {
+        create_job: createJobSig,
+        claim_fragment: claimSig,
+        submit_fragment_result: submitSig,
+        vote_1: vote1Sig,
+        vote_2: vote2Sig,
+        claim_reward_1: claimReward1Sig,
+        claim_reward_2: claimReward2Sig,
+      },
+    },
+    finished_utc: new Date().toISOString(),
+  });
 
   console.log("\n✅ Devnet minimal V2.5 job flow passed");
 }

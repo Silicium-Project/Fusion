@@ -49,7 +49,11 @@ python3 tools/world_solana_docker.py balance
 python3 tools/world_node.py bootstrap-worker --node-id france-1 --solana
 python3 tools/world_node.py peers --node-id france-1 --solana
 python3 tools/world_node.py chain-smoke --node-id france-1 --solana
-python3 tools/world_node.py run-chain-task --node-id france-1 --solana --task '{"kind":"compute","payload":"hello-chain"}'
+python3 tools/world_node.py run-chain-task \
+  --node-id france-1 \
+  --solana \
+  --task-id demo-tile-0 \
+  --task '{"task_id":"demo-tile-0","kind":"compute","payload":"hello-chain","tile_index":0,"tile_region":{"x":0,"y":0,"width":1,"height":1}}'
 ```
 
 Windows PowerShell equivalents:
@@ -60,7 +64,7 @@ py tools\world_solana_docker.py balance
 py tools\world_node.py bootstrap-worker --node-id croatia-1 --solana
 py tools\world_node.py peers --node-id croatia-1 --solana
 py tools\world_node.py chain-smoke --node-id croatia-1 --solana
-py tools\world_node.py run-chain-task --node-id croatia-1 --solana --task '{"kind":"compute","payload":"hello-chain"}'
+py tools\world_node.py run-chain-task --node-id croatia-1 --solana --task-id demo-tile-0 --task '{"task_id":"demo-tile-0","kind":"compute","payload":"hello-chain","tile_index":0,"tile_region":{"x":0,"y":0,"width":1,"height":1}}'
 ```
 
 `chain-smoke` runs the Devnet minimal compute flow inside the world container,
@@ -87,6 +91,8 @@ node, checking wallet status, bootstrapping the worker, listing peers, and
 running a Devnet chain task. Use `--profile france` or `--profile croatia` to
 pre-fill the right node id, roles, and Tailscale host for each machine. JSON
 responses are rendered as structured panels, with raw JSON still available below.
+When a chain task includes `tile_index` or `tile_region`, the GUI writes and
+renders a local `result.<task-id>.json` tile card in the computed tile grid.
 
 ## Recommended environment
 

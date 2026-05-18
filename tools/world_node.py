@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -94,14 +95,17 @@ def cmd_bootstrap_worker(args: argparse.Namespace) -> int:
 
 def cmd_chain_smoke(args: argparse.Namespace) -> int:
     task_json = getattr(args, "task", "") or '{"kind":"compute","payload":"hello-chain"}'
-    json.loads(task_json)
+    task = json.loads(task_json)
+    task_id = str(getattr(args, "task_id", "") or task.get("task_id") or f"chain-task-{int(time.time())}")
     shell = (
         "cd /workspace/solana-layer && "
         f"NODE_OPTIONS=--require={NODE_UUID_SHIM} "
         f"ANCHOR_WALLET={args.wallet} "
         f"SOLANA_RPC_URL={args.rpc} "
         f"SOLANA_LAYER_PROGRAM_ID={args.program_id} "
+        f"SILICIUM_CHAIN_TASK_ID={_shell_quote(task_id)} "
         f"SILICIUM_CHAIN_TASK_JSON={_shell_quote(task_json)} "
+        f"SILICIUM_CHAIN_RESULT_PATH={_shell_quote(f'/state/export/result.{task_id}.json')} "
         "NO_DNA=1 npx ts-node scripts/devnet_minimal_job_flow.ts"
     )
     return _run(compose_command("exec", NODE_SERVICE, "sh", "-lc", shell), env=_base_env(args))
@@ -165,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
         child = subparsers.add_parser(name, help=help_text)
         _add_common(child)
         if name in {"chain-smoke", "run-chain-task"}:
+            child.add_argument("--task-id", default="", help="Result id used for /state/export/result.<task-id>.json.")
             child.add_argument("--task", default="", help="Task JSON payload hashed into the on-chain fragment result.")
         child.set_defaults(func=func)
 
