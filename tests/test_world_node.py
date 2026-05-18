@@ -95,3 +95,29 @@ def test_chain_smoke_command_runs_devnet_flow_in_container(monkeypatch) -> None:
     assert f"NODE_OPTIONS=--require={module.NODE_UUID_SHIM}" in cmd[-1]
     assert "scripts/devnet_minimal_job_flow.ts" in cmd[-1]
     assert module.DEFAULT_PROGRAM_ID in cmd[-1]
+    assert "SILICIUM_CHAIN_TASK_JSON=" in cmd[-1]
+
+
+def test_run_chain_task_accepts_task_json(monkeypatch) -> None:
+    module = _load_module()
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, *, env=None):
+        captured["cmd"] = list(cmd)
+        return 0
+
+    monkeypatch.setattr(module, "_run", fake_run)
+    parser = module.build_parser()
+    args = parser.parse_args(
+        [
+            "run-chain-task",
+            "--solana",
+            "--node-id",
+            "france-1",
+            "--task",
+            '{"kind":"compute","payload":"from-test"}',
+        ]
+    )
+
+    assert module.cmd_chain_smoke(args) == 0
+    assert "from-test" in captured["cmd"][-1]

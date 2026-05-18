@@ -49,6 +49,7 @@ python3 tools/world_solana_docker.py balance
 python3 tools/world_node.py bootstrap-worker --node-id france-1 --solana
 python3 tools/world_node.py peers --node-id france-1 --solana
 python3 tools/world_node.py chain-smoke --node-id france-1 --solana
+python3 tools/world_node.py run-chain-task --node-id france-1 --solana --task '{"kind":"compute","payload":"hello-chain"}'
 ```
 
 Windows PowerShell equivalents:
@@ -59,12 +60,31 @@ py tools\world_solana_docker.py balance
 py tools\world_node.py bootstrap-worker --node-id croatia-1 --solana
 py tools\world_node.py peers --node-id croatia-1 --solana
 py tools\world_node.py chain-smoke --node-id croatia-1 --solana
+py tools\world_node.py run-chain-task --node-id croatia-1 --solana --task '{"kind":"compute","payload":"hello-chain"}'
 ```
 
 `chain-smoke` runs the Devnet minimal compute flow inside the world container,
 preloading the repo's Node compatibility shim for the current `uuid`/CommonJS
 dependency mismatch. Teammates do not need host-level Solana or Anchor installs
 for the normal demo path.
+
+## Local interface
+
+For a small button-based interface, start:
+
+```bash
+python3 tools/world_gui.py
+```
+
+On Windows PowerShell:
+
+```powershell
+py tools\world_gui.py
+```
+
+It opens a local page at `http://127.0.0.1:8765` with buttons for starting the
+node, checking wallet status, bootstrapping the worker, listing peers, and
+running a Devnet chain task.
 
 ## Recommended environment
 

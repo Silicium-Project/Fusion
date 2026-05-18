@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -112,15 +113,22 @@ def cmd_bootstrap_worker(args: argparse.Namespace) -> int:
 
 
 def cmd_chain_smoke(args: argparse.Namespace) -> int:
+    task_json = getattr(args, "task", "") or '{"kind":"compute","payload":"hello-chain"}'
+    json.loads(task_json)
     shell = (
         "cd /workspace/solana-layer && "
         f"NODE_OPTIONS=--require={NODE_UUID_SHIM} "
         f"ANCHOR_WALLET={args.wallet} "
         f"SOLANA_RPC_URL={args.rpc} "
         f"SOLANA_LAYER_PROGRAM_ID={args.program_id} "
+        f"SILICIUM_CHAIN_TASK_JSON={_shell_quote(task_json)} "
         "NO_DNA=1 npx ts-node scripts/devnet_minimal_job_flow.ts"
     )
     return _run(compose_command("exec", NODE_SERVICE, "sh", "-lc", shell), env=_base_env(args))
+
+
+def _shell_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 def _add_common(parser: argparse.ArgumentParser) -> None:
@@ -149,9 +157,12 @@ def build_parser() -> argparse.ArgumentParser:
         ("heartbeat", "Print the current node heartbeat.", cmd_heartbeat),
         ("bootstrap-worker", "Register or confirm the Docker wallet worker on-chain.", cmd_bootstrap_worker),
         ("chain-smoke", "Run the Devnet minimal on-chain compute flow inside Docker.", cmd_chain_smoke),
+        ("run-chain-task", "Run a packaged Devnet on-chain compute flow for a task JSON payload.", cmd_chain_smoke),
     ]:
         child = subparsers.add_parser(name, help=help_text)
         _add_common(child)
+        if name in {"chain-smoke", "run-chain-task"}:
+            child.add_argument("--task", default="", help="Task JSON payload hashed into the on-chain fragment result.")
         child.set_defaults(func=func)
 
     return parser

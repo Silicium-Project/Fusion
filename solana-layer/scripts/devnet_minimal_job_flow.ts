@@ -37,6 +37,7 @@ import {
   mintTo,
 } from "@solana/spl-token";
 import fs from "fs";
+import crypto from "crypto";
 import os from "os";
 import path from "path";
 
@@ -152,6 +153,23 @@ function rep(value: any): number {
   return Number(value?.toString?.() ?? value ?? 0);
 }
 
+function stableStringify(value: any): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+    .join(",")}}`;
+}
+
+function hash32(value: any): number[] {
+  return Array.from(crypto.createHash("sha256").update(stableStringify(value)).digest());
+}
+
 function workerSummary(state: any) {
   return {
     computeReputation: rep(state.computeReputation),
@@ -251,6 +269,21 @@ async function main() {
   console.log("program:", PROGRAM_ID.toBase58());
   console.log("wallet:", wallet.publicKey.toBase58());
   console.log("balance:", (await connection.getBalance(wallet.publicKey)) / LAMPORTS_PER_SOL, "SOL");
+
+  const taskPayload = JSON.parse(process.env.SILICIUM_CHAIN_TASK_JSON ?? '{"kind":"compute","payload":"hello-chain"}');
+  const resultPayload = {
+    task: taskPayload,
+    result: {
+      mode: "deterministic-devnet-flow",
+      ok: true,
+    },
+  };
+  const resultHash = hash32(resultPayload);
+  const proofRef = hash32({
+    script: "devnet_minimal_job_flow.ts",
+    resultHash,
+  });
+  console.log("task:", stableStringify(taskPayload));
 
   const programInfo = await connection.getAccountInfo(PROGRAM_ID, "confirmed");
   if (!programInfo?.executable) {
@@ -357,7 +390,7 @@ async function main() {
   console.log("claimFragment tx:", claimSig);
 
   const submitSig = await program.methods
-    .submitFragmentResult(0, Array(32).fill(7), Array(32).fill(8))
+    .submitFragmentResult(0, resultHash, proofRef)
     .accounts({
       worker: computeWorker.publicKey,
       workerAccount: computeWorkerAccount,

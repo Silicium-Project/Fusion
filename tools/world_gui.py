@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import html
+import json
+import subprocess
+import sys
+import threading
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Sequence
+from urllib.parse import parse_qs
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+WORLD_NODE = REPO_ROOT / "tools" / "world_node.py"
+WORLD_SOLANA = REPO_ROOT / "tools" / "world_solana_docker.py"
+DEFAULT_PORT = 8765
+
+
+def _run(cmd: Sequence[str]) -> tuple[int, str]:
+    completed = subprocess.run(
+        list(cmd),
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    output = "\n".join(part for part in [completed.stdout, completed.stderr] if part)
+    return int(completed.returncode), output.strip()
+
+
+def _base_world_args(form: dict[str, list[str]]) -> list[str]:
+    args = [
+        "--node-id",
+        _value(form, "node_id", "france-1"),
+        "--seed",
+        _value(form, "seed", "http://100.112.48.71:46001"),
+        "--advertise-host",
+        _value(form, "advertise_host", "100.112.48.71"),
+        "--roles",
+        _value(form, "roles", "verify,storage,audit"),
+    ]
+    if _value(form, "solana", "1") == "1":
+        args.append("--solana")
+    return args
+
+
+def _value(form: dict[str, list[str]], key: str, default: str) -> str:
+    values = form.get(key)
+    return values[0] if values else default
+
+
+class AppState:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.last_title = "Ready"
+        self.last_output = ""
+        self.last_code = 0
+
+    def set_result(self, title: str, code: int, output: str) -> None:
+        with self.lock:
+            self.last_title = title
+            self.last_code = code
+            self.last_output = output
+
+    def snapshot(self) -> tuple[str, int, str]:
+        with self.lock:
+            return self.last_title, self.last_code, self.last_output
+
+
+STATE = AppState()
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "SiliciumWorldGUI/1.0"
+
+    def do_GET(self) -> None:
+        self._send_page()
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        raw = self.rfile.read(length).decode("utf-8")
+        form = parse_qs(raw)
+        action = _value(form, "action", "")
+
+        try:
+            code, output = self._dispatch(action, form)
+            STATE.set_result(action or "Action", code, output)
+        except Exception as exc:
+            STATE.set_result(action or "Action", 1, f"{type(exc).__name__}: {exc}")
+
+        self.send_response(303)
+        self.send_header("Location", "/")
+        self.end_headers()
+
+    def _dispatch(self, action: str, form: dict[str, list[str]]) -> tuple[int, str]:
+        py = sys.executable
+        if action == "up":
+            return _run([py, str(WORLD_NODE), "up", *_base_world_args(form)])
+        if action == "peers":
+            return _run([py, str(WORLD_NODE), "peers", *_base_world_args(form)])
+        if action == "heartbeat":
+            return _run([py, str(WORLD_NODE), "heartbeat", *_base_world_args(form)])
+        if action == "bootstrap":
+            return _run([py, str(WORLD_NODE), "bootstrap-worker", *_base_world_args(form)])
+        if action == "chain_task":
+            task = _value(form, "task", '{"kind":"compute","payload":"hello-chain"}')
+            json.loads(task)
+            return _run([py, str(WORLD_NODE), "run-chain-task", *_base_world_args(form), "--task", task])
+        if action == "pubkey":
+            return _run([py, str(WORLD_SOLANA), "pubkey"])
+        if action == "balance":
+            return _run([py, str(WORLD_SOLANA), "balance"])
+        return 1, f"unknown action: {action}"
+
+    def _send_page(self) -> None:
+        title, code, output = STATE.snapshot()
+        body = render_page(title, code, output)
+        encoded = body.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+
+def render_page(title: str, code: int, output: str) -> str:
+    safe_title = html.escape(title)
+    safe_output = html.escape(output or "No output yet.")
+    status = "OK" if code == 0 else f"Exit {code}"
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Silicium World</title>
+  <style>
+    :root {{
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f7f8;
+      color: #182025;
+    }}
+    body {{ margin: 0; }}
+    main {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
+    h1 {{ font-size: 28px; margin: 0 0 18px; }}
+    form {{ display: grid; gap: 14px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }}
+    label {{ display: grid; gap: 6px; font-size: 13px; font-weight: 650; }}
+    input, textarea {{ width: 100%; box-sizing: border-box; border: 1px solid #cbd5d9; border-radius: 6px; padding: 10px; font: inherit; background: white; color: #182025; }}
+    textarea {{ min-height: 84px; resize: vertical; }}
+    .actions {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 18px; }}
+    button {{ border: 1px solid #1b5f75; background: #1b6f87; color: white; border-radius: 6px; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; }}
+    button.secondary {{ background: #ffffff; color: #1b5f75; }}
+    section {{ margin-top: 22px; }}
+    pre {{ white-space: pre-wrap; overflow-wrap: anywhere; background: #11181c; color: #e7f3f6; padding: 16px; border-radius: 6px; min-height: 220px; }}
+    .status {{ font-weight: 800; color: #1b6f87; }}
+    @media (max-width: 760px) {{ .grid {{ grid-template-columns: 1fr; }} main {{ padding: 18px; }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Silicium World</h1>
+    <form method="post">
+      <div class="grid">
+        <label>Node ID <input name="node_id" value="france-1"></label>
+        <label>Advertise host <input name="advertise_host" value="100.112.48.71"></label>
+        <label>Seed <input name="seed" value="http://100.112.48.71:46001"></label>
+        <label>Roles <input name="roles" value="verify,storage,audit"></label>
+      </div>
+      <input type="hidden" name="solana" value="1">
+      <label>Chain task JSON <textarea name="task">{{"kind":"compute","payload":"hello-chain"}}</textarea></label>
+      <div class="actions">
+        <button name="action" value="up">Start Node</button>
+        <button class="secondary" name="action" value="pubkey">Wallet Pubkey</button>
+        <button class="secondary" name="action" value="balance">Wallet Balance</button>
+        <button name="action" value="bootstrap">Bootstrap Worker</button>
+        <button class="secondary" name="action" value="peers">Peers</button>
+        <button class="secondary" name="action" value="heartbeat">Heartbeat</button>
+        <button name="action" value="chain_task">Run Chain Task</button>
+      </div>
+    </form>
+    <section>
+      <div><strong>{safe_title}</strong> <span class="status">{html.escape(status)}</span></div>
+      <pre>{safe_output}</pre>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = __import__("argparse").ArgumentParser(description="Local Silicium world GUI.")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--no-open", action="store_true")
+    args = parser.parse_args(argv)
+
+    url = f"http://{args.host}:{args.port}"
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"Silicium World GUI: {url}")
+    if not args.no_open:
+        threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
