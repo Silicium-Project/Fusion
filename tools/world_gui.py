@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 WORLD_NODE = REPO_ROOT / "tools" / "world_node.py"
 WORLD_SOLANA = REPO_ROOT / "tools" / "world_solana_docker.py"
 DEFAULT_PORT = 8765
+DEFAULT_STATE_DIR = REPO_ROOT / ".silicium-world" / "export"
 PROFILES = {
     "france": {
         "node_id": "france-1",
@@ -89,6 +90,128 @@ def _extract_json(output: str) -> object | None:
     return None
 
 
+def _read_json(path: Path) -> object | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+def _iter_json_files(root: Path, pattern: str) -> list[tuple[Path, object]]:
+    out: list[tuple[Path, object]] = []
+    for path in sorted(root.glob(pattern)):
+        data = _read_json(path)
+        if data is not None:
+            out.append((path, data))
+    return out
+
+
+def _dig(data: object, *keys: str) -> object | None:
+    current = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _first_int(data: object, paths: Sequence[Sequence[str]]) -> int | None:
+    for path in paths:
+        value = _dig(data, *path)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+    return None
+
+
+def _first_str(data: object, paths: Sequence[Sequence[str]]) -> str:
+    for path in paths:
+        value = _dig(data, *path)
+        if value is not None and value != "":
+            return str(value)
+    return ""
+
+
+def collect_dashboard(state_dir: Path = DEFAULT_STATE_DIR) -> dict[str, object]:
+    peers = _read_json(state_dir / f"node.{DEFAULTS['node_id']}.peers.json")
+    heartbeat = _read_json(state_dir / f"node.{DEFAULTS['node_id']}.heartbeat.json")
+    metrics = _read_json(state_dir / f"node.{DEFAULTS['node_id']}.metrics.json")
+    task_files = _iter_json_files(state_dir / "tasks", "*.json")
+    request_files = _iter_json_files(state_dir / "requests", "*.json")
+    result_files = _iter_json_files(state_dir, "result.*.json")
+    tiles = collect_tiles(result_files)
+    return {
+        "node_id": DEFAULTS["node_id"],
+        "state_dir": str(state_dir),
+        "heartbeat": heartbeat,
+        "peers": peers,
+        "metrics": metrics,
+        "tasks": [summarize_item(path, data, "task") for path, data in task_files],
+        "requests": [summarize_item(path, data, "request") for path, data in request_files],
+        "results": [summarize_result(path, data) for path, data in result_files],
+        "tiles": tiles,
+    }
+
+
+def summarize_item(path: Path, data: object, kind: str) -> dict[str, object]:
+    item_id = _first_str(data, [["task_id"], ["request_id"]]) or path.stem
+    return {
+        "id": item_id,
+        "kind": kind,
+        "status": _first_str(data, [["status"]]) or "unknown",
+        "roles": _dig(data, "required_roles") or _dig(data, "target_roles") or [],
+        "priority": _first_str(data, [["priority"]]),
+        "updated": _first_str(data, [["updated_utc"], ["submitted_utc"]]),
+    }
+
+
+def summarize_result(path: Path, data: object) -> dict[str, object]:
+    item_id = _first_str(data, [["task_id"], ["request_id"]]) or path.name.removeprefix("result.").removesuffix(".json")
+    return {
+        "id": item_id,
+        "node": _first_str(data, [["node_id"], ["capacity", "node_id"]]),
+        "kind": _first_str(data, [["kind"], ["role_result"], ["request_result"]]),
+        "success": bool(_dig(data, "success")) if isinstance(data, dict) and "success" in data else None,
+        "result_hash": _first_str(data, [["result_hash"], ["response_ref", "hash"]]),
+        "finished": _first_str(data, [["finished_utc"]]),
+    }
+
+
+def collect_tiles(result_files: list[tuple[Path, object]]) -> list[dict[str, object]]:
+    tiles: list[dict[str, object]] = []
+    for path, data in result_files:
+        index = _first_int(
+            data,
+            [
+                ["tile_index"],
+                ["task", "tile_index"],
+                ["task", "inputs", "tile_index"],
+                ["compute", "tile_index"],
+                ["fragment_index"],
+                ["on_chain", 0, "params", "fragment_index"],
+            ],
+        )
+        if index is None:
+            index = _first_int(data, [["task", "fragment_index"], ["fragment_id"]])
+        region = _dig(data, "tile_region") or _dig(data, "task", "tile_region") or _dig(data, "task", "inputs", "tile_region")
+        if index is None and not isinstance(region, dict):
+            continue
+        tiles.append(
+            {
+                "index": int(index or 0),
+                "id": _first_str(data, [["tile_id"], ["task", "tile_id"], ["task_id"], ["request_id"]]) or path.name,
+                "node": _first_str(data, [["node_id"], ["capacity", "node_id"]]),
+                "status": "ok" if _dig(data, "success") is not False else "failed",
+                "hash": _first_str(data, [["result_hash"], ["response_ref", "hash"]]),
+                "region": region if isinstance(region, dict) else {},
+            }
+        )
+    return sorted(tiles, key=lambda item: int(item.get("index", 0) or 0))
+
+
 def _json_html(value: object) -> str:
     if isinstance(value, dict):
         rows = []
@@ -121,6 +244,114 @@ def render_output(output: str) -> str:
         pretty = html.escape(json.dumps(parsed, indent=2, sort_keys=True))
         return f'<div class="json-panel">{_json_html(parsed)}</div><details><summary>Raw JSON</summary><pre>{pretty}</pre></details>'
     return f"<pre>{html.escape(output or 'No output yet.')}</pre>"
+
+
+def render_dashboard(data: dict[str, object]) -> str:
+    heartbeat = data.get("heartbeat") if isinstance(data.get("heartbeat"), dict) else {}
+    peers = data.get("peers") if isinstance(data.get("peers"), dict) else {}
+    metrics = data.get("metrics") if isinstance(data.get("metrics"), dict) else {}
+    results = data.get("results") if isinstance(data.get("results"), list) else []
+    tasks = data.get("tasks") if isinstance(data.get("tasks"), list) else []
+    requests = data.get("requests") if isinstance(data.get("requests"), list) else []
+    tiles = data.get("tiles") if isinstance(data.get("tiles"), list) else []
+    peer_rows = peers.get("peers", []) if isinstance(peers, dict) else []
+    peer_count = peers.get("count", len(peer_rows)) if isinstance(peers, dict) else 0
+    solana = "on" if heartbeat.get("solana_enabled") else "off"
+    processed = metrics.get("processed", 0) if isinstance(metrics, dict) else 0
+    failed = metrics.get("failed", 0) if isinstance(metrics, dict) else 0
+    return (
+        '<section class="dashboard">'
+        '<div class="cards">'
+        + metric_card("Node", str(data.get("node_id") or ""), f"Solana {solana}")
+        + metric_card("Peers", str(peer_count), "visible nodes")
+        + metric_card("Queue", str(len(tasks) + len(requests)), "local items")
+        + metric_card("Results", str(len(results)), f"processed {processed} / failed {failed}")
+        + "</div>"
+        + render_peer_strip(peer_rows)
+        + render_work_table(tasks, requests, results)
+        + render_tiles(tiles)
+        + "</section>"
+    )
+
+
+def metric_card(title: str, value: str, caption: str) -> str:
+    return (
+        '<div class="card">'
+        f'<span class="card-title">{html.escape(title)}</span>'
+        f'<strong>{html.escape(value)}</strong>'
+        f'<small>{html.escape(caption)}</small>'
+        "</div>"
+    )
+
+
+def render_peer_strip(peers: object) -> str:
+    if not isinstance(peers, list) or not peers:
+        return '<div class="panel"><h2>Peers</h2><p class="muted">No peer snapshot yet.</p></div>'
+    rows = []
+    for peer in peers:
+        if not isinstance(peer, dict):
+            continue
+        node_id = str(peer.get("node_id") or "unknown")
+        roles = ", ".join(str(role) for role in peer.get("roles", [])[:5]) if isinstance(peer.get("roles"), list) else ""
+        solana = "Solana on" if _dig(peer, "capacity", "solana_enabled") else "Solana off"
+        self_badge = '<span class="badge">self</span>' if peer.get("self") else ""
+        rows.append(
+            '<div class="peer">'
+            f"<strong>{html.escape(node_id)}</strong>{self_badge}"
+            f"<small>{html.escape(roles)}</small>"
+            f'<span class="muted">{html.escape(solana)}</span>'
+            "</div>"
+        )
+    return '<div class="panel"><h2>Peers</h2><div class="peer-grid">' + "".join(rows) + "</div></div>"
+
+
+def render_work_table(tasks: object, requests: object, results: object) -> str:
+    items: list[dict[str, object]] = []
+    for source in (tasks, requests, results):
+        if isinstance(source, list):
+            items.extend(item for item in source if isinstance(item, dict))
+    if not items:
+        return '<div class="panel"><h2>Tasks & results</h2><p class="muted">No task/result files found yet.</p></div>'
+    rows = []
+    for item in items[-12:]:
+        status = item.get("status") or ("ok" if item.get("success") is not False else "failed")
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(item.get('id') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('kind') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('node') or item.get('roles') or ''))}</td>"
+            f"<td><span class=\"pill\">{html.escape(str(status))}</span></td>"
+            "</tr>"
+        )
+    return '<div class="panel"><h2>Tasks & results</h2><table><tbody>' + "".join(rows) + "</tbody></table></div>"
+
+
+def render_tiles(tiles: object) -> str:
+    if not isinstance(tiles, list) or not tiles:
+        return '<div class="panel"><h2>Computed tiles</h2><p class="muted">No tile-indexed results yet. Tile results appear here when result files include tile_index or tile_region.</p></div>'
+    count = max(len(tiles), max(int(tile.get("index", 0) or 0) for tile in tiles if isinstance(tile, dict)) + 1)
+    columns = max(1, min(8, int(count**0.5) + (1 if int(count**0.5) ** 2 < count else 0)))
+    tile_by_index = {int(tile.get("index", 0) or 0): tile for tile in tiles if isinstance(tile, dict)}
+    cells = []
+    for index in range(count):
+        tile = tile_by_index.get(index)
+        if tile:
+            label = f"#{index}"
+            tooltip = f"{tile.get('id', '')} {tile.get('node', '')} {tile.get('hash', '')}"
+            cells.append(
+                f'<div class="tile done" title="{html.escape(tooltip)}">'
+                f"<strong>{html.escape(label)}</strong>"
+                f"<small>{html.escape(str(tile.get('node') or ''))}</small>"
+                "</div>"
+            )
+        else:
+            cells.append(f'<div class="tile pending"><strong>#{index}</strong><small>pending</small></div>')
+    return (
+        '<div class="panel"><h2>Computed tiles</h2>'
+        f'<div class="tile-grid" style="grid-template-columns: repeat({columns}, minmax(54px, 1fr));">'
+        + "".join(cells)
+        + "</div></div>"
+    )
 
 
 class AppState:
@@ -203,6 +434,7 @@ class Handler(BaseHTTPRequestHandler):
 def render_page(title: str, code: int, output: str) -> str:
     safe_title = html.escape(title)
     rendered_output = render_output(output)
+    dashboard = render_dashboard(collect_dashboard())
     status = "OK" if code == 0 else f"Exit {code}"
     return f"""<!doctype html>
 <html lang="en">
@@ -218,7 +450,7 @@ def render_page(title: str, code: int, output: str) -> str:
       color: #182025;
     }}
     body {{ margin: 0; }}
-    main {{ max-width: 980px; margin: 0 auto; padding: 28px; }}
+    main {{ max-width: 1160px; margin: 0 auto; padding: 28px; }}
     h1 {{ font-size: 28px; margin: 0 0 18px; }}
     form {{ display: grid; gap: 14px; }}
     .grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }}
@@ -244,7 +476,25 @@ def render_page(title: str, code: int, output: str) -> str:
     .json-item {{ border-left: 3px solid #d7e0e3; padding-left: 10px; }}
     details {{ margin-top: 12px; }}
     summary {{ cursor: pointer; font-weight: 800; color: #1b5f75; }}
+    .dashboard {{ display: grid; gap: 14px; margin: 18px 0 8px; }}
+    .cards {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }}
+    .card, .panel {{ background: #ffffff; border: 1px solid #d7e0e3; border-radius: 6px; padding: 14px; }}
+    .card {{ display: grid; gap: 5px; }}
+    .card-title, h2 {{ color: #52646c; font-size: 12px; font-weight: 850; text-transform: uppercase; margin: 0; }}
+    .card strong {{ font-size: 24px; }}
+    .card small, .muted {{ color: #64767d; }}
+    .peer-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 10px; }}
+    .peer {{ display: grid; gap: 4px; border: 1px solid #e3eaed; border-radius: 6px; padding: 10px; }}
+    .badge, .pill {{ display: inline-flex; width: fit-content; border-radius: 999px; background: #dff2ea; color: #14643a; padding: 2px 8px; font-size: 12px; font-weight: 800; }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+    td {{ border-top: 1px solid #eef2f3; padding: 9px 8px; overflow-wrap: anywhere; }}
+    .tile-grid {{ display: grid; gap: 8px; margin-top: 12px; }}
+    .tile {{ aspect-ratio: 1; min-height: 58px; border-radius: 6px; border: 1px solid #d7e0e3; display: grid; place-items: center; text-align: center; padding: 6px; }}
+    .tile.done {{ background: #dff2ea; border-color: #95d4b8; color: #123d2a; }}
+    .tile.pending {{ background: #f0f3f4; color: #6d7b80; }}
+    .tile small {{ font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }}
     @media (max-width: 760px) {{ .grid {{ grid-template-columns: 1fr; }} main {{ padding: 18px; }} }}
+    @media (max-width: 900px) {{ .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
   </style>
 </head>
 <body>
@@ -269,6 +519,7 @@ def render_page(title: str, code: int, output: str) -> str:
         <button name="action" value="chain_task">Run Chain Task</button>
       </div>
     </form>
+    {dashboard}
     <section>
       <div><strong>{safe_title}</strong> <span class="status">{html.escape(status)}</span></div>
       {rendered_output}
