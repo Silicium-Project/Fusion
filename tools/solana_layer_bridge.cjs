@@ -13,6 +13,25 @@ const solanaNodeModules = path.join(solanaLayerDir, "node_modules");
 process.env.NODE_PATH = [solanaNodeModules, process.env.NODE_PATH || ""].filter(Boolean).join(path.delimiter);
 Module._initPaths();
 
+// `rpc-websockets` currently resolves `uuid@14`, which is ESM-only and crashes
+// when loaded through the CommonJS bridge path used by Anchor/web3 here. The
+// library only needs a request id generator, so a lightweight shim is enough.
+const originalModuleLoad = Module._load;
+function uuidCompat() {
+  if (typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return crypto.randomBytes(16).toString("hex");
+}
+uuidCompat.v1 = uuidCompat;
+uuidCompat.v4 = uuidCompat;
+Module._load = function patchedModuleLoad(request, parent, isMain) {
+  if (request === "uuid") {
+    return uuidCompat;
+  }
+  return originalModuleLoad.call(this, request, parent, isMain);
+};
+
 const anchor = require("@coral-xyz/anchor");
 const { Connection, Keypair, PublicKey } = require("@solana/web3.js");
 

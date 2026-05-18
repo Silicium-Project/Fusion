@@ -63,8 +63,8 @@ export * from "./types";
 // Must match declare_id! in programs/solana-layer/src/lib.rs
 export type SolanaLayerCluster = "devnet" | "localnet";
 
-export const SOLANA_LAYER_DEVNET_PROGRAM_ID = new PublicKey("4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP");
-export const SOLANA_LAYER_LOCALNET_PROGRAM_ID = new PublicKey("4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP");
+export const SOLANA_LAYER_DEVNET_PROGRAM_ID = new PublicKey("A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2");
+export const SOLANA_LAYER_LOCALNET_PROGRAM_ID = new PublicKey("A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2");
 export const SOLANA_LAYER_PROGRAM_ID = SOLANA_LAYER_DEVNET_PROGRAM_ID;
 
 export const SOLANA_LAYER_DEVNET_RPC_URL = "https://api.devnet.solana.com";

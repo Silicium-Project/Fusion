@@ -8,7 +8,7 @@ pub mod state;
 
 pub use instructions::*;
 
-declare_id!("Fv18qaEX7EKA1SaXNFFB9gCc5G6fuffWJkjTjhaEQLot");
+declare_id!("A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2");
 
 #[program]
 pub mod solana_layer {
@@ -35,7 +35,6 @@ pub mod solana_layer {
             fragment_quorum,
         )
     }
-
 
     pub fn declare_job_storage(
         ctx: Context<DeclareJobStorage>,
@@ -116,17 +115,11 @@ pub mod solana_layer {
         )
     }
 
-    pub fn claim_fragment(
-        ctx: Context<ClaimFragment>,
-        fragment_index: u32,
-    ) -> Result<()> {
+    pub fn claim_fragment(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
         crate::instructions::claim_fragment::handler(ctx, fragment_index)
     }
 
-    pub fn reclaim_fragment(
-        ctx: Context<ReclaimFragment>,
-        fragment_index: u32,
-    ) -> Result<()> {
+    pub fn reclaim_fragment(ctx: Context<ReclaimFragment>, fragment_index: u32) -> Result<()> {
         crate::instructions::reclaim_fragment::handler(ctx, fragment_index)
     }
 
@@ -163,10 +156,7 @@ pub mod solana_layer {
         crate::instructions::propose_fragment_split::handler(ctx, manifest_hash, child_count)
     }
 
-    pub fn approve_fragment_split(
-        ctx: Context<ApproveFragmentSplit>,
-        approve: bool,
-    ) -> Result<()> {
+    pub fn approve_fragment_split(ctx: Context<ApproveFragmentSplit>, approve: bool) -> Result<()> {
         crate::instructions::approve_fragment_split::handler(ctx, approve)
     }
 

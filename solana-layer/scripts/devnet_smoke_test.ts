@@ -19,7 +19,7 @@ import path from "path";
 
 const DEVNET_RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const PROGRAM_ID = new PublicKey(
-  process.env.SOLANA_LAYER_PROGRAM_ID ?? "48Bdt8Dg9FW8n6Mpvvdh6dgTXrsBvBfqMrwhnWQ2WQm1",
+  process.env.SOLANA_LAYER_PROGRAM_ID ?? "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2",
 );
 const WRITE_MODE = process.argv.includes("--write");
 
@@ -67,6 +67,7 @@ function formatWorker(workerState: any) {
     owner: workerState.owner?.toBase58?.() ?? String(workerState.owner),
     computeReputation: rep(workerState.computeReputation),
     verifyReputation: rep(workerState.verifyReputation),
+    storageReputation: rep(workerState.storageReputation),
     globalReputation: rep(workerState.globalReputation),
     stakeAmount: rep(workerState.stakeAmount),
     status: workerState.status,
