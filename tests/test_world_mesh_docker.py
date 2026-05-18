@@ -8,6 +8,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORLD_COMPOSE = REPO_ROOT / "infra" / "docker-compose.world.yml"
 WORLD_DOCKERFILE = REPO_ROOT / "infra" / "docker" / "world-node.Dockerfile"
+WORLD_ENTRYPOINT = REPO_ROOT / "infra" / "docker" / "world-node-entrypoint.sh"
 SOLANA_TOOLS_DOCKERFILE = REPO_ROOT / "infra" / "docker" / "solana-tools.Dockerfile"
 DOCKERIGNORE = REPO_ROOT / ".dockerignore"
 
@@ -52,8 +53,17 @@ def test_world_dockerfile_installs_node_and_runs_silicium_cli() -> None:
     text = WORLD_DOCKERFILE.read_text(encoding="utf-8")
     assert "FROM python:3.12-slim-bookworm" in text
     assert "nodejs" in text
+    assert "npm" in text
     assert "openssl" in text
-    assert 'ENTRYPOINT ["python3", "/workspace/silicium"]' in text
+    assert "world-node-entrypoint.sh" in text
+
+
+def test_world_entrypoint_installs_missing_solana_js_deps() -> None:
+    text = WORLD_ENTRYPOINT.read_text(encoding="utf-8")
+    assert "npm install --include=dev --no-audit --no-fund" in text
+    assert 'SOLANA_LAYER_DIR="/workspace/solana-layer"' in text
+    assert 'node_modules/@coral-xyz/anchor' in text
+    assert "exec python3 /workspace/silicium" in text
 
 
 def test_solana_tools_dockerfile_installs_ca_and_solana_cli() -> None:
@@ -69,4 +79,5 @@ def test_world_dockerignore_keeps_build_context_minimal() -> None:
     text = DOCKERIGNORE.read_text(encoding="utf-8")
     assert "**" in text
     assert "!infra/docker/world-node.Dockerfile" in text
+    assert "!infra/docker/world-node-entrypoint.sh" in text
     assert "!infra/docker/solana-tools.Dockerfile" in text

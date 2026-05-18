@@ -3,6 +3,7 @@
 This compose file packages the role-aware Silicium mesh node in a small Python image with `openssl` preinstalled.
 It also exposes an optional Solana CLI helper service so the wallet/keypair flow can stay containerized and portable across hosts.
 You do not need a host-level Solana installation to create the wallet, request Devnet funds, or register a worker.
+If the mounted repository does not already contain `solana-layer/node_modules`, the world node will install the missing JS dependencies automatically on first boot.
 
 ## Start
 
