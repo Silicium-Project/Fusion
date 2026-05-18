@@ -105,7 +105,7 @@ def test_gui_collects_dashboard_from_state_files(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "result.demo.json").write_text(
-        '{"task_id":"demo","success":true,"node_id":"croatia-1","tile_index":2,"result_hash":"sha256:abc"}',
+        '{"task_id":"demo","success":true,"node_id":"croatia-1","tile_index":2,"result_hash":"sha256:abc","tile_image_path":"/tmp/tile.ppm"}',
         encoding="utf-8",
     )
 
@@ -116,6 +116,7 @@ def test_gui_collects_dashboard_from_state_files(tmp_path: Path) -> None:
     assert data["tasks"][0]["id"] == "demo"
     assert data["results"][0]["node"] == "croatia-1"
     assert data["tiles"][0]["index"] == 2
+    assert data["tiles"][0]["image_path"] == "/tmp/tile.ppm"
 
 
 def test_gui_renders_tile_grid() -> None:
@@ -126,6 +127,18 @@ def test_gui_renders_tile_grid() -> None:
     assert "tile-grid" in html
     assert "#1" in html
     assert "croatia-1" in html
+
+
+def test_gui_renders_ppm_preview(tmp_path: Path) -> None:
+    module = _load_module()
+    ppm = tmp_path / "tile.ppm"
+    ppm.write_bytes(b"P6\n2 1\n255\n" + bytes([255, 0, 0, 0, 0, 255]))
+
+    html = module.render_ppm_preview(str(ppm))
+
+    assert "ppm-preview" in html
+    assert "rgb(255,0,0)" in html
+    assert "rgb(0,0,255)" in html
 
 
 def test_gui_chain_task_dispatch_passes_task_id(monkeypatch) -> None:

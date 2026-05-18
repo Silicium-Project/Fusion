@@ -106,6 +106,7 @@ def cmd_chain_smoke(args: argparse.Namespace) -> int:
         f"SILICIUM_CHAIN_TASK_ID={_shell_quote(task_id)} "
         f"SILICIUM_CHAIN_TASK_JSON={_shell_quote(task_json)} "
         f"SILICIUM_CHAIN_RESULT_PATH={_shell_quote(f'/state/export/result.{task_id}.json')} "
+        f"SILICIUM_CHAIN_TILE_IMAGE_PATH={_shell_quote(f'/state/export/tiles/{task_id}.ppm')} "
         "NO_DNA=1 npx ts-node scripts/devnet_minimal_job_flow.ts"
     )
     return _run(compose_command("exec", NODE_SERVICE, "sh", "-lc", shell), env=_base_env(args))

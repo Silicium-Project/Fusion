@@ -93,6 +93,9 @@ pre-fill the right node id, roles, and Tailscale host for each machine. JSON
 responses are rendered as structured panels, with raw JSON still available below.
 When a chain task includes `tile_index` or `tile_region`, the GUI writes and
 renders a local `result.<task-id>.json` tile card in the computed tile grid.
+The packaged chain task also writes a deterministic PPM tile preview under
+`.silicium-world/export/tiles/`, and the GUI renders those pixels directly in
+the tile grid.
 
 ## Recommended environment
 

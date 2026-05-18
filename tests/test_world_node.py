@@ -141,3 +141,4 @@ def test_run_chain_task_accepts_task_json(monkeypatch) -> None:
 
     assert module.cmd_chain_smoke(args) == 0
     assert "from-test" in captured["cmd"][-1]
+    assert "SILICIUM_CHAIN_TILE_IMAGE_PATH=" in captured["cmd"][-1]

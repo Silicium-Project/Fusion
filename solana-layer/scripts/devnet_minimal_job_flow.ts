@@ -184,6 +184,33 @@ function writeChainResult(summary: any) {
   console.log("chain result:", outputPath);
 }
 
+function renderTilePpm(width: number, height: number, seed: number[]): Buffer {
+  const w = Math.max(1, Math.min(256, Math.floor(width || 1)));
+  const h = Math.max(1, Math.min(256, Math.floor(height || 1)));
+  const pixels = Buffer.alloc(w * h * 3);
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      const offset = (y * w + x) * 3;
+      const mix = seed[(x + y * 7) % seed.length] ?? 0;
+      pixels[offset] = (mix + x * 11) % 256;
+      pixels[offset + 1] = ((seed[(x * 3 + y) % seed.length] ?? 0) + y * 13) % 256;
+      pixels[offset + 2] = ((seed[(x + y) % seed.length] ?? 0) + x * y) % 256;
+    }
+  }
+  return Buffer.concat([Buffer.from(`P6\n${w} ${h}\n255\n`, "ascii"), pixels]);
+}
+
+function writeTileImage(tileRegion: any, seed: number[]): string {
+  const outputPath = process.env.SILICIUM_CHAIN_TILE_IMAGE_PATH;
+  if (!outputPath) {
+    return "";
+  }
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, renderTilePpm(Number(tileRegion.width ?? 1), Number(tileRegion.height ?? 1), seed));
+  console.log("tile image:", outputPath);
+  return outputPath;
+}
+
 function workerSummary(state: any) {
   return {
     computeReputation: rep(state.computeReputation),
@@ -308,6 +335,7 @@ async function main() {
     script: "devnet_minimal_job_flow.ts",
     resultHash,
   });
+  const tileImagePath = writeTileImage(tileRegion, resultHash);
   console.log("task:", stableStringify(taskPayload));
 
   const programInfo = await connection.getAccountInfo(PROGRAM_ID, "confirmed");
@@ -554,6 +582,8 @@ async function main() {
     node_id: "devnet-chain-flow",
     tile_index: tileIndex,
     tile_region: tileRegion,
+    tile_image_path: tileImagePath,
+    tile_image_format: tileImagePath ? "ppm/p6" : "",
     task: taskPayload,
     result_hash: `sha256:${hashHex(resultHash)}`,
     proof_ref: `sha256:${hashHex(proofRef)}`,

@@ -208,9 +208,76 @@ def collect_tiles(result_files: list[tuple[Path, object]]) -> list[dict[str, obj
                 "status": "ok" if _dig(data, "success") is not False else "failed",
                 "hash": _first_str(data, [["result_hash"], ["response_ref", "hash"]]),
                 "region": region if isinstance(region, dict) else {},
+                "image_path": _first_str(data, [["tile_image_path"], ["image_path"], ["output_path"], ["final_output", "path"]]),
             }
         )
     return sorted(tiles, key=lambda item: int(item.get("index", 0) or 0))
+
+
+def parse_ppm(path: Path) -> tuple[int, int, int, bytes] | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if not data.startswith(b"P6"):
+        return None
+    tokens: list[bytes] = []
+    index = 2
+    while len(tokens) < 3 and index < len(data):
+        while index < len(data) and data[index] in b" \t\r\n":
+            index += 1
+        if index < len(data) and data[index] == ord("#"):
+            while index < len(data) and data[index] not in b"\r\n":
+                index += 1
+            continue
+        start = index
+        while index < len(data) and data[index] not in b" \t\r\n":
+            index += 1
+        if start < index:
+            tokens.append(data[start:index])
+    while index < len(data) and data[index] in b" \t\r\n":
+        index += 1
+    if len(tokens) != 3:
+        return None
+    width, height, max_value = (int(token) for token in tokens)
+    pixels = data[index:]
+    if width <= 0 or height <= 0 or len(pixels) < width * height * 3:
+        return None
+    return width, height, max_value, pixels[: width * height * 3]
+
+
+def render_ppm_preview(path_value: str, *, max_cells: int = 16) -> str:
+    if not path_value:
+        return ""
+    path = Path(path_value)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    parsed = parse_ppm(path)
+    if parsed is None:
+        return ""
+    width, height, max_value, pixels = parsed
+    step_x = max(1, width // max_cells)
+    step_y = max(1, height // max_cells)
+    cells: list[str] = []
+    preview_w = max(1, min(max_cells, (width + step_x - 1) // step_x))
+    for y in range(0, height, step_y):
+        if len(cells) >= max_cells * max_cells:
+            break
+        for x in range(0, width, step_x):
+            if len(cells) >= max_cells * max_cells:
+                break
+            offset = (y * width + x) * 3
+            scale = 255 / max(1, max_value)
+            r = int(pixels[offset] * scale)
+            g = int(pixels[offset + 1] * scale)
+            b = int(pixels[offset + 2] * scale)
+            cells.append(f'<span style="background: rgb({r},{g},{b})"></span>')
+    return (
+        f'<div class="ppm-preview" style="grid-template-columns: repeat({preview_w}, 1fr);" '
+        f'title="{html.escape(str(path))}">'
+        + "".join(cells)
+        + "</div>"
+    )
 
 
 def _json_html(value: object) -> str:
@@ -339,8 +406,10 @@ def render_tiles(tiles: object) -> str:
         if tile:
             label = f"#{index}"
             tooltip = f"{tile.get('id', '')} {tile.get('node', '')} {tile.get('hash', '')}"
+            preview = render_ppm_preview(str(tile.get("image_path") or ""))
             cells.append(
                 f'<div class="tile done" title="{html.escape(tooltip)}">'
+                f"{preview}"
                 f"<strong>{html.escape(label)}</strong>"
                 f"<small>{html.escape(str(tile.get('node') or ''))}</small>"
                 "</div>"
@@ -500,6 +569,8 @@ def render_page(title: str, code: int, output: str) -> str:
     .tile.done {{ background: #dff2ea; border-color: #95d4b8; color: #123d2a; }}
     .tile.pending {{ background: #f0f3f4; color: #6d7b80; }}
     .tile small {{ font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }}
+    .ppm-preview {{ width: 100%; max-width: 92px; display: grid; gap: 0; border: 1px solid rgba(0,0,0,.12); image-rendering: pixelated; }}
+    .ppm-preview span {{ aspect-ratio: 1; min-width: 2px; }}
     @media (max-width: 760px) {{ .grid {{ grid-template-columns: 1fr; }} main {{ padding: 18px; }} }}
     @media (max-width: 900px) {{ .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
   </style>
