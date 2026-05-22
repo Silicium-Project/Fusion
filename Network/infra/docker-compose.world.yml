@@ -1,0 +1,65 @@
+services:
+  silicium-world-node:
+    build:
+      context: ..
+      dockerfile: infra/docker/world-node.Dockerfile
+    image: ${SILICIUM_WORLD_IMAGE:-silicium/world-node:local}
+    working_dir: /workspace
+    security_opt:
+      - label=disable
+    command:
+      - node
+      - start
+      - --world
+      - --world-name
+      - ${SILICIUM_WORLD_NAME:-team-europe}
+      - --world-seeds
+      - ${SILICIUM_WORLD_SEEDS:-}
+      - --node-id
+      - ${SILICIUM_NODE_ID:-node-1}
+      - --roles
+      - ${SILICIUM_NODE_ROLES:-compute,verify,storage,audit,resource}
+      - --export-dir
+      - /state/export
+      - --state-dir
+      - /state/node-state
+      - --gossip-port
+      - "46000"
+      - --peer-http-port
+      - "46001"
+    environment:
+      SILICIUM_WORLD_ADVERTISE_HOST: ${SILICIUM_WORLD_ADVERTISE_HOST:-}
+      SILICIUM_MESH_KEY: ${SILICIUM_MESH_KEY:-}
+      SILICIUM_SOLANA_ENABLE: ${SILICIUM_SOLANA_ENABLE:-0}
+      SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://api.devnet.solana.com}
+      SILICIUM_SOLANA_PROGRAM_ID: ${SILICIUM_SOLANA_PROGRAM_ID:-A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2}
+      SILICIUM_SOLANA_WALLET: ${SILICIUM_SOLANA_WALLET:-/state/solana/id.json}
+      SILICIUM_P2P_GATEWAY: ${SILICIUM_P2P_GATEWAY:-http://127.0.0.1:5001}
+    ports:
+      - "${SILICIUM_WORLD_GOSSIP_PORT:-46000}:46000/udp"
+      - "${SILICIUM_WORLD_HTTP_PORT:-46001}:46001/tcp"
+    volumes:
+      - ..:/workspace:Z
+      - ${SILICIUM_WORLD_STATE_DIR:-../.silicium-world}:/state:Z
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+
+  silicium-world-solana:
+    build:
+      context: ..
+      dockerfile: infra/docker/solana-tools.Dockerfile
+    image: ${SILICIUM_WORLD_SOLANA_IMAGE:-silicium/world-solana-tools:local}
+    profiles:
+      - tools
+    working_dir: /workspace
+    security_opt:
+      - label=disable
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - sleep infinity
+    volumes:
+      - ..:/workspace:Z
+      - ${SILICIUM_WORLD_STATE_DIR:-../.silicium-world}:/state:Z

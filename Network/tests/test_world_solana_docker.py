@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = REPO_ROOT / "tools" / "world_solana_docker.py"
+BRIDGE_PATH = REPO_ROOT / "tools" / "solana_layer_bridge.cjs"
+UUID_SHIM_PATH = REPO_ROOT / "tools" / "node_uuid_cjs_shim.cjs"
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location("world_solana_docker", MODULE_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_build_tools_command_uses_docker_compose_helper_service() -> None:
+    module = _load_module()
+    cmd = module.build_tools_command("solana-keygen pubkey /state/solana/id.json")
+
+    assert cmd[:6] == [
+        "docker",
+        "compose",
+        "-f",
+        str(module.WORLD_COMPOSE),
+        "--profile",
+        "tools",
+    ]
+    assert "run" in cmd
+    assert module.TOOLS_SERVICE in cmd
+    assert cmd[-1] == "solana-keygen pubkey /state/solana/id.json"
+
+
+def test_build_node_command_targets_world_node_bootstrap_worker() -> None:
+    module = _load_module()
+    cmd = module.build_node_command(
+        "node",
+        "bootstrap-worker",
+        "--solana-rpc",
+        module.DEFAULT_RPC,
+    )
+
+    assert cmd[:4] == ["docker", "compose", "-f", str(module.WORLD_COMPOSE)]
+    assert module.NODE_SERVICE in cmd
+    assert "/workspace/silicium" in cmd
+    assert cmd[-4:] == [
+        "node",
+        "bootstrap-worker",
+        "--solana-rpc",
+        module.DEFAULT_RPC,
+    ]
+
+
+def test_parser_defaults_keep_wallet_inside_state_volume() -> None:
+    module = _load_module()
+    parser = module.build_parser()
+    args = parser.parse_args(["balance"])
+
+    assert args.wallet == "/state/solana/id.json"
+    assert args.rpc == "https://api.devnet.solana.com"
+
+
+def test_solana_bridge_register_worker_is_idempotent() -> None:
+    text = BRIDGE_PATH.read_text(encoding="utf-8")
+
+    assert 'request.op === "register_worker"' in text
+    assert 'getAccountInfo(worker, "confirmed")' in text
+    assert "already_registered: true" in text
+    assert "already_registered: false" in text
+
+
+def test_solana_bridge_uses_shared_uuid_cjs_shim() -> None:
+    bridge = BRIDGE_PATH.read_text(encoding="utf-8")
+    shim = UUID_SHIM_PATH.read_text(encoding="utf-8")
+
+    assert 'require(path.join(__dirname, "node_uuid_cjs_shim.cjs"))' in bridge
+    assert "request === \"uuid\"" in shim
+    assert "crypto.randomUUID" in shim

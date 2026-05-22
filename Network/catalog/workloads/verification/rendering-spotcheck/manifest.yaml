@@ -1,0 +1,57 @@
+id: verification/rendering-spotcheck/blender
+schema_version: 1
+version: 0.1.0
+engine: container
+command: >
+  blender -b {scene} -o {output_pattern} -f {frame} &&
+  python compare.py --reference {reference} --candidate {candidate} --out {report}
+resources:
+  cpu: 4
+  gpu: optional
+  memory: 4Gi
+  budget:
+    wall_sec: 300
+    cpu_sec: 400
+    memory: 4Gi
+taxonomy:
+  category: verification
+  domain: rendering
+  complexity: medium
+  resource_profile: gpu_optional
+  determinism: deterministic
+  tags:
+    - verification
+    - rendering
+    - spotcheck
+    - deterministic
+artifacts:
+  input:
+    - name: scene
+      type: application/octet-stream
+    - name: frame
+      type: text/plain
+    - name: reference
+      type: image/png
+  output:
+    - name: candidate
+      type: image/png
+    - name: report
+      type: application/json
+validation:
+  policy: requires_non_producer
+  metrics:
+    - name: psnr
+      threshold: 45
+payment:
+  unit: audit
+  estimated_cost: 0.0006
+presets:
+  - name: default
+    description: Single frame spotcheck.
+    vars:
+      scene: scene.blend
+      output_pattern: frame_
+      frame: 1
+      reference: reference.png
+      candidate: candidate.png
+      report: report.json

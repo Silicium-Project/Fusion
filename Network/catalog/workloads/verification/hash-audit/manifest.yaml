@@ -1,0 +1,46 @@
+id: verification/hash-audit/sha256
+schema_version: 1
+version: 0.1.0
+engine: container
+command: >
+  sha256sum {artifact} > computed.hash &&
+  diff -q computed.hash {expected_hash}
+resources:
+  cpu: 1
+  gpu: none
+  memory: 512Mi
+  budget:
+    wall_sec: 10
+    cpu_sec: 8
+    memory: 512Mi
+taxonomy:
+  category: verification
+  domain: integrity
+  complexity: low
+  resource_profile: cpu_light
+  determinism: deterministic
+  tags:
+    - verification
+    - audit
+    - hash
+    - deterministic
+artifacts:
+  input:
+    - name: artifact
+      type: application/octet-stream
+    - name: expected_hash
+      type: text/plain
+  output:
+    - name: audit_report
+      type: text/plain
+validation:
+  policy: requires_non_producer
+payment:
+  unit: audit
+  estimated_cost: 0.0001
+presets:
+  - name: default
+    description: Hash verification sample.
+    vars:
+      artifact: payload.bin
+      expected_hash: payload.sha256

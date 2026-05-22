@@ -1,0 +1,42 @@
+# Doxyfile 1.9.8
+
+PROJECT_NAME           = "Silicium Solana Layer"
+PROJECT_BRIEF          = "Anchor program for the Silicium distributed compute network"
+OUTPUT_DIRECTORY       = docs/generated/doxygen
+
+INPUT                  = programs/solana-layer/src \
+                         README.md \
+                         docs
+
+RECURSIVE              = YES
+FILE_PATTERNS          = *.rs *.md
+EXTENSION_MAPPING      = rs=C++
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+
+MARKDOWN_SUPPORT       = YES
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+
+HAVE_DOT               = YES
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+
+EXCLUDE_PATTERNS       = */target/* \
+                         */node_modules/* \
+                         */.anchor/* \
+                         */test-ledger/* \
+                         */migrations/*
+
+USE_MDFILE_AS_MAINPAGE = solanaLayer_documentation1.md

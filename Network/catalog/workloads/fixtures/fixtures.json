@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "verification/hash-audit/sha256",
+      "version": "0.1.0",
+      "path": "verification/hash-audit/v1/sample.txt",
+      "sha256": "6624000c8d0a3db28e317170060acb411dde91dc2d6c38799ccefbe794cc4c37"
+    },
+    {
+      "id": "calcul/libm/sin",
+      "version": "0.1.0",
+      "path": "calcul/libm/v1/sin-input.json",
+      "sha256": "a0f1295f76a3b3c5345b1ea58ac66baae13089a5f8fc35338337e70a70ba900e"
+    }
+  ]
+}

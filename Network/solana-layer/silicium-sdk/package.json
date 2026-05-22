@@ -1,0 +1,23 @@
+{
+  "name": "@silicium/solana-layer-sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Silicium Solana Anchor layer",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.31.1",
+    "@solana/spl-token": "^0.4.13",
+    "@solana/web3.js": "^1.98.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "resolutions": {
+    "serialize-javascript": "^7.0.5"
+  }
+}

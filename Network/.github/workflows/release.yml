@@ -1,0 +1,50 @@
+name: Create GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  tests:
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
+    uses: ./.github/workflows/tests.yml
+
+  release:
+    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
+    runs-on: ubuntu-latest
+    needs: [tests]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect prerelease keywords
+        id: meta
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ "$tag" =~ (alpha|beta|rc|pre|preview) ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          git log -1 --pretty=format:"%h %s" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,25 @@
+{
+  "id": "cpp.single_namespace_class",
+  "description": "Allow at most one namespace and one class/struct definition per src/include file.",
+  "severity": "warning",
+  "kind": "pattern_count",
+  "sanitize": "cpp",
+  "scope": {
+    "path_contains": [
+      "src",
+      "include"
+    ]
+  },
+  "patterns": [
+    {
+      "label": "namespace declaration",
+      "regex": "\\bnamespace\\b\\s*(?:[A-Za-z_]\\w*(?:\\s*::\\s*[A-Za-z_]\\w*)*)?\\s*\\{",
+      "max": 1
+    },
+    {
+      "label": "class/struct definition",
+      "regex": "\\b(?<!enum\\s)(class|struct)\\s+[A-Za-z_]\\w*\\s*(?:final\\s*)?(?:[^;{]*)\\{",
+      "max": 1
+    }
+  ]
+}

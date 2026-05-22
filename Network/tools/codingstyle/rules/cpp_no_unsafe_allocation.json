@@ -1,0 +1,53 @@
+{
+  "id": "cpp.no_unsafe_allocation",
+  "description": "Disallow raw allocation/deallocation in C++ (use RAII + smart pointers).",
+  "severity": "error",
+  "scope": {
+    "include": [
+      "**/*.cpp",
+      "**/*.hpp",
+      "**/*.h",
+      "**/*.cc",
+      "**/*.cxx"
+    ]
+  },
+  "patterns": [
+    {
+      "label": "new operator",
+      "regex": "\\bnew\\b",
+      "message": "Use std::make_unique/std::make_shared or RAII instead of raw 'new'."
+    },
+    {
+      "label": "delete operator",
+      "regex": "\\bdelete\\b",
+      "message": "Avoid raw 'delete'; use RAII-managed ownership."
+    },
+    {
+      "label": "malloc",
+      "regex": "\\bmalloc\\s*\\(",
+      "message": "Avoid malloc; use RAII containers or smart pointers."
+    },
+    {
+      "label": "calloc",
+      "regex": "\\bcalloc\\s*\\(",
+      "message": "Avoid calloc; use RAII containers or smart pointers."
+    },
+    {
+      "label": "realloc",
+      "regex": "\\brealloc\\s*\\(",
+      "message": "Avoid realloc; use RAII containers or smart pointers."
+    },
+    {
+      "label": "free",
+      "regex": "\\bfree\\s*\\(",
+      "message": "Avoid free; use RAII containers or smart pointers."
+    },
+    {
+      "label": "raw pointer declaration",
+      "regex": "(?m)^\\s*(?!return\\b)(?!if\\b)(?!for\\b)(?!while\\b)(?!switch\\b)(?!case\\b)(?:const\\s+)?(?:[A-Za-z_]\\w*::)*[A-Za-z_]\\w*\\s*\\*+\\s*[A-Za-z_]\\w*\\s*(?:[=,;\\[])",
+      "message": "Avoid raw pointers; use references or smart pointers to encapsulate ownership."
+    }
+  ],
+  "kind": "pattern_match",
+  "sanitize": "cpp"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "py.final_constant_upper_snake",
+  "description": "Final-annotated constants should be UPPER_SNAKE_CASE.",
+  "severity": "warning",
+  "kind": "py_final_constant_upper_snake",
+  "scope": {
+    "include": [
+      "**/*.py"
+    ]
+  }
+}

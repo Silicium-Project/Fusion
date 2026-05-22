@@ -1,0 +1,11 @@
+{
+  "id": "py.file_snake_case",
+  "description": "Python file names should be snake_case.",
+  "severity": "warning",
+  "kind": "py_file_snake_case",
+  "scope": {
+    "include": [
+      "**/*.py"
+    ]
+  }
+}
