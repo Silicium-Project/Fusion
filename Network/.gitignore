@@ -57,3 +57,9 @@ node_modules/
 .yarn/
 .yarn-cache/
 .yarn-install-state.gz
+
+# Frontend build outputs
+silicium-layer-dashboard/dist/
+
+# Legacy copied IDL. The canonical Anchor IDL lives in target/idl.
+solana-layer/idl/

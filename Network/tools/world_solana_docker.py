@@ -12,7 +12,7 @@ from typing import Sequence
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORLD_COMPOSE = REPO_ROOT / "infra" / "docker-compose.world.yml"
 DEFAULT_RPC = "https://api.devnet.solana.com"
-DEFAULT_PROGRAM_ID = "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2"
+DEFAULT_PROGRAM_ID = "AkAFDh9CpGHAoM7gL7zAZxdCJVV6bheBTidZEyZ4BMpA"
 DEFAULT_WALLET = "/state/solana/id.json"
 TOOLS_SERVICE = "silicium-world-solana"
 NODE_SERVICE = "silicium-world-node"

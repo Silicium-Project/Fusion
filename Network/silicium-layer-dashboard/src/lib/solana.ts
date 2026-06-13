@@ -1,7 +1,7 @@
 import { AnchorProvider, Program, Idl, Wallet } from "@coral-xyz/anchor";
 import { Connection, PublicKey, Keypair } from "@solana/web3.js";
 
-export const DEVNET_PROGRAM_ID = "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2";
+export const DEVNET_PROGRAM_ID = "AkAFDh9CpGHAoM7gL7zAZxdCJVV6bheBTidZEyZ4BMpA";
 export const DEVNET_RPC = "https://api.devnet.solana.com";
 export const EMPTY_PUBLIC_KEY = "11111111111111111111111111111111";
 

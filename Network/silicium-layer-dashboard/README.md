@@ -50,7 +50,7 @@ solana-layer/target/idl/solana_layer.json
 
 ```txt
 RPC URL    = https://api.devnet.solana.com
-Program ID = A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+Program ID = AkAFDh9CpGHAoM7gL7zAZxdCJVV6bheBTidZEyZ4BMpA
 ```
 
 4. Cliquer sur `Charger le Devnet`.

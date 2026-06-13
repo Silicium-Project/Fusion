@@ -21,7 +21,7 @@ import { SiliciumLayerSdk } from "../silicium-sdk/src";
 const DEVNET_RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const NETWORK_ROOT = path.resolve(__dirname, "..", "..");
 const PROGRAM_ID = new PublicKey(
-  process.env.SOLANA_LAYER_PROGRAM_ID ?? "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2",
+  process.env.SOLANA_LAYER_PROGRAM_ID ?? "AkAFDh9CpGHAoM7gL7zAZxdCJVV6bheBTidZEyZ4BMpA",
 );
 const REWARD_PER_FRAGMENT = new anchor.BN(process.env.SILICIUM_DEMO_REWARD_PER_FRAGMENT ?? "1000000");
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(process.env.SILICIUM_DEMO_VERIFIER_REWARD_PER_VOTE ?? "100000");
@@ -55,9 +55,7 @@ function readKeypair(filePath: string): Keypair {
 
 function loadIdl(): any {
   const candidates = [
-    path.resolve(process.cwd(), "idl/solana_layer.json"),
     path.resolve(process.cwd(), "target/idl/solana_layer.json"),
-    path.resolve(process.cwd(), "solana-layer/idl/solana_layer.json"),
     path.resolve(process.cwd(), "solana-layer/target/idl/solana_layer.json"),
   ];
   for (const candidate of candidates) {
@@ -67,7 +65,7 @@ function loadIdl(): any {
       return idl;
     }
   }
-  throw new Error("IDL not found. Expected solana-layer/idl/solana_layer.json or target/idl/solana_layer.json.");
+  throw new Error("IDL not found. Expected solana-layer/target/idl/solana_layer.json or target/idl/solana_layer.json.");
 }
 
 function stableStringify(value: any): string {

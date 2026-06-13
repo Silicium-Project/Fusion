@@ -46,7 +46,6 @@ function readKeypairPubkey(filePath) {
 
 function loadIdl(programId) {
   const candidates = [
-    path.join(solanaLayerDir, "idl", "solana_layer.json"),
     path.join(solanaLayerDir, "target", "idl", "solana_layer.json"),
     path.join(repoRoot, "target", "idl", "solana_layer.json"),
   ];
