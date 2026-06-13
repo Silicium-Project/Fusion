@@ -19,6 +19,7 @@ export interface JobView {
   status: string;
   client?: string;
   mint?: string;
+  createdAtUnix?: number;
   expectedFragments: number;
   verifiedFragments: number;
   rewardPerFragment?: number;
@@ -39,6 +40,19 @@ export interface FragmentView {
   requiredStake: number;
   yesVotes?: number;
   noVotes?: number;
+  resultHash?: string;
+  proofRef?: string;
+  complexityScore?: number;
+}
+
+export interface FragmentResolutionView {
+  pubkey: string;
+  fragment: string;
+  round: number;
+  resolved: boolean;
+  winningChoice: boolean;
+  eligibleRewards: number;
+  claimedRewards: number;
 }
 
 export interface VoteView {
@@ -81,6 +95,7 @@ export interface LayerSnapshot {
     fragments: number;
     workers: number;
     votes: number;
+    fragmentResolutions: number;
     splitProposals: number;
     stakingPool: number;
     networkStakers: number;
@@ -89,6 +104,7 @@ export interface LayerSnapshot {
   fragments: FragmentView[];
   workers: WorkerView[];
   votes: VoteView[];
+  fragmentResolutions: FragmentResolutionView[];
   splitProposals: SplitProposalView[];
   networkStakers: NetworkStakerView[];
   stakingPools: StakingPoolView[];

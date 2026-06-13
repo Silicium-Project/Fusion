@@ -17,6 +17,40 @@ use crate::{
     },
 };
 
+fn compute_budget_total(job: &Job) -> Result<u64> {
+    job.deposited_amount
+        .checked_sub(job.verifier_reward_budget)
+        .ok_or(SiliciumError::InvalidParams.into())
+}
+
+fn compute_paid_amount(job: &Job) -> Result<u64> {
+    job.paid_amount
+        .checked_sub(job.claimed_verifier_rewards_total)
+        .ok_or(SiliciumError::InvalidParams.into())
+}
+
+fn next_compute_reward(job: &Job) -> Result<u64> {
+    let remaining_fragments = job
+        .expected_fragments
+        .checked_sub(job.verified_fragments)
+        .ok_or(SiliciumError::InvalidParams)?;
+    require!(remaining_fragments > 0, SiliciumError::InvalidParams);
+
+    let remaining_budget = compute_budget_total(job)?
+        .checked_sub(compute_paid_amount(job)?)
+        .ok_or(SiliciumError::InvalidParams)?;
+
+    Ok(remaining_budget / remaining_fragments as u64)
+}
+
+fn verifier_reward_per_eligible_vote(job: &Job) -> Result<u64> {
+    let expected_votes = (job.expected_fragments as u64)
+        .checked_mul(job.fragment_quorum as u64)
+        .ok_or(SiliciumError::InvalidParams)?;
+    require!(expected_votes > 0, SiliciumError::InvalidParams);
+    Ok(job.verifier_reward_budget / expected_votes)
+}
+
 #[derive(Accounts)]
 pub struct VoteFragment<'info> {
     #[account(mut)]
@@ -212,8 +246,9 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
 
     let quorum = fragment.required_quorum;
 
+    let verifier_reward_per_vote = verifier_reward_per_eligible_vote(job)?;
     let round_verifier_claimable = (quorum as u64)
-        .checked_mul(job.verifier_reward_per_vote)
+        .checked_mul(verifier_reward_per_vote)
         .ok_or(SiliciumError::InvalidParams)?;
 
     if fragment.yes_votes >= quorum {
@@ -227,7 +262,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             SiliciumError::InsufficientVerifierBudget
         );
 
-        let worker_reward = job.reward_per_fragment;
+        let worker_reward = next_compute_reward(job)?;
 
         let total_needed_now = worker_reward
             .checked_add(round_verifier_claimable)
@@ -284,7 +319,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             worker: fragment.worker,
             verifier: ctx.accounts.verifier.key(),
             worker_reward,
-            verifier_reward_per_vote: job.verifier_reward_per_vote,
+            verifier_reward_per_vote,
             eligible_verifier_rewards: quorum,
             yes_votes: fragment.yes_votes,
             round: fragment.round,
@@ -328,7 +363,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             fragment_index: fragment.fragment_index,
             worker: fragment.worker,
             verifier: ctx.accounts.verifier.key(),
-            verifier_reward_per_vote: job.verifier_reward_per_vote,
+            verifier_reward_per_vote,
             eligible_verifier_rewards: quorum,
             no_votes: fragment.no_votes,
             round: fragment.round,

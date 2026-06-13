@@ -14,6 +14,14 @@ use crate::{
     },
 };
 
+fn verifier_reward_per_eligible_vote(job: &Job) -> Result<u64> {
+    let expected_votes = (job.expected_fragments as u64)
+        .checked_mul(job.fragment_quorum as u64)
+        .ok_or(SiliciumError::InvalidParams)?;
+    require!(expected_votes > 0, SiliciumError::InvalidParams);
+    Ok(job.verifier_reward_budget / expected_votes)
+}
+
 #[derive(Accounts)]
 pub struct ClaimVerifierReward<'info> {
     #[account(mut)]
@@ -132,7 +140,17 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
         SiliciumError::VoteNotEligibleForReward
     );
 
-    let reward = job.verifier_reward_per_vote;
+    let reward = verifier_reward_per_eligible_vote(job)?;
+
+    let next_claimed_total = job
+        .claimed_verifier_rewards_total
+        .checked_add(reward)
+        .ok_or(SiliciumError::InvalidParams)?;
+
+    require!(
+        next_claimed_total <= job.claimable_verifier_rewards_total,
+        SiliciumError::InsufficientVerifierBudget
+    );
 
     require!(
         ctx.accounts.escrow.amount >= reward,
@@ -161,8 +179,7 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
     round_resolution.claimed_rewards =
         round_resolution.claimed_rewards.saturating_add(1);
 
-    job.claimed_verifier_rewards_total =
-        job.claimed_verifier_rewards_total.saturating_add(reward);
+    job.claimed_verifier_rewards_total = next_claimed_total;
 
     job.paid_amount = job.paid_amount.saturating_add(reward);
 

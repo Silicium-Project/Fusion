@@ -104,6 +104,9 @@ pub fn handler(
         SiliciumError::InsufficientVerifierBudget
     );
 
+    // Fixed-price model: this is the compute budget deposited at job creation.
+    // If the network later splits fragments recursively, the budget is divided
+    // across the resulting leaf fragments instead of increasing the client price.
     let worker_total_u128 = (expected_fragments as u128)
         .checked_mul(reward_per_fragment as u128)
         .ok_or(SiliciumError::InvalidParams)?;

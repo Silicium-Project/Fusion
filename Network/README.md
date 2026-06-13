@@ -265,7 +265,7 @@ Badge (local) : ![Badge](docs/coverage/worker/badge.svg)
 Badge (Pages si public) : `https://silicium-project.github.io/Network/worker/badge.svg`
 
 <!-- worker-coverage:start -->
-- AperÃ§u : [![worker coverage](.\docs\coverage\worker\snapshot.svg "Lignes 86.7 %, fonctions 92.9 %, branches 50.2 %")](.\docs\coverage\worker\index.html)
+- Aperçu : [![worker coverage](.\docs\coverage\worker\snapshot.svg "Lignes 86.7 %, fonctions 92.9 %, branches 50.2 %")](.\docs\coverage\worker\index.html)
 <!-- worker-coverage:end -->
 - Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html` (ou Pages si accessible)
 - Résumé JSON : `docs/coverage/worker/coverage-summary.json` (ou Pages si accessible)
@@ -760,11 +760,11 @@ Flux simplifié : l'UI appelle JobRegistry pour créer un job + escrow SPL →
 
 ---
 
-RÃ©fÃ©rence JobRegistry (spec + threat model) : `docs/job-registry-contract-spec.md`.
-RÃ©fÃ©rence Payment contract (token/credit accounting) : `docs/payment-contract-accounting-spec.md`.
-RÃ©fÃ©rence JupiterNotebook (flow + blockchain integration) : `docs/notebook-blockchain-integration-plan.md`.
-RÃ©fÃ©rence splitter extension seams (interfaces + factories) : `docs/architecture/splitter-extension-seams.md`.
-RÃ©fÃ©rence executor extension seams (backend/runner/hash boundaries) : `docs/architecture/executor-extension-seams.md`.
+Référence JobRegistry (spec + threat model) : `docs/job-registry-contract-spec.md`.
+Référence Payment contract (token/credit accounting) : `docs/payment-contract-accounting-spec.md`.
+Référence JupiterNotebook (flow + blockchain integration) : `docs/notebook-blockchain-integration-plan.md`.
+Référence splitter extension seams (interfaces + factories) : `docs/architecture/splitter-extension-seams.md`.
+Référence executor extension seams (backend/runner/hash boundaries) : `docs/architecture/executor-extension-seams.md`.
 
 ## Interface web & API (esquisse)
 

@@ -21,6 +21,7 @@ import platform
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -34,6 +35,10 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
+RENDER3D_COMPUTE_WORKLOAD = "calcul/rendering/demo-render3d"
+RENDER3D_VERIFY_WORKLOAD = "verification/rendering/demo-render3d"
+RENDER3D_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/demo-render3d-fragment"
+RENDER3D_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/demo-render3d-fragment"
 NETWORK_ROLES = frozenset({"compute", "verify", "storage", "audit", "resource"})
 REQUEST_ROLES = frozenset({"audit", "resource", "verify", "storage", "compute"})
 WORLD_DEFAULT_GOSSIP_PORT = 46000
@@ -553,6 +558,10 @@ class RoleRuntime:
         return self.run_compute_task(envelope, task, p2p_data, p2p_meta)
 
     def run_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        if str(task.get("workload", "")).strip() == RENDER3D_COMPUTE_WORKLOAD:
+            return self.run_render3d_compute_task(envelope, task, p2p_data, p2p_meta)
+        if str(task.get("workload", "")).strip() == RENDER3D_FRAGMENT_COMPUTE_WORKLOAD:
+            return self.run_render3d_fragment_compute_task(envelope, task, p2p_data, p2p_meta)
         worker_result = self.try_worker_binary(task)
         material = {
             "task": task,
@@ -565,6 +574,132 @@ class RoleRuntime:
             "input_hash": sha256_bytes(p2p_data),
             "compute": worker_result,
             "result_hash": sha256_json(material),
+        }
+
+    def run_render3d_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        if not p2p_data:
+            raise ValueError("render3d_missing_scene_payload")
+        script = Path(__file__).resolve().parents[1] / "demo" / "render3d" / "render3d_demo.py"
+        if not script.exists():
+            raise FileNotFoundError(f"render3d_worker_not_found:{script}")
+        timeout_s = int(task.get("timeout_s", 120) or 120)
+        with tempfile.TemporaryDirectory(prefix="silicium-render3d-") as tmpdir:
+            tmp = Path(tmpdir)
+            scene_path = tmp / "scene.json"
+            output_path = tmp / "render.ppm"
+            result_path = tmp / "result.json"
+            scene_path.write_bytes(p2p_data)
+            cmd = [
+                sys.executable,
+                str(script),
+                "worker-run",
+                "--scene",
+                str(scene_path),
+                "--output",
+                str(output_path),
+                "--result-json",
+                str(result_path),
+            ]
+            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s, check=False)
+            if completed.returncode != 0:
+                raise RuntimeError(f"render3d_worker_failed:{completed.stderr[-2048:]}")
+            result = read_json(result_path, {})
+            if not isinstance(result, dict):
+                raise RuntimeError("render3d_worker_bad_result")
+            output_bytes = output_path.read_bytes()
+            output_ref = self.p2p.put_local(output_bytes, replication_roles={"storage"})
+        result_hash = str(result.get("result_sha256") or sha256_bytes(output_bytes))
+        expected = str(task.get("expected_result_sha256") or "").removeprefix("sha256:")
+        return {
+            "role_result": "compute",
+            "workload": RENDER3D_COMPUTE_WORKLOAD,
+            "input": p2p_meta,
+            "input_hash": sha256_bytes(p2p_data),
+            "result_hash": result_hash,
+            "expected_result_hash": expected,
+            "expected_match": (not expected) or expected == result_hash,
+            "output_ref": output_ref,
+            "output_format": result.get("result_format", "ppm/p6"),
+            "renderer": {
+                "mode": "demo-render3d",
+                "returncode": completed.returncode,
+                "stdout": completed.stdout[-4096:],
+                "stderr": completed.stderr[-4096:],
+            },
+        }
+
+    def _render3d_fragment_spec(self, task: dict[str, Any], p2p_data: bytes) -> dict[str, Any]:
+        spec: dict[str, Any] = {}
+        if p2p_data:
+            parsed = json.loads(p2p_data.decode("utf-8"))
+            if isinstance(parsed, dict):
+                spec.update(parsed)
+        spec.update({key: value for key, value in task.items() if key in {"fragment_index", "fragment_count", "y_start", "y_end", "scene_p2p_ref"}})
+        if "scene_p2p_ref" not in spec:
+            raise ValueError("render3d_fragment_missing_scene_ref")
+        return spec
+
+    def run_render3d_fragment_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        spec = self._render3d_fragment_spec(task, p2p_data)
+        scene_data, scene_meta = self.p2p.fetch(spec.get("scene_p2p_ref"))
+        script = Path(__file__).resolve().parents[1] / "demo" / "render3d" / "render3d_demo.py"
+        if not script.exists():
+            raise FileNotFoundError(f"render3d_worker_not_found:{script}")
+        timeout_s = int(task.get("timeout_s", 120) or 120)
+        y_start = int(spec.get("y_start", 0) or 0)
+        y_end = int(spec.get("y_end", 0) or 0)
+        with tempfile.TemporaryDirectory(prefix="silicium-render3d-fragment-") as tmpdir:
+            tmp = Path(tmpdir)
+            scene_path = tmp / "scene.json"
+            output_path = tmp / "fragment.ppm"
+            result_path = tmp / "result.json"
+            scene_path.write_bytes(scene_data)
+            cmd = [
+                sys.executable,
+                str(script),
+                "worker-run",
+                "--scene",
+                str(scene_path),
+                "--output",
+                str(output_path),
+                "--result-json",
+                str(result_path),
+                "--y-start",
+                str(y_start),
+                "--y-end",
+                str(y_end),
+            ]
+            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s, check=False)
+            if completed.returncode != 0:
+                raise RuntimeError(f"render3d_fragment_worker_failed:{completed.stderr[-2048:]}")
+            result = read_json(result_path, {})
+            if not isinstance(result, dict):
+                raise RuntimeError("render3d_fragment_worker_bad_result")
+            output_bytes = output_path.read_bytes()
+            output_ref = self.p2p.put_local(output_bytes, replication_roles={"storage"})
+        result_hash = str(result.get("result_sha256") or sha256_bytes(output_bytes))
+        expected = str(task.get("expected_result_sha256") or spec.get("expected_result_sha256") or "").removeprefix("sha256:")
+        return {
+            "role_result": "compute",
+            "workload": RENDER3D_FRAGMENT_COMPUTE_WORKLOAD,
+            "input": p2p_meta,
+            "scene_input": scene_meta,
+            "input_hash": sha256_bytes(p2p_data),
+            "fragment_index": int(spec.get("fragment_index", 0) or 0),
+            "fragment_count": int(spec.get("fragment_count", 1) or 1),
+            "y_start": y_start,
+            "y_end": y_end,
+            "result_hash": result_hash,
+            "expected_result_hash": expected,
+            "expected_match": (not expected) or expected == result_hash,
+            "output_ref": output_ref,
+            "output_format": result.get("result_format", "ppm/p6"),
+            "renderer": {
+                "mode": "demo-render3d-fragment",
+                "returncode": completed.returncode,
+                "stdout": completed.stdout[-4096:],
+                "stderr": completed.stderr[-4096:],
+            },
         }
 
     def try_worker_binary(self, task: dict[str, Any]) -> dict[str, Any]:
@@ -627,6 +762,10 @@ class RoleRuntime:
         }
 
     def run_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        if str(task.get("workload", "")).strip() == RENDER3D_VERIFY_WORKLOAD:
+            return self.run_render3d_verify_task(envelope, task, p2p_data, p2p_meta)
+        if str(task.get("workload", "")).strip() == RENDER3D_FRAGMENT_VERIFY_WORKLOAD:
+            return self.run_render3d_fragment_verify_task(envelope, task, p2p_data, p2p_meta)
         actual = sha256_bytes(p2p_data)
         expected = str(task.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
         passed = not expected or expected == actual
@@ -638,6 +777,126 @@ class RoleRuntime:
             "verified": passed,
             "choice": passed,
             "result_hash": sha256_json({"verified": passed, "actual": actual, "expected": expected}),
+        }
+
+    def run_render3d_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        if not p2p_data:
+            raise ValueError("render3d_missing_result_payload")
+        scene_ref = task.get("scene_p2p_ref") or envelope.get("scene_p2p_ref")
+        if not isinstance(scene_ref, dict):
+            raise ValueError("render3d_missing_scene_ref")
+        scene_data, scene_meta = self.p2p.fetch(scene_ref)
+        script = Path(__file__).resolve().parents[1] / "demo" / "render3d" / "render3d_demo.py"
+        if not script.exists():
+            raise FileNotFoundError(f"render3d_worker_not_found:{script}")
+        timeout_s = int(task.get("timeout_s", 120) or 120)
+        with tempfile.TemporaryDirectory(prefix="silicium-render3d-verify-") as tmpdir:
+            tmp = Path(tmpdir)
+            scene_path = tmp / "scene.json"
+            expected_output_path = tmp / "expected.ppm"
+            result_path = tmp / "expected.json"
+            scene_path.write_bytes(scene_data)
+            cmd = [
+                sys.executable,
+                str(script),
+                "worker-run",
+                "--scene",
+                str(scene_path),
+                "--output",
+                str(expected_output_path),
+                "--result-json",
+                str(result_path),
+            ]
+            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s, check=False)
+            if completed.returncode != 0:
+                raise RuntimeError(f"render3d_verify_worker_failed:{completed.stderr[-2048:]}")
+            expected_bytes = expected_output_path.read_bytes()
+        actual = sha256_bytes(p2p_data)
+        recomputed = sha256_bytes(expected_bytes)
+        declared = str(task.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
+        passed = actual == recomputed and ((not declared) or declared == actual)
+        return {
+            "role_result": "verify",
+            "workload": RENDER3D_VERIFY_WORKLOAD,
+            "input": p2p_meta,
+            "scene": scene_meta,
+            "input_hash": actual,
+            "recomputed_hash": recomputed,
+            "expected_hash": declared,
+            "verified": passed,
+            "choice": passed,
+            "result_hash": sha256_json({"verified": passed, "actual": actual, "recomputed": recomputed, "expected": declared}),
+            "renderer": {
+                "mode": "demo-render3d-verify",
+                "returncode": completed.returncode,
+                "stdout": completed.stdout[-4096:],
+                "stderr": completed.stderr[-4096:],
+            },
+        }
+
+    def run_render3d_fragment_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        if not p2p_data:
+            raise ValueError("render3d_fragment_missing_result_payload")
+        scene_ref = task.get("scene_p2p_ref") or envelope.get("scene_p2p_ref")
+        if not isinstance(scene_ref, dict):
+            raise ValueError("render3d_fragment_missing_scene_ref")
+        scene_data, scene_meta = self.p2p.fetch(scene_ref)
+        script = Path(__file__).resolve().parents[1] / "demo" / "render3d" / "render3d_demo.py"
+        if not script.exists():
+            raise FileNotFoundError(f"render3d_worker_not_found:{script}")
+        timeout_s = int(task.get("timeout_s", 120) or 120)
+        y_start = int(task.get("y_start", 0) or 0)
+        y_end = int(task.get("y_end", 0) or 0)
+        with tempfile.TemporaryDirectory(prefix="silicium-render3d-fragment-verify-") as tmpdir:
+            tmp = Path(tmpdir)
+            scene_path = tmp / "scene.json"
+            expected_output_path = tmp / "expected-fragment.ppm"
+            result_path = tmp / "expected.json"
+            scene_path.write_bytes(scene_data)
+            cmd = [
+                sys.executable,
+                str(script),
+                "worker-run",
+                "--scene",
+                str(scene_path),
+                "--output",
+                str(expected_output_path),
+                "--result-json",
+                str(result_path),
+                "--y-start",
+                str(y_start),
+                "--y-end",
+                str(y_end),
+            ]
+            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s, check=False)
+            if completed.returncode != 0:
+                raise RuntimeError(f"render3d_fragment_verify_worker_failed:{completed.stderr[-2048:]}")
+            expected_bytes = expected_output_path.read_bytes()
+        actual = sha256_bytes(p2p_data)
+        recomputed = sha256_bytes(expected_bytes)
+        declared = str(task.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
+        passed = actual == recomputed and ((not declared) or declared == actual)
+        return {
+            "role_result": "verify",
+            "workload": RENDER3D_FRAGMENT_VERIFY_WORKLOAD,
+            "input": p2p_meta,
+            "scene": scene_meta,
+            "fragment_index": int(task.get("fragment_index", 0) or 0),
+            "fragment_count": int(task.get("fragment_count", 1) or 1),
+            "y_start": y_start,
+            "y_end": y_end,
+            "input_hash": actual,
+            "recomputed_hash": recomputed,
+            "expected_hash": declared,
+            "verified": passed,
+            "choice": passed,
+            "result_hash": sha256_json({"verified": passed, "actual": actual, "recomputed": recomputed, "expected": declared}),
+            "renderer": {
+                "mode": "demo-render3d-fragment-verify",
+                "returncode": completed.returncode,
+                "stdout": completed.stdout[-4096:],
+                "stderr": completed.stderr[-4096:],
+            },
         }
 
     def run_resource_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 import { Idl } from "@coral-xyz/anchor";
-import { DEVNET_PROGRAM_ID, DEVNET_RPC, enumName, makeReadonlyProgram, safeAll, toBase58, toNum } from "./solana";
-import type { FragmentView, JobView, LayerSnapshot, NetworkStakerView, SplitProposalView, StakingPoolView, VoteView, WorkerView } from "./types";
+import { DEVNET_PROGRAM_ID, DEVNET_RPC, bytesToHex, emptyKeyToUndefined, enumName, makeReadonlyProgram, safeAll, toBase58, toNum } from "./solana";
+import type { FragmentResolutionView, FragmentView, JobView, LayerSnapshot, NetworkStakerView, SplitProposalView, StakingPoolView, VoteView, WorkerView } from "./types";
 
 function rolesFromAccount(acc: any): string[] {
   const roles = toNum(acc.roles ?? acc.roleFlags ?? acc.roleMask);
@@ -38,6 +38,7 @@ function mapJob(row: any): JobView {
     status: enumName(a.status),
     client: toBase58(a.client),
     mint: toBase58(a.mint),
+    createdAtUnix: toNum(a.createdAtUnix ?? a.created_at_unix),
     expectedFragments: toNum(a.expectedFragments),
     verifiedFragments: toNum(a.verifiedFragments),
     rewardPerFragment: toNum(a.rewardPerFragment),
@@ -50,7 +51,7 @@ function mapFragment(row: any): FragmentView {
   return {
     pubkey: row.publicKey.toBase58(),
     job: toBase58(a.job),
-    parentFragment: toBase58(a.parentFragment) || undefined,
+    parentFragment: emptyKeyToUndefined(a.parentFragment),
     fragmentIndex: toNum(a.fragmentIndex),
     status: enumName(a.status),
     isLeaf: Boolean(a.isLeaf ?? true),
@@ -61,6 +62,22 @@ function mapFragment(row: any): FragmentView {
     requiredStake: toNum(a.requiredStake),
     yesVotes: toNum(a.yesVotes),
     noVotes: toNum(a.noVotes),
+    resultHash: bytesToHex(a.resultHash ?? a.result_hash),
+    proofRef: bytesToHex(a.proofRef ?? a.proof_ref),
+    complexityScore: toNum(a.complexityScore ?? a.complexity_score),
+  };
+}
+
+function mapFragmentResolution(row: any): FragmentResolutionView {
+  const a = row.account;
+  return {
+    pubkey: row.publicKey.toBase58(),
+    fragment: toBase58(a.fragment),
+    round: toNum(a.round),
+    resolved: Boolean(a.resolved),
+    winningChoice: Boolean(a.winningChoice ?? a.winning_choice),
+    eligibleRewards: toNum(a.eligibleRewards ?? a.eligible_rewards),
+    claimedRewards: toNum(a.claimedRewards ?? a.claimed_rewards),
   };
 }
 
@@ -117,11 +134,12 @@ export async function fetchLayerSnapshot(params: {
   const programId = params.programId || DEVNET_PROGRAM_ID;
   const program = makeReadonlyProgram(params.idl, rpcUrl, programId) as any;
 
-  const [workerRows, jobRows, fragmentRows, voteRows, splitRows, stakerRows, poolRows] = await Promise.all([
+  const [workerRows, jobRows, fragmentRows, voteRows, resolutionRows, splitRows, stakerRows, poolRows] = await Promise.all([
     safeAll(program, "worker"),
     safeAll(program, "job"),
     safeAll(program, "fragment"),
     safeAll(program, "fragmentVote"),
+    safeAll(program, "fragmentResolution"),
     safeAll(program, "splitProposal"),
     safeAll(program, "networkStaker"),
     safeAll(program, "stakingPool"),
@@ -131,6 +149,7 @@ export async function fetchLayerSnapshot(params: {
   const jobs = jobRows.map(mapJob);
   const fragments = fragmentRows.map(mapFragment);
   const votes = voteRows.map(mapVote);
+  const fragmentResolutions = resolutionRows.map(mapFragmentResolution);
   const splitProposals = splitRows.map(mapSplit);
   const networkStakers = stakerRows.map(mapNetworkStaker);
   const stakingPools = poolRows.map(mapPool);
@@ -143,6 +162,7 @@ export async function fetchLayerSnapshot(params: {
       fragments: fragments.length,
       workers: workers.length,
       votes: votes.length,
+      fragmentResolutions: fragmentResolutions.length,
       splitProposals: splitProposals.length,
       stakingPool: stakingPools.length,
       networkStakers: networkStakers.length,
@@ -151,6 +171,7 @@ export async function fetchLayerSnapshot(params: {
     fragments,
     workers,
     votes,
+    fragmentResolutions,
     splitProposals,
     networkStakers,
     stakingPools,

@@ -6,6 +6,7 @@ export function StatCards({ snapshot }: { snapshot: LayerSnapshot }) {
     ["Fragments", snapshot.stats.fragments],
     ["Workers", snapshot.stats.workers],
     ["Votes", snapshot.stats.votes],
+    ["Resolutions", snapshot.stats.fragmentResolutions],
     ["Splits", snapshot.stats.splitProposals],
     ["Stakers", snapshot.stats.networkStakers],
   ];

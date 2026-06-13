@@ -18,7 +18,12 @@ pub struct Job {
     pub expected_fragments: u32,
     pub verified_fragments: u32,
 
+    /// Budget compute de base au moment de la creation du job.
+    /// En cas de split, le prix client reste fixe et ce budget est reparti
+    /// dynamiquement entre les fragments leaf restants.
     pub reward_per_fragment: u64,
+    /// Montant de reference fourni par le client. Le paiement effectif par vote
+    /// est derive du verifier_reward_budget fixe et du nombre de votes attendus.
     pub verifier_reward_per_vote: u64,
     pub verifier_reward_budget: u64,
 

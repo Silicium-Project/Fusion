@@ -1,11 +1,9 @@
 import { AnchorProvider, Program, Idl, Wallet } from "@coral-xyz/anchor";
 import { Connection, PublicKey, Keypair } from "@solana/web3.js";
 
-export const DEVNET_PROGRAM_ID = "4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP";
+export const DEVNET_PROGRAM_ID = "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2";
 export const DEVNET_RPC = "https://api.devnet.solana.com";
-export const LOCALNET_RPC = "http://127.0.0.1:8899";
-
-export type ClusterName = "devnet" | "localnet" | "custom";
+export const EMPTY_PUBLIC_KEY = "11111111111111111111111111111111";
 
 class ReadonlyWallet implements Wallet {
   readonly payer = Keypair.generate();
@@ -25,11 +23,16 @@ export function makeConnection(rpcUrl: string): Connection {
 }
 
 export function makeReadonlyProgram(idl: Idl, rpcUrl: string, programId: string): Program {
+  const resolvedProgramId = new PublicKey(programId).toBase58();
+  const idlWithAddress = {
+    ...idl,
+    address: resolvedProgramId,
+  } as Idl;
   const connection = makeConnection(rpcUrl);
   const provider = new AnchorProvider(connection, new ReadonlyWallet(), {
     commitment: "confirmed",
   });
-  return new Program(idl, provider);
+  return new Program(idlWithAddress, provider);
 }
 
 export function toPublicKey(value: string): PublicKey | null {
@@ -67,11 +70,23 @@ export function toNum(value: any): number {
   return 0;
 }
 
+export function bytesToHex(value: any): string {
+  const bytes = Array.isArray(value) ? value : Array.from(value || []);
+  if (!bytes.length) return "";
+  return bytes.map((byte: any) => Number(byte).toString(16).padStart(2, "0")).join("");
+}
+
 export function toBase58(value: any): string {
   if (!value) return "";
   if (typeof value === "string") return value;
   if (typeof value.toBase58 === "function") return value.toBase58();
   return String(value);
+}
+
+export function emptyKeyToUndefined(value: any): string | undefined {
+  const base58 = toBase58(value);
+  if (!base58 || base58 === EMPTY_PUBLIC_KEY) return undefined;
+  return base58;
 }
 
 export async function safeAll(program: any, accountName: string): Promise<Array<{ publicKey: PublicKey; account: any }>> {

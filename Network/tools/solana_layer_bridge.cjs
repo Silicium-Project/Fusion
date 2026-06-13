@@ -46,6 +46,7 @@ function readKeypairPubkey(filePath) {
 
 function loadIdl(programId) {
   const candidates = [
+    path.join(solanaLayerDir, "idl", "solana_layer.json"),
     path.join(solanaLayerDir, "target", "idl", "solana_layer.json"),
     path.join(repoRoot, "target", "idl", "solana_layer.json"),
   ];
@@ -184,6 +185,52 @@ async function handle(request) {
       proofRef: hash32(params.proof_ref || params.proofRef, "proof_ref"),
     });
     signatures.push(signature);
+    return { signatures, accounts };
+  }
+
+  if (request.op === "propose_fragment_split") {
+    const result = await layer.proposeFragmentSplit({
+      job: publicKey(params.job, "job"),
+      parentFragment: params.parent_fragment || params.parentFragment ? publicKey(params.parent_fragment || params.parentFragment, "parent_fragment") : undefined,
+      parentFragmentIndex: Number(params.parent_fragment_index ?? params.parentFragmentIndex ?? params.fragment_index ?? params.fragmentIndex),
+      manifestHash: hash32(params.manifest_hash || params.manifestHash, "manifest_hash"),
+      childCount: Number(params.child_count ?? params.childCount),
+      round: params.round === undefined || params.round === null ? undefined : Number(params.round),
+    });
+    signatures.push(result.signature);
+    accounts = resultAccounts(result);
+    return { signatures, accounts };
+  }
+
+  if (request.op === "approve_fragment_split") {
+    const result = await layer.approveFragmentSplit({
+      job: publicKey(params.job, "job"),
+      parentFragment: params.parent_fragment || params.parentFragment ? publicKey(params.parent_fragment || params.parentFragment, "parent_fragment") : undefined,
+      parentFragmentIndex: Number(params.parent_fragment_index ?? params.parentFragmentIndex ?? params.fragment_index ?? params.fragmentIndex),
+      splitProposal: params.split_proposal || params.splitProposal ? publicKey(params.split_proposal || params.splitProposal, "split_proposal") : undefined,
+      approve: params.approve !== false,
+      round: params.round === undefined || params.round === null ? undefined : Number(params.round),
+    });
+    signatures.push(result.signature);
+    accounts = resultAccounts(result);
+    return { signatures, accounts };
+  }
+
+  if (request.op === "create_sub_fragment") {
+    const result = await layer.createSubFragment({
+      job: publicKey(params.job, "job"),
+      parentFragment: params.parent_fragment || params.parentFragment ? publicKey(params.parent_fragment || params.parentFragment, "parent_fragment") : undefined,
+      parentFragmentIndex: Number(params.parent_fragment_index ?? params.parentFragmentIndex),
+      splitProposal: params.split_proposal || params.splitProposal ? publicKey(params.split_proposal || params.splitProposal, "split_proposal") : undefined,
+      childFragmentIndex: Number(params.child_fragment_index ?? params.childFragmentIndex),
+      requiredComputeReputation: params.required_compute_reputation ?? params.requiredComputeReputation ?? 1500,
+      requiredStake: params.required_stake ?? params.requiredStake ?? 1,
+      complexityScore: Number(params.complexity_score ?? params.complexityScore ?? 1000),
+      inputHash: hash32(params.input_hash || params.inputHash, "input_hash"),
+      round: params.round === undefined || params.round === null ? undefined : Number(params.round),
+    });
+    signatures.push(result.signature);
+    accounts = resultAccounts(result);
     return { signatures, accounts };
   }
 
