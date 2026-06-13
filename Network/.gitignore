@@ -45,7 +45,11 @@ infra/secure-stack/wireguard/config/
 
 
 # Anchor / Solana / Rust
+# Anchor / Solana / Rust
 **/target/
+!Network/solana-layer/target/
+!Network/solana-layer/target/idl/
+!Network/solana-layer/target/idl/solana_layer.json
 .target/
 Cargo.lock
 .anchor/
