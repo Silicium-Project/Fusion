@@ -5,10 +5,21 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from networked.networked_runtime import (  # noqa: E402
+    NetworkedOrchestrator,
+    best_shared_ref,
+    fetch_network_content,
+    store_network_file,
+    store_network_content,
+    wait_for_result as wait_for_network_result,
+)
 
 from render3d_demo import (
     DEFAULT_OUTPUT_ROOT,
@@ -124,10 +135,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--reuse-job-dir", action="store_true")
     parser.add_argument("--priority", default="high", choices=["low", "normal", "high", "urgent"])
     parser.add_argument("--p2p-gateway", default="http://127.0.0.1:5001")
-    parser.add_argument("--node-mode", default="auto", choices=["auto", "cli", "inline"])
+    parser.add_argument("--node-mode", default="auto", choices=["auto", "cli", "inline", "network"])
     parser.add_argument("--node-sweeps", type=int, default=30)
     parser.add_argument("--result-timeout-s", type=float, default=60.0)
     parser.add_argument("--node-timeout-s", type=float, default=60.0)
+    parser.add_argument("--network-node-id", default="demo-orchestrator")
+    parser.add_argument("--network-bind", default="0.0.0.0")
+    parser.add_argument("--network-port", type=int, default=46100)
+    parser.add_argument("--network-advertise-host", default="127.0.0.1")
+    parser.add_argument("--network-advertise-port", type=int, default=46100)
+    parser.add_argument("--network-seed-peers", default="")
+    parser.add_argument("--network-mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", "demo-mesh"))
+    parser.add_argument("--network-start-orchestrator", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--min-compute-reputation", type=float, default=float(os.environ.get("SILICIUM_MIN_COMPUTE_REPUTATION", "0")))
+    parser.add_argument("--min-verify-reputation", type=float, default=float(os.environ.get("SILICIUM_MIN_VERIFY_REPUTATION", "0")))
     parser.add_argument("--solana-enable", action="store_true", help="Forward on-chain operations through the node when envelopes provide on_chain metadata.")
     parser.add_argument("--devnet-trace", action="store_true")
     parser.add_argument("--devnet-trace-timeout-s", type=float, default=420.0)
@@ -136,6 +157,86 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--solana-program-id", default=os.environ.get("SILICIUM_SOLANA_PROGRAM_ID", "AkAFDh9CpGHAoM7gL7zAZxdCJVV6bheBTidZEyZ4BMpA"))
     parser.add_argument("--devnet-tx-delay-ms", type=int, default=int(os.environ.get("SILICIUM_DEVNET_TX_DELAY_MS", "1200")))
     return parser
+
+
+def reject_network_placeholders(args: argparse.Namespace) -> None:
+    if args.node_mode != "network":
+        return
+    values = {
+        "--network-advertise-host": args.network_advertise_host,
+        "--network-seed-peers": args.network_seed_peers,
+    }
+    bad_tokens = ("ORCHESTRATOR_IP", "WORKER_IP", "VERIFIER_IP", "VERIFIER1_IP", "VERIFIER2_IP")
+    bad = [f"{name}={value}" for name, value in values.items() if any(token in str(value) for token in bad_tokens)]
+    if bad:
+        raise ValueError(
+            "network placeholders must be replaced by real reachable IP addresses or 127.0.0.1 for a same-machine demo: "
+            + ", ".join(bad)
+        )
+
+
+def wait_for_task_result(args: argparse.Namespace, role: str, task_id: str, node_runs: list[dict[str, Any]]) -> dict[str, Any]:
+    if args.node_mode == "network":
+        export_dir = Path(args.export_dir).resolve()
+        result = wait_for_network_result(export_dir, task_id, args.result_timeout_s)
+        task_state_path = export_dir / "tasks" / f"{task_id}.json"
+        task_state: dict[str, Any] = {}
+        if task_state_path.exists():
+            try:
+                loaded = json.loads(task_state_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    task_state = loaded
+            except json.JSONDecodeError:
+                task_state = {}
+        node_runs.append(
+            {
+                "role": role,
+                "mode": "network",
+                "target_task_id": task_id,
+                "target_result_ready": True,
+                "handled_by": result.get("node_id", ""),
+                "dispatched_to": task_state.get("dispatched_to", ""),
+                "scheduler": task_state.get("scheduler", {}),
+                "scheduler_dispatch": task_state.get("scheduler_dispatch", {}),
+            }
+        )
+        return result
+    return run_node_until_result(args, role, task_id, node_runs)
+
+
+def task_input_ref(args: argparse.Namespace, export_dir: Path, path: Path) -> dict[str, Any]:
+    if args.node_mode == "network":
+        return store_network_file(export_dir, path, args.network_node_id)
+    return {
+        "protocol": "file",
+        "content_id": str(path),
+        "hash": "sha256:" + sha256_file(path),
+    }
+
+
+def bytes_input_ref(args: argparse.Namespace, export_dir: Path, data: bytes) -> dict[str, Any]:
+    if args.node_mode == "network":
+        return store_network_content(export_dir, data, args.network_node_id)
+    digest = sha256_bytes(data)
+    path = export_dir / "p2p" / digest
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_bytes(data)
+    return {"protocol": "file", "content_id": str(path), "hash": "sha256:" + digest}
+
+
+def network_safe_result_ref(args: argparse.Namespace, export_dir: Path, result: dict[str, Any]) -> dict[str, Any]:
+    ref = output_ref_from_compute(result)
+    if args.node_mode != "network":
+        return ref
+    data = fetch_network_content(export_dir, args.network_node_id, ref, args.network_mesh_key)
+    return store_network_content(export_dir, data, args.network_node_id)
+
+
+def read_fragment_bytes(args: argparse.Namespace, export_dir: Path, ref: dict[str, Any]) -> bytes:
+    if args.node_mode == "network":
+        return fetch_network_content(export_dir, args.network_node_id, ref, args.network_mesh_key)
+    return p2p_file_path(ref).read_bytes()
 
 
 def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, Any]:
@@ -185,6 +286,7 @@ def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    reject_network_placeholders(args)
     scene_path = Path(args.scene).resolve()
     scene = load_scene(scene_path)
     width, height = image_size(scene)
@@ -198,6 +300,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     export_dir = Path(args.export_dir).resolve() if args.export_dir else (job_dir / "export").resolve()
     args.export_dir = str(export_dir)
+    orchestrator: NetworkedOrchestrator | None = None
+    orchestrator_result: dict[str, Any] = {"enabled": False}
 
     input_dir = job_dir / "input"
     expected_dir = job_dir / "expected-fragments"
@@ -208,11 +312,7 @@ def main(argv: list[str] | None = None) -> int:
 
     scene_copy = input_dir / "scene.json"
     scene_copy.write_text(scene_path.read_text(encoding="utf-8"), encoding="utf-8")
-    scene_ref = {
-        "protocol": "file",
-        "content_id": str(scene_copy),
-        "hash": "sha256:" + sha256_file(scene_copy),
-    }
+    scene_ref = task_input_ref(args, export_dir, scene_copy)
 
     full_ppm = render_scene(scene)
     expected_full_hash = sha256_bytes(full_ppm)
@@ -233,58 +333,39 @@ def main(argv: list[str] | None = None) -> int:
     submissions: list[dict[str, Any]] = []
     fragments: list[dict[str, Any]] = []
 
-    for node in leaves:
-        fragment_id = f"{job_id}-frag-{node.fragment_index:03d}"
-        fragment_ppm = render_scene(scene, node.y_start, node.y_end)
-        expected_path = expected_dir / f"fragment-{node.fragment_index:03d}.ppm"
-        expected_path.write_bytes(fragment_ppm)
-        expected_hash = sha256_bytes(fragment_ppm)
-        spec = {
-            "schema_version": 1,
-            "job_id": job_id,
-            "fragment_index": node.fragment_index,
-            "parent_index": node.parent_index,
-            "fragment_count": len(leaves),
-            "y_start": node.y_start,
-            "y_end": node.y_end,
-            "depth": node.depth,
-            "complexity_score": node.complexity_score,
-            "scene_p2p_ref": scene_ref,
-            "expected_result_sha256": expected_hash,
-        }
-        spec_path = input_dir / f"fragment-{node.fragment_index:03d}.json"
-        write_json(spec_path, spec)
-        compute_payload = {
-            "task_id": fragment_id,
-            "required_roles": ["compute"],
-            "priority": args.priority,
-            "p2p_ref": {
-                "protocol": "file",
-                "content_id": str(spec_path),
-                "hash": "sha256:" + sha256_file(spec_path),
-            },
-            "task": {
-                "kind": "compute",
-                "workload": FRAGMENT_COMPUTE_WORKLOAD,
-                **spec,
-            },
-        }
-        clear_previous_result(export_dir, fragment_id)
-        submissions.append(submit_task(export_dir, compute_payload))
-        compute_result = run_node_until_result(args, "compute", fragment_id, node_runs)
+    try:
+        if args.node_mode == "network" and args.network_start_orchestrator:
+            if not args.network_mesh_key:
+                raise RuntimeError("--network-mesh-key is required for network mode content fetches")
+            orchestrator = NetworkedOrchestrator(
+                export_dir=export_dir,
+                state_dir=job_dir / "_orchestrator_state",
+                node_id=args.network_node_id,
+                bind=args.network_bind,
+                port=args.network_port,
+                advertise_host=args.network_advertise_host,
+                advertise_port=args.network_advertise_port,
+                seed_peers=args.network_seed_peers,
+                mesh_key=args.network_mesh_key,
+            )
+            orchestrator.start()
+            orchestrator_result = {
+                "enabled": True,
+                "node_id": args.network_node_id,
+                "public_url": orchestrator.public_url,
+                "seed_peers": args.network_seed_peers,
+            }
+            time.sleep(1.0)
 
-        verify_id = f"{fragment_id}-verify"
-        verify_payload = {
-            "task_id": verify_id,
-            "required_roles": ["verify"],
-            "priority": args.priority,
-            "p2p_ref": output_ref_from_compute(compute_result),
-            "task": {
-                "kind": "verify",
-                "workload": FRAGMENT_VERIFY_WORKLOAD,
-                "expected_hash": "sha256:" + result_hash_from_compute(compute_result),
-                "scene_p2p_ref": scene_ref,
-                "source_task_id": fragment_id,
+        for node in leaves:
+            fragment_id = f"{job_id}-frag-{node.fragment_index:03d}"
+            fragment_ppm = render_scene(scene, node.y_start, node.y_end)
+            expected_path = expected_dir / f"fragment-{node.fragment_index:03d}.ppm"
+            expected_path.write_bytes(fragment_ppm)
+            expected_hash = sha256_bytes(fragment_ppm)
+            spec = {
+                "schema_version": 1,
+                "job_id": job_id,
                 "fragment_index": node.fragment_index,
                 "parent_index": node.parent_index,
                 "fragment_count": len(leaves),
@@ -292,33 +373,84 @@ def main(argv: list[str] | None = None) -> int:
                 "y_end": node.y_end,
                 "depth": node.depth,
                 "complexity_score": node.complexity_score,
-            },
-        }
-        clear_previous_result(export_dir, verify_id)
-        submissions.append(submit_task(export_dir, verify_payload))
-        verify_result = run_node_until_result(args, "verify", verify_id, node_runs)
-        fragments.append(
-            {
-                "fragment_id": fragment_id,
-                "verify_id": verify_id,
-                "fragment_index": node.fragment_index,
-                "parent_index": node.parent_index,
-                "y_start": node.y_start,
-                "y_end": node.y_end,
-                "depth": node.depth,
-                "complexity_score": node.complexity_score,
-                "expected_hash": expected_hash,
-                "compute_result_hash": result_hash_from_compute(compute_result),
-                "compute_output_ref": output_ref_from_compute(compute_result),
-                "verify_choice": bool(verify_result.get("choice", False)),
-                "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
+                "scene_p2p_ref": scene_ref,
+                "expected_result_sha256": expected_hash,
             }
-        )
+            spec_path = input_dir / f"fragment-{node.fragment_index:03d}.json"
+            write_json(spec_path, spec)
+            spec_ref = task_input_ref(args, export_dir, spec_path)
+            compute_payload = {
+                "task_id": fragment_id,
+                "required_roles": ["compute"],
+                "priority": args.priority,
+                "required_compute_reputation": args.min_compute_reputation,
+                "p2p_ref": spec_ref,
+                "task": {
+                    "kind": "compute",
+                    "workload": FRAGMENT_COMPUTE_WORKLOAD,
+                    "required_compute_reputation": args.min_compute_reputation,
+                    **spec,
+                },
+            }
+            clear_previous_result(export_dir, fragment_id)
+            submissions.append(submit_task(export_dir, compute_payload))
+            compute_result = wait_for_task_result(args, "compute", fragment_id, node_runs)
+            compute_result_ref = network_safe_result_ref(args, export_dir, compute_result)
+
+            verify_id = f"{fragment_id}-verify"
+            verify_payload = {
+                "task_id": verify_id,
+                "required_roles": ["verify"],
+                "priority": args.priority,
+                "required_verify_reputation": args.min_verify_reputation,
+                "p2p_ref": compute_result_ref,
+                "task": {
+                    "kind": "verify",
+                    "workload": FRAGMENT_VERIFY_WORKLOAD,
+                    "required_verify_reputation": args.min_verify_reputation,
+                    "expected_hash": "sha256:" + result_hash_from_compute(compute_result),
+                    "scene_p2p_ref": scene_ref,
+                    "source_task_id": fragment_id,
+                    "fragment_index": node.fragment_index,
+                    "parent_index": node.parent_index,
+                    "fragment_count": len(leaves),
+                    "y_start": node.y_start,
+                    "y_end": node.y_end,
+                    "depth": node.depth,
+                    "complexity_score": node.complexity_score,
+                },
+            }
+            clear_previous_result(export_dir, verify_id)
+            submissions.append(submit_task(export_dir, verify_payload))
+            verify_result = wait_for_task_result(args, "verify", verify_id, node_runs)
+            fragments.append(
+                {
+                    "fragment_id": fragment_id,
+                    "verify_id": verify_id,
+                    "fragment_index": node.fragment_index,
+                    "parent_index": node.parent_index,
+                    "y_start": node.y_start,
+                    "y_end": node.y_end,
+                    "depth": node.depth,
+                    "complexity_score": node.complexity_score,
+                    "expected_hash": expected_hash,
+                    "compute_result_hash": result_hash_from_compute(compute_result),
+                    "compute_output_ref": compute_result_ref,
+                    "worker_output_ref": output_ref_from_compute(compute_result),
+                    "verify_choice": bool(verify_result.get("choice", False)),
+                    "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
+                }
+            )
+    finally:
+        if orchestrator is not None:
+            orchestrator_result["stop"] = orchestrator.stop()
 
     rgb_parts: list[bytes] = []
     total_height = 0
     for fragment in sorted(fragments, key=lambda item: (item["y_start"], item["fragment_index"])):
-        part_width, part_height, part_rgb = read_p6_ppm(p2p_file_path(fragment["compute_output_ref"]))
+        part_path = reassembled_dir / f"fragment-{fragment['fragment_index']:03d}.ppm"
+        part_path.write_bytes(read_fragment_bytes(args, export_dir, fragment["compute_output_ref"]))
+        part_width, part_height, part_rgb = read_p6_ppm(part_path)
         if part_width != width:
             raise ValueError(f"fragment width mismatch: expected {width}, got {part_width}")
         rgb_parts.append(part_rgb)
@@ -355,6 +487,7 @@ def main(argv: list[str] | None = None) -> int:
         "fragments": fragments,
         "submissions": submissions,
         "node_runs": node_runs,
+        "network": orchestrator_result,
         "success": success,
         "devnet_trace": {"enabled": False, "status": "not_requested"},
     }

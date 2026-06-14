@@ -217,6 +217,38 @@ claims the root, calls `propose_fragment_split`, `approve_fragment_split`, and
 `create_sub_fragment` recursively, then claims/submits/votes only the leaf
 fragments and finalizes the job.
 
+## Run auto-split through real network nodes
+
+The `network` node mode publishes the same generic task envelopes, but the
+orchestrator does not execute compute/verify locally. It starts a peer HTTP node
+with only the `resource` role, dispatches compute/verify tasks to peers that
+advertise the required role, waits for returned results, then reassembles the
+verified outputs.
+
+Start remote nodes first, from `Network/`:
+
+```powershell
+.\demo\networked\start-node.cmd worker-1 compute 46101 http://ORCHESTRATOR_IP:46100 WORKER_IP demo-mesh 120
+.\demo\networked\start-node.cmd verifier-1 verify 46102 http://ORCHESTRATOR_IP:46100 VERIFIER1_IP demo-mesh 90
+```
+
+Then run the orchestrator:
+
+```powershell
+.\demo\render3d\run-auto-split-demo.cmd .\demo\render3d\scene.json --job-id render-net-001 --node-mode network --network-advertise-host ORCHESTRATOR_IP --network-seed-peers http://WORKER_IP:46101,http://VERIFIER1_IP:46102 --network-mesh-key demo-mesh
+```
+
+The final `start-node.cmd` argument is the node's local demo reputation. The
+generic scheduler ranks peers with role-specific reputation, local reputation,
+capacity, and current dispatch load. You can also require minimum reputation:
+
+```powershell
+.\demo\render3d\run-auto-split-demo.cmd .\demo\render3d\scene.json --job-id render-net-002 --node-mode network --network-advertise-host ORCHESTRATOR_IP --network-seed-peers http://WORKER_IP:46101,http://VERIFIER1_IP:46102 --network-mesh-key demo-mesh --min-compute-reputation 50 --min-verify-reputation 40
+```
+
+This path is workload-generic at the network layer: render3d only provides the
+split policy, compute workload id, verify workload id, and reassembler.
+
 ## Write task JSON without queuing
 
 ```powershell
