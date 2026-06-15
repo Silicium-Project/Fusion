@@ -7,10 +7,10 @@ import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from networked.networked_runtime import (  # noqa: E402
     NetworkedOrchestrator,
@@ -19,6 +19,13 @@ from networked.networked_runtime import (  # noqa: E402
     store_network_file,
     store_network_content,
     wait_for_result as wait_for_network_result,
+)
+from workloads.render3d.split import (  # noqa: E402
+    SplitNode,
+    build_split_tree,
+    flatten_tree,
+    leaf_nodes,
+    tree_to_dict,
 )
 
 from render3d_demo import (
@@ -44,84 +51,6 @@ from run_fragmented_demo import (
     write_p6_ppm,
 )
 from run_full_demo import clear_previous_result, output_ref_from_compute, result_hash_from_compute, run_node_until_result
-
-
-@dataclass
-class SplitNode:
-    fragment_index: int
-    y_start: int
-    y_end: int
-    depth: int
-    complexity_score: int
-    parent_index: int | None = None
-    children: list["SplitNode"] = field(default_factory=list)
-
-    @property
-    def is_leaf(self) -> bool:
-        return not self.children
-
-
-def estimate_render_complexity(scene: dict[str, Any], width: int, y_start: int, y_end: int) -> int:
-    objects = scene.get("objects") if isinstance(scene.get("objects"), list) else []
-    sphere_count = sum(1 for obj in objects if isinstance(obj, dict) and obj.get("type") == "sphere")
-    object_factor = max(1, sphere_count)
-    return max(1, width * max(1, y_end - y_start) * object_factor)
-
-
-def build_split_tree(
-    scene: dict[str, Any],
-    width: int,
-    y_start: int,
-    y_end: int,
-    threshold: int,
-    max_depth: int,
-    next_index: list[int],
-    parent_index: int | None = None,
-    depth: int = 0,
-) -> SplitNode:
-    fragment_index = next_index[0]
-    next_index[0] += 1
-    complexity = estimate_render_complexity(scene, width, y_start, y_end)
-    node = SplitNode(
-        fragment_index=fragment_index,
-        parent_index=parent_index,
-        y_start=y_start,
-        y_end=y_end,
-        depth=depth,
-        complexity_score=complexity,
-    )
-    can_split = complexity > threshold and depth < max_depth and (y_end - y_start) >= 2
-    if can_split:
-        mid = (y_start + y_end) // 2
-        node.children = [
-            build_split_tree(scene, width, y_start, mid, threshold, max_depth, next_index, fragment_index, depth + 1),
-            build_split_tree(scene, width, mid, y_end, threshold, max_depth, next_index, fragment_index, depth + 1),
-        ]
-    return node
-
-
-def flatten_tree(root: SplitNode) -> list[SplitNode]:
-    out = [root]
-    for child in root.children:
-        out.extend(flatten_tree(child))
-    return out
-
-
-def leaf_nodes(root: SplitNode) -> list[SplitNode]:
-    return [node for node in flatten_tree(root) if node.is_leaf]
-
-
-def tree_to_dict(node: SplitNode) -> dict[str, Any]:
-    return {
-        "fragment_index": node.fragment_index,
-        "parent_index": node.parent_index,
-        "y_start": node.y_start,
-        "y_end": node.y_end,
-        "depth": node.depth,
-        "complexity_score": node.complexity_score,
-        "is_leaf": node.is_leaf,
-        "children": [tree_to_dict(child) for child in node.children],
-    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -332,6 +261,53 @@ def main(argv: list[str] | None = None) -> int:
     node_runs: list[dict[str, Any]] = []
     submissions: list[dict[str, Any]] = []
     fragments: list[dict[str, Any]] = []
+    progress_path = job_dir / "auto-split-demo-progress.json"
+    progress_fragments: dict[int, dict[str, Any]] = {
+        node.fragment_index: {
+            "fragment_id": f"{job_id}-frag-{node.fragment_index:03d}",
+            "verify_id": f"{job_id}-frag-{node.fragment_index:03d}-verify",
+            "fragment_index": node.fragment_index,
+            "parent_index": node.parent_index,
+            "y_start": node.y_start,
+            "y_end": node.y_end,
+            "depth": node.depth,
+            "complexity_score": node.complexity_score,
+            "status": "planned",
+            "verify_choice": False,
+        }
+        for node in leaves
+    }
+
+    def write_progress(stage: str) -> None:
+        payload = {
+            "schema_version": 1,
+            "demo_mode": "auto_split",
+            "progress": True,
+            "stage": stage,
+            "job_id": job_id,
+            "scene": str(scene_path),
+            "job_dir": str(job_dir),
+            "export_dir": str(export_dir),
+            "split_policy": {
+                "kind": "render3d_horizontal_binary",
+                "complexity_threshold": args.complexity_threshold,
+                "max_depth": args.max_depth,
+            },
+            "split_tree": tree_to_dict(root),
+            "fragment_count": len(progress_fragments),
+            "image": {"width": width, "height": height},
+            "expected_full_hash": expected_full_hash,
+            "fragments": sorted(progress_fragments.values(), key=lambda item: (item["y_start"], item["fragment_index"])),
+            "submissions": submissions,
+            "node_runs": node_runs,
+            "network": orchestrator_result,
+            "success": False,
+            "devnet_trace": {"enabled": False, "status": "not_requested"},
+            "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        write_json(progress_path, payload)
+
+    write_progress("split_ready")
 
     try:
         if args.node_mode == "network" and args.network_start_orchestrator:
@@ -356,13 +332,17 @@ def main(argv: list[str] | None = None) -> int:
                 "seed_peers": args.network_seed_peers,
             }
             time.sleep(1.0)
+            write_progress("orchestrator_started")
 
         for node in leaves:
             fragment_id = f"{job_id}-frag-{node.fragment_index:03d}"
+            progress_fragments[node.fragment_index]["status"] = "preparing"
+            write_progress(f"fragment_{node.fragment_index}_preparing")
             fragment_ppm = render_scene(scene, node.y_start, node.y_end)
             expected_path = expected_dir / f"fragment-{node.fragment_index:03d}.ppm"
             expected_path.write_bytes(fragment_ppm)
             expected_hash = sha256_bytes(fragment_ppm)
+            progress_fragments[node.fragment_index]["expected_hash"] = expected_hash
             spec = {
                 "schema_version": 1,
                 "job_id": job_id,
@@ -394,8 +374,19 @@ def main(argv: list[str] | None = None) -> int:
             }
             clear_previous_result(export_dir, fragment_id)
             submissions.append(submit_task(export_dir, compute_payload))
+            progress_fragments[node.fragment_index]["status"] = "queued_compute"
+            write_progress(f"fragment_{node.fragment_index}_queued_compute")
             compute_result = wait_for_task_result(args, "compute", fragment_id, node_runs)
             compute_result_ref = network_safe_result_ref(args, export_dir, compute_result)
+            progress_fragments[node.fragment_index].update(
+                {
+                    "status": "computed",
+                    "compute_result_hash": result_hash_from_compute(compute_result),
+                    "compute_output_ref": compute_result_ref,
+                    "worker_output_ref": output_ref_from_compute(compute_result),
+                }
+            )
+            write_progress(f"fragment_{node.fragment_index}_computed")
 
             verify_id = f"{fragment_id}-verify"
             verify_payload = {
@@ -422,28 +413,22 @@ def main(argv: list[str] | None = None) -> int:
             }
             clear_previous_result(export_dir, verify_id)
             submissions.append(submit_task(export_dir, verify_payload))
+            progress_fragments[node.fragment_index]["status"] = "queued_verify"
+            write_progress(f"fragment_{node.fragment_index}_queued_verify")
             verify_result = wait_for_task_result(args, "verify", verify_id, node_runs)
-            fragments.append(
+            progress_fragments[node.fragment_index].update(
                 {
-                    "fragment_id": fragment_id,
-                    "verify_id": verify_id,
-                    "fragment_index": node.fragment_index,
-                    "parent_index": node.parent_index,
-                    "y_start": node.y_start,
-                    "y_end": node.y_end,
-                    "depth": node.depth,
-                    "complexity_score": node.complexity_score,
-                    "expected_hash": expected_hash,
-                    "compute_result_hash": result_hash_from_compute(compute_result),
-                    "compute_output_ref": compute_result_ref,
-                    "worker_output_ref": output_ref_from_compute(compute_result),
+                    "status": "verified" if bool(verify_result.get("choice", False)) else "verify_failed",
                     "verify_choice": bool(verify_result.get("choice", False)),
                     "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
                 }
             )
+            write_progress(f"fragment_{node.fragment_index}_verified")
+            fragments.append(dict(progress_fragments[node.fragment_index]))
     finally:
         if orchestrator is not None:
             orchestrator_result["stop"] = orchestrator.stop()
+            write_progress("orchestrator_stopped")
 
     rgb_parts: list[bytes] = []
     total_height = 0
@@ -464,6 +449,10 @@ def main(argv: list[str] | None = None) -> int:
     reassembled_png.write_bytes(ppm_to_png_bytes(reassembled_ppm.read_bytes()))
     reassembled_hash = sha256_file(reassembled_ppm)
     success = all(fragment["verify_choice"] for fragment in fragments) and reassembled_hash == expected_full_hash
+    for fragment in progress_fragments.values():
+        if fragment.get("status") == "verified":
+            fragment["status"] = "reassembled"
+    write_progress("reassembled")
 
     summary = {
         "schema_version": 1,

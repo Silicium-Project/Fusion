@@ -1,28 +1,45 @@
 # Render3D manual demo
 
 This folder contains the first simple end-to-end demo path for Silicium.
+The reusable render implementation now lives in `Network/workloads/render3d`.
+The scripts here are orchestration scenarios around that workload: local files,
+node passes, network mode and Devnet tracing.
 
 The input scene is provided manually as a JSON file. The demo script writes a
 local deterministic preview, hashes/manifests, then optionally queues compute
 and verify task envelopes into the Silicium network ingress directory.
 
-The role-aware node now knows this workload:
+The role-aware node now knows this workload through the workload entrypoints:
 
-- `compute` reads `scene.json` through `p2p_ref`, runs this renderer, and
+- `compute` reads `scene.json` through `p2p_ref`, runs the workload compute entrypoint, and
   publishes the rendered PPM through the local P2P cache.
 - `verify` reads the rendered PPM through `p2p_ref`, reads the original
-  `scene.json` through `scene_p2p_ref`, recomputes the render, and compares
+  `scene.json` through `scene_p2p_ref`, runs the workload verify entrypoint, and compares
   hashes.
 
 ## Files
 
 - `scene.json`: example 3D scene.
-- `render3d_demo.py`: deterministic renderer + task envelope generator.
+- `render3d_demo.py`: compatibility wrapper around `Network/workloads/render3d`.
 - `submit-render3d.cmd`: Windows helper.
 - `run_full_demo.py`: full compute-then-verify demo orchestrator.
 - `run-full-demo.cmd`: Windows helper for the full demo.
 - `run_fragmented_demo.py`: fragmented compute/verify/reassemble orchestrator.
 - `run-fragmented-demo.cmd`: Windows helper for the fragmented demo.
+
+## Workload entrypoints
+
+The reusable render3d contract is:
+
+```powershell
+py .\workloads\render3d\split.py .\demo\render3d\scene.json --output .\.silicium\split.json
+py .\workloads\render3d\compute.py --scene .\demo\render3d\scene.json --output .\.silicium\fragment.ppm --y-start 0 --y-end 100
+py .\workloads\render3d\verify.py --scene .\demo\render3d\scene.json --result .\.silicium\fragment.ppm --y-start 0 --y-end 100
+py .\workloads\render3d\reassemble.py --fragment .\.silicium\fragment-0.ppm --fragment .\.silicium\fragment-1.ppm --output .\.silicium\render.ppm --png .\.silicium\render.png
+```
+
+A future raytracer should provide the same shape of entrypoints without changing
+the network core.
 
 Generated artifacts are written outside the demo folder:
 
