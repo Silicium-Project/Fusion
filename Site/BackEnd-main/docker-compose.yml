@@ -1,0 +1,52 @@
+services:
+  db:
+    build:
+      context: ./Database
+      dockerfile: Dockerfile
+    container_name: silicium_database
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - silicium_db_data:/var/lib/postgresql
+    networks:
+      - app-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: silicium_backend
+    environment:
+      DATABASE_URL: host=${HOST} user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      SILICIUM_NETWORK_ROOT: ${SILICIUM_NETWORK_ROOT}
+      SILICIUM_SEED_PEERS: ${SILICIUM_SEED_PEERS}
+      SILICIUM_MESH_KEY: ${SILICIUM_MESH_KEY}
+      SILICIUM_ORCHESTRATOR_HOST: ${SILICIUM_ORCHESTRATOR_HOST}
+      SILICIUM_DASHBOARD_URL: ${SILICIUM_DASHBOARD_URL}
+      SILICIUM_DEVNET_TRACE: ${SILICIUM_DEVNET_TRACE}
+      SILICIUM_DEVNET_TX_DELAY_MS: ${SILICIUM_DEVNET_TX_DELAY_MS}
+
+    ports:
+      - "8080:8080"
+    networks:
+      - app-network
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  silicium_db_data:
+
+networks:
+  app-network:
+    driver: bridge

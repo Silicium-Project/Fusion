@@ -81,7 +81,7 @@ _SAFE_TASK_ID_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
 _NETWORK_ROLES = frozenset({"compute", "verify", "storage", "audit", "resource"})
 _REQUEST_KINDS = frozenset({"audit", "resource", "challenge", "replicate", "retrieve", "pin", "unpin", "health"})
 _PRIORITIES = frozenset({"low", "normal", "high", "urgent"})
-_P2P_PROTOCOLS = frozenset({"ipfs", "ipns", "libp2p", "http", "https", "file"})
+_P2P_PROTOCOLS = frozenset({"ipfs", "ipns", "libp2p", "http", "https", "file", "silicium"})
 
 METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 OAUTH_DISCOVERY_PATHS = (
@@ -492,7 +492,7 @@ def _validate_p2p_ref(value: Any, *, required: bool = False) -> dict[str, Any] |
     if not content_id:
         raise ValueError("missing_p2p_content_id")
     normalized: dict[str, Any] = {"protocol": protocol, "content_id": content_id}
-    for key in ("hash", "size_bytes", "mime_type"):
+    for key in ("hash", "size_bytes", "mime_type", "peer_id", "peer_url", "shared_ref"):
         if key in value:
             normalized[key] = value[key]
     return normalized

@@ -56,6 +56,26 @@ def safe_id(value: str) -> str:
     return cleaned or uuid.uuid4().hex
 
 
+def find_openssl_command() -> str:
+    found = shutil.which("openssl")
+    if found:
+        return found
+    if os.name != "nt":
+        return "openssl"
+    program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    for candidate in [
+        Path(program_files) / "OpenSSL-Win64" / "bin" / "openssl.exe",
+        Path(program_files) / "OpenSSL-Win32" / "bin" / "openssl.exe",
+        Path(program_files_x86) / "OpenSSL-Win32" / "bin" / "openssl.exe",
+        Path(program_files) / "Git" / "usr" / "bin" / "openssl.exe",
+        Path(program_files_x86) / "Git" / "usr" / "bin" / "openssl.exe",
+    ]:
+        if candidate.exists():
+            return str(candidate)
+    return "openssl"
+
+
 def stable_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
@@ -156,7 +176,20 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
-    tmp.replace(path)
+    last_error: Exception | None = None
+    for _ in range(8):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError as exc:
+            last_error = exc
+            time.sleep(0.05)
+    try:
+        if tmp.exists():
+            tmp.unlink()
+    finally:
+        if last_error is not None:
+            raise last_error
 
 
 def append_jsonl(path: Path, payload: Any) -> None:
@@ -264,6 +297,7 @@ class NodeIdentity:
         default_key = config.state_dir / "peer_identity_ed25519.pem"
         self.private_key_path = Path(config.identity_key_path).expanduser() if str(config.identity_key_path).strip() else default_key
         self.public_key_path = self.private_key_path.with_suffix(".pub.pem")
+        self.openssl = find_openssl_command()
         self.private_key_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_keypair()
         public_pem = self.public_key_path.read_bytes()
@@ -276,7 +310,7 @@ class NodeIdentity:
             sig_path = Path(tmpdir) / "signature.bin"
             msg_path.write_bytes(data)
             completed = subprocess.run(
-                ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
+                [self.openssl, "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -302,8 +336,9 @@ class NodeIdentity:
             msg_path.write_bytes(data)
             sig_path.write_bytes(signature)
             pub_path.write_bytes(public_pem)
+            openssl = find_openssl_command()
             completed = subprocess.run(
-                ["openssl", "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
+                [openssl, "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -321,7 +356,7 @@ class NodeIdentity:
     def _ensure_keypair(self) -> None:
         if not self.private_key_path.exists():
             completed = subprocess.run(
-                ["openssl", "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
+                [self.openssl, "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -330,7 +365,7 @@ class NodeIdentity:
                 raise RuntimeError(f"openssl_identity_generate_failed:{completed.stderr.strip()}")
         if not self.public_key_path.exists():
             completed = subprocess.run(
-                ["openssl", "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
+                [self.openssl, "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -410,6 +445,65 @@ class ReputationStore:
             peers[node_id] = float(score)
             self._payload["peer_scores"] = peers
         self.save()
+
+    def peer_dispatch_stats(self, node_id: str) -> dict[str, Any]:
+        with self._lock:
+            stats = self._payload.get("peer_dispatch_stats", {})
+            if not isinstance(stats, dict):
+                return {}
+            value = stats.get(node_id, {})
+            return dict(value) if isinstance(value, dict) else {}
+
+    def record_peer_dispatch(self, node_id: str, role: str, item_id: str) -> dict[str, Any]:
+        if not node_id:
+            return {}
+        with self._lock:
+            stats = self._payload.get("peer_dispatch_stats", {})
+            if not isinstance(stats, dict):
+                stats = {}
+            current = stats.get(node_id, {})
+            if not isinstance(current, dict):
+                current = {}
+            inflight = max(0, int(current.get("inflight", 0) or 0)) + 1
+            total = max(0, int(current.get("total_dispatched", 0) or 0)) + 1
+            by_role = current.get("by_role", {})
+            if not isinstance(by_role, dict):
+                by_role = {}
+            by_role[role] = max(0, int(by_role.get(role, 0) or 0)) + 1
+            current.update(
+                {
+                    "inflight": inflight,
+                    "total_dispatched": total,
+                    "by_role": by_role,
+                    "last_role": role,
+                    "last_item_id": item_id,
+                    "last_dispatched_utc": utc_now(),
+                }
+            )
+            stats[node_id] = current
+            self._payload["peer_dispatch_stats"] = stats
+        self.save()
+        return dict(current)
+
+    def record_peer_result(self, node_id: str, ok: bool) -> dict[str, Any]:
+        if not node_id:
+            return {}
+        with self._lock:
+            stats = self._payload.get("peer_dispatch_stats", {})
+            if not isinstance(stats, dict):
+                stats = {}
+            current = stats.get(node_id, {})
+            if not isinstance(current, dict):
+                current = {}
+            current["inflight"] = max(0, int(current.get("inflight", 0) or 0) - 1)
+            key = "completed" if ok else "failed"
+            current[key] = max(0, int(current.get(key, 0) or 0)) + 1
+            current["last_result_ok"] = bool(ok)
+            current["last_result_utc"] = utc_now()
+            stats[node_id] = current
+            self._payload["peer_dispatch_stats"] = stats
+        self.save()
+        return dict(current)
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -958,6 +1052,7 @@ class PeerNetwork:
         self._sync_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._peer_score_sink: Any = None
+        self._scheduler_store: ReputationStore | None = None
         self.http_base_url = ""
         self.advertised_http_base_url = ""
         self.gossip_target = ""
@@ -1057,6 +1152,9 @@ class PeerNetwork:
 
     def set_peer_score_sink(self, callback: Any) -> None:
         self._peer_score_sink = callback
+
+    def set_scheduler_store(self, store: ReputationStore) -> None:
+        self._scheduler_store = store
 
     def update_peer_metadata(self, node_id: str, updates: dict[str, Any]) -> None:
         if not node_id:
@@ -1390,11 +1488,21 @@ class PeerNetwork:
         status = str(peer.get("onchain_status", "")).strip().lower()
         if status and status not in {"active", "1", "workerstatus.active"}:
             return False
+        local_reputation = float(peer.get("reputation_score", 0.0) or 0.0)
+        global_reputation = float(peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0)) or 0.0)
+        compute_reputation = float(peer.get("onchain_compute_reputation", 0.0) or 0.0)
+        verify_reputation = float(peer.get("onchain_verify_reputation", 0.0) or 0.0)
+        storage_reputation = float(peer.get("onchain_storage_reputation", 0.0) or 0.0)
+        if not self.config.solana_reputation_enable:
+            global_reputation = global_reputation or local_reputation
+            compute_reputation = compute_reputation or local_reputation
+            verify_reputation = verify_reputation or local_reputation
+            storage_reputation = storage_reputation or local_reputation
         checks = {
-            "min_global_reputation": float(peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0)) or 0.0),
-            "min_compute_reputation": float(peer.get("onchain_compute_reputation", 0.0) or 0.0),
-            "min_verify_reputation": float(peer.get("onchain_verify_reputation", 0.0) or 0.0),
-            "min_storage_reputation": float(peer.get("onchain_storage_reputation", 0.0) or 0.0),
+            "min_global_reputation": global_reputation,
+            "min_compute_reputation": compute_reputation,
+            "min_verify_reputation": verify_reputation,
+            "min_storage_reputation": storage_reputation,
             "min_stake_amount": float(peer.get("onchain_stake_amount", 0.0) or 0.0),
         }
         if "compute" in required_roles and checks["min_compute_reputation"] <= 0 and self.config.solana_reputation_enable:
@@ -1409,23 +1517,54 @@ class PeerNetwork:
                 return False
         return True
 
-    def _peer_score(self, peer: dict[str, Any], required_roles: set[str]) -> tuple[float, float, float]:
+    def _role_reputation_field(self, required_roles: set[str]) -> str:
+        if "verify" in required_roles:
+            return "onchain_verify_reputation"
+        if "storage" in required_roles:
+            return "onchain_storage_reputation"
+        return "onchain_compute_reputation"
+
+    def _peer_score_components(self, peer: dict[str, Any], required_roles: set[str]) -> dict[str, float]:
         capacity = peer.get("capacity", {}) if isinstance(peer.get("capacity"), dict) else {}
         reputation = float(peer.get("reputation_score", 0.0) or 0.0)
-        if "verify" in required_roles:
-            onchain_reputation = float(peer.get("onchain_verify_reputation", peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0))) or 0.0)
-        elif "storage" in required_roles:
-            onchain_reputation = float(peer.get("onchain_storage_reputation", peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0))) or 0.0)
-        else:
-            onchain_reputation = float(peer.get("onchain_compute_reputation", peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0))) or 0.0)
+        role_field = self._role_reputation_field(required_roles)
+        onchain_reputation = float(peer.get(role_field, peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0))) or 0.0)
         cpu = float(capacity.get("cpu_count", 0) or 0)
         disk_free = float(capacity.get("disk_free_bytes", 0) or 0)
+        dispatch_stats = self._scheduler_store.peer_dispatch_stats(str(peer.get("node_id", ""))) if self._scheduler_store is not None else {}
+        inflight = float(dispatch_stats.get("inflight", 0) or 0)
+        total_dispatched = float(dispatch_stats.get("total_dispatched", 0) or 0)
         onchain_component = onchain_reputation * max(0.0, float(self.config.scheduler_onchain_weight))
         offchain_component = reputation * max(0.0, float(self.config.scheduler_offchain_weight))
         capacity_component = (cpu + (disk_free / max(1.0, 1024.0 * 1024.0 * 1024.0))) * max(
             0.0, float(self.config.scheduler_capacity_weight)
         )
-        return (onchain_component, offchain_component, capacity_component)
+        raw_score = onchain_component + offchain_component + capacity_component
+        fairness_unit = max(1.0, raw_score)
+        load_penalty = inflight * fairness_unit * 0.75 + total_dispatched * fairness_unit * 0.20
+        total = raw_score - load_penalty
+        return {
+            "total": float(total),
+            "raw": float(raw_score),
+            "onchain": float(onchain_component),
+            "offchain": float(offchain_component),
+            "capacity": float(capacity_component),
+            "load_penalty": float(load_penalty),
+            "inflight": float(inflight),
+            "total_dispatched": float(total_dispatched),
+            "role_reputation": float(onchain_reputation),
+            "local_reputation": float(reputation),
+        }
+
+    def _peer_score(self, peer: dict[str, Any], required_roles: set[str]) -> tuple[float, float, float, float, str]:
+        components = self._peer_score_components(peer, required_roles)
+        return (
+            components["total"],
+            components["role_reputation"],
+            components["local_reputation"],
+            components["capacity"],
+            str(peer.get("node_id", "")),
+        )
 
     def _push_replica(self, peer: dict[str, Any], content_id: str, data: bytes) -> bool:
         base_url = str(peer.get("http_base_url", "")).rstrip("/")
@@ -2207,6 +2346,7 @@ class NetworkNode:
         self.peer_network = PeerNetwork(config, config.export_dir)
         self.peer_network.node = self
         self.peer_network.set_peer_score_sink(self.reputation.set_peer_score)
+        self.peer_network.set_scheduler_store(self.reputation)
         self.p2p = P2PClient(config.p2p_gateway, config.export_dir, self.peer_network)
         self.solana = SolanaBridge(config)
         self.runtime = RoleRuntime(config, self.p2p)
@@ -2614,13 +2754,29 @@ class NetworkNode:
         if not peer:
             self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
             return False
+        selected_peer = peer[0]
+        selected_peer_id = str(selected_peer.get("node_id", ""))
+        scheduler_score = self.peer_network._peer_score_components(selected_peer, {str(role).lower() for role in required_roles})
+        scheduler_role = str(next(iter(required_roles), "task")).lower()
+        item_id = safe_id(str(envelope.get("request_id") or envelope.get("task_id") or "unknown"))
+        dispatch_stats = self.reputation.record_peer_dispatch(selected_peer_id, scheduler_role, item_id)
+        self.peer_network.update_peer_metadata(selected_peer_id, {"scheduler_dispatch": dispatch_stats})
         payload = dict(envelope)
         payload["dispatch_hops"] = dispatch_hops + 1
         payload["dispatched_by"] = self.config.node_id
         payload["dispatched_utc"] = utc_now()
+        payload["scheduler"] = {
+            "kind": "reputation_weighted",
+            "selected_peer": selected_peer_id,
+            "required_roles": required_roles,
+            "score": scheduler_score,
+            "dispatch_stats": dispatch_stats,
+        }
         payload["result_return_url"] = self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
-        base_url = str(peer[0].get("http_base_url", "")).rstrip("/")
+        base_url = str(selected_peer.get("http_base_url", "")).rstrip("/")
         if not base_url:
+            reverted_stats = self.reputation.record_peer_result(selected_peer_id, False)
+            self.peer_network.update_peer_metadata(selected_peer_id, {"scheduler_dispatch": reverted_stats})
             self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
             return False
         path = "/requests/dispatch" if kind == "request" else "/tasks/dispatch"
@@ -2638,9 +2794,15 @@ class NetworkNode:
             ok = False
         if ok:
             self.metrics["dispatched"] = int(self.metrics.get("dispatched", 0) or 0) + 1
-            item_id = str(envelope.get("request_id") or envelope.get("task_id") or "unknown")
-            safe_item = safe_id(item_id)
-            self.update_envelope_status(envelope, "dispatched", {"result_hash": "", "dispatched_to": peer[0].get("node_id", "")})
+            self.update_envelope_status(
+                envelope,
+                "dispatched",
+                {
+                    "result_hash": "",
+                    "dispatched_to": selected_peer_id,
+                    "scheduler": payload["scheduler"],
+                },
+            )
             append_jsonl(
                 self.events_path,
                 {
@@ -2648,12 +2810,15 @@ class NetworkNode:
                     "timestamp_utc": utc_now(),
                     "node_id": self.config.node_id,
                     "kind": "dispatch",
-                    "item_id": safe_item,
-                    "target_peer": peer[0].get("node_id", ""),
+                    "item_id": item_id,
+                    "target_peer": selected_peer_id,
                     "roles": required_roles,
+                    "scheduler": payload["scheduler"],
                 },
             )
             return True
+        reverted_stats = self.reputation.record_peer_result(selected_peer_id, False)
+        self.peer_network.update_peer_metadata(selected_peer_id, {"scheduler_dispatch": reverted_stats})
         self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
         return False
 
@@ -2712,16 +2877,21 @@ class NetworkNode:
         kind = str(payload.get("envelope_kind") or "task")
         atomic_write_json(self.config.export_dir / f"result.{item_id}.json", result)
         atomic_write_json(self.config.export_dir / f"logs.{item_id}.json", log_payload)
+        source_node = str(payload.get("handled_by", result.get("node_id", "")))
+        completed_ok = str(payload.get("status", "completed")) == "completed" and bool(result.get("success", True))
+        dispatch_stats = self.reputation.record_peer_result(source_node, completed_ok)
+        self.peer_network.update_peer_metadata(source_node, {"scheduler_dispatch": dispatch_stats})
         target_dir = self.config.export_dir / ("requests" if kind == "request" else "tasks")
         envelope_path = target_dir / f"{item_id}.json"
         current = read_json(envelope_path, {})
         if not isinstance(current, dict):
             current = {}
         current["status"] = str(payload.get("status", "completed"))
-        current["handled_by"] = str(payload.get("handled_by", result.get("node_id", "")))
+        current["handled_by"] = source_node
         current["handled_utc"] = utc_now()
         current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
         current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
+        current["scheduler_dispatch"] = dispatch_stats
         atomic_write_json(envelope_path, current)
         append_jsonl(
             self.events_path,
@@ -2731,7 +2901,8 @@ class NetworkNode:
                 "node_id": self.config.node_id,
                 "kind": "result_ingest",
                 "item_id": item_id,
-                "source_node": str(payload.get("handled_by", result.get("node_id", ""))),
+                "source_node": source_node,
+                "scheduler_dispatch": dispatch_stats,
             },
         )
 
@@ -2952,6 +3123,10 @@ class NetworkNode:
         current["handled_utc"] = utc_now()
         current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
         current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
+        if result.get("dispatched_to"):
+            current["dispatched_to"] = result.get("dispatched_to")
+        if isinstance(result.get("scheduler"), dict):
+            current["scheduler"] = result.get("scheduler")
         atomic_write_json(path, current)
 
 

@@ -1,0 +1,27 @@
+html, body {
+    background-color: #131419;
+}
+
+body {
+    font-family: 'Lato', sans-serif;
+}
+
+.hover-gradient-underline {
+    position: relative;
+    text-decoration: none;
+}
+
+.hover-gradient-underline::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 0;
+    height: 2px;
+    background: linear-gradient(to right, #9333ea, #3b82f6);
+    transition: width 0.3s ease-in-out;
+}
+
+.hover-gradient-underline:hover::after {
+    width: 100%;
+}
