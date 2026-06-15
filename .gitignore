@@ -1,0 +1,48 @@
+# Runtime state
+.silicium/
+.silicium-world/
+Network/.silicium/
+Network/.silicium-world/
+Site/BackEnd-main/storage/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node / frontend builds
+node_modules/
+.nuxt/
+.output/
+dist/
+.data/
+.temp/
+*.tsbuildinfo
+Network/silicium-layer-dashboard/package-lock.json
+
+# Site imported repository metadata
+Site/**/.github/
+Site/**/.git/
+Site/**/.gitignore
+
+# Environment and logs
+.env
+.env.*
+!.env.example
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Solana / Anchor generated output
+Network/solana-layer/target/
+Network/solana-layer/idl/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
