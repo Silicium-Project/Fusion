@@ -28,7 +28,7 @@
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Fragments resolus</p>
-          <p class="text-2xl font-bold mt-2">{{ fragments.length }}</p>
+          <p class="text-2xl font-bold mt-2">{{ verifiedFragments }} / {{ expectedFragmentCount }}</p>
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Devnet</p>
@@ -39,6 +39,36 @@
           <p class="font-mono text-sm mt-2 break-all">{{ shortHash(finalHash) }}</p>
         </div>
       </div>
+
+      <section v-if="payload" class="mb-6 bg-[#1f2029] rounded-2xl p-6">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
+          <div>
+            <h2 class="text-2xl font-bold">Puzzle du rendu</h2>
+            <p class="text-white/50">Les fragments se remplissent pendant le calcul, puis passent en vert apres verification.</p>
+          </div>
+          <div class="text-right">
+            <p class="text-white/50 text-sm">Etape courante</p>
+            <p class="font-semibold">{{ payload.summary.stage || payload.job.status }}</p>
+          </div>
+        </div>
+        <div class="h-3 rounded-full bg-black/30 overflow-hidden mb-5">
+          <div class="h-full bg-gradient-to-r from-purple-400 to-green-400 transition-all" :style="{ width: `${progressPercent}%` }"></div>
+        </div>
+        <div class="grid gap-2" :style="{ gridTemplateColumns: `repeat(${puzzleColumns}, minmax(0, 1fr))` }">
+          <div
+            v-for="tile in puzzleTiles"
+            :key="tile.id"
+            class="min-h-16 rounded-lg border p-3 transition-colors"
+            :class="tileClass(tile.status)"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-bold">#{{ tile.index }}</span>
+              <span class="text-xs">{{ tile.status }}</span>
+            </div>
+            <p class="text-xs mt-2 opacity-70">y {{ tile.yStart }} -> {{ tile.yEnd }}</p>
+          </div>
+        </div>
+      </section>
 
       <div v-if="payload" class="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6">
         <section class="bg-[#1f2029] rounded-2xl p-6">
@@ -130,7 +160,7 @@
                 <td class="py-4 text-white/70">{{ fragment.worker_output_ref?.shared_ref?.peer_id || fragment.worker_output_ref?.peer_id || 'worker' }}</td>
                 <td class="py-4">
                   <span :class="fragment.verify_choice ? 'bg-green-500/20 text-green-200' : 'bg-yellow-500/20 text-yellow-200'" class="px-3 py-1 rounded-full text-sm">
-                    {{ fragment.verify_choice ? 'verified' : 'pending' }}
+                    {{ fragment.status || (fragment.verify_choice ? 'verified' : 'pending') }}
                   </span>
                 </td>
                 <td class="py-4 font-mono text-sm break-all">{{ shortHash(fragment.compute_result_hash || fragment.expected_hash) }}</td>
@@ -185,6 +215,7 @@ const apiBase = config.public.apiBase;
 const payload = ref<DashboardPayload | null>(null);
 const errorMessage = ref('');
 const resultPreviewUrl = ref('');
+const refreshTimer = ref<ReturnType<typeof setInterval> | null>(null);
 
 const authHeaders = () => {
   const token = Cookies.get('auth_token');
@@ -192,8 +223,35 @@ const authHeaders = () => {
 };
 
 const fragments = computed<any[]>(() => Array.isArray(payload.value?.summary.fragments) ? payload.value?.summary.fragments : []);
-const finalHash = computed(() => payload.value?.summary.finalHash || payload.value?.summary.expectedFullHash || '');
+const finalHash = computed(() => payload.value?.summary.finalHash || payload.value?.summary.reassembledHash || payload.value?.summary.expectedFullHash || '');
 const splitTree = computed(() => payload.value?.summary.splitTree || payload.value?.devnet.splitTree || null);
+const expectedFragmentCount = computed(() => Number(payload.value?.summary.fragmentCount || fragments.value.length || 0));
+const verifiedFragments = computed(() => fragments.value.filter((fragment) => fragment.verify_choice || ['verified', 'reassembled'].includes(String(fragment.status))).length);
+const progressPercent = computed(() => {
+  const total = Math.max(1, expectedFragmentCount.value);
+  const weighted = fragments.value.reduce((sum, fragment) => {
+    const status = String(fragment.status || '');
+    if (status === 'reassembled') return sum + 1;
+    if (status === 'verified') return sum + 0.9;
+    if (status === 'queued_verify') return sum + 0.65;
+    if (status === 'computed') return sum + 0.55;
+    if (status === 'queued_compute') return sum + 0.3;
+    if (status === 'preparing') return sum + 0.15;
+    return sum;
+  }, 0);
+  return Math.max(0, Math.min(100, Math.round((weighted / total) * 100)));
+});
+const puzzleColumns = computed(() => Math.max(1, Math.min(4, expectedFragmentCount.value || 1)));
+const puzzleTiles = computed(() => {
+  const sorted = [...fragments.value].sort((a, b) => Number(a.y_start ?? 0) - Number(b.y_start ?? 0));
+  return sorted.map((fragment, index) => ({
+    id: String(fragment.fragment_id || fragment.fragment_index || index),
+    index: Number(fragment.fragment_index ?? index),
+    yStart: Number(fragment.y_start ?? 0),
+    yEnd: Number(fragment.y_end ?? 0),
+    status: String(fragment.status || (fragment.verify_choice ? 'verified' : 'planned')),
+  }));
+});
 
 const layoutTree = () => {
   const nodes: TreeNode[] = [];
@@ -263,6 +321,7 @@ const graphSize = computed(() => {
 
 const loadResultPreview = async () => {
   if (!payload.value?.resultReady) return;
+  if (resultPreviewUrl.value) return;
   if (resultPreviewUrl.value) URL.revokeObjectURL(resultPreviewUrl.value);
   const response = await fetch(`${apiBase}${payload.value.resultUrl}`, { headers: authHeaders() });
   if (!response.ok) return;
@@ -277,8 +336,21 @@ const loadDashboard = async () => {
       headers: authHeaders(),
     });
     await loadResultPreview();
+    updateRefreshTimer();
   } catch (error: any) {
     errorMessage.value = error?.data || error?.message || 'Impossible de charger le dashboard du job.';
+  }
+};
+
+const updateRefreshTimer = () => {
+  const status = payload.value?.job.status || '';
+  const shouldRefresh = ['queued', 'running'].includes(status);
+  if (shouldRefresh && !refreshTimer.value) {
+    refreshTimer.value = setInterval(loadDashboard, 2000);
+  }
+  if (!shouldRefresh && refreshTimer.value) {
+    clearInterval(refreshTimer.value);
+    refreshTimer.value = null;
   }
 };
 
@@ -303,8 +375,18 @@ const shortHash = (value: any) => {
   return `${text.slice(0, 10)}...${text.slice(-8)}`;
 };
 
+const tileClass = (status: string) => {
+  if (status === 'reassembled' || status === 'verified') return 'border-green-400/50 bg-green-500/20 text-green-100';
+  if (status === 'queued_verify') return 'border-blue-400/50 bg-blue-500/20 text-blue-100';
+  if (status === 'computed') return 'border-cyan-400/50 bg-cyan-500/20 text-cyan-100';
+  if (status === 'queued_compute' || status === 'preparing') return 'border-purple-400/50 bg-purple-500/20 text-purple-100';
+  if (status === 'verify_failed') return 'border-red-400/50 bg-red-500/20 text-red-100';
+  return 'border-white/10 bg-black/20 text-white/60';
+};
+
 onMounted(loadDashboard);
 onBeforeUnmount(() => {
+  if (refreshTimer.value) clearInterval(refreshTimer.value);
   if (resultPreviewUrl.value) URL.revokeObjectURL(resultPreviewUrl.value);
 });
 </script>

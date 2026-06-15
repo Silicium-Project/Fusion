@@ -112,6 +112,9 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summary := readJSONMap(job.SummaryPath)
+	if len(summary) == 0 {
+		summary = readJSONMap(progressPathForJob(job))
+	}
 	trace := readJSONMap(job.DevnetTracePath)
 	devnetTrace, _ := summary["devnet_trace"].(map[string]any)
 	if len(trace) == 0 {
@@ -140,10 +143,14 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 		"resultUrl":   "/jobs/" + strconv.Itoa(int(job.ID)) + "/result",
 		"summary": map[string]any{
 			"success":          summary["success"],
+			"progress":         summary["progress"],
+			"stage":            summary["stage"],
+			"updatedUtc":       summary["updated_utc"],
 			"demoMode":         summary["demo_mode"],
 			"jobId":            summary["job_id"],
 			"fragmentCount":    summary["fragment_count"],
 			"finalHash":        summary["final_hash"],
+			"reassembledHash":  summary["reassembled_hash"],
 			"expectedFullHash": summary["expected_full_hash"],
 			"image":            summary["image"],
 			"network":          summary["network"],
@@ -250,6 +257,14 @@ func readJSONMap(path string) map[string]any {
 		return map[string]any{}
 	}
 	return payload
+}
+
+func progressPathForJob(job models.Job) string {
+	if strings.TrimSpace(job.SummaryPath) != "" {
+		return filepath.Join(filepath.Dir(job.SummaryPath), "auto-split-demo-progress.json")
+	}
+	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "..", "Network")))
+	return filepath.Join(networkRoot, ".silicium", "demo", "render3d", job.SiliciumJobID, "auto-split-demo-progress.json")
 }
 
 func safeFilename(name string) string {
