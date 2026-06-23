@@ -3,6 +3,13 @@ setlocal
 set "ROOT=%~dp0..\.."
 pushd "%ROOT%"
 
+if exist ".silicium\env\raytracer.env" (
+  for /f "usebackq tokens=1,* delims==" %%A in (".silicium\env\raytracer.env") do (
+    if /I "%%A"=="SILICIUM_RAYTRACER_BIN" if not defined SILICIUM_RAYTRACER_BIN set "SILICIUM_RAYTRACER_BIN=%%B"
+    if /I "%%A"=="SILICIUM_RAYTRACER_ASSETS_DIR" if not defined SILICIUM_RAYTRACER_ASSETS_DIR set "SILICIUM_RAYTRACER_ASSETS_DIR=%%B"
+  )
+)
+
 if "%~1"=="" (
   echo Usage: demo\networked\start-node.cmd ^<node-id^> ^<roles^> ^<port^> ^<seed-url^> [advertise-host] [mesh-key] [reputation-score]
   echo Example worker: demo\networked\start-node.cmd worker-1 compute 46101 http://192.168.1.10:46100 192.168.1.11 demo-mesh 120

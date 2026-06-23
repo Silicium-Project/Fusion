@@ -92,6 +92,14 @@ function hexToHash32(hex: string): number[] {
   return Array.from(Buffer.from(normalized, "hex"));
 }
 
+function finalOutputUri(summary: any): string {
+  const normalizedHash = String(summary.reassembled_hash || "").replace(/^sha256:/, "");
+  if (/^[0-9a-fA-F]{64}$/.test(normalizedHash)) {
+    return `silicium://sha256/${normalizedHash}`;
+  }
+  return "silicium://result/unavailable";
+}
+
 function flattenSplitTree(node: any): any[] {
   if (!node || typeof node !== "object") return [];
   const children = Array.isArray(node.children) ? node.children : [];
@@ -472,7 +480,7 @@ async function main() {
     escrow: escrow.publicKey,
     clientToken,
     finalHash: hexToHash32(summary.reassembled_hash),
-    outputUri: summary.reassembled_png || summary.reassembled_ppm || "",
+    outputUri: finalOutputUri(summary),
   });
   await throttle();
 
@@ -503,7 +511,8 @@ async function main() {
     },
     fragments: fragmentTraces,
     final_hash: summary.reassembled_hash,
-    output_uri: summary.reassembled_png || summary.reassembled_ppm || "",
+    output_uri: finalOutputUri(summary),
+    local_output_path: summary.reassembled_png || summary.reassembled_ppm || "",
     finished_utc: new Date().toISOString(),
   };
 

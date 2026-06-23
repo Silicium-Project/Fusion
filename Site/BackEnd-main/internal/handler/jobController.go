@@ -141,6 +141,13 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 		},
 		"resultReady": job.ResultPath != "",
 		"resultUrl":   "/jobs/" + strconv.Itoa(int(job.ID)) + "/result",
+		"diagnostics": map[string]any{
+			"inputPath":       job.InputPath,
+			"resultPath":      job.ResultPath,
+			"summaryPath":     job.SummaryPath,
+			"progressPath":    progressPathForJob(job),
+			"devnetTracePath": job.DevnetTracePath,
+		},
 		"summary": map[string]any{
 			"success":          summary["success"],
 			"progress":         summary["progress"],
@@ -193,7 +200,7 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 	now := time.Now()
 	h.DB.Model(&job).Updates(map[string]any{"status": "running", "started_at": &now})
 
-	runResult := silicium.RunRender3D(job, silicium.ConfigFromEnv())
+	runResult := silicium.RunJob(job, silicium.ConfigFromEnv())
 	updates := map[string]any{
 		"status":            runResult.Status,
 		"result_path":       runResult.ResultPath,
@@ -260,10 +267,16 @@ func readJSONMap(path string) map[string]any {
 }
 
 func progressPathForJob(job models.Job) string {
+	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "..", "Network")))
+	if strings.TrimSpace(job.Workload) == "raytracer" {
+		if strings.TrimSpace(job.SummaryPath) != "" {
+			return filepath.Join(filepath.Dir(job.SummaryPath), "raytracer-progress.json")
+		}
+		return filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "raytracer-progress.json")
+	}
 	if strings.TrimSpace(job.SummaryPath) != "" {
 		return filepath.Join(filepath.Dir(job.SummaryPath), "auto-split-demo-progress.json")
 	}
-	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "..", "Network")))
 	return filepath.Join(networkRoot, ".silicium", "demo", "render3d", job.SiliciumJobID, "auto-split-demo-progress.json")
 }
 

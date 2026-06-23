@@ -3,7 +3,14 @@
     <main class="max-w-7xl mx-auto px-6 py-8">
       <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
         <div>
-          <NuxtLink to="/dashboard" class="text-white/50 hover:text-white">Retour aux taches</NuxtLink>
+          <div class="flex flex-wrap gap-3">
+            <NuxtLink to="/dashboard" class="px-4 py-2 rounded-lg bg-white/10 text-white/80 hover:bg-white/15 hover:text-white">
+              Retour au tableau de bord
+            </NuxtLink>
+            <NuxtLink to="/" class="px-4 py-2 rounded-lg bg-black/20 text-white/60 hover:bg-white/10 hover:text-white">
+              Accueil
+            </NuxtLink>
+          </div>
           <h1 class="text-4xl font-bold mt-3">Dashboard</h1>
           <p class="text-white/50 mt-2">{{ payload?.job.title || 'Job Silicium' }}</p>
         </div>
@@ -20,6 +27,19 @@
       <div v-if="errorMessage" class="mb-6 rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-red-200">
         {{ errorMessage }}
       </div>
+
+      <section v-if="payload?.job.errorMessage" class="mb-6 rounded-xl border border-red-400/30 bg-red-500/10 p-5">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-bold text-red-100">Erreur du job</h2>
+            <p class="text-red-200/80 mt-1">
+              Le pipeline a echoue pendant l'execution reseau. Le detail ci-dessous vient du backend.
+            </p>
+          </div>
+          <span class="px-3 py-1 rounded-full bg-red-500/20 text-red-100 text-sm">{{ payload.job.workload }}</span>
+        </div>
+        <pre class="mt-4 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 p-4 text-sm text-red-100">{{ payload.job.errorMessage }}</pre>
+      </section>
 
       <div v-if="payload" class="grid grid-cols-1 lg:grid-cols-4 gap-5 mb-6">
         <div class="bg-[#1f2029] rounded-2xl p-5">
@@ -134,6 +154,28 @@
               </div>
             </div>
           </section>
+
+          <section class="bg-[#1f2029] rounded-2xl p-6">
+            <h2 class="text-2xl font-bold mb-4">Diagnostics</h2>
+            <div class="space-y-3 text-sm">
+              <div>
+                <p class="text-white/50">Workload</p>
+                <p class="font-mono">{{ payload.job.workload }}</p>
+              </div>
+              <div>
+                <p class="text-white/50">Etape</p>
+                <p class="font-mono">{{ payload.summary.stage || payload.job.status }}</p>
+              </div>
+              <div>
+                <p class="text-white/50">Dernier node run</p>
+                <pre class="mt-1 max-h-44 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 p-3 text-xs">{{ latestNodeRunText }}</pre>
+              </div>
+              <div>
+                <p class="text-white/50">Fichiers</p>
+                <pre class="mt-1 max-h-36 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 p-3 text-xs">{{ diagnosticsText }}</pre>
+              </div>
+            </div>
+          </section>
         </aside>
       </div>
 
@@ -181,12 +223,17 @@ type DashboardPayload = {
   job: {
     id: number;
     title: string;
+    description?: string;
+    workload: string;
+    priority?: string;
     status: string;
     siliciumJobId: string;
     devnetJob?: string;
+    errorMessage?: string;
   };
   resultReady: boolean;
   resultUrl: string;
+  diagnostics?: Record<string, any>;
   summary: Record<string, any>;
   devnet: Record<string, any>;
 };
@@ -252,6 +299,12 @@ const puzzleTiles = computed(() => {
     status: String(fragment.status || (fragment.verify_choice ? 'verified' : 'planned')),
   }));
 });
+const latestNodeRunText = computed(() => {
+  const runs = Array.isArray(payload.value?.summary.nodeRuns) ? payload.value?.summary.nodeRuns : [];
+  if (runs.length === 0) return payload.value?.job.errorMessage || 'Aucun node run disponible.';
+  return JSON.stringify(runs[runs.length - 1], null, 2);
+});
+const diagnosticsText = computed(() => JSON.stringify(payload.value?.diagnostics || {}, null, 2));
 
 const layoutTree = () => {
   const nodes: TreeNode[] = [];

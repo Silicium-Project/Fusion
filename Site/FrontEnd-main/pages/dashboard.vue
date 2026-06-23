@@ -9,6 +9,12 @@
         </div>
         <ul class="space-y-2">
           <li>
+            <NuxtLink to="/" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors">
+              <img src="~assets/icons/Products.svg" alt="" class="w-6 h-6 mr-4" />
+              Accueil
+            </NuxtLink>
+          </li>
+          <li>
             <a href="#" class="flex items-center text-lg font-semibold p-3 rounded-xl bg-gradient-to-r from-purple-500/20 to-blue-500/20">
               <img src="~assets/icons/Users.svg" alt="" class="w-6 h-6 mr-4" />
               Tableau de bord
@@ -153,14 +159,28 @@
           </div>
           <form @submit.prevent="submitJob">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <input v-model="jobForm.workload" type="text" placeholder="Type de tache" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
-              <input v-model="jobForm.priority" type="text" placeholder="Priorite" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
+              <label class="block">
+                <span class="block text-white/50 mb-2">Type de tache</span>
+                <select v-model="jobForm.workload" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white focus:outline-none focus:ring-2 focus:ring-purple-400">
+                  <option v-for="option in workloadOptions" :key="option.value" :value="option.value" class="bg-[#1f2029] text-white">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="block text-white/50 mb-2">Priorite</span>
+                <select v-model="jobForm.priority" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white focus:outline-none focus:ring-2 focus:ring-purple-400">
+                  <option v-for="option in priorityOptions" :key="option.value" :value="option.value" class="bg-[#1f2029] text-white">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
             </div>
             <input v-model="jobForm.title" type="text" placeholder="Nom de la tache" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400 mb-6">
             <textarea v-model="jobForm.description" placeholder="Description" class="w-full h-24 bg-black/20 rounded-lg px-4 py-2 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400 mb-6"></textarea>
             <div class="mb-6">
               <label for="file-input" class="block text-white/50 mb-2">Fichier d'entree</label>
-              <input id="file-input" type="file" accept=".json,application/json" class="w-full text-white" @change="onJobFileChange">
+              <input id="file-input" type="file" accept=".json,.cfg,application/json,text/plain" class="w-full text-white" @change="onJobFileChange">
             </div>
             <p v-if="jobSubmitError" class="text-red-300 mb-4">{{ jobSubmitError }}</p>
             <button type="submit" :disabled="isSubmittingJob" class="w-full h-12 rounded-lg bg-gradient-to-r from-purple-400 to-blue-400 font-bold text-lg hover:from-purple-500 hover:to-blue-500 transition-shadow shadow-lg disabled:opacity-50">
@@ -200,6 +220,18 @@ const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
 const apiBase = config.public.apiBase;
 const devnetDashboardUrl = config.public.devnetDashboardUrl;
+
+const workloadOptions = [
+  { value: 'render3d', label: 'Rendu 3D demo' },
+  { value: 'raytracer', label: 'Raytracer' },
+];
+
+const priorityOptions = [
+  { value: 'high', label: 'Haute' },
+  { value: 'normal', label: 'Normale' },
+  { value: 'low', label: 'Basse' },
+  { value: 'urgent', label: 'Urgente' },
+];
 
 const jobForm = reactive({
   workload: 'render3d',

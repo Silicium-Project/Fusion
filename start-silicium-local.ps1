@@ -23,6 +23,7 @@ param(
     [string]$DatabaseUrl = $env:DATABASE_URL,
     [string]$SqlitePath = "",
     [string]$JwtSecret = $env:JWT_SECRET_KEY,
+    [string]$RaytracerBin = $env:SILICIUM_RAYTRACER_BIN,
     [string]$MinComputeReputation = "50",
     [string]$MinVerifyReputation = "40"
 )
@@ -36,6 +37,7 @@ $BackendRoot = Join-Path $Root "Site\BackEnd-main"
 $FrontendRoot = Join-Path $Root "Site\FrontEnd-main"
 $LogRoot = Join-Path $Root ".silicium\logs\local-start"
 $DefaultSqlitePath = Join-Path $Root ".silicium\site\silicium.db"
+$RaytracerEnvFile = Join-Path $Root ".silicium\env\raytracer.env"
 
 if (-not $DatabaseDriver) {
     if ($DatabaseUrl) {
@@ -52,6 +54,23 @@ if ($DatabaseDriver -eq "postgres" -and -not $DatabaseUrl) {
 }
 if (-not $JwtSecret) {
     $JwtSecret = "silicium-local-dev-secret"
+}
+if (-not $RaytracerBin -and (Test-Path -LiteralPath $RaytracerEnvFile -PathType Leaf)) {
+    foreach ($line in Get-Content -LiteralPath $RaytracerEnvFile) {
+        if ($line -match '^SILICIUM_RAYTRACER_BIN=(.+)$') {
+            $RaytracerBin = $Matches[1].Trim()
+        }
+    }
+}
+
+$RaytracerEnv = @()
+if ($RaytracerBin) {
+    if (-not (Test-Path -LiteralPath $RaytracerBin -PathType Leaf)) {
+        Write-Warning "SILICIUM_RAYTRACER_BIN does not point to an executable file: $RaytracerBin"
+    }
+    $RaytracerEnv = @("set `"SILICIUM_RAYTRACER_BIN=$RaytracerBin`"")
+} else {
+    Write-Warning "SILICIUM_RAYTRACER_BIN is not set. Render3D can run, but raytracer jobs will fail until each worker points to a local raytracer executable."
 }
 
 function Assert-Directory {
@@ -182,7 +201,7 @@ New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
 Write-Host "Silicium local stack"
 Write-Host "Root:      $Root"
 Write-Host "Logs:      $LogRoot"
-Write-Host "Frontend:  http://localhost:$FrontendPort/dashboard"
+Write-Host "Frontend:  http://localhost:$FrontendPort/"
 Write-Host "Backend:   http://localhost:$BackendPort"
 Write-Host "Devnet UI: http://localhost:$DashboardPort/"
 Write-Host "Database:  $DatabaseDriver"
@@ -200,12 +219,12 @@ if (-not $SkipNetworkNodes) {
     $workerCmd = Write-CmdLauncher `
         -Name "network-worker" `
         -WorkingDirectory $NetworkRoot `
-        -Environment @() `
+        -Environment $RaytracerEnv `
         -Command ".\demo\networked\start-node.cmd worker-1 compute $WorkerPort http://${HostAddress}:$OrchestratorPort $HostAddress $MeshKey $WorkerReputation"
     $verifierCmd = Write-CmdLauncher `
         -Name "network-verifier" `
         -WorkingDirectory $NetworkRoot `
-        -Environment @() `
+        -Environment $RaytracerEnv `
         -Command ".\demo\networked\start-node.cmd verifier-1 verify $VerifierPort http://${HostAddress}:$OrchestratorPort $HostAddress $MeshKey $VerifierReputation"
     Start-LoggedProcess -Name "network-worker" -CommandFile $workerCmd -Port $WorkerPort
     Start-LoggedProcess -Name "network-verifier" -CommandFile $verifierCmd -Port $VerifierPort
@@ -268,24 +287,25 @@ if (-not $SkipBackend) {
         Write-Host "OK Go -> $goPath"
     }
     $seedPeers = "http://${HostAddress}:$WorkerPort,http://${HostAddress}:$VerifierPort"
+    $BackendEnv = @(
+        "set `"DATABASE_DRIVER=$DatabaseDriver`"",
+        "set `"DATABASE_URL=$DatabaseUrl`"",
+        "set `"SQLITE_PATH=$SqlitePath`"",
+        "set `"JWT_SECRET_KEY=$JwtSecret`"",
+        "set `"SILICIUM_NETWORK_ROOT=$NetworkRoot`"",
+        "set `"SILICIUM_SEED_PEERS=$seedPeers`"",
+        "set `"SILICIUM_MESH_KEY=$MeshKey`"",
+        "set `"SILICIUM_ORCHESTRATOR_HOST=$HostAddress`"",
+        "set `"SILICIUM_DASHBOARD_URL=http://localhost:$DashboardPort/`"",
+        "set `"SILICIUM_DEVNET_TRACE=1`"",
+        "set `"SILICIUM_DEVNET_TX_DELAY_MS=2500`"",
+        "set `"SILICIUM_MIN_COMPUTE_REPUTATION=$MinComputeReputation`"",
+        "set `"SILICIUM_MIN_VERIFY_REPUTATION=$MinVerifyReputation`""
+    ) + $RaytracerEnv
     $backendCmd = Write-CmdLauncher `
         -Name "site-backend" `
         -WorkingDirectory $BackendRoot `
-        -Environment @(
-            "set `"DATABASE_DRIVER=$DatabaseDriver`"",
-            "set `"DATABASE_URL=$DatabaseUrl`"",
-            "set `"SQLITE_PATH=$SqlitePath`"",
-            "set `"JWT_SECRET_KEY=$JwtSecret`"",
-            "set `"SILICIUM_NETWORK_ROOT=$NetworkRoot`"",
-            "set `"SILICIUM_SEED_PEERS=$seedPeers`"",
-            "set `"SILICIUM_MESH_KEY=$MeshKey`"",
-            "set `"SILICIUM_ORCHESTRATOR_HOST=$HostAddress`"",
-            "set `"SILICIUM_DASHBOARD_URL=http://localhost:$DashboardPort/`"",
-            "set `"SILICIUM_DEVNET_TRACE=1`"",
-            "set `"SILICIUM_DEVNET_TX_DELAY_MS=2500`"",
-            "set `"SILICIUM_MIN_COMPUTE_REPUTATION=$MinComputeReputation`"",
-            "set `"SILICIUM_MIN_VERIFY_REPUTATION=$MinVerifyReputation`""
-        ) `
+        -Environment $BackendEnv `
         -Command "go run .\cmd\main.go"
     Start-LoggedProcess -Name "site-backend" -CommandFile $backendCmd -Port $BackendPort
     Wait-ListeningPort -Port $BackendPort -Name "site-backend" -TimeoutSeconds 45
@@ -305,12 +325,12 @@ if (-not $SkipFrontend) {
 }
 
 if (-not $NoBrowser -and -not $DryRun) {
-    Start-Process "http://localhost:$FrontendPort/dashboard"
+    Start-Process "http://localhost:$FrontendPort/"
 }
 
 Write-Host ""
 Write-Host "Local stack requested."
-Write-Host "Open site:      http://localhost:$FrontendPort/dashboard"
+Write-Host "Open site:      http://localhost:$FrontendPort/"
 Write-Host "Open dashboard: http://localhost:$DashboardPort/"
 Write-Host "Logs:           $LogRoot"
 Write-Host ""
