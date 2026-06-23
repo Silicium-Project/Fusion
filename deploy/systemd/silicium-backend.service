@@ -1,0 +1,15 @@
+[Unit]
+Description=Silicium site backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__SILICIUM_ROOT__/Site/BackEnd-main
+EnvironmentFile=/etc/silicium/backend.env
+ExecStart=__SILICIUM_ROOT__/bin/silicium-backend
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

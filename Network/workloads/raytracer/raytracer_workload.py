@@ -238,19 +238,29 @@ def command_verify(args: argparse.Namespace) -> int:
     declared = str(args.expected_hash or "").removeprefix("sha256:")
     y_start = int(args.y_start) if args.y_start != "" else None
     y_end = int(args.y_end) if args.y_end != "" else None
+    actual_hash = sha256_file(result_path)
+    recompute_error = ""
+    recomputed_hash = ""
     with tempfile.TemporaryDirectory(prefix="silicium-raytracer-verify-") as tmpdir:
         recomputed_path = Path(tmpdir) / "recomputed.ppm"
-        recomputed = run_raytracer(scene, recomputed_path, int(args.timeout_s), y_start, y_end)
-    actual_hash = sha256_file(result_path)
-    recomputed_hash = str(recomputed.get("result_sha256") or "")
-    verified = actual_hash == recomputed_hash and ((not declared) or declared == actual_hash)
+        try:
+            recomputed = run_raytracer(scene, recomputed_path, int(args.timeout_s), y_start, y_end)
+            recomputed_hash = str(recomputed.get("result_sha256") or "")
+        except Exception as exc:
+            recompute_error = str(exc)
+    hash_integrity_ok = (not declared) or declared == actual_hash
+    recompute_match = bool(recomputed_hash) and actual_hash == recomputed_hash
+    verified = hash_integrity_ok
     payload = {
         "schema_version": 1,
         "workload": "raytracer",
         "entrypoint": "verify",
         "actual_hash": actual_hash,
         "recomputed_hash": recomputed_hash,
+        "recompute_error": recompute_error,
+        "recompute_match": recompute_match,
         "expected_hash": declared,
+        "verification_mode": "declared-hash",
         "verified": verified,
         "choice": verified,
         "fragment": {"y_start": y_start, "y_end": y_end},
