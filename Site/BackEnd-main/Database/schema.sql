@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title VARCHAR(120) NOT NULL,
     description TEXT,
-    workload VARCHAR(80) NOT NULL DEFAULT 'render3d',
+    workload VARCHAR(80) NOT NULL DEFAULT 'raytracer',
     priority VARCHAR(20) NOT NULL DEFAULT 'high',
     status VARCHAR(32) NOT NULL DEFAULT 'queued',
     silicium_job_id VARCHAR(128) UNIQUE NOT NULL,

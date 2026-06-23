@@ -13,8 +13,8 @@ The mechanism is workload-agnostic:
    `/results/dispatch`;
 6. the orchestrator can reassemble or finalize using the returned refs.
 
-`render3d` is only the first workload plugged into this path. Another workload
-can reuse the same network flow if it provides:
+`raytracer` is the current workload plugged into this path. Another workload can
+reuse the same network flow if it provides:
 
 - a compute workload id;
 - a verify workload id;
@@ -46,18 +46,18 @@ on-chain reputation (`compute`, `verify`, `storage`). The selection is weighted
 by reputation and capacity, then penalized by current dispatch load so one strong
 peer can receive more work without monopolizing every fragment.
 
-## Run the render3d auto-split demo in network mode
+## Run the raytracer workload in network mode
 
 On the orchestrator machine:
 
 ```powershell
-.\demo\render3d\run-auto-split-demo.cmd .\demo\render3d\scene.json --job-id render-net-001 --node-mode network --network-advertise-host ORCHESTRATOR_IP --network-seed-peers http://WORKER_IP:46101,http://VERIFIER1_IP:46102,http://VERIFIER2_IP:46103 --network-mesh-key demo-mesh
+py .\workloads\raytracer\run_network_job.py .\workloads\raytracer\examples\silicium-multi-fragment-scene.cfg --job-id raytracer-net-001 --node-mode network --network-advertise-host ORCHESTRATOR_IP --network-seed-peers http://WORKER_IP:46101,http://VERIFIER1_IP:46102,http://VERIFIER2_IP:46103 --network-mesh-key demo-mesh
 ```
 
 Optional reputation gates:
 
 ```powershell
-.\demo\render3d\run-auto-split-demo.cmd .\demo\render3d\scene.json --job-id render-net-002 --node-mode network --network-advertise-host ORCHESTRATOR_IP --network-seed-peers http://WORKER_IP:46101,http://VERIFIER1_IP:46102 --network-mesh-key demo-mesh --min-compute-reputation 50 --min-verify-reputation 40
+py .\workloads\raytracer\run_network_job.py .\workloads\raytracer\examples\silicium-multi-fragment-scene.cfg --job-id raytracer-net-002 --node-mode network --network-advertise-host ORCHESTRATOR_IP --network-seed-peers http://WORKER_IP:46101,http://VERIFIER1_IP:46102 --network-mesh-key demo-mesh --min-compute-reputation 50 --min-verify-reputation 40
 ```
 
 Add `--devnet-trace` when the network run succeeds and you want to write the

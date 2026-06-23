@@ -7,7 +7,7 @@ type Job struct {
 	UserID          uint       `gorm:"not null;index" json:"userId"`
 	Title           string     `gorm:"size:120;not null" json:"title"`
 	Description     string     `gorm:"type:text" json:"description"`
-	Workload        string     `gorm:"size:80;not null;default:'render3d'" json:"workload"`
+	Workload        string     `gorm:"size:80;not null;default:'raytracer'" json:"workload"`
 	Priority        string     `gorm:"size:20;not null;default:'high'" json:"priority"`
 	Status          string     `gorm:"size:32;not null;default:'queued';index" json:"status"`
 	SiliciumJobID   string     `gorm:"size:128;uniqueIndex;not null" json:"siliciumJobId"`

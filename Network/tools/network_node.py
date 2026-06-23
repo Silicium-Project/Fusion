@@ -35,10 +35,10 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
-RENDER3D_COMPUTE_WORKLOAD = "calcul/rendering/demo-render3d"
-RENDER3D_VERIFY_WORKLOAD = "verification/rendering/demo-render3d"
-RENDER3D_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/demo-render3d-fragment"
-RENDER3D_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/demo-render3d-fragment"
+RAYTRACER_COMPUTE_WORKLOAD = "calcul/rendering/raytracer"
+RAYTRACER_VERIFY_WORKLOAD = "verification/rendering/raytracer"
+RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/raytracer-fragment"
+RAYTRACER_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/raytracer-fragment"
 NETWORK_ROLES = frozenset({"compute", "verify", "storage", "audit", "resource"})
 REQUEST_ROLES = frozenset({"audit", "resource", "verify", "storage", "compute"})
 WORLD_DEFAULT_GOSSIP_PORT = 46000
@@ -637,10 +637,10 @@ class RoleRuntime:
         self.config = config
         self.p2p = p2p
 
-    def render3d_entrypoint(self, name: str) -> Path:
-        script = Path(__file__).resolve().parents[1] / "workloads" / "render3d" / f"{name}.py"
+    def raytracer_entrypoint(self, name: str) -> Path:
+        script = Path(__file__).resolve().parents[1] / "workloads" / "raytracer" / f"{name}.py"
         if not script.exists():
-            raise FileNotFoundError(f"render3d_workload_entrypoint_not_found:{script}")
+            raise FileNotFoundError(f"raytracer_workload_entrypoint_not_found:{script}")
         return script
 
     def capacity(self) -> dict[str, Any]:
@@ -658,10 +658,10 @@ class RoleRuntime:
         return self.run_compute_task(envelope, task, p2p_data, p2p_meta)
 
     def run_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
-        if str(task.get("workload", "")).strip() == RENDER3D_COMPUTE_WORKLOAD:
-            return self.run_render3d_compute_task(envelope, task, p2p_data, p2p_meta)
-        if str(task.get("workload", "")).strip() == RENDER3D_FRAGMENT_COMPUTE_WORKLOAD:
-            return self.run_render3d_fragment_compute_task(envelope, task, p2p_data, p2p_meta)
+        if str(task.get("workload", "")).strip() == RAYTRACER_COMPUTE_WORKLOAD:
+            return self.run_raytracer_compute_task(envelope, task, p2p_data, p2p_meta)
+        if str(task.get("workload", "")).strip() == RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD:
+            return self.run_raytracer_fragment_compute_task(envelope, task, p2p_data, p2p_meta)
         worker_result = self.try_worker_binary(task)
         material = {
             "task": task,
@@ -676,14 +676,14 @@ class RoleRuntime:
             "result_hash": sha256_json(material),
         }
 
-    def run_render3d_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+    def run_raytracer_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
         if not p2p_data:
-            raise ValueError("render3d_missing_scene_payload")
-        script = self.render3d_entrypoint("compute")
-        timeout_s = int(task.get("timeout_s", 120) or 120)
-        with tempfile.TemporaryDirectory(prefix="silicium-render3d-") as tmpdir:
+            raise ValueError("raytracer_missing_scene_payload")
+        script = self.raytracer_entrypoint("compute")
+        timeout_s = int(task.get("timeout_s", 300) or 300)
+        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-") as tmpdir:
             tmp = Path(tmpdir)
-            scene_path = tmp / "scene.json"
+            scene_path = tmp / "scene.cfg"
             output_path = tmp / "render.ppm"
             result_path = tmp / "result.json"
             scene_path.write_bytes(p2p_data)
@@ -696,20 +696,22 @@ class RoleRuntime:
                 str(output_path),
                 "--result-json",
                 str(result_path),
+                "--timeout-s",
+                str(timeout_s),
             ]
-            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s, check=False)
+            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s + 30, check=False)
             if completed.returncode != 0:
-                raise RuntimeError(f"render3d_worker_failed:{completed.stderr[-2048:]}")
+                raise RuntimeError(f"raytracer_worker_failed:{completed.stderr[-2048:]}")
             result = read_json(result_path, {})
             if not isinstance(result, dict):
-                raise RuntimeError("render3d_worker_bad_result")
+                raise RuntimeError("raytracer_worker_bad_result")
             output_bytes = output_path.read_bytes()
             output_ref = self.p2p.put_local(output_bytes, replication_roles={"storage"})
         result_hash = str(result.get("result_sha256") or sha256_bytes(output_bytes))
         expected = str(task.get("expected_result_sha256") or "").removeprefix("sha256:")
         return {
             "role_result": "compute",
-            "workload": RENDER3D_COMPUTE_WORKLOAD,
+            "workload": RAYTRACER_COMPUTE_WORKLOAD,
             "input": p2p_meta,
             "input_hash": sha256_bytes(p2p_data),
             "result_hash": result_hash,
@@ -718,14 +720,14 @@ class RoleRuntime:
             "output_ref": output_ref,
             "output_format": result.get("result_format", "ppm/p6"),
             "renderer": {
-                "mode": "demo-render3d",
+                "mode": "raytracer",
                 "returncode": completed.returncode,
                 "stdout": completed.stdout[-4096:],
                 "stderr": completed.stderr[-4096:],
             },
         }
 
-    def _render3d_fragment_spec(self, task: dict[str, Any], p2p_data: bytes) -> dict[str, Any]:
+    def _raytracer_fragment_spec(self, task: dict[str, Any], p2p_data: bytes) -> dict[str, Any]:
         spec: dict[str, Any] = {}
         if p2p_data:
             parsed = json.loads(p2p_data.decode("utf-8"))
@@ -733,19 +735,19 @@ class RoleRuntime:
                 spec.update(parsed)
         spec.update({key: value for key, value in task.items() if key in {"fragment_index", "fragment_count", "y_start", "y_end", "scene_p2p_ref"}})
         if "scene_p2p_ref" not in spec:
-            raise ValueError("render3d_fragment_missing_scene_ref")
+            raise ValueError("raytracer_fragment_missing_scene_ref")
         return spec
 
-    def run_render3d_fragment_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
-        spec = self._render3d_fragment_spec(task, p2p_data)
+    def run_raytracer_fragment_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        spec = self._raytracer_fragment_spec(task, p2p_data)
         scene_data, scene_meta = self.p2p.fetch(spec.get("scene_p2p_ref"))
-        script = self.render3d_entrypoint("compute")
-        timeout_s = int(task.get("timeout_s", 120) or 120)
+        script = self.raytracer_entrypoint("compute")
+        timeout_s = int(task.get("timeout_s", 300) or 300)
         y_start = int(spec.get("y_start", 0) or 0)
         y_end = int(spec.get("y_end", 0) or 0)
-        with tempfile.TemporaryDirectory(prefix="silicium-render3d-fragment-") as tmpdir:
+        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-fragment-") as tmpdir:
             tmp = Path(tmpdir)
-            scene_path = tmp / "scene.json"
+            scene_path = tmp / "scene.cfg"
             output_path = tmp / "fragment.ppm"
             result_path = tmp / "result.json"
             scene_path.write_bytes(scene_data)
@@ -758,24 +760,26 @@ class RoleRuntime:
                 str(output_path),
                 "--result-json",
                 str(result_path),
+                "--timeout-s",
+                str(timeout_s),
                 "--y-start",
                 str(y_start),
                 "--y-end",
                 str(y_end),
             ]
-            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s, check=False)
+            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s + 30, check=False)
             if completed.returncode != 0:
-                raise RuntimeError(f"render3d_fragment_worker_failed:{completed.stderr[-2048:]}")
+                raise RuntimeError(f"raytracer_fragment_worker_failed:{completed.stderr[-2048:]}")
             result = read_json(result_path, {})
             if not isinstance(result, dict):
-                raise RuntimeError("render3d_fragment_worker_bad_result")
+                raise RuntimeError("raytracer_fragment_worker_bad_result")
             output_bytes = output_path.read_bytes()
             output_ref = self.p2p.put_local(output_bytes, replication_roles={"storage"})
         result_hash = str(result.get("result_sha256") or sha256_bytes(output_bytes))
         expected = str(task.get("expected_result_sha256") or spec.get("expected_result_sha256") or "").removeprefix("sha256:")
         return {
             "role_result": "compute",
-            "workload": RENDER3D_FRAGMENT_COMPUTE_WORKLOAD,
+            "workload": RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
             "input": p2p_meta,
             "scene_input": scene_meta,
             "input_hash": sha256_bytes(p2p_data),
@@ -789,7 +793,7 @@ class RoleRuntime:
             "output_ref": output_ref,
             "output_format": result.get("result_format", "ppm/p6"),
             "renderer": {
-                "mode": "demo-render3d-fragment",
+                "mode": "raytracer-fragment",
                 "returncode": completed.returncode,
                 "stdout": completed.stdout[-4096:],
                 "stderr": completed.stderr[-4096:],
@@ -856,10 +860,10 @@ class RoleRuntime:
         }
 
     def run_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
-        if str(task.get("workload", "")).strip() == RENDER3D_VERIFY_WORKLOAD:
-            return self.run_render3d_verify_task(envelope, task, p2p_data, p2p_meta)
-        if str(task.get("workload", "")).strip() == RENDER3D_FRAGMENT_VERIFY_WORKLOAD:
-            return self.run_render3d_fragment_verify_task(envelope, task, p2p_data, p2p_meta)
+        if str(task.get("workload", "")).strip() == RAYTRACER_VERIFY_WORKLOAD:
+            return self.run_raytracer_verify_task(envelope, task, p2p_data, p2p_meta)
+        if str(task.get("workload", "")).strip() == RAYTRACER_FRAGMENT_VERIFY_WORKLOAD:
+            return self.run_raytracer_fragment_verify_task(envelope, task, p2p_data, p2p_meta)
         actual = sha256_bytes(p2p_data)
         expected = str(task.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
         passed = not expected or expected == actual
@@ -873,18 +877,18 @@ class RoleRuntime:
             "result_hash": sha256_json({"verified": passed, "actual": actual, "expected": expected}),
         }
 
-    def run_render3d_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+    def run_raytracer_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
         if not p2p_data:
-            raise ValueError("render3d_missing_result_payload")
+            raise ValueError("raytracer_missing_result_payload")
         scene_ref = task.get("scene_p2p_ref") or envelope.get("scene_p2p_ref")
         if not isinstance(scene_ref, dict):
-            raise ValueError("render3d_missing_scene_ref")
+            raise ValueError("raytracer_missing_scene_ref")
         scene_data, scene_meta = self.p2p.fetch(scene_ref)
-        script = self.render3d_entrypoint("verify")
-        timeout_s = int(task.get("timeout_s", 120) or 120)
-        with tempfile.TemporaryDirectory(prefix="silicium-render3d-verify-") as tmpdir:
+        script = self.raytracer_entrypoint("verify")
+        timeout_s = int(task.get("timeout_s", 300) or 300)
+        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-verify-") as tmpdir:
             tmp = Path(tmpdir)
-            scene_path = tmp / "scene.json"
+            scene_path = tmp / "scene.cfg"
             result_path = tmp / "verify.json"
             result_input_path = tmp / "result.ppm"
             scene_path.write_bytes(scene_data)
@@ -900,10 +904,12 @@ class RoleRuntime:
                 str(task.get("expected_hash") or envelope.get("expected_hash") or ""),
                 "--result-json",
                 str(result_path),
+                "--timeout-s",
+                str(timeout_s),
             ]
-            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s, check=False)
+            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s + 30, check=False)
             if completed.returncode not in (0, 2):
-                raise RuntimeError(f"render3d_verify_worker_failed:{completed.stderr[-2048:]}")
+                raise RuntimeError(f"raytracer_verify_worker_failed:{completed.stderr[-2048:]}")
             verify_payload = read_json(result_path, {})
         actual = sha256_bytes(p2p_data)
         recomputed = str(verify_payload.get("recomputed_hash") or "")
@@ -911,7 +917,7 @@ class RoleRuntime:
         passed = bool(verify_payload.get("verified", False))
         return {
             "role_result": "verify",
-            "workload": RENDER3D_VERIFY_WORKLOAD,
+            "workload": RAYTRACER_VERIFY_WORKLOAD,
             "input": p2p_meta,
             "scene": scene_meta,
             "input_hash": actual,
@@ -921,27 +927,27 @@ class RoleRuntime:
             "choice": passed,
             "result_hash": sha256_json({"verified": passed, "actual": actual, "recomputed": recomputed, "expected": declared}),
             "renderer": {
-                "mode": "demo-render3d-verify",
+                "mode": "raytracer-verify",
                 "returncode": completed.returncode,
                 "stdout": completed.stdout[-4096:],
                 "stderr": completed.stderr[-4096:],
             },
         }
 
-    def run_render3d_fragment_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+    def run_raytracer_fragment_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
         if not p2p_data:
-            raise ValueError("render3d_fragment_missing_result_payload")
+            raise ValueError("raytracer_fragment_missing_result_payload")
         scene_ref = task.get("scene_p2p_ref") or envelope.get("scene_p2p_ref")
         if not isinstance(scene_ref, dict):
-            raise ValueError("render3d_fragment_missing_scene_ref")
+            raise ValueError("raytracer_fragment_missing_scene_ref")
         scene_data, scene_meta = self.p2p.fetch(scene_ref)
-        script = self.render3d_entrypoint("verify")
-        timeout_s = int(task.get("timeout_s", 120) or 120)
+        script = self.raytracer_entrypoint("verify")
+        timeout_s = int(task.get("timeout_s", 300) or 300)
         y_start = int(task.get("y_start", 0) or 0)
         y_end = int(task.get("y_end", 0) or 0)
-        with tempfile.TemporaryDirectory(prefix="silicium-render3d-fragment-verify-") as tmpdir:
+        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-fragment-verify-") as tmpdir:
             tmp = Path(tmpdir)
-            scene_path = tmp / "scene.json"
+            scene_path = tmp / "scene.cfg"
             result_path = tmp / "verify.json"
             result_input_path = tmp / "fragment.ppm"
             scene_path.write_bytes(scene_data)
@@ -957,14 +963,16 @@ class RoleRuntime:
                 str(task.get("expected_hash") or envelope.get("expected_hash") or ""),
                 "--result-json",
                 str(result_path),
+                "--timeout-s",
+                str(timeout_s),
                 "--y-start",
                 str(y_start),
                 "--y-end",
                 str(y_end),
             ]
-            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s, check=False)
+            completed = subprocess.run(cmd, text=True, capture_output=True, timeout=timeout_s + 30, check=False)
             if completed.returncode not in (0, 2):
-                raise RuntimeError(f"render3d_fragment_verify_worker_failed:{completed.stderr[-2048:]}")
+                raise RuntimeError(f"raytracer_fragment_verify_worker_failed:{completed.stderr[-2048:]}")
             verify_payload = read_json(result_path, {})
         actual = sha256_bytes(p2p_data)
         recomputed = str(verify_payload.get("recomputed_hash") or "")
@@ -972,7 +980,7 @@ class RoleRuntime:
         passed = bool(verify_payload.get("verified", False))
         return {
             "role_result": "verify",
-            "workload": RENDER3D_FRAGMENT_VERIFY_WORKLOAD,
+            "workload": RAYTRACER_FRAGMENT_VERIFY_WORKLOAD,
             "input": p2p_meta,
             "scene": scene_meta,
             "fragment_index": int(task.get("fragment_index", 0) or 0),
@@ -986,7 +994,7 @@ class RoleRuntime:
             "choice": passed,
             "result_hash": sha256_json({"verified": passed, "actual": actual, "recomputed": recomputed, "expected": declared}),
             "renderer": {
-                "mode": "demo-render3d-fragment-verify",
+                "mode": "raytracer-fragment-verify",
                 "returncode": completed.returncode,
                 "stdout": completed.stdout[-4096:],
                 "stderr": completed.stderr[-4096:],
@@ -1371,7 +1379,7 @@ class PeerNetwork:
         try:
             with urllib.request.urlopen(req, timeout=5):
                 return
-        except urllib.error.URLError:
+        except (TimeoutError, OSError, urllib.error.URLError):
             return
 
     def _fetch_direct_from_peer(self, peer: dict[str, Any], content_id: str) -> bytes | None:
@@ -1383,7 +1391,7 @@ class PeerNetwork:
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
                 return response.read()
-        except urllib.error.URLError:
+        except (TimeoutError, OSError, urllib.error.URLError):
             return None
 
     def _fetch_via_relays(self, content_id: str, preferred_peer_id: str, candidates: list[dict[str, Any]]) -> tuple[bytes, dict[str, Any]] | None:
@@ -1399,7 +1407,7 @@ class PeerNetwork:
             try:
                 with urllib.request.urlopen(request, timeout=5) as response:
                     return response.read(), {"node_id": target_peer_id, "http_base_url": relay_url, "relayed_via": relay.get("node_id", "")}
-            except urllib.error.URLError:
+            except (TimeoutError, OSError, urllib.error.URLError):
                 continue
         return None
 
@@ -1450,7 +1458,7 @@ class PeerNetwork:
             try:
                 with urllib.request.urlopen(request, timeout=5) as response:
                     return response.status == 200
-            except urllib.error.URLError:
+            except (TimeoutError, OSError, urllib.error.URLError):
                 continue
         return False
 
@@ -1580,7 +1588,7 @@ class PeerNetwork:
         try:
             with urllib.request.urlopen(request, timeout=10) as response:
                 return response.status == 200
-        except urllib.error.URLError:
+        except (TimeoutError, OSError, urllib.error.URLError):
             return False
 
     def _start_udp_listener(self) -> None:
@@ -2790,7 +2798,7 @@ class NetworkNode:
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
                 ok = response.status in {200, 202}
-        except urllib.error.URLError:
+        except (TimeoutError, OSError, urllib.error.URLError):
             ok = False
         if ok:
             self.metrics["dispatched"] = int(self.metrics.get("dispatched", 0) or 0) + 1
@@ -2851,7 +2859,7 @@ class NetworkNode:
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
                 ok = response.status in {200, 202}
-        except urllib.error.URLError:
+        except (TimeoutError, OSError, urllib.error.URLError):
             ok = False
         append_jsonl(
             self.events_path,

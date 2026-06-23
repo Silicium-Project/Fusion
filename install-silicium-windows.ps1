@@ -2,7 +2,9 @@ param(
     [switch]$InstallSystemDeps,
     [switch]$SkipNpmInstall,
     [switch]$SkipSolanaCheck,
-    [switch]$SkipDockerCheck
+    [switch]$SkipDockerCheck,
+    [string]$RaytracerBin = $env:SILICIUM_RAYTRACER_BIN,
+    [string]$RaytracerAssetsDir = $env:SILICIUM_RAYTRACER_ASSETS_DIR
 )
 
 $ErrorActionPreference = "Stop"
@@ -97,6 +99,125 @@ function Invoke-NpmInstall($Path, $Name) {
     }
 }
 
+function Find-RaytracerBinary {
+    param([string]$ExplicitPath)
+
+    $candidates = @()
+    if ($ExplicitPath) {
+        $candidates += $ExplicitPath
+    }
+    if ($env:SILICIUM_RAYTRACER_BIN) {
+        $candidates += $env:SILICIUM_RAYTRACER_BIN
+    }
+    $candidates += @(
+        (Join-Path $Root "Network\bin\raytracer\raytracer.exe"),
+        (Join-Path $Root "Network\bin\raytracer\raytracer"),
+        (Join-Path $Root "raytracer.exe"),
+        (Join-Path $Root "raytracer")
+    )
+
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    $cmd = Get-Command "raytracer.exe" -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
+    }
+    $cmd = Get-Command "raytracer" -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
+    }
+    return ""
+}
+
+function Write-RaytracerEnv {
+    param([string]$BinaryPath, [string]$AssetsPath)
+
+    $envDir = Join-Path $Root ".silicium\env"
+    New-Item -ItemType Directory -Force -Path $envDir | Out-Null
+    $envFile = Join-Path $envDir "raytracer.env"
+    $lines = @("SILICIUM_RAYTRACER_BIN=$BinaryPath")
+    if ($AssetsPath -and (Test-Path -LiteralPath $AssetsPath -PathType Container)) {
+        $lines += "SILICIUM_RAYTRACER_ASSETS_DIR=$((Resolve-Path -LiteralPath $AssetsPath).Path)"
+    }
+    Set-Content -LiteralPath $envFile -Value $lines -Encoding ASCII
+    Write-Host "[ok] Raytracer runtime config -> $envFile"
+}
+
+function Install-RaytracerRuntime {
+    param([string]$BinaryPath)
+
+    $resolvedBinary = (Resolve-Path -LiteralPath $BinaryPath).Path
+    $runtimeDir = Join-Path $Root ".silicium\bin\raytracer"
+    New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+
+    $installedBinary = Join-Path $runtimeDir (Split-Path -Leaf $resolvedBinary)
+    if ($resolvedBinary -ne (Join-Path $runtimeDir (Split-Path -Leaf $resolvedBinary))) {
+        Copy-Item -LiteralPath $resolvedBinary -Destination $installedBinary -Force
+    }
+
+    $sourceDir = Split-Path -Parent $resolvedBinary
+    Get-ChildItem -LiteralPath $sourceDir -Filter "*.dll" -File -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            $targetDll = Join-Path $runtimeDir $_.Name
+            if ($_.FullName -ne $targetDll) {
+                Copy-Item -LiteralPath $_.FullName -Destination $targetDll -Force
+            }
+        }
+
+    $msysUcrtBin = "C:\msys64\ucrt64\bin"
+    if (Test-Path -LiteralPath $msysUcrtBin -PathType Container) {
+        $runtimeDlls = @(
+            "libgcc_s_seh-1.dll",
+            "libwinpthread-1.dll",
+            "libstdc++-6.dll",
+            "libsfml-system-3.dll",
+            "libsfml-window-3.dll",
+            "libsfml-graphics-3.dll",
+            "libfreetype-6.dll",
+            "libbz2-1.dll",
+            "libbrotlidec.dll",
+            "libbrotlicommon.dll",
+            "zlib1.dll",
+            "libpng16-16.dll",
+            "libharfbuzz-0.dll",
+            "libgraphite2.dll",
+            "libglib-2.0-0.dll",
+            "libintl-8.dll",
+            "libiconv-2.dll",
+            "libpcre2-8-0.dll"
+        )
+        foreach ($dll in $runtimeDlls) {
+            $dllPath = Join-Path $msysUcrtBin $dll
+            if (Test-Path -LiteralPath $dllPath -PathType Leaf) {
+                Copy-Item -LiteralPath $dllPath -Destination (Join-Path $runtimeDir $dll) -Force
+            }
+        }
+    }
+
+    $assetsSource = ""
+    if ($RaytracerAssetsDir -and (Test-Path -LiteralPath $RaytracerAssetsDir -PathType Container)) {
+        $assetsSource = (Resolve-Path -LiteralPath $RaytracerAssetsDir).Path
+    } elseif (Test-Path -LiteralPath (Join-Path $sourceDir "assets") -PathType Container) {
+        $assetsSource = Join-Path $sourceDir "assets"
+    }
+    if ($assetsSource) {
+        $assetsTarget = Join-Path $runtimeDir "assets"
+        $resolvedAssetsSource = (Resolve-Path -LiteralPath $assetsSource).Path
+        if ((Test-Path -LiteralPath $assetsTarget) -and ((Resolve-Path -LiteralPath $assetsTarget).Path -ne $resolvedAssetsSource)) {
+            Remove-Item -LiteralPath $assetsTarget -Recurse -Force
+        }
+        if (-not (Test-Path -LiteralPath $assetsTarget)) {
+            Copy-Item -LiteralPath $resolvedAssetsSource -Destination $assetsTarget -Recurse -Force
+        }
+    }
+
+    return (Resolve-Path -LiteralPath $installedBinary).Path
+}
+
 function Show-Version($Command, [string[]]$VersionArgs = @("--version")) {
     if (Test-Command $Command) {
         try {
@@ -149,6 +270,19 @@ Invoke-NpmInstall (Join-Path $Root "Network\silicium-layer-dashboard") "Network 
 Invoke-NpmInstall (Join-Path $Root "Network\solana-layer") "Solana layer scripts"
 Invoke-NpmInstall (Join-Path $Root "Site\FrontEnd-main") "Site frontend"
 
+Write-Step "Configuring raytracer workload runtime"
+$detectedRaytracerBin = Find-RaytracerBinary $RaytracerBin
+if ($detectedRaytracerBin) {
+    Write-Host "[ok] Raytracer executable -> $detectedRaytracerBin"
+    $installedRaytracerBin = Install-RaytracerRuntime $detectedRaytracerBin
+    Write-Host "[ok] Raytracer installed runtime -> $installedRaytracerBin"
+    Write-RaytracerEnv $installedRaytracerBin (Join-Path (Split-Path -Parent $installedRaytracerBin) "assets")
+} else {
+    Write-Warning "Raytracer executable not found. Raytracer jobs need a packaged binary."
+    Write-Warning "Expected default path: Network\bin\raytracer\raytracer.exe"
+    Write-Warning "Or run once: .\install-silicium-windows.cmd -RaytracerBin C:\path\to\raytracer.exe"
+}
+
 Write-Step "Checking Python files"
 if (Test-Command "py") {
     Push-Location $Root
@@ -156,8 +290,10 @@ if (Test-Command "py") {
         py -m py_compile `
             Network\tools\network_node.py `
             Network\tools\mcp_server.py `
-            Network\demo\render3d\run_auto_split_demo.py `
-            Network\demo\networked\networked_runtime.py
+            Network\demo\networked\networked_runtime.py `
+            Network\workloads\common.py `
+            Network\workloads\raytracer\run_network_job.py `
+            Network\workloads\raytracer\raytracer_workload.py
     } finally {
         Pop-Location
     }
@@ -170,7 +306,7 @@ Write-Host "2. Start the full local stack from the repository root:"
 Write-Host "   .\start-silicium-local.cmd -Visible"
 Write-Host ""
 Write-Host "3. Open the site:"
-Write-Host "   http://localhost:3000/dashboard"
+Write-Host "   http://localhost:3000/"
 Write-Host ""
 Write-Host "Useful checks:"
 Write-Host "   .\start-silicium-local.cmd -DryRun"

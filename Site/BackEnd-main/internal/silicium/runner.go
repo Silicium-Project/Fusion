@@ -53,7 +53,16 @@ func ConfigFromEnv() RunnerConfig {
 	}
 }
 
-func RunRender3D(job models.Job, cfg RunnerConfig) RunResult {
+func RunJob(job models.Job, cfg RunnerConfig) RunResult {
+	switch strings.TrimSpace(job.Workload) {
+	case "", "raytracer":
+		return RunRaytracer(job, cfg)
+	default:
+		return RunResult{Status: "failed", ErrorMessage: "unsupported workload"}
+	}
+}
+
+func RunRaytracer(job models.Job, cfg RunnerConfig) RunResult {
 	if strings.TrimSpace(cfg.SeedPeers) == "" {
 		return RunResult{Status: "failed", ErrorMessage: "SILICIUM_SEED_PEERS is required"}
 	}
@@ -64,9 +73,8 @@ func RunRender3D(job models.Job, cfg RunnerConfig) RunResult {
 	if _, err := os.Stat(networkRoot); err != nil {
 		return RunResult{Status: "failed", ErrorMessage: fmt.Sprintf("network root not found: %s", networkRoot)}
 	}
-
 	args := []string{
-		"demo/render3d/run_auto_split_demo.py",
+		"workloads/raytracer/run_network_job.py",
 		job.InputPath,
 		"--job-id", job.SiliciumJobID,
 		"--node-mode", "network",
@@ -79,16 +87,24 @@ func RunRender3D(job models.Job, cfg RunnerConfig) RunResult {
 	if cfg.DevnetTrace {
 		args = append(args, "--devnet-trace", "--devnet-tx-delay-ms", cfg.DevnetTxDelayMS)
 	}
-
 	cmd := pythonCommand(networkRoot, args...)
 	output, err := cmd.CombinedOutput()
-	summaryPath := filepath.Join(networkRoot, ".silicium", "demo", "render3d", job.SiliciumJobID, "auto-split-demo-summary.json")
-	result := parseSummary(summaryPath)
+	summaryPath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "raytracer-summary.json")
+	result := parseRaytracerSummary(summaryPath)
 	result.SummaryPath = summaryPath
 	if result.DevnetTracePath == "" {
-		tracePath := filepath.Join(networkRoot, ".silicium", "demo", "render3d", job.SiliciumJobID, "devnet-trace.json")
+		tracePath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "devnet-trace.json")
 		if _, statErr := os.Stat(tracePath); statErr == nil {
 			result.DevnetTracePath = tracePath
+		}
+	}
+	if result.ResultPath == "" {
+		pngPath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "reassembled", "render.png")
+		outputPath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "reassembled", "render.ppm")
+		if _, statErr := os.Stat(pngPath); statErr == nil {
+			result.ResultPath = pngPath
+		} else if _, statErr := os.Stat(outputPath); statErr == nil {
+			result.ResultPath = outputPath
 		}
 	}
 	if err != nil {
@@ -121,7 +137,7 @@ func pythonCommand(networkRoot string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func parseSummary(summaryPath string) RunResult {
+func parseRaytracerSummary(summaryPath string) RunResult {
 	data, err := os.ReadFile(summaryPath)
 	if err != nil {
 		return RunResult{}
@@ -131,10 +147,11 @@ func parseSummary(summaryPath string) RunResult {
 		return RunResult{}
 	}
 	result := RunResult{Status: "completed"}
-	if success, ok := payload["success"].(bool); ok && !success {
-		result.Status = "failed"
-	}
 	if value, ok := payload["reassembled_png"].(string); ok {
+		result.ResultPath = value
+	} else if value, ok := payload["result_png_path"].(string); ok {
+		result.ResultPath = value
+	} else if value, ok := payload["result_path"].(string); ok {
 		result.ResultPath = value
 	}
 	if trace, ok := payload["devnet_trace"].(map[string]any); ok {
@@ -149,6 +166,9 @@ func parseSummary(summaryPath string) RunResult {
 		if okValue, ok := trace["ok"].(bool); ok && !okValue {
 			result.Status = "failed"
 			result.ErrorMessage = "devnet trace failed"
+			if msg, ok := trace["error"].(string); ok && strings.TrimSpace(msg) != "" {
+				result.ErrorMessage = msg
+			}
 		}
 	}
 	return result
@@ -163,7 +183,7 @@ func envDefault(key string, fallback string) string {
 }
 
 func ValidateWorkload(workload string) error {
-	if workload == "" || workload == "render3d" {
+	if workload == "" || workload == "raytracer" {
 		return nil
 	}
 	return errors.New("unsupported workload")

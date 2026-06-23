@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -17,8 +19,12 @@ func main() {
 	h := handler.New(DB)
 
 	// CORS Setup
+	allowedOrigins := strings.Split(envDefault("CORS_ALLOWED_ORIGINS", "*"), ",")
+	for i, origin := range allowedOrigins {
+		allowedOrigins[i] = strings.TrimSpace(origin)
+	}
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "Origin", "Accept", "*"},
 		AllowCredentials: true,
@@ -31,8 +37,19 @@ func main() {
 	han := c.Handler(router)
 
 	// Listen & Serve
-	log.Println("Listening on port 8080")
-	err := http.ListenAndServe(":8080", han)
+	host := envDefault("HOST", "0.0.0.0")
+	port := envDefault("PORT", "8080")
+	addr := host + ":" + port
+	log.Println("Listening on", addr)
+	err := http.ListenAndServe(addr, han)
 	utils.LogFatal(err, "Error starting server")
 
+}
+
+func envDefault(key string, fallback string) string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	return value
 }
