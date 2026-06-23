@@ -144,7 +144,7 @@ async function ensureWorkerRegistered(sdk: SiliciumLayerSdk, owner: Keypair, lab
 async function main() {
   const summaryPath = process.argv[2];
   if (!summaryPath) {
-    throw new Error("usage: ts-node scripts/devnet_trace_render3d_fragments.ts <fragmented-demo-summary.json>");
+    throw new Error("usage: ts-node scripts/devnet_trace_fragments.ts <fragmented-job-summary.json>");
   }
   const summary = JSON.parse(fs.readFileSync(summaryPath, "utf8"));
   if (!summary.success) {

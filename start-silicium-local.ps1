@@ -70,7 +70,7 @@ if ($RaytracerBin) {
     }
     $RaytracerEnv = @("set `"SILICIUM_RAYTRACER_BIN=$RaytracerBin`"")
 } else {
-    Write-Warning "SILICIUM_RAYTRACER_BIN is not set. Render3D can run, but raytracer jobs will fail until each worker points to a local raytracer executable."
+    Write-Warning "SILICIUM_RAYTRACER_BIN is not set. Raytracer jobs will fail until each worker points to a local raytracer executable."
 }
 
 function Assert-Directory {

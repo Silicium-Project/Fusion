@@ -278,7 +278,7 @@ if ($detectedRaytracerBin) {
     Write-Host "[ok] Raytracer installed runtime -> $installedRaytracerBin"
     Write-RaytracerEnv $installedRaytracerBin (Join-Path (Split-Path -Parent $installedRaytracerBin) "assets")
 } else {
-    Write-Warning "Raytracer executable not found. Render3D can run, but raytracer jobs need a packaged binary."
+    Write-Warning "Raytracer executable not found. Raytracer jobs need a packaged binary."
     Write-Warning "Expected default path: Network\bin\raytracer\raytracer.exe"
     Write-Warning "Or run once: .\install-silicium-windows.cmd -RaytracerBin C:\path\to\raytracer.exe"
 }
@@ -290,8 +290,8 @@ if (Test-Command "py") {
         py -m py_compile `
             Network\tools\network_node.py `
             Network\tools\mcp_server.py `
-            Network\demo\render3d\run_auto_split_demo.py `
             Network\demo\networked\networked_runtime.py `
+            Network\workloads\common.py `
             Network\workloads\raytracer\run_network_job.py `
             Network\workloads\raytracer\raytracer_workload.py
     } finally {

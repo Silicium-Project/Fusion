@@ -29,7 +29,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	workload := strings.TrimSpace(r.FormValue("workload"))
 	if workload == "" {
-		workload = "render3d"
+		workload = "raytracer"
 	}
 	if err := silicium.ValidateWorkload(workload); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -64,7 +64,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	job := models.Job{
 		UserID:        userID,
-		Title:         envDefaultValue(r.FormValue("title"), "Rendu 3D"),
+		Title:         envDefaultValue(r.FormValue("title"), "Raytracer"),
 		Description:   strings.TrimSpace(r.FormValue("description")),
 		Workload:      workload,
 		Priority:      envDefaultValue(r.FormValue("priority"), "high"),
@@ -277,7 +277,7 @@ func progressPathForJob(job models.Job) string {
 	if strings.TrimSpace(job.SummaryPath) != "" {
 		return filepath.Join(filepath.Dir(job.SummaryPath), "auto-split-demo-progress.json")
 	}
-	return filepath.Join(networkRoot, ".silicium", "demo", "render3d", job.SiliciumJobID, "auto-split-demo-progress.json")
+	return filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "raytracer-progress.json")
 }
 
 func safeFilename(name string) string {

@@ -35,11 +35,11 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def ppm_to_png_bytes(ppm_bytes: bytes) -> bytes:
     try:
-        from workloads.render3d.render3d_workload import ppm_to_png_bytes as convert
+        from workloads.common import ppm_to_png_bytes as convert
     except ImportError:
         parent = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(parent.parent))
-        from workloads.render3d.render3d_workload import ppm_to_png_bytes as convert
+        from workloads.common import ppm_to_png_bytes as convert
 
     return convert(ppm_bytes)
 

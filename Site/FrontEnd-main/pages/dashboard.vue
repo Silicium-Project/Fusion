@@ -222,7 +222,6 @@ const apiBase = config.public.apiBase;
 const devnetDashboardUrl = config.public.devnetDashboardUrl;
 
 const workloadOptions = [
-  { value: 'render3d', label: 'Rendu 3D demo' },
   { value: 'raytracer', label: 'Raytracer' },
 ];
 
@@ -234,9 +233,9 @@ const priorityOptions = [
 ];
 
 const jobForm = reactive({
-  workload: 'render3d',
+  workload: 'raytracer',
   priority: 'high',
-  title: 'Rendu 3D',
+  title: 'Raytracer',
   description: '',
 });
 

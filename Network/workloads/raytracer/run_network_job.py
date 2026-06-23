@@ -13,7 +13,6 @@ from typing import Any
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(NETWORK_ROOT))
 sys.path.insert(0, str(NETWORK_ROOT / "demo"))
-sys.path.insert(0, str(NETWORK_ROOT / "demo" / "render3d"))
 
 from networked.networked_runtime import (  # noqa: E402
     NetworkedOrchestrator,
@@ -22,10 +21,23 @@ from networked.networked_runtime import (  # noqa: E402
     store_network_file,
     wait_for_result as wait_for_network_result,
 )
-from workloads.render3d.render3d_workload import sha256_bytes, sha256_file, submit_task, write_json  # noqa: E402
+from workloads.common import (  # noqa: E402
+    clear_previous_result,
+    default_solana_wallet_path,
+    output_ref_from_compute,
+    p2p_file_path,
+    resolve_solana_wallet,
+    result_hash_from_compute,
+    sha256_bytes,
+    sha256_file,
+    submit_task,
+    write_json,
+)
 from workloads.raytracer.raytracer_workload import scene_resolution  # noqa: E402
-from run_full_demo import clear_previous_result, output_ref_from_compute, result_hash_from_compute, run_node_until_result  # noqa: E402
-from run_fragmented_demo import default_solana_wallet_path, p2p_file_path, resolve_solana_wallet  # noqa: E402
+
+
+def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    raise RuntimeError("local node sweeps are not supported by the raytracer workload; use --node-mode network")
 
 RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/raytracer-fragment"
 RAYTRACER_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/raytracer-fragment"
@@ -177,7 +189,8 @@ def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, 
         raise RuntimeError(
             "solana_wallet_not_found:"
             + str(wallet_path)
-            + " | Create one with: .\\demo\\render3d\\prepare-devnet-wallet.cmd"
+            + " | Create one with: solana-keygen new -o "
+            + str(default_solana_wallet_path())
             + " | Default path: "
             + str(default_solana_wallet_path())
         )
@@ -189,7 +202,7 @@ def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, 
     env["SOLANA_LAYER_PROGRAM_ID"] = args.solana_program_id
     env["SILICIUM_DEVNET_TX_DELAY_MS"] = str(args.devnet_tx_delay_ms)
     completed = subprocess.run(
-        [npx, "ts-node", "scripts/devnet_trace_render3d_fragments.ts", str(summary_path)],
+        [npx, "ts-node", "scripts/devnet_trace_fragments.ts", str(summary_path)],
         cwd=str(NETWORK_ROOT / "solana-layer"),
         env=env,
         text=True,

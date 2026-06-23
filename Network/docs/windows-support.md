@@ -43,9 +43,7 @@ Useful options:
 system installs if Windows does not refresh `PATH` immediately.
 
 OpenSSL is required by `silicium node start` to create and use the local peer
-identity. Without it, the render3d full demo can still run in `--node-mode auto`
-through its inline fallback, but `--node-mode cli` will fail before the signed
-P2P node starts.
+identity. Without it, signed P2P nodes cannot start correctly.
 
 ## Modes
 
