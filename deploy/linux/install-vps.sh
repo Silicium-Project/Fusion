@@ -18,9 +18,12 @@ apt-get install -y \
   python3 \
   python3-venv \
   python3-pip \
-  nodejs \
-  npm \
   golang-go
+
+if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'Number(process.versions.node.split(".")[0])')" -lt 20 ]]; then
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y nodejs
+fi
 
 mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana "$ROOT/bin"
 
