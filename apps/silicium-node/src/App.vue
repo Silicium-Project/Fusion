@@ -81,6 +81,45 @@
         <button class="danger" :disabled="busy" @click="deactivateNode">Retirer mon PC du reseau</button>
       </section>
 
+      <section class="visual-grid">
+        <section class="panel network-map">
+          <div class="map-head">
+            <div>
+              <h2>Schema du node</h2>
+              <p>Un seul PC, plusieurs capacites, attribution automatique par le reseau.</p>
+            </div>
+            <span class="map-badge">{{ status.running ? 'connecte' : 'hors ligne' }}</span>
+          </div>
+
+          <div class="node-graph" :class="{ active: status.running }">
+            <div class="graph-node graph-network">Reseau</div>
+            <div class="graph-line line-compute"></div>
+            <div class="graph-line line-verify"></div>
+            <div class="graph-line line-trace"></div>
+            <div class="graph-node graph-pc">Votre PC</div>
+            <div class="graph-node graph-compute">Calcul</div>
+            <div class="graph-node graph-verify">Verification</div>
+            <div class="graph-node graph-trace">Trace</div>
+          </div>
+        </section>
+
+        <section class="panel role-policy">
+          <h2>Regle de confiance</h2>
+          <div class="policy-step ok">
+            <strong>Ce PC peut calculer</strong>
+            <span>Il recoit des fragments adaptes a sa reputation et sa disponibilite.</span>
+          </div>
+          <div class="policy-step ok">
+            <strong>Ce PC peut verifier</strong>
+            <span>Il controle des fragments produits par d autres machines.</span>
+          </div>
+          <div class="policy-step guard">
+            <strong>Pas d auto-verification</strong>
+            <span>Un node ne valide pas son propre calcul sur le meme fragment.</span>
+          </div>
+        </section>
+      </section>
+
       <section class="split-grid">
         <section class="panel">
           <h2>Historique</h2>
