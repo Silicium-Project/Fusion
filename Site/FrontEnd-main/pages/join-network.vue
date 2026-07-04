@@ -30,14 +30,14 @@
             <span class="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">reseau</span>
           </h1>
           <p class="mt-6 max-w-3xl text-xl leading-8 text-white/70">
-            Installez un node Silicium pour mettre votre machine a disposition du reseau. Votre PC peut calculer des fragments, verifier des resultats, puis gagner en reputation au fil des taches.
+            Telechargez l'app Silicium Node pour mettre votre machine a disposition du reseau en un clic. Votre PC reste disponible, puis le reseau lui attribue automatiquement du calcul ou de la verification.
           </p>
           <div class="mt-8 flex flex-col gap-4 sm:flex-row">
-            <a href="#beta-install" class="inline-flex h-14 items-center justify-center rounded-full bg-gradient-to-r from-purple-400 to-blue-400 px-8 text-lg font-bold shadow-lg shadow-purple-500/20 transition hover:from-purple-500 hover:to-blue-500">
-              Installer la beta
+            <a :href="nodeAppWindowsUrl" download class="inline-flex h-14 items-center justify-center rounded-full bg-gradient-to-r from-purple-400 to-blue-400 px-8 text-lg font-bold shadow-lg shadow-purple-500/20 transition hover:from-purple-500 hover:to-blue-500">
+              Telecharger l'app Windows
             </a>
-            <a href="#roles" class="inline-flex h-14 items-center justify-center rounded-full border border-white/20 px-8 text-lg font-bold text-white/80 transition hover:border-white/40 hover:text-white">
-              Choisir un role
+            <a href="#how-it-works" class="inline-flex h-14 items-center justify-center rounded-full border border-white/20 px-8 text-lg font-bold text-white/80 transition hover:border-white/40 hover:text-white">
+              Voir le fonctionnement
             </a>
           </div>
         </div>
@@ -61,7 +61,7 @@
         </section>
       </section>
 
-      <section id="roles" class="mt-16 grid gap-6 lg:grid-cols-3">
+      <section id="how-it-works" class="mt-16 grid gap-6 lg:grid-cols-3">
         <article v-for="role in roles" :key="role.title" class="rounded-2xl border border-white/10 bg-[#1f2029]/90 p-6">
           <div class="mb-5 flex h-12 w-12 items-center justify-center rounded-xl" :class="role.iconClass">
             <img :src="role.icon" alt="" class="h-6 w-6" />
@@ -79,23 +79,23 @@
 
       <section id="beta-install" class="mt-16 grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
         <div class="rounded-2xl border border-white/10 bg-[#1f2029]/90 p-6">
-          <h2 class="text-3xl font-bold">App bureau</h2>
+          <h2 class="text-3xl font-bold">App bureau Silicium Node</h2>
           <p class="mt-4 text-white/65">
-            La premiere application Silicium Node permettra de demarrer ou arreter le node, choisir les roles, suivre les taches et lire les logs depuis une interface simple.
+            L'app installe ou repare le runtime, connecte votre machine a l'orchestrateur public, puis affiche le statut, les travaux et l'historique dans une interface simple.
           </p>
-          <button disabled class="mt-6 h-12 w-full cursor-not-allowed rounded-xl bg-white/10 font-bold text-white/40">
-            Telechargement bientot disponible
-          </button>
+          <a :href="nodeAppWindowsUrl" download class="mt-6 inline-flex h-12 w-full items-center justify-center rounded-xl bg-gradient-to-r from-purple-400 to-blue-400 font-bold text-white transition hover:from-purple-500 hover:to-blue-500">
+            Telecharger pour Windows
+          </a>
           <p class="mt-4 text-sm text-white/40">
-            En attendant le package desktop, l'installation beta se fait avec le repo et les scripts reseau.
+            Si le telechargement retourne une erreur 404, l'installeur n'a pas encore ete publie sur ce serveur. Le site est deja pret a le servir.
           </p>
         </div>
 
         <div class="rounded-2xl border border-white/10 bg-black/35 p-6">
           <div class="mb-4 flex items-center justify-between gap-4">
             <div>
-              <h2 class="text-2xl font-bold">Installation beta Windows</h2>
-              <p class="text-white/50">Commandes temporaires pour connecter un PC au reseau public.</p>
+              <h2 class="text-2xl font-bold">Secours beta</h2>
+              <p class="text-white/50">A utiliser seulement si l'app desktop n'est pas encore publiee.</p>
             </div>
             <span class="rounded-full bg-yellow-400/15 px-3 py-1 text-sm font-bold text-yellow-100">beta</span>
           </div>
@@ -103,8 +103,9 @@
 cd eipSilicium
 git checkout codex-networked-reputation-demo
 .\install-silicium-windows.cmd
-.\Network\scripts\start-worker.cmd {{ orchestratorUrl }} YOUR_PUBLIC_OR_LAN_IP
-.\Network\scripts\start-verifier.cmd {{ orchestratorUrl }} YOUR_PUBLIC_OR_LAN_IP</code></pre>
+cd apps\silicium-node
+npm.cmd install
+npm.cmd run tauri:dev</code></pre>
         </div>
       </section>
 
@@ -137,28 +138,29 @@ import '~/assets/css/stars.css';
 const router = useRouter();
 const config = useRuntimeConfig();
 const orchestratorUrl = config.public.orchestratorUrl;
+const nodeAppWindowsUrl = config.public.nodeAppWindowsUrl;
 
 const roles = [
   {
-    title: 'Worker',
-    description: 'Calcule les fragments envoyes par le reseau et publie un resultat verifiable.',
+    title: 'Calcul automatique',
+    description: 'Quand une tache compatible arrive, le reseau peut confier un fragment a votre machine.',
     icon: ProductsIcon,
     iconClass: 'bg-blue-500/20',
-    points: ['Utilise CPU aujourd hui, GPU plus tard', 'Recoit des fragments de workloads', 'Construit sa reputation sur les succes'],
+    points: ['Attribution par reputation', 'Execution de workloads compatibles', 'Resultat renvoye au reseau'],
   },
   {
-    title: 'Verifier',
-    description: 'Controle les resultats produits par les workers avant reassemblage.',
+    title: 'Verification automatique',
+    description: 'Votre PC peut aussi controler les resultats produits par d autres machines.',
     icon: ReceiptIcon,
     iconClass: 'bg-green-500/20',
-    points: ['Verifie les hashes et preuves', 'Vote sur les fragments', 'Renforce la confiance du reseau'],
+    points: ['Controle les hashes et preuves', 'Vote sur les fragments', 'Ne verifie pas son propre calcul'],
   },
   {
-    title: 'Node mixte',
-    description: 'Combine calcul et verification sur la meme machine pour les tests beta.',
+    title: 'Un seul bouton',
+    description: 'L utilisateur active son PC, puis Silicium decide quoi lui donner selon le contexte.',
     icon: UsersIcon,
     iconClass: 'bg-purple-500/20',
-    points: ['Simple pour contribuer vite', 'Ideal pour tester le reseau', 'Configurable role par role ensuite'],
+    points: ['Pas de choix technique', 'Dashboard local simple', 'Retrait du reseau a tout moment'],
   },
 ];
 
@@ -166,7 +168,7 @@ const networkChecks = [
   { label: 'Site public', value: 'actif', className: 'text-green-200' },
   { label: 'API publique', value: 'actif', className: 'text-green-200' },
   { label: 'Reseau P2P', value: 'beta', className: 'text-yellow-100' },
-  { label: 'App bureau', value: 'en preparation', className: 'text-blue-200' },
+  { label: 'App bureau', value: 'pret a publier', className: 'text-blue-200' },
 ];
 
 const stars = ref<{ id: number; size: string; style: Record<string, string> }[]>([]);
