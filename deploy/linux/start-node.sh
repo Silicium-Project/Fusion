@@ -22,10 +22,10 @@ python3 silicium node start \
   --roles "$ROLES" \
   --export-dir ".silicium/networked/$NODE_ID/export" \
   --state-dir ".silicium/networked/$NODE_ID/state" \
-  --peer-bind 0.0.0.0 \
+  --peer-http-bind 0.0.0.0 \
   --peer-http-port "$PORT" \
   --peer-advertise-host "$ADVERTISE_HOST" \
   --peer-advertise-port "$PORT" \
   --seed-peer "$SEED_URL" \
   --mesh-key "$MESH_KEY" \
-  --demo-reputation-score "$REPUTATION"
+  --reputation-score "$REPUTATION"

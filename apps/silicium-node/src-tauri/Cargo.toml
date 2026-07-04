@@ -1,0 +1,17 @@
+[package]
+name = "silicium-node"
+version = "0.1.0"
+description = "Silicium desktop node launcher"
+authors = ["Silicium"]
+edition = "2021"
+
+[lib]
+name = "silicium_node_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.4", features = [] }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2.2.4", features = [] }
