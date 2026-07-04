@@ -49,12 +49,17 @@
       <p v-if="userMessage" class="user-message">{{ userMessage }}</p>
     </section>
 
-    <section v-else class="dashboard">
+    <section v-else-if="view === 'dashboard'" class="dashboard">
+      <nav class="view-nav">
+        <button class="ghost active-tab">Tableau de bord</button>
+        <button class="ghost" @click="view = 'history'">Historique</button>
+      </nav>
+
       <section class="stats-grid">
         <article class="stat-card">
           <span>Etat</span>
-          <strong>Disponible</strong>
-          <small>Votre PC peut recevoir du travail.</small>
+          <strong>{{ nodePhase.label }}</strong>
+          <small>{{ nodePhase.description }}</small>
         </article>
         <article class="stat-card">
           <span>Travail actuel</span>
@@ -76,9 +81,21 @@
       <section class="panel current-panel">
         <div>
           <h2>Activite du PC</h2>
-          <p>{{ status.running ? 'En attente ou execution selon les besoins du reseau.' : 'Node inactif.' }}</p>
+          <p>{{ nodePhase.detail }}</p>
         </div>
         <button class="danger" :disabled="busy" @click="deactivateNode">Retirer mon PC du reseau</button>
+      </section>
+
+      <section class="status-flow">
+        <div
+          v-for="step in flowSteps"
+          :key="step.key"
+          class="flow-step"
+          :class="{ active: step.key === nodePhase.key, done: step.done }"
+        >
+          <span>{{ step.index }}</span>
+          <strong>{{ step.label }}</strong>
+        </div>
       </section>
 
       <section class="visual-grid">
@@ -122,18 +139,12 @@
 
       <section class="split-grid">
         <section class="panel">
-          <h2>Historique</h2>
-          <div v-if="activity.history.length === 0" class="empty-state">
-            Aucun travail local encore enregistre.
-          </div>
-          <div v-else class="history-list">
-            <div v-for="item in activity.history" :key="`${item.name}-${item.modifiedAt}`" class="history-row">
-              <div>
-                <strong>{{ item.name }}</strong>
-                <small>{{ formatDate(item.modifiedAt) }}</small>
-              </div>
-              <span>{{ formatBytes(item.sizeBytes) }}</span>
+          <div class="panel-row">
+            <div>
+              <h2>Derniere activite</h2>
+              <p>{{ friendlyLastActivity }}</p>
             </div>
+            <button class="ghost" @click="view = 'history'">Voir l historique</button>
           </div>
         </section>
 
@@ -145,7 +156,7 @@
           </div>
           <div class="account-grid">
             <span>Capacites</span>
-            <strong>{{ status.roles }}</strong>
+            <strong>Calcul + verification</strong>
             <span>Reputation initiale</span>
             <strong>{{ form.reputationScore }}</strong>
             <span>Taches vues</span>
@@ -170,6 +181,37 @@
           <pre class="logs">{{ logs.join('\n') }}</pre>
         </div>
       </details>
+    </section>
+
+    <section v-else class="dashboard">
+      <nav class="view-nav">
+        <button class="ghost" @click="view = 'dashboard'">Tableau de bord</button>
+        <button class="ghost active-tab">Historique</button>
+      </nav>
+
+      <section class="panel history-page">
+        <div class="panel-row history-header">
+          <div>
+            <h2>Historique de votre PC</h2>
+            <p>Resume simple des derniers travaux vus par cette machine.</p>
+          </div>
+          <button class="ghost" :disabled="busy" @click="refreshAll">Rafraichir</button>
+        </div>
+
+        <div v-if="friendlyHistory.length === 0" class="empty-state">
+          Aucun travail enregistre pour le moment. Votre PC est pret et attend une tache.
+        </div>
+        <div v-else class="friendly-history">
+          <article v-for="item in friendlyHistory" :key="item.id" class="friendly-event">
+            <div class="event-dot"></div>
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.description }}</p>
+            </div>
+            <span>{{ item.date }}</span>
+          </article>
+        </div>
+      </section>
     </section>
   </main>
 </template>
@@ -208,8 +250,81 @@ const checks = ref<CheckItem[]>([]);
 const logs = ref<string[]>(['Silicium Node pret.']);
 const busy = ref(false);
 const userMessage = ref('');
+const view = ref<'dashboard' | 'history'>('dashboard');
 
-const currentWorkLabel = computed(() => (activity.knownTasks > 0 ? 'Activite detectee' : 'En attente'));
+const nodePhase = computed(() => {
+  if (!status.running) {
+    return {
+      key: 'offline',
+      label: 'Hors ligne',
+      description: 'Votre PC ne participe pas encore.',
+      detail: 'Activez votre PC pour rejoindre le reseau.',
+    };
+  }
+  const names = activity.history.map((item) => item.name.toLowerCase());
+  if (names.some((name) => name.startsWith('result.'))) {
+    return {
+      key: 'submitted',
+      label: 'Resultat envoye',
+      description: 'Un travail a ete termine localement.',
+      detail: 'Le dernier resultat local a ete produit et rendu disponible au reseau.',
+    };
+  }
+  if (names.some((name) => name.includes('verify') || name.includes('vote'))) {
+    return {
+      key: 'verify',
+      label: 'Verification',
+      description: 'Votre PC controle un resultat.',
+      detail: 'Votre machine verifie un fragment calcule par un autre node.',
+    };
+  }
+  if (names.some((name) => name.includes('task') || name.includes('queue'))) {
+    return {
+      key: 'compute',
+      label: 'Calcul',
+      description: 'Votre PC traite une tache.',
+      detail: 'Votre machine travaille sur un fragment attribue par le reseau.',
+    };
+  }
+  return {
+    key: 'waiting',
+    label: 'En attente',
+    description: 'Votre PC est connecte et disponible.',
+    detail: 'Votre PC est connecte au reseau. Il sera sollicite quand une tache compatible arrivera.',
+  };
+});
+
+const currentWorkLabel = computed(() => {
+  if (!status.running) {
+    return 'Inactif';
+  }
+  return nodePhase.value.key === 'waiting' ? 'Pret' : nodePhase.value.label;
+});
+
+const flowOrder = ['waiting', 'compute', 'verify', 'submitted'];
+const flowSteps = computed(() => {
+  const currentIndex = Math.max(0, flowOrder.indexOf(nodePhase.value.key));
+  return [
+    { key: 'waiting', label: 'Connecte', index: '1', done: currentIndex > 0 },
+    { key: 'compute', label: 'Calcul', index: '2', done: currentIndex > 1 },
+    { key: 'verify', label: 'Verification', index: '3', done: currentIndex > 2 },
+    { key: 'submitted', label: 'Resultat envoye', index: '4', done: nodePhase.value.key === 'submitted' },
+  ];
+});
+
+const friendlyLastActivity = computed(() => {
+  if (activity.history.length === 0) {
+    return 'Aucune tache recue pour le moment. Le PC reste disponible.';
+  }
+  return `${friendlyEvent(activity.history[0]).title} - ${friendlyEvent(activity.history[0]).date}`;
+});
+
+const friendlyHistory = computed(() =>
+  activity.history.slice(0, 12).map((item, index) => ({
+    id: `${item.name}-${item.modifiedAt}-${index}`,
+    ...friendlyEvent(item),
+  })),
+);
 
 function remember() {
   localStorage.setItem('silicium.repoRoot', form.repoRoot);
@@ -321,6 +436,36 @@ function formatDate(seconds: number) {
     return 'date inconnue';
   }
   return new Date(seconds * 1000).toLocaleString();
+}
+
+function friendlyEvent(item: { name: string; modifiedAt: number; sizeBytes: number }) {
+  const lower = item.name.toLowerCase();
+  if (lower.startsWith('result.')) {
+    return {
+      title: 'Resultat envoye',
+      description: `Un resultat a ete produit par ce PC (${formatBytes(item.sizeBytes)}).`,
+      date: formatDate(item.modifiedAt),
+    };
+  }
+  if (lower.includes('verify') || lower.includes('vote')) {
+    return {
+      title: 'Verification effectuee',
+      description: 'Ce PC a participe au controle d un resultat.',
+      date: formatDate(item.modifiedAt),
+    };
+  }
+  if (lower.includes('task') || lower.includes('queue')) {
+    return {
+      title: 'Tache recue',
+      description: 'Le reseau a transmis un travail a cette machine.',
+      date: formatDate(item.modifiedAt),
+    };
+  }
+  return {
+    title: 'Activite reseau',
+    description: 'Un fichier local lie au node a ete mis a jour.',
+    date: formatDate(item.modifiedAt),
+  };
 }
 
 onMounted(async () => {
