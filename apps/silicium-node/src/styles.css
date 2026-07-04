@@ -1,6 +1,6 @@
 :root {
   color: #fff;
-  background: #131419;
+  background: #121318;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
 }
 
@@ -10,12 +10,12 @@
 
 body {
   margin: 0;
-  min-width: 760px;
+  min-width: 980px;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 72% 4%, rgba(147, 51, 234, 0.24), transparent 36%),
-    radial-gradient(circle at 12% 65%, rgba(59, 130, 246, 0.18), transparent 34%),
-    #131419;
+    radial-gradient(circle at 72% 4%, rgba(147, 51, 234, 0.2), transparent 34%),
+    radial-gradient(circle at 10% 70%, rgba(59, 130, 246, 0.14), transparent 30%),
+    #121318;
 }
 
 button,
@@ -24,10 +24,10 @@ input {
 }
 
 button {
-  min-width: 104px;
-  height: 42px;
+  min-width: 120px;
+  min-height: 42px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   color: white;
   font-weight: 800;
   cursor: pointer;
@@ -40,20 +40,25 @@ button:disabled {
 }
 
 button.ghost {
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.07);
+}
+
+button.icon-button {
+  min-width: auto;
+  padding: 0 14px;
 }
 
 input {
   width: 100%;
-  height: 46px;
+  height: 44px;
   margin-top: 8px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  border-radius: 10px;
   outline: none;
-  padding: 0 14px;
+  padding: 0 12px;
   color: white;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.24);
 }
 
 input:focus {
@@ -62,12 +67,14 @@ input:focus {
 
 .shell {
   min-height: 100vh;
-  padding: 36px;
+  padding: 30px;
 }
 
 .hero,
 .panel-head,
-.role-card {
+.work-card,
+.history-row,
+.check-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -75,7 +82,7 @@ input:focus {
 }
 
 .hero {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .eyebrow {
@@ -83,7 +90,7 @@ input:focus {
   color: #93c5fd;
   font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.28em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
 }
 
@@ -94,21 +101,21 @@ p {
 }
 
 h1 {
-  font-size: 48px;
+  font-size: 42px;
   line-height: 1;
 }
 
 h2 {
-  margin-bottom: 18px;
-  font-size: 24px;
+  margin-bottom: 16px;
+  font-size: 22px;
 }
 
 .subtitle {
   max-width: 760px;
-  margin-top: 14px;
+  margin-top: 12px;
   color: rgba(255, 255, 255, 0.68);
-  font-size: 18px;
-  line-height: 1.55;
+  font-size: 17px;
+  line-height: 1.5;
 }
 
 .status-pill {
@@ -126,60 +133,210 @@ h2 {
   color: #bbf7d0;
 }
 
-.grid {
+.layout {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 360px minmax(0, 1fr);
   gap: 22px;
+}
+
+.main-stack {
+  min-width: 0;
 }
 
 .panel {
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 22px;
-  padding: 24px;
-  background: rgba(31, 32, 41, 0.92);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
+  border-radius: 18px;
+  padding: 22px;
+  background: rgba(31, 32, 41, 0.94);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.22);
 }
 
 .panel + .panel,
-.grid + .panel {
-  margin-top: 22px;
+.split-grid + .panel,
+.stats-grid + .panel {
+  margin-top: 18px;
+}
+
+.setup-panel {
+  position: sticky;
+  top: 30px;
+  align-self: start;
+}
+
+.compact h2 {
+  margin-bottom: 4px;
 }
 
 label {
   display: block;
-  margin-bottom: 16px;
-  color: rgba(255, 255, 255, 0.58);
-  font-size: 14px;
+  margin-bottom: 14px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
   font-weight: 800;
 }
 
-.hint,
-.role-card p,
-.panel-head p {
-  color: rgba(255, 255, 255, 0.55);
+.panel-head p,
+.work-card p,
+.stat-card small,
+.account-card p,
+.history-row small,
+.check-row small {
+  color: rgba(255, 255, 255, 0.56);
   line-height: 1.45;
 }
 
-.role-card {
-  margin-top: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.check-list {
+  display: grid;
+  gap: 10px;
+}
+
+.check-row {
+  justify-content: flex-start;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.check-row.ok {
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+.check-row span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.check-row strong,
+.check-row small,
+.history-row strong,
+.history-row small {
+  display: block;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.stat-card {
+  min-height: 132px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 16px;
-  padding: 16px;
+  padding: 18px;
+  background: rgba(31, 32, 41, 0.94);
+}
+
+.stat-card span {
+  color: rgba(255, 255, 255, 0.58);
+  font-weight: 800;
+}
+
+.stat-card strong {
+  display: block;
+  margin: 12px 0 8px;
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+
+.work-card {
+  margin-top: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 14px;
+  padding: 18px;
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.work-state {
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #bfdbfe;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.split-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.history-list {
+  display: grid;
+  gap: 10px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.history-row {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px;
   background: rgba(255, 255, 255, 0.04);
 }
 
-.role-card strong {
+.history-row strong {
+  overflow-wrap: anywhere;
+}
+
+.history-row span {
+  color: #bfdbfe;
+  font-weight: 900;
+}
+
+.empty-state {
+  border: 1px dashed rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  padding: 24px;
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.account-card {
+  border-radius: 14px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.account-card strong {
   display: block;
-  margin-bottom: 4px;
-  font-size: 18px;
+  margin-bottom: 8px;
+  overflow-wrap: anywhere;
+}
+
+.account-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.account-grid span {
+  color: rgba(255, 255, 255, 0.58);
 }
 
 .logs {
-  min-height: 170px;
-  margin: 18px 0 0;
+  min-height: 150px;
+  margin: 14px 0 0;
   overflow: auto;
-  border-radius: 16px;
-  padding: 18px;
+  border-radius: 14px;
+  padding: 16px;
   color: #bfdbfe;
   background: #0c0d12;
   white-space: pre-wrap;
