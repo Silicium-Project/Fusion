@@ -32,6 +32,8 @@ func main() {
 
 	// Router creation
 	router := mux.NewRouter()
+	router.HandleFunc("/health", healthHandler).Methods("GET")
+	router.HandleFunc("/healthz", healthHandler).Methods("GET")
 	routes.RegisterUserRoutes(router, h) // Register user routes
 	routes.RegisterJobRoutes(router, h)
 	han := c.Handler(router)
@@ -44,6 +46,11 @@ func main() {
 	err := http.ListenAndServe(addr, han)
 	utils.LogFatal(err, "Error starting server")
 
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
 func envDefault(key string, fallback string) string {

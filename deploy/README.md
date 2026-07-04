@@ -8,13 +8,14 @@ Recommended first public setup:
 1. One Linux VPS hosts:
    - Nuxt frontend on `127.0.0.1:3000`
    - Go backend on `127.0.0.1:8080`
-   - Devnet dashboard on `127.0.0.1:5174`
+   - Devnet dashboard on `127.0.0.1:5174` for local/admin inspection only
    - Silicium orchestrator on public port `46100`
 2. Remote worker/verifier machines connect to the VPS orchestrator.
 3. Nginx exposes:
    - `https://silicium.example.com`
    - `https://api.silicium.example.com`
-   - `https://dashboard.silicium.example.com`
+4. The Devnet dashboard is not exposed publicly by default. Keep it local or put
+   it behind authentication before exposing it.
 
 ## VPS install
 
@@ -61,7 +62,7 @@ sudo systemctl reload nginx
 For HTTPS, use certbot:
 
 ```bash
-sudo certbot --nginx -d silicium.example.com -d api.silicium.example.com -d dashboard.silicium.example.com
+sudo certbot --nginx -d silicium.example.com -d api.silicium.example.com
 ```
 
 ## Remote workers

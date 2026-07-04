@@ -4,6 +4,7 @@ export default defineNuxtConfig({
       adminToken: process.env.NUXT_PUBLIC_ADMIN_TOKEN || '',
       apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
       devnetDashboardUrl: process.env.NUXT_PUBLIC_DEVNET_DASHBOARD_URL || 'http://localhost:5174/',
+      orchestratorUrl: process.env.NUXT_PUBLIC_ORCHESTRATOR_URL || 'http://213.32.68.67:46100',
     },
   },
   app: {
