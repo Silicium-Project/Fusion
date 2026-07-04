@@ -17,6 +17,10 @@
         <span>Service</span>
       </button>
 
+      <NuxtLink to="/join-network" class="flex items-center space-x-2 px-6 py-3 text-xl font-normal text-white bg-transparent transition-all hover-gradient-underline">
+        <span>Rejoindre le reseau</span>
+      </NuxtLink>
+
       <!-- Contact Button -->
       <button class="flex items-center space-x-2 px-6 py-3 text-xl font-normal text-white bg-transparent transition-all hover-gradient-underline">
         <span>Contact</span>
