@@ -3,151 +3,142 @@
     <section class="hero">
       <div>
         <p class="eyebrow">Silicium Node</p>
-        <h1>Votre PC rejoint le reseau</h1>
+        <h1>{{ status.running ? 'Votre PC aide le reseau' : 'Activez votre PC' }}</h1>
         <p class="subtitle">
-          Une seule app pour installer le runtime, connecter la machine, suivre les travaux et garder
-          l'historique local.
+          {{ status.running
+            ? 'Silicium utilise votre machine quand une tache compatible est disponible.'
+            : 'Un clic suffit. L app prepare le runtime, connecte votre machine et affiche ensuite son activite.' }}
         </p>
       </div>
       <div class="status-pill" :class="{ online: status.running }">
-        {{ status.running ? 'Node actif' : 'Node arrete' }}
+        {{ status.running ? 'Connecte' : 'Hors ligne' }}
       </div>
     </section>
 
-    <section class="layout">
-      <aside class="panel setup-panel">
-        <div class="panel-head compact">
-          <div>
-            <h2>Installation</h2>
-            <p>Beta locale, futur installateur autonome.</p>
-          </div>
-          <button class="ghost icon-button" @click="runChecks">Verifier</button>
+    <section v-if="!status.running" class="activation-card">
+      <div class="activation-copy">
+        <h2>Rejoindre le reseau Silicium</h2>
+        <p>
+          Aucune notion technique necessaire. Silicium choisira automatiquement si votre PC calcule,
+          verifie ou attend une meilleure tache.
+        </p>
+      </div>
+
+      <button class="primary-action" :disabled="busy" @click="activateOneClick">
+        {{ busy ? 'Activation en cours...' : 'Activer mon PC' }}
+      </button>
+
+      <details class="advanced">
+        <summary>Options avancees</summary>
+        <div class="advanced-grid">
+          <label>
+            Dossier Silicium
+            <input v-model="form.repoRoot" placeholder="detecte automatiquement" />
+          </label>
+          <label>
+            Orchestrateur
+            <input v-model="form.orchestratorUrl" />
+          </label>
+          <label>
+            Adresse annoncee
+            <input v-model="form.advertiseHost" placeholder="detectee automatiquement" />
+          </label>
         </div>
+      </details>
 
-        <label>
-          Dossier Silicium
-          <input v-model="form.repoRoot" placeholder="C:\\Users\\...\\eipSilicium" />
-        </label>
-        <label>
-          Orchestrateur
-          <input v-model="form.orchestratorUrl" />
-        </label>
-        <label>
-          Adresse annoncee
-          <input v-model="form.advertiseHost" placeholder="IP locale ou publique" />
-        </label>
+      <p v-if="userMessage" class="user-message">{{ userMessage }}</p>
+    </section>
 
-        <div class="actions">
-          <button @click="install">Installer / reparer</button>
-          <button :disabled="status.running" @click="activateNode">Activer mon PC</button>
-          <button class="ghost" :disabled="!status.running" @click="deactivateNode">Arreter</button>
+    <section v-else class="dashboard">
+      <section class="stats-grid">
+        <article class="stat-card">
+          <span>Etat</span>
+          <strong>Disponible</strong>
+          <small>Votre PC peut recevoir du travail.</small>
+        </article>
+        <article class="stat-card">
+          <span>Travail actuel</span>
+          <strong>{{ currentWorkLabel }}</strong>
+          <small>Le reseau assigne les taches automatiquement.</small>
+        </article>
+        <article class="stat-card">
+          <span>Resultats locaux</span>
+          <strong>{{ activity.knownResults }}</strong>
+          <small>{{ activity.lastResult }}</small>
+        </article>
+        <article class="stat-card">
+          <span>Stockage utilise</span>
+          <strong>{{ formatBytes(activity.storageBytes) }}</strong>
+          <small>Cache et sorties du node.</small>
+        </article>
+      </section>
+
+      <section class="panel current-panel">
+        <div>
+          <h2>Activite du PC</h2>
+          <p>{{ status.running ? 'En attente ou execution selon les besoins du reseau.' : 'Node inactif.' }}</p>
         </div>
+        <button class="danger" :disabled="busy" @click="deactivateNode">Retirer mon PC du reseau</button>
+      </section>
 
-        <div class="check-list">
-          <div v-for="check in checks" :key="check.name" class="check-row" :class="{ ok: check.ok }">
-            <span>{{ check.ok ? 'ok' : 'x' }}</span>
-            <div>
-              <strong>{{ check.name }}</strong>
-              <small>{{ check.detail || 'non disponible' }}</small>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      <section class="main-stack">
-        <section class="stats-grid">
-          <article class="stat-card">
-            <span>Mode actuel</span>
-            <strong>{{ status.running ? 'Disponible' : 'Hors ligne' }}</strong>
-            <small>{{ status.running ? 'Le reseau choisit calcul ou verification.' : 'Aucun travail accepte.' }}</small>
-          </article>
-          <article class="stat-card">
-            <span>Roles reseau</span>
-            <strong>{{ status.roles || 'compute,verify' }}</strong>
-            <small>Selection automatique cote orchestration.</small>
-          </article>
-          <article class="stat-card">
-            <span>Resultats locaux</span>
-            <strong>{{ activity.knownResults }}</strong>
-            <small>{{ activity.lastResult }}</small>
-          </article>
-          <article class="stat-card">
-            <span>Stockage local</span>
-            <strong>{{ formatBytes(activity.storageBytes) }}</strong>
-            <small>Cache node et sorties de calcul.</small>
-          </article>
-        </section>
-
+      <section class="split-grid">
         <section class="panel">
-          <div class="panel-head">
-            <div>
-              <h2>Travail en cours</h2>
-              <p>Cette zone affichera la tache assignee, le fragment courant et la verification.</p>
-            </div>
-            <button class="ghost" @click="refreshAll">Rafraichir</button>
+          <h2>Historique</h2>
+          <div v-if="activity.history.length === 0" class="empty-state">
+            Aucun travail local encore enregistre.
           </div>
-          <div class="work-card">
-            <div>
-              <strong>{{ status.running ? 'En attente de mission reseau' : 'Node inactif' }}</strong>
-              <p>
-                {{ status.running
-                  ? 'Le PC est joignable. Quand une tache arrive, le detail apparaitra ici.'
-                  : 'Activez le PC pour rejoindre le pool de calcul.' }}
-              </p>
-            </div>
-            <span class="work-state">{{ status.running ? 'ready' : 'offline' }}</span>
-          </div>
-        </section>
-
-        <section class="split-grid">
-          <section class="panel">
-            <h2>Historique</h2>
-            <div v-if="activity.history.length === 0" class="empty-state">
-              Aucun fichier d'activite local trouve pour le moment.
-            </div>
-            <div v-else class="history-list">
-              <div v-for="item in activity.history" :key="`${item.name}-${item.modifiedAt}`" class="history-row">
-                <div>
-                  <strong>{{ item.name }}</strong>
-                  <small>{{ formatDate(item.modifiedAt) }}</small>
-                </div>
-                <span>{{ formatBytes(item.sizeBytes) }}</span>
+          <div v-else class="history-list">
+            <div v-for="item in activity.history" :key="`${item.name}-${item.modifiedAt}`" class="history-row">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <small>{{ formatDate(item.modifiedAt) }}</small>
               </div>
+              <span>{{ formatBytes(item.sizeBytes) }}</span>
             </div>
-          </section>
-
-          <section class="panel">
-            <h2>Compte node</h2>
-            <div class="account-card">
-              <strong>{{ form.nodeId }}</strong>
-              <p>Identite locale beta. Ensuite, cette identite sera liee au compte Silicium et au wallet.</p>
-            </div>
-            <div class="account-grid">
-              <span>Reputation initiale</span>
-              <strong>{{ form.reputationScore }}</strong>
-              <span>Taches vues</span>
-              <strong>{{ activity.knownTasks }}</strong>
-            </div>
-          </section>
+          </div>
         </section>
 
         <section class="panel">
-          <div class="panel-head">
-            <div>
-              <h2>Journal</h2>
-              <p>Evenements locaux du launcher.</p>
+          <h2>Mon node</h2>
+          <div class="node-card">
+            <strong>{{ form.nodeId }}</strong>
+            <p>Identite locale de cette machine.</p>
+          </div>
+          <div class="account-grid">
+            <span>Capacites</span>
+            <strong>{{ status.roles }}</strong>
+            <span>Reputation initiale</span>
+            <strong>{{ form.reputationScore }}</strong>
+            <span>Taches vues</span>
+            <strong>{{ activity.knownTasks }}</strong>
+          </div>
+        </section>
+      </section>
+
+      <details class="diagnostics">
+        <summary>Diagnostics</summary>
+        <div class="diag-content">
+          <button class="ghost" :disabled="busy" @click="refreshAll">Rafraichir</button>
+          <div class="check-list">
+            <div v-for="check in checks" :key="check.name" class="check-row" :class="{ ok: check.ok }">
+              <span>{{ check.ok ? 'ok' : 'x' }}</span>
+              <div>
+                <strong>{{ check.name }}</strong>
+                <small>{{ check.detail || 'non disponible' }}</small>
+              </div>
             </div>
           </div>
           <pre class="logs">{{ logs.join('\n') }}</pre>
-        </section>
-      </section>
+        </div>
+      </details>
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import {
+  appDefaults,
   checkEnvironment,
   installRuntime,
   nodeActivity,
@@ -158,10 +149,8 @@ import {
   type NodeActivity,
 } from './tauri';
 
-const defaultRepoRoot = localStorage.getItem('silicium.repoRoot') || '';
-
 const form = reactive({
-  repoRoot: defaultRepoRoot,
+  repoRoot: localStorage.getItem('silicium.repoRoot') || '',
   orchestratorUrl: localStorage.getItem('silicium.orchestratorUrl') || 'http://213.32.68.67:46100',
   advertiseHost: localStorage.getItem('silicium.advertiseHost') || '',
   nodeId: localStorage.getItem('silicium.nodeId') || `silicium-${crypto.randomUUID().slice(0, 8)}`,
@@ -177,7 +166,11 @@ const activity = reactive<NodeActivity>({
   history: [],
 });
 const checks = ref<CheckItem[]>([]);
-const logs = ref<string[]>(['Silicium Node pret. Lancez les checks puis activez votre PC.']);
+const logs = ref<string[]>(['Silicium Node pret.']);
+const busy = ref(false);
+const userMessage = ref('');
+
+const currentWorkLabel = computed(() => (activity.knownTasks > 0 ? 'Activite detectee' : 'En attente'));
 
 function remember() {
   localStorage.setItem('silicium.repoRoot', form.repoRoot);
@@ -188,7 +181,19 @@ function remember() {
 }
 
 function pushLog(message: string) {
-  logs.value = [`${new Date().toLocaleTimeString()}  ${message}`, ...logs.value].slice(0, 100);
+  logs.value = [`${new Date().toLocaleTimeString()}  ${message}`, ...logs.value].slice(0, 80);
+}
+
+async function loadDefaults() {
+  try {
+    const defaults = await appDefaults();
+    form.repoRoot ||= defaults.repoRoot;
+    form.advertiseHost ||= defaults.advertiseHost;
+    form.orchestratorUrl ||= defaults.orchestratorUrl;
+    remember();
+  } catch (error) {
+    pushLog(`Detection automatique indisponible: ${String(error)}`);
+  }
 }
 
 async function refreshStatus() {
@@ -198,49 +203,39 @@ async function refreshStatus() {
 }
 
 async function refreshActivity() {
-  if (!form.repoRoot.trim()) {
-    return;
-  }
   try {
     const next = await nodeActivity(form.repoRoot);
     Object.assign(activity, next);
-  } catch (error) {
-    pushLog(`Activite indisponible: ${String(error)}`);
+  } catch {
+    // No activity yet, or repo not available. Keep the dashboard quiet for non-technical users.
   }
 }
 
 async function refreshAll() {
-  try {
-    await refreshStatus();
-    await refreshActivity();
-  } catch (error) {
-    pushLog(`Rafraichissement impossible: ${String(error)}`);
+  await refreshStatus();
+  await refreshActivity();
+}
+
+async function runChecksQuietly() {
+  checks.value = await checkEnvironment(form.repoRoot);
+  const failed = checks.value.filter((check) => !check.ok);
+  if (failed.length > 0) {
+    pushLog(`${failed.length} verification(s) a revoir.`);
+  } else {
+    pushLog('Environnement pret.');
   }
 }
 
-async function runChecks() {
+async function activateOneClick() {
+  busy.value = true;
+  userMessage.value = 'Preparation de votre PC...';
   remember();
   try {
-    checks.value = await checkEnvironment(form.repoRoot);
-    pushLog('Checks systeme termines.');
-  } catch (error) {
-    pushLog(`Checks impossibles: ${String(error)}`);
-  }
-}
-
-async function install() {
-  remember();
-  try {
-    const message = await installRuntime(form.repoRoot);
-    pushLog(message);
-  } catch (error) {
-    pushLog(`Installation impossible: ${String(error)}`);
-  }
-}
-
-async function activateNode() {
-  remember();
-  try {
+    await loadDefaults();
+    await runChecksQuietly();
+    userMessage.value = 'Installation et verification du runtime...';
+    await installRuntime(form.repoRoot);
+    userMessage.value = 'Connexion au reseau Silicium...';
     const message = await startNode({
       repoRoot: form.repoRoot,
       orchestratorUrl: form.orchestratorUrl,
@@ -249,19 +244,26 @@ async function activateNode() {
       reputationScore: form.reputationScore,
     });
     pushLog(message);
+    userMessage.value = '';
     await refreshAll();
   } catch (error) {
+    userMessage.value = "L activation n a pas pu se terminer. Ouvrez Diagnostics si besoin.";
     pushLog(`Activation impossible: ${String(error)}`);
+  } finally {
+    busy.value = false;
   }
 }
 
 async function deactivateNode() {
+  busy.value = true;
   try {
     const message = await stopNode();
     pushLog(message);
     await refreshAll();
   } catch (error) {
-    pushLog(`Arret impossible: ${String(error)}`);
+    pushLog(`Retrait impossible: ${String(error)}`);
+  } finally {
+    busy.value = false;
   }
 }
 
@@ -283,10 +285,8 @@ function formatDate(seconds: number) {
 }
 
 onMounted(async () => {
+  await loadDefaults();
   await refreshAll();
-  if (form.repoRoot.trim()) {
-    await runChecks();
-  }
   window.setInterval(refreshAll, 5000);
 });
 </script>

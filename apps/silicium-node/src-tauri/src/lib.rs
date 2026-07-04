@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::{
+    env,
     fs,
+    net::UdpSocket,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
@@ -27,6 +29,14 @@ struct NodeConfig {
 struct NodeStatus {
     running: bool,
     roles: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppDefaults {
+    repo_root: String,
+    advertise_host: String,
+    orchestrator_url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,7 +87,7 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
         return Ok("Silicium node already running".to_string());
     }
 
-    let repo_root = PathBuf::from(config.repo_root.trim());
+    let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
 
     let child = spawn_node(&repo_root, &config)?;
@@ -103,7 +113,7 @@ fn stop_node(state: State<ProcessState>) -> Result<String, String> {
 
 #[tauri::command]
 fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
-    let root = PathBuf::from(repo_root.trim());
+    let root = resolve_repo_root(&repo_root)?;
     let mut checks = vec![
         command_check("Git", "git", &["--version"]),
         command_check("Node.js", "node", &["--version"]),
@@ -122,9 +132,9 @@ fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
 
 #[tauri::command]
 fn install_runtime(repo_root: String) -> Result<String, String> {
-    let root = PathBuf::from(repo_root.trim());
+    let root = resolve_repo_root(&repo_root)?;
     validate_repo_root(&root)?;
-    let child = if cfg!(target_os = "windows") {
+    let status = if cfg!(target_os = "windows") {
         let script = root.join("install-silicium-windows.cmd");
         if !script.exists() {
             return Err(format!("installer_not_found: {}", script.display()));
@@ -137,7 +147,7 @@ fn install_runtime(repo_root: String) -> Result<String, String> {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn()
+            .status()
     } else {
         let script = root.join("deploy").join("linux").join("install-vps-deps.sh");
         if !script.exists() {
@@ -149,15 +159,18 @@ fn install_runtime(repo_root: String) -> Result<String, String> {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn()
+            .status()
     };
-    child.map_err(|error| error.to_string())?;
-    Ok("Runtime installation started in background".to_string())
+    let status = status.map_err(|error| error.to_string())?;
+    if !status.success() {
+        return Err(format!("installer_failed: {status}"));
+    }
+    Ok("Runtime pret".to_string())
 }
 
 #[tauri::command]
 fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
-    let root = PathBuf::from(repo_root.trim());
+    let root = resolve_repo_root(&repo_root)?;
     validate_repo_root(&root)?;
     let networked_dir = root.join("Network").join(".silicium").join("networked");
     let mut history = Vec::new();
@@ -188,6 +201,41 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
     })
 }
 
+#[tauri::command]
+fn app_defaults() -> AppDefaults {
+    AppDefaults {
+        repo_root: discover_repo_root()
+            .map(|path| path.display().to_string())
+            .unwrap_or_default(),
+        advertise_host: detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
+        orchestrator_url: "http://213.32.68.67:46100".to_string(),
+    }
+}
+
+fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
+    if !repo_root.trim().is_empty() {
+        return Ok(PathBuf::from(repo_root.trim()));
+    }
+    discover_repo_root().ok_or_else(|| "repo_root_not_found".to_string())
+}
+
+fn discover_repo_root() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(current_dir) = env::current_dir() {
+        candidates.push(current_dir);
+    }
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
+
+    for candidate in candidates {
+        for ancestor in candidate.ancestors() {
+            if ancestor.join("Network").exists() && ancestor.join("Site").exists() {
+                return Some(ancestor.to_path_buf());
+            }
+        }
+    }
+    None
+}
+
 fn validate_repo_root(repo_root: &Path) -> Result<(), String> {
     if !repo_root.exists() {
         return Err("repo_root_not_found".to_string());
@@ -199,6 +247,12 @@ fn validate_repo_root(repo_root: &Path) -> Result<(), String> {
 }
 
 fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
+    let advertise_host = if config.advertise_host.trim().is_empty() {
+        detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string())
+    } else {
+        config.advertise_host.trim().to_string()
+    };
+
     if cfg!(target_os = "windows") {
         let script = repo_root
             .join("Network")
@@ -217,7 +271,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("compute,verify")
             .arg("46101")
             .arg(&config.orchestrator_url)
-            .arg(&config.advertise_host)
+            .arg(&advertise_host)
             .arg("demo-mesh")
             .arg(config.reputation_score.to_string())
             .current_dir(repo_root);
@@ -234,12 +288,18 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("compute,verify")
             .arg("46101")
             .arg(&config.orchestrator_url)
-            .arg(&config.advertise_host)
+            .arg(&advertise_host)
             .arg("demo-mesh")
             .arg(config.reputation_score.to_string())
             .current_dir(repo_root);
         spawn_detached(command)
     }
+}
+
+fn detect_local_ip() -> Option<String> {
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    Some(socket.local_addr().ok()?.ip().to_string())
 }
 
 fn spawn_detached(mut command: Command) -> Result<Child, String> {
@@ -346,7 +406,8 @@ pub fn run() {
             node_status,
             check_environment,
             install_runtime,
-            node_activity
+            node_activity,
+            app_defaults
         ])
         .run(tauri::generate_context!())
         .expect("error while running Silicium Node");

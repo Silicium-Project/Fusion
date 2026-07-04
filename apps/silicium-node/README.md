@@ -49,13 +49,11 @@ http://213.32.68.67:46100
 
 MVP:
 
-- install/repair runtime from the existing repo installer
-- run system checks
-- configure orchestrator URL
-- configure advertise host
+- one-click activation for non-technical users
+- automatic repo/IP/default configuration detection
+- install/repair runtime through the existing repo installer
 - start/stop one local node with compute and verify roles
-- display local process state
-- show local activity and recent files
+- display local process state, activity, history, and diagnostics
 
 Later:
 

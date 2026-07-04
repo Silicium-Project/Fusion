@@ -33,6 +33,12 @@ export type NodeActivity = {
   history: HistoryItem[];
 };
 
+export type AppDefaults = {
+  repoRoot: string;
+  advertiseHost: string;
+  orchestratorUrl: string;
+};
+
 export async function startNode(config: NodeConfig): Promise<string> {
   return await invoke<string>('start_node', { config });
 }
@@ -55,4 +61,8 @@ export async function installRuntime(repoRoot: string): Promise<string> {
 
 export async function nodeActivity(repoRoot: string): Promise<NodeActivity> {
   return await invoke<NodeActivity>('node_activity', { repoRoot });
+}
+
+export async function appDefaults(): Promise<AppDefaults> {
+  return await invoke<AppDefaults>('app_defaults');
 }
