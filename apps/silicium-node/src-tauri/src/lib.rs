@@ -149,15 +149,30 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
     }
 
     write_service_config(&repo_root, &config)?;
-    install_autostart_task(&repo_root)?;
+    let autostart_warning = match install_autostart_task(&repo_root) {
+        Ok(()) => None,
+        Err(error) => {
+            let _ = append_supervisor_log(
+                &repo_root,
+                &format!("autostart_task_install_failed: {error}\n"),
+            );
+            Some(error)
+        }
+    };
     let mut child = spawn_supervisor(&repo_root)?;
     write_supervisor_pid(&repo_root, child.id())?;
     wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
     *node = Some(child);
-    Ok(format!(
-        "Silicium local service started with compute,verify roles against {}",
-        config.orchestrator_url
-    ))
+    if let Some(warning) = autostart_warning {
+        Ok(format!(
+            "Silicium node started, but Windows autostart is not installed yet: {warning}"
+        ))
+    } else {
+        Ok(format!(
+            "Silicium local service started with compute,verify roles against {}",
+            config.orchestrator_url
+        ))
+    }
 }
 
 #[tauri::command]
@@ -447,7 +462,7 @@ fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
         exe.display(),
         repo_root.display()
     );
-    let status = Command::new("schtasks")
+    let output = Command::new("schtasks")
         .arg("/Create")
         .arg("/TN")
         .arg(SUPERVISOR_TASK_NAME)
@@ -457,14 +472,19 @@ fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
         .arg(task_command)
         .arg("/F")
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
+        .output()
         .map_err(|error| error.to_string())?;
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
-        Err(format!("autostart_task_install_failed: {status}"))
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(format!(
+            "{}{}{}",
+            output.status,
+            if stdout.is_empty() { "" } else { ": " },
+            if stderr.is_empty() { stdout } else { stderr }
+        ))
     }
 }
 
