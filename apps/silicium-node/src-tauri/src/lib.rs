@@ -119,7 +119,7 @@ fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
         command_check("Node.js", "node", &["--version"]),
         command_check("npm", if cfg!(target_os = "windows") { "npm.cmd" } else { "npm" }, &["--version"]),
         command_check("Python", if cfg!(target_os = "windows") { "py" } else { "python3" }, &["--version"]),
-        command_check("OpenSSL", "openssl", &["version"]),
+        openssl_check(),
     ];
 
     checks.push(path_check("Repo Silicium", &root.join("Network")));
@@ -275,6 +275,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("demo-mesh")
             .arg(config.reputation_score.to_string())
             .current_dir(repo_root);
+        apply_runtime_path(&mut command);
         spawn_detached(command)
     } else {
         let script = repo_root.join("deploy").join("linux").join("start-node.sh");
@@ -292,6 +293,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("demo-mesh")
             .arg(config.reputation_score.to_string())
             .current_dir(repo_root);
+        apply_runtime_path(&mut command);
         spawn_detached(command)
     }
 }
@@ -340,6 +342,42 @@ fn command_check(name: &str, command: &str, args: &[&str]) -> CheckItem {
             ok: false,
             detail: error.to_string(),
         },
+    }
+}
+
+fn openssl_check() -> CheckItem {
+    if let Some(path) = find_openssl() {
+        let path_string = path.display().to_string();
+        let mut check = command_check("OpenSSL", &path_string, &["version"]);
+        if check.ok {
+            check.detail = format!("{} ({})", check.detail, path.display());
+        }
+        return check;
+    }
+    command_check("OpenSSL", "openssl", &["version"])
+}
+
+fn find_openssl() -> Option<PathBuf> {
+    let candidates = if cfg!(target_os = "windows") {
+        vec![
+            PathBuf::from(r"C:\Program Files\OpenSSL-Win64\bin\openssl.exe"),
+            PathBuf::from(r"C:\Program Files\OpenSSL-Win32\bin\openssl.exe"),
+            PathBuf::from(r"C:\Program Files\Git\usr\bin\openssl.exe"),
+            PathBuf::from(r"C:\Program Files (x86)\OpenSSL-Win32\bin\openssl.exe"),
+            PathBuf::from(r"C:\Program Files (x86)\Git\usr\bin\openssl.exe"),
+        ]
+    } else {
+        vec![PathBuf::from("/usr/bin/openssl"), PathBuf::from("/usr/local/bin/openssl")]
+    };
+    candidates.into_iter().find(|path| path.exists())
+}
+
+fn apply_runtime_path(command: &mut Command) {
+    if let Some(openssl) = find_openssl().and_then(|path| path.parent().map(Path::to_path_buf)) {
+        let current_path = env::var("PATH").unwrap_or_default();
+        let separator = if cfg!(target_os = "windows") { ";" } else { ":" };
+        let next_path = format!("{}{}{}", openssl.display(), separator, current_path);
+        command.env("PATH", next_path);
     }
 }
 
