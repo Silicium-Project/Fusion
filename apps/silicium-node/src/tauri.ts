@@ -43,12 +43,12 @@ export async function startNode(config: NodeConfig): Promise<string> {
   return await invoke<string>('start_node', { config });
 }
 
-export async function stopNode(): Promise<string> {
-  return await invoke<string>('stop_node');
+export async function stopNode(repoRoot?: string): Promise<string> {
+  return await invoke<string>('stop_node', { repoRoot });
 }
 
-export async function nodeStatus(): Promise<NodeStatus> {
-  return await invoke<NodeStatus>('node_status');
+export async function nodeStatus(repoRoot?: string): Promise<NodeStatus> {
+  return await invoke<NodeStatus>('node_status', { repoRoot });
 }
 
 export async function checkEnvironment(repoRoot: string): Promise<CheckItem[]> {

@@ -6,7 +6,7 @@
         <h1>{{ status.running ? 'Votre PC aide le reseau' : 'Activez votre PC' }}</h1>
         <p class="subtitle">
           {{ status.running
-            ? 'Silicium utilise votre machine quand une tache compatible est disponible.'
+            ? 'Silicium utilise votre machine quand une tache compatible est disponible. Vous pouvez fermer cette fenetre, le node continue en arriere-plan.'
             : 'Un clic suffit. L app prepare le runtime, connecte votre machine et affiche ensuite son activite.' }}
         </p>
       </div>
@@ -351,7 +351,7 @@ async function loadDefaults() {
 }
 
 async function refreshStatus() {
-  const next = await nodeStatus();
+  const next = await nodeStatus(form.repoRoot);
   status.running = next.running;
   status.roles = next.roles;
 }
@@ -411,7 +411,7 @@ async function activateOneClick() {
 async function deactivateNode() {
   busy.value = true;
   try {
-    const message = await stopNode();
+    const message = await stopNode(form.repoRoot);
     pushLog(message);
     await refreshAll();
   } catch (error) {

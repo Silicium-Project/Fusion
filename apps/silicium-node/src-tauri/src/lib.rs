@@ -10,6 +10,9 @@ use std::{
 };
 use tauri::State;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 #[derive(Default)]
 struct ProcessState {
     node: Mutex<Option<Child>>,
@@ -66,13 +69,34 @@ struct HistoryItem {
 }
 
 #[tauri::command]
-fn node_status(state: State<ProcessState>) -> Result<NodeStatus, String> {
-    let node = state
+fn node_status(repo_root: Option<String>, state: State<ProcessState>) -> Result<NodeStatus, String> {
+    let mut node = state
         .node
         .lock()
         .map_err(|_| "process_state_locked".to_string())?;
+    if let Some(child) = node.as_mut() {
+        match child.try_wait().map_err(|error| error.to_string())? {
+            None => {
+                return Ok(NodeStatus {
+                    running: true,
+                    roles: "compute,verify".to_string(),
+                });
+            }
+            Some(_) => {
+                *node = None;
+            }
+        }
+    }
+
+    let running = repo_root
+        .as_deref()
+        .and_then(|root| resolve_repo_root(root).ok())
+        .and_then(|root| read_pid(&root).ok().flatten())
+        .map(process_is_running)
+        .unwrap_or(false);
+
     Ok(NodeStatus {
-        running: node.is_some(),
+        running,
         roles: "compute,verify".to_string(),
     })
 }
@@ -89,8 +113,15 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
 
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
+    if let Some(pid) = read_pid(&repo_root)? {
+        if process_is_running(pid) {
+            return Ok("Silicium node already running in background".to_string());
+        }
+        remove_pid(&repo_root);
+    }
 
     let child = spawn_node(&repo_root, &config)?;
+    write_pid(&repo_root, child.id())?;
     *node = Some(child);
     Ok(format!(
         "Silicium node started with compute,verify roles against {}",
@@ -99,15 +130,26 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
 }
 
 #[tauri::command]
-fn stop_node(state: State<ProcessState>) -> Result<String, String> {
+fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Result<String, String> {
     let mut node = state
         .node
         .lock()
         .map_err(|_| "process_state_locked".to_string())?;
-    let Some(mut child) = node.take() else {
-        return Ok("Silicium node is not running".to_string());
-    };
-    child.kill().map_err(|error| error.to_string())?;
+    if let Some(mut child) = node.take() {
+        let _ = child.kill();
+    }
+
+    let root = repo_root
+        .as_deref()
+        .and_then(|value| resolve_repo_root(value).ok())
+        .or_else(discover_repo_root);
+    if let Some(root) = root {
+        if let Some(pid) = read_pid(&root)? {
+            kill_process_tree(pid)?;
+        }
+        remove_pid(&root);
+    }
+
     Ok("Silicium node stopped".to_string())
 }
 
@@ -305,6 +347,7 @@ fn detect_local_ip() -> Option<String> {
 }
 
 fn spawn_detached(mut command: Command) -> Result<Child, String> {
+    configure_detached_process(&mut command);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -312,6 +355,17 @@ fn spawn_detached(mut command: Command) -> Result<Child, String> {
         .spawn()
         .map_err(|error| error.to_string())
 }
+
+#[cfg(target_os = "windows")]
+fn configure_detached_process(command: &mut Command) {
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn configure_detached_process(_command: &mut Command) {}
 
 fn normalized_node_id(node_id: &str) -> String {
     if node_id.trim().is_empty() {
@@ -379,6 +433,81 @@ fn apply_runtime_path(command: &mut Command) {
         let next_path = format!("{}{}{}", openssl.display(), separator, current_path);
         command.env("PATH", next_path);
     }
+}
+
+fn pid_path(repo_root: &Path) -> PathBuf {
+    repo_root
+        .join(".silicium")
+        .join("node-app")
+        .join("silicium-node.pid")
+}
+
+fn write_pid(repo_root: &Path, pid: u32) -> Result<(), String> {
+    let path = pid_path(repo_root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::write(path, pid.to_string()).map_err(|error| error.to_string())
+}
+
+fn read_pid(repo_root: &Path) -> Result<Option<u32>, String> {
+    let path = pid_path(repo_root);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    Ok(raw.trim().parse::<u32>().ok())
+}
+
+fn remove_pid(repo_root: &Path) {
+    let _ = fs::remove_file(pid_path(repo_root));
+}
+
+fn process_is_running(pid: u32) -> bool {
+    if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .arg("/C")
+            .arg(format!("tasklist /FI \"PID eq {pid}\" /NH"))
+            .stdin(Stdio::null())
+            .output()
+            .map(|output| {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).contains(&pid.to_string())
+            })
+            .unwrap_or(false)
+    } else {
+        Command::new("kill")
+            .arg("-0")
+            .arg(pid.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false)
+    }
+}
+
+fn kill_process_tree(pid: u32) -> Result<(), String> {
+    let status = if cfg!(target_os = "windows") {
+        Command::new("taskkill")
+            .arg("/PID")
+            .arg(pid.to_string())
+            .arg("/T")
+            .arg("/F")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+    } else {
+        Command::new("kill")
+            .arg(pid.to_string())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+    };
+    status.map_err(|error| error.to_string()).map(|_| ())
 }
 
 fn path_check(name: &str, path: &Path) -> CheckItem {
