@@ -354,7 +354,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             return Err(format!("silicium_cli_not_found: {}", silicium_cli.display()));
         }
         let node_id = normalized_node_id(&config.node_id);
-        let mut command = Command::new("py");
+        let mut command = Command::new(hidden_python_launcher());
         command
             .arg("silicium")
             .arg("node")
@@ -612,6 +612,32 @@ fn detect_local_ip() -> Option<String> {
     Some(socket.local_addr().ok()?.ip().to_string())
 }
 
+fn hidden_python_launcher() -> String {
+    if !cfg!(target_os = "windows") {
+        return "python3".to_string();
+    }
+    let mut candidates = Vec::new();
+    if let Ok(system_root) = env::var("SystemRoot") {
+        candidates.push(PathBuf::from(system_root).join("pyw.exe"));
+    }
+    if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+        for version in ["Python314", "Python313", "Python312", "Python311", "Python310"] {
+            candidates.push(
+                PathBuf::from(&local_app_data)
+                    .join("Programs")
+                    .join("Python")
+                    .join(version)
+                    .join("pythonw.exe"),
+            );
+        }
+    }
+    candidates
+        .into_iter()
+        .find(|path| path.exists())
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "pyw".to_string())
+}
+
 fn spawn_detached(command: Command, repo_root: &Path) -> Result<Child, String> {
     spawn_detached_with_log(
         command,
@@ -670,11 +696,10 @@ fn normalized_node_id(node_id: &str) -> String {
 }
 
 fn command_check(name: &str, command: &str, args: &[&str]) -> CheckItem {
-    match Command::new(command)
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-    {
+    let mut process = Command::new(command);
+    process.args(args).stdin(Stdio::null());
+    configure_detached_process(&mut process);
+    match process.output() {
         Ok(output) if output.status.success() => CheckItem {
             name: name.to_string(),
             ok: true,
@@ -883,10 +908,13 @@ fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> 
 
 fn process_is_running(pid: u32) -> bool {
     if cfg!(target_os = "windows") {
-        Command::new("cmd")
+        let mut command = Command::new("cmd");
+        command
             .arg("/C")
             .arg(format!("tasklist /FI \"PID eq {pid}\" /NH"))
-            .stdin(Stdio::null())
+            .stdin(Stdio::null());
+        configure_detached_process(&mut command);
+        command
             .output()
             .map(|output| {
                 output.status.success()
