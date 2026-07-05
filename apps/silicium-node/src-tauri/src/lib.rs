@@ -3,12 +3,12 @@ use std::{
     env,
     fs::{self, OpenOptions},
     io::Read,
-    net::UdpSocket,
+    net::{TcpStream, UdpSocket},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
     thread,
-    time::{Duration, UNIX_EPOCH},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 use tauri::State;
 
@@ -124,15 +124,7 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
 
     let mut child = spawn_node(&repo_root, &config)?;
     write_pid(&repo_root, child.id())?;
-    thread::sleep(Duration::from_millis(1200));
-    if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-        remove_pid(&repo_root);
-        let logs = read_node_log_tail(&repo_root);
-        return Err(format!(
-            "node_exited_immediately: {status}\n{}",
-            logs.unwrap_or_else(|| "No node logs available yet.".to_string())
-        ));
-    }
+    wait_for_node_start(&mut child, &repo_root, 46101)?;
     *node = Some(child);
     Ok(format!(
         "Silicium node started with compute,verify roles against {}",
@@ -307,27 +299,43 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
     };
 
     if cfg!(target_os = "windows") {
-        let script = repo_root
-            .join("Network")
-            .join("demo")
-            .join("networked")
-            .join("start-node.cmd");
-        if !script.exists() {
-            return Err(format!("script_not_found: {}", script.display()));
+        let network_root = repo_root.join("Network");
+        let silicium_cli = network_root.join("silicium");
+        if !silicium_cli.exists() {
+            return Err(format!("silicium_cli_not_found: {}", silicium_cli.display()));
         }
         let node_id = normalized_node_id(&config.node_id);
-        let mut command = Command::new("cmd");
+        let mut command = Command::new("py");
         command
-            .arg("/C")
-            .arg(script)
-            .arg(node_id)
+            .arg("silicium")
+            .arg("node")
+            .arg("start")
+            .arg("--roles")
             .arg("compute,verify")
+            .arg("--node-id")
+            .arg(node_id)
+            .arg("--export-dir")
+            .arg(".silicium\\networked\\silicium-desktop-node\\export")
+            .arg("--state-dir")
+            .arg(".silicium\\networked\\silicium-desktop-node\\state")
+            .arg("--peer-http-bind")
+            .arg("0.0.0.0")
+            .arg("--peer-http-port")
             .arg("46101")
-            .arg(&config.orchestrator_url)
+            .arg("--peer-advertise-host")
             .arg(&advertise_host)
+            .arg("--peer-advertise-port")
+            .arg("46101")
+            .arg("--seed-peers")
+            .arg(&config.orchestrator_url)
+            .arg("--mesh-key")
             .arg("demo-mesh")
+            .arg("--reputation-score")
             .arg(config.reputation_score.to_string())
-            .current_dir(repo_root);
+            .arg("--idle-ms")
+            .arg("250")
+            .current_dir(&network_root);
+        apply_raytracer_env(&mut command, repo_root);
         apply_runtime_path(&mut command);
         spawn_detached(command, repo_root)
     } else {
@@ -348,6 +356,31 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .current_dir(repo_root);
         apply_runtime_path(&mut command);
         spawn_detached(command, repo_root)
+    }
+}
+
+fn wait_for_node_start(child: &mut Child, repo_root: &Path, port: u16) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            remove_pid(repo_root);
+            let logs = read_node_log_tail(repo_root);
+            return Err(format!(
+                "node_exited_before_ready: {status}\n{}",
+                logs.unwrap_or_else(|| "No node logs available yet.".to_string())
+            ));
+        }
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            let logs = read_node_log_tail(repo_root);
+            return Err(format!(
+                "node_not_ready_after_timeout\n{}",
+                logs.unwrap_or_else(|| "No node logs available yet.".to_string())
+            ));
+        }
+        thread::sleep(Duration::from_millis(250));
     }
 }
 
@@ -458,6 +491,21 @@ fn apply_runtime_path(command: &mut Command) {
         let separator = if cfg!(target_os = "windows") { ";" } else { ":" };
         let next_path = format!("{}{}{}", openssl.display(), separator, current_path);
         command.env("PATH", next_path);
+    }
+}
+
+fn apply_raytracer_env(command: &mut Command, repo_root: &Path) {
+    let env_file = repo_root.join(".silicium").join("env").join("raytracer.env");
+    let Ok(content) = fs::read_to_string(env_file) else {
+        return;
+    };
+    for line in content.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        if key == "SILICIUM_RAYTRACER_BIN" || key == "SILICIUM_RAYTRACER_ASSETS_DIR" {
+            command.env(key, value);
+        }
     }
 }
 
