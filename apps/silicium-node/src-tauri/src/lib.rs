@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::{
     env,
-    fs,
+    fs::{self, OpenOptions},
+    io::Read,
     net::UdpSocket,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
-    time::UNIX_EPOCH,
+    thread,
+    time::{Duration, UNIX_EPOCH},
 };
 use tauri::State;
 
@@ -120,8 +122,17 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
         remove_pid(&repo_root);
     }
 
-    let child = spawn_node(&repo_root, &config)?;
+    let mut child = spawn_node(&repo_root, &config)?;
     write_pid(&repo_root, child.id())?;
+    thread::sleep(Duration::from_millis(1200));
+    if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+        remove_pid(&repo_root);
+        let logs = read_node_log_tail(&repo_root);
+        return Err(format!(
+            "node_exited_immediately: {status}\n{}",
+            logs.unwrap_or_else(|| "No node logs available yet.".to_string())
+        ));
+    }
     *node = Some(child);
     Ok(format!(
         "Silicium node started with compute,verify roles against {}",
@@ -318,7 +329,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg(config.reputation_score.to_string())
             .current_dir(repo_root);
         apply_runtime_path(&mut command);
-        spawn_detached(command)
+        spawn_detached(command, repo_root)
     } else {
         let script = repo_root.join("deploy").join("linux").join("start-node.sh");
         if !script.exists() {
@@ -336,7 +347,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg(config.reputation_score.to_string())
             .current_dir(repo_root);
         apply_runtime_path(&mut command);
-        spawn_detached(command)
+        spawn_detached(command, repo_root)
     }
 }
 
@@ -346,12 +357,27 @@ fn detect_local_ip() -> Option<String> {
     Some(socket.local_addr().ok()?.ip().to_string())
 }
 
-fn spawn_detached(mut command: Command) -> Result<Child, String> {
+fn spawn_detached(mut command: Command, repo_root: &Path) -> Result<Child, String> {
     configure_detached_process(&mut command);
+    let stdout = node_app_log_path(repo_root, "silicium-node.out.log");
+    let stderr = node_app_log_path(repo_root, "silicium-node.err.log");
+    if let Some(parent) = stdout.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let stdout_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(stdout)
+        .map_err(|error| error.to_string())?;
+    let stderr_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(stderr)
+        .map_err(|error| error.to_string())?;
     command
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
         .spawn()
         .map_err(|error| error.to_string())
 }
@@ -436,10 +462,14 @@ fn apply_runtime_path(command: &mut Command) {
 }
 
 fn pid_path(repo_root: &Path) -> PathBuf {
+    node_app_log_path(repo_root, "silicium-node.pid")
+}
+
+fn node_app_log_path(repo_root: &Path, file_name: &str) -> PathBuf {
     repo_root
         .join(".silicium")
         .join("node-app")
-        .join("silicium-node.pid")
+        .join(file_name)
 }
 
 fn write_pid(repo_root: &Path, pid: u32) -> Result<(), String> {
@@ -508,6 +538,40 @@ fn kill_process_tree(pid: u32) -> Result<(), String> {
             .status()
     };
     status.map_err(|error| error.to_string()).map(|_| ())
+}
+
+fn read_node_log_tail(repo_root: &Path) -> Option<String> {
+    let mut parts = Vec::new();
+    for (label, name) in [
+        ("stderr", "silicium-node.err.log"),
+        ("stdout", "silicium-node.out.log"),
+    ] {
+        let path = node_app_log_path(repo_root, name);
+        let Ok(mut file) = fs::File::open(path) else {
+            continue;
+        };
+        let mut content = String::new();
+        if file.read_to_string(&mut content).is_err() {
+            continue;
+        }
+        let tail = content
+            .lines()
+            .rev()
+            .take(30)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !tail.trim().is_empty() {
+            parts.push(format!("{label}:\n{tail}"));
+        }
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n"))
+    }
 }
 
 fn path_check(name: &str, path: &Path) -> CheckItem {
