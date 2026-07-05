@@ -21,6 +21,7 @@ struct ProcessState {
 }
 
 const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
+const SUPERVISOR_RUN_KEY_NAME: &str = "SiliciumNodeService";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -469,6 +470,42 @@ fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
         .arg("/SC")
         .arg("ONLOGON")
         .arg("/TR")
+        .arg(&task_command)
+        .arg("/F")
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        return Ok(());
+    }
+    match install_autostart_run_key(&task_command) {
+        Ok(()) => Ok(()),
+        Err(registry_error) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(format!(
+                "{}{}{}; registry fallback failed: {}",
+                output.status,
+                if stdout.is_empty() && stderr.is_empty() { "" } else { ": " },
+                if stderr.is_empty() { stdout } else { stderr },
+                registry_error
+            ))
+        }
+    }
+}
+
+fn install_autostart_run_key(task_command: &str) -> Result<(), String> {
+    if !cfg!(target_os = "windows") {
+        return Ok(());
+    }
+    let output = Command::new("reg")
+        .arg("add")
+        .arg(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run")
+        .arg("/V")
+        .arg(SUPERVISOR_RUN_KEY_NAME)
+        .arg("/T")
+        .arg("REG_SZ")
+        .arg("/D")
         .arg(task_command)
         .arg("/F")
         .stdin(Stdio::null())
@@ -501,6 +538,16 @@ fn uninstall_autostart_task() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+    let _ = Command::new("reg")
+        .arg("delete")
+        .arg(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run")
+        .arg("/V")
+        .arg(SUPERVISOR_RUN_KEY_NAME)
+        .arg("/F")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
 }
 
 pub fn run_supervisor_cli() -> i32 {
@@ -526,6 +573,7 @@ pub fn run_supervisor_cli() -> i32 {
         reputation_score: 100,
     });
 
+    let mut restart_attempts = 0_u32;
     loop {
         cleanup_dead_pids(&repo_root);
         let node_running = read_pid(&repo_root)
@@ -534,10 +582,14 @@ pub fn run_supervisor_cli() -> i32 {
             .map(process_is_running)
             .unwrap_or(false)
             && TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+        if node_running {
+            restart_attempts = 0;
+        }
         if !node_running {
             remove_pid(&repo_root);
             match spawn_node(&repo_root, &config) {
                 Ok(child) => {
+                    restart_attempts = restart_attempts.saturating_add(1);
                     let _ = write_pid(&repo_root, child.id());
                     let _ = append_supervisor_log(
                         &repo_root,
@@ -549,7 +601,8 @@ pub fn run_supervisor_cli() -> i32 {
                 }
             }
         }
-        thread::sleep(Duration::from_secs(5));
+        let delay = if restart_attempts > 3 { 20 } else { 5 };
+        thread::sleep(Duration::from_secs(delay));
     }
 }
 
@@ -601,9 +654,8 @@ fn spawn_detached_with_log(
 #[cfg(target_os = "windows")]
 fn configure_detached_process(command: &mut Command) {
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS | CREATE_NO_WINDOW);
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
 }
 
 #[cfg(not(target_os = "windows"))]
