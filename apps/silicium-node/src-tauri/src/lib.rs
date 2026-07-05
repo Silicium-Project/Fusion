@@ -90,12 +90,20 @@ fn node_status(repo_root: Option<String>, state: State<ProcessState>) -> Result<
         }
     }
 
-    let running = repo_root
+    let root = repo_root
         .as_deref()
         .and_then(|root| resolve_repo_root(root).ok())
-        .and_then(|root| read_pid(&root).ok().flatten())
+        .or_else(discover_repo_root);
+    let running = root
+        .as_ref()
+        .and_then(|root| read_pid(root).ok().flatten())
         .map(process_is_running)
         .unwrap_or(false);
+    if !running {
+        if let Some(root) = root.as_ref() {
+            remove_pid(root);
+        }
+    }
 
     Ok(NodeStatus {
         running,
