@@ -20,7 +20,9 @@ struct ProcessState {
     node: Mutex<Option<Child>>,
 }
 
-#[derive(Debug, Deserialize)]
+const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NodeConfig {
     repo_root: String,
@@ -94,12 +96,21 @@ fn node_status(repo_root: Option<String>, state: State<ProcessState>) -> Result<
         .as_deref()
         .and_then(|root| resolve_repo_root(root).ok())
         .or_else(discover_repo_root);
-    let running = root
+    if let Some(root) = root.as_ref() {
+        cleanup_dead_pids(root);
+    }
+    let node_running = root
         .as_ref()
         .and_then(|root| read_pid(root).ok().flatten())
         .map(process_is_running)
         .unwrap_or(false);
-    if !running {
+    let supervisor_running = root
+        .as_ref()
+        .and_then(|root| read_supervisor_pid(root).ok().flatten())
+        .map(process_is_running)
+        .unwrap_or(false);
+    let running = node_running || supervisor_running;
+    if !node_running {
         if let Some(root) = root.as_ref() {
             remove_pid(root);
         }
@@ -123,6 +134,13 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
 
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
+    cleanup_dead_pids(&repo_root);
+    if let Some(pid) = read_supervisor_pid(&repo_root)? {
+        if process_is_running(pid) {
+            return Ok("Silicium local service already running".to_string());
+        }
+        remove_supervisor_pid(&repo_root);
+    }
     if let Some(pid) = read_pid(&repo_root)? {
         if process_is_running(pid) {
             return Ok("Silicium node already running in background".to_string());
@@ -130,12 +148,14 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
         remove_pid(&repo_root);
     }
 
-    let mut child = spawn_node(&repo_root, &config)?;
-    write_pid(&repo_root, child.id())?;
-    wait_for_node_start(&mut child, &repo_root, 46101)?;
+    write_service_config(&repo_root, &config)?;
+    install_autostart_task(&repo_root)?;
+    let mut child = spawn_supervisor(&repo_root)?;
+    write_supervisor_pid(&repo_root, child.id())?;
+    wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
     *node = Some(child);
     Ok(format!(
-        "Silicium node started with compute,verify roles against {}",
+        "Silicium local service started with compute,verify roles against {}",
         config.orchestrator_url
     ))
 }
@@ -155,13 +175,18 @@ fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Result<St
         .and_then(|value| resolve_repo_root(value).ok())
         .or_else(discover_repo_root);
     if let Some(root) = root {
+        if let Some(pid) = read_supervisor_pid(&root)? {
+            let _ = kill_process_tree(pid);
+        }
         if let Some(pid) = read_pid(&root)? {
             kill_process_tree(pid)?;
         }
         remove_pid(&root);
+        remove_supervisor_pid(&root);
+        uninstall_autostart_task();
     }
 
-    Ok("Silicium node stopped".to_string())
+    Ok("Silicium local service stopped".to_string())
 }
 
 #[tauri::command]
@@ -367,15 +392,19 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
     }
 }
 
-fn wait_for_node_start(child: &mut Child, repo_root: &Path, port: u16) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(8);
+fn wait_for_supervised_node_start(
+    supervisor: &mut Child,
+    repo_root: &Path,
+    port: u16,
+) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_secs(12);
     loop {
-        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-            remove_pid(repo_root);
+        if let Some(status) = supervisor.try_wait().map_err(|error| error.to_string())? {
+            remove_supervisor_pid(repo_root);
             let logs = read_node_log_tail(repo_root);
             return Err(format!(
-                "node_exited_before_ready: {status}\n{}",
-                logs.unwrap_or_else(|| "No node logs available yet.".to_string())
+                "supervisor_exited_before_ready: {status}\n{}",
+                logs.unwrap_or_else(|| "No supervisor logs available yet.".to_string())
             ));
         }
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {
@@ -384,11 +413,123 @@ fn wait_for_node_start(child: &mut Child, repo_root: &Path, port: u16) -> Result
         if Instant::now() >= deadline {
             let logs = read_node_log_tail(repo_root);
             return Err(format!(
-                "node_not_ready_after_timeout\n{}",
+                "node_not_ready_after_supervisor_start\n{}",
                 logs.unwrap_or_else(|| "No node logs available yet.".to_string())
             ));
         }
-        thread::sleep(Duration::from_millis(250));
+        thread::sleep(Duration::from_millis(300));
+    }
+}
+
+fn spawn_supervisor(repo_root: &Path) -> Result<Child, String> {
+    let exe = env::current_exe().map_err(|error| error.to_string())?;
+    let mut command = Command::new(exe);
+    command
+        .arg("--supervisor")
+        .arg("--repo-root")
+        .arg(repo_root.display().to_string())
+        .current_dir(repo_root);
+    spawn_detached_with_log(
+        command,
+        repo_root,
+        "silicium-supervisor.out.log",
+        "silicium-supervisor.err.log",
+    )
+}
+
+fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
+    if !cfg!(target_os = "windows") {
+        return Ok(());
+    }
+    let exe = env::current_exe().map_err(|error| error.to_string())?;
+    let task_command = format!(
+        "\"{}\" --supervisor --repo-root \"{}\"",
+        exe.display(),
+        repo_root.display()
+    );
+    let status = Command::new("schtasks")
+        .arg("/Create")
+        .arg("/TN")
+        .arg(SUPERVISOR_TASK_NAME)
+        .arg("/SC")
+        .arg("ONLOGON")
+        .arg("/TR")
+        .arg(task_command)
+        .arg("/F")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|error| error.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("autostart_task_install_failed: {status}"))
+    }
+}
+
+fn uninstall_autostart_task() {
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    let _ = Command::new("schtasks")
+        .arg("/Delete")
+        .arg("/TN")
+        .arg(SUPERVISOR_TASK_NAME)
+        .arg("/F")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+pub fn run_supervisor_cli() -> i32 {
+    let mut repo_root = String::new();
+    let mut args = env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--repo-root" {
+            repo_root = args.next().unwrap_or_default();
+        }
+    }
+    let Ok(repo_root) = resolve_repo_root(&repo_root) else {
+        return 2;
+    };
+    if validate_repo_root(&repo_root).is_err() {
+        return 2;
+    }
+    let _ = write_supervisor_pid(&repo_root, std::process::id());
+    let config = read_service_config(&repo_root).unwrap_or_else(|_| NodeConfig {
+        repo_root: repo_root.display().to_string(),
+        orchestrator_url: "http://213.32.68.67:46100".to_string(),
+        advertise_host: detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
+        node_id: "silicium-desktop-node".to_string(),
+        reputation_score: 100,
+    });
+
+    loop {
+        cleanup_dead_pids(&repo_root);
+        let node_running = read_pid(&repo_root)
+            .ok()
+            .flatten()
+            .map(process_is_running)
+            .unwrap_or(false)
+            && TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+        if !node_running {
+            remove_pid(&repo_root);
+            match spawn_node(&repo_root, &config) {
+                Ok(child) => {
+                    let _ = write_pid(&repo_root, child.id());
+                    let _ = append_supervisor_log(
+                        &repo_root,
+                        &format!("node_started pid={}\n", child.id()),
+                    );
+                }
+                Err(error) => {
+                    let _ = append_supervisor_log(&repo_root, &format!("spawn_node_failed: {error}\n"));
+                }
+            }
+        }
+        thread::sleep(Duration::from_secs(5));
     }
 }
 
@@ -398,10 +539,24 @@ fn detect_local_ip() -> Option<String> {
     Some(socket.local_addr().ok()?.ip().to_string())
 }
 
-fn spawn_detached(mut command: Command, repo_root: &Path) -> Result<Child, String> {
+fn spawn_detached(command: Command, repo_root: &Path) -> Result<Child, String> {
+    spawn_detached_with_log(
+        command,
+        repo_root,
+        "silicium-node.out.log",
+        "silicium-node.err.log",
+    )
+}
+
+fn spawn_detached_with_log(
+    mut command: Command,
+    repo_root: &Path,
+    stdout_name: &str,
+    stderr_name: &str,
+) -> Result<Child, String> {
     configure_detached_process(&mut command);
-    let stdout = node_app_log_path(repo_root, "silicium-node.out.log");
-    let stderr = node_app_log_path(repo_root, "silicium-node.err.log");
+    let stdout = node_app_log_path(repo_root, stdout_name);
+    let stderr = node_app_log_path(repo_root, stderr_name);
     if let Some(parent) = stdout.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -521,6 +676,14 @@ fn pid_path(repo_root: &Path) -> PathBuf {
     node_app_log_path(repo_root, "silicium-node.pid")
 }
 
+fn supervisor_pid_path(repo_root: &Path) -> PathBuf {
+    node_app_log_path(repo_root, "silicium-supervisor.pid")
+}
+
+fn service_config_path(repo_root: &Path) -> PathBuf {
+    node_app_log_path(repo_root, "service-config.env")
+}
+
 fn node_app_log_path(repo_root: &Path, file_name: &str) -> PathBuf {
     repo_root
         .join(".silicium")
@@ -530,6 +693,14 @@ fn node_app_log_path(repo_root: &Path, file_name: &str) -> PathBuf {
 
 fn write_pid(repo_root: &Path, pid: u32) -> Result<(), String> {
     let path = pid_path(repo_root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::write(path, pid.to_string()).map_err(|error| error.to_string())
+}
+
+fn write_supervisor_pid(repo_root: &Path, pid: u32) -> Result<(), String> {
+    let path = supervisor_pid_path(repo_root);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
@@ -547,6 +718,95 @@ fn read_pid(repo_root: &Path) -> Result<Option<u32>, String> {
 
 fn remove_pid(repo_root: &Path) {
     let _ = fs::remove_file(pid_path(repo_root));
+}
+
+fn read_supervisor_pid(repo_root: &Path) -> Result<Option<u32>, String> {
+    let path = supervisor_pid_path(repo_root);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    Ok(raw.trim().parse::<u32>().ok())
+}
+
+fn remove_supervisor_pid(repo_root: &Path) {
+    let _ = fs::remove_file(supervisor_pid_path(repo_root));
+}
+
+fn cleanup_dead_pids(repo_root: &Path) {
+    if read_pid(repo_root)
+        .ok()
+        .flatten()
+        .map(|pid| !process_is_running(pid))
+        .unwrap_or(false)
+    {
+        remove_pid(repo_root);
+    }
+    if read_supervisor_pid(repo_root)
+        .ok()
+        .flatten()
+        .map(|pid| !process_is_running(pid))
+        .unwrap_or(false)
+    {
+        remove_supervisor_pid(repo_root);
+    }
+}
+
+fn write_service_config(repo_root: &Path, config: &NodeConfig) -> Result<(), String> {
+    let path = service_config_path(repo_root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let content = format!(
+        "repo_root={}\norchestrator_url={}\nadvertise_host={}\nnode_id={}\nreputation_score={}\n",
+        repo_root.display(),
+        config.orchestrator_url,
+        config.advertise_host,
+        config.node_id,
+        config.reputation_score
+    );
+    fs::write(path, content).map_err(|error| error.to_string())
+}
+
+fn read_service_config(repo_root: &Path) -> Result<NodeConfig, String> {
+    let content = fs::read_to_string(service_config_path(repo_root)).map_err(|error| error.to_string())?;
+    let mut config = NodeConfig {
+        repo_root: repo_root.display().to_string(),
+        orchestrator_url: "http://213.32.68.67:46100".to_string(),
+        advertise_host: String::new(),
+        node_id: "silicium-desktop-node".to_string(),
+        reputation_score: 100,
+    };
+    for line in content.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        match key {
+            "repo_root" => config.repo_root = value.to_string(),
+            "orchestrator_url" => config.orchestrator_url = value.to_string(),
+            "advertise_host" => config.advertise_host = value.to_string(),
+            "node_id" => config.node_id = value.to_string(),
+            "reputation_score" => {
+                config.reputation_score = value.parse::<u16>().unwrap_or(config.reputation_score);
+            }
+            _ => {}
+        }
+    }
+    Ok(config)
+}
+
+fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> {
+    let path = node_app_log_path(repo_root, "silicium-supervisor.err.log");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    use std::io::Write;
+    file.write_all(message.as_bytes()).map_err(|error| error.to_string())
 }
 
 fn process_is_running(pid: u32) -> bool {
@@ -599,6 +859,8 @@ fn kill_process_tree(pid: u32) -> Result<(), String> {
 fn read_node_log_tail(repo_root: &Path) -> Option<String> {
     let mut parts = Vec::new();
     for (label, name) in [
+        ("supervisor stderr", "silicium-supervisor.err.log"),
+        ("supervisor stdout", "silicium-supervisor.out.log"),
         ("stderr", "silicium-node.err.log"),
         ("stdout", "silicium-node.out.log"),
     ] {

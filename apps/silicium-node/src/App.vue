@@ -6,7 +6,7 @@
         <h1>{{ status.running ? 'Votre PC aide le reseau' : 'Activez votre PC' }}</h1>
         <p class="subtitle">
           {{ status.running
-            ? 'Silicium utilise votre machine quand une tache compatible est disponible. Vous pouvez fermer cette fenetre, le node continue en arriere-plan.'
+            ? 'Silicium utilise votre machine quand une tache compatible est disponible. Vous pouvez fermer cette fenetre, le service local reste actif.'
             : 'Un clic suffit. L app prepare le runtime, connecte votre machine et affiche ensuite son activite.' }}
         </p>
       </div>
@@ -289,8 +289,8 @@ const nodePhase = computed(() => {
   return {
     key: 'waiting',
     label: 'En attente',
-    description: 'Votre PC est connecte et disponible.',
-    detail: 'Votre PC est connecte au reseau. Il sera sollicite quand une tache compatible arrivera.',
+    description: 'Le service local est actif.',
+    detail: 'Votre PC reste connecte au reseau. Il sera sollicite quand une tache compatible arrivera.',
   };
 });
 
