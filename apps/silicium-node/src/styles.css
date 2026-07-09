@@ -639,3 +639,65 @@ label {
   background: #0c0d12;
   white-space: pre-wrap;
 }
+
+.compact-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.compact-hero {
+  margin-bottom: 22px;
+}
+
+.compact-activation {
+  min-height: 360px;
+  margin-top: 36px;
+}
+
+.compact-dashboard {
+  gap: 16px;
+}
+
+.compact-stats .stat-card {
+  min-height: 118px;
+}
+
+.compact-grid {
+  grid-template-columns: 1fr 0.78fr;
+}
+
+.work-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.work-step {
+  min-height: 92px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.work-step.active {
+  border-color: rgba(96, 165, 250, 0.45);
+  background: rgba(96, 165, 250, 0.13);
+}
+
+.work-step strong,
+.work-step span {
+  display: block;
+}
+
+.work-step span {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.compact-history {
+  min-height: 260px;
+}
