@@ -1176,6 +1176,16 @@ class PeerNetwork:
             self._peers[node_id] = current
         self.peers_snapshot()
 
+    def remove_peer(self, node_id: str) -> bool:
+        node_id = safe_id(str(node_id or ""))
+        if not node_id or node_id == self.node_id:
+            return False
+        with self._lock:
+            removed = self._peers.pop(node_id, None) is not None
+        if removed:
+            self.peers_snapshot()
+        return removed
+
     def publish(self, topic: str, payload: dict[str, Any]) -> None:
         message = {
             "message_type": "gossip_event",
@@ -2084,6 +2094,23 @@ class PeerNetwork:
                         return
                     peer_network._record_peer(payload)
                     body = b'{"ok":true}'
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/peers/leave":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    removed = peer_network.remove_peer(str(payload.get("node_id", "")))
+                    body = stable_json({"ok": True, "removed": removed}).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
