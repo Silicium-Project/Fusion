@@ -268,7 +268,11 @@ fn install_runtime(repo_root: String) -> Result<String, String> {
 fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
     let root = resolve_repo_root(&repo_root)?;
     validate_repo_root(&root)?;
-    let networked_dir = root.join("Network").join(".silicium").join("networked");
+    let networked_dir = root
+        .join("Network")
+        .join(".silicium")
+        .join("networked")
+        .join("silicium-desktop-node");
     let mut history = Vec::new();
     collect_history(&networked_dir, &mut history);
     history.sort_by(|left, right| right.modified_at.cmp(&left.modified_at));
@@ -1028,12 +1032,38 @@ fn collect_history(path: &Path, history: &mut Vec<HistoryItem>) {
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .map(|duration| duration.as_secs())
             .unwrap_or(0);
+        let Some(name) = display_history_name(&entry.path()) else {
+            continue;
+        };
         history.push(HistoryItem {
-            name: entry.file_name().to_string_lossy().to_string(),
+            name,
             modified_at,
             size_bytes: metadata.len(),
         });
     }
+}
+
+fn display_history_name(path: &Path) -> Option<String> {
+    let file_name = path.file_name()?.to_string_lossy();
+    let lower = file_name.to_lowercase();
+    if lower.ends_with(".queue.ndjson") || lower == "tasks.queue.ndjson" {
+        return None;
+    }
+    if lower.starts_with("result.") {
+        return Some(file_name.to_string());
+    }
+    if lower.contains("verify") || lower.contains("vote") {
+        return Some(file_name.to_string());
+    }
+    if path
+        .parent()
+        .and_then(Path::file_name)
+        .map(|name| name.to_string_lossy().eq_ignore_ascii_case("tasks"))
+        .unwrap_or(false)
+    {
+        return Some(format!("task.{file_name}"));
+    }
+    None
 }
 
 fn directory_size(path: &Path) -> u64 {
