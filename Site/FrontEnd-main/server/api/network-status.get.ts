@@ -1,6 +1,7 @@
 export default defineEventHandler(async () => {
   const config = useRuntimeConfig();
   const orchestratorUrl = String(config.public.orchestratorUrl || '').replace(/\/$/, '');
+  const localOrchestratorUrl = 'http://127.0.0.1:46100';
   const headers: Record<string, string> = {};
   if (config.siliciumMeshKey) {
     headers.Authorization = `Bearer ${config.siliciumMeshKey}`;
@@ -17,15 +18,22 @@ export default defineEventHandler(async () => {
     return status;
   }
 
+  let reachableUrl = orchestratorUrl;
   try {
-    await $fetch(`${orchestratorUrl}/healthz`, { timeout: 2500 });
+    await $fetch(`${reachableUrl}/healthz`, { timeout: 2500 });
     status.ok = true;
   } catch {
-    return status;
+    try {
+      reachableUrl = localOrchestratorUrl;
+      await $fetch(`${reachableUrl}/healthz`, { timeout: 2500 });
+      status.ok = true;
+    } catch {
+      return status;
+    }
   }
 
   try {
-    const peers = await $fetch<{ count?: number; peers?: unknown[] }>(`${orchestratorUrl}/peers`, {
+    const peers = await $fetch<{ count?: number; peers?: unknown[] }>(`${reachableUrl}/peers`, {
       headers,
       timeout: 2500,
     });

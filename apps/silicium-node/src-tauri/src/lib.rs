@@ -233,15 +233,17 @@ fn install_runtime(repo_root: String) -> Result<String, String> {
         if !script.exists() {
             return Err(format!("installer_not_found: {}", script.display()));
         }
-        Command::new("cmd")
+        let mut command = Command::new("cmd");
+        command
             .arg("/C")
             .arg(script)
             .arg("-SkipDockerCheck")
             .current_dir(&root)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .stderr(Stdio::null());
+        configure_detached_process(&mut command);
+        command.status()
     } else {
         let script = root.join("deploy").join("linux").join("install-vps-deps.sh");
         if !script.exists() {
@@ -463,7 +465,8 @@ fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
         exe.display(),
         repo_root.display()
     );
-    let output = Command::new("schtasks")
+    let mut command = Command::new("schtasks");
+    command
         .arg("/Create")
         .arg("/TN")
         .arg(SUPERVISOR_TASK_NAME)
@@ -472,9 +475,9 @@ fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
         .arg("/TR")
         .arg(&task_command)
         .arg("/F")
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| error.to_string())?;
+        .stdin(Stdio::null());
+    configure_detached_process(&mut command);
+    let output = command.output().map_err(|error| error.to_string())?;
     if output.status.success() {
         return Ok(());
     }
@@ -498,7 +501,8 @@ fn install_autostart_run_key(task_command: &str) -> Result<(), String> {
     if !cfg!(target_os = "windows") {
         return Ok(());
     }
-    let output = Command::new("reg")
+    let mut command = Command::new("reg");
+    command
         .arg("add")
         .arg(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run")
         .arg("/V")
@@ -508,9 +512,9 @@ fn install_autostart_run_key(task_command: &str) -> Result<(), String> {
         .arg("/D")
         .arg(task_command)
         .arg("/F")
-        .stdin(Stdio::null())
-        .output()
-        .map_err(|error| error.to_string())?;
+        .stdin(Stdio::null());
+    configure_detached_process(&mut command);
+    let output = command.output().map_err(|error| error.to_string())?;
     if output.status.success() {
         Ok(())
     } else {
@@ -529,25 +533,28 @@ fn uninstall_autostart_task() {
     if !cfg!(target_os = "windows") {
         return;
     }
-    let _ = Command::new("schtasks")
+    let mut schtasks = Command::new("schtasks");
+    schtasks
         .arg("/Delete")
         .arg("/TN")
         .arg(SUPERVISOR_TASK_NAME)
         .arg("/F")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    let _ = Command::new("reg")
-        .arg("delete")
+        .stderr(Stdio::null());
+    configure_detached_process(&mut schtasks);
+    let _ = schtasks.status();
+    let mut reg = Command::new("reg");
+    reg.arg("delete")
         .arg(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run")
         .arg("/V")
         .arg(SUPERVISOR_RUN_KEY_NAME)
         .arg("/F")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+        .stderr(Stdio::null());
+    configure_detached_process(&mut reg);
+    let _ = reg.status();
 }
 
 pub fn run_supervisor_cli() -> i32 {
@@ -576,12 +583,13 @@ pub fn run_supervisor_cli() -> i32 {
     let mut restart_attempts = 0_u32;
     loop {
         cleanup_dead_pids(&repo_root);
-        let node_running = read_pid(&repo_root)
+        let pid_running = read_pid(&repo_root)
             .ok()
             .flatten()
             .map(process_is_running)
-            .unwrap_or(false)
-            && TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+            .unwrap_or(false);
+        let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+        let node_running = pid_running || port_ready;
         if node_running {
             restart_attempts = 0;
         }
@@ -617,9 +625,6 @@ fn hidden_python_launcher() -> String {
         return "python3".to_string();
     }
     let mut candidates = Vec::new();
-    if let Ok(system_root) = env::var("SystemRoot") {
-        candidates.push(PathBuf::from(system_root).join("pyw.exe"));
-    }
     if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
         for version in ["Python314", "Python313", "Python312", "Python311", "Python310"] {
             candidates.push(
@@ -627,15 +632,18 @@ fn hidden_python_launcher() -> String {
                     .join("Programs")
                     .join("Python")
                     .join(version)
-                    .join("pythonw.exe"),
+                    .join("python.exe"),
             );
         }
+    }
+    if let Ok(system_root) = env::var("SystemRoot") {
+        candidates.push(PathBuf::from(system_root).join("py.exe"));
     }
     candidates
         .into_iter()
         .find(|path| path.exists())
         .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "pyw".to_string())
+        .unwrap_or_else(|| "py".to_string())
 }
 
 fn spawn_detached(command: Command, repo_root: &Path) -> Result<Child, String> {
@@ -936,15 +944,17 @@ fn process_is_running(pid: u32) -> bool {
 
 fn kill_process_tree(pid: u32) -> Result<(), String> {
     let status = if cfg!(target_os = "windows") {
-        Command::new("taskkill")
+        let mut command = Command::new("taskkill");
+        command
             .arg("/PID")
             .arg(pid.to_string())
             .arg("/T")
             .arg("/F")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .stderr(Stdio::null());
+        configure_detached_process(&mut command);
+        command.status()
     } else {
         Command::new("kill")
             .arg(pid.to_string())

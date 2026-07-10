@@ -155,8 +155,6 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import {
   appDefaults,
-  checkEnvironment,
-  installRuntime,
   nodeActivity,
   nodeStatus,
   startNode,
@@ -192,7 +190,10 @@ const nodePhase = computed(() => {
       detail: 'Activez votre PC pour rejoindre le reseau.',
     };
   }
-  const names = activity.history.map((item) => item.name.toLowerCase());
+  const recentLimit = Date.now() / 1000 - 120;
+  const names = activity.history
+    .filter((item) => item.modifiedAt >= recentLimit)
+    .map((item) => item.name.toLowerCase());
   if (names.some((name) => name.startsWith('result.'))) {
     return {
       key: 'submitted',
@@ -296,8 +297,6 @@ async function activateOneClick() {
   remember();
   try {
     await loadDefaults();
-    await checkEnvironment(form.repoRoot);
-    await installRuntime(form.repoRoot);
     await startNode({
       repoRoot: form.repoRoot,
       orchestratorUrl: form.orchestratorUrl,
