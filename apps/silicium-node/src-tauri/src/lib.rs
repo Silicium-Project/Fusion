@@ -93,10 +93,7 @@ fn node_status(repo_root: Option<String>, state: State<ProcessState>) -> Result<
         }
     }
 
-    let root = repo_root
-        .as_deref()
-        .and_then(|root| resolve_repo_root(root).ok())
-        .or_else(discover_repo_root);
+    let root = resolve_optional_repo_root(repo_root.as_deref());
     if let Some(root) = root.as_ref() {
         cleanup_dead_pids(root);
     }
@@ -186,20 +183,9 @@ fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Result<St
         let _ = child.kill();
     }
 
-    let root = repo_root
-        .as_deref()
-        .and_then(|value| resolve_repo_root(value).ok())
-        .or_else(discover_repo_root);
+    let root = resolve_optional_repo_root(repo_root.as_deref());
     if let Some(root) = root {
-        if let Some(pid) = read_supervisor_pid(&root)? {
-            let _ = kill_process_tree(pid);
-        }
-        if let Some(pid) = read_pid(&root)? {
-            kill_process_tree(pid)?;
-        }
-        remove_pid(&root);
-        remove_supervisor_pid(&root);
-        uninstall_autostart_task();
+        cleanup_node_installation(&root)?;
     }
 
     Ok("Silicium local service stopped".to_string())
@@ -303,13 +289,23 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
 
 #[tauri::command]
 fn app_defaults() -> AppDefaults {
+    let repo_root = discover_configured_repo_root()
+        .or_else(discover_repo_root)
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
     AppDefaults {
-        repo_root: discover_repo_root()
-            .map(|path| path.display().to_string())
-            .unwrap_or_default(),
+        repo_root,
         advertise_host: detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
         orchestrator_url: "http://213.32.68.67:46100".to_string(),
     }
+}
+
+fn resolve_optional_repo_root(repo_root: Option<&str>) -> Option<PathBuf> {
+    repo_root
+        .filter(|value| !value.trim().is_empty())
+        .and_then(|value| resolve_repo_root(value).ok())
+        .or_else(discover_configured_repo_root)
+        .or_else(discover_repo_root)
 }
 
 fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
@@ -874,7 +870,8 @@ fn write_service_config(repo_root: &Path, config: &NodeConfig) -> Result<(), Str
         config.node_id,
         config.reputation_score
     );
-    fs::write(path, content).map_err(|error| error.to_string())
+    fs::write(path, content).map_err(|error| error.to_string())?;
+    write_global_repo_root(repo_root)
 }
 
 fn read_service_config(repo_root: &Path) -> Result<NodeConfig, String> {
@@ -902,6 +899,77 @@ fn read_service_config(repo_root: &Path) -> Result<NodeConfig, String> {
         }
     }
     Ok(config)
+}
+
+fn app_state_dir() -> PathBuf {
+    if cfg!(target_os = "windows") {
+        if let Ok(app_data) = env::var("APPDATA") {
+            return PathBuf::from(app_data).join("SiliciumNode");
+        }
+        if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
+            return PathBuf::from(local_app_data).join("SiliciumNode");
+        }
+    }
+    if let Ok(home) = env::var("HOME") {
+        return PathBuf::from(home).join(".config").join("silicium-node");
+    }
+    env::temp_dir().join("silicium-node")
+}
+
+fn global_repo_root_path() -> PathBuf {
+    app_state_dir().join("repo-root.txt")
+}
+
+fn write_global_repo_root(repo_root: &Path) -> Result<(), String> {
+    let path = global_repo_root_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::write(path, repo_root.display().to_string()).map_err(|error| error.to_string())
+}
+
+fn read_global_repo_root() -> Option<PathBuf> {
+    let raw = fs::read_to_string(global_repo_root_path()).ok()?;
+    let path = PathBuf::from(raw.trim());
+    if validate_repo_root(&path).is_ok() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn remove_global_repo_root() {
+    let _ = fs::remove_file(global_repo_root_path());
+}
+
+fn discover_configured_repo_root() -> Option<PathBuf> {
+    read_global_repo_root()
+}
+
+fn cleanup_node_installation(repo_root: &Path) -> Result<(), String> {
+    if let Some(pid) = read_supervisor_pid(repo_root)? {
+        let _ = kill_process_tree(pid);
+    }
+    if let Some(pid) = read_pid(repo_root)? {
+        kill_process_tree(pid)?;
+    }
+    remove_pid(repo_root);
+    remove_supervisor_pid(repo_root);
+    uninstall_autostart_task();
+    remove_global_repo_root();
+    Ok(())
+}
+
+pub fn run_cleanup_cli() -> i32 {
+    let Some(repo_root) = resolve_optional_repo_root(None) else {
+        uninstall_autostart_task();
+        remove_global_repo_root();
+        return 0;
+    };
+    match cleanup_node_installation(&repo_root) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
 }
 
 fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> {
