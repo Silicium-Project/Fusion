@@ -107,7 +107,8 @@ fn node_status(repo_root: Option<String>, state: State<ProcessState>) -> Result<
         .and_then(|root| read_supervisor_pid(root).ok().flatten())
         .map(process_is_running)
         .unwrap_or(false);
-    let running = node_running || supervisor_running;
+    let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+    let running = node_running || supervisor_running || port_ready;
     if !node_running {
         if let Some(root) = root.as_ref() {
             remove_pid(root);
@@ -186,6 +187,10 @@ fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Result<St
     let root = resolve_optional_repo_root(repo_root.as_deref());
     if let Some(root) = root {
         cleanup_node_installation(&root)?;
+    } else {
+        kill_known_silicium_processes(None);
+        uninstall_autostart_task();
+        remove_global_repo_root();
     }
 
     Ok("Silicium local service stopped".to_string())
@@ -953,6 +958,7 @@ fn cleanup_node_installation(repo_root: &Path) -> Result<(), String> {
     if let Some(pid) = read_pid(repo_root)? {
         kill_process_tree(pid)?;
     }
+    kill_known_silicium_processes(Some(repo_root));
     remove_pid(repo_root);
     remove_supervisor_pid(repo_root);
     uninstall_autostart_task();
@@ -962,6 +968,7 @@ fn cleanup_node_installation(repo_root: &Path) -> Result<(), String> {
 
 pub fn run_cleanup_cli() -> i32 {
     let Some(repo_root) = resolve_optional_repo_root(None) else {
+        kill_known_silicium_processes(None);
         uninstall_autostart_task();
         remove_global_repo_root();
         return 0;
@@ -970,6 +977,37 @@ pub fn run_cleanup_cli() -> i32 {
         Ok(()) => 0,
         Err(_) => 1,
     }
+}
+
+fn kill_known_silicium_processes(repo_root: Option<&Path>) {
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    let mut filters = vec![
+        "$_.CommandLine -like '*silicium node start*'".to_string(),
+        "$_.CommandLine -like '* --supervisor *'".to_string(),
+        "$_.CommandLine -like '* --supervisor'".to_string(),
+    ];
+    if let Some(root) = repo_root {
+        let escaped = root.display().to_string().replace('\'', "''");
+        filters.push(format!("$_.CommandLine -like '*{}*'", escaped));
+    }
+    let filter = filters.join(" -or ");
+    let script = format!(
+        "Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and ({filter}) }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+    );
+    let mut command = Command::new("powershell.exe");
+    command
+        .arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-Command")
+        .arg(script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    configure_detached_process(&mut command);
+    let _ = command.status();
 }
 
 fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> {
