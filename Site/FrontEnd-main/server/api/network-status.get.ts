@@ -38,7 +38,7 @@ export default defineEventHandler(async () => {
       timeout: 2500,
     });
     const peerCount = Array.isArray(peers.peers) ? peers.peers.length : Number(peers.count || 0);
-    status.connectedNodes = Math.max(0, peerCount + 1);
+    status.connectedNodes = Math.max(0, peerCount);
   } catch {
     status.connectedNodes = 1;
   }
