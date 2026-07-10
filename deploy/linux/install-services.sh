@@ -8,7 +8,7 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
-mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana
+mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana /var/lib/silicium/downloads
 
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-backend.service > /etc/systemd/system/silicium-backend.service
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-frontend.service > /etc/systemd/system/silicium-frontend.service

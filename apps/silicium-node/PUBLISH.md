@@ -31,12 +31,12 @@ silicium-node-windows.exe
 4. Publish it either:
 
 - in a GitHub Release and set `NUXT_PUBLIC_NODE_APP_WINDOWS_URL` to the release asset URL;
-- or on the VPS under the frontend public downloads path.
+- or on the VPS under the persistent downloads path.
 
 For local site testing, copy the installer to:
 
 ```text
-Site\FrontEnd-main\public\downloads\silicium-node-windows.exe
+/var/lib/silicium/downloads/silicium-node-windows.exe
 ```
 
 Do not commit generated installers to the repository unless the team explicitly
