@@ -142,7 +142,7 @@ const stars = ref<{ id: number; size: string; style: Record<string, string> }[]>
 const numStars = 70;
 
 function goToAuth() {
-  router.push('/auth');
+  router.push('/auth?mode=register');
 }
 
 onMounted(() => {

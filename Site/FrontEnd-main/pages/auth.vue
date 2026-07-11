@@ -1,6 +1,10 @@
 <template>
-  <div class="bg-[#131419] min-h-screen flex items-center justify-center">
+  <div class="bg-[#131419] min-h-screen flex items-center justify-center px-6">
     <div class="w-full max-w-md p-8 space-y-8 bg-[#1f2029] rounded-2xl shadow-lg">
+      <NuxtLink to="/" class="inline-flex items-center text-white/60 hover:text-white">
+        <img src="~assets/icons/Back.svg" alt="" class="mr-2 h-5 w-5" />
+        Retour a l'accueil
+      </NuxtLink>
       <div class="text-center">
         <h1 class="text-3xl font-extrabold text-white">
           <span class="text-transparent bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text">{{ isLogin ? 'Content de vous revoir !' : 'Créer un compte' }}</span>
@@ -22,7 +26,7 @@
         </button>
       </form>
       <div class="text-center">
-        <button @click="isLogin = !isLogin" class="text-white/50 hover:text-white">
+        <button @click="switchMode" class="text-white/50 hover:text-white">
           {{ isLogin ? 'Besoin d\'un compte ? S\'inscrire' : 'Vous avez déjà un compte ? Se connecter' }}
         </button>
       </div>
@@ -31,13 +35,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
+import { ref, reactive, watch } from 'vue';
 import { useRouter } from '#vue-router';
 import Cookies from 'js-cookie';
 import { jwtDecode } from 'jwt-decode';
 
 const isLogin = ref(true);
 const router = useRouter();
+const route = useRoute();
 const config = useRuntimeConfig();
 const apiBase = config.public.apiBase;
 
@@ -49,12 +54,24 @@ const form = reactive({
   password: '',
 });
 
+watch(
+  () => route.query.mode,
+  (mode) => {
+    isLogin.value = mode !== 'register';
+  },
+  { immediate: true },
+);
+
 const handleSubmit = async () => {
   if (isLogin.value) {
     await login();
   } else {
     await register();
   }
+};
+
+const switchMode = async () => {
+  await router.push(isLogin.value ? '/auth?mode=register' : '/auth?mode=login');
 };
 
 const login = async () => {
@@ -96,7 +113,7 @@ const register = async () => {
       }
     });
     // switch to login mode after successful registration
-    isLogin.value = true;
+    await router.push('/auth?mode=login');
   } catch (error) {
     console.error(error);
   }

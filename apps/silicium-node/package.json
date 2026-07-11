@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
     "build": "vue-tsc --noEmit && vite build",
+    "prepare:runtime": "powershell -ExecutionPolicy Bypass -File ./scripts/prepare-runtime.ps1",
     "preview": "vite preview --host 127.0.0.1 --port 1420",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"

@@ -8,10 +8,10 @@ This app is intentionally separate from:
 - `Site/`: public client website
 - `deploy/`: VPS deployment assets
 
-The first version is a lightweight Tauri launcher around the existing network
-scripts. It does not reimplement the network node. The app starts one local node
-with `compute,verify` capabilities; the network/orchestrator decides what work
-is assigned over time.
+The app is a Tauri shell around the existing Silicium network node. It does not
+reimplement the node. The installer bundles a minimal runtime so a normal user
+can install the app, click one button, and join the network with `compute,verify`
+capabilities. The network/orchestrator decides what work is assigned over time.
 
 ## Development
 
@@ -34,10 +34,21 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
-The app asks for the local repository path so it can call the existing scripts:
+Before Tauri bundles the installer, `npm run prepare:runtime` stages a runtime
+under `src-tauri/resources/runtime` containing:
 
-- Windows node: `Network\demo\networked\start-node.cmd`
-- Linux/macOS node: `deploy/linux/start-node.sh`
+- the minimal `Network/` runtime needed by the node
+- the raytracer executable and DLLs from `Network/bin/raytracer`
+- Python copied from `apps/silicium-node/vendor/python` when present, otherwise
+  from the local Windows Python install
+- OpenSSL copied from `apps/silicium-node/vendor/openssl` when present, otherwise
+  from the local Windows OpenSSL install
+
+The staged runtime is generated and ignored by Git. Rebuild it with:
+
+```bash
+npm run prepare:runtime
+```
 
 Default public orchestrator:
 
@@ -51,13 +62,12 @@ MVP:
 
 - one-click activation for non-technical users
 - automatic repo/IP/default configuration detection
-- install/repair runtime through the existing repo installer
+- bundled runtime for installed users
 - start/stop one local node with compute and verify roles
 - display local process state, activity, history, and diagnostics
 
 Later:
 
-- standalone installer with bundled runtime
 - Windows service/background mode
 - auto-update
 - node identity and wallet onboarding

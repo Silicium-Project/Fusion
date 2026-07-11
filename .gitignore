@@ -21,6 +21,7 @@ node_modules/
 dist/
 apps/**/src-tauri/target/
 apps/**/src-tauri/gen/
+apps/silicium-node/src-tauri/resources/runtime/
 apps/silicium-node/*.exe
 .data/
 .temp/

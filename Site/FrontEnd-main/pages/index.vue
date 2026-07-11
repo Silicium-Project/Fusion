@@ -64,7 +64,7 @@ import '~/assets/css/stars.css';
 const router = useRouter();
 
 function handleRegister() {
-  router.push(`/auth`);
+  router.push('/auth?mode=register');
 }
 
 const stars = ref([]);

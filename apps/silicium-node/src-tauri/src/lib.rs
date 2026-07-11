@@ -74,7 +74,10 @@ struct HistoryItem {
 }
 
 #[tauri::command]
-fn node_status(repo_root: Option<String>, state: State<ProcessState>) -> Result<NodeStatus, String> {
+fn node_status(
+    repo_root: Option<String>,
+    state: State<ProcessState>,
+) -> Result<NodeStatus, String> {
     let mut node = state
         .node
         .lock()
@@ -200,11 +203,8 @@ fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Result<St
 fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
     let root = resolve_repo_root(&repo_root)?;
     let mut checks = vec![
-        command_check("Git", "git", &["--version"]),
-        command_check("Node.js", "node", &["--version"]),
-        command_check("npm", if cfg!(target_os = "windows") { "npm.cmd" } else { "npm" }, &["--version"]),
-        command_check("Python", if cfg!(target_os = "windows") { "py" } else { "python3" }, &["--version"]),
-        openssl_check(),
+        command_check("Python", &python_launcher(&root), &["--version"]),
+        openssl_check(Some(&root)),
     ];
 
     checks.push(path_check("Repo Silicium", &root.join("Network")));
@@ -236,7 +236,10 @@ fn install_runtime(repo_root: String) -> Result<String, String> {
         configure_detached_process(&mut command);
         command.status()
     } else {
-        let script = root.join("deploy").join("linux").join("install-vps-deps.sh");
+        let script = root
+            .join("deploy")
+            .join("linux")
+            .join("install-vps-deps.sh");
         if !script.exists() {
             return Err(format!("installer_not_found: {}", script.display()));
         }
@@ -296,6 +299,7 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
 fn app_defaults() -> AppDefaults {
     let repo_root = discover_configured_repo_root()
         .or_else(discover_repo_root)
+        .or_else(discover_managed_runtime_root)
         .map(|path| path.display().to_string())
         .unwrap_or_default();
     AppDefaults {
@@ -317,7 +321,11 @@ fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
     if !repo_root.trim().is_empty() {
         return Ok(PathBuf::from(repo_root.trim()));
     }
-    discover_repo_root().ok_or_else(|| "repo_root_not_found".to_string())
+    discover_configured_repo_root()
+        .or_else(discover_repo_root)
+        .or_else(discover_managed_runtime_root)
+        .map(Ok)
+        .unwrap_or_else(ensure_managed_runtime)
 }
 
 fn discover_repo_root() -> Option<PathBuf> {
@@ -347,6 +355,89 @@ fn validate_repo_root(repo_root: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn managed_runtime_root() -> PathBuf {
+    app_state_dir().join("runtime")
+}
+
+fn discover_managed_runtime_root() -> Option<PathBuf> {
+    let root = managed_runtime_root();
+    if validate_repo_root(&root).is_ok() {
+        Some(root)
+    } else {
+        None
+    }
+}
+
+fn ensure_managed_runtime() -> Result<PathBuf, String> {
+    let root = managed_runtime_root();
+    if validate_repo_root(&root).is_ok() {
+        return Ok(root);
+    }
+
+    let source = find_packaged_runtime_root().ok_or_else(|| {
+        format!(
+            "managed_runtime_missing: no bundled runtime found. Expected an installed runtime with Network/ under {}",
+            root.display()
+        )
+    })?;
+    if same_path(&source, &root) {
+        validate_repo_root(&root)?;
+        return Ok(root);
+    }
+
+    if root.exists() {
+        let _ = fs::remove_dir_all(&root);
+    }
+    copy_dir_all(&source, &root)?;
+    validate_repo_root(&root)?;
+    Ok(root)
+}
+
+fn find_packaged_runtime_root() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(exe) = env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            candidates.push(parent.join("runtime"));
+            candidates.push(parent.join("resources").join("runtime"));
+            candidates.push(parent.join("..").join("Resources").join("runtime"));
+        }
+    }
+    candidates.push(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("runtime"),
+    );
+
+    candidates
+        .into_iter()
+        .find(|path| validate_repo_root(path).is_ok())
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    match (left.canonicalize(), right.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => left == right,
+    }
+}
+
+fn copy_dir_all(source: &Path, target: &Path) -> Result<(), String> {
+    fs::create_dir_all(target).map_err(|error| error.to_string())?;
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_dir_all(&source_path, &target_path)?;
+        } else {
+            if let Some(parent) = target_path.parent() {
+                fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+            }
+            fs::copy(&source_path, &target_path).map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
     let advertise_host = if config.advertise_host.trim().is_empty() {
         detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string())
@@ -358,10 +449,13 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
         let network_root = repo_root.join("Network");
         let silicium_cli = network_root.join("silicium");
         if !silicium_cli.exists() {
-            return Err(format!("silicium_cli_not_found: {}", silicium_cli.display()));
+            return Err(format!(
+                "silicium_cli_not_found: {}",
+                silicium_cli.display()
+            ));
         }
         let node_id = normalized_node_id(&config.node_id);
-        let mut command = Command::new(hidden_python_launcher());
+        let mut command = Command::new(python_launcher(repo_root));
         command
             .arg("silicium")
             .arg("node")
@@ -395,7 +489,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("250")
             .current_dir(&network_root);
         apply_raytracer_env(&mut command, repo_root);
-        apply_runtime_path(&mut command);
+        apply_runtime_path(&mut command, repo_root);
         spawn_detached(command, repo_root)
     } else {
         let script = repo_root.join("deploy").join("linux").join("start-node.sh");
@@ -416,7 +510,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("--pull-tasks-interval-s")
             .arg("2")
             .current_dir(repo_root);
-        apply_runtime_path(&mut command);
+        apply_runtime_path(&mut command, repo_root);
         spawn_detached(command, repo_root)
     }
 }
@@ -500,7 +594,11 @@ fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
             Err(format!(
                 "{}{}{}; registry fallback failed: {}",
                 output.status,
-                if stdout.is_empty() && stderr.is_empty() { "" } else { ": " },
+                if stdout.is_empty() && stderr.is_empty() {
+                    ""
+                } else {
+                    ": "
+                },
                 if stderr.is_empty() { stdout } else { stderr },
                 registry_error
             ))
@@ -616,7 +714,8 @@ pub fn run_supervisor_cli() -> i32 {
                     );
                 }
                 Err(error) => {
-                    let _ = append_supervisor_log(&repo_root, &format!("spawn_node_failed: {error}\n"));
+                    let _ =
+                        append_supervisor_log(&repo_root, &format!("spawn_node_failed: {error}\n"));
                 }
             }
         }
@@ -631,13 +730,22 @@ fn detect_local_ip() -> Option<String> {
     Some(socket.local_addr().ok()?.ip().to_string())
 }
 
-fn hidden_python_launcher() -> String {
+fn python_launcher(repo_root: &Path) -> String {
     if !cfg!(target_os = "windows") {
         return "python3".to_string();
     }
     let mut candidates = Vec::new();
+    candidates.push(repo_root.join("tools").join("python").join("python.exe"));
+    candidates.push(repo_root.join("tools").join("python").join("python3.exe"));
+    candidates.push(repo_root.join("python").join("python.exe"));
     if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
-        for version in ["Python314", "Python313", "Python312", "Python311", "Python310"] {
+        for version in [
+            "Python314",
+            "Python313",
+            "Python312",
+            "Python311",
+            "Python310",
+        ] {
             candidates.push(
                 PathBuf::from(&local_app_data)
                     .join("Programs")
@@ -737,8 +845,8 @@ fn command_check(name: &str, command: &str, args: &[&str]) -> CheckItem {
     }
 }
 
-fn openssl_check() -> CheckItem {
-    if let Some(path) = find_openssl() {
+fn openssl_check(repo_root: Option<&Path>) -> CheckItem {
+    if let Some(path) = find_openssl(repo_root) {
         let path_string = path.display().to_string();
         let mut check = command_check("OpenSSL", &path_string, &["version"]);
         if check.ok {
@@ -749,32 +857,70 @@ fn openssl_check() -> CheckItem {
     command_check("OpenSSL", "openssl", &["version"])
 }
 
-fn find_openssl() -> Option<PathBuf> {
-    let candidates = if cfg!(target_os = "windows") {
-        vec![
+fn find_openssl(repo_root: Option<&Path>) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(root) = repo_root {
+        candidates.push(
+            root.join("tools")
+                .join("openssl")
+                .join("bin")
+                .join("openssl.exe"),
+        );
+        candidates.push(root.join("tools").join("openssl").join("openssl.exe"));
+        candidates.push(root.join("bin").join("openssl").join("openssl.exe"));
+    }
+    if cfg!(target_os = "windows") {
+        candidates.extend([
             PathBuf::from(r"C:\Program Files\OpenSSL-Win64\bin\openssl.exe"),
             PathBuf::from(r"C:\Program Files\OpenSSL-Win32\bin\openssl.exe"),
             PathBuf::from(r"C:\Program Files\Git\usr\bin\openssl.exe"),
             PathBuf::from(r"C:\Program Files (x86)\OpenSSL-Win32\bin\openssl.exe"),
             PathBuf::from(r"C:\Program Files (x86)\Git\usr\bin\openssl.exe"),
-        ]
+        ]);
     } else {
-        vec![PathBuf::from("/usr/bin/openssl"), PathBuf::from("/usr/local/bin/openssl")]
-    };
+        candidates.extend([
+            PathBuf::from("/usr/bin/openssl"),
+            PathBuf::from("/usr/local/bin/openssl"),
+        ]);
+    }
     candidates.into_iter().find(|path| path.exists())
 }
 
-fn apply_runtime_path(command: &mut Command) {
-    if let Some(openssl) = find_openssl().and_then(|path| path.parent().map(Path::to_path_buf)) {
+fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
+    let mut path_entries = Vec::new();
+    if cfg!(target_os = "windows") {
+        let python_dir = repo_root.join("tools").join("python");
+        if python_dir.exists() {
+            path_entries.push(python_dir);
+        }
+    }
+    if let Some(openssl) =
+        find_openssl(Some(repo_root)).and_then(|path| path.parent().map(Path::to_path_buf))
+    {
+        path_entries.push(openssl);
+    }
+    if !path_entries.is_empty() {
         let current_path = env::var("PATH").unwrap_or_default();
-        let separator = if cfg!(target_os = "windows") { ";" } else { ":" };
-        let next_path = format!("{}{}{}", openssl.display(), separator, current_path);
+        let separator = if cfg!(target_os = "windows") {
+            ";"
+        } else {
+            ":"
+        };
+        let prefix = path_entries
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(separator);
+        let next_path = format!("{}{}{}", prefix, separator, current_path);
         command.env("PATH", next_path);
     }
 }
 
 fn apply_raytracer_env(command: &mut Command, repo_root: &Path) {
-    let env_file = repo_root.join(".silicium").join("env").join("raytracer.env");
+    let env_file = repo_root
+        .join(".silicium")
+        .join("env")
+        .join("raytracer.env");
     let Ok(content) = fs::read_to_string(env_file) else {
         return;
     };
@@ -801,10 +947,7 @@ fn service_config_path(repo_root: &Path) -> PathBuf {
 }
 
 fn node_app_log_path(repo_root: &Path, file_name: &str) -> PathBuf {
-    repo_root
-        .join(".silicium")
-        .join("node-app")
-        .join(file_name)
+    repo_root.join(".silicium").join("node-app").join(file_name)
 }
 
 fn write_pid(repo_root: &Path, pid: u32) -> Result<(), String> {
@@ -886,7 +1029,8 @@ fn write_service_config(repo_root: &Path, config: &NodeConfig) -> Result<(), Str
 }
 
 fn read_service_config(repo_root: &Path) -> Result<NodeConfig, String> {
-    let content = fs::read_to_string(service_config_path(repo_root)).map_err(|error| error.to_string())?;
+    let content =
+        fs::read_to_string(service_config_path(repo_root)).map_err(|error| error.to_string())?;
     let mut config = NodeConfig {
         repo_root: repo_root.display().to_string(),
         orchestrator_url: "http://213.32.68.67:46100".to_string(),
@@ -1056,7 +1200,8 @@ fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> 
         .open(path)
         .map_err(|error| error.to_string())?;
     use std::io::Write;
-    file.write_all(message.as_bytes()).map_err(|error| error.to_string())
+    file.write_all(message.as_bytes())
+        .map_err(|error| error.to_string())
 }
 
 fn process_is_running(pid: u32) -> bool {
