@@ -386,6 +386,9 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg(&config.orchestrator_url)
             .arg("--mesh-key")
             .arg("demo-mesh")
+            .arg("--pull-tasks-enable")
+            .arg("--pull-tasks-interval-s")
+            .arg("2")
             .arg("--reputation-score")
             .arg(config.reputation_score.to_string())
             .arg("--idle-ms")
@@ -409,6 +412,9 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg(&advertise_host)
             .arg("demo-mesh")
             .arg(config.reputation_score.to_string())
+            .arg("--pull-tasks-enable")
+            .arg("--pull-tasks-interval-s")
+            .arg("2")
             .current_dir(repo_root);
         apply_runtime_path(&mut command);
         spawn_detached(command, repo_root)

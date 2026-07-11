@@ -67,6 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--network-seed-peers", default="")
     parser.add_argument("--network-mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", "demo-mesh"))
     parser.add_argument("--network-start-orchestrator", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--network-role-timeout-s", type=float, default=float(os.environ.get("SILICIUM_NETWORK_ROLE_TIMEOUT_S", "60")))
     parser.add_argument("--min-compute-reputation", type=float, default=float(os.environ.get("SILICIUM_MIN_COMPUTE_REPUTATION", "0")))
     parser.add_argument("--min-verify-reputation", type=float, default=float(os.environ.get("SILICIUM_MIN_VERIFY_REPUTATION", "0")))
     parser.add_argument("--solana-enable", action="store_true")
@@ -311,8 +312,8 @@ def main(argv: list[str] | None = None) -> int:
             "public_url": orchestrator.public_url,
             "seed_peers": args.network_seed_peers,
         }
-        wait_for_network_role(export_dir, args.network_node_id, "compute")
-        wait_for_network_role(export_dir, args.network_node_id, "verify")
+        wait_for_network_role(export_dir, args.network_node_id, "compute", args.network_role_timeout_s)
+        wait_for_network_role(export_dir, args.network_node_id, "verify", args.network_role_timeout_s)
 
     try:
         scene_ref = task_input_ref(args, export_dir, local_scene)

@@ -242,6 +242,8 @@ class NodeConfig:
     discovery_sync_interval_s: int
     remote_dispatch_enable: bool
     remote_dispatch_limit: int
+    pull_tasks_enable: bool
+    pull_tasks_interval_s: int
     nat_punch_enable: bool
     solana_reputation_enable: bool
     solana_reputation_refresh_s: int
@@ -2149,6 +2151,27 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(body)
                     return
+                if self.path == "/tasks/claim":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    try:
+                        result = peer_network.node.claim_task_for_peer(payload)
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    body = stable_json(result).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 if self.path == "/requests/dispatch":
                     try:
                         payload = json.loads(raw.decode("utf-8"))
@@ -2392,6 +2415,8 @@ class NetworkNode:
             self.metrics_path,
             {"schema_version": 1, "handled": 0, "failed": 0, "retried": 0, "dead_lettered": 0, "dispatched": 0, "dispatch_failed": 0},
         )
+        self._claim_lock = threading.Lock()
+        self._last_pull_unix = 0.0
         self._last_reputation_refresh_unix = 0.0
         self._last_peer_reputation_refresh_unix = 0.0
         self._solana_owner = ""
@@ -2411,13 +2436,14 @@ class NetworkNode:
             self.refresh_local_onchain_profile(force=True)
             while True:
                 self.write_heartbeat()
+                pulled = self.pull_remote_task()
                 handled = self.sweep()
                 self.state.save()
                 self.write_metrics()
                 self.write_heartbeat()
                 if self.config.once:
                     return
-                if handled == 0:
+                if handled == 0 and not pulled:
                     time.sleep(max(0, self.config.idle_ms) / 1000.0)
         finally:
             self.peer_network.stop()
@@ -2614,6 +2640,8 @@ class NetworkNode:
                         if self.config.max_items > 0 and handled >= self.config.max_items:
                             return handled
                         continue
+                    if {"resource", "storage"}.intersection(self.config.roles):
+                        continue
                     self.schedule_retry_or_dead_letter(envelope, "no_local_role_and_dispatch_failed")
                     self.state.mark_seen(key)
                     continue
@@ -2674,6 +2702,108 @@ class NetworkNode:
             return not target_roles or bool(target_roles.intersection(self.config.roles))
         required_roles = set(str(role) for role in envelope.get("required_roles", ["compute"]))
         return bool(required_roles.intersection(self.config.roles))
+
+    def claim_task_for_peer(self, claim: dict[str, Any]) -> dict[str, Any]:
+        node_id = safe_id(str(claim.get("node_id", "")))
+        roles = {str(role).lower() for role in claim.get("roles", []) if str(role).strip()}
+        if not node_id or not roles:
+            raise ValueError("missing_claim_identity")
+        peer = self.peer_network._peers.get(node_id, {})
+        constraints_base = {
+            "min_compute_reputation": float(claim.get("min_compute_reputation", 0.0) or 0.0),
+            "min_verify_reputation": float(claim.get("min_verify_reputation", 0.0) or 0.0),
+        }
+        tasks_dir = self.config.export_dir / "tasks"
+        if not tasks_dir.exists():
+            return {"ok": True, "claimed": False}
+        with self._claim_lock:
+            for path in sorted(tasks_dir.glob("*.json"), key=lambda item: item.stat().st_mtime):
+                envelope = read_json(path, {})
+                if not isinstance(envelope, dict):
+                    continue
+                status = str(envelope.get("status", "queued")).lower()
+                if status in {"claimed", "completed", "failed", "dead_lettered"}:
+                    continue
+                required_roles = {str(role).lower() for role in envelope.get("required_roles", ["compute"]) if str(role).strip()}
+                if required_roles and not required_roles.intersection(roles):
+                    continue
+                task = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
+                constraints = {**constraints_base, **_peer_constraints(task, envelope)}
+                if isinstance(peer, dict) and peer:
+                    if not self.peer_network._peer_meets_constraints(peer, required_roles, constraints):
+                        continue
+                claimed = dict(envelope)
+                claimed["status"] = "claimed"
+                claimed["claimed_by"] = node_id
+                claimed["claimed_utc"] = utc_now()
+                claimed["dispatched_by"] = self.config.node_id
+                claimed["dispatched_utc"] = utc_now()
+                claimed["result_return_url"] = self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
+                claimed["scheduler"] = {
+                    "kind": "worker_pull",
+                    "selected_peer": node_id,
+                    "required_roles": sorted(required_roles),
+                }
+                atomic_write_json(path, claimed)
+                item_id = safe_id(str(claimed.get("task_id", path.stem)))
+                append_jsonl(
+                    self.events_path,
+                    {
+                        "schema_version": 1,
+                        "timestamp_utc": utc_now(),
+                        "node_id": self.config.node_id,
+                        "kind": "pull_claim",
+                        "item_id": item_id,
+                        "target_peer": node_id,
+                        "roles": sorted(required_roles),
+                    },
+                )
+                return {"ok": True, "claimed": True, "task": claimed}
+        return {"ok": True, "claimed": False}
+
+    def pull_remote_task(self) -> bool:
+        if not self.config.pull_tasks_enable or not self.config.seed_peers:
+            return False
+        if not {"compute", "verify"}.intersection(self.config.roles):
+            return False
+        now = time.time()
+        if now - self._last_pull_unix < max(1, self.config.pull_tasks_interval_s):
+            return False
+        self._last_pull_unix = now
+        claim = {
+            "schema_version": 1,
+            "node_id": self.config.node_id,
+            "roles": sorted(self.config.roles),
+            "capacity": self.runtime.capacity(),
+            "reputation_score": self.reputation.local_score(),
+        }
+        raw = stable_json(claim).encode("utf-8")
+        for seed in self.config.seed_peers:
+            base_url = self.peer_network._normalize_http_target(seed)
+            if not base_url:
+                continue
+            path = "/tasks/claim"
+            request = urllib.request.Request(
+                base_url.rstrip("/") + path,
+                data=raw,
+                method="POST",
+                headers=self.peer_network._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    if response.status not in {200, 202}:
+                        continue
+                    payload = json.loads(response.read().decode("utf-8"))
+            except Exception:
+                continue
+            if not isinstance(payload, dict) or not payload.get("claimed"):
+                continue
+            task = payload.get("task")
+            if not isinstance(task, dict) or not self.accepts(task):
+                continue
+            self.handle(task)
+            return True
+        return False
 
     def handle(self, envelope: dict[str, Any]) -> None:
         started = time.monotonic()
@@ -3225,6 +3355,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--discovery-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_DISCOVERY_SYNC_INTERVAL_S", "30")))
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
+    parser.add_argument("--pull-tasks-enable", action="store_true", default=os.environ.get("SILICIUM_PULL_TASKS_ENABLE", "0") == "1")
+    parser.add_argument("--pull-tasks-interval-s", type=int, default=int(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "2")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
@@ -3311,6 +3443,8 @@ def main(argv: list[str] | None = None) -> int:
         discovery_sync_interval_s=max(0, int(args.discovery_sync_interval_s)),
         remote_dispatch_enable=bool(args.remote_dispatch_enable),
         remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
+        pull_tasks_enable=bool(args.pull_tasks_enable),
+        pull_tasks_interval_s=max(1, int(args.pull_tasks_interval_s)),
         nat_punch_enable=bool(args.nat_punch_enable),
         solana_reputation_enable=bool(args.solana_reputation_enable),
         solana_reputation_refresh_s=max(1, int(args.solana_reputation_refresh_s)),

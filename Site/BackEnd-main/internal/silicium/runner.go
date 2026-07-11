@@ -15,15 +15,17 @@ import (
 )
 
 type RunnerConfig struct {
-	NetworkRoot          string
-	MeshKey              string
-	SeedPeers            string
-	OrchestratorHost     string
-	DashboardURL         string
-	DevnetTrace          bool
-	DevnetTxDelayMS      string
-	MinComputeReputation string
-	MinVerifyReputation  string
+	NetworkRoot           string
+	OrchestratorExportDir string
+	OrchestratorNodeID    string
+	MeshKey               string
+	SeedPeers             string
+	OrchestratorHost      string
+	DashboardURL          string
+	DevnetTrace           bool
+	DevnetTxDelayMS       string
+	MinComputeReputation  string
+	MinVerifyReputation   string
 }
 
 type RunResult struct {
@@ -41,15 +43,17 @@ func ConfigFromEnv() RunnerConfig {
 		networkRoot = filepath.Clean(filepath.Join("..", "..", "Network"))
 	}
 	return RunnerConfig{
-		NetworkRoot:          networkRoot,
-		MeshKey:              envDefault("SILICIUM_MESH_KEY", "demo-mesh"),
-		SeedPeers:            os.Getenv("SILICIUM_SEED_PEERS"),
-		OrchestratorHost:     envDefault("SILICIUM_ORCHESTRATOR_HOST", "127.0.0.1"),
-		DashboardURL:         envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
-		DevnetTrace:          envDefault("SILICIUM_DEVNET_TRACE", "1") != "0",
-		DevnetTxDelayMS:      envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
-		MinComputeReputation: envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
-		MinVerifyReputation:  envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
+		NetworkRoot:           networkRoot,
+		OrchestratorExportDir: os.Getenv("SILICIUM_ORCHESTRATOR_EXPORT_DIR"),
+		OrchestratorNodeID:    envDefault("SILICIUM_ORCHESTRATOR_NODE_ID", "orchestrator-1"),
+		MeshKey:               envDefault("SILICIUM_MESH_KEY", "demo-mesh"),
+		SeedPeers:             os.Getenv("SILICIUM_SEED_PEERS"),
+		OrchestratorHost:      envDefault("SILICIUM_ORCHESTRATOR_HOST", "127.0.0.1"),
+		DashboardURL:          envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
+		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "1") != "0",
+		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
+		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
+		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
 	}
 }
 
@@ -83,6 +87,14 @@ func RunRaytracer(job models.Job, cfg RunnerConfig) RunResult {
 		"--network-mesh-key", cfg.MeshKey,
 		"--min-compute-reputation", cfg.MinComputeReputation,
 		"--min-verify-reputation", cfg.MinVerifyReputation,
+	}
+	if strings.TrimSpace(cfg.OrchestratorExportDir) != "" {
+		args = append(
+			args,
+			"--export-dir", cfg.OrchestratorExportDir,
+			"--network-node-id", cfg.OrchestratorNodeID,
+			"--no-network-start-orchestrator",
+		)
 	}
 	if cfg.DevnetTrace {
 		args = append(args, "--devnet-trace", "--devnet-tx-delay-ms", cfg.DevnetTxDelayMS)
