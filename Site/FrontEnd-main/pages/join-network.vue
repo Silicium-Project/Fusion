@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import Header from '../components/Header.vue';
 import '~/assets/css/stars.css';
 
@@ -98,14 +98,33 @@ const router = useRouter();
 const config = useRuntimeConfig();
 const nodeAppWindowsUrl = config.public.nodeAppWindowsUrl;
 
-const { data: networkStatus } = await useFetch<{
+type NetworkStatus = {
   ok: boolean;
   connectedNodes: number | null;
   orchestratorUrl: string;
   updatedAt: string;
-}>('/api/network-status', {
-  default: () => ({ ok: false, connectedNodes: null, orchestratorUrl: '', updatedAt: '' }),
+};
+
+const networkStatus = ref<NetworkStatus>({
+  ok: false,
+  connectedNodes: null,
+  orchestratorUrl: '',
+  updatedAt: '',
 });
+const refreshTimer = ref<ReturnType<typeof setInterval> | null>(null);
+
+async function refreshNetworkStatus() {
+  try {
+    networkStatus.value = await $fetch<NetworkStatus>('/api/network-status');
+  } catch {
+    networkStatus.value = {
+      ok: false,
+      connectedNodes: null,
+      orchestratorUrl: '',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+}
 
 const connectedNodesLabel = computed(() => {
   const count = networkStatus.value?.connectedNodes;
@@ -145,7 +164,9 @@ function goToAuth() {
   router.push('/auth');
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await refreshNetworkStatus();
+  refreshTimer.value = setInterval(refreshNetworkStatus, 5000);
   for (let i = 0; i < numStars; i++) {
     const size = Math.random() > 0.7 ? (Math.random() > 0.8 ? 'star-lg' : 'star-md') : 'star-sm';
     stars.value.push({
@@ -157,6 +178,13 @@ onMounted(() => {
         '--animation-delay': `${Math.random() * 3}s`,
       },
     });
+  }
+});
+
+onBeforeUnmount(() => {
+  if (refreshTimer.value) {
+    clearInterval(refreshTimer.value);
+    refreshTimer.value = null;
   }
 });
 </script>
