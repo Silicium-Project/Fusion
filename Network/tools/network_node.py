@@ -1683,6 +1683,7 @@ class PeerNetwork:
 
     def sync_once(self) -> None:
         self._prune_stale_peers()
+        self.announce()
         targets = self._sync_targets()
         for base_url in targets:
             self._sync_peer_table(base_url)
@@ -2703,12 +2704,35 @@ class NetworkNode:
         required_roles = set(str(role) for role in envelope.get("required_roles", ["compute"]))
         return bool(required_roles.intersection(self.config.roles))
 
+    def refresh_claiming_peer(self, claim: dict[str, Any]) -> dict[str, Any]:
+        node_id = safe_id(str(claim.get("node_id", "")))
+        if not node_id:
+            return {}
+        roles = [str(role).lower() for role in claim.get("roles", []) if str(role).strip()]
+        capacity = claim.get("capacity", {}) if isinstance(claim.get("capacity"), dict) else {}
+        with self.peer_network._lock:
+            current = dict(self.peer_network._peers.get(node_id, {}))
+            current.update(
+                {
+                    "node_id": node_id,
+                    "roles": roles or current.get("roles", []),
+                    "capacity": capacity or current.get("capacity", {}),
+                    "reputation_score": float(claim.get("reputation_score", current.get("reputation_score", 0.0)) or 0.0),
+                    "last_seen_unix": int(time.time()),
+                    "updated_utc": utc_now(),
+                    "self": node_id == self.config.node_id,
+                }
+            )
+            self.peer_network._peers[node_id] = current
+        self.peer_network.peers_snapshot()
+        return current
+
     def claim_task_for_peer(self, claim: dict[str, Any]) -> dict[str, Any]:
         node_id = safe_id(str(claim.get("node_id", "")))
         roles = {str(role).lower() for role in claim.get("roles", []) if str(role).strip()}
         if not node_id or not roles:
             raise ValueError("missing_claim_identity")
-        peer = self.peer_network._peers.get(node_id, {})
+        peer = self.refresh_claiming_peer(claim)
         constraints_base = {
             "min_compute_reputation": float(claim.get("min_compute_reputation", 0.0) or 0.0),
             "min_verify_reputation": float(claim.get("min_verify_reputation", 0.0) or 0.0),

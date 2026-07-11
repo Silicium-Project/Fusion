@@ -86,46 +86,101 @@
       </div>
 
       <section id="jobs" class="mt-8 bg-[#1f2029] rounded-2xl p-6">
-        <div class="flex items-center justify-between gap-4 mb-4">
+        <div class="flex flex-col gap-4 mb-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h3 class="text-2xl font-bold">Mes taches</h3>
             <p class="text-white/50">Le site soumet au backend, le backend orchestre Silicium, le dashboard observe le Devnet.</p>
           </div>
-          <button @click="loadJobs" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">
-            Rafraichir
-          </button>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex h-10 items-center gap-3 rounded-lg bg-black/20 px-4 text-sm text-white/70">
+              <span>Afficher les erreurs</span>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="showErroredJobs"
+                class="relative h-6 w-11 rounded-full transition-colors"
+                :class="showErroredJobs ? 'bg-red-400/70' : 'bg-white/15'"
+                @click="showErroredJobs = !showErroredJobs"
+              >
+                <span
+                  class="absolute top-1 h-4 w-4 rounded-full bg-white transition-transform"
+                  :class="showErroredJobs ? 'translate-x-6' : 'translate-x-1'"
+                />
+              </button>
+            </label>
+            <button @click="loadJobs" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">
+              Rafraichir
+            </button>
+          </div>
         </div>
 
         <div v-if="jobs.length === 0" class="text-white/50 py-6">
           Aucun job soumis pour le moment.
         </div>
-        <div v-else class="overflow-x-auto">
-          <table class="w-full text-left">
-            <thead class="text-white/50 text-sm">
-              <tr>
-                <th class="py-3">Nom</th>
-                <th class="py-3">Workload</th>
-                <th class="py-3">Statut</th>
-                <th class="py-3">Job reseau</th>
-                <th class="py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="job in jobs" :key="job.id" class="border-t border-white/10">
-                <td class="py-4">
-                  <div class="font-semibold">{{ job.title }}</div>
-                  <div class="text-white/40 text-sm">{{ job.description }}</div>
-                  <div v-if="job.errorMessage" class="text-red-300 text-sm mt-1">{{ job.errorMessage }}</div>
-                </td>
-                <td class="py-4 text-white/70">{{ job.workload }}</td>
-                <td class="py-4">
+        <div v-else-if="displayedJobs.length === 0" class="rounded-xl border border-white/10 bg-black/10 p-5 text-white/50">
+          Les taches en erreur sont masquees. Active le toggle pour les afficher.
+        </div>
+        <div v-else class="space-y-3">
+          <div class="flex items-center justify-between text-sm text-white/50">
+            <span>{{ displayedJobs.length }} tache(s) affichee(s)</span>
+            <span v-if="hiddenErroredJobs > 0">{{ hiddenErroredJobs }} erreur(s) masquee(s)</span>
+          </div>
+
+          <article
+            v-for="job in recentDisplayedJobs"
+            :key="job.id"
+            class="rounded-xl border border-white/10 bg-black/10 p-4"
+          >
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-3">
+                  <h4 class="font-semibold">{{ job.title }}</h4>
                   <span class="px-3 py-1 rounded-full text-sm" :class="statusClass(job.status)">
                     {{ job.status }}
                   </span>
-                </td>
-                <td class="py-4 text-white/70">{{ job.siliciumJobId }}</td>
-                <td class="py-4">
-                  <div class="flex justify-end gap-2">
+                </div>
+                <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
+                <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
+                <div v-if="showErroredJobs && job.errorMessage" class="mt-3 rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
+                  {{ job.errorMessage }}
+                </div>
+              </div>
+              <div class="flex shrink-0 gap-2">
+                <button v-if="job.status === 'completed'" @click="downloadResult(job)" class="px-3 py-2 rounded-lg bg-green-500/20 text-green-200 hover:bg-green-500/30">
+                  Telecharger
+                </button>
+                <NuxtLink :to="`/jobs/${job.id}/dashboard`" class="px-3 py-2 rounded-lg bg-blue-500/20 text-blue-200 hover:bg-blue-500/30">
+                  Dashboard
+                </NuxtLink>
+              </div>
+            </div>
+          </article>
+
+          <details v-if="olderDisplayedJobs.length > 0" class="rounded-xl border border-white/10 bg-black/10 p-4">
+            <summary class="cursor-pointer select-none font-semibold text-white/80">
+              Voir les anciennes taches ({{ olderDisplayedJobs.length }})
+            </summary>
+            <div class="mt-4 space-y-3">
+              <article
+                v-for="job in olderDisplayedJobs"
+                :key="job.id"
+                class="rounded-lg border border-white/10 bg-[#1f2029] p-4"
+              >
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-3">
+                      <h4 class="font-semibold">{{ job.title }}</h4>
+                      <span class="px-3 py-1 rounded-full text-sm" :class="statusClass(job.status)">
+                        {{ job.status }}
+                      </span>
+                    </div>
+                    <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
+                    <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
+                    <div v-if="showErroredJobs && job.errorMessage" class="mt-3 rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
+                      {{ job.errorMessage }}
+                    </div>
+                  </div>
+                  <div class="flex shrink-0 gap-2">
                     <button v-if="job.status === 'completed'" @click="downloadResult(job)" class="px-3 py-2 rounded-lg bg-green-500/20 text-green-200 hover:bg-green-500/30">
                       Telecharger
                     </button>
@@ -133,10 +188,10 @@
                       Dashboard
                     </NuxtLink>
                   </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </div>
+              </article>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -215,6 +270,7 @@ const isSubmittingJob = ref(false);
 const selectedJobFile = ref<File | null>(null);
 const jobSubmitError = ref('');
 const jobs = ref<Job[]>([]);
+const showErroredJobs = ref(false);
 const user = ref<any>(null);
 const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
@@ -241,6 +297,11 @@ const jobForm = reactive({
 
 const runningJobs = computed(() => jobs.value.filter((job) => ['queued', 'running'].includes(job.status)).length);
 const completedJobs = computed(() => jobs.value.filter((job) => job.status === 'completed').length);
+const isErroredJob = (job: Job) => job.status === 'failed' || Boolean(job.errorMessage);
+const displayedJobs = computed(() => (showErroredJobs.value ? jobs.value : jobs.value.filter((job) => !isErroredJob(job))));
+const recentDisplayedJobs = computed(() => displayedJobs.value.slice(0, 5));
+const olderDisplayedJobs = computed(() => displayedJobs.value.slice(5));
+const hiddenErroredJobs = computed(() => (showErroredJobs.value ? 0 : jobs.value.filter(isErroredJob).length));
 const latestDashboardPath = computed(() => {
   const latest = jobs.value.find((job) => job.status === 'completed') || jobs.value[0];
   return latest ? `/jobs/${latest.id}/dashboard` : '/dashboard';
