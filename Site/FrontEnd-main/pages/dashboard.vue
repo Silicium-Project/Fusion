@@ -103,8 +103,8 @@
                 @click="showErrorDetails = !showErrorDetails"
               >
                 <span
-                  class="absolute top-1 h-4 w-4 rounded-full bg-white transition-transform"
-                  :class="showErrorDetails ? 'translate-x-6' : 'translate-x-1'"
+                  class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform"
+                  :class="showErrorDetails ? 'translate-x-5' : 'translate-x-0'"
                 />
               </button>
             </label>
