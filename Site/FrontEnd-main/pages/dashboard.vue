@@ -93,18 +93,18 @@
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <label class="flex h-10 items-center gap-3 rounded-lg bg-black/20 px-4 text-sm text-white/70">
-              <span>Afficher les erreurs</span>
+              <span>Afficher les details d'erreur</span>
               <button
                 type="button"
                 role="switch"
-                :aria-checked="showErroredJobs"
+                :aria-checked="showErrorDetails"
                 class="relative h-6 w-11 rounded-full transition-colors"
-                :class="showErroredJobs ? 'bg-red-400/70' : 'bg-white/15'"
-                @click="showErroredJobs = !showErroredJobs"
+                :class="showErrorDetails ? 'bg-red-400/70' : 'bg-white/15'"
+                @click="showErrorDetails = !showErrorDetails"
               >
                 <span
                   class="absolute top-1 h-4 w-4 rounded-full bg-white transition-transform"
-                  :class="showErroredJobs ? 'translate-x-6' : 'translate-x-1'"
+                  :class="showErrorDetails ? 'translate-x-6' : 'translate-x-1'"
                 />
               </button>
             </label>
@@ -117,13 +117,10 @@
         <div v-if="jobs.length === 0" class="text-white/50 py-6">
           Aucun job soumis pour le moment.
         </div>
-        <div v-else-if="displayedJobs.length === 0" class="rounded-xl border border-white/10 bg-black/10 p-5 text-white/50">
-          Les taches en erreur sont masquees. Active le toggle pour les afficher.
-        </div>
         <div v-else class="space-y-3">
           <div class="flex items-center justify-between text-sm text-white/50">
             <span>{{ displayedJobs.length }} tache(s) affichee(s)</span>
-            <span v-if="hiddenErroredJobs > 0">{{ hiddenErroredJobs }} erreur(s) masquee(s)</span>
+            <span v-if="hiddenErrorDetails > 0">{{ hiddenErrorDetails }} detail(s) d'erreur masque(s)</span>
           </div>
 
           <article
@@ -141,7 +138,7 @@
                 </div>
                 <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
                 <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
-                <div v-if="showErroredJobs && job.errorMessage" class="mt-3 rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
+                <div v-if="showErrorDetails && job.errorMessage" class="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
                   {{ job.errorMessage }}
                 </div>
               </div>
@@ -176,7 +173,7 @@
                     </div>
                     <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
                     <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
-                    <div v-if="showErroredJobs && job.errorMessage" class="mt-3 rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
+                    <div v-if="showErrorDetails && job.errorMessage" class="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
                       {{ job.errorMessage }}
                     </div>
                   </div>
@@ -270,7 +267,7 @@ const isSubmittingJob = ref(false);
 const selectedJobFile = ref<File | null>(null);
 const jobSubmitError = ref('');
 const jobs = ref<Job[]>([]);
-const showErroredJobs = ref(false);
+const showErrorDetails = ref(false);
 const user = ref<any>(null);
 const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
@@ -297,11 +294,11 @@ const jobForm = reactive({
 
 const runningJobs = computed(() => jobs.value.filter((job) => ['queued', 'running'].includes(job.status)).length);
 const completedJobs = computed(() => jobs.value.filter((job) => job.status === 'completed').length);
-const isErroredJob = (job: Job) => job.status === 'failed' || Boolean(job.errorMessage);
-const displayedJobs = computed(() => (showErroredJobs.value ? jobs.value : jobs.value.filter((job) => !isErroredJob(job))));
+const hasErrorDetails = (job: Job) => Boolean(job.errorMessage);
+const displayedJobs = computed(() => jobs.value);
 const recentDisplayedJobs = computed(() => displayedJobs.value.slice(0, 5));
 const olderDisplayedJobs = computed(() => displayedJobs.value.slice(5));
-const hiddenErroredJobs = computed(() => (showErroredJobs.value ? 0 : jobs.value.filter(isErroredJob).length));
+const hiddenErrorDetails = computed(() => (showErrorDetails.value ? 0 : jobs.value.filter(hasErrorDetails).length));
 const latestDashboardPath = computed(() => {
   const latest = jobs.value.find((job) => job.status === 'completed') || jobs.value[0];
   return latest ? `/jobs/${latest.id}/dashboard` : '/dashboard';
