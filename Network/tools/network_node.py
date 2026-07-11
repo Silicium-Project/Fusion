@@ -2996,6 +2996,9 @@ class NetworkNode:
         if not item_id:
             return
         safe_item = safe_id(item_id)
+        content_sync = self.sync_result_content_refs(return_url, result, origin_node_id)
+        if content_sync["attempted"] > 0:
+            result["content_return"] = content_sync
         payload = {
             "schema_version": 1,
             "item_id": safe_item,
@@ -3030,6 +3033,64 @@ class NetworkNode:
                 "ok": ok,
             },
         )
+
+    def iter_result_content_refs(self, value: Any) -> Iterable[dict[str, Any]]:
+        if isinstance(value, dict):
+            protocol = str(value.get("protocol", "")).strip().lower()
+            content_id = str(value.get("content_id", "")).strip()
+            if protocol == "silicium" and content_id:
+                yield value
+            for nested in value.values():
+                yield from self.iter_result_content_refs(nested)
+            return
+        if isinstance(value, list):
+            for nested in value:
+                yield from self.iter_result_content_refs(nested)
+
+    def sync_result_content_refs(self, return_url: str, result: dict[str, Any], owner_node_id: str) -> dict[str, Any]:
+        parsed = urlparse(return_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return {"attempted": 0, "stored": 0, "ok": False, "refs": []}
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        seen: set[str] = set()
+        report: dict[str, Any] = {"attempted": 0, "stored": 0, "ok": True, "refs": []}
+        for ref in self.iter_result_content_refs(result):
+            content_id = str(ref.get("content_id", "")).strip()
+            if not content_id or content_id in seen:
+                continue
+            seen.add(content_id)
+            local = self.config.export_dir / "p2p" / content_id
+            if not local.exists():
+                report["refs"].append({"content_id": content_id, "ok": False, "error": "local_content_missing"})
+                report["ok"] = False
+                continue
+            data = local.read_bytes()
+            path = f"/p2p/ingest?content_id={quote(content_id, safe='')}"
+            request = urllib.request.Request(
+                base_url + path,
+                data=data,
+                method="POST",
+                headers=self.peer_network._signed_headers("POST", path, data, {"Content-Type": "application/octet-stream"}),
+            )
+            report["attempted"] += 1
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    ok = response.status == 200
+            except (TimeoutError, OSError, urllib.error.URLError) as exc:
+                ok = False
+                error = str(exc)
+            else:
+                error = ""
+            if ok:
+                report["stored"] += 1
+                ref["peer_id"] = str(owner_node_id or self.config.node_id)
+            else:
+                report["ok"] = False
+            item = {"content_id": content_id, "ok": ok, "size_bytes": len(data)}
+            if error:
+                item["error"] = error[-240:]
+            report["refs"].append(item)
+        return report
 
     def ingest_dispatched_result(self, payload: dict[str, Any]) -> None:
         item_id = safe_id(str(payload.get("item_id", "")))
