@@ -900,13 +900,15 @@ fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
             path_entries.push(python_dir);
         }
     }
-    if let Some(openssl) =
-        find_openssl(Some(repo_root)).and_then(|path| path.parent().map(Path::to_path_buf))
-    {
-        if let Some(parent) = openssl.parent() {
-            path_entries.push(parent.to_path_buf());
+    if let Some(openssl_bin) = find_openssl(Some(repo_root)) {
+        command.env("SILICIUM_OPENSSL_BIN", &openssl_bin);
+        if let Some(openssl_dir) = openssl_bin.parent() {
+            if let Some(openssl_root) = openssl_dir.parent() {
+                path_entries.push(openssl_root.to_path_buf());
+            }
+            path_entries.push(openssl_dir.to_path_buf());
+            command.env("OPENSSL_MODULES", openssl_dir);
         }
-        path_entries.push(openssl);
     }
     if !path_entries.is_empty() {
         let current_path = env::var("PATH").unwrap_or_default();

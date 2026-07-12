@@ -79,7 +79,10 @@ function Copy-PythonRuntime {
 }
 
 function Repair-OpenSslRuntime {
-    param([string]$Destination)
+    param(
+        [string]$Destination,
+        [string]$PythonRuntimeDestination = ""
+    )
 
     if (-not $Destination -or -not (Test-Path -LiteralPath $Destination)) {
         return
@@ -99,6 +102,37 @@ function Repair-OpenSslRuntime {
         } | ForEach-Object {
             Copy-Item -LiteralPath $_.FullName -Destination $binDir -Force
         }
+        if ($PythonRuntimeDestination -and (Test-Path -LiteralPath $PythonRuntimeDestination)) {
+            Get-ChildItem -LiteralPath $PythonRuntimeDestination -File -Force | Where-Object {
+                $_.Name -match '^(vcruntime|ucrtbase|msvcp).*\.dll$'
+            } | ForEach-Object {
+                if (-not (Test-Path -LiteralPath (Join-Path $binDir $_.Name))) {
+                    Copy-Item -LiteralPath $_.FullName -Destination $binDir -Force
+                }
+            }
+        }
+    }
+}
+
+function Test-OpenSslRuntime {
+    param([string]$Destination)
+
+    $opensslExe = Join-Path $Destination "bin\openssl.exe"
+    if (-not (Test-Path -LiteralPath $opensslExe)) {
+        throw "OpenSSL runtime did not contain bin\openssl.exe: $Destination"
+    }
+
+    $binDir = Split-Path -Parent $opensslExe
+    $previousPath = $env:PATH
+    try {
+        $env:PATH = "$binDir;$Destination;$previousPath"
+        $output = & $opensslExe version 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "OpenSSL runtime check failed with exit code $LASTEXITCODE`: $output"
+        }
+        Write-Host "[ok] OpenSSL runtime check -> $output"
+    } finally {
+        $env:PATH = $previousPath
     }
 }
 
@@ -155,7 +189,8 @@ if (-not $pythonSource) {
         (Join-Path $env:LOCALAPPDATA "Programs\Python\Python310")
     )
 }
-$null = Copy-PythonRuntime -Source $pythonSource -Destination (Join-Path $runtimeRoot "tools\python")
+$pythonDestination = Join-Path $runtimeRoot "tools\python"
+$null = Copy-PythonRuntime -Source $pythonSource -Destination $pythonDestination
 
 $opensslSource = $OpenSslRuntime
 if (-not $opensslSource) {
@@ -169,7 +204,8 @@ if (-not $opensslSource) {
 $opensslDestination = Join-Path $runtimeRoot "tools\openssl"
 $opensslBundled = Copy-OptionalDirectory -Source $opensslSource -Destination $opensslDestination -Label "OpenSSL"
 if ($opensslBundled) {
-    Repair-OpenSslRuntime -Destination $opensslDestination
+    Repair-OpenSslRuntime -Destination $opensslDestination -PythonRuntimeDestination $pythonDestination
+    Test-OpenSslRuntime -Destination $opensslDestination
 }
 
 Write-Host "Runtime prepared: $runtimeRoot"

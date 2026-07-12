@@ -62,10 +62,10 @@ def find_openssl_command() -> str:
         configured_path = Path(configured)
         if configured_path.exists():
             return str(configured_path)
-    found = shutil.which("openssl")
-    if found:
-        return found
     if os.name != "nt":
+        found = shutil.which("openssl")
+        if found:
+            return found
         return "openssl"
     network_root = Path(__file__).resolve().parents[1]
     runtime_root = network_root.parent
@@ -84,6 +84,9 @@ def find_openssl_command() -> str:
     ]:
         if candidate.exists():
             return str(candidate)
+    found = shutil.which("openssl")
+    if found:
+        return found
     return "openssl"
 
 
