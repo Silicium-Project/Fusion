@@ -115,6 +115,12 @@ def find_openssl_command() -> str:
     return "openssl"
 
 
+def force_hmac_identity() -> bool:
+    mode = os.environ.get("SILICIUM_IDENTITY_MODE", "").strip().lower()
+    forced = os.environ.get("SILICIUM_FORCE_HMAC_IDENTITY", "").strip().lower()
+    return mode == "hmac" or forced in {"1", "true", "yes", "on"}
+
+
 def openssl_subprocess_env(openssl: str) -> dict[str, str]:
     env = dict(os.environ)
     openssl_path = Path(openssl)
@@ -359,7 +365,8 @@ class NodeIdentity:
         self.private_key_path = Path(config.identity_key_path).expanduser() if str(config.identity_key_path).strip() else default_key
         self.public_key_path = self.private_key_path.with_suffix(".pub.pem")
         self.hmac_key_path = self.private_key_path.with_suffix(".hmac.key")
-        self.openssl = find_openssl_command()
+        self.identity_mode = "hmac" if force_hmac_identity() else "ed25519"
+        self.openssl = "" if self.identity_mode == "hmac" else find_openssl_command()
         self.private_key_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_keypair()
         public_pem = self.public_key_path.read_bytes()
@@ -432,6 +439,9 @@ class NodeIdentity:
         return sha256_bytes(public_pem)[:32]
 
     def _ensure_keypair(self) -> None:
+        if self.identity_mode == "hmac":
+            self._ensure_hmac_keypair()
+            return
         if self.hmac_key_path.exists():
             self._ensure_hmac_keypair()
             return
@@ -2403,7 +2413,16 @@ class PeerNetwork:
             def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
                 return
 
-        server = http.server.ThreadingHTTPServer((self.config.peer_http_bind, self.config.peer_http_port), _PeerHandler)
+        class _QuietThreadingHTTPServer(http.server.ThreadingHTTPServer):
+            def handle_error(self, request: Any, client_address: Any) -> None:
+                exc_type, exc, _traceback = sys.exc_info()
+                if exc_type in {BrokenPipeError, ConnectionResetError, ConnectionAbortedError}:
+                    return
+                if isinstance(exc, OSError) and getattr(exc, "errno", None) in {32, 104, 10053, 10054}:
+                    return
+                super().handle_error(request, client_address)
+
+        server = _QuietThreadingHTTPServer((self.config.peer_http_bind, self.config.peer_http_port), _PeerHandler)
         self._http_server = server
         bind_host, bind_port = server.server_address[:2]
         local_host = "127.0.0.1" if bind_host in {"0.0.0.0", ""} else str(bind_host)

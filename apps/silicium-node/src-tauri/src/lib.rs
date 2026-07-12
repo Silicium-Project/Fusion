@@ -222,7 +222,7 @@ fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
     let root = resolve_repo_root(&repo_root)?;
     let mut checks = vec![
         command_check("Python", &python_launcher(&root), &["--version"]),
-        openssl_presence_check(Some(&root)),
+        identity_mode_check(),
     ];
 
     checks.push(path_check("Repo Silicium", &root.join("Network")));
@@ -339,7 +339,7 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
         node_running,
         supervisor_running,
         port_ready,
-        openssl: openssl_presence_check(Some(&root)),
+        openssl: identity_mode_check(),
         python: command_check("Python", &python_launcher(&root), &["--version"]),
         log_tail: read_node_log_tail(&root).unwrap_or_else(|| "Aucun log node disponible pour le moment.".to_string()),
     })
@@ -560,6 +560,8 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("--idle-ms")
             .arg("250")
             .current_dir(&network_root);
+        command.env("SILICIUM_IDENTITY_MODE", "hmac");
+        command.env("SILICIUM_FORCE_HMAC_IDENTITY", "1");
         apply_raytracer_env(&mut command, repo_root);
         apply_runtime_path(&mut command, repo_root);
         spawn_detached(command, repo_root)
@@ -926,18 +928,11 @@ fn command_check(name: &str, command: &str, args: &[&str]) -> CheckItem {
     }
 }
 
-fn openssl_presence_check(repo_root: Option<&Path>) -> CheckItem {
-    if let Some(path) = find_openssl(repo_root) {
-        return CheckItem {
-            name: "OpenSSL".to_string(),
-            ok: true,
-            detail: format!("detecte: {}", path.display()),
-        };
-    }
+fn identity_mode_check() -> CheckItem {
     CheckItem {
-        name: "OpenSSL".to_string(),
-        ok: false,
-        detail: "non detecte".to_string(),
+        name: "Identite reseau".to_string(),
+        ok: true,
+        detail: "HMAC demo actif - OpenSSL non requis".to_string(),
     }
 }
 

@@ -308,17 +308,14 @@ $null = Copy-PythonRuntime -Source $pythonSource -Destination $pythonDestination
 
 $opensslSource = $OpenSslRuntime
 if (-not $opensslSource) {
-    $opensslSource = Find-FirstExisting @(
-        (Join-Path $appRoot "vendor\openssl"),
-        "C:\Program Files\OpenSSL-Win64",
-        "C:\Program Files\OpenSSL-Win32",
-        "C:\Program Files\Git\usr"
-    )
+    Write-Host "[skip] OpenSSL runtime not bundled. Desktop nodes use HMAC identity mode for the demo."
 }
-$opensslDestination = Join-Path $runtimeRoot "tools\openssl"
-$opensslBundled = Copy-OpenSslRuntime -Source $opensslSource -Destination $opensslDestination -PythonRuntimeDestination $pythonDestination
-if ($opensslBundled) {
-    Test-OpenSslRuntime -Destination $opensslDestination
+if ($opensslSource) {
+    $opensslDestination = Join-Path $runtimeRoot "tools\openssl"
+    $opensslBundled = Copy-OpenSslRuntime -Source $opensslSource -Destination $opensslDestination -PythonRuntimeDestination $pythonDestination
+    if ($opensslBundled) {
+        Test-OpenSslRuntime -Destination $opensslDestination
+    }
 }
 
 Write-Host "Runtime prepared: $runtimeRoot"

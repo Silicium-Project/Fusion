@@ -155,7 +155,7 @@
         <div class="panel-row">
           <div>
             <h2>Etat local</h2>
-            <p>Infos utiles si un PC ne recupere pas les taches ou si OpenSSL echoue.</p>
+            <p>Infos utiles si un PC ne recupere pas les taches ou si le runtime local echoue.</p>
           </div>
           <button class="ghost" :disabled="busy" @click="refreshDiagnostics">Verifier</button>
         </div>
@@ -171,7 +171,7 @@
           <div class="check-row" :class="{ ok: diagnostics.openssl.ok }">
             <span>{{ diagnostics.openssl.ok ? 'ok' : 'x' }}</span>
             <div>
-              <strong>OpenSSL</strong>
+              <strong>{{ diagnostics.openssl.name || 'Identite reseau' }}</strong>
               <small>{{ diagnostics.openssl.detail || 'non teste' }}</small>
             </div>
           </div>
@@ -236,7 +236,7 @@ const diagnostics = reactive<NodeDiagnostics>({
   nodeRunning: false,
   supervisorRunning: false,
   portReady: false,
-  openssl: { name: 'OpenSSL', ok: false, detail: 'non teste' },
+  openssl: { name: 'Identite reseau', ok: false, detail: 'non teste' },
   python: { name: 'Python', ok: false, detail: 'non teste' },
   logTail: 'Ouvrez puis cliquez sur Verifier pour charger les diagnostics.',
 });
