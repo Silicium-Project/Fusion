@@ -2799,6 +2799,48 @@ class NetworkNode:
         tasks_dir = self.config.export_dir / "tasks"
         if not tasks_dir.exists():
             return {"ok": True, "claimed": False}
+
+        def task_group_id(task_id: str) -> str:
+            marker = "-frag-"
+            if marker in task_id:
+                return task_id.split(marker, 1)[0]
+            if task_id.endswith("-verify"):
+                return task_id[: -len("-verify")]
+            return task_id
+
+        def task_role(value: dict[str, Any]) -> str:
+            roles_value = value.get("required_roles", ["compute"])
+            if isinstance(roles_value, list) and roles_value:
+                return str(roles_value[0]).lower()
+            if isinstance(roles_value, str) and roles_value.strip():
+                return roles_value.lower()
+            return "compute"
+
+        def assigned_count_for_group(group_id: str, role: str, target_node: str) -> int:
+            total = 0
+            for candidate_path in tasks_dir.glob("*.json"):
+                candidate = read_json(candidate_path, {})
+                if not isinstance(candidate, dict):
+                    continue
+                candidate_status = str(candidate.get("status", "")).lower()
+                if candidate_status not in {"claimed", "completed", "failed", "dead_lettered"}:
+                    continue
+                candidate_task_id = safe_id(str(candidate.get("task_id", candidate_path.stem)))
+                if task_group_id(candidate_task_id) != group_id:
+                    continue
+                if task_role(candidate) != role:
+                    continue
+                assigned_node = safe_id(
+                    str(
+                        candidate.get("claimed_by")
+                        or candidate.get("handled_by")
+                        or candidate.get("scheduler", {}).get("selected_peer", "")
+                    )
+                )
+                if assigned_node == target_node:
+                    total += 1
+            return total
+
         with self._claim_lock:
             for path in tasks_dir.glob("*.json"):
                 envelope = read_json(path, {})
@@ -2873,6 +2915,15 @@ class NetworkNode:
                         else {}
                     )
                     alternative_counts.append(int(alternative_by_role.get(scheduler_role, 0) or 0))
+                if alternatives:
+                    group_id = task_group_id(item_id)
+                    current_group_count = assigned_count_for_group(group_id, scheduler_role, node_id)
+                    alternative_group_counts = [
+                        assigned_count_for_group(group_id, scheduler_role, safe_id(str(alternative.get("node_id", ""))))
+                        for alternative in alternatives
+                    ]
+                    if alternative_group_counts and current_group_count > min(alternative_group_counts):
+                        continue
                 try:
                     fairness_until_unix = float(envelope.get("fairness_until_unix", task.get("fairness_until_unix", 0.0)) or 0.0)
                 except (TypeError, ValueError):

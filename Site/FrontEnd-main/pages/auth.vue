@@ -13,7 +13,7 @@
           {{ isLogin ? 'Connectez-vous pour continuer' : 'Inscrivez-vous pour commencer' }}
         </p>
       </div>
-      <form class="space-y-6" @submit.prevent="handleSubmit">
+      <form class="space-y-6" @submit.prevent.stop="handleSubmit">
         <div v-if="!isLogin" class="grid grid-cols-2 gap-4">
           <input v-model="form.firstName" type="text" placeholder="Prénom" required class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
           <input v-model="form.lastName" type="text" placeholder="Nom de famille" required class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
@@ -21,8 +21,15 @@
         <input v-if="!isLogin" v-model="form.username" type="text" placeholder="Nom d'utilisateur" required class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
         <input v-model="form.email" type="email" placeholder="E-mail" required class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
         <input v-model="form.password" type="password" placeholder="Mot de passe" required class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
-        <button type="submit" class="w-full h-12 rounded-lg bg-gradient-to-r from-purple-400 to-blue-400 text-white font-bold text-lg hover:from-purple-500 hover:to-blue-500 transition-shadow shadow-lg">
-          {{ isLogin ? 'Connexion' : 'S\'inscrire' }}
+        <p v-if="errorMessage" class="rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-100">
+          {{ errorMessage }}
+        </p>
+        <button
+          type="submit"
+          :disabled="isSubmitting"
+          class="w-full h-12 rounded-lg bg-gradient-to-r from-purple-400 to-blue-400 text-white font-bold text-lg hover:from-purple-500 hover:to-blue-500 transition-shadow shadow-lg disabled:cursor-wait disabled:opacity-60"
+        >
+          {{ isSubmitting ? 'Connexion...' : (isLogin ? 'Connexion' : 'S\'inscrire') }}
         </button>
       </form>
       <div class="text-center">
@@ -53,6 +60,8 @@ const form = reactive({
   email: '',
   password: '',
 });
+const isSubmitting = ref(false);
+const errorMessage = ref('');
 
 watch(
   () => route.query.mode,
@@ -63,11 +72,15 @@ watch(
 );
 
 const handleSubmit = async () => {
+  if (isSubmitting.value) return;
+  errorMessage.value = '';
+  isSubmitting.value = true;
   if (isLogin.value) {
     await login();
   } else {
     await register();
   }
+  isSubmitting.value = false;
 };
 
 const switchMode = async () => {
@@ -76,26 +89,35 @@ const switchMode = async () => {
 
 const login = async () => {
   try {
-    const response = await $fetch(`${apiBase}/login`, {
+    const response = await $fetch<{ token: string }>(`${apiBase}/login`, {
       method: 'POST',
       body: {
-        email: form.email,
+        email: form.email.trim(),
         password: form.password,
       }
     });
+
+    if (!response?.token) {
+      throw new Error('Token de connexion absent.');
+    }
 
     Cookies.set('auth_token', response.token, {
       expires: 7,
       sameSite: 'Strict',
     });
 
-    const decodedToken = jwtDecode(response.token) as { role: string };
-
-    if (decodedToken.role === 'user') {
-      await router.push('/dashboard');
+    try {
+      const decodedToken = jwtDecode(response.token) as { role?: string };
+      if (decodedToken.role && decodedToken.role !== 'user') {
+        console.warn('Unexpected user role:', decodedToken.role);
+      }
+    } catch (decodeError) {
+      console.warn('Could not decode auth token:', decodeError);
     }
+    await router.push('/dashboard');
   } catch (error) {
     console.error(error);
+    errorMessage.value = 'Connexion impossible. Verifiez votre e-mail, votre mot de passe ou l API.';
   }
 };
 
@@ -116,6 +138,7 @@ const register = async () => {
     await router.push('/auth?mode=login');
   } catch (error) {
     console.error(error);
+    errorMessage.value = 'Inscription impossible. Verifiez les informations ou reessayez plus tard.';
   }
 };
 </script>
