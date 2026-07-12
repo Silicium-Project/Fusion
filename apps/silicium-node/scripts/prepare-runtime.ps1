@@ -115,11 +115,9 @@ Copy-Item -LiteralPath (Join-Path $networkRoot "demo\networked\networked_runtime
 
 $envDir = Join-Path $runtimeRoot ".silicium\env"
 New-Item -ItemType Directory -Force -Path $envDir | Out-Null
-$raytracerBin = Join-Path $runtimeNetwork "bin\raytracer\raytracer.exe"
-$raytracerAssets = Join-Path $runtimeNetwork "bin\raytracer"
 @(
-    "SILICIUM_RAYTRACER_BIN=$raytracerBin",
-    "SILICIUM_RAYTRACER_ASSETS_DIR=$raytracerAssets"
+    "SILICIUM_RAYTRACER_BIN=Network\bin\raytracer\raytracer.exe",
+    "SILICIUM_RAYTRACER_ASSETS_DIR=Network\bin\raytracer"
 ) | Set-Content -Path (Join-Path $envDir "raytracer.env") -Encoding ASCII
 
 $pythonSource = $PythonRuntime

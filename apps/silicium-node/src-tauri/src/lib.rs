@@ -929,8 +929,18 @@ fn apply_raytracer_env(command: &mut Command, repo_root: &Path) {
             continue;
         };
         if key == "SILICIUM_RAYTRACER_BIN" || key == "SILICIUM_RAYTRACER_ASSETS_DIR" {
-            command.env(key, value);
+            let resolved = resolve_runtime_env_path(repo_root, value);
+            command.env(key, resolved);
         }
+    }
+}
+
+fn resolve_runtime_env_path(repo_root: &Path, value: &str) -> PathBuf {
+    let path = PathBuf::from(value.trim());
+    if path.is_absolute() {
+        path
+    } else {
+        repo_root.join(path)
     }
 }
 
