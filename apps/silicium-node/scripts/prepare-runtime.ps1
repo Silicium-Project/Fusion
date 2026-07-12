@@ -43,8 +43,7 @@ function Copy-PythonRuntime {
     )
 
     if (-not $Source -or -not (Test-Path -LiteralPath $Source)) {
-        Write-Warning "Optional runtime not bundled: Python"
-        return $false
+        throw "Python runtime source not found. Provide -PythonRuntime or install Python locally before building."
     }
 
     New-Item -ItemType Directory -Force -Path $Destination | Out-Null
@@ -138,6 +137,72 @@ function Repair-OpenSslRuntime {
     }
 }
 
+function Copy-OpenSslRuntime {
+    param(
+        [string]$Source,
+        [string]$Destination,
+        [string]$PythonRuntimeDestination = ""
+    )
+
+    if (-not $Source -or -not (Test-Path -LiteralPath $Source)) {
+        throw "OpenSSL runtime source not found. Provide -OpenSslRuntime or install OpenSSL locally before building."
+    }
+
+    $sourceBin = Join-Path $Source "bin"
+    $opensslExe = Join-Path $sourceBin "openssl.exe"
+    if (-not (Test-Path -LiteralPath $opensslExe)) {
+        $opensslExe = Join-Path $Source "openssl.exe"
+        $sourceBin = Split-Path -Parent $opensslExe
+    }
+    if (-not (Test-Path -LiteralPath $opensslExe)) {
+        throw "OpenSSL executable not found in $Source"
+    }
+
+    $destBin = Join-Path $Destination "bin"
+    New-Item -ItemType Directory -Force -Path $destBin | Out-Null
+    Copy-Item -LiteralPath $opensslExe -Destination (Join-Path $destBin "openssl.exe") -Force
+
+    Get-ChildItem -LiteralPath $sourceBin -File -Force | Where-Object {
+        $_.Name -match '^(libcrypto|libssl|legacy|p_).*\.dll$'
+    } | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $destBin -Force
+    }
+    Get-ChildItem -LiteralPath $Source -File -Force | Where-Object {
+        $_.Name -match '^(libcrypto|libssl).*\.dll$'
+    } | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $destBin -Force
+    }
+
+    $sourceModules = Get-OpenSslModulesDir -Destination $Source
+    if ($sourceModules) {
+        Copy-Directory -Source $sourceModules -Destination (Join-Path $Destination "lib\ossl-modules")
+    }
+
+    if ($PythonRuntimeDestination -and (Test-Path -LiteralPath $PythonRuntimeDestination)) {
+        Get-ChildItem -LiteralPath $PythonRuntimeDestination -File -Force | Where-Object {
+            $_.Name -match '^(vcruntime|msvcp|concrt).*\.dll$'
+        } | ForEach-Object {
+            if (-not (Test-Path -LiteralPath (Join-Path $destBin $_.Name))) {
+                Copy-Item -LiteralPath $_.FullName -Destination $destBin -Force
+            }
+        }
+    }
+
+    foreach ($dllName in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll", "concrt140.dll")) {
+        $target = Join-Path $destBin $dllName
+        if (Test-Path -LiteralPath $target) {
+            continue
+        }
+        $sourceDll = Join-Path $env:WINDIR "System32\$dllName"
+        if (Test-Path -LiteralPath $sourceDll) {
+            Copy-Item -LiteralPath $sourceDll -Destination $target -Force
+        }
+    }
+
+    Write-Host "[ok] Bundled OpenSSL -> $Destination"
+    return $true
+}
+
 function Get-OpenSslModulesDir {
     param([string]$Destination)
 
@@ -212,6 +277,9 @@ Copy-Item -LiteralPath (Join-Path $networkRoot "silicium") -Destination (Join-Pa
 Copy-Directory -Source (Join-Path $networkRoot "tools") -Destination (Join-Path $runtimeNetwork "tools")
 Copy-Directory -Source (Join-Path $networkRoot "workloads") -Destination (Join-Path $runtimeNetwork "workloads")
 Copy-Directory -Source (Join-Path $networkRoot "bin") -Destination (Join-Path $runtimeNetwork "bin")
+if (-not (Test-Path -LiteralPath (Join-Path $runtimeNetwork "bin\raytracer\raytracer.exe"))) {
+    throw "Raytracer executable is missing from packaged runtime: Network\bin\raytracer\raytracer.exe"
+}
 
 $networkedDemo = Join-Path $runtimeNetwork "demo\networked"
 New-Item -ItemType Directory -Force -Path $networkedDemo | Out-Null
@@ -248,9 +316,8 @@ if (-not $opensslSource) {
     )
 }
 $opensslDestination = Join-Path $runtimeRoot "tools\openssl"
-$opensslBundled = Copy-OptionalDirectory -Source $opensslSource -Destination $opensslDestination -Label "OpenSSL"
+$opensslBundled = Copy-OpenSslRuntime -Source $opensslSource -Destination $opensslDestination -PythonRuntimeDestination $pythonDestination
 if ($opensslBundled) {
-    Repair-OpenSslRuntime -Destination $opensslDestination -PythonRuntimeDestination $pythonDestination
     Test-OpenSslRuntime -Destination $opensslDestination
 }
 
