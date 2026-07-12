@@ -2479,6 +2479,8 @@ class NetworkNode:
             {"schema_version": 1, "handled": 0, "failed": 0, "retried": 0, "dead_lettered": 0, "dispatched": 0, "dispatch_failed": 0},
         )
         self._claim_lock = threading.Lock()
+        self._active_task_lock = threading.Lock()
+        self._active_task_ids: set[str] = set()
         self._last_pull_unix = 0.0
         self._last_reputation_refresh_unix = 0.0
         self._last_peer_reputation_refresh_unix = 0.0
@@ -2491,6 +2493,39 @@ class NetworkNode:
         self._solana_onchain_stake_amount = 0.0
         self._solana_onchain_status = ""
         self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.reputation.local_score())
+
+    def local_active_task_count(self) -> int:
+        with self._active_task_lock:
+            return len(self._active_task_ids)
+
+    def local_max_active_tasks(self) -> int:
+        capacity = self.runtime.capacity()
+        try:
+            cpu_count = int(capacity.get("cpu_count", 0) or 0)
+        except (TypeError, ValueError):
+            cpu_count = 0
+        if cpu_count <= 0:
+            return 1
+        return max(1, min(4, cpu_count // 4))
+
+    def start_background_task(self, envelope: dict[str, Any]) -> bool:
+        item_id = safe_id(str(envelope.get("request_id") or envelope.get("task_id") or uuid.uuid4().hex))
+        with self._active_task_lock:
+            if len(self._active_task_ids) >= self.local_max_active_tasks():
+                return False
+            if item_id in self._active_task_ids:
+                return False
+            self._active_task_ids.add(item_id)
+
+        def _run() -> None:
+            try:
+                self.handle(envelope)
+            finally:
+                with self._active_task_lock:
+                    self._active_task_ids.discard(item_id)
+
+        threading.Thread(target=_run, name=f"silicium-task-{item_id}", daemon=True).start()
+        return True
 
     def run(self) -> None:
         self.peer_network.start()
@@ -2687,6 +2722,8 @@ class NetworkNode:
 
     def write_metrics(self) -> None:
         self.metrics["updated_utc"] = utc_now()
+        self.metrics["active_tasks"] = self.local_active_task_count()
+        self.metrics["max_active_tasks"] = self.local_max_active_tasks()
         atomic_write_json(self.metrics_path, self.metrics)
 
     def sweep(self) -> int:
@@ -2863,8 +2900,8 @@ class NetworkNode:
             except (TypeError, ValueError):
                 cpu_count = 0
             if role == "verify":
-                return max(1, min(3, cpu_count // 8 if cpu_count > 0 else 1))
-            return max(1, min(4, cpu_count // 6 if cpu_count > 0 else 1))
+                return max(1, min(4, cpu_count // 6 if cpu_count > 0 else 1))
+            return max(1, min(4, cpu_count // 4 if cpu_count > 0 else 1))
 
         def fresh_peer(peer_value: dict[str, Any]) -> bool:
             try:
@@ -3034,6 +3071,8 @@ class NetworkNode:
             return False
         if not {"compute", "verify"}.intersection(self.config.roles):
             return False
+        if not self.config.once and self.local_active_task_count() >= self.local_max_active_tasks():
+            return False
         now = time.time()
         if now - self._last_pull_unix < max(1, self.config.pull_tasks_interval_s):
             return False
@@ -3080,7 +3119,10 @@ class NetworkNode:
                     "roles": sorted(task.get("required_roles", [])),
                 },
             )
-            self.handle(task)
+            if self.config.once:
+                self.handle(task)
+            elif not self.start_background_task(task):
+                self.handle(task)
             return True
         return False
 
