@@ -526,6 +526,9 @@ class P2PClient:
             return b"", {"source": "none"}
         if not isinstance(p2p_ref, dict):
             raise ValueError("p2p_ref_not_object")
+        shared_ref = p2p_ref.get("shared_ref")
+        if isinstance(shared_ref, dict) and str(shared_ref.get("protocol", "")).lower() == "silicium":
+            p2p_ref = shared_ref
 
         protocol = str(p2p_ref.get("protocol", "ipfs")).lower()
         content_id = str(p2p_ref.get("content_id") or p2p_ref.get("cid") or p2p_ref.get("url") or "").strip()

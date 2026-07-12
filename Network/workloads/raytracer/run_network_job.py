@@ -120,6 +120,13 @@ def read_ref_bytes(args: argparse.Namespace, export_dir: Path, ref: dict[str, An
     return p2p_file_path(ref).read_bytes()
 
 
+def portable_network_ref(ref: dict[str, Any]) -> dict[str, Any]:
+    shared = ref.get("shared_ref") if isinstance(ref, dict) else None
+    if isinstance(shared, dict) and str(shared.get("protocol", "")).lower() == "silicium":
+        return shared
+    return ref
+
+
 def ensure_task_success(result: dict[str, Any], task_id: str) -> None:
     if result.get("success", True) is not False:
         return
@@ -378,6 +385,7 @@ def main(argv: list[str] | None = None) -> int:
                 write_progress("compute_failed")
                 raise
             output_ref = output_ref_from_compute(compute_result)
+            verify_ref = portable_network_ref(output_ref)
             result_hash = result_hash_from_compute(compute_result)
             fragment_file = fragments_dir / f"fragment-{index:03d}.ppm"
             fragment_file.write_bytes(read_ref_bytes(args, export_dir, output_ref))
@@ -387,6 +395,7 @@ def main(argv: list[str] | None = None) -> int:
                     "status": "computed",
                     "result_hash": result_hash,
                     "output_ref": output_ref,
+                    "verify_ref": verify_ref,
                     "expected_hash": result_hash,
                     "compute_result_hash": result_hash,
                     "compute_output_ref": output_ref,
@@ -400,7 +409,7 @@ def main(argv: list[str] | None = None) -> int:
                     "y_start": y_start,
                     "y_end": y_end,
                     "fragment_id": fragment_id,
-                    "output_ref": output_ref,
+                    "output_ref": verify_ref,
                     "result_hash": result_hash,
                     "compute_node_id": compute_result.get("node_id", ""),
                 }
