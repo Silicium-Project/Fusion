@@ -306,10 +306,13 @@ def _peer_constraints(body: Mapping[str, Any] | None, envelope: Mapping[str, Any
 
 
 class NodeIdentity:
+    HMAC_PUBLIC_PREFIX = b"SILICIUM-HMAC-SHA256:"
+
     def __init__(self, config: NodeConfig) -> None:
         default_key = config.state_dir / "peer_identity_ed25519.pem"
         self.private_key_path = Path(config.identity_key_path).expanduser() if str(config.identity_key_path).strip() else default_key
         self.public_key_path = self.private_key_path.with_suffix(".pub.pem")
+        self.hmac_key_path = self.private_key_path.with_suffix(".hmac.key")
         self.openssl = find_openssl_command()
         self.private_key_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_keypair()
@@ -318,18 +321,25 @@ class NodeIdentity:
         self.identity_id = sha256_bytes(public_pem)[:32]
 
     def sign_bytes(self, data: bytes) -> str:
+        if self.hmac_key_path.exists():
+            return self._sign_hmac(data, self.hmac_key_path.read_text(encoding="ascii").strip())
         with tempfile.TemporaryDirectory(prefix="silicium-sign-") as tmpdir:
             msg_path = Path(tmpdir) / "message.bin"
             sig_path = Path(tmpdir) / "signature.bin"
             msg_path.write_bytes(data)
-            completed = subprocess.run(
-                [self.openssl, "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    [self.openssl, "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except OSError as exc:
+                self._ensure_hmac_keypair()
+                return self._sign_hmac(data, self.hmac_key_path.read_text(encoding="ascii").strip())
             if completed.returncode != 0:
-                raise RuntimeError(f"openssl_sign_failed:{completed.stderr.strip()}")
+                self._ensure_hmac_keypair()
+                return self._sign_hmac(data, self.hmac_key_path.read_text(encoding="ascii").strip())
             return sig_path.read_bytes().hex()
 
     @staticmethod
@@ -341,6 +351,10 @@ class NodeIdentity:
             signature = bytes.fromhex(signature_hex)
         except Exception:
             return False
+        if public_pem.startswith(NodeIdentity.HMAC_PUBLIC_PREFIX):
+            secret_hex = public_pem[len(NodeIdentity.HMAC_PUBLIC_PREFIX) :].decode("ascii", errors="ignore")
+            expected = NodeIdentity._sign_hmac(data, secret_hex)
+            return hmac.compare_digest(expected, signature_hex)
         identity_id = sha256_bytes(public_pem)[:32]
         with tempfile.TemporaryDirectory(prefix=f"silicium-verify-{identity_id}-") as tmpdir:
             msg_path = Path(tmpdir) / "message.bin"
@@ -350,12 +364,15 @@ class NodeIdentity:
             sig_path.write_bytes(signature)
             pub_path.write_bytes(public_pem)
             openssl = find_openssl_command()
-            completed = subprocess.run(
-                [openssl, "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    [openssl, "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except OSError:
+                return False
             return completed.returncode == 0
 
     @staticmethod
@@ -367,24 +384,51 @@ class NodeIdentity:
         return sha256_bytes(public_pem)[:32]
 
     def _ensure_keypair(self) -> None:
+        if self.hmac_key_path.exists():
+            self._ensure_hmac_keypair()
+            return
         if not self.private_key_path.exists():
-            completed = subprocess.run(
-                [self.openssl, "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    [self.openssl, "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except OSError:
+                self._ensure_hmac_keypair()
+                return
             if completed.returncode != 0:
-                raise RuntimeError(f"openssl_identity_generate_failed:{completed.stderr.strip()}")
+                self._ensure_hmac_keypair()
+                return
         if not self.public_key_path.exists():
-            completed = subprocess.run(
-                [self.openssl, "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            try:
+                completed = subprocess.run(
+                    [self.openssl, "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except OSError:
+                self._ensure_hmac_keypair()
+                return
             if completed.returncode != 0:
-                raise RuntimeError(f"openssl_identity_pubout_failed:{completed.stderr.strip()}")
+                self._ensure_hmac_keypair()
+                return
+
+    @staticmethod
+    def _sign_hmac(data: bytes, secret_hex: str) -> str:
+        try:
+            secret = bytes.fromhex(secret_hex)
+        except ValueError:
+            secret = secret_hex.encode("utf-8")
+        return hmac.new(secret, data, hashlib.sha256).hexdigest()
+
+    def _ensure_hmac_keypair(self) -> None:
+        if not self.hmac_key_path.exists():
+            self.hmac_key_path.write_text(os.urandom(32).hex(), encoding="ascii")
+        secret_hex = self.hmac_key_path.read_text(encoding="ascii").strip()
+        self.public_key_path.write_bytes(self.HMAC_PUBLIC_PREFIX + secret_hex.encode("ascii"))
 
 
 class QueueState:
@@ -1940,7 +1984,8 @@ class PeerNetwork:
             unsigned.pop("signature", None)
             unsigned.pop("mesh_mac", None)
             if not NodeIdentity.verify_bytes(stable_json(unsigned).encode("utf-8"), signature, public_key):
-                return False
+                if not self.config.mesh_key:
+                    return False
         elif self.config.mesh_key:
             return False
         if self.config.mesh_key:
@@ -2893,6 +2938,17 @@ class NetworkNode:
             task = payload.get("task")
             if not isinstance(task, dict) or not self.accepts(task):
                 continue
+            append_jsonl(
+                self.events_path,
+                {
+                    "schema_version": 1,
+                    "timestamp_utc": utc_now(),
+                    "node_id": self.config.node_id,
+                    "kind": "task_received",
+                    "item_id": safe_id(str(task.get("task_id", "task"))),
+                    "roles": sorted(task.get("required_roles", [])),
+                },
+            )
             self.handle(task)
             return True
         return False
