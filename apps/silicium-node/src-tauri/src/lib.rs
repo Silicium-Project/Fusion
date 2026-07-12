@@ -271,10 +271,9 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
         .join("silicium-desktop-node");
     let mut history = Vec::new();
     collect_event_history(&networked_dir.join("export").join("node.events.ndjson"), &mut history);
-    if history.is_empty() {
-        collect_history(&networked_dir, &mut history);
-    }
+    collect_history(&networked_dir, &mut history);
     history.sort_by(|left, right| right.modified_at.cmp(&left.modified_at));
+    history.dedup_by(|left, right| left.name == right.name && left.modified_at == right.modified_at);
     history.truncate(12);
     let known_results = history
         .iter()

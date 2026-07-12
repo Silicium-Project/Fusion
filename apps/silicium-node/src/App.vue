@@ -400,6 +400,6 @@ function formatDurationMs(durationMs: number) {
 onMounted(async () => {
   await loadDefaults();
   await refreshAll();
-  window.setInterval(refreshAll, 5000);
+  window.setInterval(refreshAll, 2000);
 });
 </script>

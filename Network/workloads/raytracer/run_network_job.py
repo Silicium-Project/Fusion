@@ -161,6 +161,17 @@ def portable_network_ref(ref: dict[str, Any]) -> dict[str, Any]:
     return ref
 
 
+def orchestrator_pinned_ref(args: argparse.Namespace, export_dir: Path, data: bytes) -> dict[str, Any]:
+    if args.node_mode == "network":
+        return store_network_content(export_dir, data, args.network_node_id)
+    digest = sha256_bytes(data)
+    path = export_dir / "p2p" / digest
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_bytes(data)
+    return {"protocol": "file", "content_id": str(path), "hash": "sha256:" + digest}
+
+
 def ensure_task_success(result: dict[str, Any], task_id: str) -> None:
     if result.get("success", True) is not False:
         return
@@ -437,11 +448,12 @@ def main(argv: list[str] | None = None) -> int:
                     write_progress("compute_failed")
                     raise
                 output_ref = output_ref_from_compute(compute_result)
-                verify_ref = portable_network_ref(output_ref)
                 result_hash = result_hash_from_compute(compute_result)
                 fragment_file = fragments_dir / f"fragment-{index:03d}.ppm"
-                fragment_file.write_bytes(read_ref_bytes(args, export_dir, output_ref))
+                fragment_bytes = read_ref_bytes(args, export_dir, output_ref)
+                fragment_file.write_bytes(fragment_bytes)
                 fragment_files.append((y_start, fragment_file))
+                verify_ref = orchestrator_pinned_ref(args, export_dir, fragment_bytes)
                 progress_fragments[index].update(
                     {
                         "status": "computed",

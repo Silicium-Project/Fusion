@@ -2841,6 +2841,40 @@ class NetworkNode:
                     total += 1
             return total
 
+        def active_claim_count(target_node: str) -> int:
+            total = 0
+            for candidate_path in tasks_dir.glob("*.json"):
+                candidate = read_json(candidate_path, {})
+                if not isinstance(candidate, dict):
+                    continue
+                if str(candidate.get("status", "")).lower() != "claimed":
+                    continue
+                if safe_id(str(candidate.get("claimed_by", ""))) == target_node:
+                    total += 1
+            return total
+
+        def max_active_claims_for_peer(role: str) -> int:
+            capacity = peer.get("capacity", {}) if isinstance(peer, dict) and isinstance(peer.get("capacity"), dict) else {}
+            try:
+                cpu_count = int(capacity.get("cpu_count", 0) or 0)
+            except (TypeError, ValueError):
+                cpu_count = 0
+            if role == "verify":
+                return max(1, min(3, cpu_count // 8 if cpu_count > 0 else 1))
+            return max(1, min(4, cpu_count // 6 if cpu_count > 0 else 1))
+
+        def fresh_peer(peer_value: dict[str, Any]) -> bool:
+            try:
+                last_seen = float(peer_value.get("last_seen_unix", 0) or 0)
+            except (TypeError, ValueError):
+                last_seen = 0.0
+            if last_seen <= 0:
+                return False
+            return time.time() - last_seen <= max(30.0, float(self.config.peer_stale_after_s or 0))
+
+        def fresh_alternatives(peers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            return [candidate for candidate in peers if fresh_peer(candidate)]
+
         with self._claim_lock:
             for path in tasks_dir.glob("*.json"):
                 envelope = read_json(path, {})
@@ -2859,7 +2893,7 @@ class NetworkNode:
                     except OSError:
                         claimed_age_s = 0.0
                     if claimed_age_s <= stale_after_s:
-                        return {"ok": True, "claimed": False, "reason": "node_already_has_active_task"}
+                        continue
                     envelope["status"] = "queued"
                     envelope["requeued_utc"] = utc_now()
                     envelope["requeue_reason"] = "stale_claim"
@@ -2896,14 +2930,19 @@ class NetworkNode:
                         continue
                 item_id = safe_id(str(envelope.get("task_id", path.stem)))
                 scheduler_role = str(next(iter(required_roles), "task")).lower()
+                max_claims = max_active_claims_for_peer(scheduler_role)
+                if active_claim_count(node_id) >= max_claims:
+                    continue
                 current_stats = self.reputation.peer_dispatch_stats(node_id)
                 current_by_role = current_stats.get("by_role", {}) if isinstance(current_stats.get("by_role"), dict) else {}
                 current_count = int(current_by_role.get(scheduler_role, 0) or 0)
-                alternatives = self.peer_network.select_peers(
-                    required_roles=required_roles,
-                    limit=0,
-                    exclude={node_id, self.config.node_id},
-                    constraints=constraints,
+                alternatives = fresh_alternatives(
+                    self.peer_network.select_peers(
+                        required_roles=required_roles,
+                        limit=0,
+                        exclude={node_id, self.config.node_id},
+                        constraints=constraints,
+                    )
                 )
                 alternative_counts: list[int] = []
                 for alternative in alternatives:
@@ -2945,11 +2984,13 @@ class NetworkNode:
                     excluded_until_unix = 0.0
                 excluded_fallback = node_id in excluded_node_ids and time.time() >= excluded_until_unix > 0
                 if node_id in excluded_node_ids and not excluded_fallback:
-                    alternatives = self.peer_network.select_peers(
-                        required_roles=required_roles,
-                        limit=1,
-                        exclude={node_id, self.config.node_id},
-                        constraints=constraints,
+                    alternatives = fresh_alternatives(
+                        self.peer_network.select_peers(
+                            required_roles=required_roles,
+                            limit=0,
+                            exclude={node_id, self.config.node_id},
+                            constraints=constraints,
+                        )
                     )
                     if alternatives:
                         continue
