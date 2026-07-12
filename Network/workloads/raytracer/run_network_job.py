@@ -306,8 +306,11 @@ def main(argv: list[str] | None = None) -> int:
         int(fragment["fragment_index"]): {**fragment, "status": "planned"}
         for fragment in fragments
     }
+    started_unix = time.time()
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_unix))
 
     def write_progress(stage: str, success: bool = False) -> None:
+        now_unix = time.time()
         write_json(
             progress_path,
             {
@@ -320,6 +323,11 @@ def main(argv: list[str] | None = None) -> int:
                 "job_dir": str(job_dir),
                 "export_dir": str(export_dir),
                 "scene": str(scene_path),
+                "started_utc": started_utc,
+                "started_unix": started_unix,
+                "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_unix)),
+                "updated_unix": now_unix,
+                "elapsed_s": round(now_unix - started_unix, 3),
                 "image": {"width": width, "height": height},
                 "split_policy": split.get("split_policy", {}),
                 "fragment_count": len(fragments),
@@ -327,7 +335,6 @@ def main(argv: list[str] | None = None) -> int:
                 "submissions": submissions,
                 "node_runs": node_runs,
                 "network": orchestrator_result,
-                "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
         )
 
@@ -377,14 +384,17 @@ def main(argv: list[str] | None = None) -> int:
                 "scene_p2p_ref": scene_ref,
             }
             progress_fragments[index]["status"] = "queued_compute"
+            fairness_until_unix = time.time() + 12.0
             compute_payload = {
                 "task_id": fragment_id,
                 "required_roles": ["compute"],
                 "priority": args.priority,
+                "fairness_until_unix": fairness_until_unix,
                 "p2p_ref": bytes_input_ref(args, export_dir, json.dumps(spec, sort_keys=True).encode("utf-8")),
                 "task": {
                     "kind": "compute",
                     "workload": RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
+                    "fairness_until_unix": fairness_until_unix,
                     "fragment_index": index,
                     "fragment_count": len(fragments),
                     "y_start": y_start,
@@ -456,10 +466,14 @@ def main(argv: list[str] | None = None) -> int:
                     }
                 )
                 verify_id = f"{fragment_id}-verify"
+                verify_fallback_until_unix = time.time() + 30.0
+                verify_fairness_until_unix = time.time() + 12.0
                 verify_payload = {
                     "task_id": verify_id,
                     "required_roles": ["verify"],
                     "excluded_node_ids": [str(compute_result.get("node_id") or "")],
+                    "excluded_until_unix": verify_fallback_until_unix,
+                    "fairness_until_unix": verify_fairness_until_unix,
                     "priority": args.priority,
                     "p2p_ref": verify_ref,
                     "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
@@ -471,6 +485,8 @@ def main(argv: list[str] | None = None) -> int:
                         "scene_p2p_ref": scene_ref,
                         "source_task_id": fragment_id,
                         "excluded_node_ids": [str(compute_result.get("node_id") or "")],
+                        "excluded_until_unix": verify_fallback_until_unix,
+                        "fairness_until_unix": verify_fairness_until_unix,
                         "fragment_index": index,
                         "fragment_count": len(fragments),
                         "y_start": y_start,
@@ -519,6 +535,15 @@ def main(argv: list[str] | None = None) -> int:
                 break
             if time.monotonic() >= deadline:
                 pending = sorted(list(pending_compute.keys()) + list(pending_verify.keys()))
+                for task_id, job in pending_compute.items():
+                    progress_fragments[int(job["index"])].update(
+                        {"status": "compute_timeout", "error": f"timeout waiting for {task_id}"}
+                    )
+                for task_id, job in pending_verify.items():
+                    progress_fragments[int(job["index"])].update(
+                        {"status": "verify_timeout", "error": f"timeout waiting for {task_id}"}
+                    )
+                write_progress("pipeline_timeout")
                 raise TimeoutError(
                     f"raytracer network pipeline timed out after {args.result_timeout_s:.1f}s; pending: {', '.join(pending)}"
                 )
@@ -532,6 +557,7 @@ def main(argv: list[str] | None = None) -> int:
         reassembled = reassemble_fragments(fragment_files, reassembled_ppm, reassembled_png, reassemble_json)
         for fragment in progress_fragments.values():
             fragment["status"] = "reassembled"
+        completed_unix = time.time()
         summary = {
             "schema_version": 1,
             "mode": "raytracer_network_job",
@@ -540,6 +566,11 @@ def main(argv: list[str] | None = None) -> int:
             "scene": str(scene_path),
             "job_dir": str(job_dir),
             "export_dir": str(export_dir),
+            "started_utc": started_utc,
+            "started_unix": started_unix,
+            "completed_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(completed_unix)),
+            "completed_unix": completed_unix,
+            "elapsed_s": round(completed_unix - started_unix, 3),
             "image": {"width": width, "height": height},
             "split_policy": split.get("split_policy", {}),
             "fragment_count": len(fragments),

@@ -41,7 +41,7 @@
         <pre class="mt-4 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 p-4 text-sm text-red-100">{{ payload.job.errorMessage }}</pre>
       </section>
 
-      <div v-if="payload" class="grid grid-cols-1 lg:grid-cols-4 gap-5 mb-6">
+      <div v-if="payload" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-5 mb-6">
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Statut</p>
           <p class="text-2xl font-bold mt-2">{{ payload.job.status }}</p>
@@ -49,6 +49,10 @@
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Fragments resolus</p>
           <p class="text-2xl font-bold mt-2">{{ verifiedFragments }} / {{ expectedFragmentCount }}</p>
+        </div>
+        <div class="bg-[#1f2029] rounded-2xl p-5">
+          <p class="text-white/50">Duree</p>
+          <p class="text-2xl font-bold mt-2">{{ elapsedLabel }}</p>
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Devnet</p>
@@ -232,6 +236,9 @@ type DashboardPayload = {
     siliciumJobId: string;
     devnetJob?: string;
     errorMessage?: string;
+    createdAt?: string;
+    startedAt?: string;
+    completedAt?: string;
   };
   resultReady: boolean;
   resultUrl: string;
@@ -265,6 +272,8 @@ const payload = ref<DashboardPayload | null>(null);
 const errorMessage = ref('');
 const resultPreviewUrl = ref('');
 const refreshTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const clockTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const nowMs = ref(Date.now());
 
 const authHeaders = () => {
   const token = Cookies.get('auth_token');
@@ -273,6 +282,26 @@ const authHeaders = () => {
 
 const fragments = computed<any[]>(() => Array.isArray(payload.value?.summary.fragments) ? payload.value?.summary.fragments : []);
 const finalHash = computed(() => payload.value?.summary.finalHash || payload.value?.summary.reassembledHash || payload.value?.summary.expectedFullHash || '');
+const startedMs = computed(() => {
+  const summaryStart = Number(payload.value?.summary.startedUnix || 0);
+  if (summaryStart > 0) return summaryStart * 1000;
+  const fallback = payload.value?.job.startedAt || payload.value?.job.createdAt;
+  const parsed = fallback ? Date.parse(fallback) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+});
+const completedMs = computed(() => {
+  const summaryEnd = Number(payload.value?.summary.completedUnix || 0);
+  if (summaryEnd > 0) return summaryEnd * 1000;
+  const parsed = payload.value?.job.completedAt ? Date.parse(payload.value.job.completedAt) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+});
+const elapsedSeconds = computed(() => {
+  const start = startedMs.value;
+  if (!start) return 0;
+  const end = completedMs.value || nowMs.value;
+  return Math.max(0, Math.floor((end - start) / 1000));
+});
+const elapsedLabel = computed(() => formatDuration(elapsedSeconds.value));
 const splitTree = computed(() => payload.value?.summary.splitTree || payload.value?.devnet.splitTree || null);
 const expectedFragmentCount = computed(() => Number(payload.value?.summary.fragmentCount || fragments.value.length || 0));
 const verifiedFragments = computed(() => fragments.value.filter((fragment) => fragment.verify_choice || ['verified', 'reassembled'].includes(String(fragment.status))).length);
@@ -437,6 +466,17 @@ const shortNode = (value: any) => {
   return `${text.slice(0, 12)}...${text.slice(-6)}`;
 };
 
+const formatDuration = (seconds: number) => {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours > 0) return `${hours}h ${String(remainingMinutes).padStart(2, '0')}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  if (minutes > 0) return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  return `${remainingSeconds}s`;
+};
+
 const tileClass = (status: string) => {
   if (status === 'reassembled' || status === 'verified') return 'border-green-400/50 bg-green-500/20 text-green-100';
   if (status === 'queued_verify') return 'border-blue-400/50 bg-blue-500/20 text-blue-100';
@@ -446,9 +486,15 @@ const tileClass = (status: string) => {
   return 'border-white/10 bg-black/20 text-white/60';
 };
 
-onMounted(loadDashboard);
+onMounted(() => {
+  clockTimer.value = setInterval(() => {
+    nowMs.value = Date.now();
+  }, 1000);
+  loadDashboard();
+});
 onBeforeUnmount(() => {
   if (refreshTimer.value) clearInterval(refreshTimer.value);
+  if (clockTimer.value) clearInterval(clockTimer.value);
   if (resultPreviewUrl.value) URL.revokeObjectURL(resultPreviewUrl.value);
 });
 </script>

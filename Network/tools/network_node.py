@@ -57,14 +57,25 @@ def safe_id(value: str) -> str:
 
 
 def find_openssl_command() -> str:
+    configured = os.environ.get("SILICIUM_OPENSSL_BIN", "").strip()
+    if configured:
+        configured_path = Path(configured)
+        if configured_path.exists():
+            return str(configured_path)
     found = shutil.which("openssl")
     if found:
         return found
     if os.name != "nt":
         return "openssl"
+    network_root = Path(__file__).resolve().parents[1]
+    runtime_root = network_root.parent
     program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
     program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
     for candidate in [
+        runtime_root / "tools" / "openssl" / "bin" / "openssl.exe",
+        runtime_root / "tools" / "openssl" / "openssl.exe",
+        network_root / "tools" / "openssl" / "bin" / "openssl.exe",
+        network_root / "tools" / "openssl" / "openssl.exe",
         Path(program_files) / "OpenSSL-Win64" / "bin" / "openssl.exe",
         Path(program_files) / "OpenSSL-Win32" / "bin" / "openssl.exe",
         Path(program_files_x86) / "OpenSSL-Win32" / "bin" / "openssl.exe",
@@ -2759,6 +2770,35 @@ class NetworkNode:
                 if isinstance(peer, dict) and peer:
                     if not self.peer_network._peer_meets_constraints(peer, required_roles, constraints):
                         continue
+                item_id = safe_id(str(envelope.get("task_id", path.stem)))
+                scheduler_role = str(next(iter(required_roles), "task")).lower()
+                try:
+                    fairness_until_unix = float(envelope.get("fairness_until_unix", task.get("fairness_until_unix", 0.0)) or 0.0)
+                except (TypeError, ValueError):
+                    fairness_until_unix = 0.0
+                if time.time() < fairness_until_unix:
+                    alternatives = self.peer_network.select_peers(
+                        required_roles=required_roles,
+                        limit=0,
+                        exclude={node_id, self.config.node_id},
+                        constraints=constraints,
+                    )
+                    if alternatives:
+                        current_stats = self.reputation.peer_dispatch_stats(node_id)
+                        current_by_role = current_stats.get("by_role", {}) if isinstance(current_stats.get("by_role"), dict) else {}
+                        current_count = int(current_by_role.get(scheduler_role, 0) or 0)
+                        alternative_counts: list[int] = []
+                        for alternative in alternatives:
+                            alternative_id = safe_id(str(alternative.get("node_id", "")))
+                            alternative_stats = self.reputation.peer_dispatch_stats(alternative_id)
+                            alternative_by_role = (
+                                alternative_stats.get("by_role", {})
+                                if isinstance(alternative_stats.get("by_role"), dict)
+                                else {}
+                            )
+                            alternative_counts.append(int(alternative_by_role.get(scheduler_role, 0) or 0))
+                        if alternative_counts and current_count > min(alternative_counts):
+                            continue
                 excluded_raw = envelope.get("excluded_node_ids", task.get("excluded_node_ids", []))
                 if isinstance(excluded_raw, str):
                     excluded_values = [excluded_raw]
@@ -2767,7 +2807,12 @@ class NetworkNode:
                 else:
                     excluded_values = []
                 excluded_node_ids = {safe_id(str(value)) for value in excluded_values if str(value).strip()}
-                if node_id in excluded_node_ids:
+                try:
+                    excluded_until_unix = float(envelope.get("excluded_until_unix", task.get("excluded_until_unix", 0.0)) or 0.0)
+                except (TypeError, ValueError):
+                    excluded_until_unix = 0.0
+                excluded_fallback = node_id in excluded_node_ids and time.time() >= excluded_until_unix > 0
+                if node_id in excluded_node_ids and not excluded_fallback:
                     alternatives = self.peer_network.select_peers(
                         required_roles=required_roles,
                         limit=1,
@@ -2783,8 +2828,6 @@ class NetworkNode:
                 claimed["dispatched_by"] = self.config.node_id
                 claimed["dispatched_utc"] = utc_now()
                 claimed["result_return_url"] = self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
-                item_id = safe_id(str(claimed.get("task_id", path.stem)))
-                scheduler_role = str(next(iter(required_roles), "task")).lower()
                 dispatch_stats = self.reputation.record_peer_dispatch(node_id, scheduler_role, item_id)
                 self.peer_network.update_peer_metadata(node_id, {"scheduler_dispatch": dispatch_stats})
                 claimed["scheduler"] = {
@@ -2792,6 +2835,7 @@ class NetworkNode:
                     "selected_peer": node_id,
                     "required_roles": sorted(required_roles),
                     "dispatch_stats": dispatch_stats,
+                    "excluded_fallback": excluded_fallback,
                 }
                 atomic_write_json(path, claimed)
                 append_jsonl(
