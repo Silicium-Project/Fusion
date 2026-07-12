@@ -47,6 +47,25 @@ WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 
 
+def configure_windows_error_mode() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        SEM_FAILCRITICALERRORS = 0x0001
+        SEM_NOGPFAULTERRORBOX = 0x0002
+        SEM_NOOPENFILEERRORBOX = 0x8000
+        ctypes.windll.kernel32.SetErrorMode(
+            SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+        )
+    except Exception:
+        pass
+
+
+configure_windows_error_mode()
+
+
 def utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -76,6 +95,12 @@ def find_openssl_command() -> str:
         runtime_root / "tools" / "openssl" / "openssl.exe",
         network_root / "tools" / "openssl" / "bin" / "openssl.exe",
         network_root / "tools" / "openssl" / "openssl.exe",
+    ]:
+        if candidate.exists():
+            return str(candidate)
+    if os.environ.get("SILICIUM_REQUIRE_BUNDLED_RUNTIME", "").strip() == "1":
+        return str(runtime_root / "tools" / "openssl" / "bin" / "openssl.exe")
+    for candidate in [
         Path(program_files) / "OpenSSL-Win64" / "bin" / "openssl.exe",
         Path(program_files) / "OpenSSL-Win32" / "bin" / "openssl.exe",
         Path(program_files_x86) / "OpenSSL-Win32" / "bin" / "openssl.exe",
@@ -88,6 +113,24 @@ def find_openssl_command() -> str:
     if found:
         return found
     return "openssl"
+
+
+def openssl_subprocess_env(openssl: str) -> dict[str, str]:
+    env = dict(os.environ)
+    openssl_path = Path(openssl)
+    if openssl_path.exists():
+        openssl_dir = openssl_path.parent
+        openssl_root = openssl_dir.parent
+        env["PATH"] = str(openssl_dir) + os.pathsep + str(openssl_root) + os.pathsep + env.get("PATH", "")
+        for modules in [
+            openssl_root / "lib" / "ossl-modules",
+            openssl_dir / "ossl-modules",
+            openssl_root / "ossl-modules",
+        ]:
+            if modules.exists():
+                env["OPENSSL_MODULES"] = str(modules)
+                break
+    return env
 
 
 def stable_json(value: Any) -> str:
@@ -335,6 +378,7 @@ class NodeIdentity:
                     [self.openssl, "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
                     capture_output=True,
                     text=True,
+                    env=openssl_subprocess_env(self.openssl),
                     check=False,
                 )
             except OSError as exc:
@@ -372,6 +416,7 @@ class NodeIdentity:
                     [openssl, "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
                     capture_output=True,
                     text=True,
+                    env=openssl_subprocess_env(openssl),
                     check=False,
                 )
             except OSError:
@@ -396,6 +441,7 @@ class NodeIdentity:
                     [self.openssl, "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
                     capture_output=True,
                     text=True,
+                    env=openssl_subprocess_env(self.openssl),
                     check=False,
                 )
             except OSError:
@@ -410,6 +456,7 @@ class NodeIdentity:
                     [self.openssl, "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
                     capture_output=True,
                     text=True,
+                    env=openssl_subprocess_env(self.openssl),
                     check=False,
                 )
             except OSError:

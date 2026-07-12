@@ -222,7 +222,7 @@ fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
     let root = resolve_repo_root(&repo_root)?;
     let mut checks = vec![
         command_check("Python", &python_launcher(&root), &["--version"]),
-        openssl_check(Some(&root)),
+        openssl_presence_check(Some(&root)),
     ];
 
     checks.push(path_check("Repo Silicium", &root.join("Network")));
@@ -278,7 +278,7 @@ fn install_runtime(repo_root: String) -> Result<String, String> {
 
 #[tauri::command]
 fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
-    let root = resolve_repo_root(&repo_root)?;
+    let root = resolve_repo_root_readonly(&repo_root)?;
     validate_repo_root(&root)?;
     let networked_dir = root
         .join("Network")
@@ -317,7 +317,7 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
 
 #[tauri::command]
 fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
-    let root = resolve_repo_root(&repo_root)?;
+    let root = resolve_repo_root_readonly(&repo_root)?;
     validate_repo_root(&root)?;
     cleanup_dead_pids(&root);
     let node_pid = read_pid(&root).ok().flatten();
@@ -339,7 +339,7 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
         node_running,
         supervisor_running,
         port_ready,
-        openssl: openssl_check(Some(&root)),
+        openssl: openssl_presence_check(Some(&root)),
         python: command_check("Python", &python_launcher(&root), &["--version"]),
         log_tail: read_node_log_tail(&root).unwrap_or_else(|| "Aucun log node disponible pour le moment.".to_string()),
     })
@@ -362,9 +362,10 @@ fn app_defaults() -> AppDefaults {
 fn resolve_optional_repo_root(repo_root: Option<&str>) -> Option<PathBuf> {
     repo_root
         .filter(|value| !value.trim().is_empty())
-        .and_then(|value| resolve_repo_root(value).ok())
-        .or_else(discover_configured_repo_root)
+        .and_then(|value| resolve_repo_root_readonly(value).ok())
+        .or_else(|| discover_configured_repo_root().filter(|root| validate_repo_root(root).is_ok()))
         .or_else(discover_repo_root)
+        .or_else(discover_managed_runtime_root)
 }
 
 fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
@@ -378,6 +379,21 @@ fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
         .or_else(discover_managed_runtime_root)
         .map(refresh_managed_runtime_if_needed)
         .unwrap_or_else(ensure_managed_runtime)
+}
+
+fn resolve_repo_root_readonly(repo_root: &str) -> Result<PathBuf, String> {
+    if !repo_root.trim().is_empty() {
+        let root = PathBuf::from(repo_root.trim());
+        validate_repo_root(&root)?;
+        return Ok(root);
+    }
+    if let Some(root) = discover_configured_repo_root() {
+        validate_repo_root(&root)?;
+        return Ok(root);
+    }
+    discover_repo_root()
+        .or_else(discover_managed_runtime_root)
+        .ok_or_else(|| "repo_root_not_found".to_string())
 }
 
 fn discover_repo_root() -> Option<PathBuf> {
@@ -443,6 +459,10 @@ fn refresh_managed_runtime_if_needed(root: PathBuf) -> Result<PathBuf, String> {
         return Ok(root);
     }
     ensure_managed_runtime()
+}
+
+fn is_managed_runtime_root(root: &Path) -> bool {
+    same_path(root, &managed_runtime_root())
 }
 
 fn find_packaged_runtime_root() -> Option<PathBuf> {
@@ -726,7 +746,7 @@ pub fn run_supervisor_cli() -> i32 {
             repo_root = args.next().unwrap_or_default();
         }
     }
-    let Ok(repo_root) = resolve_repo_root(&repo_root) else {
+    let Ok(repo_root) = resolve_repo_root_readonly(&repo_root) else {
         return 2;
     };
     if validate_repo_root(&repo_root).is_err() {
@@ -790,6 +810,15 @@ fn python_launcher(repo_root: &Path) -> String {
     candidates.push(repo_root.join("tools").join("python").join("python.exe"));
     candidates.push(repo_root.join("tools").join("python").join("python3.exe"));
     candidates.push(repo_root.join("python").join("python.exe"));
+    let bundled_default = repo_root.join("tools").join("python").join("python.exe");
+    if is_managed_runtime_root(repo_root) {
+        return candidates
+            .into_iter()
+            .find(|path| path.exists())
+            .unwrap_or(bundled_default)
+            .display()
+            .to_string();
+    }
     if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
         for version in [
             "Python314",
@@ -897,16 +926,19 @@ fn command_check(name: &str, command: &str, args: &[&str]) -> CheckItem {
     }
 }
 
-fn openssl_check(repo_root: Option<&Path>) -> CheckItem {
+fn openssl_presence_check(repo_root: Option<&Path>) -> CheckItem {
     if let Some(path) = find_openssl(repo_root) {
-        let path_string = path.display().to_string();
-        let mut check = command_check("OpenSSL", &path_string, &["version"]);
-        if check.ok {
-            check.detail = format!("{} ({})", check.detail, path.display());
-        }
-        return check;
+        return CheckItem {
+            name: "OpenSSL".to_string(),
+            ok: true,
+            detail: format!("detecte: {}", path.display()),
+        };
     }
-    command_check("OpenSSL", "openssl", &["version"])
+    CheckItem {
+        name: "OpenSSL".to_string(),
+        ok: false,
+        detail: "non detecte".to_string(),
+    }
 }
 
 fn find_openssl(repo_root: Option<&Path>) -> Option<PathBuf> {
@@ -920,6 +952,9 @@ fn find_openssl(repo_root: Option<&Path>) -> Option<PathBuf> {
         );
         candidates.push(root.join("tools").join("openssl").join("openssl.exe"));
         candidates.push(root.join("bin").join("openssl").join("openssl.exe"));
+        if is_managed_runtime_root(root) {
+            return candidates.into_iter().find(|path| path.exists());
+        }
     }
     if cfg!(target_os = "windows") {
         candidates.extend([
@@ -940,6 +975,9 @@ fn find_openssl(repo_root: Option<&Path>) -> Option<PathBuf> {
 
 fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
     let mut path_entries = Vec::new();
+    if is_managed_runtime_root(repo_root) {
+        command.env("SILICIUM_REQUIRE_BUNDLED_RUNTIME", "1");
+    }
     if cfg!(target_os = "windows") {
         let python_dir = repo_root.join("tools").join("python");
         if python_dir.exists() {
