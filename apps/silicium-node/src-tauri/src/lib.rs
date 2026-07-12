@@ -71,6 +71,7 @@ struct NodeActivity {
 #[serde(rename_all = "camelCase")]
 struct NodeDiagnostics {
     repo_root: String,
+    silicium_cli: String,
     log_dir: String,
     node_pid: Option<u32>,
     supervisor_pid: Option<u32>,
@@ -328,8 +329,10 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
         .parent()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| root.display().to_string());
+    let silicium_cli = root.join("Network").join("silicium");
     Ok(NodeDiagnostics {
         repo_root: root.display().to_string(),
+        silicium_cli: silicium_cli.display().to_string(),
         log_dir,
         node_pid,
         supervisor_pid,
@@ -506,7 +509,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
         let node_id = normalized_node_id(&config.node_id);
         let mut command = Command::new(python_launcher(repo_root));
         command
-            .arg("silicium")
+            .arg(&silicium_cli)
             .arg("node")
             .arg("start")
             .arg("--roles")

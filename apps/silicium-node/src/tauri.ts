@@ -35,6 +35,7 @@ export type NodeActivity = {
 
 export type NodeDiagnostics = {
   repoRoot: string;
+  siliciumCli: string;
   logDir: string;
   nodePid?: number | null;
   supervisorPid?: number | null;

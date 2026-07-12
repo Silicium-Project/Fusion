@@ -180,6 +180,8 @@
         <div class="diag-grid">
           <span>Runtime</span>
           <code>{{ diagnostics.repoRoot || form.repoRoot || 'non detecte' }}</code>
+          <span>CLI Silicium</span>
+          <code>{{ diagnostics.siliciumCli || 'non detecte' }}</code>
           <span>Logs</span>
           <code>{{ diagnostics.logDir || 'non detecte' }}</code>
           <span>Node PID</span>
@@ -227,6 +229,7 @@ const activity = reactive<NodeActivity>({
 });
 const diagnostics = reactive<NodeDiagnostics>({
   repoRoot: '',
+  siliciumCli: '',
   logDir: '',
   nodePid: null,
   supervisorPid: null,
