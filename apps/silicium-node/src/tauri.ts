@@ -33,6 +33,19 @@ export type NodeActivity = {
   history: HistoryItem[];
 };
 
+export type NodeDiagnostics = {
+  repoRoot: string;
+  logDir: string;
+  nodePid?: number | null;
+  supervisorPid?: number | null;
+  nodeRunning: boolean;
+  supervisorRunning: boolean;
+  portReady: boolean;
+  openssl: CheckItem;
+  python: CheckItem;
+  logTail: string;
+};
+
 export type AppDefaults = {
   repoRoot: string;
   advertiseHost: string;
@@ -61,6 +74,10 @@ export async function installRuntime(repoRoot: string): Promise<string> {
 
 export async function nodeActivity(repoRoot: string): Promise<NodeActivity> {
   return await invoke<NodeActivity>('node_activity', { repoRoot });
+}
+
+export async function nodeDiagnostics(repoRoot: string): Promise<NodeDiagnostics> {
+  return await invoke<NodeDiagnostics>('node_diagnostics', { repoRoot });
 }
 
 export async function appDefaults(): Promise<AppDefaults> {

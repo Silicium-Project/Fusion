@@ -69,6 +69,21 @@ struct NodeActivity {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct NodeDiagnostics {
+    repo_root: String,
+    log_dir: String,
+    node_pid: Option<u32>,
+    supervisor_pid: Option<u32>,
+    node_running: bool,
+    supervisor_running: bool,
+    port_ready: bool,
+    openssl: CheckItem,
+    python: CheckItem,
+    log_tail: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct HistoryItem {
     name: String,
     modified_at: u64,
@@ -296,6 +311,34 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
         last_result,
         storage_bytes,
         history,
+    })
+}
+
+#[tauri::command]
+fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
+    let root = resolve_repo_root(&repo_root)?;
+    validate_repo_root(&root)?;
+    cleanup_dead_pids(&root);
+    let node_pid = read_pid(&root).ok().flatten();
+    let supervisor_pid = read_supervisor_pid(&root).ok().flatten();
+    let node_running = node_pid.map(process_is_running).unwrap_or(false);
+    let supervisor_running = supervisor_pid.map(process_is_running).unwrap_or(false);
+    let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+    let log_dir = node_app_log_path(&root, "silicium-node.err.log")
+        .parent()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| root.display().to_string());
+    Ok(NodeDiagnostics {
+        repo_root: root.display().to_string(),
+        log_dir,
+        node_pid,
+        supervisor_pid,
+        node_running,
+        supervisor_running,
+        port_ready,
+        openssl: openssl_check(Some(&root)),
+        python: command_check("Python", &python_launcher(&root), &["--version"]),
+        log_tail: read_node_log_tail(&root).unwrap_or_else(|| "Aucun log node disponible pour le moment.".to_string()),
     })
 }
 
@@ -905,9 +948,17 @@ fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
         if let Some(openssl_dir) = openssl_bin.parent() {
             if let Some(openssl_root) = openssl_dir.parent() {
                 path_entries.push(openssl_root.to_path_buf());
+                let modules_dir = openssl_root.join("lib").join("ossl-modules");
+                if modules_dir.exists() {
+                    command.env("OPENSSL_MODULES", modules_dir);
+                } else {
+                    let bin_modules_dir = openssl_dir.join("ossl-modules");
+                    if bin_modules_dir.exists() {
+                        command.env("OPENSSL_MODULES", bin_modules_dir);
+                    }
+                }
             }
             path_entries.push(openssl_dir.to_path_buf());
-            command.env("OPENSSL_MODULES", openssl_dir);
         }
     }
     if !path_entries.is_empty() {
@@ -1452,6 +1503,7 @@ pub fn run() {
             check_environment,
             install_runtime,
             node_activity,
+            node_diagnostics,
             app_defaults
         ])
         .run(tauri::generate_context!())

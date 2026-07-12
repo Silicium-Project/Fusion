@@ -97,6 +97,11 @@ function Repair-OpenSslRuntime {
         }
     }
     if (Test-Path -LiteralPath $binDir) {
+        Get-ChildItem -LiteralPath $Destination -Recurse -File -Force -Filter "*.dll" | ForEach-Object {
+            if (-not (Test-Path -LiteralPath (Join-Path $binDir $_.Name))) {
+                Copy-Item -LiteralPath $_.FullName -Destination $binDir -Force
+            }
+        }
         Get-ChildItem -LiteralPath $Destination -File -Force | Where-Object {
             $_.Name -match '^(libcrypto|libssl|vcruntime|ucrtbase).*\.dll$'
         } | ForEach-Object {
@@ -111,7 +116,42 @@ function Repair-OpenSslRuntime {
                 }
             }
         }
+        $systemDllCandidates = @(
+            "vcruntime140.dll",
+            "vcruntime140_1.dll",
+            "msvcp140.dll",
+            "msvcp140_1.dll",
+            "msvcp140_2.dll",
+            "concrt140.dll",
+            "ucrtbase.dll"
+        )
+        foreach ($dllName in $systemDllCandidates) {
+            $target = Join-Path $binDir $dllName
+            if (Test-Path -LiteralPath $target) {
+                continue
+            }
+            $source = Join-Path $env:WINDIR "System32\$dllName"
+            if (Test-Path -LiteralPath $source) {
+                Copy-Item -LiteralPath $source -Destination $target -Force
+            }
+        }
     }
+}
+
+function Get-OpenSslModulesDir {
+    param([string]$Destination)
+
+    $candidates = @(
+        (Join-Path $Destination "lib\ossl-modules"),
+        (Join-Path $Destination "bin\ossl-modules"),
+        (Join-Path $Destination "ossl-modules")
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+    return ""
 }
 
 function Test-OpenSslRuntime {
@@ -123,9 +163,14 @@ function Test-OpenSslRuntime {
     }
 
     $binDir = Split-Path -Parent $opensslExe
+    $modulesDir = Get-OpenSslModulesDir -Destination $Destination
     $previousPath = $env:PATH
+    $previousModules = $env:OPENSSL_MODULES
     try {
         $env:PATH = "$binDir;$Destination;$previousPath"
+        if ($modulesDir) {
+            $env:OPENSSL_MODULES = $modulesDir
+        }
         $output = & $opensslExe version 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "OpenSSL runtime check failed with exit code $LASTEXITCODE`: $output"
@@ -133,6 +178,7 @@ function Test-OpenSslRuntime {
         Write-Host "[ok] OpenSSL runtime check -> $output"
     } finally {
         $env:PATH = $previousPath
+        $env:OPENSSL_MODULES = $previousModules
     }
 }
 

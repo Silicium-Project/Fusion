@@ -148,6 +148,51 @@
         </div>
       </section>
     </section>
+
+    <details class="diagnostics compact-diagnostics">
+      <summary>Diagnostics techniques</summary>
+      <div class="diag-content">
+        <div class="panel-row">
+          <div>
+            <h2>Etat local</h2>
+            <p>Infos utiles si un PC ne recupere pas les taches ou si OpenSSL echoue.</p>
+          </div>
+          <button class="ghost" :disabled="busy" @click="refreshDiagnostics">Verifier</button>
+        </div>
+
+        <div class="check-list">
+          <div class="check-row" :class="{ ok: diagnostics.python.ok }">
+            <span>{{ diagnostics.python.ok ? 'ok' : 'x' }}</span>
+            <div>
+              <strong>Python</strong>
+              <small>{{ diagnostics.python.detail || 'non teste' }}</small>
+            </div>
+          </div>
+          <div class="check-row" :class="{ ok: diagnostics.openssl.ok }">
+            <span>{{ diagnostics.openssl.ok ? 'ok' : 'x' }}</span>
+            <div>
+              <strong>OpenSSL</strong>
+              <small>{{ diagnostics.openssl.detail || 'non teste' }}</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="diag-grid">
+          <span>Runtime</span>
+          <code>{{ diagnostics.repoRoot || form.repoRoot || 'non detecte' }}</code>
+          <span>Logs</span>
+          <code>{{ diagnostics.logDir || 'non detecte' }}</code>
+          <span>Node PID</span>
+          <code>{{ diagnostics.nodePid || 'aucun' }}</code>
+          <span>Supervisor PID</span>
+          <code>{{ diagnostics.supervisorPid || 'aucun' }}</code>
+          <span>Port local</span>
+          <code>{{ diagnostics.portReady ? '46101 ouvert' : '46101 ferme' }}</code>
+        </div>
+
+        <pre class="logs">{{ diagnostics.logTail }}</pre>
+      </div>
+    </details>
   </main>
 </template>
 
@@ -156,10 +201,12 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import {
   appDefaults,
   nodeActivity,
+  nodeDiagnostics,
   nodeStatus,
   startNode,
   stopNode,
   type NodeActivity,
+  type NodeDiagnostics,
 } from './tauri';
 
 const form = reactive({
@@ -177,6 +224,18 @@ const activity = reactive<NodeActivity>({
   lastResult: 'Aucun resultat local',
   storageBytes: 0,
   history: [],
+});
+const diagnostics = reactive<NodeDiagnostics>({
+  repoRoot: '',
+  logDir: '',
+  nodePid: null,
+  supervisorPid: null,
+  nodeRunning: false,
+  supervisorRunning: false,
+  portReady: false,
+  openssl: { name: 'OpenSSL', ok: false, detail: 'non teste' },
+  python: { name: 'Python', ok: false, detail: 'non teste' },
+  logTail: 'Ouvrez puis cliquez sur Verifier pour charger les diagnostics.',
 });
 const busy = ref(false);
 const userMessage = ref('');
@@ -291,6 +350,15 @@ async function refreshAll() {
   await refreshActivity();
 }
 
+async function refreshDiagnostics() {
+  try {
+    const next = await nodeDiagnostics(form.repoRoot);
+    Object.assign(diagnostics, next);
+  } catch (error) {
+    diagnostics.logTail = error instanceof Error ? error.message : String(error);
+  }
+}
+
 async function activateOneClick() {
   busy.value = true;
   userMessage.value = 'Connexion du PC au reseau...';
@@ -308,6 +376,7 @@ async function activateOneClick() {
     await refreshAll();
   } catch {
     userMessage.value = "L activation n a pas pu se terminer. Verifiez que l installation est a jour.";
+    await refreshDiagnostics();
   } finally {
     busy.value = false;
   }

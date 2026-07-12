@@ -600,6 +600,30 @@ label {
   margin-top: 16px;
 }
 
+.compact-diagnostics {
+  margin-top: 16px;
+}
+
+.diag-grid {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.diag-grid span {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 800;
+}
+
+.diag-grid code {
+  overflow-wrap: anywhere;
+  color: #bfdbfe;
+}
+
 .check-list {
   display: grid;
   gap: 10px;
