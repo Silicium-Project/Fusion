@@ -78,6 +78,30 @@ function Copy-PythonRuntime {
     return $true
 }
 
+function Repair-OpenSslRuntime {
+    param([string]$Destination)
+
+    if (-not $Destination -or -not (Test-Path -LiteralPath $Destination)) {
+        return
+    }
+    $binDir = Join-Path $Destination "bin"
+    $opensslExe = Join-Path $binDir "openssl.exe"
+    if (-not (Test-Path -LiteralPath $opensslExe)) {
+        $flatExe = Join-Path $Destination "openssl.exe"
+        if (Test-Path -LiteralPath $flatExe) {
+            New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+            Copy-Item -LiteralPath $flatExe -Destination $opensslExe -Force
+        }
+    }
+    if (Test-Path -LiteralPath $binDir) {
+        Get-ChildItem -LiteralPath $Destination -File -Force | Where-Object {
+            $_.Name -match '^(libcrypto|libssl|vcruntime|ucrtbase).*\.dll$'
+        } | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $binDir -Force
+        }
+    }
+}
+
 function Find-FirstExisting {
     param([string[]]$Candidates)
     foreach ($candidate in $Candidates) {
@@ -142,6 +166,10 @@ if (-not $opensslSource) {
         "C:\Program Files\Git\usr"
     )
 }
-$null = Copy-OptionalDirectory -Source $opensslSource -Destination (Join-Path $runtimeRoot "tools\openssl") -Label "OpenSSL"
+$opensslDestination = Join-Path $runtimeRoot "tools\openssl"
+$opensslBundled = Copy-OptionalDirectory -Source $opensslSource -Destination $opensslDestination -Label "OpenSSL"
+if ($opensslBundled) {
+    Repair-OpenSslRuntime -Destination $opensslDestination
+}
 
 Write-Host "Runtime prepared: $runtimeRoot"

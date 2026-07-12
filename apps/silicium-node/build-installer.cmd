@@ -7,5 +7,8 @@ if not exist ".\dist\index.html" (
   exit /b 1
 )
 
+call npm.cmd run prepare:runtime
+if errorlevel 1 exit /b %errorlevel%
+
 call .\node_modules\.bin\tauri.cmd build --bundles nsis
 exit /b %errorlevel%

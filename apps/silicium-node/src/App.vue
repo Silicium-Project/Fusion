@@ -342,10 +342,24 @@ function formatDate(seconds: number) {
 
 function friendlyEvent(item: { name: string; modifiedAt: number; sizeBytes: number }) {
   const lower = item.name.toLowerCase();
+  if (lower.startsWith('failed.')) {
+    return {
+      title: 'Travail en erreur',
+      description: 'Votre PC a rencontre une erreur sur un travail du reseau.',
+      date: formatDate(item.modifiedAt),
+    };
+  }
+  if (lower.startsWith('result.sent.')) {
+    return {
+      title: 'Resultat renvoye',
+      description: `Le resultat a ete transmis au reseau (${formatDurationMs(item.sizeBytes)}).`,
+      date: formatDate(item.modifiedAt),
+    };
+  }
   if (lower.startsWith('result.')) {
     return {
       title: 'Resultat produit',
-      description: `Votre PC a termine un travail (${formatBytes(item.sizeBytes)}).`,
+      description: `Votre PC a termine un travail (${formatDurationMs(item.sizeBytes)}).`,
       date: formatDate(item.modifiedAt),
     };
   }
@@ -368,6 +382,19 @@ function friendlyEvent(item: { name: string; modifiedAt: number; sizeBytes: numb
     description: 'Un fichier local lie au node a ete mis a jour.',
     date: formatDate(item.modifiedAt),
   };
+}
+
+function formatDurationMs(durationMs: number) {
+  if (!durationMs) {
+    return 'duree inconnue';
+  }
+  const seconds = Math.round(durationMs / 1000);
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
 }
 
 onMounted(async () => {

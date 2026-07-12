@@ -1,4 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     env,
     fs::{self, OpenOptions},
@@ -268,7 +270,10 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
         .join("networked")
         .join("silicium-desktop-node");
     let mut history = Vec::new();
-    collect_history(&networked_dir, &mut history);
+    collect_event_history(&networked_dir.join("export").join("node.events.ndjson"), &mut history);
+    if history.is_empty() {
+        collect_history(&networked_dir, &mut history);
+    }
     history.sort_by(|left, right| right.modified_at.cmp(&left.modified_at));
     history.truncate(12);
     let known_results = history
@@ -899,6 +904,9 @@ fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
     if let Some(openssl) =
         find_openssl(Some(repo_root)).and_then(|path| path.parent().map(Path::to_path_buf))
     {
+        if let Some(parent) = openssl.parent() {
+            path_entries.push(parent.to_path_buf());
+        }
         path_entries.push(openssl);
     }
     if !path_entries.is_empty() {
@@ -1339,6 +1347,55 @@ fn collect_history(path: &Path, history: &mut Vec<HistoryItem>) {
             size_bytes: metadata.len(),
         });
     }
+}
+
+fn collect_event_history(path: &Path, history: &mut Vec<HistoryItem>) {
+    let Ok(raw) = fs::read_to_string(path) else {
+        return;
+    };
+    for line in raw.lines().rev().take(80) {
+        let Ok(value) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let kind = value
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let item_id = value
+            .get("item_id")
+            .and_then(Value::as_str)
+            .unwrap_or("task")
+            .trim();
+        let timestamp = value
+            .get("timestamp_utc")
+            .and_then(Value::as_str)
+            .and_then(parse_utc_timestamp)
+            .unwrap_or(0);
+        let duration_ms = value.get("duration_ms").and_then(Value::as_u64).unwrap_or(0);
+        let ok = value.get("ok").and_then(Value::as_bool).unwrap_or(true);
+        let name = match kind {
+            "task_received" | "pull_claim" => format!("task.received.{item_id}"),
+            "task" | "request" if ok => format!("result.{item_id}"),
+            "task" | "request" => format!("failed.{item_id}"),
+            "result_return" if ok => format!("result.sent.{item_id}"),
+            "result_return" => format!("result.return_failed.{item_id}"),
+            _ => continue,
+        };
+        history.push(HistoryItem {
+            name,
+            modified_at: timestamp,
+            size_bytes: duration_ms,
+        });
+    }
+}
+
+fn parse_utc_timestamp(value: &str) -> Option<u64> {
+    DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|datetime| datetime.with_timezone(&Utc).timestamp())
+        .filter(|timestamp| *timestamp >= 0)
+        .map(|timestamp| timestamp as u64)
 }
 
 fn display_history_name(path: &Path) -> Option<String> {

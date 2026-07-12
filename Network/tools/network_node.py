@@ -2800,6 +2800,43 @@ class NetworkNode:
         if not tasks_dir.exists():
             return {"ok": True, "claimed": False}
         with self._claim_lock:
+            for path in tasks_dir.glob("*.json"):
+                envelope = read_json(path, {})
+                if not isinstance(envelope, dict):
+                    continue
+                status = str(envelope.get("status", "")).lower()
+                claimed_by = safe_id(str(envelope.get("claimed_by", "")))
+                if status == "claimed" and claimed_by == node_id:
+                    task = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
+                    try:
+                        stale_after_s = max(300.0, float(task.get("timeout_s", 300.0) or 300.0) * 2.0)
+                    except (TypeError, ValueError):
+                        stale_after_s = 600.0
+                    try:
+                        claimed_age_s = max(0.0, time.time() - path.stat().st_mtime)
+                    except OSError:
+                        claimed_age_s = 0.0
+                    if claimed_age_s <= stale_after_s:
+                        return {"ok": True, "claimed": False, "reason": "node_already_has_active_task"}
+                    envelope["status"] = "queued"
+                    envelope["requeued_utc"] = utc_now()
+                    envelope["requeue_reason"] = "stale_claim"
+                    envelope.pop("claimed_by", None)
+                    envelope.pop("claimed_utc", None)
+                    atomic_write_json(path, envelope)
+                    self.reputation.record_peer_result(node_id, False)
+                    append_jsonl(
+                        self.events_path,
+                        {
+                            "schema_version": 1,
+                            "timestamp_utc": utc_now(),
+                            "node_id": self.config.node_id,
+                            "kind": "task_requeued",
+                            "item_id": safe_id(str(envelope.get("task_id", path.stem))),
+                            "source_node": node_id,
+                            "reason": "stale_claim",
+                        },
+                    )
             for path in sorted(tasks_dir.glob("*.json"), key=lambda item: item.stat().st_mtime):
                 envelope = read_json(path, {})
                 if not isinstance(envelope, dict):
@@ -2817,33 +2854,32 @@ class NetworkNode:
                         continue
                 item_id = safe_id(str(envelope.get("task_id", path.stem)))
                 scheduler_role = str(next(iter(required_roles), "task")).lower()
+                current_stats = self.reputation.peer_dispatch_stats(node_id)
+                current_by_role = current_stats.get("by_role", {}) if isinstance(current_stats.get("by_role"), dict) else {}
+                current_count = int(current_by_role.get(scheduler_role, 0) or 0)
+                alternatives = self.peer_network.select_peers(
+                    required_roles=required_roles,
+                    limit=0,
+                    exclude={node_id, self.config.node_id},
+                    constraints=constraints,
+                )
+                alternative_counts: list[int] = []
+                for alternative in alternatives:
+                    alternative_id = safe_id(str(alternative.get("node_id", "")))
+                    alternative_stats = self.reputation.peer_dispatch_stats(alternative_id)
+                    alternative_by_role = (
+                        alternative_stats.get("by_role", {})
+                        if isinstance(alternative_stats.get("by_role"), dict)
+                        else {}
+                    )
+                    alternative_counts.append(int(alternative_by_role.get(scheduler_role, 0) or 0))
                 try:
                     fairness_until_unix = float(envelope.get("fairness_until_unix", task.get("fairness_until_unix", 0.0)) or 0.0)
                 except (TypeError, ValueError):
                     fairness_until_unix = 0.0
                 if time.time() < fairness_until_unix:
-                    alternatives = self.peer_network.select_peers(
-                        required_roles=required_roles,
-                        limit=0,
-                        exclude={node_id, self.config.node_id},
-                        constraints=constraints,
-                    )
-                    if alternatives:
-                        current_stats = self.reputation.peer_dispatch_stats(node_id)
-                        current_by_role = current_stats.get("by_role", {}) if isinstance(current_stats.get("by_role"), dict) else {}
-                        current_count = int(current_by_role.get(scheduler_role, 0) or 0)
-                        alternative_counts: list[int] = []
-                        for alternative in alternatives:
-                            alternative_id = safe_id(str(alternative.get("node_id", "")))
-                            alternative_stats = self.reputation.peer_dispatch_stats(alternative_id)
-                            alternative_by_role = (
-                                alternative_stats.get("by_role", {})
-                                if isinstance(alternative_stats.get("by_role"), dict)
-                                else {}
-                            )
-                            alternative_counts.append(int(alternative_by_role.get(scheduler_role, 0) or 0))
-                        if alternative_counts and current_count > min(alternative_counts):
-                            continue
+                    if alternative_counts and current_count > min(alternative_counts):
+                        continue
                 excluded_raw = envelope.get("excluded_node_ids", task.get("excluded_node_ids", []))
                 if isinstance(excluded_raw, str):
                     excluded_values = [excluded_raw]

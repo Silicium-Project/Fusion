@@ -138,6 +138,7 @@
                 </div>
                 <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
                 <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
+                <p class="mt-2 text-sm text-white/50">Duree : <span class="font-semibold text-white/80">{{ jobDuration(job) }}</span></p>
                 <div v-if="showErrorDetails && job.errorMessage" class="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
                   {{ job.errorMessage }}
                 </div>
@@ -173,6 +174,7 @@
                     </div>
                     <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
                     <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
+                    <p class="mt-2 text-sm text-white/50">Duree : <span class="font-semibold text-white/80">{{ jobDuration(job) }}</span></p>
                     <div v-if="showErrorDetails && job.errorMessage" class="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
                       {{ job.errorMessage }}
                     </div>
@@ -246,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue';
+import { computed, reactive, ref, onBeforeUnmount, onMounted } from 'vue';
 import Cookies from 'js-cookie';
 import * as web3 from '@solana/web3.js';
 
@@ -260,6 +262,9 @@ type Job = {
   siliciumJobId: string;
   dashboardUrl?: string;
   errorMessage?: string;
+  createdAt?: string;
+  startedAt?: string;
+  completedAt?: string;
 };
 
 const isModalOpen = ref(false);
@@ -268,6 +273,9 @@ const selectedJobFile = ref<File | null>(null);
 const jobSubmitError = ref('');
 const jobs = ref<Job[]>([]);
 const showErrorDetails = ref(false);
+const nowMs = ref(Date.now());
+const clockTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const jobsRefreshTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const user = ref<any>(null);
 const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
@@ -307,6 +315,27 @@ const latestDashboardPath = computed(() => {
 const authHeaders = () => {
   const token = Cookies.get('auth_token');
   return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+const formatDuration = (seconds: number) => {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours > 0) return `${hours}h ${String(remainingMinutes).padStart(2, '0')}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  if (minutes > 0) return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  return `${remainingSeconds}s`;
+};
+
+const jobDuration = (job: Job) => {
+  const startRaw = job.startedAt || job.createdAt;
+  const start = startRaw ? Date.parse(startRaw) : NaN;
+  if (!Number.isFinite(start)) return 'non disponible';
+  const endRaw = job.completedAt;
+  const end = endRaw ? Date.parse(endRaw) : nowMs.value;
+  if (!Number.isFinite(end)) return 'en cours';
+  return formatDuration((end - start) / 1000);
 };
 
 const loadJobs = async () => {
@@ -413,6 +442,14 @@ const deviceTypesOptions = ref({
 });
 
 onMounted(async () => {
+  clockTimer.value = setInterval(() => {
+    nowMs.value = Date.now();
+  }, 1000);
+  jobsRefreshTimer.value = setInterval(() => {
+    if (jobs.value.some((job) => ['queued', 'running'].includes(job.status))) {
+      loadJobs();
+    }
+  }, 3000);
   const token = Cookies.get('auth_token');
   if (!token) return;
   try {
@@ -431,5 +468,10 @@ onMounted(async () => {
   } catch (error) {
     console.error('Failed to fetch dashboard data:', error);
   }
+});
+
+onBeforeUnmount(() => {
+  if (clockTimer.value) clearInterval(clockTimer.value);
+  if (jobsRefreshTimer.value) clearInterval(jobsRefreshTimer.value);
 });
 </script>

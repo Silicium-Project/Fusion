@@ -384,7 +384,7 @@ def main(argv: list[str] | None = None) -> int:
                 "scene_p2p_ref": scene_ref,
             }
             progress_fragments[index]["status"] = "queued_compute"
-            fairness_until_unix = time.time() + 12.0
+            fairness_until_unix = time.time() + min(120.0, max(30.0, float(args.result_timeout_s) * 0.5))
             compute_payload = {
                 "task_id": fragment_id,
                 "required_roles": ["compute"],
@@ -466,8 +466,8 @@ def main(argv: list[str] | None = None) -> int:
                     }
                 )
                 verify_id = f"{fragment_id}-verify"
-                verify_fallback_until_unix = time.time() + 30.0
-                verify_fairness_until_unix = time.time() + 12.0
+                verify_fallback_until_unix = time.time() + min(120.0, max(45.0, float(args.result_timeout_s) * 0.5))
+                verify_fairness_until_unix = time.time() + min(120.0, max(30.0, float(args.result_timeout_s) * 0.5))
                 verify_payload = {
                     "task_id": verify_id,
                     "required_roles": ["verify"],
