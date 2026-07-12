@@ -319,12 +319,14 @@ fn resolve_optional_repo_root(repo_root: Option<&str>) -> Option<PathBuf> {
 
 fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
     if !repo_root.trim().is_empty() {
-        return Ok(PathBuf::from(repo_root.trim()));
+        return refresh_managed_runtime_if_needed(PathBuf::from(repo_root.trim()));
     }
-    discover_configured_repo_root()
-        .or_else(discover_repo_root)
+    if let Some(root) = discover_configured_repo_root() {
+        return refresh_managed_runtime_if_needed(root);
+    }
+    discover_repo_root()
         .or_else(discover_managed_runtime_root)
-        .map(Ok)
+        .map(refresh_managed_runtime_if_needed)
         .unwrap_or_else(ensure_managed_runtime)
 }
 
@@ -370,10 +372,6 @@ fn discover_managed_runtime_root() -> Option<PathBuf> {
 
 fn ensure_managed_runtime() -> Result<PathBuf, String> {
     let root = managed_runtime_root();
-    if validate_repo_root(&root).is_ok() {
-        return Ok(root);
-    }
-
     let source = find_packaged_runtime_root().ok_or_else(|| {
         format!(
             "managed_runtime_missing: no bundled runtime found. Expected an installed runtime with Network/ under {}",
@@ -385,12 +383,16 @@ fn ensure_managed_runtime() -> Result<PathBuf, String> {
         return Ok(root);
     }
 
-    if root.exists() {
-        let _ = fs::remove_dir_all(&root);
-    }
     copy_dir_all(&source, &root)?;
     validate_repo_root(&root)?;
     Ok(root)
+}
+
+fn refresh_managed_runtime_if_needed(root: PathBuf) -> Result<PathBuf, String> {
+    if !same_path(&root, &managed_runtime_root()) {
+        return Ok(root);
+    }
+    ensure_managed_runtime()
 }
 
 fn find_packaged_runtime_root() -> Option<PathBuf> {
