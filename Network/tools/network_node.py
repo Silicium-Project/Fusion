@@ -2756,6 +2756,23 @@ class NetworkNode:
                 if isinstance(peer, dict) and peer:
                     if not self.peer_network._peer_meets_constraints(peer, required_roles, constraints):
                         continue
+                excluded_raw = envelope.get("excluded_node_ids", task.get("excluded_node_ids", []))
+                if isinstance(excluded_raw, str):
+                    excluded_values = [excluded_raw]
+                elif isinstance(excluded_raw, list):
+                    excluded_values = excluded_raw
+                else:
+                    excluded_values = []
+                excluded_node_ids = {safe_id(str(value)) for value in excluded_values if str(value).strip()}
+                if node_id in excluded_node_ids:
+                    alternatives = self.peer_network.select_peers(
+                        required_roles=required_roles,
+                        limit=1,
+                        exclude={node_id, self.config.node_id},
+                        constraints=constraints,
+                    )
+                    if alternatives:
+                        continue
                 claimed = dict(envelope)
                 claimed["status"] = "claimed"
                 claimed["claimed_by"] = node_id
@@ -2763,13 +2780,17 @@ class NetworkNode:
                 claimed["dispatched_by"] = self.config.node_id
                 claimed["dispatched_utc"] = utc_now()
                 claimed["result_return_url"] = self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
+                item_id = safe_id(str(claimed.get("task_id", path.stem)))
+                scheduler_role = str(next(iter(required_roles), "task")).lower()
+                dispatch_stats = self.reputation.record_peer_dispatch(node_id, scheduler_role, item_id)
+                self.peer_network.update_peer_metadata(node_id, {"scheduler_dispatch": dispatch_stats})
                 claimed["scheduler"] = {
                     "kind": "worker_pull",
                     "selected_peer": node_id,
                     "required_roles": sorted(required_roles),
+                    "dispatch_stats": dispatch_stats,
                 }
                 atomic_write_json(path, claimed)
-                item_id = safe_id(str(claimed.get("task_id", path.stem)))
                 append_jsonl(
                     self.events_path,
                     {

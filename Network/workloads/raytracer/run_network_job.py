@@ -319,6 +319,9 @@ def main(argv: list[str] | None = None) -> int:
         scene_ref = task_input_ref(args, export_dir, local_scene)
         write_progress("split_ready")
         fragment_files: list[tuple[int, Path]] = []
+        compute_jobs: list[dict[str, Any]] = []
+        computed_fragments: list[dict[str, Any]] = []
+        verify_jobs: list[dict[str, Any]] = []
 
         for fragment in fragments:
             index = int(fragment["fragment_index"])
@@ -351,6 +354,21 @@ def main(argv: list[str] | None = None) -> int:
             }
             clear_previous_result(export_dir, fragment_id)
             submissions.append(submit_task(export_dir, compute_payload))
+            compute_jobs.append(
+                {
+                    "index": index,
+                    "y_start": y_start,
+                    "y_end": y_end,
+                    "fragment_id": fragment_id,
+                }
+            )
+        write_progress("compute_queued")
+
+        for job in compute_jobs:
+            index = int(job["index"])
+            y_start = int(job["y_start"])
+            y_end = int(job["y_end"])
+            fragment_id = str(job["fragment_id"])
             write_progress("compute_queued")
             compute_result = wait_for_task_result(args, "compute", fragment_id, node_runs)
             try:
@@ -372,14 +390,34 @@ def main(argv: list[str] | None = None) -> int:
                     "expected_hash": result_hash,
                     "compute_result_hash": result_hash,
                     "compute_output_ref": output_ref,
+                    "compute_node_id": compute_result.get("node_id", ""),
                 }
             )
             write_progress("fragment_computed")
+            computed_fragments.append(
+                {
+                    "index": index,
+                    "y_start": y_start,
+                    "y_end": y_end,
+                    "fragment_id": fragment_id,
+                    "output_ref": output_ref,
+                    "result_hash": result_hash,
+                    "compute_node_id": compute_result.get("node_id", ""),
+                }
+            )
 
+        for fragment in computed_fragments:
+            index = int(fragment["index"])
+            y_start = int(fragment["y_start"])
+            y_end = int(fragment["y_end"])
+            fragment_id = str(fragment["fragment_id"])
+            output_ref = fragment["output_ref"]
+            result_hash = str(fragment["result_hash"])
             verify_id = f"{fragment_id}-verify"
             verify_payload = {
                 "task_id": verify_id,
                 "required_roles": ["verify"],
+                "excluded_node_ids": [str(fragment.get("compute_node_id") or "")],
                 "priority": args.priority,
                 "p2p_ref": output_ref,
                 "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
@@ -390,6 +428,7 @@ def main(argv: list[str] | None = None) -> int:
                     "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
                     "scene_p2p_ref": scene_ref,
                     "source_task_id": fragment_id,
+                    "excluded_node_ids": [str(fragment.get("compute_node_id") or "")],
                     "fragment_index": index,
                     "fragment_count": len(fragments),
                     "y_start": y_start,
@@ -400,7 +439,19 @@ def main(argv: list[str] | None = None) -> int:
             clear_previous_result(export_dir, verify_id)
             submissions.append(submit_task(export_dir, verify_payload))
             progress_fragments[index]["status"] = "queued_verify"
-            write_progress("verify_queued")
+            verify_jobs.append(
+                {
+                    "index": index,
+                    "fragment_id": fragment_id,
+                    "verify_id": verify_id,
+                }
+            )
+        write_progress("verify_queued")
+
+        for job in verify_jobs:
+            index = int(job["index"])
+            fragment_id = str(job["fragment_id"])
+            verify_id = str(job["verify_id"])
             verify_result = wait_for_task_result(args, "verify", verify_id, node_runs)
             try:
                 ensure_task_success(verify_result, verify_id)
@@ -415,6 +466,7 @@ def main(argv: list[str] | None = None) -> int:
                     "verify_id": verify_id,
                     "verify_choice": verified,
                     "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
+                    "verify_node_id": verify_result.get("node_id", ""),
                 }
             )
             write_progress("fragment_verified")

@@ -190,7 +190,8 @@
               <tr>
                 <th class="py-3">Fragment</th>
                 <th class="py-3">Parent</th>
-                <th class="py-3">Worker</th>
+                <th class="py-3">Calcul</th>
+                <th class="py-3">Verificateur</th>
                 <th class="py-3">Verification</th>
                 <th class="py-3">Hash resultat</th>
               </tr>
@@ -199,7 +200,8 @@
               <tr v-for="fragment in fragments" :key="fragment.fragment_id || fragment.fragment_index" class="border-t border-white/10">
                 <td class="py-4 font-mono">#{{ fragment.fragment_index }}</td>
                 <td class="py-4 text-white/70">{{ fragment.parent_index ?? 'racine' }}</td>
-                <td class="py-4 text-white/70">{{ fragment.worker_output_ref?.shared_ref?.peer_id || fragment.worker_output_ref?.peer_id || 'worker' }}</td>
+                <td class="py-4 text-white/70 font-mono text-sm">{{ shortNode(fragment.compute_node_id || fragment.worker_output_ref?.shared_ref?.peer_id || fragment.worker_output_ref?.peer_id || 'worker') }}</td>
+                <td class="py-4 text-white/70 font-mono text-sm">{{ shortNode(fragment.verify_node_id || 'en attente') }}</td>
                 <td class="py-4">
                   <span :class="fragment.verify_choice ? 'bg-green-500/20 text-green-200' : 'bg-yellow-500/20 text-yellow-200'" class="px-3 py-1 rounded-full text-sm">
                     {{ fragment.status || (fragment.verify_choice ? 'verified' : 'pending') }}
@@ -426,6 +428,13 @@ const shortHash = (value: any) => {
   const text = String(value || '');
   if (text.length <= 18) return text || 'non disponible';
   return `${text.slice(0, 10)}...${text.slice(-8)}`;
+};
+
+const shortNode = (value: any) => {
+  const text = String(value || '').trim();
+  if (!text) return 'non disponible';
+  if (text.length <= 22) return text;
+  return `${text.slice(0, 12)}...${text.slice(-6)}`;
 };
 
 const tileClass = (status: string) => {
