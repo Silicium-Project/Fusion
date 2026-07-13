@@ -324,7 +324,9 @@ function remember() {
 async function loadDefaults() {
   try {
     const defaults = await appDefaults();
-    form.repoRoot ||= defaults.repoRoot;
+    if (defaults.repoRoot) {
+      form.repoRoot = defaults.repoRoot;
+    }
     form.advertiseHost ||= defaults.advertiseHost;
     form.orchestratorUrl ||= defaults.orchestratorUrl;
     remember();

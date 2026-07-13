@@ -347,9 +347,7 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
 
 #[tauri::command]
 fn app_defaults() -> AppDefaults {
-    let repo_root = discover_configured_repo_root()
-        .or_else(discover_repo_root)
-        .or_else(discover_managed_runtime_root)
+    let repo_root = preferred_repo_root()
         .map(|path| path.display().to_string())
         .unwrap_or_default();
     AppDefaults {
@@ -360,6 +358,9 @@ fn app_defaults() -> AppDefaults {
 }
 
 fn resolve_optional_repo_root(repo_root: Option<&str>) -> Option<PathBuf> {
+    if let Some(root) = discover_managed_runtime_root() {
+        return Some(root);
+    }
     repo_root
         .filter(|value| !value.trim().is_empty())
         .and_then(|value| resolve_repo_root_readonly(value).ok())
@@ -369,6 +370,9 @@ fn resolve_optional_repo_root(repo_root: Option<&str>) -> Option<PathBuf> {
 }
 
 fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
+    if let Some(root) = discover_managed_runtime_root() {
+        return refresh_managed_runtime_if_needed(root);
+    }
     if !repo_root.trim().is_empty() {
         return refresh_managed_runtime_if_needed(PathBuf::from(repo_root.trim()));
     }
@@ -382,6 +386,10 @@ fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
 }
 
 fn resolve_repo_root_readonly(repo_root: &str) -> Result<PathBuf, String> {
+    if let Some(root) = discover_managed_runtime_root() {
+        validate_repo_root(&root)?;
+        return Ok(root);
+    }
     if !repo_root.trim().is_empty() {
         let root = PathBuf::from(repo_root.trim());
         validate_repo_root(&root)?;
@@ -394,6 +402,12 @@ fn resolve_repo_root_readonly(repo_root: &str) -> Result<PathBuf, String> {
     discover_repo_root()
         .or_else(discover_managed_runtime_root)
         .ok_or_else(|| "repo_root_not_found".to_string())
+}
+
+fn preferred_repo_root() -> Option<PathBuf> {
+    discover_managed_runtime_root()
+        .or_else(|| discover_configured_repo_root().filter(|root| validate_repo_root(root).is_ok()))
+        .or_else(discover_repo_root)
 }
 
 fn discover_repo_root() -> Option<PathBuf> {
