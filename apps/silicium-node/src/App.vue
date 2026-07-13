@@ -15,6 +15,9 @@
       </div>
     </section>
 
+    <p v-if="userMessage" class="app-banner info-banner">{{ userMessage }}</p>
+    <p v-if="refreshError" class="app-banner error-banner">{{ refreshError }}</p>
+
     <section v-if="!status.running" class="activation-card compact-activation">
       <div class="activation-copy">
         <h2>Rejoindre le reseau</h2>
@@ -45,7 +48,6 @@
         </div>
       </details>
 
-      <p v-if="userMessage" class="user-message">{{ userMessage }}</p>
     </section>
 
     <section v-else class="dashboard compact-dashboard">
@@ -125,6 +127,33 @@
         </section>
       </section>
 
+      <section class="panel machines-panel">
+        <div class="panel-row history-header">
+          <div>
+            <h2>Machines du reseau</h2>
+            <p>Presence, travail actif et confirmation de la derniere reponse.</p>
+          </div>
+          <span class="machine-count">{{ onlineMachineCount }} en ligne</span>
+        </div>
+        <div v-if="activity.machines.length === 0" class="empty-state">
+          Aucun autre PC annonce pour le moment. La liste apparait apres le prochain heartbeat reseau.
+        </div>
+        <div v-else class="machine-list">
+          <article v-for="machine in activity.machines" :key="machine.nodeId" class="machine-row">
+            <span class="machine-light" :class="{ online: machine.online }"></span>
+            <div class="machine-main">
+              <strong>{{ machine.nodeId }}</strong>
+              <small>{{ machine.online ? 'Connectee et ouverte' : 'Hors ligne ou heartbeat expire' }}</small>
+            </div>
+            <div class="machine-work">
+              <strong>{{ machineWorkLabel(machine) }}</strong>
+              <small>{{ machineWorkDetail(machine) }}</small>
+            </div>
+            <span class="response-badge" :class="responseClass(machine)">{{ responseLabel(machine) }}</span>
+          </article>
+        </div>
+      </section>
+
       <section class="panel history-page compact-history">
         <div class="panel-row history-header">
           <div>
@@ -188,6 +217,13 @@
               <small>{{ diagnostics.openssl.detail || 'non teste' }}</small>
             </div>
           </div>
+          <div class="check-row" :class="{ ok: diagnostics.orchestrator.ok }">
+            <span>{{ diagnostics.orchestrator.ok ? 'ok' : 'x' }}</span>
+            <div>
+              <strong>Orchestrateur</strong>
+              <small>{{ diagnostics.orchestrator.detail || 'non teste' }}</small>
+            </div>
+          </div>
         </div>
 
         <div class="diag-grid">
@@ -212,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import {
   appDefaults,
   nodeActivity,
@@ -239,6 +275,7 @@ const activity = reactive<NodeActivity>({
   lastResult: 'Aucun resultat local',
   storageBytes: 0,
   history: [],
+  machines: [],
 });
 const diagnostics = reactive<NodeDiagnostics>({
   repoRoot: '',
@@ -249,12 +286,16 @@ const diagnostics = reactive<NodeDiagnostics>({
   nodeRunning: false,
   supervisorRunning: false,
   portReady: false,
+  orchestrator: { name: 'Orchestrateur', ok: false, detail: 'non teste' },
   openssl: { name: 'Identite reseau', ok: false, detail: 'non teste' },
   python: { name: 'Python', ok: false, detail: 'non teste' },
   logTail: 'Ouvrez puis cliquez sur Verifier pour charger les diagnostics.',
 });
 const busy = ref(false);
 const userMessage = ref('');
+const refreshError = ref('');
+let refreshTimer: number | undefined;
+let refreshInFlight = false;
 
 const nodePhase = computed(() => {
   if (!status.running) {
@@ -320,6 +361,7 @@ const friendlyHistory = computed(() =>
 );
 const recentFriendlyHistory = computed(() => friendlyHistory.value.slice(0, 5));
 const olderFriendlyHistory = computed(() => friendlyHistory.value.slice(5));
+const onlineMachineCount = computed(() => activity.machines.filter((machine) => machine.online).length);
 
 const shortResultName = computed(() => {
   if (!activity.lastResult || activity.lastResult === 'Aucun resultat local') {
@@ -344,6 +386,9 @@ async function loadDefaults() {
     }
     form.advertiseHost ||= defaults.advertiseHost;
     form.orchestratorUrl ||= defaults.orchestratorUrl;
+    if (defaults.nodeId) {
+      form.nodeId = defaults.nodeId;
+    }
     remember();
   } catch {
     // Keep the app silent for non-technical users; activation will show a simple message if needed.
@@ -366,8 +411,17 @@ async function refreshActivity() {
 }
 
 async function refreshAll() {
-  await refreshStatus();
-  await refreshActivity();
+  if (refreshInFlight) return;
+  refreshInFlight = true;
+  try {
+    await refreshStatus();
+    await refreshActivity();
+    refreshError.value = '';
+  } catch (error) {
+    refreshError.value = `Impossible de lire l etat local : ${friendlyError(error)}`;
+  } finally {
+    refreshInFlight = false;
+  }
 }
 
 async function refreshDiagnostics() {
@@ -375,7 +429,7 @@ async function refreshDiagnostics() {
     const next = await nodeDiagnostics(form.repoRoot);
     Object.assign(diagnostics, next);
   } catch (error) {
-    diagnostics.logTail = error instanceof Error ? error.message : String(error);
+    diagnostics.logTail = friendlyError(error);
   }
 }
 
@@ -385,17 +439,17 @@ async function activateOneClick() {
   remember();
   try {
     await loadDefaults();
-    await startNode({
+    const message = await startNode({
       repoRoot: form.repoRoot,
       orchestratorUrl: form.orchestratorUrl,
       advertiseHost: form.advertiseHost,
       nodeId: form.nodeId,
       reputationScore: form.reputationScore,
     });
-    userMessage.value = '';
+    userMessage.value = message;
     await refreshAll();
-  } catch {
-    userMessage.value = "L activation n a pas pu se terminer. Verifiez que l installation est a jour.";
+  } catch (error) {
+    userMessage.value = `L activation n a pas pu se terminer : ${friendlyError(error)}`;
     await refreshDiagnostics();
   } finally {
     busy.value = false;
@@ -406,7 +460,10 @@ async function deactivateNode() {
   busy.value = true;
   try {
     await stopNode(form.repoRoot);
+    userMessage.value = 'Ce PC a ete retire du reseau.';
     await refreshAll();
+  } catch (error) {
+    userMessage.value = `Impossible de retirer ce PC : ${friendlyError(error)}`;
   } finally {
     busy.value = false;
   }
@@ -429,8 +486,31 @@ function formatDate(seconds: number) {
   return new Date(seconds * 1000).toLocaleString();
 }
 
-function friendlyEvent(item: { name: string; modifiedAt: number; sizeBytes: number }) {
+function friendlyEvent(item: NodeActivity['history'][number]) {
   const lower = item.name.toLowerCase();
+  const fragment = item.fragmentIndex ? ` fragment #${item.fragmentIndex}` : '';
+  const peer = item.peerId ? ` via ${item.peerId}` : '';
+  if (item.kind === 'fragment_fetched') {
+    return {
+      title: `Fragment recupere${fragment}`,
+      description: `Les donnees de calcul ont bien ete recues${peer}.`,
+      date: formatDate(item.modifiedAt),
+    };
+  }
+  if (item.kind === 'verification_input_fetched') {
+    return {
+      title: `Verification recue${fragment}`,
+      description: `Le resultat a controler a bien ete recupere${peer}.`,
+      date: formatDate(item.modifiedAt),
+    };
+  }
+  if (item.kind === 'task_started') {
+    return {
+      title: item.role === 'verify' ? `Verification demarree${fragment}` : `Calcul demarre${fragment}`,
+      description: `La machine traite ${item.itemId || 'une tache du reseau'}.`,
+      date: formatDate(item.modifiedAt),
+    };
+  }
   if (lower.startsWith('failed.')) {
     return {
       title: 'Travail en erreur',
@@ -473,6 +553,34 @@ function friendlyEvent(item: { name: string; modifiedAt: number; sizeBytes: numb
   };
 }
 
+function machineWorkLabel(machine: NodeActivity['machines'][number]) {
+  const task = machine.activeTasks[0];
+  if (!machine.online) return 'Inactive';
+  if (!task) return 'Disponible';
+  if (task.role === 'verify' || task.activity === 'verification') return 'Verification en cours';
+  if (task.activity === 'fragment') return 'Fragment en cours';
+  return 'Tache en cours';
+}
+
+function machineWorkDetail(machine: NodeActivity['machines'][number]) {
+  const task = machine.activeTasks[0];
+  if (!task) return machine.roles.length ? machine.roles.join(' + ') : 'aucun role annonce';
+  const fragment = task.fragmentIndex ? `fragment #${task.fragmentIndex}` : task.workload;
+  return `${task.itemId}${fragment ? ` - ${fragment}` : ''}`;
+}
+
+function responseLabel(machine: NodeActivity['machines'][number]) {
+  if (machine.lastResponseOk === true) return 'Reponse OK';
+  if (machine.lastResponseOk === false) return 'Reponse en erreur';
+  return 'Pas encore de retour';
+}
+
+function responseClass(machine: NodeActivity['machines'][number]) {
+  if (machine.lastResponseOk === true) return 'ok';
+  if (machine.lastResponseOk === false) return 'failed';
+  return '';
+}
+
 function formatDurationMs(durationMs: number) {
   if (!durationMs) {
     return 'duree inconnue';
@@ -486,9 +594,31 @@ function formatDurationMs(durationMs: number) {
   return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
 }
 
+function friendlyError(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error);
+  const messages: Record<string, string> = {
+    managed_runtime_not_found: 'le runtime Silicium est absent; reinstallez l application',
+    orchestrator_url_missing: 'l adresse de l orchestrateur est vide',
+    orchestrator_url_invalid_scheme: 'l adresse doit commencer par http:// ou https://',
+    orchestrator_url_invalid_host: 'l adresse de l orchestrateur est invalide',
+  };
+  return messages[raw] || raw;
+}
+
+function scheduleRefresh() {
+  refreshTimer = window.setTimeout(async () => {
+    await refreshAll();
+    scheduleRefresh();
+  }, 5000);
+}
+
 onMounted(async () => {
   await loadDefaults();
   await refreshAll();
-  window.setInterval(refreshAll, 2000);
+  scheduleRefresh();
+});
+
+onBeforeUnmount(() => {
+  if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
 });
 </script>

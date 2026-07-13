@@ -19,7 +19,6 @@
     "jwt-decode": "^4.0.0",
     "nuxt": "^3.13.0",
     "vue": "latest",
-    "vue-jwt-decode": "^0.1.0",
     "vue-router": "latest"
   },
   "devDependencies": {

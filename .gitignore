@@ -23,6 +23,7 @@ apps/**/src-tauri/target/
 apps/**/src-tauri/gen/
 apps/silicium-node/src-tauri/resources/runtime/
 apps/silicium-node/*.exe
+Site/FrontEnd-main/public/downloads/*.exe
 .data/
 .temp/
 *.tsbuildinfo

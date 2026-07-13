@@ -3349,19 +3349,25 @@ def configure_node_get(parser: argparse.ArgumentParser) -> None:
 def cmd_node_get_task(args: argparse.Namespace, ctx: Context) -> None:
     (void := ctx)
     settings = _resolve_mcp_settings(args)
-    print((Path(settings["export_dir"]) / "tasks" / f"{args.item_id}.json").read_text(encoding="utf-8"))
+    from tools.mcp_server import McpTaskStore
+
+    print(McpTaskStore(Path(settings["export_dir"])).read(args.item_id))
 
 
 def cmd_node_get_request(args: argparse.Namespace, ctx: Context) -> None:
     (void := ctx)
     settings = _resolve_mcp_settings(args)
-    print((Path(settings["export_dir"]) / "requests" / f"{args.item_id}.json").read_text(encoding="utf-8"))
+    from tools.mcp_server import McpRequestStore
+
+    print(McpRequestStore(Path(settings["export_dir"])).read(args.item_id))
 
 
 def cmd_node_get_result(args: argparse.Namespace, ctx: Context) -> None:
     (void := ctx)
     settings = _resolve_mcp_settings(args)
-    print((Path(settings["export_dir"]) / f"result.{args.item_id}.json").read_text(encoding="utf-8"))
+    from tools.mcp_server import McpExportStore, RESOURCE_RESULT_PREFIX
+
+    print(McpExportStore(Path(settings["export_dir"])).read_resource(RESOURCE_RESULT_PREFIX + args.item_id))
 
 
 def configure_node_get_local_file(parser: argparse.ArgumentParser) -> None:

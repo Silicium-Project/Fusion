@@ -5,17 +5,23 @@ use std::{
     env,
     fs::{self, OpenOptions},
     io::Read,
-    net::{TcpStream, UdpSocket},
+    net::{TcpStream, ToSocketAddrs, UdpSocket},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
     thread,
-    time::{Duration, Instant, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::State;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, STILL_ACTIVE},
+    System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION},
+};
 
 #[derive(Default)]
 struct ProcessState {
@@ -47,6 +53,7 @@ struct AppDefaults {
     repo_root: String,
     advertise_host: String,
     orchestrator_url: String,
+    node_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -65,6 +72,31 @@ struct NodeActivity {
     last_result: String,
     storage_bytes: u64,
     history: Vec<HistoryItem>,
+    machines: Vec<MachineActivity>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineActivity {
+    node_id: String,
+    online: bool,
+    status: String,
+    roles: Vec<String>,
+    active_tasks: Vec<MachineTaskActivity>,
+    last_seen_utc: String,
+    last_response_ok: Option<bool>,
+    last_response_item_id: String,
+    last_response_utc: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineTaskActivity {
+    item_id: String,
+    role: String,
+    activity: String,
+    workload: String,
+    fragment_index: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -78,6 +110,7 @@ struct NodeDiagnostics {
     node_running: bool,
     supervisor_running: bool,
     port_ready: bool,
+    orchestrator: CheckItem,
     openssl: CheckItem,
     python: CheckItem,
     log_tail: String,
@@ -89,6 +122,13 @@ struct HistoryItem {
     name: String,
     modified_at: u64,
     size_bytes: u64,
+    kind: String,
+    item_id: String,
+    role: String,
+    activity: String,
+    fragment_index: String,
+    ok: Option<bool>,
+    peer_id: String,
 }
 
 #[tauri::command]
@@ -128,7 +168,7 @@ fn node_status(
         .and_then(|root| read_supervisor_pid(root).ok().flatten())
         .map(process_is_running)
         .unwrap_or(false);
-    let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+    let port_ready = root.is_some() && TcpStream::connect(("127.0.0.1", 46101)).is_ok();
     let running = node_running || supervisor_running || port_ready;
     if !node_running {
         if let Some(root) = root.as_ref() {
@@ -143,7 +183,7 @@ fn node_status(
 }
 
 #[tauri::command]
-fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, String> {
+fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<String, String> {
     let mut node = state
         .node
         .lock()
@@ -152,6 +192,8 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
         return Ok("Silicium node already running".to_string());
     }
 
+    config.node_id = normalized_node_id(&config.node_id);
+    config.orchestrator_url = normalize_orchestrator_url(&config.orchestrator_url)?;
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
     cleanup_previous_node_processes(&repo_root);
@@ -288,11 +330,14 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
         .join("networked")
         .join("silicium-desktop-node");
     let mut history = Vec::new();
-    collect_event_history(&networked_dir.join("export").join("node.events.ndjson"), &mut history);
+    collect_event_history(
+        &networked_dir.join("export").join("node.events.ndjson"),
+        &mut history,
+    );
     collect_history(&networked_dir, &mut history);
     history.sort_by(|left, right| right.modified_at.cmp(&left.modified_at));
-    history.dedup_by(|left, right| left.name == right.name && left.modified_at == right.modified_at);
-    history.truncate(12);
+    history
+        .dedup_by(|left, right| left.name == right.name && left.modified_at == right.modified_at);
     let known_results = history
         .iter()
         .filter(|item| item.name.starts_with("result."))
@@ -306,7 +351,9 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
         .find(|item| item.name.starts_with("result."))
         .map(|item| item.name.clone())
         .unwrap_or_else(|| "Aucun resultat local pour le moment".to_string());
+    history.truncate(50);
     let storage_bytes = directory_size(&networked_dir);
+    let machines = collect_machine_activity(&networked_dir.join("export"));
 
     Ok(NodeActivity {
         known_results,
@@ -314,6 +361,7 @@ fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
         last_result,
         storage_bytes,
         history,
+        machines,
     })
 }
 
@@ -327,6 +375,9 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
     let node_running = node_pid.map(process_is_running).unwrap_or(false);
     let supervisor_running = supervisor_pid.map(process_is_running).unwrap_or(false);
     let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+    let orchestrator_url = read_service_config(&root)
+        .map(|config| config.orchestrator_url)
+        .unwrap_or_else(|_| "http://213.32.68.67:46100".to_string());
     let log_dir = node_app_log_path(&root, "silicium-node.err.log")
         .parent()
         .map(|path| path.display().to_string())
@@ -341,9 +392,11 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
         node_running,
         supervisor_running,
         port_ready,
+        orchestrator: orchestrator_check(&orchestrator_url),
         openssl: identity_mode_check(),
         python: command_check("Python", &python_launcher(&root), &["--version"]),
-        log_tail: read_node_log_tail(&root).unwrap_or_else(|| "Aucun log node disponible pour le moment.".to_string()),
+        log_tail: read_node_log_tail(&root)
+            .unwrap_or_else(|| "Aucun log node disponible pour le moment.".to_string()),
     })
 }
 
@@ -353,10 +406,18 @@ fn app_defaults() -> AppDefaults {
         .or_else(discover_managed_runtime_root)
         .map(|path| path.display().to_string())
         .unwrap_or_default();
+    let saved_config =
+        discover_managed_runtime_root().and_then(|root| read_service_config(&root).ok());
     AppDefaults {
         repo_root,
         advertise_host: detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
-        orchestrator_url: "http://213.32.68.67:46100".to_string(),
+        orchestrator_url: saved_config
+            .as_ref()
+            .map(|config| config.orchestrator_url.clone())
+            .unwrap_or_else(|| "http://213.32.68.67:46100".to_string()),
+        node_id: saved_config
+            .map(|config| normalized_node_id(&config.node_id))
+            .unwrap_or_default(),
     }
 }
 
@@ -881,10 +942,92 @@ fn configure_detached_process(command: &mut Command) {
 fn configure_detached_process(_command: &mut Command) {}
 
 fn normalized_node_id(node_id: &str) -> String {
-    if node_id.trim().is_empty() {
+    let normalized = node_id
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .chars()
+        .take(64)
+        .collect::<String>();
+    if normalized.is_empty() {
         "silicium-desktop-node".to_string()
     } else {
-        node_id.trim().to_string()
+        normalized
+    }
+}
+
+fn normalize_orchestrator_url(value: &str) -> Result<String, String> {
+    let trimmed = value.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("orchestrator_url_missing".to_string());
+    }
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return Err("orchestrator_url_invalid_scheme".to_string());
+    }
+    let authority = trimmed
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or_default()
+        .split('/')
+        .next()
+        .unwrap_or_default();
+    if authority.is_empty() || authority.contains(char::is_whitespace) {
+        return Err("orchestrator_url_invalid_host".to_string());
+    }
+    Ok(trimmed.to_string())
+}
+
+fn orchestrator_check(url: &str) -> CheckItem {
+    let normalized = match normalize_orchestrator_url(url) {
+        Ok(value) => value,
+        Err(error) => {
+            return CheckItem {
+                name: "Orchestrateur".to_string(),
+                ok: false,
+                detail: error,
+            };
+        }
+    };
+    let secure = normalized.starts_with("https://");
+    let authority = normalized
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or_default()
+        .split('/')
+        .next()
+        .unwrap_or_default();
+    let address = if authority.contains(':') {
+        authority.to_string()
+    } else {
+        format!("{}:{}", authority, if secure { 443 } else { 80 })
+    };
+    let reachable = address
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut addresses| {
+            addresses
+                .any(|socket| {
+                    TcpStream::connect_timeout(&socket, Duration::from_millis(800)).is_ok()
+                })
+                .then_some(())
+        })
+        .is_some();
+    CheckItem {
+        name: "Orchestrateur".to_string(),
+        ok: reachable,
+        detail: if reachable {
+            format!("{} joignable", normalized)
+        } else {
+            format!("{} injoignable", normalized)
+        },
     }
 }
 
@@ -1293,32 +1436,34 @@ fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> 
         .map_err(|error| error.to_string())
 }
 
+#[cfg(target_os = "windows")]
 fn process_is_running(pid: u32) -> bool {
-    if cfg!(target_os = "windows") {
-        let mut command = Command::new("cmd");
-        command
-            .arg("/C")
-            .arg(format!("tasklist /FI \"PID eq {pid}\" /NH"))
-            .stdin(Stdio::null());
-        configure_detached_process(&mut command);
-        command
-            .output()
-            .map(|output| {
-                output.status.success()
-                    && String::from_utf8_lossy(&output.stdout).contains(&pid.to_string())
-            })
-            .unwrap_or(false)
-    } else {
-        Command::new("kill")
-            .arg("-0")
-            .arg(pid.to_string())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
+    // Query the process directly. `tasklist` can return Access denied on
+    // managed Windows installations, which previously made the UI discard
+    // valid PID files and stay on the activation screen.
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return false;
+        }
+        let mut exit_code = 0_u32;
+        let queried = GetExitCodeProcess(handle, &mut exit_code);
+        CloseHandle(handle);
+        queried != 0 && exit_code == STILL_ACTIVE as u32
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn process_is_running(pid: u32) -> bool {
+    Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 fn kill_process_tree(pid: u32) -> Result<(), String> {
@@ -1414,6 +1559,13 @@ fn collect_history(path: &Path, history: &mut Vec<HistoryItem>) {
             name,
             modified_at,
             size_bytes: metadata.len(),
+            kind: "file".to_string(),
+            item_id: String::new(),
+            role: String::new(),
+            activity: String::new(),
+            fragment_index: String::new(),
+            ok: None,
+            peer_id: String::new(),
         });
     }
 }
@@ -1422,7 +1574,7 @@ fn collect_event_history(path: &Path, history: &mut Vec<HistoryItem>) {
     let Ok(raw) = fs::read_to_string(path) else {
         return;
     };
-    for line in raw.lines().rev().take(80) {
+    for line in raw.lines().rev().take(500) {
         let Ok(value) = serde_json::from_str::<Value>(line) else {
             continue;
         };
@@ -1441,10 +1593,17 @@ fn collect_event_history(path: &Path, history: &mut Vec<HistoryItem>) {
             .and_then(Value::as_str)
             .and_then(parse_utc_timestamp)
             .unwrap_or(0);
-        let duration_ms = value.get("duration_ms").and_then(Value::as_u64).unwrap_or(0);
+        let duration_ms = value
+            .get("duration_ms")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
         let ok = value.get("ok").and_then(Value::as_bool).unwrap_or(true);
         let name = match kind {
             "task_received" | "pull_claim" => format!("task.received.{item_id}"),
+            "task_started" => format!("task.started.{item_id}"),
+            "fragment_fetched" => format!("fragment.fetched.{item_id}"),
+            "verification_input_fetched" => format!("verification.fetched.{item_id}"),
+            "task_input_fetched" => format!("task.input_fetched.{item_id}"),
             "task" | "request" if ok => format!("result.{item_id}"),
             "task" | "request" => format!("failed.{item_id}"),
             "result_return" if ok => format!("result.sent.{item_id}"),
@@ -1455,8 +1614,105 @@ fn collect_event_history(path: &Path, history: &mut Vec<HistoryItem>) {
             name,
             modified_at: timestamp,
             size_bytes: duration_ms,
+            kind: kind.to_string(),
+            item_id: item_id.to_string(),
+            role: value.get("role").and_then(Value::as_str).unwrap_or("").to_string(),
+            activity: value.get("activity").and_then(Value::as_str).unwrap_or("").to_string(),
+            fragment_index: json_value_text(value.get("fragment_index")),
+            ok: value.get("ok").and_then(Value::as_bool),
+            peer_id: value
+                .get("source_peer")
+                .or_else(|| value.get("source_node"))
+                .or_else(|| value.get("target_node"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
         });
     }
+}
+
+fn json_value_text(value: Option<&Value>) -> String {
+    match value {
+        Some(Value::String(text)) => text.clone(),
+        Some(Value::Number(number)) => number.to_string(),
+        Some(Value::Bool(boolean)) => boolean.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
+    let snapshot_path = export_dir.join("mesh.discovery.json");
+    let Ok(raw) = fs::read_to_string(snapshot_path) else {
+        return Vec::new();
+    };
+    let Ok(snapshot) = serde_json::from_str::<Value>(&raw) else {
+        return Vec::new();
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let mut machines = snapshot
+        .get("peers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|peer| {
+            let node_id = peer.get("node_id")?.as_str()?.to_string();
+            let last_seen = peer.get("last_seen_unix").and_then(Value::as_u64).unwrap_or(0);
+            let activity = peer.get("activity").and_then(Value::as_object);
+            let active_tasks = activity
+                .and_then(|item| item.get("active_tasks"))
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|task| {
+                    Some(MachineTaskActivity {
+                        item_id: task.get("item_id")?.as_str()?.to_string(),
+                        role: task.get("role").and_then(Value::as_str).unwrap_or("").to_string(),
+                        activity: task.get("activity").and_then(Value::as_str).unwrap_or("").to_string(),
+                        workload: task.get("workload").and_then(Value::as_str).unwrap_or("").to_string(),
+                        fragment_index: json_value_text(task.get("fragment_index")),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let last_response = activity
+                .and_then(|item| item.get("last_response"))
+                .and_then(Value::as_object);
+            Some(MachineActivity {
+                node_id,
+                online: last_seen > 0 && now.saturating_sub(last_seen) <= 45,
+                status: activity
+                    .and_then(|item| item.get("status"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(if active_tasks.is_empty() { "idle" } else { "working" })
+                    .to_string(),
+                roles: peer
+                    .get("roles")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect(),
+                active_tasks,
+                last_seen_utc: peer.get("updated_utc").and_then(Value::as_str).unwrap_or("").to_string(),
+                last_response_ok: last_response.and_then(|item| item.get("ok")).and_then(Value::as_bool),
+                last_response_item_id: last_response
+                    .and_then(|item| item.get("item_id"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                last_response_utc: last_response
+                    .and_then(|item| item.get("timestamp_utc"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+    machines.sort_by(|left, right| right.online.cmp(&left.online).then_with(|| left.node_id.cmp(&right.node_id)));
+    machines
 }
 
 fn parse_utc_timestamp(value: &str) -> Option<u64> {
@@ -1511,7 +1767,8 @@ fn directory_size(path: &Path) -> u64 {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    install_crash_log();
+    if let Err(error) = tauri::Builder::default()
         .manage(ProcessState::default())
         .invoke_handler(tauri::generate_handler![
             start_node,
@@ -1524,5 +1781,80 @@ pub fn run() {
             app_defaults
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Silicium Node");
+    {
+        let _ = append_app_log(&format!("tauri_runtime_error: {error}\n"));
+    }
+}
+
+fn install_crash_log() {
+    std::panic::set_hook(Box::new(|info| {
+        let _ = append_app_log(&format!("panic: {info}\n"));
+    }));
+}
+
+fn append_app_log(message: &str) -> Result<(), String> {
+    let path = app_state_dir().join("silicium-app.err.log");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    use std::io::Write;
+    file.write_all(message.as_bytes())
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn node_id_is_safe_for_files_and_service_config() {
+        assert_eq!(
+            normalized_node_id(" pc de Thom\ninvalid "),
+            "pc-de-Thom-invalid"
+        );
+        assert_eq!(normalized_node_id("   "), "silicium-desktop-node");
+    }
+
+    #[test]
+    fn orchestrator_url_requires_http_and_a_host() {
+        assert_eq!(
+            normalize_orchestrator_url(" http://127.0.0.1:46100/ ").unwrap(),
+            "http://127.0.0.1:46100"
+        );
+        assert!(normalize_orchestrator_url("127.0.0.1:46100").is_err());
+        assert!(normalize_orchestrator_url("https://").is_err());
+    }
+
+    #[test]
+    fn current_process_is_detected_as_running() {
+        assert!(process_is_running(std::process::id()));
+    }
+
+    #[test]
+    fn machine_activity_reads_work_and_last_response() {
+        let directory = env::temp_dir().join(format!("silicium-machine-activity-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        fs::write(
+            directory.join("mesh.discovery.json"),
+            format!(
+                r#"{{"peers":[{{"node_id":"worker-a","roles":["compute"],"last_seen_unix":{now},"updated_utc":"2026-07-13T18:00:00Z","activity":{{"status":"working","active_tasks":[{{"item_id":"render:1","role":"compute","activity":"fragment","workload":"raytracer-fragment","fragment_index":3}}],"last_response":{{"item_id":"verify:2","ok":true,"timestamp_utc":"2026-07-13T17:59:00Z"}}}}}}]}}"#
+            ),
+        )
+        .unwrap();
+
+        let machines = collect_machine_activity(&directory);
+        assert_eq!(machines.len(), 1);
+        assert!(machines[0].online);
+        assert_eq!(machines[0].status, "working");
+        assert_eq!(machines[0].active_tasks[0].fragment_index, "3");
+        assert_eq!(machines[0].last_response_ok, Some(true));
+        let _ = fs::remove_dir_all(&directory);
+    }
 }

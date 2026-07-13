@@ -1,6 +1,6 @@
 {
   "name": "silicium-node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File ./scripts/prepare-runtime.ps1",
     "preview": "vite preview --host 127.0.0.1 --port 1420",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build --bundles nsis"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",

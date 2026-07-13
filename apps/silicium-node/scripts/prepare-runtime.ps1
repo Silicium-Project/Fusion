@@ -67,6 +67,14 @@ function Copy-PythonRuntime {
         } | ForEach-Object {
             Copy-Item -LiteralPath $_.FullName -Destination $targetLib -Recurse -Force
         }
+
+        # Compiled caches and nested standard-library test suites are not used
+        # by the node and add several megabytes to every installer.
+        Get-ChildItem -LiteralPath $targetLib -Directory -Recurse -Force | Where-Object {
+            $_.Name -in @("__pycache__", "test", "tests")
+        } | Sort-Object FullName -Descending | ForEach-Object {
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force
+        }
     }
 
     if (-not (Test-Path -LiteralPath (Join-Path $Destination "python.exe"))) {

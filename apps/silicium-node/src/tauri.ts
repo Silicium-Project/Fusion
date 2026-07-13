@@ -23,6 +23,33 @@ export type HistoryItem = {
   name: string;
   modifiedAt: number;
   sizeBytes: number;
+  kind: string;
+  itemId: string;
+  role: string;
+  activity: string;
+  fragmentIndex: string;
+  ok?: boolean | null;
+  peerId: string;
+};
+
+export type MachineTaskActivity = {
+  itemId: string;
+  role: string;
+  activity: string;
+  workload: string;
+  fragmentIndex: string;
+};
+
+export type MachineActivity = {
+  nodeId: string;
+  online: boolean;
+  status: string;
+  roles: string[];
+  activeTasks: MachineTaskActivity[];
+  lastSeenUtc: string;
+  lastResponseOk?: boolean | null;
+  lastResponseItemId: string;
+  lastResponseUtc: string;
 };
 
 export type NodeActivity = {
@@ -31,6 +58,7 @@ export type NodeActivity = {
   lastResult: string;
   storageBytes: number;
   history: HistoryItem[];
+  machines: MachineActivity[];
 };
 
 export type NodeDiagnostics = {
@@ -42,6 +70,7 @@ export type NodeDiagnostics = {
   nodeRunning: boolean;
   supervisorRunning: boolean;
   portReady: boolean;
+  orchestrator: CheckItem;
   openssl: CheckItem;
   python: CheckItem;
   logTail: string;
@@ -51,6 +80,7 @@ export type AppDefaults = {
   repoRoot: string;
   advertiseHost: string;
   orchestratorUrl: string;
+  nodeId: string;
 };
 
 export async function startNode(config: NodeConfig): Promise<string> {

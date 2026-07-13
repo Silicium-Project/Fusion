@@ -164,7 +164,7 @@ def test_mcp_server_submits_and_reads_tasks(tmp_path: Path) -> None:
 
         code, body = _http_post(
             base + "/tools",
-            {"name": "tools.silicium.get_task", "args": {"task_id": "render:tile_1"}},
+            {"name": "tools.silicium.get_task", "args": {"task_id": "render_tile_1"}},
         )
         assert code == 200
         wrapped = json.loads(body)

@@ -144,6 +144,10 @@ def _sanitize_task_id(task_id: str) -> str:
     return _SAFE_TASK_ID_RE.sub("_", task_id)
 
 
+def _filename_id(task_id: str) -> str:
+    return _sanitize_task_id(task_id).replace(":", "_")
+
+
 def _csv_values(raw: str) -> list[str]:
     return [item.strip() for item in str(raw).split(",") if item.strip()]
 
@@ -223,37 +227,37 @@ class McpExportStore:
             task_id = _sanitize_task_id(uri[len(RESOURCE_RESULT_PREFIX) :])
             if not task_id:
                 raise FileNotFoundError("missing_task_id")
-            return self._read_text(self._export_dir / f"result.{task_id}.json")
+            return self._read_text(self._export_dir / f"result.{_filename_id(task_id)}.json")
         if uri.startswith(RESOURCE_LOGS_PREFIX):
             task_id = _sanitize_task_id(uri[len(RESOURCE_LOGS_PREFIX) :])
             if not task_id:
                 raise FileNotFoundError("missing_task_id")
-            return self._read_text(self._export_dir / f"logs.{task_id}.json")
+            return self._read_text(self._export_dir / f"logs.{_filename_id(task_id)}.json")
         if uri.startswith(RESOURCE_TASK_PREFIX):
             task_id = _sanitize_task_id(uri[len(RESOURCE_TASK_PREFIX) :])
             if not task_id:
                 raise FileNotFoundError("missing_task_id")
-            return self._read_text(self._export_dir / "tasks" / f"{task_id}.json")
+            return self._read_text(self._export_dir / "tasks" / f"{_filename_id(task_id)}.json")
         if uri.startswith(RESOURCE_REQUEST_PREFIX):
             request_id = _sanitize_task_id(uri[len(RESOURCE_REQUEST_PREFIX) :])
             if not request_id:
                 raise FileNotFoundError("missing_request_id")
-            return self._read_text(self._export_dir / "requests" / f"{request_id}.json")
+            return self._read_text(self._export_dir / "requests" / f"{_filename_id(request_id)}.json")
         if uri.startswith(RESOURCE_NODE_HEARTBEAT_PREFIX):
             node_id = _sanitize_task_id(uri[len(RESOURCE_NODE_HEARTBEAT_PREFIX) :])
             if not node_id:
                 raise FileNotFoundError("missing_node_id")
-            return self._read_text(self._export_dir / f"node.{node_id}.heartbeat.json")
+            return self._read_text(self._export_dir / f"node.{_filename_id(node_id)}.heartbeat.json")
         if uri.startswith(RESOURCE_NODE_METRICS_PREFIX):
             node_id = _sanitize_task_id(uri[len(RESOURCE_NODE_METRICS_PREFIX) :])
             if not node_id:
                 raise FileNotFoundError("missing_node_id")
-            return self._read_text(self._export_dir / f"node.{node_id}.metrics.json")
+            return self._read_text(self._export_dir / f"node.{_filename_id(node_id)}.metrics.json")
         if uri.startswith(RESOURCE_NODE_PEERS_PREFIX):
             node_id = _sanitize_task_id(uri[len(RESOURCE_NODE_PEERS_PREFIX) :])
             if not node_id:
                 raise FileNotFoundError("missing_node_id")
-            return self._read_text(self._export_dir / f"node.{node_id}.peers.json")
+            return self._read_text(self._export_dir / f"node.{_filename_id(node_id)}.peers.json")
         raise ValueError("unsupported_resource")
 
     def _read_text(self, path: Path) -> str:
@@ -579,7 +583,7 @@ class McpTaskStore:
             raise ValueError("task_too_large")
 
         with self._lock:
-            final_path = self._tasks_dir / f"{task_id}.json"
+            final_path = self._tasks_dir / f"{_filename_id(task_id)}.json"
             tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
             tmp_path.write_text(encoded, encoding="utf-8")
             tmp_path.replace(final_path)
@@ -602,7 +606,7 @@ class McpTaskStore:
         safe_task_id = _sanitize_task_id(task_id)
         if not safe_task_id:
             raise FileNotFoundError("missing_task_id")
-        return (self._tasks_dir / f"{safe_task_id}.json").read_text(encoding="utf-8")
+        return (self._tasks_dir / f"{_filename_id(safe_task_id)}.json").read_text(encoding="utf-8")
 
 
 class McpRequestStore:
@@ -661,7 +665,7 @@ class McpRequestStore:
             raise ValueError("request_too_large")
 
         with self._lock:
-            final_path = self._requests_dir / f"{request_id}.json"
+            final_path = self._requests_dir / f"{_filename_id(request_id)}.json"
             tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
             tmp_path.write_text(encoded, encoding="utf-8")
             tmp_path.replace(final_path)
@@ -689,7 +693,7 @@ class McpRequestStore:
         safe_request_id = _sanitize_task_id(request_id)
         if not safe_request_id:
             raise FileNotFoundError("missing_request_id")
-        return (self._requests_dir / f"{safe_request_id}.json").read_text(encoding="utf-8")
+        return (self._requests_dir / f"{_filename_id(safe_request_id)}.json").read_text(encoding="utf-8")
 
 
 def _utc_now() -> str:

@@ -56,6 +56,7 @@ class SiliciumLayerSdk {
     constructor(params) {
         this.pdas = {
             job: (client, jobId) => (0, pdas_1.jobPda)(this.programId, client, jobId),
+            jobStorage: (job) => (0, pdas_1.jobStoragePda)(this.programId, job),
             fragment: (job, fragmentIndex) => (0, pdas_1.fragmentPda)(this.programId, job, fragmentIndex),
             worker: (worker) => (0, pdas_1.workerPda)(this.programId, worker),
             escrowAuth: (job) => (0, pdas_1.escrowAuthPda)(this.programId, job),
@@ -142,6 +143,22 @@ class SiliciumLayerSdk {
             .signers([params.escrow]);
         const signature = await builder.rpc();
         return { signature, job, escrowAuth };
+    }
+    async declareJobStorage(params) {
+        const client = params.client ?? this.walletPubkey();
+        const jobStorage = this.pdas.jobStorage(params.job);
+        const encryptionRefHash = params.encryptionRefHash ?? new Uint8Array(32);
+        let builder = this.methods
+            .declareJobStorage(asHash32(params.manifestHash), asHash32(params.inputRootHash), asHash32(params.storageRefHash), asHash32(encryptionRefHash))
+            .accounts({
+            client,
+            job: params.job,
+            jobStorage,
+            systemProgram: web3_js_1.SystemProgram.programId,
+        });
+        builder = appendSigners(builder, params.signers);
+        const signature = await builder.rpc();
+        return { signature, jobStorage };
     }
     async claimFragment(params) {
         const worker = params.worker ?? this.walletPubkey();
@@ -508,6 +525,10 @@ class SiliciumLayerSdk {
     }
     async fetchJob(job) {
         return this.accounts.job.fetch(job);
+    }
+    async fetchJobStorage(jobOrJobStorage, isJobStorageAccount = false) {
+        const account = isJobStorageAccount ? jobOrJobStorage : this.pdas.jobStorage(jobOrJobStorage);
+        return this.accounts.jobStorage.fetch(account);
     }
     async fetchFragment(fragment) {
         return this.accounts.fragment.fetch(fragment);

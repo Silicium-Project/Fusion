@@ -235,7 +235,7 @@ def test_silicium_node_create_job_and_enqueue_task(tmp_path: Path) -> None:
     assert payload["job"]["accounts"]["job"] == "job-pubkey"
     assert payload["task"]["task_id"] == "job:42"
 
-    task = json.loads((export_dir / "tasks" / "job:42.json").read_text(encoding="utf-8"))
+    task = json.loads((export_dir / "tasks" / "job_42.json").read_text(encoding="utf-8"))
     assert task["on_chain"]["job"] == "job-pubkey"
 
 

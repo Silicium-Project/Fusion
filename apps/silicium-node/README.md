@@ -13,6 +13,11 @@ reimplement the node. The installer bundles a minimal runtime so a normal user
 can install the app, click one button, and join the network with `compute,verify`
 capabilities. The network/orchestrator decides what work is assigned over time.
 
+The installed application keeps its managed runtime, node identity, logs and
+task history under `%APPDATA%\SiliciumNode`. Closing the window does not stop
+the activated worker: its supervisor continues in the background and is
+restored when the Windows session starts.
+
 ## Development
 
 Requirements:
@@ -65,6 +70,13 @@ MVP:
 - bundled runtime for installed users
 - start/stop one local node with compute and verify roles
 - display local process state, activity, history, and diagnostics
+- display connected machines, active fragments/verifications, and last response status
+- preserve identity and history across repair installs and upgrades
+- log native startup failures to `%APPDATA%\SiliciumNode\silicium-app.err.log`
+
+Task lifecycle details are persisted in `node.events.ndjson`. Heartbeats and
+peer announcements expose the active task, role, fragment index, input source,
+processing result, and whether a dispatched result reached its origin node.
 
 Later:
 

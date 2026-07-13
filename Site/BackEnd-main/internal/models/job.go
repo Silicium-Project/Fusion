@@ -11,10 +11,10 @@ type Job struct {
 	Priority        string     `gorm:"size:20;not null;default:'high'" json:"priority"`
 	Status          string     `gorm:"size:32;not null;default:'queued';index" json:"status"`
 	SiliciumJobID   string     `gorm:"size:128;uniqueIndex;not null" json:"siliciumJobId"`
-	InputPath       string     `gorm:"type:text;not null" json:"inputPath"`
-	ResultPath      string     `gorm:"type:text" json:"resultPath,omitempty"`
-	SummaryPath     string     `gorm:"type:text" json:"summaryPath,omitempty"`
-	DevnetTracePath string     `gorm:"type:text" json:"devnetTracePath,omitempty"`
+	InputPath       string     `gorm:"type:text;not null" json:"-"`
+	ResultPath      string     `gorm:"type:text" json:"-"`
+	SummaryPath     string     `gorm:"type:text" json:"-"`
+	DevnetTracePath string     `gorm:"type:text" json:"-"`
 	DevnetJob       string     `gorm:"size:128" json:"devnetJob,omitempty"`
 	DashboardURL    string     `gorm:"type:text" json:"dashboardUrl,omitempty"`
 	ErrorMessage    string     `gorm:"type:text" json:"errorMessage,omitempty"`

@@ -7,6 +7,16 @@ export interface EventSubscription {
     listenerId: number;
     remove(): Promise<void>;
 }
+export interface JobStorageDeclaredEvent {
+    job: PublicKey;
+    jobStorage: PublicKey;
+    client: PublicKey;
+    manifestHash: number[];
+    inputRootHash: number[];
+    storageRefHash: number[];
+    encryptionRefHash: number[];
+    createdAtUnix: anchor.BN;
+}
 export interface FragmentSplitProposedEvent {
     job: PublicKey;
     parentFragment: PublicKey;
@@ -87,6 +97,7 @@ export interface BayesianReputationUpdatedEvent {
 }
 export interface SiliciumEventMap {
     jobCreated: unknown;
+    jobStorageDeclared: JobStorageDeclaredEvent;
     workerRegistered: unknown;
     workerStaked: unknown;
     treasuryInitialized: unknown;

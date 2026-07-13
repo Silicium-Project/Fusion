@@ -7,6 +7,27 @@ from pathlib import Path
 from tools import network_node
 
 
+def test_p2p_content_ids_cannot_escape_export_directory(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    assert network_node.p2p_content_path(export_dir, "abc-123_DEF.bin") == export_dir / "p2p" / "abc-123_DEF.bin"
+    for unsafe in ("../secret", "..", "folder/file", r"folder\file", "C:secret"):
+        try:
+            network_node.p2p_content_path(export_dir, unsafe)
+        except ValueError as exc:
+            assert str(exc) == "invalid_p2p_content_id"
+        else:
+            raise AssertionError(f"unsafe content id accepted: {unsafe}")
+
+
+def test_remote_file_references_are_detected() -> None:
+    assert network_node.contains_file_reference(
+        {"task": {"input": {"protocol": "file", "content_id": "C:/secret.txt"}}}
+    )
+    assert not network_node.contains_file_reference(
+        {"task": {"input": {"protocol": "silicium", "content_id": "abc123"}}}
+    )
+
+
 def _write_jsonl(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -132,6 +153,8 @@ def _config(
         scheduler_onchain_weight=10.0,
         scheduler_offchain_weight=1.0,
         scheduler_capacity_weight=0.01,
+        pull_tasks_enable=False,
+        pull_tasks_interval_s=1,
     )
 
 
@@ -166,17 +189,26 @@ def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.storage:1.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.storage_1.json").read_text(encoding="utf-8"))
     assert result["success"] is True
     assert result["required_roles"] == ["storage"]
     assert result["input"]["source"] == "local-p2p-cache"
     assert result["role_result"] == "storage"
     assert result["stored_ref"]["hash"].startswith("sha256:")
 
-    stored = json.loads((export_dir / "tasks" / "storage:1.json").read_text(encoding="utf-8"))
+    stored = json.loads((export_dir / "tasks" / "storage_1.json").read_text(encoding="utf-8"))
     assert stored["status"] == "completed"
     assert stored["handled_by"] == "node-a"
-    assert (export_dir / "node.node-a.heartbeat.json").exists()
+    heartbeat = json.loads((export_dir / "node.node-a.heartbeat.json").read_text(encoding="utf-8"))
+    assert heartbeat["online"] is True
+    assert heartbeat["status"] == "idle"
+    assert heartbeat["active_tasks"] == []
+    assert heartbeat["last_response"]["item_id"] == "storage:1"
+    assert heartbeat["last_response"]["ok"] is True
+    events = [json.loads(line) for line in (export_dir / "node.events.ndjson").read_text(encoding="utf-8").splitlines()]
+    assert any(event["kind"] == "task_started" and event["item_id"] == "storage:1" for event in events)
+    assert any(event["kind"] == "task_input_fetched" and event["ok"] is True for event in events)
+    assert any(event["kind"] == "task" and event["phase"] == "completed" and event["ok"] is True for event in events)
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
     assert metrics["handled"] == 1
 
@@ -224,10 +256,12 @@ def test_network_node_prioritizes_urgent_requests(tmp_path: Path) -> None:
     )
     assert code == 0
 
-    assert (export_dir / "result.audit:now.json").exists()
-    assert not (export_dir / "result.compute:late.json").exists()
+    assert (export_dir / "result.audit_now.json").exists()
+    assert not (export_dir / "result.compute_late.json").exists()
     events = [json.loads(line) for line in (export_dir / "node.events.ndjson").read_text(encoding="utf-8").splitlines()]
-    assert events[0]["kind"] == "request"
+    completed = [event for event in events if event.get("phase") == "completed"]
+    assert completed[0]["kind"] == "request"
+    assert completed[0]["item_id"] == "audit:now"
 
 
 def test_network_node_submits_compute_result_on_chain_when_enabled(tmp_path: Path) -> None:
@@ -272,7 +306,7 @@ def test_network_node_submits_compute_result_on_chain_when_enabled(tmp_path: Pat
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.compute:on-chain.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.compute_on-chain.json").read_text(encoding="utf-8"))
     assert result["on_chain"][0]["op"] == "submit_fragment_result"
     assert result["on_chain"][0]["params"]["fragment_index"] == 0
     assert result["on_chain"][0]["params"]["result_hash"] == result["result_hash"]
@@ -319,7 +353,7 @@ def test_network_node_votes_on_audit_request_when_enabled(tmp_path: Path) -> Non
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.audit:on-chain.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.audit_on-chain.json").read_text(encoding="utf-8"))
     assert result["on_chain"][0]["op"] == "vote_fragment"
     assert result["on_chain"][0]["params"]["choice"] is True
 
@@ -346,7 +380,7 @@ def test_network_node_verifies_expected_hash(tmp_path: Path) -> None:
     code = network_node.main(["--export-dir", str(export_dir), "--roles", "verify", "--node-id", "node-a", "--once"])
     assert code == 0
 
-    result = json.loads((export_dir / "result.verify:1.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.verify_1.json").read_text(encoding="utf-8"))
     assert result["role_result"] == "verify"
     assert result["verified"] is True
     assert result["choice"] is True
@@ -381,7 +415,7 @@ def test_network_node_retries_then_dead_letters_failures(tmp_path: Path) -> None
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.storage:missing.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.storage_missing.json").read_text(encoding="utf-8"))
     assert result["success"] is False
     assert (export_dir / "dead_letters.ndjson").exists()
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
@@ -395,6 +429,21 @@ def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
     peer_a = network_node.PeerNetwork(config_a, export_a)
     p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
     peer_a.start()
+    peer_a.set_local_activity(
+        {
+            "status": "working",
+            "active_task_count": 1,
+            "active_tasks": [
+                {
+                    "item_id": "render:fragment:2",
+                    "role": "compute",
+                    "activity": "fragment",
+                    "fragment_index": 2,
+                }
+            ],
+            "last_response": {"item_id": "verify:1", "ok": True, "timestamp_utc": network_node.utc_now()},
+        }
+    )
     try:
         config_b = _config(export_b, "node-b", seed_peers=[f"127.0.0.1:{config_a.gossip_port}"])
         peer_b = network_node.PeerNetwork(config_b, export_b)
@@ -437,6 +486,14 @@ def test_peer_network_syncs_over_http_with_public_identity(tmp_path: Path) -> No
     peer_a = network_node.PeerNetwork(config_a, export_a)
     p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
     peer_a.start()
+    peer_a.set_local_activity(
+        {
+            "status": "working",
+            "active_task_count": 1,
+            "active_tasks": [{"item_id": "render:fragment:2", "role": "compute", "activity": "fragment", "fragment_index": 2}],
+            "last_response": {"item_id": "verify:1", "ok": True, "timestamp_utc": network_node.utc_now()},
+        }
+    )
     try:
         unauthorized = urllib.request.Request(peer_a.http_base_url + "/peers")
         try:
@@ -464,6 +521,11 @@ def test_peer_network_syncs_over_http_with_public_identity(tmp_path: Path) -> No
                 time.sleep(0.05)
             assert peer_b.peers_snapshot()["count"] >= 2
             assert peer_a.peers_snapshot()["count"] >= 2
+            peer_a_from_b = next(peer for peer in peer_b.peers_snapshot()["peers"] if peer["node_id"] == "node-a")
+            assert peer_a_from_b["online"] is True
+            assert peer_a_from_b["activity"]["status"] == "working"
+            assert peer_a_from_b["activity"]["active_tasks"][0]["fragment_index"] == 2
+            assert peer_a_from_b["activity"]["last_response"]["ok"] is True
 
             stored = p2p_a.put_local(b"hello-http-mesh")
             data, meta = p2p_b.fetch(stored["shared_ref"])
@@ -636,9 +698,9 @@ def test_network_node_dispatches_task_to_remote_peer(tmp_path: Path) -> None:
             ]
         )
         assert code == 0
-        dispatched = json.loads((export_a / "tasks" / "compute:remote.json").read_text(encoding="utf-8"))
+        dispatched = json.loads((export_a / "tasks" / "compute_remote.json").read_text(encoding="utf-8"))
         assert dispatched["status"] == "dispatched"
-        remote_task = json.loads((export_b / "tasks" / "compute:remote.json").read_text(encoding="utf-8"))
+        remote_task = json.loads((export_b / "tasks" / "compute_remote.json").read_text(encoding="utf-8"))
         assert remote_task["task_id"] == "compute:remote"
         metrics = json.loads((export_a / "node.node-a.metrics.json").read_text(encoding="utf-8"))
         assert metrics["dispatched"] == 1
@@ -682,13 +744,13 @@ def test_network_node_ingests_remote_result_back_to_origin(tmp_path: Path) -> No
         _write_jsonl(export_a / "tasks.queue.ndjson", task)
         handled_a = node_a.sweep()
         assert handled_a == 1
-        dispatched = json.loads((export_a / "tasks" / "compute:return.json").read_text(encoding="utf-8"))
+        dispatched = json.loads((export_a / "tasks" / "compute_return.json").read_text(encoding="utf-8"))
         assert dispatched["status"] == "dispatched"
         handled_b = node_b.sweep()
         assert handled_b == 1
-        result = json.loads((export_a / "result.compute:return.json").read_text(encoding="utf-8"))
+        result = json.loads((export_a / "result.compute_return.json").read_text(encoding="utf-8"))
         assert result["node_id"] == "node-b"
-        origin_task = json.loads((export_a / "tasks" / "compute:return.json").read_text(encoding="utf-8"))
+        origin_task = json.loads((export_a / "tasks" / "compute_return.json").read_text(encoding="utf-8"))
         assert origin_task["status"] == "completed"
         assert origin_task["handled_by"] == "node-b"
     finally:
@@ -851,9 +913,9 @@ def test_remote_dispatch_filters_peers_with_onchain_thresholds(tmp_path: Path) -
             ]
         )
         assert code == 0
-        remote_task = json.loads((export_b / "tasks" / "compute:threshold.json").read_text(encoding="utf-8"))
+        remote_task = json.loads((export_b / "tasks" / "compute_threshold.json").read_text(encoding="utf-8"))
         assert remote_task["task_id"] == "compute:threshold"
-        assert not (export_c / "tasks" / "compute:threshold.json").exists()
+        assert not (export_c / "tasks" / "compute_threshold.json").exists()
     finally:
         peer_b.stop()
         peer_c.stop()
