@@ -2564,6 +2564,10 @@ class NetworkNode:
         with self._active_task_lock:
             return len(self._active_task_ids)
 
+    def local_active_task_ids(self) -> list[str]:
+        with self._active_task_lock:
+            return sorted(self._active_task_ids)
+
     def local_max_active_tasks(self) -> int:
         capacity = self.runtime.capacity()
         try:
@@ -2898,6 +2902,12 @@ class NetworkNode:
         if not node_id or not roles:
             raise ValueError("missing_claim_identity")
         peer = self.refresh_claiming_peer(claim)
+        accepting_tasks = bool(claim.get("accepting_tasks", True))
+        active_task_ids = {
+            safe_id(str(item_id))
+            for item_id in claim.get("active_task_ids", [])
+            if str(item_id).strip()
+        }
         constraints_base = {
             "min_compute_reputation": float(claim.get("min_compute_reputation", 0.0) or 0.0),
             "min_verify_reputation": float(claim.get("min_verify_reputation", 0.0) or 0.0),
@@ -2981,44 +2991,94 @@ class NetworkNode:
         def fresh_alternatives(peers: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return [candidate for candidate in peers if fresh_peer(candidate)]
 
-        with self._claim_lock:
-            for path in tasks_dir.glob("*.json"):
-                envelope = read_json(path, {})
-                if not isinstance(envelope, dict):
+        def claim_lease_s(task: dict[str, Any]) -> float:
+            try:
+                configured = float(os.environ.get("SILICIUM_CLAIM_LEASE_S", "45") or 45)
+            except (TypeError, ValueError):
+                configured = 45.0
+            try:
+                task_timeout = float(task.get("timeout_s", 300.0) or 300.0)
+            except (TypeError, ValueError):
+                task_timeout = 300.0
+            return max(15.0, min(configured, max(15.0, task_timeout * 0.5)))
+
+        def renew_active_claims_for_peer() -> None:
+            if not active_task_ids:
+                return
+            now = time.time()
+            for candidate_path in tasks_dir.glob("*.json"):
+                candidate = read_json(candidate_path, {})
+                if not isinstance(candidate, dict):
                     continue
-                status = str(envelope.get("status", "")).lower()
-                claimed_by = safe_id(str(envelope.get("claimed_by", "")))
-                if status == "claimed" and claimed_by == node_id:
-                    task = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
-                    try:
-                        stale_after_s = max(300.0, float(task.get("timeout_s", 300.0) or 300.0) * 2.0)
-                    except (TypeError, ValueError):
-                        stale_after_s = 600.0
-                    try:
-                        claimed_age_s = max(0.0, time.time() - path.stat().st_mtime)
-                    except OSError:
-                        claimed_age_s = 0.0
-                    if claimed_age_s <= stale_after_s:
-                        continue
-                    envelope["status"] = "queued"
-                    envelope["requeued_utc"] = utc_now()
-                    envelope["requeue_reason"] = "stale_claim"
-                    envelope.pop("claimed_by", None)
-                    envelope.pop("claimed_utc", None)
-                    atomic_write_json(path, envelope)
-                    self.reputation.record_peer_result(node_id, False)
-                    append_jsonl(
-                        self.events_path,
-                        {
-                            "schema_version": 1,
-                            "timestamp_utc": utc_now(),
-                            "node_id": self.config.node_id,
-                            "kind": "task_requeued",
-                            "item_id": safe_id(str(envelope.get("task_id", path.stem))),
-                            "source_node": node_id,
-                            "reason": "stale_claim",
-                        },
-                    )
+                if str(candidate.get("status", "")).lower() != "claimed":
+                    continue
+                candidate_id = safe_id(str(candidate.get("task_id", candidate_path.stem)))
+                if candidate_id not in active_task_ids:
+                    continue
+                if safe_id(str(candidate.get("claimed_by", ""))) != node_id:
+                    continue
+                task = candidate.get("task") if isinstance(candidate.get("task"), dict) else {}
+                candidate["claimed_heartbeat_unix"] = now
+                candidate["claimed_expires_unix"] = now + claim_lease_s(task)
+                candidate["claimed_heartbeat_utc"] = utc_now()
+                atomic_write_json(candidate_path, candidate)
+
+        def requeue_stale_claims() -> None:
+            now = time.time()
+            for candidate_path in tasks_dir.glob("*.json"):
+                candidate = read_json(candidate_path, {})
+                if not isinstance(candidate, dict):
+                    continue
+                if str(candidate.get("status", "")).lower() != "claimed":
+                    continue
+                claimed_node = safe_id(str(candidate.get("claimed_by", "")))
+                if not claimed_node:
+                    continue
+                task = candidate.get("task") if isinstance(candidate.get("task"), dict) else {}
+                lease = claim_lease_s(task)
+                try:
+                    claimed_expires_unix = float(candidate.get("claimed_expires_unix", 0.0) or 0.0)
+                except (TypeError, ValueError):
+                    claimed_expires_unix = 0.0
+                try:
+                    claimed_age_s = max(0.0, now - candidate_path.stat().st_mtime)
+                except OSError:
+                    claimed_age_s = 0.0
+                with self.peer_network._lock:
+                    claimed_peer = dict(self.peer_network._peers.get(claimed_node, {}))
+                expired = claimed_expires_unix > 0 and now > claimed_expires_unix
+                missing_or_stale_peer = not fresh_peer(claimed_peer) and claimed_age_s > lease
+                if not expired and not missing_or_stale_peer:
+                    continue
+                candidate["status"] = "queued"
+                candidate["requeued_utc"] = utc_now()
+                candidate["requeue_reason"] = "claim_lease_expired" if expired else "claimed_peer_stale"
+                candidate["previous_claimed_by"] = claimed_node
+                candidate.pop("claimed_by", None)
+                candidate.pop("claimed_utc", None)
+                candidate.pop("claimed_heartbeat_unix", None)
+                candidate.pop("claimed_expires_unix", None)
+                candidate.pop("claimed_heartbeat_utc", None)
+                atomic_write_json(candidate_path, candidate)
+                self.reputation.record_peer_result(claimed_node, False)
+                append_jsonl(
+                    self.events_path,
+                    {
+                        "schema_version": 1,
+                        "timestamp_utc": utc_now(),
+                        "node_id": self.config.node_id,
+                        "kind": "task_requeued",
+                        "item_id": safe_id(str(candidate.get("task_id", candidate_path.stem))),
+                        "source_node": claimed_node,
+                        "reason": candidate["requeue_reason"],
+                    },
+                )
+
+        with self._claim_lock:
+            renew_active_claims_for_peer()
+            requeue_stale_claims()
+            if not accepting_tasks:
+                return {"ok": True, "claimed": False, "reason": "peer_busy"}
             for path in sorted(tasks_dir.glob("*.json"), key=lambda item: item.stat().st_mtime):
                 envelope = read_json(path, {})
                 if not isinstance(envelope, dict):
@@ -3104,6 +3164,9 @@ class NetworkNode:
                 claimed["status"] = "claimed"
                 claimed["claimed_by"] = node_id
                 claimed["claimed_utc"] = utc_now()
+                claimed["claimed_heartbeat_unix"] = time.time()
+                task_for_lease = claimed.get("task") if isinstance(claimed.get("task"), dict) else {}
+                claimed["claimed_expires_unix"] = time.time() + claim_lease_s(task_for_lease)
                 claimed["dispatched_by"] = self.config.node_id
                 claimed["dispatched_utc"] = utc_now()
                 claimed["result_return_url"] = self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
@@ -3137,8 +3200,9 @@ class NetworkNode:
             return False
         if not {"compute", "verify"}.intersection(self.config.roles):
             return False
-        if not self.config.once and self.local_active_task_count() >= self.local_max_active_tasks():
-            return False
+        active_task_ids = self.local_active_task_ids()
+        active_task_count = len(active_task_ids)
+        accepting_tasks = self.config.once or active_task_count == 0
         now = time.time()
         if now - self._last_pull_unix < max(1, self.config.pull_tasks_interval_s):
             return False
@@ -3149,6 +3213,9 @@ class NetworkNode:
             "roles": sorted(self.config.roles),
             "capacity": self.runtime.capacity(),
             "reputation_score": self.reputation.local_score(),
+            "active_task_ids": active_task_ids,
+            "active_task_count": active_task_count,
+            "accepting_tasks": accepting_tasks,
         }
         raw = stable_json(claim).encode("utf-8")
         for seed in self.config.seed_peers:
