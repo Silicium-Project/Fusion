@@ -137,7 +137,7 @@
           Aucun travail enregistre pour le moment. Votre PC est connecte et attend une tache.
         </div>
         <div v-else class="friendly-history">
-          <article v-for="item in friendlyHistory" :key="item.id" class="friendly-event">
+          <article v-for="item in recentFriendlyHistory" :key="item.id" class="friendly-event">
             <div class="event-dot"></div>
             <div>
               <strong>{{ item.title }}</strong>
@@ -145,6 +145,19 @@
             </div>
             <span>{{ item.date }}</span>
           </article>
+          <details v-if="olderFriendlyHistory.length > 0" class="history-more">
+            <summary>Voir les anciens evenements ({{ olderFriendlyHistory.length }})</summary>
+            <div class="friendly-history history-more-list">
+              <article v-for="item in olderFriendlyHistory" :key="item.id" class="friendly-event">
+                <div class="event-dot"></div>
+                <div>
+                  <strong>{{ item.title }}</strong>
+                  <p>{{ item.description }}</p>
+                </div>
+                <span>{{ item.date }}</span>
+              </article>
+            </div>
+          </details>
         </div>
       </section>
     </section>
@@ -300,11 +313,13 @@ const friendlyLastActivity = computed(() => {
 });
 
 const friendlyHistory = computed(() =>
-  activity.history.slice(0, 10).map((item, index) => ({
+  activity.history.map((item, index) => ({
     id: `${item.name}-${item.modifiedAt}-${index}`,
     ...friendlyEvent(item),
   })),
 );
+const recentFriendlyHistory = computed(() => friendlyHistory.value.slice(0, 5));
+const olderFriendlyHistory = computed(() => friendlyHistory.value.slice(5));
 
 const shortResultName = computed(() => {
   if (!activity.lastResult || activity.lastResult === 'Aucun resultat local') {

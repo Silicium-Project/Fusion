@@ -138,6 +138,7 @@
                 </div>
                 <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
                 <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
+                <p class="mt-2 text-sm text-white/50">Date : <span class="font-semibold text-white/80">{{ jobDate(job) }}</span></p>
                 <p class="mt-2 text-sm text-white/50">Duree : <span class="font-semibold text-white/80">{{ jobDuration(job) }}</span></p>
                 <div v-if="showErrorDetails && job.errorMessage" class="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
                   {{ job.errorMessage }}
@@ -174,6 +175,7 @@
                     </div>
                     <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
                     <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
+                    <p class="mt-2 text-sm text-white/50">Date : <span class="font-semibold text-white/80">{{ jobDate(job) }}</span></p>
                     <p class="mt-2 text-sm text-white/50">Duree : <span class="font-semibold text-white/80">{{ jobDuration(job) }}</span></p>
                     <div v-if="showErrorDetails && job.errorMessage" class="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
                       {{ job.errorMessage }}
@@ -336,6 +338,20 @@ const jobDuration = (job: Job) => {
   const end = endRaw ? Date.parse(endRaw) : nowMs.value;
   if (!Number.isFinite(end)) return 'en cours';
   return formatDuration((end - start) / 1000);
+};
+
+const jobDate = (job: Job) => {
+  const raw = job.createdAt || job.startedAt || job.completedAt;
+  if (!raw) return 'non disponible';
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) return 'non disponible';
+  return new Date(parsed).toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 const loadJobs = async () => {
