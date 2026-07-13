@@ -347,7 +347,8 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
 
 #[tauri::command]
 fn app_defaults() -> AppDefaults {
-    let repo_root = preferred_repo_root()
+    let repo_root = ensure_packaged_runtime_preferred()
+        .or_else(discover_managed_runtime_root)
         .map(|path| path.display().to_string())
         .unwrap_or_default();
     AppDefaults {
@@ -357,74 +358,40 @@ fn app_defaults() -> AppDefaults {
     }
 }
 
-fn resolve_optional_repo_root(repo_root: Option<&str>) -> Option<PathBuf> {
+fn resolve_optional_repo_root(_repo_root: Option<&str>) -> Option<PathBuf> {
     if let Some(root) = discover_managed_runtime_root() {
         return Some(root);
     }
-    repo_root
-        .filter(|value| !value.trim().is_empty())
-        .and_then(|value| resolve_repo_root_readonly(value).ok())
-        .or_else(|| discover_configured_repo_root().filter(|root| validate_repo_root(root).is_ok()))
-        .or_else(discover_repo_root)
-        .or_else(discover_managed_runtime_root)
+    ensure_packaged_runtime_preferred()
 }
 
-fn resolve_repo_root(repo_root: &str) -> Result<PathBuf, String> {
+fn resolve_repo_root(_repo_root: &str) -> Result<PathBuf, String> {
     if let Some(root) = discover_managed_runtime_root() {
         return refresh_managed_runtime_if_needed(root);
     }
-    if !repo_root.trim().is_empty() {
-        return refresh_managed_runtime_if_needed(PathBuf::from(repo_root.trim()));
+    if find_packaged_runtime_root().is_some() {
+        return ensure_managed_runtime();
     }
-    if let Some(root) = discover_configured_repo_root() {
-        return refresh_managed_runtime_if_needed(root);
-    }
-    discover_repo_root()
-        .or_else(discover_managed_runtime_root)
-        .map(refresh_managed_runtime_if_needed)
-        .unwrap_or_else(ensure_managed_runtime)
+    Err("managed_runtime_not_found".to_string())
 }
 
-fn resolve_repo_root_readonly(repo_root: &str) -> Result<PathBuf, String> {
+fn resolve_repo_root_readonly(_repo_root: &str) -> Result<PathBuf, String> {
     if let Some(root) = discover_managed_runtime_root() {
         validate_repo_root(&root)?;
         return Ok(root);
     }
-    if !repo_root.trim().is_empty() {
-        let root = PathBuf::from(repo_root.trim());
-        validate_repo_root(&root)?;
-        return Ok(root);
+    if find_packaged_runtime_root().is_some() {
+        return ensure_managed_runtime();
     }
-    if let Some(root) = discover_configured_repo_root() {
-        validate_repo_root(&root)?;
-        return Ok(root);
-    }
-    discover_repo_root()
-        .or_else(discover_managed_runtime_root)
-        .ok_or_else(|| "repo_root_not_found".to_string())
+    Err("managed_runtime_not_found".to_string())
 }
 
-fn preferred_repo_root() -> Option<PathBuf> {
-    discover_managed_runtime_root()
-        .or_else(|| discover_configured_repo_root().filter(|root| validate_repo_root(root).is_ok()))
-        .or_else(discover_repo_root)
-}
-
-fn discover_repo_root() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(current_dir) = env::current_dir() {
-        candidates.push(current_dir);
+fn ensure_packaged_runtime_preferred() -> Option<PathBuf> {
+    if find_packaged_runtime_root().is_some() {
+        ensure_managed_runtime().ok()
+    } else {
+        None
     }
-    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")));
-
-    for candidate in candidates {
-        for ancestor in candidate.ancestors() {
-            if ancestor.join("Network").exists() && ancestor.join("Site").exists() {
-                return Some(ancestor.to_path_buf());
-            }
-        }
-    }
-    None
 }
 
 fn validate_repo_root(repo_root: &Path) -> Result<(), String> {
@@ -1205,22 +1172,8 @@ fn write_global_repo_root(repo_root: &Path) -> Result<(), String> {
     fs::write(path, repo_root.display().to_string()).map_err(|error| error.to_string())
 }
 
-fn read_global_repo_root() -> Option<PathBuf> {
-    let raw = fs::read_to_string(global_repo_root_path()).ok()?;
-    let path = PathBuf::from(raw.trim());
-    if validate_repo_root(&path).is_ok() {
-        Some(path)
-    } else {
-        None
-    }
-}
-
 fn remove_global_repo_root() {
     let _ = fs::remove_file(global_repo_root_path());
-}
-
-fn discover_configured_repo_root() -> Option<PathBuf> {
-    read_global_repo_root()
 }
 
 fn cleanup_node_installation(repo_root: &Path) -> Result<(), String> {
