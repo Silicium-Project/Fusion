@@ -154,6 +154,7 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
 
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
+    cleanup_previous_node_processes(&repo_root);
     cleanup_dead_pids(&repo_root);
     if let Some(pid) = read_supervisor_pid(&repo_root)? {
         if process_is_running(pid) {
@@ -182,7 +183,8 @@ fn start_node(config: NodeConfig, state: State<ProcessState>) -> Result<String, 
     let mut child = spawn_supervisor(&repo_root)?;
     write_supervisor_pid(&repo_root, child.id())?;
     wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
-    *node = Some(child);
+    drop(child);
+    *node = None;
     if let Some(warning) = autostart_warning {
         Ok(format!(
             "Silicium node started, but Windows autostart is not installed yet: {warning}"
@@ -1192,6 +1194,18 @@ fn cleanup_node_installation(repo_root: &Path) -> Result<(), String> {
     uninstall_autostart_task();
     remove_global_repo_root();
     Ok(())
+}
+
+fn cleanup_previous_node_processes(repo_root: &Path) {
+    if let Ok(Some(pid)) = read_supervisor_pid(repo_root) {
+        let _ = kill_process_tree(pid);
+    }
+    if let Ok(Some(pid)) = read_pid(repo_root) {
+        let _ = kill_process_tree(pid);
+    }
+    kill_known_silicium_processes(Some(repo_root));
+    remove_pid(repo_root);
+    remove_supervisor_pid(repo_root);
 }
 
 fn notify_peer_leave(config: &NodeConfig) {
