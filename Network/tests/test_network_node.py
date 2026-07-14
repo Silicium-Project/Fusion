@@ -173,7 +173,7 @@ def _queued_task(export_dir: Path, task_id: str, role: str, **extra: object) -> 
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_claim_does_not_wait_for_a_busy_alternative(tmp_path: Path) -> None:
+def test_claim_waits_for_a_busy_independent_verifier(tmp_path: Path) -> None:
     export_dir = tmp_path / "export"
     node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
     _queued_task(
@@ -202,8 +202,7 @@ def test_claim_does_not_wait_for_a_busy_alternative(tmp_path: Path) -> None:
         }
     )
 
-    assert claimed["claimed"] is True
-    assert claimed["task"]["claimed_by"] == "worker-a"
+    assert claimed["claimed"] is False
 
 
 def test_claim_waits_for_an_available_alternative(tmp_path: Path) -> None:
@@ -281,6 +280,42 @@ def test_verifier_cannot_verify_its_own_fragment_when_an_idle_peer_is_online(tmp
     assert independent_verification["task"]["claimed_by"] == "worker-b"
 
 
+def test_fairness_does_not_wait_for_the_excluded_compute_node(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    node.reputation.record_peer_dispatch("worker-b", "verify", "previous-verify-1")
+    node.reputation.record_peer_dispatch("worker-b", "verify", "previous-verify-2")
+    _queued_task(
+        export_dir,
+        "render-frag-002-verify",
+        "verify",
+        excluded_node_ids=["worker-a"],
+        excluded_until_unix=time.time() + 120,
+        fairness_until_unix=time.time() + 120,
+    )
+    node.peer_network._peers["worker-a"] = {
+        "node_id": "worker-a",
+        "roles": ["compute", "verify"],
+        "last_seen_unix": time.time(),
+        "accepting_tasks": True,
+        "active_task_count": 0,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-b",
+            "roles": ["compute", "verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is True
+    assert claimed["task"]["claimed_by"] == "worker-b"
+
+
 def test_worker_accepts_claims_until_its_cpu_slot_limit(tmp_path: Path, monkeypatch) -> None:
     node = network_node.NetworkNode(_config(tmp_path / "export", "worker-a"))
     monkeypatch.setattr(node, "local_max_active_tasks", lambda: 2)
@@ -329,6 +364,47 @@ def test_claim_reserves_a_fragment_for_a_fresh_idle_peer(tmp_path: Path) -> None
     )
 
     assert claimed["claimed"] is False
+
+
+def test_job_fairness_ignores_dispatch_history_from_older_jobs(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    node.reputation.record_peer_dispatch("worker-b", "compute", "old-job-1")
+    node.reputation.record_peer_dispatch("worker-b", "compute", "old-job-2")
+    _queued_task(
+        export_dir,
+        "render-frag-000",
+        "compute",
+        status="completed",
+        claimed_by="worker-a",
+    )
+    _queued_task(
+        export_dir,
+        "render-frag-001",
+        "compute",
+        fairness_until_unix=time.time() + 60,
+    )
+    node.peer_network._peers["worker-a"] = {
+        "node_id": "worker-a",
+        "roles": ["compute"],
+        "last_seen_unix": time.time(),
+        "accepting_tasks": True,
+        "active_task_count": 0,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-b",
+            "roles": ["compute"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is True
+    assert claimed["task"]["claimed_by"] == "worker-b"
 
 
 def test_claim_falls_back_after_the_fairness_window(tmp_path: Path) -> None:

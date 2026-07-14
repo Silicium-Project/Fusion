@@ -3149,6 +3149,12 @@ class NetworkNode:
                     alternatives.append(candidate)
             return alternatives
 
+        def fresh_verification_alternatives(peers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            # Verification must remain independent even when the other verifier
+            # is temporarily busy. The excluded compute node is only allowed to
+            # fall back after excluded_until_unix.
+            return [candidate for candidate in peers if fresh_peer(candidate)]
+
         def claim_lease_s(task: dict[str, Any]) -> float:
             try:
                 configured = float(os.environ.get("SILICIUM_CLAIM_LEASE_S", "45") or 45)
@@ -3260,6 +3266,14 @@ class NetworkNode:
                 current_stats = self.reputation.peer_dispatch_stats(node_id)
                 current_by_role = current_stats.get("by_role", {}) if isinstance(current_stats.get("by_role"), dict) else {}
                 current_count = int(current_by_role.get(scheduler_role, 0) or 0)
+                excluded_raw = envelope.get("excluded_node_ids", task.get("excluded_node_ids", []))
+                if isinstance(excluded_raw, str):
+                    excluded_values = [excluded_raw]
+                elif isinstance(excluded_raw, list):
+                    excluded_values = excluded_raw
+                else:
+                    excluded_values = []
+                excluded_node_ids = {safe_id(str(value)) for value in excluded_values if str(value).strip()}
                 try:
                     fairness_until_unix = float(envelope.get("fairness_until_unix", task.get("fairness_until_unix", 0.0)) or 0.0)
                 except (TypeError, ValueError):
@@ -3269,7 +3283,7 @@ class NetworkNode:
                     self.peer_network.select_peers(
                         required_roles=required_roles,
                         limit=0,
-                        exclude={node_id, self.config.node_id},
+                        exclude={node_id, self.config.node_id, *excluded_node_ids},
                         constraints=constraints,
                     )
                 )
@@ -3292,24 +3306,16 @@ class NetworkNode:
                     ]
                     if alternative_group_counts and current_group_count > min(alternative_group_counts):
                         continue
-                if fairness_active:
+                if fairness_active and "-frag-" not in item_id:
                     if alternative_counts and current_count > min(alternative_counts):
                         continue
-                excluded_raw = envelope.get("excluded_node_ids", task.get("excluded_node_ids", []))
-                if isinstance(excluded_raw, str):
-                    excluded_values = [excluded_raw]
-                elif isinstance(excluded_raw, list):
-                    excluded_values = excluded_raw
-                else:
-                    excluded_values = []
-                excluded_node_ids = {safe_id(str(value)) for value in excluded_values if str(value).strip()}
                 try:
                     excluded_until_unix = float(envelope.get("excluded_until_unix", task.get("excluded_until_unix", 0.0)) or 0.0)
                 except (TypeError, ValueError):
                     excluded_until_unix = 0.0
                 excluded_fallback = node_id in excluded_node_ids and time.time() >= excluded_until_unix > 0
                 if node_id in excluded_node_ids and not excluded_fallback:
-                    alternatives = fresh_fairness_alternatives(
+                    alternatives = fresh_verification_alternatives(
                         self.peer_network.select_peers(
                             required_roles=required_roles,
                             limit=0,
