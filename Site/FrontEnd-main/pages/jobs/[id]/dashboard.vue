@@ -95,16 +95,58 @@
       </section>
 
       <div v-if="payload" class="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6">
-        <section class="bg-[#1f2029] rounded-2xl p-6">
-          <div class="flex items-center justify-between gap-4 mb-4">
+        <section class="min-w-0 bg-[#1f2029] rounded-2xl p-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
             <div>
               <h2 class="text-2xl font-bold">Graphe du job</h2>
               <p class="text-white/50">Du job initial aux fragments, puis calcul, verification et reassemblage.</p>
             </div>
-            <span class="text-white/50">{{ graphFragments.length }} fragments</span>
+            <div class="flex items-center gap-2">
+              <span class="mr-2 text-sm text-white/50">{{ graphFragments.length }} fragments</span>
+              <button
+                type="button"
+                class="h-9 w-9 rounded-lg bg-white/10 text-lg hover:bg-white/15"
+                aria-label="Reduire le graphe"
+                @click="changeGraphZoom(-0.1)"
+              >
+                −
+              </button>
+              <span class="w-12 text-center text-xs text-white/60">{{ Math.round(graphView.scale * 100) }}%</span>
+              <button
+                type="button"
+                class="h-9 w-9 rounded-lg bg-white/10 text-lg hover:bg-white/15"
+                aria-label="Agrandir le graphe"
+                @click="changeGraphZoom(0.1)"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                class="h-9 rounded-lg bg-white/10 px-3 text-sm hover:bg-white/15"
+                @click="resetGraphView"
+              >
+                Recentrer
+              </button>
+            </div>
           </div>
-          <div class="relative overflow-auto rounded-xl bg-[#f8fafc] min-h-[720px]">
-            <svg :width="jobGraph.width" :height="jobGraph.height" class="block">
+          <div
+            ref="graphViewport"
+            class="relative h-[560px] w-full touch-none select-none overflow-hidden rounded-xl border border-white/10 bg-[#f8fafc]"
+            :class="graphDrag.active ? 'cursor-grabbing' : 'cursor-grab'"
+            @pointerdown="startGraphDrag"
+            @pointermove="moveGraphDrag"
+            @pointerup="endGraphDrag"
+            @pointercancel="endGraphDrag"
+          >
+            <div class="pointer-events-none absolute left-3 top-3 z-10 rounded-md bg-slate-900/75 px-3 py-1.5 text-xs text-white shadow">
+              Glisser pour deplacer le graphe
+            </div>
+            <svg
+              :width="jobGraph.width"
+              :height="jobGraph.height"
+              class="absolute left-0 top-0 block max-w-none"
+              :style="graphTransformStyle"
+            >
               <defs>
                 <marker id="job-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
                   <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
@@ -237,7 +279,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import Cookies from 'js-cookie';
 
 type DashboardPayload = {
@@ -289,6 +331,13 @@ const resultPreviewUrl = ref('');
 const refreshTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const clockTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const nowMs = ref(Date.now());
+const graphViewport = ref<HTMLDivElement | null>(null);
+const graphView = reactive({ x: 18, y: 26, scale: 0.65 });
+const graphDrag = reactive({ active: false, pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0 });
+const graphTransformStyle = computed(() => ({
+  transform: `translate(${graphView.x}px, ${graphView.y}px) scale(${graphView.scale})`,
+  transformOrigin: '0 0',
+}));
 
 const authHeaders = () => {
   const token = Cookies.get('auth_token');
@@ -504,6 +553,64 @@ const jobGraph = computed(() => {
 
   return { width, height: 790, nodes, edges };
 });
+
+const clampGraphScale = (value: number) => Math.max(0.35, Math.min(1.35, value));
+
+const changeGraphZoom = (delta: number) => {
+  const viewport = graphViewport.value;
+  const previousScale = graphView.scale;
+  const nextScale = clampGraphScale(previousScale + delta);
+  if (!viewport || nextScale === previousScale) return;
+  const centerX = viewport.clientWidth / 2;
+  const centerY = viewport.clientHeight / 2;
+  const contentX = (centerX - graphView.x) / previousScale;
+  const contentY = (centerY - graphView.y) / previousScale;
+  graphView.scale = nextScale;
+  graphView.x = centerX - contentX * nextScale;
+  graphView.y = centerY - contentY * nextScale;
+};
+
+const resetGraphView = async () => {
+  await nextTick();
+  const viewport = graphViewport.value;
+  if (!viewport) return;
+  const fitScale = (viewport.clientWidth - 36) / Math.max(1, jobGraph.value.width);
+  graphView.scale = clampGraphScale(Math.max(0.55, Math.min(0.82, fitScale)));
+  const renderedWidth = jobGraph.value.width * graphView.scale;
+  const renderedHeight = jobGraph.value.height * graphView.scale;
+  graphView.x = renderedWidth <= viewport.clientWidth
+    ? (viewport.clientWidth - renderedWidth) / 2
+    : 18;
+  graphView.y = Math.max(18, (viewport.clientHeight - renderedHeight) / 2);
+};
+
+const startGraphDrag = (event: PointerEvent) => {
+  if (event.button !== 0) return;
+  const target = event.currentTarget as HTMLElement;
+  target.setPointerCapture(event.pointerId);
+  graphDrag.active = true;
+  graphDrag.pointerId = event.pointerId;
+  graphDrag.startX = event.clientX;
+  graphDrag.startY = event.clientY;
+  graphDrag.originX = graphView.x;
+  graphDrag.originY = graphView.y;
+};
+
+const moveGraphDrag = (event: PointerEvent) => {
+  if (!graphDrag.active || event.pointerId !== graphDrag.pointerId) return;
+  graphView.x = graphDrag.originX + event.clientX - graphDrag.startX;
+  graphView.y = graphDrag.originY + event.clientY - graphDrag.startY;
+};
+
+const endGraphDrag = (event: PointerEvent) => {
+  if (!graphDrag.active || event.pointerId !== graphDrag.pointerId) return;
+  const target = event.currentTarget as HTMLElement;
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+  graphDrag.active = false;
+  graphDrag.pointerId = -1;
+};
+
+watch(() => jobGraph.value.width, resetGraphView, { flush: 'post' });
 
 const loadResultPreview = async () => {
   if (!payload.value?.resultReady) return;
