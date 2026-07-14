@@ -545,6 +545,11 @@ def main(argv: list[str] | None = None) -> int:
 
             if len(verified_indexes) >= len(fragments):
                 break
+            if made_progress:
+                # The timeout measures a lack of network progress, not the total
+                # duration of a multi-worker pipeline. A worker joining or leaving
+                # can legitimately redistribute the remaining fragments.
+                deadline = time.monotonic() + float(args.result_timeout_s)
             if time.monotonic() >= deadline:
                 pending = sorted(list(pending_compute.keys()) + list(pending_verify.keys()))
                 for task_id, job in pending_compute.items():

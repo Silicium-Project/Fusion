@@ -2699,6 +2699,9 @@ class NetworkNode:
             return 1
         return max(1, min(4, cpu_count // 4))
 
+    def local_available_task_slots(self) -> int:
+        return max(0, self.local_max_active_tasks() - self.local_active_task_count())
+
     def start_background_task(self, envelope: dict[str, Any]) -> bool:
         detail = self.describe_envelope(envelope)
         item_id = str(detail["item_id"])
@@ -3013,6 +3016,15 @@ class NetworkNode:
                     "roles": roles or current.get("roles", []),
                     "capacity": capacity or current.get("capacity", {}),
                     "reputation_score": float(claim.get("reputation_score", current.get("reputation_score", 0.0)) or 0.0),
+                    "accepting_tasks": bool(claim.get("accepting_tasks", True)),
+                    "active_task_count": max(0, int(claim.get("active_task_count", 0) or 0)),
+                    "max_active_tasks": max(1, int(claim.get("max_active_tasks", 1) or 1)),
+                    "available_task_slots": max(0, int(claim.get("available_task_slots", 0) or 0)),
+                    "active_task_ids": [
+                        safe_id(str(item_id))
+                        for item_id in claim.get("active_task_ids", [])
+                        if str(item_id).strip()
+                    ],
                     "last_seen_unix": int(time.time()),
                     "updated_utc": utc_now(),
                     "self": node_id == self.config.node_id,
@@ -3115,7 +3127,11 @@ class NetworkNode:
             return time.time() - last_seen <= max(30.0, float(self.config.peer_stale_after_s or 0))
 
         def fresh_alternatives(peers: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            return [candidate for candidate in peers if fresh_peer(candidate)]
+            return [
+                candidate
+                for candidate in peers
+                if fresh_peer(candidate) and candidate.get("accepting_tasks") is True
+            ]
 
         def claim_lease_s(task: dict[str, Any]) -> float:
             try:
@@ -3328,7 +3344,9 @@ class NetworkNode:
             return False
         active_task_ids = self.local_active_task_ids()
         active_task_count = len(active_task_ids)
-        accepting_tasks = self.config.once or active_task_count == 0
+        max_active_tasks = self.local_max_active_tasks()
+        available_task_slots = max(0, max_active_tasks - active_task_count)
+        accepting_tasks = self.config.once or available_task_slots > 0
         now = time.time()
         if now - self._last_pull_unix < max(1, self.config.pull_tasks_interval_s):
             return False
@@ -3341,6 +3359,8 @@ class NetworkNode:
             "reputation_score": self.reputation.local_score(),
             "active_task_ids": active_task_ids,
             "active_task_count": active_task_count,
+            "max_active_tasks": max_active_tasks,
+            "available_task_slots": available_task_slots,
             "accepting_tasks": accepting_tasks,
         }
         raw = stable_json(claim).encode("utf-8")
@@ -3645,17 +3665,25 @@ class NetworkNode:
         }
         raw = stable_json(payload).encode("utf-8")
         path = urlparse(return_url).path or "/results/dispatch"
-        request = urllib.request.Request(
-            return_url,
-            data=raw,
-            method="POST",
-            headers=self.peer_network._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:
-                ok = response.status in {200, 202}
-        except (TimeoutError, OSError, urllib.error.URLError):
-            ok = False
+        attempts = 0
+        ok = False
+        for attempt in range(5):
+            attempts = attempt + 1
+            request = urllib.request.Request(
+                return_url,
+                data=raw,
+                method="POST",
+                headers=self.peer_network._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    ok = response.status in {200, 202}
+            except (TimeoutError, OSError, urllib.error.URLError):
+                ok = False
+            if ok:
+                break
+            if attempt < 4:
+                time.sleep(min(2.0, 0.25 * (2**attempt)))
         append_jsonl(
             self.events_path,
             {
@@ -3666,6 +3694,7 @@ class NetworkNode:
                 "item_id": safe_item,
                 "target_node": origin_node_id,
                 "ok": ok,
+                "attempts": attempts,
                 "role": log_payload.get("role", ""),
                 "activity": log_payload.get("activity", ""),
                 "fragment_index": log_payload.get("fragment_index"),

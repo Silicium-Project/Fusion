@@ -192,7 +192,7 @@ fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<Stri
         return Ok("Silicium node already running".to_string());
     }
 
-    config.node_id = normalized_node_id(&config.node_id);
+    config.node_id = effective_node_id(&config.node_id);
     config.orchestrator_url = normalize_orchestrator_url(&config.orchestrator_url)?;
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
@@ -416,8 +416,8 @@ fn app_defaults() -> AppDefaults {
             .map(|config| config.orchestrator_url.clone())
             .unwrap_or_else(|| "http://213.32.68.67:46100".to_string()),
         node_id: saved_config
-            .map(|config| normalized_node_id(&config.node_id))
-            .unwrap_or_default(),
+            .map(|config| effective_node_id(&config.node_id))
+            .unwrap_or_else(persistent_node_id),
     }
 }
 
@@ -570,7 +570,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
                 silicium_cli.display()
             ));
         }
-        let node_id = normalized_node_id(&config.node_id);
+        let node_id = effective_node_id(&config.node_id);
         let mut command = Command::new(python_launcher(repo_root));
         command
             .arg(&silicium_cli)
@@ -617,7 +617,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
         let mut command = Command::new("bash");
         command
             .arg(script)
-            .arg(normalized_node_id(&config.node_id))
+            .arg(effective_node_id(&config.node_id))
             .arg("compute,verify")
             .arg("46101")
             .arg(&config.orchestrator_url)
@@ -962,6 +962,39 @@ fn normalized_node_id(node_id: &str) -> String {
     } else {
         normalized
     }
+}
+
+fn effective_node_id(node_id: &str) -> String {
+    let normalized = normalized_node_id(node_id);
+    if normalized == "silicium-desktop-node" {
+        persistent_node_id()
+    } else {
+        normalized
+    }
+}
+
+fn persistent_node_id() -> String {
+    let path = app_state_dir().join("node-id.txt");
+    if let Ok(saved) = fs::read_to_string(&path) {
+        let normalized = normalized_node_id(&saved);
+        if normalized != "silicium-desktop-node" {
+            return normalized;
+        }
+    }
+
+    let machine = env::var("COMPUTERNAME")
+        .or_else(|_| env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "desktop".to_string());
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let generated = normalized_node_id(&format!("silicium-{machine}-{nonce:x}"));
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(path, &generated);
+    generated
 }
 
 fn normalize_orchestrator_url(value: &str) -> Result<String, String> {

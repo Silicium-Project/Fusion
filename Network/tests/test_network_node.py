@@ -158,6 +158,137 @@ def _config(
     )
 
 
+def _queued_task(export_dir: Path, task_id: str, role: str, **extra: object) -> None:
+    payload = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": task_id,
+        "status": "queued",
+        "required_roles": [role],
+        "task": {"kind": role},
+        **extra,
+    }
+    path = export_dir / "tasks" / f"{task_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_claim_does_not_wait_for_a_busy_alternative(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(
+        export_dir,
+        "render-frag-000-verify",
+        "verify",
+        excluded_node_ids=["worker-a"],
+        excluded_until_unix=time.time() + 120,
+    )
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["verify"],
+        "last_seen_unix": time.time(),
+        "accepting_tasks": False,
+        "active_task_count": 1,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is True
+    assert claimed["task"]["claimed_by"] == "worker-a"
+
+
+def test_claim_waits_for_an_available_alternative(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(
+        export_dir,
+        "render-frag-000-verify",
+        "verify",
+        excluded_node_ids=["worker-a"],
+        excluded_until_unix=time.time() + 120,
+    )
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["verify"],
+        "last_seen_unix": time.time(),
+        "accepting_tasks": True,
+        "active_task_count": 0,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is False
+
+
+def test_worker_accepts_claims_until_its_cpu_slot_limit(tmp_path: Path, monkeypatch) -> None:
+    node = network_node.NetworkNode(_config(tmp_path / "export", "worker-a"))
+    monkeypatch.setattr(node, "local_max_active_tasks", lambda: 2)
+
+    assert node.local_available_task_slots() == 2
+    with node._active_task_lock:
+        node._active_task_ids.add("fragment-a")
+    assert node.local_available_task_slots() == 1
+    with node._active_task_lock:
+        node._active_task_ids.add("fragment-b")
+    assert node.local_available_task_slots() == 0
+
+
+def test_result_return_retries_transient_network_errors(tmp_path: Path, monkeypatch) -> None:
+    node = network_node.NetworkNode(_config(tmp_path / "export", "worker-a"))
+    calls = 0
+
+    class Response:
+        status = 202
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def flaky_urlopen(_request, timeout):
+        nonlocal calls
+        calls += 1
+        assert timeout == 5
+        if calls < 3:
+            raise urllib.error.URLError("temporary")
+        return Response()
+
+    monkeypatch.setattr(network_node.urllib.request, "urlopen", flaky_urlopen)
+    monkeypatch.setattr(network_node.time, "sleep", lambda _seconds: None)
+
+    delivered = node.return_dispatched_result(
+        {
+            "task_id": "render-frag-000",
+            "dispatched_by": "orchestrator",
+            "result_return_url": "http://127.0.0.1:46100/results/dispatch",
+        },
+        {"success": True, "result_hash": "sha256:test"},
+        {"role": "compute", "fragment_index": 0},
+    )
+
+    assert delivered is True
+    assert calls == 3
+
+
 def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
     export_dir = tmp_path / "export"
     export_dir.mkdir()
