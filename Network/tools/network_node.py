@@ -692,7 +692,32 @@ class P2PClient:
             if self.peer_network is None:
                 raise ValueError("peer_network_not_configured")
             content_id = validate_content_id(content_id)
-            data, peer_meta = self.peer_network.fetch_content(content_id, str(p2p_ref.get("peer_id", "")).strip())
+            preferred_peer_id = str(p2p_ref.get("peer_id", "")).strip()
+            preferred_peer_url = str(p2p_ref.get("peer_url", "")).strip()
+            last_error: FileNotFoundError | None = None
+            for attempt in range(5):
+                try:
+                    if preferred_peer_url:
+                        data, peer_meta = self.peer_network.fetch_content_from_url(
+                            preferred_peer_url,
+                            content_id,
+                            preferred_peer_id,
+                        )
+                    else:
+                        data, peer_meta = self.peer_network.fetch_content(content_id, preferred_peer_id)
+                    break
+                except FileNotFoundError as exc:
+                    last_error = exc
+                    if preferred_peer_url:
+                        try:
+                            data, peer_meta = self.peer_network.fetch_content(content_id, preferred_peer_id)
+                            break
+                        except FileNotFoundError as discovery_exc:
+                            last_error = discovery_exc
+                    if attempt < 4:
+                        time.sleep(min(2.0, 0.25 * (2**attempt)))
+            else:
+                raise last_error or FileNotFoundError(f"peer_content_not_found:{content_id}")
             meta = {
                 "source": "silicium-peer",
                 "content_id": content_id,
@@ -1417,6 +1442,16 @@ class PeerNetwork:
         if relayed is not None:
             return relayed
         raise FileNotFoundError(f"peer_content_not_found:{content_id}")
+
+    def fetch_content_from_url(self, base_url: str, content_id: str, peer_id: str = "") -> tuple[bytes, dict[str, Any]]:
+        normalized_url = self._normalize_http_target(base_url)
+        if not normalized_url:
+            raise FileNotFoundError(f"peer_content_not_found:{content_id}")
+        peer = {"node_id": peer_id, "http_base_url": normalized_url}
+        data = self._fetch_direct_from_peer(peer, content_id)
+        if data is None:
+            raise FileNotFoundError(f"peer_content_not_found:{content_id}")
+        return data, peer
 
     def _record_self_peer(self) -> None:
         with self._lock:

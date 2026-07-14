@@ -483,6 +483,61 @@ def test_result_return_retries_transient_network_errors(tmp_path: Path, monkeypa
     assert calls == 3
 
 
+def test_p2p_content_fetch_retries_transient_peer_discovery(tmp_path: Path, monkeypatch) -> None:
+    attempts = 0
+
+    class PeerNetwork:
+        def fetch_content(self, content_id: str, preferred_peer_id: str):
+            nonlocal attempts
+            attempts += 1
+            assert content_id == "abc123"
+            assert preferred_peer_id == "orchestrator-1"
+            if attempts < 3:
+                raise FileNotFoundError(f"peer_content_not_found:{content_id}")
+            return b"fragment-input", {"node_id": "orchestrator-1", "http_base_url": "http://127.0.0.1:46100"}
+
+    monkeypatch.setattr(network_node.time, "sleep", lambda _seconds: None)
+    client = network_node.P2PClient("http://127.0.0.1:5001", tmp_path, PeerNetwork())
+
+    data, metadata = client.fetch(
+        {
+            "protocol": "silicium",
+            "content_id": "abc123",
+            "peer_id": "orchestrator-1",
+        }
+    )
+
+    assert attempts == 3
+    assert data == b"fragment-input"
+    assert metadata["peer_id"] == "orchestrator-1"
+
+
+def test_p2p_content_fetch_uses_embedded_owner_url(tmp_path: Path) -> None:
+    class PeerNetwork:
+        def fetch_content_from_url(self, base_url: str, content_id: str, peer_id: str):
+            assert base_url == "http://213.32.68.67:46100"
+            assert content_id == "abc123"
+            assert peer_id == "orchestrator-1"
+            return b"fragment-input", {"node_id": peer_id, "http_base_url": base_url}
+
+        def fetch_content(self, _content_id: str, _preferred_peer_id: str):
+            raise AssertionError("peer discovery should not be needed when peer_url is present")
+
+    client = network_node.P2PClient("http://127.0.0.1:5001", tmp_path, PeerNetwork())
+
+    data, metadata = client.fetch(
+        {
+            "protocol": "silicium",
+            "content_id": "abc123",
+            "peer_id": "orchestrator-1",
+            "peer_url": "http://213.32.68.67:46100",
+        }
+    )
+
+    assert data == b"fragment-input"
+    assert metadata["peer_url"] == "http://213.32.68.67:46100"
+
+
 def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
     export_dir = tmp_path / "export"
     export_dir.mkdir()

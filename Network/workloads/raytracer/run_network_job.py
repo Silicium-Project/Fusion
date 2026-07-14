@@ -9,6 +9,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(NETWORK_ROOT))
@@ -131,15 +132,33 @@ def poll_task_result(args: argparse.Namespace, role: str, task_id: str, node_run
     return None
 
 
+def network_owner_url(args: argparse.Namespace) -> str:
+    host = str(args.network_advertise_host or "").strip().rstrip("/")
+    if not host:
+        return ""
+    base_url = host if "://" in host else f"http://{host}"
+    parsed = urlsplit(base_url)
+    if parsed.port is not None:
+        return base_url
+    return f"{base_url}:{int(args.network_advertise_port)}"
+
+
+def network_owned_ref(args: argparse.Namespace, ref: dict[str, Any]) -> dict[str, Any]:
+    owner_url = network_owner_url(args)
+    if owner_url:
+        ref["peer_url"] = owner_url
+    return ref
+
+
 def task_input_ref(args: argparse.Namespace, export_dir: Path, path: Path) -> dict[str, Any]:
     if args.node_mode == "network":
-        return store_network_file(export_dir, path, args.network_node_id)
+        return network_owned_ref(args, store_network_file(export_dir, path, args.network_node_id))
     return {"protocol": "file", "content_id": str(path), "hash": "sha256:" + sha256_file(path)}
 
 
 def bytes_input_ref(args: argparse.Namespace, export_dir: Path, data: bytes) -> dict[str, Any]:
     if args.node_mode == "network":
-        return store_network_content(export_dir, data, args.network_node_id)
+        return network_owned_ref(args, store_network_content(export_dir, data, args.network_node_id))
     digest = sha256_bytes(data)
     path = export_dir / "p2p" / digest
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,7 +182,7 @@ def portable_network_ref(ref: dict[str, Any]) -> dict[str, Any]:
 
 def orchestrator_pinned_ref(args: argparse.Namespace, export_dir: Path, data: bytes) -> dict[str, Any]:
     if args.node_mode == "network":
-        return store_network_content(export_dir, data, args.network_node_id)
+        return network_owned_ref(args, store_network_content(export_dir, data, args.network_node_id))
     digest = sha256_bytes(data)
     path = export_dir / "p2p" / digest
     path.parent.mkdir(parents=True, exist_ok=True)
