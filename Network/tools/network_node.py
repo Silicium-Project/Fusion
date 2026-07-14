@@ -3126,12 +3126,28 @@ class NetworkNode:
                 return False
             return time.time() - last_seen <= max(30.0, float(self.config.peer_stale_after_s or 0))
 
-        def fresh_alternatives(peers: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            return [
-                candidate
-                for candidate in peers
-                if fresh_peer(candidate) and candidate.get("accepting_tasks") is True
-            ]
+        def fresh_fairness_alternatives(peers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            alternatives: list[dict[str, Any]] = []
+            for candidate in peers:
+                if not fresh_peer(candidate) or candidate.get("accepting_tasks") is False:
+                    continue
+                if candidate.get("accepting_tasks") is True:
+                    alternatives.append(candidate)
+                    continue
+                activity = candidate.get("activity") if isinstance(candidate.get("activity"), dict) else {}
+                try:
+                    active_count = int(
+                        candidate.get(
+                            "active_task_count",
+                            activity.get("active_task_count", len(activity.get("active_tasks", []))),
+                        )
+                        or 0
+                    )
+                except (TypeError, ValueError):
+                    active_count = 0
+                if active_count == 0:
+                    alternatives.append(candidate)
+            return alternatives
 
         def claim_lease_s(task: dict[str, Any]) -> float:
             try:
@@ -3244,7 +3260,12 @@ class NetworkNode:
                 current_stats = self.reputation.peer_dispatch_stats(node_id)
                 current_by_role = current_stats.get("by_role", {}) if isinstance(current_stats.get("by_role"), dict) else {}
                 current_count = int(current_by_role.get(scheduler_role, 0) or 0)
-                alternatives = fresh_alternatives(
+                try:
+                    fairness_until_unix = float(envelope.get("fairness_until_unix", task.get("fairness_until_unix", 0.0)) or 0.0)
+                except (TypeError, ValueError):
+                    fairness_until_unix = 0.0
+                fairness_active = time.time() < fairness_until_unix
+                alternatives = fresh_fairness_alternatives(
                     self.peer_network.select_peers(
                         required_roles=required_roles,
                         limit=0,
@@ -3262,7 +3283,7 @@ class NetworkNode:
                         else {}
                     )
                     alternative_counts.append(int(alternative_by_role.get(scheduler_role, 0) or 0))
-                if alternatives:
+                if fairness_active and alternatives:
                     group_id = task_group_id(item_id)
                     current_group_count = assigned_count_for_group(group_id, scheduler_role, node_id)
                     alternative_group_counts = [
@@ -3271,11 +3292,7 @@ class NetworkNode:
                     ]
                     if alternative_group_counts and current_group_count > min(alternative_group_counts):
                         continue
-                try:
-                    fairness_until_unix = float(envelope.get("fairness_until_unix", task.get("fairness_until_unix", 0.0)) or 0.0)
-                except (TypeError, ValueError):
-                    fairness_until_unix = 0.0
-                if time.time() < fairness_until_unix:
+                if fairness_active:
                     if alternative_counts and current_count > min(alternative_counts):
                         continue
                 excluded_raw = envelope.get("excluded_node_ids", task.get("excluded_node_ids", []))
@@ -3292,7 +3309,7 @@ class NetworkNode:
                     excluded_until_unix = 0.0
                 excluded_fallback = node_id in excluded_node_ids and time.time() >= excluded_until_unix > 0
                 if node_id in excluded_node_ids and not excluded_fallback:
-                    alternatives = fresh_alternatives(
+                    alternatives = fresh_fairness_alternatives(
                         self.peer_network.select_peers(
                             required_roles=required_roles,
                             limit=0,
