@@ -3123,6 +3123,8 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--discovery-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_DISCOVERY_SYNC_INTERVAL_S", "30")))
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
+    parser.add_argument("--pull-tasks-enable", action="store_true", default=os.environ.get("SILICIUM_PULL_TASKS_ENABLE", "0") == "1")
+    parser.add_argument("--pull-tasks-interval-s", type=int, default=int(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "2")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
@@ -3209,6 +3211,8 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.discovery_sync_interval_s),
         "--remote-dispatch-limit",
         str(args.remote_dispatch_limit),
+        "--pull-tasks-interval-s",
+        str(args.pull_tasks_interval_s),
         "--solana-reputation-refresh-s",
         str(args.solana_reputation_refresh_s),
         "--scheduler-onchain-weight",
@@ -3228,6 +3232,8 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         argv.append("--relay-enable")
     if args.remote_dispatch_enable:
         argv.append("--remote-dispatch-enable")
+    if args.pull_tasks_enable:
+        argv.append("--pull-tasks-enable")
     if args.nat_punch_enable:
         argv.append("--nat-punch-enable")
     if args.solana_reputation_enable:
@@ -3343,19 +3349,25 @@ def configure_node_get(parser: argparse.ArgumentParser) -> None:
 def cmd_node_get_task(args: argparse.Namespace, ctx: Context) -> None:
     (void := ctx)
     settings = _resolve_mcp_settings(args)
-    print((Path(settings["export_dir"]) / "tasks" / f"{args.item_id}.json").read_text(encoding="utf-8"))
+    from tools.mcp_server import McpTaskStore
+
+    print(McpTaskStore(Path(settings["export_dir"])).read(args.item_id))
 
 
 def cmd_node_get_request(args: argparse.Namespace, ctx: Context) -> None:
     (void := ctx)
     settings = _resolve_mcp_settings(args)
-    print((Path(settings["export_dir"]) / "requests" / f"{args.item_id}.json").read_text(encoding="utf-8"))
+    from tools.mcp_server import McpRequestStore
+
+    print(McpRequestStore(Path(settings["export_dir"])).read(args.item_id))
 
 
 def cmd_node_get_result(args: argparse.Namespace, ctx: Context) -> None:
     (void := ctx)
     settings = _resolve_mcp_settings(args)
-    print((Path(settings["export_dir"]) / f"result.{args.item_id}.json").read_text(encoding="utf-8"))
+    from tools.mcp_server import McpExportStore, RESOURCE_RESULT_PREFIX
+
+    print(McpExportStore(Path(settings["export_dir"])).read_resource(RESOURCE_RESULT_PREFIX + args.item_id))
 
 
 def configure_node_get_local_file(parser: argparse.ArgumentParser) -> None:

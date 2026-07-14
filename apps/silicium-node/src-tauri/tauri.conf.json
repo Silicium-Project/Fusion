@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Silicium Node",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "network.silicium.node",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && npm run prepare:runtime",
     "frontendDist": "../dist"
   },
   "app": {
@@ -25,10 +25,21 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": "nsis",
     "icon": [
       "icons/icon.ico",
       "icons/icon.png"
-    ]
+    ],
+    "resources": [
+      "resources/runtime"
+    ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/nsis-hooks.nsh",
+        "installMode": "currentUser",
+        "languages": ["French", "English"],
+        "startMenuFolder": "Silicium"
+      }
+    }
   }
 }

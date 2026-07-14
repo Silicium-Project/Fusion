@@ -336,7 +336,7 @@ def test_world_mode_defaults_enable_mesh_bootstrap(monkeypatch) -> None:
     assert resolved.gossip_advertise_host == "100.70.0.12"
     assert resolved.peer_advertise_host == "100.70.0.12"
     assert resolved.mesh_key.startswith("world:team-eu:")
-    assert "world-identities/france-1/ed25519.pem" in resolved.identity_key_path
+    assert "world-identities/france-1/ed25519.pem" in Path(resolved.identity_key_path).as_posix()
 
 
 def test_world_mode_merges_discovery_seeds(monkeypatch) -> None:

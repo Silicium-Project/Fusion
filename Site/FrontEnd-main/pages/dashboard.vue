@@ -86,46 +86,102 @@
       </div>
 
       <section id="jobs" class="mt-8 bg-[#1f2029] rounded-2xl p-6">
-        <div class="flex items-center justify-between gap-4 mb-4">
+        <div class="flex flex-col gap-4 mb-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h3 class="text-2xl font-bold">Mes taches</h3>
             <p class="text-white/50">Le site soumet au backend, le backend orchestre Silicium, le dashboard observe le Devnet.</p>
           </div>
-          <button @click="loadJobs" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">
-            Rafraichir
-          </button>
+          <div class="flex flex-wrap items-center gap-3">
+            <label class="flex h-10 items-center gap-3 rounded-lg bg-black/20 px-4 text-sm text-white/70">
+              <span>Afficher les details d'erreur</span>
+              <button
+                type="button"
+                role="switch"
+                :aria-checked="showErrorDetails"
+                class="relative h-6 w-11 rounded-full transition-colors"
+                :class="showErrorDetails ? 'bg-red-400/70' : 'bg-white/15'"
+                @click="showErrorDetails = !showErrorDetails"
+              >
+                <span
+                  class="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform"
+                  :class="showErrorDetails ? 'translate-x-5' : 'translate-x-0'"
+                />
+              </button>
+            </label>
+            <button @click="loadJobs" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">
+              Rafraichir
+            </button>
+          </div>
         </div>
 
         <div v-if="jobs.length === 0" class="text-white/50 py-6">
           Aucun job soumis pour le moment.
         </div>
-        <div v-else class="overflow-x-auto">
-          <table class="w-full text-left">
-            <thead class="text-white/50 text-sm">
-              <tr>
-                <th class="py-3">Nom</th>
-                <th class="py-3">Workload</th>
-                <th class="py-3">Statut</th>
-                <th class="py-3">Job reseau</th>
-                <th class="py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="job in jobs" :key="job.id" class="border-t border-white/10">
-                <td class="py-4">
-                  <div class="font-semibold">{{ job.title }}</div>
-                  <div class="text-white/40 text-sm">{{ job.description }}</div>
-                  <div v-if="job.errorMessage" class="text-red-300 text-sm mt-1">{{ job.errorMessage }}</div>
-                </td>
-                <td class="py-4 text-white/70">{{ job.workload }}</td>
-                <td class="py-4">
+        <div v-else class="space-y-3">
+          <div class="flex items-center justify-between text-sm text-white/50">
+            <span>{{ displayedJobs.length }} tache(s) affichee(s)</span>
+            <span v-if="hiddenErrorDetails > 0">{{ hiddenErrorDetails }} detail(s) d'erreur masque(s)</span>
+          </div>
+
+          <article
+            v-for="job in recentDisplayedJobs"
+            :key="job.id"
+            class="rounded-xl border border-white/10 bg-black/10 p-4"
+          >
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-3">
+                  <h4 class="font-semibold">{{ job.title }}</h4>
                   <span class="px-3 py-1 rounded-full text-sm" :class="statusClass(job.status)">
                     {{ job.status }}
                   </span>
-                </td>
-                <td class="py-4 text-white/70">{{ job.siliciumJobId }}</td>
-                <td class="py-4">
-                  <div class="flex justify-end gap-2">
+                </div>
+                <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
+                <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
+                <p class="mt-2 text-sm text-white/50">Date : <span class="font-semibold text-white/80">{{ jobDate(job) }}</span></p>
+                <p class="mt-2 text-sm text-white/50">Duree : <span class="font-semibold text-white/80">{{ jobDuration(job) }}</span></p>
+                <div v-if="showErrorDetails && job.errorMessage" class="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
+                  {{ job.errorMessage }}
+                </div>
+              </div>
+              <div class="flex shrink-0 gap-2">
+                <button v-if="job.status === 'completed'" @click="downloadResult(job)" class="px-3 py-2 rounded-lg bg-green-500/20 text-green-200 hover:bg-green-500/30">
+                  Telecharger
+                </button>
+                <NuxtLink :to="`/jobs/${job.id}/dashboard`" class="px-3 py-2 rounded-lg bg-blue-500/20 text-blue-200 hover:bg-blue-500/30">
+                  Dashboard
+                </NuxtLink>
+              </div>
+            </div>
+          </article>
+
+          <details v-if="olderDisplayedJobs.length > 0" class="rounded-xl border border-white/10 bg-black/10 p-4">
+            <summary class="cursor-pointer select-none font-semibold text-white/80">
+              Voir les anciennes taches ({{ olderDisplayedJobs.length }})
+            </summary>
+            <div class="mt-4 space-y-3">
+              <article
+                v-for="job in olderDisplayedJobs"
+                :key="job.id"
+                class="rounded-lg border border-white/10 bg-[#1f2029] p-4"
+              >
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-3">
+                      <h4 class="font-semibold">{{ job.title }}</h4>
+                      <span class="px-3 py-1 rounded-full text-sm" :class="statusClass(job.status)">
+                        {{ job.status }}
+                      </span>
+                    </div>
+                    <p class="mt-1 text-sm text-white/45">{{ job.description || 'Aucune description' }}</p>
+                    <p class="mt-2 break-all text-sm text-white/60">{{ job.workload }} - {{ job.siliciumJobId }}</p>
+                    <p class="mt-2 text-sm text-white/50">Date : <span class="font-semibold text-white/80">{{ jobDate(job) }}</span></p>
+                    <p class="mt-2 text-sm text-white/50">Duree : <span class="font-semibold text-white/80">{{ jobDuration(job) }}</span></p>
+                    <div v-if="showErrorDetails && job.errorMessage" class="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-sm text-red-200">
+                      {{ job.errorMessage }}
+                    </div>
+                  </div>
+                  <div class="flex shrink-0 gap-2">
                     <button v-if="job.status === 'completed'" @click="downloadResult(job)" class="px-3 py-2 rounded-lg bg-green-500/20 text-green-200 hover:bg-green-500/30">
                       Telecharger
                     </button>
@@ -133,10 +189,10 @@
                       Dashboard
                     </NuxtLink>
                   </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </div>
+              </article>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -194,7 +250,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue';
+import { computed, reactive, ref, onBeforeUnmount, onMounted } from 'vue';
 import Cookies from 'js-cookie';
 import * as web3 from '@solana/web3.js';
 
@@ -208,6 +264,9 @@ type Job = {
   siliciumJobId: string;
   dashboardUrl?: string;
   errorMessage?: string;
+  createdAt?: string;
+  startedAt?: string;
+  completedAt?: string;
 };
 
 const isModalOpen = ref(false);
@@ -215,6 +274,10 @@ const isSubmittingJob = ref(false);
 const selectedJobFile = ref<File | null>(null);
 const jobSubmitError = ref('');
 const jobs = ref<Job[]>([]);
+const showErrorDetails = ref(false);
+const nowMs = ref(Date.now());
+const clockTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const jobsRefreshTimer = ref<ReturnType<typeof setInterval> | null>(null);
 const user = ref<any>(null);
 const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
@@ -241,6 +304,11 @@ const jobForm = reactive({
 
 const runningJobs = computed(() => jobs.value.filter((job) => ['queued', 'running'].includes(job.status)).length);
 const completedJobs = computed(() => jobs.value.filter((job) => job.status === 'completed').length);
+const hasErrorDetails = (job: Job) => Boolean(job.errorMessage);
+const displayedJobs = computed(() => jobs.value);
+const recentDisplayedJobs = computed(() => displayedJobs.value.slice(0, 5));
+const olderDisplayedJobs = computed(() => displayedJobs.value.slice(5));
+const hiddenErrorDetails = computed(() => (showErrorDetails.value ? 0 : jobs.value.filter(hasErrorDetails).length));
 const latestDashboardPath = computed(() => {
   const latest = jobs.value.find((job) => job.status === 'completed') || jobs.value[0];
   return latest ? `/jobs/${latest.id}/dashboard` : '/dashboard';
@@ -249,6 +317,41 @@ const latestDashboardPath = computed(() => {
 const authHeaders = () => {
   const token = Cookies.get('auth_token');
   return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+const formatDuration = (seconds: number) => {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours > 0) return `${hours}h ${String(remainingMinutes).padStart(2, '0')}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  if (minutes > 0) return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  return `${remainingSeconds}s`;
+};
+
+const jobDuration = (job: Job) => {
+  const startRaw = job.startedAt || job.createdAt;
+  const start = startRaw ? Date.parse(startRaw) : NaN;
+  if (!Number.isFinite(start)) return 'non disponible';
+  const endRaw = job.completedAt;
+  const end = endRaw ? Date.parse(endRaw) : nowMs.value;
+  if (!Number.isFinite(end)) return 'en cours';
+  return formatDuration((end - start) / 1000);
+};
+
+const jobDate = (job: Job) => {
+  const raw = job.createdAt || job.startedAt || job.completedAt;
+  if (!raw) return 'non disponible';
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) return 'non disponible';
+  return new Date(parsed).toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 const loadJobs = async () => {
@@ -355,6 +458,14 @@ const deviceTypesOptions = ref({
 });
 
 onMounted(async () => {
+  clockTimer.value = setInterval(() => {
+    nowMs.value = Date.now();
+  }, 1000);
+  jobsRefreshTimer.value = setInterval(() => {
+    if (jobs.value.some((job) => ['queued', 'running'].includes(job.status))) {
+      loadJobs();
+    }
+  }, 3000);
   const token = Cookies.get('auth_token');
   if (!token) return;
   try {
@@ -373,5 +484,10 @@ onMounted(async () => {
   } catch (error) {
     console.error('Failed to fetch dashboard data:', error);
   }
+});
+
+onBeforeUnmount(() => {
+  if (clockTimer.value) clearInterval(clockTimer.value);
+  if (jobsRefreshTimer.value) clearInterval(jobsRefreshTimer.value);
 });
 </script>

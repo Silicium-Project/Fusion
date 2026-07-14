@@ -2,29 +2,21 @@ package middleware
 
 import (
 	"context"
-	"fmt"
+	"net/http"
+	"strings"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/silicium/internal/contextkeys" // Import the shared context keys package
-	"net/http"
-	"os"
-	"strings"
+	"github.com/silicium/internal/security"
 )
-
-var jwtKey []byte
-
-func init() {
-	// Initialize jwtKey from environment variable
-	key := os.Getenv("JWT_SECRET_KEY")
-	if key == "" {
-		// Fallback to a default or log a fatal error in production
-		fmt.Println("WARNING: JWT_SECRET_KEY environment variable not set. Using a default key. DO NOT USE IN PRODUCTION.")
-		key = "supersecretdevelopmentkeythatshouldneverbeusedinproduction"
-	}
-	jwtKey = []byte(key)
-}
 
 func JwtMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jwtKey, err := security.JWTKey()
+		if err != nil {
+			http.Error(w, "Authentication is not configured", http.StatusServiceUnavailable)
+			return
+		}
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			http.Error(w, "Authorization header required", http.StatusUnauthorized)
@@ -41,7 +33,7 @@ func JwtMiddleware(next http.Handler) http.Handler {
 
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 			return jwtKey, nil
-		})
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 
 		if err != nil || !token.Valid {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)

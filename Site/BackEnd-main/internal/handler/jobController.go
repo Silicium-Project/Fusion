@@ -22,6 +22,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 20<<20)
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
 		http.Error(w, "Invalid multipart form", http.StatusBadRequest)
 		return
@@ -142,17 +143,20 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 		"resultReady": job.ResultPath != "",
 		"resultUrl":   "/jobs/" + strconv.Itoa(int(job.ID)) + "/result",
 		"diagnostics": map[string]any{
-			"inputPath":       job.InputPath,
-			"resultPath":      job.ResultPath,
-			"summaryPath":     job.SummaryPath,
-			"progressPath":    progressPathForJob(job),
-			"devnetTracePath": job.DevnetTracePath,
+			"summaryAvailable": len(summary) > 0,
+			"traceAvailable":   len(trace) > 0,
 		},
 		"summary": map[string]any{
 			"success":          summary["success"],
 			"progress":         summary["progress"],
 			"stage":            summary["stage"],
+			"startedUtc":       summary["started_utc"],
+			"startedUnix":      summary["started_unix"],
 			"updatedUtc":       summary["updated_utc"],
+			"updatedUnix":      summary["updated_unix"],
+			"completedUtc":     summary["completed_utc"],
+			"completedUnix":    summary["completed_unix"],
+			"elapsedS":         summary["elapsed_s"],
 			"demoMode":         summary["demo_mode"],
 			"jobId":            summary["job_id"],
 			"fragmentCount":    summary["fragment_count"],

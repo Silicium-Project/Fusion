@@ -47,8 +47,11 @@ def ppm_to_png_bytes(ppm_bytes: bytes) -> bytes:
 def raytracer_binary() -> Path:
     override = os.environ.get("SILICIUM_RAYTRACER_BIN", "").strip()
     if not override:
-        raise RuntimeError("raytracer_binary_missing: set SILICIUM_RAYTRACER_BIN to the worker-local raytracer executable")
-    candidate = Path(override).expanduser()
+        candidate = NETWORK_ROOT / "bin" / "raytracer" / "raytracer.exe"
+    else:
+        candidate = Path(override).expanduser()
+        if not candidate.is_absolute():
+            candidate = NETWORK_ROOT.parent / candidate
     if not candidate.exists():
         raise RuntimeError(f"raytracer_binary_missing: {candidate}")
     return candidate.resolve()

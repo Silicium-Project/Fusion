@@ -23,6 +23,9 @@ DEFAULT_EXCLUDE_DIRS = {
     "run_output",
     "run_build",
     ".worker_tmp",
+    ".silicium",
+    ".silicium-world",
+    "target",
 }
 
 DEFAULT_EXCLUDE_EXTS = {

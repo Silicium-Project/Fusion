@@ -9,6 +9,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(NETWORK_ROOT))
@@ -67,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--network-seed-peers", default="")
     parser.add_argument("--network-mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", "demo-mesh"))
     parser.add_argument("--network-start-orchestrator", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--network-role-timeout-s", type=float, default=float(os.environ.get("SILICIUM_NETWORK_ROLE_TIMEOUT_S", "60")))
     parser.add_argument("--min-compute-reputation", type=float, default=float(os.environ.get("SILICIUM_MIN_COMPUTE_REPUTATION", "0")))
     parser.add_argument("--min-verify-reputation", type=float, default=float(os.environ.get("SILICIUM_MIN_VERIFY_REPUTATION", "0")))
     parser.add_argument("--solana-enable", action="store_true")
@@ -96,15 +98,67 @@ def wait_for_task_result(args: argparse.Namespace, role: str, task_id: str, node
     return run_node_until_result(args, role, task_id, node_runs)
 
 
+def poll_task_result(args: argparse.Namespace, role: str, task_id: str, node_runs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if args.node_mode != "network":
+        return None
+    export_dir = Path(args.export_dir).resolve()
+    result_path = export_dir / f"result.{task_id}.json"
+    if result_path.exists():
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        if isinstance(result, dict):
+            node_runs.append(
+                {
+                    "role": role,
+                    "mode": "network",
+                    "target_task_id": task_id,
+                    "target_result_ready": True,
+                    "handled_by": result.get("node_id", ""),
+                }
+            )
+            return result
+    dead_letters_path = export_dir / "dead_letters.ndjson"
+    if dead_letters_path.exists():
+        for line in dead_letters_path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict) and str(item.get("task_id", "")) == task_id:
+                raise RuntimeError(
+                    "network task dead-lettered: "
+                    + str(item.get("last_error", "unknown_error"))
+                    + f" ({task_id})"
+                )
+    return None
+
+
+def network_owner_url(args: argparse.Namespace) -> str:
+    host = str(args.network_advertise_host or "").strip().rstrip("/")
+    if not host:
+        return ""
+    base_url = host if "://" in host else f"http://{host}"
+    parsed = urlsplit(base_url)
+    if parsed.port is not None:
+        return base_url
+    return f"{base_url}:{int(args.network_advertise_port)}"
+
+
+def network_owned_ref(args: argparse.Namespace, ref: dict[str, Any]) -> dict[str, Any]:
+    owner_url = network_owner_url(args)
+    if owner_url:
+        ref["peer_url"] = owner_url
+    return ref
+
+
 def task_input_ref(args: argparse.Namespace, export_dir: Path, path: Path) -> dict[str, Any]:
     if args.node_mode == "network":
-        return store_network_file(export_dir, path, args.network_node_id)
+        return network_owned_ref(args, store_network_file(export_dir, path, args.network_node_id))
     return {"protocol": "file", "content_id": str(path), "hash": "sha256:" + sha256_file(path)}
 
 
 def bytes_input_ref(args: argparse.Namespace, export_dir: Path, data: bytes) -> dict[str, Any]:
     if args.node_mode == "network":
-        return store_network_content(export_dir, data, args.network_node_id)
+        return network_owned_ref(args, store_network_content(export_dir, data, args.network_node_id))
     digest = sha256_bytes(data)
     path = export_dir / "p2p" / digest
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +171,24 @@ def read_ref_bytes(args: argparse.Namespace, export_dir: Path, ref: dict[str, An
     if args.node_mode == "network":
         return fetch_network_content(export_dir, args.network_node_id, ref, args.network_mesh_key)
     return p2p_file_path(ref).read_bytes()
+
+
+def portable_network_ref(ref: dict[str, Any]) -> dict[str, Any]:
+    shared = ref.get("shared_ref") if isinstance(ref, dict) else None
+    if isinstance(shared, dict) and str(shared.get("protocol", "")).lower() == "silicium":
+        return shared
+    return ref
+
+
+def orchestrator_pinned_ref(args: argparse.Namespace, export_dir: Path, data: bytes) -> dict[str, Any]:
+    if args.node_mode == "network":
+        return network_owned_ref(args, store_network_content(export_dir, data, args.network_node_id))
+    digest = sha256_bytes(data)
+    path = export_dir / "p2p" / digest
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.write_bytes(data)
+    return {"protocol": "file", "content_id": str(path), "hash": "sha256:" + digest}
 
 
 def ensure_task_success(result: dict[str, Any], task_id: str) -> None:
@@ -264,8 +336,11 @@ def main(argv: list[str] | None = None) -> int:
         int(fragment["fragment_index"]): {**fragment, "status": "planned"}
         for fragment in fragments
     }
+    started_unix = time.time()
+    started_utc = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_unix))
 
     def write_progress(stage: str, success: bool = False) -> None:
+        now_unix = time.time()
         write_json(
             progress_path,
             {
@@ -278,6 +353,11 @@ def main(argv: list[str] | None = None) -> int:
                 "job_dir": str(job_dir),
                 "export_dir": str(export_dir),
                 "scene": str(scene_path),
+                "started_utc": started_utc,
+                "started_unix": started_unix,
+                "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_unix)),
+                "updated_unix": now_unix,
+                "elapsed_s": round(now_unix - started_unix, 3),
                 "image": {"width": width, "height": height},
                 "split_policy": split.get("split_policy", {}),
                 "fragment_count": len(fragments),
@@ -285,7 +365,6 @@ def main(argv: list[str] | None = None) -> int:
                 "submissions": submissions,
                 "node_runs": node_runs,
                 "network": orchestrator_result,
-                "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
         )
 
@@ -311,13 +390,16 @@ def main(argv: list[str] | None = None) -> int:
             "public_url": orchestrator.public_url,
             "seed_peers": args.network_seed_peers,
         }
-        wait_for_network_role(export_dir, args.network_node_id, "compute")
-        wait_for_network_role(export_dir, args.network_node_id, "verify")
+        wait_for_network_role(export_dir, args.network_node_id, "compute", args.network_role_timeout_s)
+        wait_for_network_role(export_dir, args.network_node_id, "verify", args.network_role_timeout_s)
 
     try:
         scene_ref = task_input_ref(args, export_dir, local_scene)
         write_progress("split_ready")
         fragment_files: list[tuple[int, Path]] = []
+        compute_jobs: list[dict[str, Any]] = []
+        computed_fragments: list[dict[str, Any]] = []
+        verify_jobs: list[dict[str, Any]] = []
 
         for fragment in fragments:
             index = int(fragment["fragment_index"])
@@ -332,14 +414,17 @@ def main(argv: list[str] | None = None) -> int:
                 "scene_p2p_ref": scene_ref,
             }
             progress_fragments[index]["status"] = "queued_compute"
+            fairness_until_unix = time.time() + min(120.0, max(30.0, float(args.result_timeout_s) * 0.5))
             compute_payload = {
                 "task_id": fragment_id,
                 "required_roles": ["compute"],
                 "priority": args.priority,
+                "fairness_until_unix": fairness_until_unix,
                 "p2p_ref": bytes_input_ref(args, export_dir, json.dumps(spec, sort_keys=True).encode("utf-8")),
                 "task": {
                     "kind": "compute",
                     "workload": RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
+                    "fairness_until_unix": fairness_until_unix,
                     "fragment_index": index,
                     "fragment_count": len(fragments),
                     "y_start": y_start,
@@ -350,75 +435,157 @@ def main(argv: list[str] | None = None) -> int:
             }
             clear_previous_result(export_dir, fragment_id)
             submissions.append(submit_task(export_dir, compute_payload))
-            write_progress("compute_queued")
-            compute_result = wait_for_task_result(args, "compute", fragment_id, node_runs)
-            try:
-                ensure_task_success(compute_result, fragment_id)
-            except RuntimeError as error:
-                progress_fragments[index].update({"status": "compute_failed", "error": str(error)})
-                write_progress("compute_failed")
-                raise
-            output_ref = output_ref_from_compute(compute_result)
-            result_hash = result_hash_from_compute(compute_result)
-            fragment_file = fragments_dir / f"fragment-{index:03d}.ppm"
-            fragment_file.write_bytes(read_ref_bytes(args, export_dir, output_ref))
-            fragment_files.append((y_start, fragment_file))
-            progress_fragments[index].update(
+            compute_jobs.append(
                 {
-                    "status": "computed",
-                    "result_hash": result_hash,
-                    "output_ref": output_ref,
-                    "expected_hash": result_hash,
-                    "compute_result_hash": result_hash,
-                    "compute_output_ref": output_ref,
-                }
-            )
-            write_progress("fragment_computed")
-
-            verify_id = f"{fragment_id}-verify"
-            verify_payload = {
-                "task_id": verify_id,
-                "required_roles": ["verify"],
-                "priority": args.priority,
-                "p2p_ref": output_ref,
-                "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
-                "scene_p2p_ref": scene_ref,
-                "task": {
-                    "kind": "verify",
-                    "workload": RAYTRACER_FRAGMENT_VERIFY_WORKLOAD,
-                    "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
-                    "scene_p2p_ref": scene_ref,
-                    "source_task_id": fragment_id,
-                    "fragment_index": index,
-                    "fragment_count": len(fragments),
+                    "index": index,
                     "y_start": y_start,
                     "y_end": y_end,
-                    "timeout_s": int(args.node_timeout_s),
-                },
-            }
-            clear_previous_result(export_dir, verify_id)
-            submissions.append(submit_task(export_dir, verify_payload))
-            progress_fragments[index]["status"] = "queued_verify"
-            write_progress("verify_queued")
-            verify_result = wait_for_task_result(args, "verify", verify_id, node_runs)
-            try:
-                ensure_task_success(verify_result, verify_id)
-            except RuntimeError as error:
-                progress_fragments[index].update({"status": "verify_failed", "error": str(error)})
-                write_progress("verify_failed")
-                raise
-            verified = bool(verify_result.get("choice", verify_result.get("verified", False)))
-            progress_fragments[index].update(
-                {
-                    "status": "verified" if verified else "verify_failed",
-                    "verify_id": verify_id,
-                    "verify_choice": verified,
-                    "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
+                    "fragment_id": fragment_id,
                 }
             )
-            write_progress("fragment_verified")
-            if not verified:
-                raise RuntimeError(f"raytracer fragment verification failed: {fragment_id}")
+        write_progress("compute_queued")
+
+        pending_compute = {str(job["fragment_id"]): dict(job) for job in compute_jobs}
+        pending_verify: dict[str, dict[str, Any]] = {}
+        verified_indexes: set[int] = set()
+        deadline = time.monotonic() + float(args.result_timeout_s)
+
+        while len(verified_indexes) < len(fragments):
+            made_progress = False
+            for fragment_id, job in list(pending_compute.items()):
+                compute_result = poll_task_result(args, "compute", fragment_id, node_runs)
+                if compute_result is None:
+                    continue
+                made_progress = True
+                index = int(job["index"])
+                y_start = int(job["y_start"])
+                y_end = int(job["y_end"])
+                try:
+                    ensure_task_success(compute_result, fragment_id)
+                except RuntimeError as error:
+                    progress_fragments[index].update({"status": "compute_failed", "error": str(error)})
+                    write_progress("compute_failed")
+                    raise
+                output_ref = output_ref_from_compute(compute_result)
+                result_hash = result_hash_from_compute(compute_result)
+                fragment_file = fragments_dir / f"fragment-{index:03d}.ppm"
+                fragment_bytes = read_ref_bytes(args, export_dir, output_ref)
+                fragment_file.write_bytes(fragment_bytes)
+                fragment_files.append((y_start, fragment_file))
+                verify_ref = orchestrator_pinned_ref(args, export_dir, fragment_bytes)
+                progress_fragments[index].update(
+                    {
+                        "status": "computed",
+                        "result_hash": result_hash,
+                        "output_ref": output_ref,
+                        "verify_ref": verify_ref,
+                        "expected_hash": result_hash,
+                        "compute_result_hash": result_hash,
+                        "compute_output_ref": output_ref,
+                        "compute_node_id": compute_result.get("node_id", ""),
+                    }
+                )
+                computed_fragments.append(
+                    {
+                        "index": index,
+                        "y_start": y_start,
+                        "y_end": y_end,
+                        "fragment_id": fragment_id,
+                        "output_ref": verify_ref,
+                        "result_hash": result_hash,
+                        "compute_node_id": compute_result.get("node_id", ""),
+                    }
+                )
+                verify_id = f"{fragment_id}-verify"
+                verify_fallback_until_unix = time.time() + min(120.0, max(45.0, float(args.result_timeout_s) * 0.5))
+                verify_fairness_until_unix = time.time() + min(120.0, max(30.0, float(args.result_timeout_s) * 0.5))
+                verify_payload = {
+                    "task_id": verify_id,
+                    "required_roles": ["verify"],
+                    "excluded_node_ids": [str(compute_result.get("node_id") or "")],
+                    "excluded_until_unix": verify_fallback_until_unix,
+                    "fairness_until_unix": verify_fairness_until_unix,
+                    "priority": args.priority,
+                    "p2p_ref": verify_ref,
+                    "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
+                    "scene_p2p_ref": scene_ref,
+                    "task": {
+                        "kind": "verify",
+                        "workload": RAYTRACER_FRAGMENT_VERIFY_WORKLOAD,
+                        "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
+                        "scene_p2p_ref": scene_ref,
+                        "source_task_id": fragment_id,
+                        "excluded_node_ids": [str(compute_result.get("node_id") or "")],
+                        "excluded_until_unix": verify_fallback_until_unix,
+                        "fairness_until_unix": verify_fairness_until_unix,
+                        "fragment_index": index,
+                        "fragment_count": len(fragments),
+                        "y_start": y_start,
+                        "y_end": y_end,
+                        "timeout_s": int(args.node_timeout_s),
+                    },
+                }
+                clear_previous_result(export_dir, verify_id)
+                submissions.append(submit_task(export_dir, verify_payload))
+                progress_fragments[index]["status"] = "queued_verify"
+                verify_jobs.append({"index": index, "fragment_id": fragment_id, "verify_id": verify_id})
+                pending_verify[verify_id] = {"index": index, "fragment_id": fragment_id, "verify_id": verify_id}
+                pending_compute.pop(fragment_id, None)
+                write_progress("verify_queued")
+
+            for verify_id, job in list(pending_verify.items()):
+                verify_result = poll_task_result(args, "verify", verify_id, node_runs)
+                if verify_result is None:
+                    continue
+                made_progress = True
+                index = int(job["index"])
+                fragment_id = str(job["fragment_id"])
+                try:
+                    ensure_task_success(verify_result, verify_id)
+                except RuntimeError as error:
+                    progress_fragments[index].update({"status": "verify_failed", "error": str(error)})
+                    write_progress("verify_failed")
+                    raise
+                verified = bool(verify_result.get("choice", verify_result.get("verified", False)))
+                progress_fragments[index].update(
+                    {
+                        "status": "verified" if verified else "verify_failed",
+                        "verify_id": verify_id,
+                        "verify_choice": verified,
+                        "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
+                        "verify_node_id": verify_result.get("node_id", ""),
+                    }
+                )
+                pending_verify.pop(verify_id, None)
+                write_progress("fragment_verified")
+                if not verified:
+                    raise RuntimeError(f"raytracer fragment verification failed: {fragment_id}")
+                verified_indexes.add(index)
+
+            if len(verified_indexes) >= len(fragments):
+                break
+            if made_progress:
+                # The timeout measures a lack of network progress, not the total
+                # duration of a multi-worker pipeline. A worker joining or leaving
+                # can legitimately redistribute the remaining fragments.
+                deadline = time.monotonic() + float(args.result_timeout_s)
+            if time.monotonic() >= deadline:
+                pending = sorted(list(pending_compute.keys()) + list(pending_verify.keys()))
+                for task_id, job in pending_compute.items():
+                    progress_fragments[int(job["index"])].update(
+                        {"status": "compute_timeout", "error": f"timeout waiting for {task_id}"}
+                    )
+                for task_id, job in pending_verify.items():
+                    progress_fragments[int(job["index"])].update(
+                        {"status": "verify_timeout", "error": f"timeout waiting for {task_id}"}
+                    )
+                write_progress("pipeline_timeout")
+                raise TimeoutError(
+                    f"raytracer network pipeline timed out after {args.result_timeout_s:.1f}s; pending: {', '.join(pending)}"
+                )
+            if not made_progress:
+                write_progress("pipeline_running")
+                time.sleep(0.25)
 
         reassembled_ppm = reassembled_dir / "render.ppm"
         reassembled_png = reassembled_dir / "render.png"
@@ -426,6 +593,7 @@ def main(argv: list[str] | None = None) -> int:
         reassembled = reassemble_fragments(fragment_files, reassembled_ppm, reassembled_png, reassemble_json)
         for fragment in progress_fragments.values():
             fragment["status"] = "reassembled"
+        completed_unix = time.time()
         summary = {
             "schema_version": 1,
             "mode": "raytracer_network_job",
@@ -434,6 +602,11 @@ def main(argv: list[str] | None = None) -> int:
             "scene": str(scene_path),
             "job_dir": str(job_dir),
             "export_dir": str(export_dir),
+            "started_utc": started_utc,
+            "started_unix": started_unix,
+            "completed_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(completed_unix)),
+            "completed_unix": completed_unix,
+            "elapsed_s": round(completed_unix - started_unix, 3),
             "image": {"width": width, "height": height},
             "split_policy": split.get("split_policy", {}),
             "fragment_count": len(fragments),

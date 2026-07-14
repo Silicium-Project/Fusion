@@ -65,6 +65,30 @@ For HTTPS, use certbot:
 sudo certbot --nginx -d silicium.example.com -d api.silicium.example.com
 ```
 
+## Windows desktop application
+
+Build and sign the Windows installer, then upload it to the persistent download
+directory using the exact public filename expected by the frontend:
+
+```bash
+scp "Silicium Node_0.2.0_x64-setup.exe" USER@VPS:/tmp/silicium-node-windows.exe
+ssh USER@VPS "sudo install -o root -g root -m 0644 /tmp/silicium-node-windows.exe /var/lib/silicium/downloads/silicium-node-windows.exe"
+```
+
+The frontend variable must remain:
+
+```text
+NUXT_PUBLIC_NODE_APP_WINDOWS_URL=/downloads/silicium-node-windows.exe
+```
+
+Nginx serves this file directly from `/var/lib/silicium/downloads`; rebuilding
+or restarting the frontend is not required when only replacing the installer.
+Verify the public download after upload:
+
+```bash
+curl -I https://YOUR_DOMAIN/downloads/silicium-node-windows.exe
+```
+
 ## Remote workers
 
 On a worker machine, install the repo and raytracer runtime, then start:

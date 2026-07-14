@@ -38,6 +38,15 @@ export interface CreateJobParams {
     deadlineUnix: Amount;
     fragmentQuorum: number;
 }
+export interface DeclareJobStorageParams {
+    client?: PublicKey;
+    job: PublicKey;
+    manifestHash: Hash32;
+    inputRootHash: Hash32;
+    storageRefHash: Hash32;
+    encryptionRefHash?: Hash32;
+    signers?: Signer[];
+}
 export interface RegisterWorkerParams {
     worker?: PublicKey;
     signers?: Signer[];
@@ -195,5 +204,5 @@ export interface CreateSubFragmentParams {
     inputHash: Hash32;
     signers?: Signer[];
 }
-export type SdkEventName = "jobCreated" | "workerRegistered" | "workerStaked" | "treasuryInitialized" | "fragmentClaimed" | "fragmentReclaimed" | "fragmentSubmitted" | "fragmentVerified" | "fragmentRejected" | "verifierRewardClaimed" | "jobFinalized" | "jobCancelled" | "voteSlashed" | "dualReputationUpdated" | "bayesianReputationUpdated" | "fragmentSplitProposed" | "fragmentSplitApproved" | "fragmentSplitRejected" | "subFragmentCreated" | "fragmentSplitCompleted" | "stakingPoolInitialized" | "networkStakeDeposited" | "stakingRewardsFunded" | "stakingRewardClaimed" | "networkUnstakeRequested" | "networkUnstakeWithdrawn";
+export type SdkEventName = "jobCreated" | "jobStorageDeclared" | "workerRegistered" | "workerStaked" | "treasuryInitialized" | "fragmentClaimed" | "fragmentReclaimed" | "fragmentSubmitted" | "fragmentVerified" | "fragmentRejected" | "verifierRewardClaimed" | "jobFinalized" | "jobCancelled" | "voteSlashed" | "dualReputationUpdated" | "bayesianReputationUpdated" | "fragmentSplitProposed" | "fragmentSplitApproved" | "fragmentSplitRejected" | "subFragmentCreated" | "fragmentSplitCompleted" | "stakingPoolInitialized" | "networkStakeDeposited" | "stakingRewardsFunded" | "stakingRewardClaimed" | "networkUnstakeRequested" | "networkUnstakeWithdrawn";
 export declare const SDK_EVENT_NAMES: SdkEventName[];

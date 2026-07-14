@@ -1,10 +1,16 @@
 import * as anchor from "@coral-xyz/anchor";
 import {
+  Commitment,
   Connection,
   Keypair,
   PublicKey,
+  RpcResponseAndContext,
+  SignatureResult,
   SystemProgram,
   LAMPORTS_PER_SOL,
+  TransactionConfirmationStrategy,
+  TransactionExpiredBlockheightExceededError,
+  TransactionSignature,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -27,9 +33,108 @@ const REWARD_PER_FRAGMENT = new anchor.BN(process.env.SILICIUM_DEMO_REWARD_PER_F
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(process.env.SILICIUM_DEMO_VERIFIER_REWARD_PER_VOTE ?? "100000");
 const FRAGMENT_QUORUM = Number(process.env.SILICIUM_DEMO_FRAGMENT_QUORUM ?? "2");
 const TX_DELAY_MS = Number(process.env.SILICIUM_DEVNET_TX_DELAY_MS ?? "1200");
+const CONFIRM_POLL_MS = Math.max(250, Number(process.env.SILICIUM_DEVNET_CONFIRM_POLL_MS ?? "1500"));
+const CONFIRM_TIMEOUT_MS = Math.max(10_000, Number(process.env.SILICIUM_DEVNET_CONFIRM_TIMEOUT_MS ?? "180000"));
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function rpcDisplayName(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch (_error) {
+    return "configured RPC endpoint";
+  }
+}
+
+function confirmationReached(
+  confirmationStatus: "processed" | "confirmed" | "finalized" | null | undefined,
+  confirmations: number | null | undefined,
+  commitment: Commitment,
+): boolean {
+  const effectiveStatus = confirmationStatus ?? (confirmations === null ? "finalized" : "processed");
+  if (commitment === "finalized" || commitment === "max" || commitment === "root") {
+    return effectiveStatus === "finalized";
+  }
+  if (commitment === "confirmed" || commitment === "single" || commitment === "singleGossip") {
+    return effectiveStatus === "confirmed" || effectiveStatus === "finalized";
+  }
+  return true;
+}
+
+/**
+ * Solana web3.js normally confirms transactions through signatureSubscribe.
+ * Some managed RPC endpoints expose JSON-RPC over HTTP but reject that WebSocket
+ * subscription. Polling getSignatureStatuses keeps confirmation provider-neutral
+ * and avoids opening a WebSocket containing the RPC API key.
+ */
+class HttpPollingConnection extends Connection {
+  async confirmTransaction(
+    strategy: TransactionConfirmationStrategy | TransactionSignature,
+    commitment: Commitment = this.commitment ?? "confirmed",
+  ): Promise<RpcResponseAndContext<SignatureResult>> {
+    const signature = typeof strategy === "string" ? strategy : strategy.signature;
+    const abortSignal = typeof strategy === "string" ? undefined : strategy.abortSignal;
+    const lastValidBlockHeight =
+      typeof strategy !== "string" && "lastValidBlockHeight" in strategy
+        ? strategy.lastValidBlockHeight
+        : undefined;
+    const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
+    let polls = 0;
+    let rpcFailed = false;
+
+    while (Date.now() < deadline) {
+      if (abortSignal?.aborted) {
+        throw abortSignal.reason ?? new Error(`transaction_confirmation_aborted:${signature}`);
+      }
+
+      try {
+        const statuses = await this.getSignatureStatuses([signature], {
+          searchTransactionHistory: true,
+        });
+        const status = statuses.value[0];
+        if (status?.err) {
+          return { context: statuses.context, value: { err: status.err } };
+        }
+        if (status && confirmationReached(status.confirmationStatus, status.confirmations, commitment)) {
+          return { context: statuses.context, value: { err: null } };
+        }
+
+        polls += 1;
+        if (lastValidBlockHeight !== undefined && polls % 4 === 0) {
+          const blockHeight = await this.getBlockHeight(commitment);
+          if (blockHeight > lastValidBlockHeight) {
+            // Check once more before declaring expiry: the status may have become
+            // visible between the two HTTP calls.
+            const finalStatus = await this.getSignatureStatuses([signature], {
+              searchTransactionHistory: true,
+            });
+            const value = finalStatus.value[0];
+            if (value?.err) {
+              return { context: finalStatus.context, value: { err: value.err } };
+            }
+            if (value && confirmationReached(value.confirmationStatus, value.confirmations, commitment)) {
+              return { context: finalStatus.context, value: { err: null } };
+            }
+            throw new TransactionExpiredBlockheightExceededError(signature);
+          }
+        }
+      } catch (error) {
+        if (error instanceof TransactionExpiredBlockheightExceededError) {
+          throw error;
+        }
+        // Temporary HTTP/RPC failures are retried until the confirmation
+        // deadline. Avoid including provider URLs or credentials in the error.
+        rpcFailed = true;
+      }
+
+      await sleep(CONFIRM_POLL_MS);
+    }
+
+    const reason = rpcFailed ? "rpc_unavailable" : "status_not_confirmed";
+    throw new Error(`transaction_confirmation_timeout:${reason}:${signature}`);
+  }
 }
 
 async function throttle() {
@@ -160,7 +265,7 @@ async function main() {
 
   const walletPath = process.env.ANCHOR_WALLET ?? path.join(NETWORK_ROOT, ".silicium", "solana", "id.json");
   const payer = readKeypair(walletPath);
-  const connection = new Connection(DEVNET_RPC, "confirmed");
+  const connection = new HttpPollingConnection(DEVNET_RPC, "confirmed");
   const provider = new anchor.AnchorProvider(connection, new anchor.Wallet(payer), {
     commitment: "confirmed",
     preflightCommitment: "confirmed",
@@ -169,7 +274,7 @@ async function main() {
   const program = new (anchor as any).Program(loadIdl(), provider) as any;
   const sdk = new SiliciumLayerSdk({ provider, program });
 
-  console.log("rpc:", DEVNET_RPC);
+  console.log("rpc:", rpcDisplayName(DEVNET_RPC), "(HTTP polling confirmation)");
   console.log("program:", PROGRAM_ID.toBase58());
   console.log("wallet:", provider.wallet.publicKey.toBase58());
   console.log("balance:", (await connection.getBalance(provider.wallet.publicKey)) / LAMPORTS_PER_SOL, "SOL");
@@ -488,7 +593,7 @@ async function main() {
     schema_version: 1,
     success: true,
     source_summary_path: path.resolve(summaryPath),
-    rpc: DEVNET_RPC,
+    rpc: rpcDisplayName(DEVNET_RPC),
     program_id: PROGRAM_ID.toBase58(),
     wallet: provider.wallet.publicKey.toBase58(),
     mint: mint.toBase58(),

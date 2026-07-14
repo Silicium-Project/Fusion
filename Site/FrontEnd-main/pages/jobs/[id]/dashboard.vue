@@ -41,7 +41,7 @@
         <pre class="mt-4 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-black/30 p-4 text-sm text-red-100">{{ payload.job.errorMessage }}</pre>
       </section>
 
-      <div v-if="payload" class="grid grid-cols-1 lg:grid-cols-4 gap-5 mb-6">
+      <div v-if="payload" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-5 mb-6">
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Statut</p>
           <p class="text-2xl font-bold mt-2">{{ payload.job.status }}</p>
@@ -49,6 +49,10 @@
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Fragments resolus</p>
           <p class="text-2xl font-bold mt-2">{{ verifiedFragments }} / {{ expectedFragmentCount }}</p>
+        </div>
+        <div class="bg-[#1f2029] rounded-2xl p-5">
+          <p class="text-white/50">Duree</p>
+          <p class="text-2xl font-bold mt-2">{{ elapsedLabel }}</p>
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Devnet</p>
@@ -91,38 +95,95 @@
       </section>
 
       <div v-if="payload" class="grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6">
-        <section class="bg-[#1f2029] rounded-2xl p-6">
-          <div class="flex items-center justify-between gap-4 mb-4">
+        <section class="min-w-0 bg-[#1f2029] rounded-2xl p-6">
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
             <div>
               <h2 class="text-2xl font-bold">Graphe du job</h2>
-              <p class="text-white/50">Split recursif, calcul des feuilles, verification puis reassemblage.</p>
+              <p class="text-white/50">Du job initial aux fragments, puis calcul, verification et reassemblage.</p>
             </div>
-            <span class="text-white/50">{{ treeNodes.length }} noeuds</span>
+            <div class="flex items-center gap-2">
+              <span class="mr-2 text-sm text-white/50">{{ graphFragments.length }} fragments</span>
+              <button
+                type="button"
+                class="h-9 w-9 rounded-lg bg-white/10 text-lg hover:bg-white/15"
+                aria-label="Reduire le graphe"
+                @click="changeGraphZoom(-0.1)"
+              >
+                −
+              </button>
+              <span class="w-12 text-center text-xs text-white/60">{{ Math.round(graphView.scale * 100) }}%</span>
+              <button
+                type="button"
+                class="h-9 w-9 rounded-lg bg-white/10 text-lg hover:bg-white/15"
+                aria-label="Agrandir le graphe"
+                @click="changeGraphZoom(0.1)"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                class="h-9 rounded-lg bg-white/10 px-3 text-sm hover:bg-white/15"
+                @click="resetGraphView"
+              >
+                Recentrer
+              </button>
+            </div>
           </div>
-          <div class="relative overflow-auto rounded-xl bg-[#f8fafc] min-h-[520px]">
-            <svg :width="graphSize.width" :height="graphSize.height" class="block">
+          <div
+            ref="graphViewport"
+            class="relative h-[560px] w-full touch-none select-none overflow-hidden rounded-xl border border-white/10 bg-[#f8fafc]"
+            :class="graphDrag.active ? 'cursor-grabbing' : 'cursor-grab'"
+            @pointerdown="startGraphDrag"
+            @pointermove="moveGraphDrag"
+            @pointerup="endGraphDrag"
+            @pointercancel="endGraphDrag"
+          >
+            <div class="pointer-events-none absolute left-3 top-3 z-10 rounded-md bg-slate-900/75 px-3 py-1.5 text-xs text-white shadow">
+              Glisser pour deplacer le graphe
+            </div>
+            <svg
+              :width="jobGraph.width"
+              :height="jobGraph.height"
+              class="absolute left-0 top-0 block max-w-none"
+              :style="graphTransformStyle"
+            >
               <defs>
-                <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <marker id="job-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
                   <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
                 </marker>
+                <filter id="node-shadow" x="-20%" y="-20%" width="140%" height="150%">
+                  <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12" />
+                </filter>
               </defs>
-              <line
-                v-for="edge in treeEdges"
+              <path
+                v-for="edge in jobGraph.edges"
                 :key="edge.id"
-                :x1="edge.x1"
-                :y1="edge.y1"
-                :x2="edge.x2"
-                :y2="edge.y2"
+                :d="edge.path"
+                fill="none"
                 stroke="#94a3b8"
                 stroke-width="2"
-                stroke-dasharray="5 5"
-                marker-end="url(#arrow)"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                marker-end="url(#job-arrow)"
               />
-              <g v-for="node in treeNodes" :key="node.id" :transform="`translate(${node.x}, ${node.y})`">
-                <rect :class="node.leaf ? 'fill-green-50 stroke-green-500' : 'fill-purple-50 stroke-purple-500'" width="170" height="74" rx="12" stroke-width="2" />
-                <text x="14" y="24" fill="#0f172a" font-size="14" font-weight="700">Fragment {{ node.index }}</text>
-                <text x="14" y="45" fill="#475569" font-size="12">{{ node.leaf ? 'verified leaf' : 'split parent' }}</text>
-                <text x="14" y="62" fill="#64748b" font-size="11">depth {{ node.depth }} - {{ node.complexity }}</text>
+              <g
+                v-for="node in jobGraph.nodes"
+                :key="node.id"
+                :transform="`translate(${node.x}, ${node.y})`"
+                filter="url(#node-shadow)"
+              >
+                <rect
+                  :width="node.width"
+                  :height="node.height"
+                  rx="13"
+                  :fill="node.fill"
+                  :stroke="node.stroke"
+                  stroke-width="2"
+                />
+                <circle cx="16" cy="19" r="5" :fill="node.stroke" />
+                <text x="29" y="24" fill="#0f172a" font-size="14" font-weight="700">{{ node.title }}</text>
+                <text x="14" y="47" fill="#475569" font-size="11.5">{{ node.detail }}</text>
+                <text x="14" :y="node.height - 11" :fill="node.stroke" font-size="10.5" font-weight="700">{{ node.status }}</text>
               </g>
             </svg>
           </div>
@@ -190,7 +251,8 @@
               <tr>
                 <th class="py-3">Fragment</th>
                 <th class="py-3">Parent</th>
-                <th class="py-3">Worker</th>
+                <th class="py-3">Calcul</th>
+                <th class="py-3">Verificateur</th>
                 <th class="py-3">Verification</th>
                 <th class="py-3">Hash resultat</th>
               </tr>
@@ -199,7 +261,8 @@
               <tr v-for="fragment in fragments" :key="fragment.fragment_id || fragment.fragment_index" class="border-t border-white/10">
                 <td class="py-4 font-mono">#{{ fragment.fragment_index }}</td>
                 <td class="py-4 text-white/70">{{ fragment.parent_index ?? 'racine' }}</td>
-                <td class="py-4 text-white/70">{{ fragment.worker_output_ref?.shared_ref?.peer_id || fragment.worker_output_ref?.peer_id || 'worker' }}</td>
+                <td class="py-4 text-white/70 font-mono text-sm">{{ shortNode(fragment.compute_node_id || fragment.worker_output_ref?.shared_ref?.peer_id || fragment.worker_output_ref?.peer_id || 'worker') }}</td>
+                <td class="py-4 text-white/70 font-mono text-sm">{{ shortNode(fragment.verify_node_id || 'en attente') }}</td>
                 <td class="py-4">
                   <span :class="fragment.verify_choice ? 'bg-green-500/20 text-green-200' : 'bg-yellow-500/20 text-yellow-200'" class="px-3 py-1 rounded-full text-sm">
                     {{ fragment.status || (fragment.verify_choice ? 'verified' : 'pending') }}
@@ -216,7 +279,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import Cookies from 'js-cookie';
 
 type DashboardPayload = {
@@ -230,6 +293,9 @@ type DashboardPayload = {
     siliciumJobId: string;
     devnetJob?: string;
     errorMessage?: string;
+    createdAt?: string;
+    startedAt?: string;
+    completedAt?: string;
   };
   resultReady: boolean;
   resultUrl: string;
@@ -238,22 +304,22 @@ type DashboardPayload = {
   devnet: Record<string, any>;
 };
 
-type TreeNode = {
+type JobGraphNode = {
   id: string;
-  index: number;
-  depth: number;
-  complexity: number;
-  leaf: boolean;
+  title: string;
+  detail: string;
+  status: string;
   x: number;
   y: number;
+  width: number;
+  height: number;
+  fill: string;
+  stroke: string;
 };
 
-type TreeEdge = {
+type JobGraphEdge = {
   id: string;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
+  path: string;
 };
 
 const route = useRoute();
@@ -263,6 +329,15 @@ const payload = ref<DashboardPayload | null>(null);
 const errorMessage = ref('');
 const resultPreviewUrl = ref('');
 const refreshTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const clockTimer = ref<ReturnType<typeof setInterval> | null>(null);
+const nowMs = ref(Date.now());
+const graphViewport = ref<HTMLDivElement | null>(null);
+const graphView = reactive({ x: 18, y: 26, scale: 0.65 });
+const graphDrag = reactive({ active: false, pointerId: -1, startX: 0, startY: 0, originX: 0, originY: 0 });
+const graphTransformStyle = computed(() => ({
+  transform: `translate(${graphView.x}px, ${graphView.y}px) scale(${graphView.scale})`,
+  transformOrigin: '0 0',
+}));
 
 const authHeaders = () => {
   const token = Cookies.get('auth_token');
@@ -271,7 +346,26 @@ const authHeaders = () => {
 
 const fragments = computed<any[]>(() => Array.isArray(payload.value?.summary.fragments) ? payload.value?.summary.fragments : []);
 const finalHash = computed(() => payload.value?.summary.finalHash || payload.value?.summary.reassembledHash || payload.value?.summary.expectedFullHash || '');
-const splitTree = computed(() => payload.value?.summary.splitTree || payload.value?.devnet.splitTree || null);
+const startedMs = computed(() => {
+  const summaryStart = Number(payload.value?.summary.startedUnix || 0);
+  if (summaryStart > 0) return summaryStart * 1000;
+  const fallback = payload.value?.job.startedAt || payload.value?.job.createdAt;
+  const parsed = fallback ? Date.parse(fallback) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+});
+const completedMs = computed(() => {
+  const summaryEnd = Number(payload.value?.summary.completedUnix || 0);
+  if (summaryEnd > 0) return summaryEnd * 1000;
+  const parsed = payload.value?.job.completedAt ? Date.parse(payload.value.job.completedAt) : NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+});
+const elapsedSeconds = computed(() => {
+  const start = startedMs.value;
+  if (!start) return 0;
+  const end = completedMs.value || nowMs.value;
+  return Math.max(0, Math.floor((end - start) / 1000));
+});
+const elapsedLabel = computed(() => formatDuration(elapsedSeconds.value));
 const expectedFragmentCount = computed(() => Number(payload.value?.summary.fragmentCount || fragments.value.length || 0));
 const verifiedFragments = computed(() => fragments.value.filter((fragment) => fragment.verify_choice || ['verified', 'reassembled'].includes(String(fragment.status))).length);
 const progressPercent = computed(() => {
@@ -306,71 +400,217 @@ const latestNodeRunText = computed(() => {
 });
 const diagnosticsText = computed(() => JSON.stringify(payload.value?.diagnostics || {}, null, 2));
 
-const layoutTree = () => {
-  const nodes: TreeNode[] = [];
-  const edges: TreeEdge[] = [];
-  const leaves: TreeNode[] = [];
-  let nextLeaf = 0;
-  const horizontalGap = 235;
-  const verticalGap = 105;
+const graphFragments = computed<any[]>(() => {
+  const sorted = [...fragments.value].sort(
+    (a, b) => Number(a.fragment_index ?? 0) - Number(b.fragment_index ?? 0),
+  );
+  if (sorted.length > 0) return sorted;
+  return Array.from({ length: expectedFragmentCount.value }, (_, index) => ({
+    fragment_index: index,
+    status: 'planned',
+  }));
+});
 
-  const walk = (raw: any, depth: number, parent?: TreeNode): TreeNode => {
-    const children = Array.isArray(raw?.children) ? raw.children : [];
-    const node: TreeNode = {
-      id: `fragment-${raw?.fragment_index ?? nodes.length}`,
-      index: Number(raw?.fragment_index ?? nodes.length),
-      depth,
-      complexity: Number(raw?.complexity_score ?? 0),
-      leaf: children.length === 0 || Boolean(raw?.is_leaf),
-      x: 40 + depth * horizontalGap,
-      y: 40,
-    };
-    nodes.push(node);
-    if (children.length === 0) {
-      node.y = 40 + nextLeaf * verticalGap;
-      nextLeaf += 1;
-      leaves.push(node);
-    } else {
-      const childNodes = children.map((child: any) => walk(child, depth + 1, node));
-      node.y = childNodes.reduce((sum: number, child: TreeNode) => sum + child.y, 0) / childNodes.length;
-    }
-    if (parent) {
-      edges.push({
-        id: `${parent.id}-${node.id}`,
-        x1: parent.x + 170,
-        y1: parent.y + 37,
-        x2: node.x,
-        y2: node.y + 37,
-      });
-    }
-    return node;
+const jobGraph = computed(() => {
+  const items = graphFragments.value;
+  const nodeWidth = 174;
+  const nodeHeight = 78;
+  const columnGap = 28;
+  const sidePadding = 56;
+  const contentWidth = items.length > 0
+    ? items.length * nodeWidth + Math.max(0, items.length - 1) * columnGap
+    : nodeWidth;
+  const width = Math.max(860, contentWidth + sidePadding * 2);
+  const centerX = width / 2;
+  const rootWidth = 210;
+  const mergeWidth = 210;
+  const nodes: JobGraphNode[] = [];
+  const edges: JobGraphEdge[] = [];
+
+  const palette = (kind: string, state: string) => {
+    const failed = state.includes('failed') || state === 'error';
+    if (failed) return { fill: '#fff1f2', stroke: '#ef4444' };
+    if (kind === 'job') return { fill: '#f5f3ff', stroke: '#8b5cf6' };
+    if (kind === 'compute') return state === 'termine'
+      ? { fill: '#ecfeff', stroke: '#0891b2' }
+      : { fill: '#eff6ff', stroke: '#3b82f6' };
+    if (kind === 'verify') return state === 'verifie'
+      ? { fill: '#ecfdf5', stroke: '#16a34a' }
+      : { fill: '#fff7ed', stroke: '#f97316' };
+    if (kind === 'result') return payload.value?.resultReady
+      ? { fill: '#ecfdf5', stroke: '#16a34a' }
+      : { fill: '#f8fafc', stroke: '#94a3b8' };
+    if (kind === 'merge') return verifiedFragments.value === expectedFragmentCount.value && expectedFragmentCount.value > 0
+      ? { fill: '#ecfdf5', stroke: '#16a34a' }
+      : { fill: '#f8fafc', stroke: '#64748b' };
+    return state === 'verified' || state === 'reassembled'
+      ? { fill: '#ecfdf5', stroke: '#16a34a' }
+      : { fill: '#f5f3ff', stroke: '#8b5cf6' };
   };
 
-  if (splitTree.value) {
-    walk(splitTree.value, 0);
-  } else {
-    fragments.value.forEach((fragment, index) => {
-      nodes.push({
-        id: `fragment-${fragment.fragment_index ?? index}`,
-        index: Number(fragment.fragment_index ?? index),
-        depth: Number(fragment.depth ?? 0),
-        complexity: Number(fragment.complexity_score ?? 0),
-        leaf: true,
-        x: 40 + Number(fragment.depth ?? 0) * horizontalGap,
-        y: 40 + index * verticalGap,
-      });
-    });
-  }
-  return { nodes, edges, leaves };
+  const addNode = (node: Omit<JobGraphNode, 'fill' | 'stroke'>, kind: string, state: string) => {
+    nodes.push({ ...node, ...palette(kind, state) });
+  };
+  const verticalEdge = (id: string, fromX: number, fromY: number, toX: number, toY: number) => {
+    const middleY = fromY + Math.max(18, (toY - fromY) / 2);
+    edges.push({ id, path: `M ${fromX} ${fromY} V ${middleY} H ${toX} V ${toY}` });
+  };
+
+  const rootX = centerX - rootWidth / 2;
+  const rootY = 28;
+  const rootState = String(payload.value?.job.status || 'queued');
+  addNode({
+    id: 'job-root',
+    title: 'Job de rendu',
+    detail: shortNode(payload.value?.job.siliciumJobId || payload.value?.job.title || 'Silicium'),
+    status: rootState,
+    x: rootX,
+    y: rootY,
+    width: rootWidth,
+    height: nodeHeight,
+  }, 'job', rootState);
+
+  items.forEach((fragment, position) => {
+    const index = Number(fragment.fragment_index ?? position);
+    const x = sidePadding + position * (nodeWidth + columnGap);
+    const center = x + nodeWidth / 2;
+    const fragmentState = String(fragment.status || (fragment.verify_choice ? 'verified' : 'planned'));
+    const computeNode = fragment.compute_node_id || fragment.computeNodeId || fragment.worker_output_ref?.shared_ref?.peer_id || fragment.worker_output_ref?.peer_id;
+    const verifyNode = fragment.verify_node_id || fragment.verifyNodeId;
+    const computeDone = Boolean(computeNode) || ['computed', 'queued_verify', 'verified', 'reassembled'].includes(fragmentState);
+    const verifyDone = Boolean(fragment.verify_choice) || ['verified', 'reassembled'].includes(fragmentState);
+    const fragmentY = 154;
+    const computeY = 284;
+    const verifyY = 414;
+
+    addNode({
+      id: `fragment-${index}`,
+      title: `Fragment ${index}`,
+      detail: `y ${Number(fragment.y_start ?? 0)} → ${Number(fragment.y_end ?? 0)}`,
+      status: fragmentState,
+      x,
+      y: fragmentY,
+      width: nodeWidth,
+      height: nodeHeight,
+    }, 'fragment', fragmentState);
+    addNode({
+      id: `compute-${index}`,
+      title: 'Calcul',
+      detail: computeNode ? `PC ${shortNode(computeNode)}` : 'PC en attente',
+      status: computeDone ? 'termine' : 'en attente',
+      x,
+      y: computeY,
+      width: nodeWidth,
+      height: nodeHeight,
+    }, 'compute', computeDone ? 'termine' : 'en attente');
+    addNode({
+      id: `verify-${index}`,
+      title: 'Verification',
+      detail: verifyNode ? `PC ${shortNode(verifyNode)}` : 'PC en attente',
+      status: verifyDone ? 'verifie' : 'en attente',
+      x,
+      y: verifyY,
+      width: nodeWidth,
+      height: nodeHeight,
+    }, 'verify', verifyDone ? 'verifie' : 'en attente');
+
+    verticalEdge(`job-fragment-${index}`, centerX, rootY + nodeHeight, center, fragmentY);
+    verticalEdge(`fragment-compute-${index}`, center, fragmentY + nodeHeight, center, computeY);
+    verticalEdge(`compute-verify-${index}`, center, computeY + nodeHeight, center, verifyY);
+  });
+
+  const mergeY = 558;
+  const resultY = 674;
+  const mergeX = centerX - mergeWidth / 2;
+  const allVerified = verifiedFragments.value === expectedFragmentCount.value && expectedFragmentCount.value > 0;
+  addNode({
+    id: 'reassembly',
+    title: 'Reassemblage',
+    detail: `${verifiedFragments.value} / ${expectedFragmentCount.value} fragments`,
+    status: allVerified ? 'termine' : 'en attente',
+    x: mergeX,
+    y: mergeY,
+    width: mergeWidth,
+    height: nodeHeight,
+  }, 'merge', allVerified ? 'termine' : 'en attente');
+  addNode({
+    id: 'final-result',
+    title: 'Resultat final',
+    detail: payload.value?.resultReady ? shortHash(finalHash.value) : 'rendu indisponible',
+    status: payload.value?.resultReady ? 'disponible' : 'en attente',
+    x: mergeX,
+    y: resultY,
+    width: mergeWidth,
+    height: nodeHeight,
+  }, 'result', payload.value?.resultReady ? 'disponible' : 'en attente');
+
+  items.forEach((fragment, position) => {
+    const index = Number(fragment.fragment_index ?? position);
+    const center = sidePadding + position * (nodeWidth + columnGap) + nodeWidth / 2;
+    verticalEdge(`verify-merge-${index}`, center, 414 + nodeHeight, centerX, mergeY);
+  });
+  verticalEdge('merge-result', centerX, mergeY + nodeHeight, centerX, resultY);
+
+  return { width, height: 790, nodes, edges };
+});
+
+const clampGraphScale = (value: number) => Math.max(0.35, Math.min(1.35, value));
+
+const changeGraphZoom = (delta: number) => {
+  const viewport = graphViewport.value;
+  const previousScale = graphView.scale;
+  const nextScale = clampGraphScale(previousScale + delta);
+  if (!viewport || nextScale === previousScale) return;
+  const centerX = viewport.clientWidth / 2;
+  const centerY = viewport.clientHeight / 2;
+  const contentX = (centerX - graphView.x) / previousScale;
+  const contentY = (centerY - graphView.y) / previousScale;
+  graphView.scale = nextScale;
+  graphView.x = centerX - contentX * nextScale;
+  graphView.y = centerY - contentY * nextScale;
 };
 
-const treeNodes = computed(() => layoutTree().nodes);
-const treeEdges = computed(() => layoutTree().edges);
-const graphSize = computed(() => {
-  const maxX = Math.max(720, ...treeNodes.value.map((node) => node.x + 220));
-  const maxY = Math.max(520, ...treeNodes.value.map((node) => node.y + 120));
-  return { width: maxX, height: maxY };
-});
+const resetGraphView = async () => {
+  await nextTick();
+  const viewport = graphViewport.value;
+  if (!viewport) return;
+  const fitScale = (viewport.clientWidth - 36) / Math.max(1, jobGraph.value.width);
+  graphView.scale = clampGraphScale(Math.max(0.55, Math.min(0.82, fitScale)));
+  const renderedWidth = jobGraph.value.width * graphView.scale;
+  const renderedHeight = jobGraph.value.height * graphView.scale;
+  graphView.x = renderedWidth <= viewport.clientWidth
+    ? (viewport.clientWidth - renderedWidth) / 2
+    : 18;
+  graphView.y = Math.max(18, (viewport.clientHeight - renderedHeight) / 2);
+};
+
+const startGraphDrag = (event: PointerEvent) => {
+  if (event.button !== 0) return;
+  const target = event.currentTarget as HTMLElement;
+  target.setPointerCapture(event.pointerId);
+  graphDrag.active = true;
+  graphDrag.pointerId = event.pointerId;
+  graphDrag.startX = event.clientX;
+  graphDrag.startY = event.clientY;
+  graphDrag.originX = graphView.x;
+  graphDrag.originY = graphView.y;
+};
+
+const moveGraphDrag = (event: PointerEvent) => {
+  if (!graphDrag.active || event.pointerId !== graphDrag.pointerId) return;
+  graphView.x = graphDrag.originX + event.clientX - graphDrag.startX;
+  graphView.y = graphDrag.originY + event.clientY - graphDrag.startY;
+};
+
+const endGraphDrag = (event: PointerEvent) => {
+  if (!graphDrag.active || event.pointerId !== graphDrag.pointerId) return;
+  const target = event.currentTarget as HTMLElement;
+  if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
+  graphDrag.active = false;
+  graphDrag.pointerId = -1;
+};
+
+watch(() => jobGraph.value.width, resetGraphView, { flush: 'post' });
 
 const loadResultPreview = async () => {
   if (!payload.value?.resultReady) return;
@@ -428,6 +668,24 @@ const shortHash = (value: any) => {
   return `${text.slice(0, 10)}...${text.slice(-8)}`;
 };
 
+const shortNode = (value: any) => {
+  const text = String(value || '').trim();
+  if (!text) return 'non disponible';
+  if (text.length <= 22) return text;
+  return `${text.slice(0, 12)}...${text.slice(-6)}`;
+};
+
+const formatDuration = (seconds: number) => {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours > 0) return `${hours}h ${String(remainingMinutes).padStart(2, '0')}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  if (minutes > 0) return `${minutes}m ${String(remainingSeconds).padStart(2, '0')}s`;
+  return `${remainingSeconds}s`;
+};
+
 const tileClass = (status: string) => {
   if (status === 'reassembled' || status === 'verified') return 'border-green-400/50 bg-green-500/20 text-green-100';
   if (status === 'queued_verify') return 'border-blue-400/50 bg-blue-500/20 text-blue-100';
@@ -437,9 +695,15 @@ const tileClass = (status: string) => {
   return 'border-white/10 bg-black/20 text-white/60';
 };
 
-onMounted(loadDashboard);
+onMounted(() => {
+  clockTimer.value = setInterval(() => {
+    nowMs.value = Date.now();
+  }, 1000);
+  loadDashboard();
+});
 onBeforeUnmount(() => {
   if (refreshTimer.value) clearInterval(refreshTimer.value);
+  if (clockTimer.value) clearInterval(clockTimer.value);
   if (resultPreviewUrl.value) URL.revokeObjectURL(resultPreviewUrl.value);
 });
 </script>

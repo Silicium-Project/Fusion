@@ -4,6 +4,7 @@ export declare function u32le(value: number): Buffer;
 export declare function u16le(value: number): Buffer;
 export declare function toBn(value: anchor.BN | number | bigint | string): anchor.BN;
 export declare function jobPda(programId: PublicKey, client: PublicKey, jobId: anchor.BN | number | bigint | string): PublicKey;
+export declare function jobStoragePda(programId: PublicKey, job: PublicKey): PublicKey;
 export declare function fragmentPda(programId: PublicKey, job: PublicKey, fragmentIndex: number): PublicKey;
 export declare function workerPda(programId: PublicKey, worker: PublicKey): PublicKey;
 export declare function escrowAuthPda(programId: PublicKey, job: PublicKey): PublicKey;

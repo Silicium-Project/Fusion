@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Connection, PublicKey, TransactionSignature } from "@solana/web3.js";
 import { SiliciumEventClient } from "./events";
-import type { CancelJobParams, ClaimFragmentParams, ClaimStakingRewardParams, ClaimVerifierRewardParams, CreateJobParams, CreateSdkParams, FinalizeJobParams, FundStakingRewardsParams, IdlProgram, InitStakingPoolParams, InitTreasuryParams, ProposeFragmentSplitParams, ApproveFragmentSplitParams, CreateSubFragmentParams, ReclaimFragmentParams, RegisterWorkerParams, RequestUnstakeParams, SlashVoteParams, StakeNetworkParams, StakeWorkerParams, SubmitFragmentResultParams, VoteFragmentParams, WithdrawUnstakedParams } from "./types";
+import type { CancelJobParams, ClaimFragmentParams, ClaimStakingRewardParams, ClaimVerifierRewardParams, CreateJobParams, DeclareJobStorageParams, CreateSdkParams, FinalizeJobParams, FundStakingRewardsParams, IdlProgram, InitStakingPoolParams, InitTreasuryParams, ProposeFragmentSplitParams, ApproveFragmentSplitParams, CreateSubFragmentParams, ReclaimFragmentParams, RegisterWorkerParams, RequestUnstakeParams, SlashVoteParams, StakeNetworkParams, StakeWorkerParams, SubmitFragmentResultParams, VoteFragmentParams, WithdrawUnstakedParams } from "./types";
 export * from "./pdas";
 export * from "./events";
 export * from "./types";
@@ -26,6 +26,7 @@ export declare class SiliciumLayerSdk {
     private get accounts();
     pdas: {
         job: (client: PublicKey, jobId: anchor.BN | number | bigint | string) => anchor.web3.PublicKey;
+        jobStorage: (job: PublicKey) => anchor.web3.PublicKey;
         fragment: (job: PublicKey, fragmentIndex: number) => anchor.web3.PublicKey;
         worker: (worker: PublicKey) => anchor.web3.PublicKey;
         escrowAuth: (job: PublicKey) => anchor.web3.PublicKey;
@@ -47,6 +48,10 @@ export declare class SiliciumLayerSdk {
         signature: TransactionSignature;
         job: PublicKey;
         escrowAuth: PublicKey;
+    }>;
+    declareJobStorage(params: DeclareJobStorageParams): Promise<{
+        signature: TransactionSignature;
+        jobStorage: PublicKey;
     }>;
     claimFragment(params: ClaimFragmentParams): Promise<{
         signature: TransactionSignature;
@@ -114,6 +119,7 @@ export declare class SiliciumLayerSdk {
     }>;
     withdrawUnstaked(params: WithdrawUnstakedParams): Promise<TransactionSignature>;
     fetchJob(job: PublicKey): Promise<unknown>;
+    fetchJobStorage(jobOrJobStorage: PublicKey, isJobStorageAccount?: boolean): Promise<unknown>;
     fetchFragment(fragment: PublicKey): Promise<unknown>;
     fetchWorker(workerOrWorkerAccount: PublicKey, isWorkerAccount?: boolean): Promise<unknown>;
     fetchWorkerReputation(workerOrWorkerAccount: PublicKey, isWorkerAccount?: boolean): Promise<{

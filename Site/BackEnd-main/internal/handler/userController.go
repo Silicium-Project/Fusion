@@ -2,29 +2,16 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/silicium/internal/contextkeys" // Import the shared context keys package
 	"github.com/silicium/internal/models"
+	"github.com/silicium/internal/security"
 )
-
-var jwtKey []byte
-
-func init() {
-	// Initialize jwtKey from environment variable
-	key := os.Getenv("JWT_SECRET_KEY")
-	if key == "" {
-		// Fallback to a default or log a fatal error in production
-		fmt.Println("WARNING: JWT_SECRET_KEY environment variable not set. Using a default key. DO NOT USE IN PRODUCTION.")
-		key = "supersecretdevelopmentkeythatshouldneverbeusedinproduction"
-	}
-	jwtKey = []byte(key)
-}
 
 // JWTClaims includes the user role along with registered claims
 type JWTClaims struct {
@@ -57,14 +44,15 @@ type UpdateUserRequest struct {
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	// Basic validation
-	if req.Email == "" || req.Password == "" {
-		http.Error(w, "Email and password are required", http.StatusBadRequest)
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
+	if req.Email == "" || len(req.Password) < 12 {
+		http.Error(w, "A valid email and a password of at least 12 characters are required", http.StatusBadRequest)
 		return
 	}
 
@@ -79,7 +67,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 	// The BeforeSave hook will hash the password
 	if result := h.DB.Create(&user); result.Error != nil {
-		http.Error(w, "Could not create user: "+result.Error.Error(), http.StatusInternalServerError)
+		http.Error(w, "Could not create user", http.StatusConflict)
 		return
 	}
 
@@ -89,11 +77,12 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
 	var user models.User
 	if result := h.DB.Where("email = ?", req.Email).First(&user); result.Error != nil {
 		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
@@ -115,6 +104,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	jwtKey, err := security.JWTKey()
+	if err != nil {
+		http.Error(w, "Authentication is not configured", http.StatusServiceUnavailable)
+		return
+	}
 	tokenString, err := token.SignedString(jwtKey)
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)
@@ -151,7 +145,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -195,13 +189,13 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req ChangePasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if req.NewPassword == "" || req.CurrentPassword == "" {
-		http.Error(w, "Both current and new password are required", http.StatusBadRequest)
+	if len(req.NewPassword) < 12 || req.CurrentPassword == "" {
+		http.Error(w, "The current password and a new password of at least 12 characters are required", http.StatusBadRequest)
 		return
 	}
 
@@ -251,7 +245,7 @@ func (h *Handler) ConnectWallet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req ConnectWalletRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}

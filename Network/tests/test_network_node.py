@@ -7,6 +7,27 @@ from pathlib import Path
 from tools import network_node
 
 
+def test_p2p_content_ids_cannot_escape_export_directory(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    assert network_node.p2p_content_path(export_dir, "abc-123_DEF.bin") == export_dir / "p2p" / "abc-123_DEF.bin"
+    for unsafe in ("../secret", "..", "folder/file", r"folder\file", "C:secret"):
+        try:
+            network_node.p2p_content_path(export_dir, unsafe)
+        except ValueError as exc:
+            assert str(exc) == "invalid_p2p_content_id"
+        else:
+            raise AssertionError(f"unsafe content id accepted: {unsafe}")
+
+
+def test_remote_file_references_are_detected() -> None:
+    assert network_node.contains_file_reference(
+        {"task": {"input": {"protocol": "file", "content_id": "C:/secret.txt"}}}
+    )
+    assert not network_node.contains_file_reference(
+        {"task": {"input": {"protocol": "silicium", "content_id": "abc123"}}}
+    )
+
+
 def _write_jsonl(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -132,7 +153,389 @@ def _config(
         scheduler_onchain_weight=10.0,
         scheduler_offchain_weight=1.0,
         scheduler_capacity_weight=0.01,
+        pull_tasks_enable=False,
+        pull_tasks_interval_s=1,
     )
+
+
+def _queued_task(export_dir: Path, task_id: str, role: str, **extra: object) -> None:
+    payload = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": task_id,
+        "status": "queued",
+        "required_roles": [role],
+        "task": {"kind": role},
+        **extra,
+    }
+    path = export_dir / "tasks" / f"{task_id}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_claim_waits_for_a_busy_independent_verifier(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(
+        export_dir,
+        "render-frag-000-verify",
+        "verify",
+        excluded_node_ids=["worker-a"],
+        excluded_until_unix=time.time() + 120,
+    )
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["verify"],
+        "last_seen_unix": time.time(),
+        "accepting_tasks": False,
+        "active_task_count": 1,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is False
+
+
+def test_claim_waits_for_an_available_alternative(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(
+        export_dir,
+        "render-frag-000-verify",
+        "verify",
+        excluded_node_ids=["worker-a"],
+        excluded_until_unix=time.time() + 120,
+    )
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["verify"],
+        "last_seen_unix": time.time(),
+        "accepting_tasks": True,
+        "active_task_count": 0,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is False
+
+
+def test_verifier_cannot_verify_its_own_fragment_when_an_idle_peer_is_online(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(
+        export_dir,
+        "render-frag-000-verify",
+        "verify",
+        excluded_node_ids=["worker-a"],
+        excluded_until_unix=time.time() + 120,
+    )
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["compute", "verify"],
+        "last_seen_unix": time.time(),
+        "activity": {"status": "idle", "active_task_count": 0, "active_tasks": []},
+    }
+
+    self_verification = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["compute", "verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+    independent_verification = node.claim_task_for_peer(
+        {
+            "node_id": "worker-b",
+            "roles": ["compute", "verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert self_verification["claimed"] is False
+    assert independent_verification["claimed"] is True
+    assert independent_verification["task"]["claimed_by"] == "worker-b"
+
+
+def test_fairness_does_not_wait_for_the_excluded_compute_node(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    node.reputation.record_peer_dispatch("worker-b", "verify", "previous-verify-1")
+    node.reputation.record_peer_dispatch("worker-b", "verify", "previous-verify-2")
+    _queued_task(
+        export_dir,
+        "render-frag-002-verify",
+        "verify",
+        excluded_node_ids=["worker-a"],
+        excluded_until_unix=time.time() + 120,
+        fairness_until_unix=time.time() + 120,
+    )
+    node.peer_network._peers["worker-a"] = {
+        "node_id": "worker-a",
+        "roles": ["compute", "verify"],
+        "last_seen_unix": time.time(),
+        "accepting_tasks": True,
+        "active_task_count": 0,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-b",
+            "roles": ["compute", "verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is True
+    assert claimed["task"]["claimed_by"] == "worker-b"
+
+
+def test_worker_accepts_claims_until_its_cpu_slot_limit(tmp_path: Path, monkeypatch) -> None:
+    node = network_node.NetworkNode(_config(tmp_path / "export", "worker-a"))
+    monkeypatch.setattr(node, "local_max_active_tasks", lambda: 2)
+
+    assert node.local_available_task_slots() == 2
+    with node._active_task_lock:
+        node._active_task_ids.add("fragment-a")
+    assert node.local_available_task_slots() == 1
+    with node._active_task_lock:
+        node._active_task_ids.add("fragment-b")
+    assert node.local_available_task_slots() == 0
+
+
+def test_claim_reserves_a_fragment_for_a_fresh_idle_peer(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(
+        export_dir,
+        "render-frag-000",
+        "compute",
+        status="completed",
+        claimed_by="worker-a",
+    )
+    _queued_task(
+        export_dir,
+        "render-frag-001",
+        "compute",
+        fairness_until_unix=time.time() + 60,
+    )
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["compute"],
+        "last_seen_unix": time.time(),
+        "activity": {"status": "idle", "active_task_count": 0, "active_tasks": []},
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["compute"],
+            "capacity": {"cpu_count": 16},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is False
+
+
+def test_job_fairness_ignores_dispatch_history_from_older_jobs(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    node.reputation.record_peer_dispatch("worker-b", "compute", "old-job-1")
+    node.reputation.record_peer_dispatch("worker-b", "compute", "old-job-2")
+    _queued_task(
+        export_dir,
+        "render-frag-000",
+        "compute",
+        status="completed",
+        claimed_by="worker-a",
+    )
+    _queued_task(
+        export_dir,
+        "render-frag-001",
+        "compute",
+        fairness_until_unix=time.time() + 60,
+    )
+    node.peer_network._peers["worker-a"] = {
+        "node_id": "worker-a",
+        "roles": ["compute"],
+        "last_seen_unix": time.time(),
+        "accepting_tasks": True,
+        "active_task_count": 0,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-b",
+            "roles": ["compute"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is True
+    assert claimed["task"]["claimed_by"] == "worker-b"
+
+
+def test_claim_falls_back_after_the_fairness_window(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(
+        export_dir,
+        "render-frag-000",
+        "compute",
+        status="completed",
+        claimed_by="worker-a",
+    )
+    _queued_task(
+        export_dir,
+        "render-frag-001",
+        "compute",
+        fairness_until_unix=time.time() - 1,
+    )
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["compute"],
+        "last_seen_unix": time.time(),
+        "activity": {"status": "idle", "active_task_count": 0, "active_tasks": []},
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["compute"],
+            "capacity": {"cpu_count": 16},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is True
+    assert claimed["task"]["claimed_by"] == "worker-a"
+
+
+def test_result_return_retries_transient_network_errors(tmp_path: Path, monkeypatch) -> None:
+    node = network_node.NetworkNode(_config(tmp_path / "export", "worker-a"))
+    calls = 0
+
+    class Response:
+        status = 202
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def flaky_urlopen(_request, timeout):
+        nonlocal calls
+        calls += 1
+        assert timeout == 5
+        if calls < 3:
+            raise urllib.error.URLError("temporary")
+        return Response()
+
+    monkeypatch.setattr(network_node.urllib.request, "urlopen", flaky_urlopen)
+    monkeypatch.setattr(network_node.time, "sleep", lambda _seconds: None)
+
+    delivered = node.return_dispatched_result(
+        {
+            "task_id": "render-frag-000",
+            "dispatched_by": "orchestrator",
+            "result_return_url": "http://127.0.0.1:46100/results/dispatch",
+        },
+        {"success": True, "result_hash": "sha256:test"},
+        {"role": "compute", "fragment_index": 0},
+    )
+
+    assert delivered is True
+    assert calls == 3
+
+
+def test_p2p_content_fetch_retries_transient_peer_discovery(tmp_path: Path, monkeypatch) -> None:
+    attempts = 0
+
+    class PeerNetwork:
+        def fetch_content(self, content_id: str, preferred_peer_id: str):
+            nonlocal attempts
+            attempts += 1
+            assert content_id == "abc123"
+            assert preferred_peer_id == "orchestrator-1"
+            if attempts < 3:
+                raise FileNotFoundError(f"peer_content_not_found:{content_id}")
+            return b"fragment-input", {"node_id": "orchestrator-1", "http_base_url": "http://127.0.0.1:46100"}
+
+    monkeypatch.setattr(network_node.time, "sleep", lambda _seconds: None)
+    client = network_node.P2PClient("http://127.0.0.1:5001", tmp_path, PeerNetwork())
+
+    data, metadata = client.fetch(
+        {
+            "protocol": "silicium",
+            "content_id": "abc123",
+            "peer_id": "orchestrator-1",
+        }
+    )
+
+    assert attempts == 3
+    assert data == b"fragment-input"
+    assert metadata["peer_id"] == "orchestrator-1"
+
+
+def test_p2p_content_fetch_uses_embedded_owner_url(tmp_path: Path) -> None:
+    class PeerNetwork:
+        def fetch_content_from_url(self, base_url: str, content_id: str, peer_id: str):
+            assert base_url == "http://213.32.68.67:46100"
+            assert content_id == "abc123"
+            assert peer_id == "orchestrator-1"
+            return b"fragment-input", {"node_id": peer_id, "http_base_url": base_url}
+
+        def fetch_content(self, _content_id: str, _preferred_peer_id: str):
+            raise AssertionError("peer discovery should not be needed when peer_url is present")
+
+    client = network_node.P2PClient("http://127.0.0.1:5001", tmp_path, PeerNetwork())
+
+    data, metadata = client.fetch(
+        {
+            "protocol": "silicium",
+            "content_id": "abc123",
+            "peer_id": "orchestrator-1",
+            "peer_url": "http://213.32.68.67:46100",
+        }
+    )
+
+    assert data == b"fragment-input"
+    assert metadata["peer_url"] == "http://213.32.68.67:46100"
 
 
 def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
@@ -166,17 +569,26 @@ def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.storage:1.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.storage_1.json").read_text(encoding="utf-8"))
     assert result["success"] is True
     assert result["required_roles"] == ["storage"]
     assert result["input"]["source"] == "local-p2p-cache"
     assert result["role_result"] == "storage"
     assert result["stored_ref"]["hash"].startswith("sha256:")
 
-    stored = json.loads((export_dir / "tasks" / "storage:1.json").read_text(encoding="utf-8"))
+    stored = json.loads((export_dir / "tasks" / "storage_1.json").read_text(encoding="utf-8"))
     assert stored["status"] == "completed"
     assert stored["handled_by"] == "node-a"
-    assert (export_dir / "node.node-a.heartbeat.json").exists()
+    heartbeat = json.loads((export_dir / "node.node-a.heartbeat.json").read_text(encoding="utf-8"))
+    assert heartbeat["online"] is True
+    assert heartbeat["status"] == "idle"
+    assert heartbeat["active_tasks"] == []
+    assert heartbeat["last_response"]["item_id"] == "storage:1"
+    assert heartbeat["last_response"]["ok"] is True
+    events = [json.loads(line) for line in (export_dir / "node.events.ndjson").read_text(encoding="utf-8").splitlines()]
+    assert any(event["kind"] == "task_started" and event["item_id"] == "storage:1" for event in events)
+    assert any(event["kind"] == "task_input_fetched" and event["ok"] is True for event in events)
+    assert any(event["kind"] == "task" and event["phase"] == "completed" and event["ok"] is True for event in events)
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
     assert metrics["handled"] == 1
 
@@ -224,10 +636,12 @@ def test_network_node_prioritizes_urgent_requests(tmp_path: Path) -> None:
     )
     assert code == 0
 
-    assert (export_dir / "result.audit:now.json").exists()
-    assert not (export_dir / "result.compute:late.json").exists()
+    assert (export_dir / "result.audit_now.json").exists()
+    assert not (export_dir / "result.compute_late.json").exists()
     events = [json.loads(line) for line in (export_dir / "node.events.ndjson").read_text(encoding="utf-8").splitlines()]
-    assert events[0]["kind"] == "request"
+    completed = [event for event in events if event.get("phase") == "completed"]
+    assert completed[0]["kind"] == "request"
+    assert completed[0]["item_id"] == "audit:now"
 
 
 def test_network_node_submits_compute_result_on_chain_when_enabled(tmp_path: Path) -> None:
@@ -272,7 +686,7 @@ def test_network_node_submits_compute_result_on_chain_when_enabled(tmp_path: Pat
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.compute:on-chain.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.compute_on-chain.json").read_text(encoding="utf-8"))
     assert result["on_chain"][0]["op"] == "submit_fragment_result"
     assert result["on_chain"][0]["params"]["fragment_index"] == 0
     assert result["on_chain"][0]["params"]["result_hash"] == result["result_hash"]
@@ -319,7 +733,7 @@ def test_network_node_votes_on_audit_request_when_enabled(tmp_path: Path) -> Non
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.audit:on-chain.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.audit_on-chain.json").read_text(encoding="utf-8"))
     assert result["on_chain"][0]["op"] == "vote_fragment"
     assert result["on_chain"][0]["params"]["choice"] is True
 
@@ -346,7 +760,7 @@ def test_network_node_verifies_expected_hash(tmp_path: Path) -> None:
     code = network_node.main(["--export-dir", str(export_dir), "--roles", "verify", "--node-id", "node-a", "--once"])
     assert code == 0
 
-    result = json.loads((export_dir / "result.verify:1.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.verify_1.json").read_text(encoding="utf-8"))
     assert result["role_result"] == "verify"
     assert result["verified"] is True
     assert result["choice"] is True
@@ -381,7 +795,7 @@ def test_network_node_retries_then_dead_letters_failures(tmp_path: Path) -> None
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.storage:missing.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / "result.storage_missing.json").read_text(encoding="utf-8"))
     assert result["success"] is False
     assert (export_dir / "dead_letters.ndjson").exists()
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
@@ -395,6 +809,21 @@ def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
     peer_a = network_node.PeerNetwork(config_a, export_a)
     p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
     peer_a.start()
+    peer_a.set_local_activity(
+        {
+            "status": "working",
+            "active_task_count": 1,
+            "active_tasks": [
+                {
+                    "item_id": "render:fragment:2",
+                    "role": "compute",
+                    "activity": "fragment",
+                    "fragment_index": 2,
+                }
+            ],
+            "last_response": {"item_id": "verify:1", "ok": True, "timestamp_utc": network_node.utc_now()},
+        }
+    )
     try:
         config_b = _config(export_b, "node-b", seed_peers=[f"127.0.0.1:{config_a.gossip_port}"])
         peer_b = network_node.PeerNetwork(config_b, export_b)
@@ -437,6 +866,14 @@ def test_peer_network_syncs_over_http_with_public_identity(tmp_path: Path) -> No
     peer_a = network_node.PeerNetwork(config_a, export_a)
     p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
     peer_a.start()
+    peer_a.set_local_activity(
+        {
+            "status": "working",
+            "active_task_count": 1,
+            "active_tasks": [{"item_id": "render:fragment:2", "role": "compute", "activity": "fragment", "fragment_index": 2}],
+            "last_response": {"item_id": "verify:1", "ok": True, "timestamp_utc": network_node.utc_now()},
+        }
+    )
     try:
         unauthorized = urllib.request.Request(peer_a.http_base_url + "/peers")
         try:
@@ -464,6 +901,11 @@ def test_peer_network_syncs_over_http_with_public_identity(tmp_path: Path) -> No
                 time.sleep(0.05)
             assert peer_b.peers_snapshot()["count"] >= 2
             assert peer_a.peers_snapshot()["count"] >= 2
+            peer_a_from_b = next(peer for peer in peer_b.peers_snapshot()["peers"] if peer["node_id"] == "node-a")
+            assert peer_a_from_b["online"] is True
+            assert peer_a_from_b["activity"]["status"] == "working"
+            assert peer_a_from_b["activity"]["active_tasks"][0]["fragment_index"] == 2
+            assert peer_a_from_b["activity"]["last_response"]["ok"] is True
 
             stored = p2p_a.put_local(b"hello-http-mesh")
             data, meta = p2p_b.fetch(stored["shared_ref"])
@@ -636,9 +1078,9 @@ def test_network_node_dispatches_task_to_remote_peer(tmp_path: Path) -> None:
             ]
         )
         assert code == 0
-        dispatched = json.loads((export_a / "tasks" / "compute:remote.json").read_text(encoding="utf-8"))
+        dispatched = json.loads((export_a / "tasks" / "compute_remote.json").read_text(encoding="utf-8"))
         assert dispatched["status"] == "dispatched"
-        remote_task = json.loads((export_b / "tasks" / "compute:remote.json").read_text(encoding="utf-8"))
+        remote_task = json.loads((export_b / "tasks" / "compute_remote.json").read_text(encoding="utf-8"))
         assert remote_task["task_id"] == "compute:remote"
         metrics = json.loads((export_a / "node.node-a.metrics.json").read_text(encoding="utf-8"))
         assert metrics["dispatched"] == 1
@@ -682,13 +1124,13 @@ def test_network_node_ingests_remote_result_back_to_origin(tmp_path: Path) -> No
         _write_jsonl(export_a / "tasks.queue.ndjson", task)
         handled_a = node_a.sweep()
         assert handled_a == 1
-        dispatched = json.loads((export_a / "tasks" / "compute:return.json").read_text(encoding="utf-8"))
+        dispatched = json.loads((export_a / "tasks" / "compute_return.json").read_text(encoding="utf-8"))
         assert dispatched["status"] == "dispatched"
         handled_b = node_b.sweep()
         assert handled_b == 1
-        result = json.loads((export_a / "result.compute:return.json").read_text(encoding="utf-8"))
+        result = json.loads((export_a / "result.compute_return.json").read_text(encoding="utf-8"))
         assert result["node_id"] == "node-b"
-        origin_task = json.loads((export_a / "tasks" / "compute:return.json").read_text(encoding="utf-8"))
+        origin_task = json.loads((export_a / "tasks" / "compute_return.json").read_text(encoding="utf-8"))
         assert origin_task["status"] == "completed"
         assert origin_task["handled_by"] == "node-b"
     finally:
@@ -851,9 +1293,9 @@ def test_remote_dispatch_filters_peers_with_onchain_thresholds(tmp_path: Path) -
             ]
         )
         assert code == 0
-        remote_task = json.loads((export_b / "tasks" / "compute:threshold.json").read_text(encoding="utf-8"))
+        remote_task = json.loads((export_b / "tasks" / "compute_threshold.json").read_text(encoding="utf-8"))
         assert remote_task["task_id"] == "compute:threshold"
-        assert not (export_c / "tasks" / "compute:threshold.json").exists()
+        assert not (export_c / "tasks" / "compute_threshold.json").exists()
     finally:
         peer_b.stop()
         peer_c.stop()
