@@ -593,7 +593,7 @@ async function main() {
     schema_version: 1,
     success: true,
     source_summary_path: path.resolve(summaryPath),
-    rpc: DEVNET_RPC,
+    rpc: rpcDisplayName(DEVNET_RPC),
     program_id: PROGRAM_ID.toBase58(),
     wallet: provider.wallet.publicKey.toBase58(),
     mint: mint.toBase58(),
