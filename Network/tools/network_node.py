@@ -1733,11 +1733,18 @@ class PeerNetwork:
         compute_reputation = float(peer.get("onchain_compute_reputation", 0.0) or 0.0)
         verify_reputation = float(peer.get("onchain_verify_reputation", 0.0) or 0.0)
         storage_reputation = float(peer.get("onchain_storage_reputation", 0.0) or 0.0)
-        if not self.config.solana_reputation_enable:
-            global_reputation = global_reputation or local_reputation
-            compute_reputation = compute_reputation or local_reputation
-            verify_reputation = verify_reputation or local_reputation
-            storage_reputation = storage_reputation or local_reputation
+        # Desktop workers can start polling before their optional Solana
+        # profile has been resolved (or without an on-chain worker account in
+        # HMAC demo mode). Use local reputation until an actual worker account
+        # is known; once registered, the authoritative role-specific on-chain
+        # scores keep applying. An explicitly inactive account is rejected
+        # above in both cases.
+        has_onchain_worker = bool(str(peer.get("solana_worker", "")).strip())
+        if not self.config.solana_reputation_enable or not has_onchain_worker:
+            global_reputation = max(global_reputation, local_reputation)
+            compute_reputation = max(compute_reputation, local_reputation)
+            verify_reputation = max(verify_reputation, local_reputation)
+            storage_reputation = max(storage_reputation, local_reputation)
         checks = {
             "min_global_reputation": global_reputation,
             "min_compute_reputation": compute_reputation,
@@ -1745,12 +1752,6 @@ class PeerNetwork:
             "min_storage_reputation": storage_reputation,
             "min_stake_amount": float(peer.get("onchain_stake_amount", 0.0) or 0.0),
         }
-        if "compute" in required_roles and checks["min_compute_reputation"] <= 0 and self.config.solana_reputation_enable:
-            return False
-        if "verify" in required_roles and checks["min_verify_reputation"] <= 0 and self.config.solana_reputation_enable:
-            return False
-        if "storage" in required_roles and checks["min_storage_reputation"] <= 0 and self.config.solana_reputation_enable:
-            return False
         for key, actual in checks.items():
             minimum = float(constraints.get(key, 0.0) or 0.0)
             if minimum > 0 and actual < minimum:

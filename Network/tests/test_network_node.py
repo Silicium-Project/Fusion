@@ -479,6 +479,86 @@ def test_raytracer_allows_only_one_active_fragment_per_worker(tmp_path: Path) ->
     assert second_for_b["task"]["claimed_by"] == "worker-b"
 
 
+def test_pull_scheduler_uses_local_reputation_while_onchain_profile_is_pending(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(
+        _config(
+            export_dir,
+            "orchestrator",
+            roles="resource",
+            solana_reputation_enable=True,
+        )
+    )
+    _queued_task(
+        export_dir,
+        "render-frag-000",
+        "compute",
+        task={
+            "kind": "compute",
+            "workload": network_node.RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
+            "min_compute_reputation": 50,
+        },
+    )
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["compute", "verify"],
+            "capacity": {"cpu_count": 8},
+            "reputation_score": 100,
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is True
+    assert claimed["task"]["claimed_by"] == "worker-a"
+
+
+def test_pull_scheduler_enforces_reputation_of_registered_onchain_worker(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(
+        _config(
+            export_dir,
+            "orchestrator",
+            roles="resource",
+            solana_reputation_enable=True,
+        )
+    )
+    _queued_task(
+        export_dir,
+        "render-frag-000",
+        "compute",
+        task={
+            "kind": "compute",
+            "workload": network_node.RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
+            "min_compute_reputation": 50,
+        },
+    )
+    node.peer_network._peers["worker-a"] = {
+        "node_id": "worker-a",
+        "roles": ["compute", "verify"],
+        "solana_worker": "registered-worker-address",
+        "onchain_compute_reputation": 10,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["compute", "verify"],
+            "capacity": {"cpu_count": 8},
+            "reputation_score": 100,
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is False
+    assert claimed["reason"] == "no_matching_task"
+
+
 def test_fairness_ignores_online_peer_that_has_not_polled_recently(tmp_path: Path) -> None:
     export_dir = tmp_path / "export"
     node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
