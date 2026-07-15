@@ -123,6 +123,9 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			trace = inner
 		}
 	}
+	devnetEnabled := traceValue(trace, devnetTrace, "enabled")
+	devnetOK := traceValue(trace, devnetTrace, "ok")
+	devnetStatus := traceValue(trace, devnetTrace, "status")
 
 	payload := map[string]any{
 		"job": map[string]any{
@@ -170,15 +173,26 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"splitTree":        summary["split_tree"],
 		},
 		"devnet": map[string]any{
-			"enabled":    devnetTrace["enabled"],
-			"ok":         devnetTrace["ok"],
-			"status":     devnetTrace["status"],
-			"job":        trace["job"],
-			"programId":  trace["program_id"],
-			"rpc":        trace["rpc"],
-			"signatures": trace["signatures"],
-			"fragments":  trace["fragments"],
-			"splitTree":  trace["split_tree"],
+			"enabled":           devnetEnabled,
+			"ok":                devnetOK,
+			"status":            devnetStatus,
+			"mode":              trace["mode"],
+			"job":               trace["job"],
+			"programId":         trace["program_id"],
+			"memoProgramId":     trace["memo_program_id"],
+			"siliciumProgramId": trace["silicium_program_id"],
+			"rpc":               trace["rpc"],
+			"signature":         trace["signature"],
+			"explorerUrl":       trace["explorer_url"],
+			"manifestHash":      trace["manifest_hash"],
+			"merkleRoot":        trace["merkle_root"],
+			"finalHash":         trace["final_hash"],
+			"fragmentCount":     trace["fragment_count"],
+			"confirmedUtc":      trace["confirmed_utc"],
+			"error":             trace["error"],
+			"signatures":        trace["signatures"],
+			"fragments":         trace["fragments"],
+			"splitTree":         trace["split_tree"],
 		},
 	}
 	writeJSON(w, http.StatusOK, payload)
@@ -204,7 +218,8 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 	now := time.Now()
 	h.DB.Model(&job).Updates(map[string]any{"status": "running", "started_at": &now})
 
-	runResult := silicium.RunJob(job, silicium.ConfigFromEnv())
+	cfg := silicium.ConfigFromEnv()
+	runResult := silicium.RunJob(job, cfg)
 	updates := map[string]any{
 		"status":            runResult.Status,
 		"result_path":       runResult.ResultPath,
@@ -212,8 +227,27 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 		"devnet_trace_path": runResult.DevnetTracePath,
 		"devnet_job":        runResult.DevnetJob,
 		"error_message":     runResult.ErrorMessage,
-		"dashboard_url":     silicium.ConfigFromEnv().DashboardURL,
+		"dashboard_url":     cfg.DashboardURL,
 		"completed_at":      time.Now(),
+	}
+	compactTracePath := ""
+	if runResult.Status == "completed" && cfg.DevnetTraceMode == "async_compact" {
+		if path, err := silicium.PrepareCompactDevnetTrace(runResult.SummaryPath); err == nil {
+			compactTracePath = path
+			updates["devnet_trace_path"] = path
+		}
+	}
+	h.DB.Model(&models.Job{}).Where("id = ?", jobID).Updates(updates)
+	if compactTracePath != "" {
+		go h.runCompactDevnetTrace(jobID, runResult.SummaryPath, cfg)
+	}
+}
+
+func (h *Handler) runCompactDevnetTrace(jobID uint, summaryPath string, cfg silicium.RunnerConfig) {
+	result := silicium.RunCompactDevnetTrace(summaryPath, cfg)
+	updates := map[string]any{"devnet_trace_path": result.Path}
+	if result.Signature != "" {
+		updates["devnet_job"] = result.Signature
 	}
 	h.DB.Model(&models.Job{}).Where("id = ?", jobID).Updates(updates)
 }
@@ -268,6 +302,13 @@ func readJSONMap(path string) map[string]any {
 		return map[string]any{}
 	}
 	return payload
+}
+
+func traceValue(trace map[string]any, summaryTrace map[string]any, key string) any {
+	if value, ok := trace[key]; ok {
+		return value
+	}
+	return summaryTrace[key]
 }
 
 func progressPathForJob(job models.Job) string {
