@@ -56,7 +56,7 @@
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Devnet</p>
-          <p class="text-2xl font-bold mt-2">{{ payload.devnet.ok ? 'trace ok' : 'non confirme' }}</p>
+          <p class="text-2xl font-bold mt-2">{{ devnetStatusLabel }}</p>
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-5">
           <p class="text-white/50">Hash final</p>
@@ -199,19 +199,39 @@
           </section>
 
           <section class="bg-[#1f2029] rounded-2xl p-6">
-            <h2 class="text-2xl font-bold mb-4">Trace Devnet</h2>
+            <h2 class="text-2xl font-bold mb-4">Preuve blockchain</h2>
             <div class="space-y-3 text-sm">
               <div>
-                <p class="text-white/50">Job</p>
-                <p class="font-mono break-all">{{ payload.devnet.job || payload.job.devnetJob || 'non disponible' }}</p>
+                <p class="text-white/50">Statut</p>
+                <p class="font-semibold">{{ devnetStatusLabel }}</p>
+              </div>
+              <div v-if="payload.devnet.mode">
+                <p class="text-white/50">Mode</p>
+                <p class="font-mono break-all">{{ payload.devnet.mode }}</p>
+              </div>
+              <div v-if="payload.devnet.merkleRoot">
+                <p class="text-white/50">Racine Merkle</p>
+                <p class="font-mono break-all">{{ payload.devnet.merkleRoot }}</p>
+              </div>
+              <div v-if="payload.devnet.manifestHash">
+                <p class="text-white/50">Hash du manifeste</p>
+                <p class="font-mono break-all">{{ payload.devnet.manifestHash }}</p>
               </div>
               <div>
-                <p class="text-white/50">Program</p>
-                <p class="font-mono break-all">{{ payload.devnet.programId || 'non disponible' }}</p>
+                <p class="text-white/50">Transaction</p>
+                <p class="font-mono break-all">{{ devnetSignature || 'non disponible' }}</p>
               </div>
-              <div>
-                <p class="text-white/50">Finalize tx</p>
-                <p class="font-mono break-all">{{ payload.devnet.signatures?.finalize_job || 'non disponible' }}</p>
+              <a
+                v-if="payload.devnet.explorerUrl"
+                :href="payload.devnet.explorerUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex rounded-lg bg-purple-500/20 px-3 py-2 text-purple-200 hover:bg-purple-500/30"
+              >
+                Voir sur Solana Explorer
+              </a>
+              <div v-if="payload.devnet.error" class="rounded-lg border border-red-400/20 bg-red-500/10 p-3 text-red-200">
+                {{ payload.devnet.error }}
               </div>
             </div>
           </section>
@@ -366,6 +386,20 @@ const elapsedSeconds = computed(() => {
   return Math.max(0, Math.floor((end - start) / 1000));
 });
 const elapsedLabel = computed(() => formatDuration(elapsedSeconds.value));
+const devnetStatus = computed(() => String(payload.value?.devnet.status || ''));
+const devnetStatusLabel = computed(() => {
+  if (payload.value?.devnet.ok || devnetStatus.value === 'confirmed') return 'trace OK';
+  if (['pending', 'confirming', 'submitted'].includes(devnetStatus.value)) return 'en cours';
+  if (devnetStatus.value === 'failed') return 'echec';
+  if (!payload.value?.devnet.enabled || ['off', 'disabled', 'not_requested'].includes(devnetStatus.value)) return 'desactivee';
+  return 'non confirmee';
+});
+const devnetSignature = computed(() => (
+  payload.value?.devnet.signature
+  || payload.value?.devnet.signatures?.finalize_job
+  || payload.value?.job.devnetJob
+  || ''
+));
 const expectedFragmentCount = computed(() => Number(payload.value?.summary.fragmentCount || fragments.value.length || 0));
 const verifiedFragments = computed(() => fragments.value.filter((fragment) => fragment.verify_choice || ['verified', 'reassembled'].includes(String(fragment.status))).length);
 const progressPercent = computed(() => {
