@@ -449,7 +449,7 @@ def test_claim_falls_back_after_the_fairness_window(tmp_path: Path) -> None:
     assert claimed["task"]["claimed_by"] == "worker-a"
 
 
-def test_raytracer_allows_only_one_active_fragment_per_worker(tmp_path: Path) -> None:
+def test_raytracer_allows_multiple_active_fragments_up_to_worker_limit(tmp_path: Path) -> None:
     export_dir = tmp_path / "export"
     node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
     for index in range(2):
@@ -465,18 +465,62 @@ def test_raytracer_allows_only_one_active_fragment_per_worker(tmp_path: Path) ->
         "capacity": {"cpu_count": 32},
         "active_task_ids": [],
         "active_task_count": 0,
+        "max_active_tasks": 4,
         "accepting_tasks": True,
     }
 
     first = node.claim_task_for_peer(worker_a)
     second_for_a = node.claim_task_for_peer(worker_a)
-    second_for_b = node.claim_task_for_peer({**worker_a, "node_id": "worker-b"})
 
     assert first["claimed"] is True
     assert first["task"]["claimed_by"] == "worker-a"
-    assert second_for_a["claimed"] is False
-    assert second_for_b["claimed"] is True
-    assert second_for_b["task"]["claimed_by"] == "worker-b"
+    assert second_for_a["claimed"] is True
+    assert second_for_a["task"]["claimed_by"] == "worker-a"
+
+
+def test_raytracer_multitask_claims_remain_balanced_between_active_workers(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    worker_a = {
+        "node_id": "worker-a",
+        "roles": ["compute", "verify"],
+        "capacity": {"cpu_count": 32},
+        "active_task_ids": [],
+        "active_task_count": 0,
+        "max_active_tasks": 4,
+        "accepting_tasks": True,
+    }
+    worker_b = {**worker_a, "node_id": "worker-b"}
+
+    # Register both workers as genuine active pollers before work arrives.
+    assert node.claim_task_for_peer(worker_a)["claimed"] is False
+    assert node.claim_task_for_peer(worker_b)["claimed"] is False
+    for index in range(4):
+        _queued_task(
+            export_dir,
+            f"render-frag-{index:03d}",
+            "compute",
+            fairness_until_unix=time.time() + 60,
+            task={"kind": "compute", "workload": network_node.RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD},
+        )
+
+    first_a = node.claim_task_for_peer(worker_a)
+    blocked_second_a = node.claim_task_for_peer(worker_a)
+    first_b = node.claim_task_for_peer(worker_b)
+    second_a = node.claim_task_for_peer(worker_a)
+    second_b = node.claim_task_for_peer(worker_b)
+
+    assert first_a["claimed"] is True
+    assert blocked_second_a["claimed"] is False
+    assert first_b["claimed"] is True
+    assert second_a["claimed"] is True
+    assert second_b["claimed"] is True
+    assert [
+        first_a["task"]["claimed_by"],
+        first_b["task"]["claimed_by"],
+        second_a["task"]["claimed_by"],
+        second_b["task"]["claimed_by"],
+    ] == ["worker-a", "worker-b", "worker-a", "worker-b"]
 
 
 def test_pull_scheduler_uses_local_reputation_while_onchain_profile_is_pending(tmp_path: Path) -> None:

@@ -3180,20 +3180,23 @@ class NetworkNode:
             return total
 
         def max_active_claims_for_peer(role: str, task: dict[str, Any]) -> int:
-            workload = str(task.get("workload", "")).strip()
-            if workload in {RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD, RAYTRACER_FRAGMENT_VERIFY_WORKLOAD}:
-                # A raytracer fragment already uses the CPU's worker threads.
-                # Reserving several fragments on one PC oversubscribes it and
-                # prevents another active PC from contributing.
-                return 1
             capacity = peer.get("capacity", {}) if isinstance(peer, dict) and isinstance(peer.get("capacity"), dict) else {}
             try:
                 cpu_count = int(capacity.get("cpu_count", 0) or 0)
             except (TypeError, ValueError):
                 cpu_count = 0
+            try:
+                advertised_limit = max(1, int(peer.get("max_active_tasks", 1) or 1))
+            except (TypeError, ValueError):
+                advertised_limit = 1
             if role == "verify":
-                return max(1, min(4, cpu_count // 6 if cpu_count > 0 else 1))
-            return max(1, min(4, cpu_count // 4 if cpu_count > 0 else 1))
+                capacity_limit = max(1, min(4, cpu_count // 6 if cpu_count > 0 else 1))
+            else:
+                capacity_limit = max(1, min(4, cpu_count // 4 if cpu_count > 0 else 1))
+            # The worker is authoritative about its available concurrency.
+            # Fairness below still prevents a fast poller from reserving a
+            # second fragment while another active worker has received fewer.
+            return min(advertised_limit, capacity_limit)
 
         def fresh_peer(peer_value: dict[str, Any]) -> bool:
             try:
