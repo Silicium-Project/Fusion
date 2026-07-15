@@ -131,7 +131,6 @@ const register = async () => {
         last_name: form.lastName,
         email: form.email,
         password: form.password,
-        phone_number: '', // Add a phone number field if needed
       }
     });
     // switch to login mode after successful registration
