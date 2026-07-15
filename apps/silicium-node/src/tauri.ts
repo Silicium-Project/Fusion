@@ -43,10 +43,13 @@ export type MachineTaskActivity = {
 export type MachineActivity = {
   nodeId: string;
   online: boolean;
+  schedulerActive: boolean;
   status: string;
   roles: string[];
   activeTasks: MachineTaskActivity[];
   lastSeenUtc: string;
+  lastClaimPollUtc: string;
+  lastClaimError: string;
   lastResponseOk?: boolean | null;
   lastResponseItemId: string;
   lastResponseUtc: string;

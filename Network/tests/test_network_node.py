@@ -187,6 +187,7 @@ def test_claim_waits_for_a_busy_independent_verifier(tmp_path: Path) -> None:
         "node_id": "worker-b",
         "roles": ["verify"],
         "last_seen_unix": time.time(),
+        "last_claim_poll_unix": time.time(),
         "accepting_tasks": False,
         "active_task_count": 1,
     }
@@ -219,6 +220,7 @@ def test_claim_waits_for_an_available_alternative(tmp_path: Path) -> None:
         "node_id": "worker-b",
         "roles": ["verify"],
         "last_seen_unix": time.time(),
+        "last_claim_poll_unix": time.time(),
         "accepting_tasks": True,
         "active_task_count": 0,
     }
@@ -251,6 +253,7 @@ def test_verifier_cannot_verify_its_own_fragment_when_an_idle_peer_is_online(tmp
         "node_id": "worker-b",
         "roles": ["compute", "verify"],
         "last_seen_unix": time.time(),
+        "last_claim_poll_unix": time.time(),
         "activity": {"status": "idle", "active_task_count": 0, "active_tasks": []},
     }
 
@@ -349,6 +352,7 @@ def test_claim_reserves_a_fragment_for_a_fresh_idle_peer(tmp_path: Path) -> None
         "node_id": "worker-b",
         "roles": ["compute"],
         "last_seen_unix": time.time(),
+        "last_claim_poll_unix": time.time(),
         "activity": {"status": "idle", "active_task_count": 0, "active_tasks": []},
     }
 
@@ -443,6 +447,138 @@ def test_claim_falls_back_after_the_fairness_window(tmp_path: Path) -> None:
 
     assert claimed["claimed"] is True
     assert claimed["task"]["claimed_by"] == "worker-a"
+
+
+def test_raytracer_allows_only_one_active_fragment_per_worker(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    for index in range(2):
+        _queued_task(
+            export_dir,
+            f"render-frag-{index:03d}",
+            "compute",
+            task={"kind": "compute", "workload": network_node.RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD},
+        )
+    worker_a = {
+        "node_id": "worker-a",
+        "roles": ["compute"],
+        "capacity": {"cpu_count": 32},
+        "active_task_ids": [],
+        "active_task_count": 0,
+        "accepting_tasks": True,
+    }
+
+    first = node.claim_task_for_peer(worker_a)
+    second_for_a = node.claim_task_for_peer(worker_a)
+    second_for_b = node.claim_task_for_peer({**worker_a, "node_id": "worker-b"})
+
+    assert first["claimed"] is True
+    assert first["task"]["claimed_by"] == "worker-a"
+    assert second_for_a["claimed"] is False
+    assert second_for_b["claimed"] is True
+    assert second_for_b["task"]["claimed_by"] == "worker-b"
+
+
+def test_fairness_ignores_online_peer_that_has_not_polled_recently(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(export_dir, "render-frag-000", "compute", status="completed", claimed_by="worker-a")
+    _queued_task(export_dir, "render-frag-001", "compute", fairness_until_unix=time.time() + 60)
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["compute"],
+        "last_seen_unix": time.time(),
+        "last_claim_poll_unix": time.time() - network_node.ACTIVE_CLAIM_POLLER_WINDOW_S - 1,
+        "accepting_tasks": True,
+        "active_task_count": 0,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["compute"],
+            "capacity": {"cpu_count": 16},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is True
+    assert claimed["task"]["claimed_by"] == "worker-a"
+
+
+def test_active_verifier_prevents_self_verification_after_fallback(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="resource"))
+    _queued_task(
+        export_dir,
+        "render-frag-000-verify",
+        "verify",
+        excluded_node_ids=["worker-a"],
+        excluded_until_unix=time.time() - 1,
+    )
+    node.peer_network._peers["worker-b"] = {
+        "node_id": "worker-b",
+        "roles": ["verify"],
+        "last_seen_unix": time.time(),
+        "last_claim_poll_unix": time.time(),
+        "accepting_tasks": True,
+        "active_task_count": 0,
+    }
+
+    claimed = node.claim_task_for_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["verify"],
+            "capacity": {"cpu_count": 8},
+            "active_task_ids": [],
+            "active_task_count": 0,
+            "accepting_tasks": True,
+        }
+    )
+
+    assert claimed["claimed"] is False
+    assert claimed["reason"] == "no_matching_task"
+
+
+def test_claim_poll_updates_peer_diagnostics(tmp_path: Path) -> None:
+    node = network_node.NetworkNode(_config(tmp_path / "export", "orchestrator", roles="resource"))
+
+    peer = node.refresh_claiming_peer(
+        {
+            "node_id": "worker-a",
+            "roles": ["compute", "verify"],
+            "capacity": {"cpu_count": 8},
+            "last_claim_error": "URLError:temporary",
+        }
+    )
+
+    assert peer["last_claim_poll_unix"] > 0
+    assert peer["last_claim_poll_utc"].endswith("Z")
+    assert peer["last_claim_error"] == "URLError:temporary"
+
+
+def test_pull_remote_task_logs_network_error(tmp_path: Path, monkeypatch) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(
+        _config(export_dir, "worker-a", seed_peers=["http://127.0.0.1:46100"])
+    )
+    node.config.pull_tasks_enable = True
+
+    def failing_urlopen(_request, timeout):
+        assert timeout == 10
+        raise urllib.error.URLError("temporary")
+
+    monkeypatch.setattr(network_node.urllib.request, "urlopen", failing_urlopen)
+
+    assert node.pull_remote_task() is False
+    events = [json.loads(line) for line in node.events_path.read_text(encoding="utf-8").splitlines()]
+    attempt = events[-1]
+    assert attempt["kind"] == "claim_attempt"
+    assert attempt["status"] == "error"
+    assert "URLError" in attempt["error"]
+    assert "temporary" in node._last_claim_error
 
 
 def test_result_return_retries_transient_network_errors(tmp_path: Path, monkeypatch) -> None:

@@ -42,6 +42,9 @@ def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
 
 RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/raytracer-fragment"
 RAYTRACER_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/raytracer-fragment"
+COMPUTE_FAIRNESS_WINDOW_S = 10.0
+VERIFY_FAIRNESS_WINDOW_S = 10.0
+VERIFY_FALLBACK_WINDOW_S = 15.0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -414,7 +417,7 @@ def main(argv: list[str] | None = None) -> int:
                 "scene_p2p_ref": scene_ref,
             }
             progress_fragments[index]["status"] = "queued_compute"
-            fairness_until_unix = time.time() + min(120.0, max(30.0, float(args.result_timeout_s) * 0.5))
+            fairness_until_unix = time.time() + COMPUTE_FAIRNESS_WINDOW_S
             compute_payload = {
                 "task_id": fragment_id,
                 "required_roles": ["compute"],
@@ -497,8 +500,8 @@ def main(argv: list[str] | None = None) -> int:
                     }
                 )
                 verify_id = f"{fragment_id}-verify"
-                verify_fallback_until_unix = time.time() + min(120.0, max(45.0, float(args.result_timeout_s) * 0.5))
-                verify_fairness_until_unix = time.time() + min(120.0, max(30.0, float(args.result_timeout_s) * 0.5))
+                verify_fallback_until_unix = time.time() + VERIFY_FALLBACK_WINDOW_S
+                verify_fairness_until_unix = time.time() + VERIFY_FAIRNESS_WINDOW_S
                 verify_payload = {
                     "task_id": verify_id,
                     "required_roles": ["verify"],

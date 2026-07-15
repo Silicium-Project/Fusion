@@ -46,6 +46,7 @@ WORLD_DEFAULT_PEER_HTTP_PORT = 46001
 WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 MAX_PEER_REQUEST_BYTES = 128 * 1024 * 1024
+ACTIVE_CLAIM_POLLER_WINDOW_S = 10.0
 
 
 def configure_windows_error_mode() -> None:
@@ -2402,9 +2403,38 @@ class PeerNetwork:
                         return
                     try:
                         result = peer_network.node.claim_task_for_peer(payload)
-                    except Exception:
+                    except Exception as exc:
+                        append_jsonl(
+                            peer_network.node.events_path,
+                            {
+                                "schema_version": 1,
+                                "timestamp_utc": utc_now(),
+                                "node_id": peer_network.node.config.node_id,
+                                "kind": "claim_poll",
+                                "source_node": safe_id(str(payload.get("node_id", ""))),
+                                "status": "refused",
+                                "error": f"{type(exc).__name__}:{exc}"[:1024],
+                            },
+                        )
                         self.send_error(400)
                         return
+                    claimed_task = result.get("task") if isinstance(result.get("task"), dict) else {}
+                    append_jsonl(
+                        peer_network.node.events_path,
+                        {
+                            "schema_version": 1,
+                            "timestamp_utc": utc_now(),
+                            "node_id": peer_network.node.config.node_id,
+                            "kind": "claim_poll",
+                            "source_node": safe_id(str(payload.get("node_id", ""))),
+                            "status": "claimed" if result.get("claimed") else (
+                                "refused" if result.get("reason") == "peer_busy" else "no_task"
+                            ),
+                            "reason": str(result.get("reason", "")),
+                            "last_claim_error": str(payload.get("last_claim_error", ""))[:1024],
+                            "item_id": safe_id(str(claimed_task.get("task_id", ""))),
+                        },
+                    )
                     body = stable_json(result).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -2670,6 +2700,7 @@ class NetworkNode:
         self._active_task_details: dict[str, dict[str, Any]] = {}
         self._last_response: dict[str, Any] = {}
         self._last_pull_unix = 0.0
+        self._last_claim_error = ""
         self._last_reputation_refresh_unix = 0.0
         self._last_peer_reputation_refresh_unix = 0.0
         self._solana_owner = ""
@@ -3043,6 +3074,8 @@ class NetworkNode:
             return {}
         roles = [str(role).lower() for role in claim.get("roles", []) if str(role).strip()]
         capacity = claim.get("capacity", {}) if isinstance(claim.get("capacity"), dict) else {}
+        now = time.time()
+        poll_utc = utc_now()
         with self.peer_network._lock:
             current = dict(self.peer_network._peers.get(node_id, {}))
             current.update(
@@ -3060,8 +3093,11 @@ class NetworkNode:
                         for item_id in claim.get("active_task_ids", [])
                         if str(item_id).strip()
                     ],
-                    "last_seen_unix": int(time.time()),
-                    "updated_utc": utc_now(),
+                    "last_seen_unix": int(now),
+                    "last_claim_poll_unix": now,
+                    "last_claim_poll_utc": poll_utc,
+                    "last_claim_error": str(claim.get("last_claim_error", ""))[:1024],
+                    "updated_utc": poll_utc,
                     "self": node_id == self.config.node_id,
                 }
             )
@@ -3142,7 +3178,13 @@ class NetworkNode:
                     total += 1
             return total
 
-        def max_active_claims_for_peer(role: str) -> int:
+        def max_active_claims_for_peer(role: str, task: dict[str, Any]) -> int:
+            workload = str(task.get("workload", "")).strip()
+            if workload in {RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD, RAYTRACER_FRAGMENT_VERIFY_WORKLOAD}:
+                # A raytracer fragment already uses the CPU's worker threads.
+                # Reserving several fragments on one PC oversubscribes it and
+                # prevents another active PC from contributing.
+                return 1
             capacity = peer.get("capacity", {}) if isinstance(peer, dict) and isinstance(peer.get("capacity"), dict) else {}
             try:
                 cpu_count = int(capacity.get("cpu_count", 0) or 0)
@@ -3161,10 +3203,17 @@ class NetworkNode:
                 return False
             return time.time() - last_seen <= max(30.0, float(self.config.peer_stale_after_s or 0))
 
+        def active_claim_poller(peer_value: dict[str, Any]) -> bool:
+            try:
+                last_poll = float(peer_value.get("last_claim_poll_unix", 0) or 0)
+            except (TypeError, ValueError):
+                last_poll = 0.0
+            return last_poll > 0 and time.time() - last_poll <= ACTIVE_CLAIM_POLLER_WINDOW_S
+
         def fresh_fairness_alternatives(peers: list[dict[str, Any]]) -> list[dict[str, Any]]:
             alternatives: list[dict[str, Any]] = []
             for candidate in peers:
-                if not fresh_peer(candidate) or candidate.get("accepting_tasks") is False:
+                if not fresh_peer(candidate) or not active_claim_poller(candidate) or candidate.get("accepting_tasks") is False:
                     continue
                 if candidate.get("accepting_tasks") is True:
                     alternatives.append(candidate)
@@ -3185,10 +3234,14 @@ class NetworkNode:
             return alternatives
 
         def fresh_verification_alternatives(peers: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            # Verification must remain independent even when the other verifier
-            # is temporarily busy. The excluded compute node is only allowed to
-            # fall back after excluded_until_unix.
-            return [candidate for candidate in peers if fresh_peer(candidate)]
+            # A busy verifier still counts as an independent alternative while
+            # it keeps polling. The producer must wait for it instead of
+            # verifying its own fragment.
+            return [
+                candidate
+                for candidate in peers
+                if fresh_peer(candidate) and active_claim_poller(candidate)
+            ]
 
         def claim_lease_s(task: dict[str, Any]) -> float:
             try:
@@ -3295,7 +3348,7 @@ class NetworkNode:
                         continue
                 item_id = safe_id(str(envelope.get("task_id", path.stem)))
                 scheduler_role = str(next(iter(required_roles), "task")).lower()
-                max_claims = max_active_claims_for_peer(scheduler_role)
+                max_claims = max_active_claims_for_peer(scheduler_role, task)
                 if active_claim_count(node_id) >= max_claims:
                     continue
                 current_stats = self.reputation.peer_dispatch_stats(node_id)
@@ -3332,7 +3385,11 @@ class NetworkNode:
                         else {}
                     )
                     alternative_counts.append(int(alternative_by_role.get(scheduler_role, 0) or 0))
-                if fairness_active and alternatives:
+                # Fairness remains active for as long as another worker is
+                # genuinely polling. The timestamp is retained for backward
+                # compatibility, but no longer lets a fast poller monopolize a
+                # long-running job after an arbitrary timeout.
+                if alternatives:
                     group_id = task_group_id(item_id)
                     current_group_count = assigned_count_for_group(group_id, scheduler_role, node_id)
                     alternative_group_counts = [
@@ -3349,7 +3406,7 @@ class NetworkNode:
                 except (TypeError, ValueError):
                     excluded_until_unix = 0.0
                 excluded_fallback = node_id in excluded_node_ids and time.time() >= excluded_until_unix > 0
-                if node_id in excluded_node_ids and not excluded_fallback:
+                if node_id in excluded_node_ids:
                     alternatives = fresh_verification_alternatives(
                         self.peer_network.select_peers(
                             required_roles=required_roles,
@@ -3359,6 +3416,8 @@ class NetworkNode:
                         )
                     )
                     if alternatives:
+                        continue
+                    if not excluded_fallback:
                         continue
                 claimed = dict(envelope)
                 claimed["status"] = "claimed"
@@ -3393,7 +3452,31 @@ class NetworkNode:
                     },
                 )
                 return {"ok": True, "claimed": True, "task": claimed}
-        return {"ok": True, "claimed": False}
+        return {"ok": True, "claimed": False, "reason": "no_matching_task"}
+
+    def record_claim_attempt(
+        self,
+        *,
+        status: str,
+        endpoint: str,
+        reason: str = "",
+        error: str = "",
+        task_id: str = "",
+    ) -> None:
+        append_jsonl(
+            self.events_path,
+            {
+                "schema_version": 1,
+                "timestamp_utc": utc_now(),
+                "node_id": self.config.node_id,
+                "kind": "claim_attempt",
+                "status": status,
+                "endpoint": endpoint,
+                "reason": reason,
+                "error": error[:1024],
+                "item_id": safe_id(task_id) if task_id else "",
+            },
+        )
 
     def pull_remote_task(self) -> bool:
         if not self.config.pull_tasks_enable or not self.config.seed_peers:
@@ -3420,6 +3503,7 @@ class NetworkNode:
             "max_active_tasks": max_active_tasks,
             "available_task_slots": available_task_slots,
             "accepting_tasks": accepting_tasks,
+            "last_claim_error": self._last_claim_error,
         }
         raw = stable_json(claim).encode("utf-8")
         for seed in self.config.seed_peers:
@@ -3436,15 +3520,39 @@ class NetworkNode:
             try:
                 with urllib.request.urlopen(request, timeout=10) as response:
                     if response.status not in {200, 202}:
+                        error = f"http_status_{response.status}"
+                        self._last_claim_error = error
+                        self.record_claim_attempt(status="refused", endpoint=base_url, error=error)
                         continue
                     payload = json.loads(response.read().decode("utf-8"))
-            except Exception:
+            except urllib.error.HTTPError as exc:
+                error = f"http_{exc.code}:{exc.reason}"
+                self._last_claim_error = error
+                self.record_claim_attempt(status="refused", endpoint=base_url, error=error)
                 continue
-            if not isinstance(payload, dict) or not payload.get("claimed"):
+            except Exception as exc:
+                error = f"{type(exc).__name__}:{exc}"
+                self._last_claim_error = error
+                self.record_claim_attempt(status="error", endpoint=base_url, error=error)
+                continue
+            self._last_claim_error = ""
+            if not isinstance(payload, dict):
+                self.record_claim_attempt(status="refused", endpoint=base_url, error="invalid_claim_response")
+                continue
+            if not payload.get("claimed"):
+                reason = str(payload.get("reason", "no_task"))
+                status = "refused" if reason == "peer_busy" else "no_task"
+                self.record_claim_attempt(status=status, endpoint=base_url, reason=reason)
                 continue
             task = payload.get("task")
             if not isinstance(task, dict) or not self.accepts(task):
+                self.record_claim_attempt(status="refused", endpoint=base_url, error="invalid_or_unsupported_task")
                 continue
+            self.record_claim_attempt(
+                status="claimed",
+                endpoint=base_url,
+                task_id=str(task.get("task_id", "")),
+            )
             append_jsonl(
                 self.events_path,
                 {

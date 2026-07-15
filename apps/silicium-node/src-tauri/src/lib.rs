@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -80,10 +80,13 @@ struct NodeActivity {
 struct MachineActivity {
     node_id: String,
     online: bool,
+    scheduler_active: bool,
     status: String,
     roles: Vec<String>,
     active_tasks: Vec<MachineTaskActivity>,
     last_seen_utc: String,
+    last_claim_poll_utc: String,
+    last_claim_error: String,
     last_response_ok: Option<bool>,
     last_response_item_id: String,
     last_response_utc: String,
@@ -1465,7 +1468,11 @@ fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> 
         .open(path)
         .map_err(|error| error.to_string())?;
     use std::io::Write;
-    file.write_all(message.as_bytes())
+    let now: DateTime<Utc> = SystemTime::now().into();
+    let timestamp = now.to_rfc3339_opts(SecondsFormat::Secs, true);
+    let normalized = message.trim_end_matches(&['\r', '\n'][..]);
+    let line = format!("[{timestamp}] {normalized}\n");
+    file.write_all(line.as_bytes())
         .map_err(|error| error.to_string())
 }
 
@@ -1693,6 +1700,10 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
         .filter_map(|peer| {
             let node_id = peer.get("node_id")?.as_str()?.to_string();
             let last_seen = peer.get("last_seen_unix").and_then(Value::as_u64).unwrap_or(0);
+            let last_claim_poll = peer
+                .get("last_claim_poll_unix")
+                .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|item| item as f64)))
+                .unwrap_or(0.0);
             let activity = peer.get("activity").and_then(Value::as_object);
             let active_tasks = activity
                 .and_then(|item| item.get("active_tasks"))
@@ -1715,6 +1726,8 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
             Some(MachineActivity {
                 node_id,
                 online: last_seen > 0 && now.saturating_sub(last_seen) <= 45,
+                scheduler_active: last_claim_poll > 0.0
+                    && (now as f64 - last_claim_poll).max(0.0) <= 10.0,
                 status: activity
                     .and_then(|item| item.get("status"))
                     .and_then(Value::as_str)
@@ -1730,6 +1743,16 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                     .collect(),
                 active_tasks,
                 last_seen_utc: peer.get("updated_utc").and_then(Value::as_str).unwrap_or("").to_string(),
+                last_claim_poll_utc: peer
+                    .get("last_claim_poll_utc")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                last_claim_error: peer
+                    .get("last_claim_error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
                 last_response_ok: last_response.and_then(|item| item.get("ok")).and_then(Value::as_bool),
                 last_response_item_id: last_response
                     .and_then(|item| item.get("item_id"))
@@ -1877,7 +1900,7 @@ mod tests {
         fs::write(
             directory.join("mesh.discovery.json"),
             format!(
-                r#"{{"peers":[{{"node_id":"worker-a","roles":["compute"],"last_seen_unix":{now},"updated_utc":"2026-07-13T18:00:00Z","activity":{{"status":"working","active_tasks":[{{"item_id":"render:1","role":"compute","activity":"fragment","workload":"raytracer-fragment","fragment_index":3}}],"last_response":{{"item_id":"verify:2","ok":true,"timestamp_utc":"2026-07-13T17:59:00Z"}}}}}}]}}"#
+                r#"{{"peers":[{{"node_id":"worker-a","roles":["compute"],"last_seen_unix":{now},"last_claim_poll_unix":{now},"last_claim_poll_utc":"2026-07-13T18:00:00Z","last_claim_error":"","updated_utc":"2026-07-13T18:00:00Z","activity":{{"status":"working","active_tasks":[{{"item_id":"render:1","role":"compute","activity":"fragment","workload":"raytracer-fragment","fragment_index":3}}],"last_response":{{"item_id":"verify:2","ok":true,"timestamp_utc":"2026-07-13T17:59:00Z"}}}}}}]}}"#
             ),
         )
         .unwrap();
@@ -1885,6 +1908,7 @@ mod tests {
         let machines = collect_machine_activity(&directory);
         assert_eq!(machines.len(), 1);
         assert!(machines[0].online);
+        assert!(machines[0].scheduler_active);
         assert_eq!(machines[0].status, "working");
         assert_eq!(machines[0].active_tasks[0].fragment_index, "3");
         assert_eq!(machines[0].last_response_ok, Some(true));

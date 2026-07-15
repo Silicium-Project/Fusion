@@ -143,7 +143,7 @@
             <span class="machine-light" :class="{ online: machine.online }"></span>
             <div class="machine-main">
               <strong>{{ machine.nodeId }}</strong>
-              <small>{{ machine.online ? 'Connectee et ouverte' : 'Hors ligne ou heartbeat expire' }}</small>
+              <small>{{ machinePresenceLabel(machine) }}</small>
             </div>
             <div class="machine-work">
               <strong>{{ machineWorkLabel(machine) }}</strong>
@@ -556,6 +556,7 @@ function friendlyEvent(item: NodeActivity['history'][number]) {
 function machineWorkLabel(machine: NodeActivity['machines'][number]) {
   const task = machine.activeTasks[0];
   if (!machine.online) return 'Inactive';
+  if (!machine.schedulerActive) return 'Polling interrompu';
   if (!task) return 'Disponible';
   if (task.role === 'verify' || task.activity === 'verification') return 'Verification en cours';
   if (task.activity === 'fragment') return 'Fragment en cours';
@@ -564,9 +565,21 @@ function machineWorkLabel(machine: NodeActivity['machines'][number]) {
 
 function machineWorkDetail(machine: NodeActivity['machines'][number]) {
   const task = machine.activeTasks[0];
+  if (machine.lastClaimError) return machine.lastClaimError;
+  if (machine.online && !machine.schedulerActive) {
+    return machine.lastClaimPollUtc
+      ? `Derniere demande: ${machine.lastClaimPollUtc}`
+      : 'Aucune demande de tache recente';
+  }
   if (!task) return machine.roles.length ? machine.roles.join(' + ') : 'aucun role annonce';
   const fragment = task.fragmentIndex ? `fragment #${task.fragmentIndex}` : task.workload;
   return `${task.itemId}${fragment ? ` - ${fragment}` : ''}`;
+}
+
+function machinePresenceLabel(machine: NodeActivity['machines'][number]) {
+  if (!machine.online) return 'Hors ligne ou heartbeat expire';
+  if (!machine.schedulerActive) return 'Connectee, mais ne reclame plus de tache';
+  return 'Connectee et disponible pour le scheduler';
 }
 
 function responseLabel(machine: NodeActivity['machines'][number]) {
