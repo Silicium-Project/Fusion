@@ -31,6 +31,28 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+function Ensure-Submodules {
+    $gitmodules = Join-Path $Root ".gitmodules"
+    if (-not (Test-Path -LiteralPath $gitmodules -PathType Leaf)) {
+        return
+    }
+    if (Test-Path -LiteralPath (Join-Path $Root "Network") -PathType Container) {
+        return
+    }
+    if (-not (Get-Command "git" -ErrorAction SilentlyContinue)) {
+        throw "git is required to initialize the Network submodule. Run git submodule update --init --recursive manually."
+    }
+    Push-Location $Root
+    try {
+        git submodule update --init --recursive
+    } finally {
+        Pop-Location
+    }
+}
+
+Ensure-Submodules
+
 $NetworkRoot = Join-Path $Root "Network"
 $DashboardRoot = Join-Path $NetworkRoot "silicium-layer-dashboard"
 $BackendRoot = Join-Path $Root "Site\BackEnd-main"

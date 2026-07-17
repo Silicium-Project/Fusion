@@ -10,6 +10,26 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+function Ensure-Submodules {
+    $gitmodules = Join-Path $Root ".gitmodules"
+    if (-not (Test-Path -LiteralPath $gitmodules -PathType Leaf)) {
+        return
+    }
+    if (Test-Path -LiteralPath (Join-Path $Root "Network") -PathType Container) {
+        return
+    }
+    if (-not (Test-Command "git")) {
+        throw "git is required to initialize the Network submodule. Run git submodule update --init --recursive manually."
+    }
+    Write-Step "Initializing Git submodules"
+    Push-Location $Root
+    try {
+        git submodule update --init --recursive
+    } finally {
+        Pop-Location
+    }
+}
+
 function Write-Step($Message) {
     Write-Host ""
     Write-Host "==> $Message" -ForegroundColor Cyan
@@ -242,6 +262,8 @@ if ($opensslPath) {
 Ensure-Tool "go" "GoLang.Go" "Go" | Out-Null
 Ensure-Tool "rustup" "Rustlang.Rustup" "Rustup/Rust" -Optional | Out-Null
 Ensure-Tool "cargo" "" "Cargo" -Optional | Out-Null
+
+Ensure-Submodules
 
 if (-not $SkipDockerCheck) {
     Ensure-Tool "docker" "Docker.DockerDesktop" "Docker Desktop" -Optional | Out-Null

@@ -2,12 +2,21 @@
 
 Silicium regroupe le reseau de calcul distribue, le layer Solana Devnet, le dashboard d'observation et le site client.
 
+Le composant Network est suivi comme submodule Git pour garder son cycle de vie independant tout en restant compose par Fusion.
+
 ## Installation locale Windows
 
 Depuis la racine du repository:
 
 ```powershell
+git clone --recurse-submodules https://github.com/Silicium-Project/Fusion.git
 .\install-silicium-windows.cmd -InstallSystemDeps
+```
+
+Si le repository a ete clone sans recurse-submodules, lancez d'abord:
+
+```powershell
+git submodule update --init --recursive
 ```
 
 Ce script verifie/installe les outils systeme principaux, puis installe les dependances npm du dashboard Devnet, du layer Solana et du site.
@@ -19,6 +28,8 @@ Depuis la racine du repository:
 ```powershell
 .\start-silicium-local.cmd
 ```
+
+Le lancement local suppose que les submodules sont initialises.
 
 Le script demarre:
 
