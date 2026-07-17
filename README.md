@@ -2,7 +2,7 @@
 
 Silicium regroupe le reseau de calcul distribue, le layer Solana Devnet, le dashboard d'observation et le site client.
 
-Le composant Network est suivi comme submodule Git pour garder son cycle de vie independant tout en restant compose par Fusion.
+Les composants Network, BackEnd et FrontEnd sont suivis comme submodules Git pour garder leur cycle de vie independant tout en restant composes par Fusion.
 
 ## Installation locale Windows
 

@@ -34,15 +34,31 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Ensure-Submodules {
     $gitmodules = Join-Path $Root ".gitmodules"
+    $requiredPaths = @(
+        (Join-Path $Root "Network"),
+        (Join-Path $Root "Site\BackEnd-main"),
+        (Join-Path $Root "Site\FrontEnd-main")
+    )
+
     if (-not (Test-Path -LiteralPath $gitmodules -PathType Leaf)) {
         return
     }
-    if (Test-Path -LiteralPath (Join-Path $Root "Network") -PathType Container) {
+
+    $missing = @()
+    foreach ($path in $requiredPaths) {
+        if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+            $missing += $path
+        }
+    }
+
+    if ($missing.Count -eq 0) {
         return
     }
+
     if (-not (Get-Command "git" -ErrorAction SilentlyContinue)) {
-        throw "git is required to initialize the Network submodule. Run git submodule update --init --recursive manually."
+        throw "git is required to initialize Fusion submodules. Run git submodule update --init --recursive manually."
     }
+
     Push-Location $Root
     try {
         git submodule update --init --recursive

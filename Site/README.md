@@ -1,6 +1,6 @@
 # Silicium site integration
 
-This folder contains the client-facing site and backend API.
+This folder contains the client-facing site and backend API, both tracked as Git submodules.
 
 Responsibilities stay separated:
 
