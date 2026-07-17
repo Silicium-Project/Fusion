@@ -42,6 +42,21 @@ WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 
 
+def find_openssl_bin() -> str:
+    candidates = [
+        os.environ.get("SILICIUM_OPENSSL_BIN", ""),
+        shutil.which("openssl") or "",
+        shutil.which("openssl.exe") or "",
+        r"C:\Program Files\Git\mingw64\bin\openssl.exe",
+        r"C:\Program Files\Git\usr\bin\openssl.exe",
+    ]
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        if value and Path(value).exists():
+            return value
+    return "openssl"
+
+
 def utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -197,6 +212,7 @@ class NodeConfig:
     relay_enable: bool
     relay_hops: int
     identity_key_path: str
+    identity_dev_mesh_auth: bool
     reputation_score: float
     replication_factor: int
     replication_quorum: int
@@ -259,8 +275,10 @@ class NodeIdentity:
         default_key = config.state_dir / "peer_identity_ed25519.pem"
         self.private_key_path = Path(config.identity_key_path).expanduser() if str(config.identity_key_path).strip() else default_key
         self.public_key_path = self.private_key_path.with_suffix(".pub.pem")
+        self.openssl_bin = find_openssl_bin()
         self.private_key_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_keypair()
+        self._harden_private_key_permissions()
         public_pem = self.public_key_path.read_bytes()
         self.public_key_b64 = base64.b64encode(public_pem).decode("ascii")
         self.identity_id = sha256_bytes(public_pem)[:32]
@@ -271,7 +289,7 @@ class NodeIdentity:
             sig_path = Path(tmpdir) / "signature.bin"
             msg_path.write_bytes(data)
             completed = subprocess.run(
-                ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
+                [self.openssl_bin, "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -297,8 +315,9 @@ class NodeIdentity:
             msg_path.write_bytes(data)
             sig_path.write_bytes(signature)
             pub_path.write_bytes(public_pem)
+            openssl_bin = find_openssl_bin()
             completed = subprocess.run(
-                ["openssl", "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
+                [openssl_bin, "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -316,7 +335,7 @@ class NodeIdentity:
     def _ensure_keypair(self) -> None:
         if not self.private_key_path.exists():
             completed = subprocess.run(
-                ["openssl", "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
+                [self.openssl_bin, "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -325,13 +344,21 @@ class NodeIdentity:
                 raise RuntimeError(f"openssl_identity_generate_failed:{completed.stderr.strip()}")
         if not self.public_key_path.exists():
             completed = subprocess.run(
-                ["openssl", "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
+                [self.openssl_bin, "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
                 capture_output=True,
                 text=True,
                 check=False,
             )
             if completed.returncode != 0:
                 raise RuntimeError(f"openssl_identity_pubout_failed:{completed.stderr.strip()}")
+
+    def _harden_private_key_permissions(self) -> None:
+        if os.name == "nt":
+            return
+        try:
+            os.chmod(self.private_key_path, 0o600)
+        except OSError:
+            pass
 
 
 class QueueState:
@@ -691,6 +718,7 @@ class PeerNetwork:
         self.discovery_registry_path = export_dir / "mesh.discovery.json"
         self._peers: dict[str, dict[str, Any]] = {}
         self._seen_events: set[str] = set()
+        self._seen_handshake_nonces: dict[str, float] = {}
         self._lock = threading.Lock()
         self._http_server: http.server.ThreadingHTTPServer | None = None
         self._http_thread: threading.Thread | None = None
@@ -1077,11 +1105,17 @@ class PeerNetwork:
     def request_udp_punch(self, target_peer_id: str) -> bool:
         if not self.config.nat_punch_enable:
             return False
+        session_id = "punch-" + uuid.uuid4().hex
+        handshake = self.create_session_handshake(
+            target_peer_id=target_peer_id,
+            session_id=session_id,
+            purpose="nat_punch",
+        )
         for relay in self.select_peers(required_roles=set(), limit=max(1, self.config.relay_hops), require_relay=True, exclude={target_peer_id}):
             relay_url = str(relay.get("http_base_url", "")).rstrip("/")
             if not relay_url:
                 continue
-            payload = {"target_peer_id": target_peer_id}
+            payload = {"target_peer_id": target_peer_id, "session_id": session_id, "handshake": handshake}
             raw = stable_json(payload).encode("utf-8")
             path = "/relay/punch"
             request = urllib.request.Request(
@@ -1096,6 +1130,122 @@ class PeerNetwork:
             except urllib.error.URLError:
                 continue
         return False
+
+    def create_session_handshake(
+        self,
+        *,
+        target_peer_id: str,
+        session_id: str = "",
+        purpose: str = "direct_session",
+        task_id: str = "",
+        candidate_fingerprints: list[dict[str, Any]] | None = None,
+        ttl_s: int = 300,
+    ) -> dict[str, Any]:
+        now = int(time.time())
+        handshake = {
+            "schema_version": 1,
+            "message_type": "session_handshake",
+            "session_id": session_id or "sess-" + uuid.uuid4().hex,
+            "peer_id": self.node_id,
+            "target_peer_id": safe_id(target_peer_id),
+            "purpose": safe_id(purpose),
+            "task_id": str(task_id or ""),
+            "roles": sorted(self.config.roles),
+            "reputation_score": self.local_reputation_score,
+            "onchain_reputation": self.local_onchain_reputation,
+            "candidate_fingerprints": candidate_fingerprints or [],
+            "timestamp_unix": now,
+            "expires_unix": now + max(1, int(ttl_s)),
+            "nonce": uuid.uuid4().hex,
+            "identity_id": self.identity.identity_id,
+            "public_key": self.identity.public_key_b64,
+        }
+        handshake["signature"] = self.identity.sign_bytes(stable_json(handshake).encode("utf-8"))
+        return handshake
+
+    def verify_session_handshake(
+        self,
+        handshake: Mapping[str, Any] | None,
+        *,
+        expected_peer_id: str = "",
+        expected_target_peer_id: str = "",
+        authorized_task_ids: set[str] | None = None,
+        max_age_s: int = 300,
+    ) -> tuple[bool, str]:
+        if not isinstance(handshake, Mapping):
+            return False, "handshake_not_object"
+        if str(handshake.get("message_type", "")) != "session_handshake":
+            return False, "handshake_type_invalid"
+        public_key = str(handshake.get("public_key", "")).strip()
+        identity_id = str(handshake.get("identity_id", "")).strip()
+        signature = str(handshake.get("signature", "")).strip()
+        if not public_key or not identity_id or not signature:
+            return False, "handshake_identity_missing"
+        if NodeIdentity.identity_id_for_key(public_key) != identity_id:
+            return False, "handshake_identity_mismatch"
+        unsigned = dict(handshake)
+        unsigned.pop("signature", None)
+        if not NodeIdentity.verify_bytes(stable_json(unsigned).encode("utf-8"), signature, public_key):
+            return False, "handshake_signature_invalid"
+        peer_id = safe_id(str(handshake.get("peer_id", "")))
+        target_peer_id = safe_id(str(handshake.get("target_peer_id", "")))
+        if expected_peer_id and peer_id != safe_id(expected_peer_id):
+            return False, "handshake_peer_mismatch"
+        if expected_target_peer_id and target_peer_id != safe_id(expected_target_peer_id):
+            return False, "handshake_target_mismatch"
+        now = int(time.time())
+        try:
+            timestamp_unix = int(handshake.get("timestamp_unix", 0) or 0)
+            expires_unix = int(handshake.get("expires_unix", 0) or 0)
+        except (TypeError, ValueError):
+            return False, "handshake_timestamp_invalid"
+        if timestamp_unix <= 0 or abs(now - timestamp_unix) > max(1, int(max_age_s)):
+            return False, "handshake_expired"
+        if expires_unix <= now:
+            return False, "handshake_expired"
+        task_id = str(handshake.get("task_id", "") or "")
+        if authorized_task_ids is not None and task_id not in authorized_task_ids:
+            return False, "handshake_task_unauthorized"
+        roles = handshake.get("roles", [])
+        if not isinstance(roles, list) or not roles:
+            return False, "handshake_roles_invalid"
+        role_set = {str(role).lower() for role in roles}
+        if not role_set.issubset(NETWORK_ROLES):
+            return False, "handshake_roles_invalid"
+        try:
+            float(handshake.get("reputation_score", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return False, "handshake_reputation_invalid"
+        candidates = handshake.get("candidate_fingerprints", [])
+        if not isinstance(candidates, list):
+            return False, "handshake_candidates_invalid"
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                return False, "handshake_candidates_invalid"
+            try:
+                candidate_expires = int(candidate.get("expires_unix", expires_unix) or expires_unix)
+            except (TypeError, ValueError):
+                return False, "handshake_candidates_invalid"
+            if candidate_expires <= now:
+                return False, "handshake_candidate_expired"
+        nonce = str(handshake.get("nonce", "")).strip()
+        session_id = str(handshake.get("session_id", "")).strip()
+        if not nonce or not session_id:
+            return False, "handshake_nonce_missing"
+        replay_key = f"{identity_id}:{session_id}:{nonce}"
+        self._prune_handshake_nonces(now)
+        with self._lock:
+            if replay_key in self._seen_handshake_nonces:
+                return False, "handshake_replay"
+            self._seen_handshake_nonces[replay_key] = float(expires_unix)
+        return True, "ok"
+
+    def _prune_handshake_nonces(self, now: int | None = None) -> None:
+        cutoff = float(now if now is not None else int(time.time()))
+        with self._lock:
+            for key, expires_at in list(self._seen_handshake_nonces.items()):
+                if float(expires_at) <= cutoff:
+                    self._seen_handshake_nonces.pop(key, None)
 
     def select_peers(
         self,
@@ -1220,6 +1370,13 @@ class PeerNetwork:
                 self.announce()
             return
         if message_type == "punch_probe":
+            requester_handshake = message.get("requester_handshake")
+            if isinstance(requester_handshake, dict) and safe_id(str(requester_handshake.get("peer_id", ""))) != self.node_id:
+                ok, _reason = self.verify_session_handshake(requester_handshake, expected_target_peer_id=self.node_id)
+                if not ok:
+                    return
+            elif not isinstance(requester_handshake, dict):
+                return
             target_host = str(message.get("target_host", "")).strip()
             target_port = int(message.get("target_port", 0) or 0)
             if target_host and target_port > 0:
@@ -1523,7 +1680,7 @@ class PeerNetwork:
         return True
 
     def _authorize_peer_request(self, handler: http.server.BaseHTTPRequestHandler, body: bytes = b"") -> bool:
-        if self.config.mesh_key:
+        if self.config.mesh_key and self.config.identity_dev_mesh_auth:
             auth = str(handler.headers.get("Authorization", "")).strip()
             if auth == f"Bearer {self.config.mesh_key}":
                 return True
@@ -1793,6 +1950,22 @@ class PeerNetwork:
                         self.send_error(400)
                         return
                     target_peer_id = str(payload.get("target_peer_id", "")).strip()
+                    session_id = str(payload.get("session_id", "")).strip()
+                    requester_handshake = payload.get("handshake")
+                    requester_node_id = str(self.headers.get("X-Silicium-Node-Id", "")).strip()
+                    ok, reason = peer_network.verify_session_handshake(
+                        requester_handshake if isinstance(requester_handshake, dict) else None,
+                        expected_peer_id=requester_node_id,
+                        expected_target_peer_id=target_peer_id,
+                    )
+                    if not ok:
+                        body = stable_json({"ok": False, "error": reason}).encode("utf-8")
+                        self.send_response(403)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
                     requester_peer = peer_network._peers.get(str(self.headers.get("X-Silicium-Node-Id", "")).strip(), {})
                     target_peer = peer_network._peers.get(target_peer_id, {})
                     if not isinstance(requester_peer, dict) or not isinstance(target_peer, dict):
@@ -1805,9 +1978,11 @@ class PeerNetwork:
                     if requester_host and requester_port > 0 and target_host and target_port > 0:
                         probe_to_target = {
                             "message_type": "punch_probe",
+                            "session_id": session_id,
                             "node_id": peer_network.node_id,
                             "identity_id": peer_network.identity.identity_id,
                             "public_key": peer_network.identity.public_key_b64,
+                            "requester_handshake": requester_handshake,
                             "target_host": requester_host,
                             "target_port": requester_port,
                             "timestamp_utc": utc_now(),
@@ -1816,9 +1991,11 @@ class PeerNetwork:
                         peer_network._send_udp(f"{target_host}:{target_port}", target_host, target_port, probe_to_target)
                         probe_to_requester = {
                             "message_type": "punch_probe",
+                            "session_id": session_id,
                             "node_id": peer_network.node_id,
                             "identity_id": peer_network.identity.identity_id,
                             "public_key": peer_network.identity.public_key_b64,
+                            "requester_handshake": requester_handshake,
                             "target_host": target_host,
                             "target_port": target_port,
                             "timestamp_utc": utc_now(),
@@ -2749,6 +2926,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
     parser.add_argument("--relay-hops", type=int, default=int(os.environ.get("SILICIUM_RELAY_HOPS", "2")))
     parser.add_argument("--identity-key-path", default=os.environ.get("SILICIUM_IDENTITY_KEY_PATH", ""))
+    parser.add_argument(
+        "--identity-dev-mesh-auth",
+        action="store_true",
+        default=os.environ.get("SILICIUM_IDENTITY_DEV_MESH_AUTH", "0") == "1",
+        help="Allow bearer-only mesh-key HTTP auth for local development. Production peers must use signed identity headers.",
+    )
     parser.add_argument("--reputation-score", type=float, default=float(os.environ.get("SILICIUM_REPUTATION_SCORE", "0")))
     parser.add_argument("--replication-factor", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_FACTOR", "0")))
     parser.add_argument("--replication-quorum", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_QUORUM", "0")))
@@ -2796,7 +2979,7 @@ def main(argv: list[str] | None = None) -> int:
         args.peer_sync_interval_s = max(int(args.peer_sync_interval_s or 0), WORLD_DEFAULT_PEER_SYNC_INTERVAL_S)
         args.discovery_sync_interval_s = max(int(args.discovery_sync_interval_s or 0), WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S)
         if not str(args.identity_key_path).strip():
-            args.identity_key_path = str(Path(".silicium") / "world-identities" / safe_id(str(args.node_id)) / "ed25519.pem")
+            args.identity_key_path = (Path(".silicium") / "world-identities" / safe_id(str(args.node_id)) / "ed25519.pem").as_posix()
     export_dir = Path(args.export_dir).expanduser().resolve()
     state_dir = Path(args.state_dir).expanduser().resolve() if args.state_dir else export_dir / "node-state" / safe_id(args.node_id)
     config = NodeConfig(
@@ -2835,6 +3018,7 @@ def main(argv: list[str] | None = None) -> int:
         relay_enable=bool(args.relay_enable),
         relay_hops=max(1, int(args.relay_hops)),
         identity_key_path=str(args.identity_key_path),
+        identity_dev_mesh_auth=bool(args.identity_dev_mesh_auth),
         reputation_score=float(args.reputation_score),
         replication_factor=max(0, int(args.replication_factor)),
         replication_quorum=max(0, int(args.replication_quorum)),

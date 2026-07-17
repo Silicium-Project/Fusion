@@ -68,6 +68,7 @@ def _config(
     mesh_key: str = "",
     peer_sync_interval_s: int = 1,
     relay_enable: bool = False,
+    identity_dev_mesh_auth: bool = False,
     reputation_score: float = 0.0,
     replication_factor: int = 0,
     replication_quorum: int = 0,
@@ -119,6 +120,7 @@ def _config(
         relay_enable=relay_enable,
         relay_hops=2,
         identity_key_path="",
+        identity_dev_mesh_auth=identity_dev_mesh_auth,
         reputation_score=reputation_score,
         replication_factor=replication_factor,
         replication_quorum=replication_quorum,
@@ -133,6 +135,127 @@ def _config(
         scheduler_offchain_weight=1.0,
         scheduler_capacity_weight=0.01,
     )
+
+
+def _resign_handshake(peer: network_node.PeerNetwork, handshake: dict) -> dict:
+    unsigned = dict(handshake)
+    unsigned.pop("signature", None)
+    unsigned["signature"] = peer.identity.sign_bytes(network_node.stable_json(unsigned).encode("utf-8"))
+    return unsigned
+
+
+class _RequestStub:
+    def __init__(self, headers: dict[str, str], *, command: str = "GET", path: str = "/peers") -> None:
+        self.headers = headers
+        self.command = command
+        self.path = path
+
+
+def test_peer_identity_persists_across_restarts(tmp_path: Path) -> None:
+    export_dir = tmp_path / "identity"
+    config = _config(export_dir, "node-a")
+
+    first = network_node.NodeIdentity(config)
+    second = network_node.NodeIdentity(config)
+
+    assert first.identity_id == second.identity_id
+    assert first.public_key_b64 == second.public_key_b64
+    assert first.private_key_path.exists()
+    assert first.public_key_path.exists()
+
+
+def test_session_handshake_accepts_valid_signed_payload(tmp_path: Path) -> None:
+    source = network_node.PeerNetwork(_config(tmp_path / "source", "node-a", roles="compute", reputation_score=25), tmp_path / "source")
+    target = network_node.PeerNetwork(_config(tmp_path / "target", "node-b", roles="verify"), tmp_path / "target")
+
+    handshake = source.create_session_handshake(
+        target_peer_id="node-b",
+        session_id="sess-valid",
+        purpose="fragment_fetch",
+        task_id="task-1",
+        candidate_fingerprints=[{"candidate_id": "cand-a", "expires_unix": int(time.time()) + 60}],
+    )
+
+    ok, reason = target.verify_session_handshake(
+        handshake,
+        expected_peer_id="node-a",
+        expected_target_peer_id="node-b",
+        authorized_task_ids={"task-1"},
+    )
+    assert ok, reason
+
+
+def test_session_handshake_rejects_replay(tmp_path: Path) -> None:
+    source = network_node.PeerNetwork(_config(tmp_path / "source", "node-a"), tmp_path / "source")
+    target = network_node.PeerNetwork(_config(tmp_path / "target", "node-b"), tmp_path / "target")
+    handshake = source.create_session_handshake(target_peer_id="node-b", session_id="sess-replay")
+
+    assert target.verify_session_handshake(handshake, expected_peer_id="node-a", expected_target_peer_id="node-b")[0]
+    ok, reason = target.verify_session_handshake(handshake, expected_peer_id="node-a", expected_target_peer_id="node-b")
+    assert not ok
+    assert reason == "handshake_replay"
+
+
+def test_session_handshake_rejects_wrong_peer_id(tmp_path: Path) -> None:
+    source = network_node.PeerNetwork(_config(tmp_path / "source", "node-a"), tmp_path / "source")
+    target = network_node.PeerNetwork(_config(tmp_path / "target", "node-b"), tmp_path / "target")
+    handshake = source.create_session_handshake(target_peer_id="node-b", session_id="sess-wrong-peer")
+
+    ok, reason = target.verify_session_handshake(handshake, expected_peer_id="node-c", expected_target_peer_id="node-b")
+    assert not ok
+    assert reason == "handshake_peer_mismatch"
+
+
+def test_session_handshake_rejects_expired_payload(tmp_path: Path) -> None:
+    source = network_node.PeerNetwork(_config(tmp_path / "source", "node-a"), tmp_path / "source")
+    target = network_node.PeerNetwork(_config(tmp_path / "target", "node-b"), tmp_path / "target")
+    handshake = source.create_session_handshake(target_peer_id="node-b", session_id="sess-expired")
+    handshake["timestamp_unix"] = int(time.time()) - 600
+    handshake["expires_unix"] = int(time.time()) - 300
+    handshake = _resign_handshake(source, handshake)
+
+    ok, reason = target.verify_session_handshake(handshake, expected_peer_id="node-a", expected_target_peer_id="node-b")
+    assert not ok
+    assert reason == "handshake_expired"
+
+
+def test_session_handshake_rejects_tampered_payload(tmp_path: Path) -> None:
+    source = network_node.PeerNetwork(_config(tmp_path / "source", "node-a"), tmp_path / "source")
+    target = network_node.PeerNetwork(_config(tmp_path / "target", "node-b"), tmp_path / "target")
+    handshake = source.create_session_handshake(target_peer_id="node-b", session_id="sess-tamper", task_id="task-1")
+    handshake["task_id"] = "task-2"
+
+    ok, reason = target.verify_session_handshake(handshake, expected_peer_id="node-a", expected_target_peer_id="node-b")
+    assert not ok
+    assert reason == "handshake_signature_invalid"
+
+
+def test_session_handshake_rejects_unauthorized_task(tmp_path: Path) -> None:
+    source = network_node.PeerNetwork(_config(tmp_path / "source", "node-a"), tmp_path / "source")
+    target = network_node.PeerNetwork(_config(tmp_path / "target", "node-b"), tmp_path / "target")
+    handshake = source.create_session_handshake(target_peer_id="node-b", session_id="sess-task", task_id="task-a")
+
+    ok, reason = target.verify_session_handshake(
+        handshake,
+        expected_peer_id="node-a",
+        expected_target_peer_id="node-b",
+        authorized_task_ids={"task-b"},
+    )
+    assert not ok
+    assert reason == "handshake_task_unauthorized"
+
+
+def test_mesh_key_bearer_auth_requires_explicit_dev_flag(tmp_path: Path) -> None:
+    peer = network_node.PeerNetwork(_config(tmp_path / "peer", "node-a", mesh_key="demo-mesh"), tmp_path / "peer")
+    request = _RequestStub({"Authorization": "Bearer demo-mesh"})
+
+    assert not peer._authorize_peer_request(request)
+
+    dev_peer = network_node.PeerNetwork(
+        _config(tmp_path / "dev-peer", "node-a", mesh_key="demo-mesh", identity_dev_mesh_auth=True),
+        tmp_path / "dev-peer",
+    )
+    assert dev_peer._authorize_peer_request(request)
 
 
 def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:

@@ -273,7 +273,7 @@ def _apply_world_mode_defaults(args: argparse.Namespace, *, node_id: str) -> arg
     )
     if not str(getattr(args, "identity_key_path", "") or "").strip():
         safe_node_id = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in str(node_id)) or "node"
-        args.identity_key_path = str(LOCAL_STATE_DIR / "world-identities" / safe_node_id / "ed25519.pem")
+        args.identity_key_path = (LOCAL_STATE_DIR / "world-identities" / safe_node_id / "ed25519.pem").as_posix()
     return args
 MCP_DEFAULT_PORT = 9765
 MCP_DEFAULT_EXPORT_DIR = LOCAL_STATE_DIR / "mcp" / "export"
@@ -3116,6 +3116,12 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
     parser.add_argument("--relay-hops", type=int, default=int(os.environ.get("SILICIUM_RELAY_HOPS", "2")))
     parser.add_argument("--identity-key-path", default=os.environ.get("SILICIUM_IDENTITY_KEY_PATH", ""))
+    parser.add_argument(
+        "--identity-dev-mesh-auth",
+        action="store_true",
+        default=os.environ.get("SILICIUM_IDENTITY_DEV_MESH_AUTH", "0") == "1",
+        help="Allow bearer-only mesh-key HTTP auth for local development. Production peers must use signed identity headers.",
+    )
     parser.add_argument("--reputation-score", type=float, default=float(os.environ.get("SILICIUM_REPUTATION_SCORE", "0")))
     parser.add_argument("--replication-factor", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_FACTOR", "0")))
     parser.add_argument("--replication-quorum", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_QUORUM", "0")))
@@ -3226,6 +3232,8 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         argv.append("--gossip-enable")
     if args.relay_enable:
         argv.append("--relay-enable")
+    if args.identity_dev_mesh_auth:
+        argv.append("--identity-dev-mesh-auth")
     if args.remote_dispatch_enable:
         argv.append("--remote-dispatch-enable")
     if args.nat_punch_enable:

@@ -122,6 +122,40 @@ Every P2P message uses these identifiers:
 Messages that omit any required identifier must be rejected before state
 mutation.
 
+## Peer Identity and Handshake
+
+Each node owns a persistent Ed25519 peer identity. The default private key path
+is under the node state directory, and headless/world deployments may provide an
+explicit `--identity-key-path`. The private key is local node identity material:
+it must not be copied into task payloads, logs, or peer announcements. Public
+keys are announced with peer metadata so receivers can verify signed messages.
+
+Direct or relay-assisted session setup uses a signed `session_handshake`
+payload. The handshake binds:
+
+- session id;
+- sender peer id;
+- target peer id;
+- purpose;
+- task id when available;
+- sender role claims;
+- reputation metadata;
+- candidate fingerprints and candidate expiry;
+- timestamp and expiry;
+- nonce;
+- identity id and public key.
+
+Receivers must reject handshakes when the signature is invalid, the nonce has
+already been used for the same identity/session, the timestamp is stale, the
+target peer id does not match the receiver, the requested task is not authorized,
+or any candidate fingerprint has expired.
+
+The legacy shared mesh key remains available for local development only. Bearer
+authentication with the mesh key must require an explicit development flag such
+as `--identity-dev-mesh-auth` or `SILICIUM_IDENTITY_DEV_MESH_AUTH=1`. Production
+peers must authenticate HTTP and mesh messages with peer identity signatures;
+the mesh key may add a MAC but must not be the only security boundary.
+
 ## Message Catalog
 
 ### PeerRegister
@@ -241,6 +275,34 @@ Instructs both peers to attempt simultaneous UDP punching.
   "timestamp_unix_ms": 1784310003000,
   "nonce": "punch-start-0001",
   "auth": {"scheme": "signaling-signature-v1", "value": "base64-signature"}
+}
+```
+
+### SessionHandshake
+
+Authenticates one direct or relay-assisted session attempt.
+
+```json
+{
+  "schema_version": 1,
+  "message_type": "session_handshake",
+  "session_id": "p2p-sess-01",
+  "peer_id": "node-a",
+  "target_peer_id": "node-b",
+  "purpose": "fragment_fetch",
+  "task_id": "compute:42",
+  "roles": ["compute"],
+  "reputation_score": 25.0,
+  "onchain_reputation": 0.0,
+  "candidate_fingerprints": [
+    {"candidate_id": "cand-a-srflx-1", "expires_unix": 1784310061}
+  ],
+  "timestamp_unix": 1784310001,
+  "expires_unix": 1784310301,
+  "nonce": "8f4c0c0a15f04f9d8c26a50a083fbe12",
+  "identity_id": "sha256-prefix",
+  "public_key": "base64-pem",
+  "signature": "hex-ed25519-signature"
 }
 ```
 
