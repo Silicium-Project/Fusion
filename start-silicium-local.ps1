@@ -231,8 +231,8 @@ function Start-LoggedProcess {
 
 Assert-Directory $NetworkRoot "Network"
 Assert-Directory $DashboardRoot "Devnet dashboard"
-Assert-Directory $BackendRoot "Site backend"
-Assert-Directory $FrontendRoot "Site frontend"
+Assert-Directory $BackendRoot "BackEnd"
+Assert-Directory $FrontendRoot "FrontEnd"
 
 New-Item -ItemType Directory -Force -Path $LogRoot | Out-Null
 
