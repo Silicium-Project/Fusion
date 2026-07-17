@@ -6,8 +6,8 @@ Responsibilities stay separated:
 
 - `FrontEnd`: user dashboard, task submission form, result display link, and
   link to the read-only Devnet dashboard.
-- `BackEnd`: authenticated API, job persistence, file upload, and bridge to the
-  Silicium network runner.
+- `BackEnd`: authenticated API, job persistence, file upload, and bridge to
+  the Silicium network runner.
 - `../Network`: P2P nodes, workers/verifiers, render workload, reassembly, and
   Devnet trace/dashboard.
 
