@@ -703,6 +703,11 @@ def test_pull_remote_task_logs_network_error(tmp_path: Path, monkeypatch) -> Non
     assert attempt["status"] == "error"
     assert "URLError" in attempt["error"]
     assert "temporary" in node._last_claim_error
+    health = json.loads((export_dir / "claim-poll.health.json").read_text(encoding="utf-8"))
+    assert health["node_id"] == "worker-a"
+    assert health["status"] == "error"
+    assert health["timestamp_unix"] > 0
+    assert health["timestamp_utc"].endswith("Z")
 
 
 def test_result_return_retries_transient_network_errors(tmp_path: Path, monkeypatch) -> None:

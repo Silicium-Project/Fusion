@@ -30,6 +30,7 @@ struct ProcessState {
 
 const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
 const SUPERVISOR_RUN_KEY_NAME: &str = "SiliciumNodeService";
+const CLAIM_POLL_STALE_AFTER: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -811,6 +812,7 @@ pub fn run_supervisor_cli() -> i32 {
     });
 
     let mut restart_attempts = 0_u32;
+    let mut node_started_at = Instant::now();
     loop {
         cleanup_dead_pids(&repo_root);
         let pid_running = read_pid(&repo_root)
@@ -819,7 +821,24 @@ pub fn run_supervisor_cli() -> i32 {
             .map(process_is_running)
             .unwrap_or(false);
         let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
-        let node_running = pid_running || port_ready;
+        let mut node_running = pid_running || port_ready;
+        if node_running
+            && node_started_at.elapsed() >= CLAIM_POLL_STALE_AFTER
+            && !claim_poll_is_fresh(&repo_root, CLAIM_POLL_STALE_AFTER)
+        {
+            let _ = append_supervisor_log(
+                &repo_root,
+                "claim_poll_stale: restarting the managed network node",
+            );
+            if let Ok(Some(pid)) = read_pid(&repo_root) {
+                let _ = kill_process_tree(pid);
+            } else {
+                kill_known_silicium_processes(Some(&repo_root));
+            }
+            remove_pid(&repo_root);
+            node_running = false;
+            thread::sleep(Duration::from_secs(1));
+        }
         if node_running {
             restart_attempts = 0;
         }
@@ -828,6 +847,7 @@ pub fn run_supervisor_cli() -> i32 {
             match spawn_node(&repo_root, &config) {
                 Ok(child) => {
                     restart_attempts = restart_attempts.saturating_add(1);
+                    node_started_at = Instant::now();
                     let _ = write_pid(&repo_root, child.id());
                     let _ = append_supervisor_log(
                         &repo_root,
@@ -843,6 +863,25 @@ pub fn run_supervisor_cli() -> i32 {
         let delay = if restart_attempts > 3 { 20 } else { 5 };
         thread::sleep(Duration::from_secs(delay));
     }
+}
+
+fn claim_poll_health_path(repo_root: &Path) -> PathBuf {
+    repo_root
+        .join("Network")
+        .join(".silicium")
+        .join("networked")
+        .join("silicium-desktop-node")
+        .join("export")
+        .join("claim-poll.health.json")
+}
+
+fn claim_poll_is_fresh(repo_root: &Path, maximum_age: Duration) -> bool {
+    fs::metadata(claim_poll_health_path(repo_root))
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+        .map(|age| age <= maximum_age)
+        .unwrap_or(false)
 }
 
 fn detect_local_ip() -> Option<String> {

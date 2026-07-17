@@ -3467,11 +3467,27 @@ class NetworkNode:
         error: str = "",
         task_id: str = "",
     ) -> None:
+        timestamp_utc = utc_now()
+        health = {
+            "schema_version": 1,
+            "timestamp_utc": timestamp_utc,
+            "timestamp_unix": time.time(),
+            "node_id": self.config.node_id,
+            "status": status,
+            "endpoint": endpoint,
+            "reason": reason,
+            "error": error[:1024],
+            "item_id": safe_id(task_id) if task_id else "",
+        }
+        # The desktop supervisor watches this small file. Unlike the general
+        # event log, its modification time proves that the scheduler pull loop
+        # itself is still making progress, even when the orchestrator is down.
+        atomic_write_json(self.config.export_dir / "claim-poll.health.json", health)
         append_jsonl(
             self.events_path,
             {
                 "schema_version": 1,
-                "timestamp_utc": utc_now(),
+                "timestamp_utc": timestamp_utc,
                 "node_id": self.config.node_id,
                 "kind": "claim_attempt",
                 "status": status,

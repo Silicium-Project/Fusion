@@ -556,28 +556,35 @@ function friendlyEvent(item: NodeActivity['history'][number]) {
 function machineWorkLabel(machine: NodeActivity['machines'][number]) {
   const task = machine.activeTasks[0];
   if (!machine.online) return 'Inactive';
-  if (!machine.schedulerActive) return 'Polling interrompu';
-  if (!task) return 'Disponible';
-  if (task.role === 'verify' || task.activity === 'verification') return 'Verification en cours';
-  if (task.activity === 'fragment') return 'Fragment en cours';
-  return 'Tache en cours';
+  if (task) {
+    if (task.role === 'verify' || task.activity === 'verification') return 'Verification en cours';
+    if (task.activity === 'fragment') return 'Fragment en cours';
+    return 'Tache en cours';
+  }
+  if (!machine.schedulerActive) return 'En attente du scheduler';
+  return 'Disponible';
 }
 
 function machineWorkDetail(machine: NodeActivity['machines'][number]) {
   const task = machine.activeTasks[0];
   if (machine.lastClaimError) return machine.lastClaimError;
+  if (task) {
+    const fragment = task.fragmentIndex !== null && task.fragmentIndex !== undefined
+      ? `fragment #${task.fragmentIndex}`
+      : task.workload;
+    return `${task.itemId}${fragment ? ` - ${fragment}` : ''}`;
+  }
   if (machine.online && !machine.schedulerActive) {
     return machine.lastClaimPollUtc
       ? `Derniere demande: ${machine.lastClaimPollUtc}`
       : 'Aucune demande de tache recente';
   }
-  if (!task) return machine.roles.length ? machine.roles.join(' + ') : 'aucun role annonce';
-  const fragment = task.fragmentIndex ? `fragment #${task.fragmentIndex}` : task.workload;
-  return `${task.itemId}${fragment ? ` - ${fragment}` : ''}`;
+  return machine.roles.length ? machine.roles.join(' + ') : 'aucun role annonce';
 }
 
 function machinePresenceLabel(machine: NodeActivity['machines'][number]) {
   if (!machine.online) return 'Hors ligne ou heartbeat expire';
+  if (machine.activeTasks.length > 0) return 'Connectee et en cours de travail';
   if (!machine.schedulerActive) return 'Connectee, mais ne reclame plus de tache';
   return 'Connectee et disponible pour le scheduler';
 }
