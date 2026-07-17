@@ -15,6 +15,7 @@ import base64
 import hashlib
 import hmac
 import http.server
+import ipaddress
 import json
 import os
 import platform
@@ -40,6 +41,7 @@ WORLD_DEFAULT_GOSSIP_PORT = 46000
 WORLD_DEFAULT_PEER_HTTP_PORT = 46001
 WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
+ATOMIC_WRITE_LOCK = threading.Lock()
 
 
 def find_openssl_bin() -> str:
@@ -166,7 +168,15 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
-    tmp.replace(path)
+    with ATOMIC_WRITE_LOCK:
+        for attempt in range(5):
+            try:
+                tmp.replace(path)
+                return
+            except PermissionError:
+                if attempt >= 4:
+                    raise
+                time.sleep(0.02 * float(attempt + 1))
 
 
 def append_jsonl(path: Path, payload: Any) -> None:
@@ -221,6 +231,8 @@ class NodeConfig:
     remote_dispatch_enable: bool
     remote_dispatch_limit: int
     nat_punch_enable: bool
+    p2p_candidate_ttl_s: int
+    p2p_candidate_refresh_s: int
     solana_reputation_enable: bool
     solana_reputation_refresh_s: int
     scheduler_onchain_weight: float
@@ -714,9 +726,11 @@ class PeerNetwork:
         self.node_id = safe_id(config.node_id)
         self.identity = NodeIdentity(config)
         self.peers_path = export_dir / f"node.{self.node_id}.peers.json"
+        self.candidates_path = export_dir / "p2p.candidates.json"
         self.gossip_events_path = export_dir / "gossip.events.ndjson"
         self.discovery_registry_path = export_dir / "mesh.discovery.json"
         self._peers: dict[str, dict[str, Any]] = {}
+        self._local_candidates: list[dict[str, Any]] = []
         self._seen_events: set[str] = set()
         self._seen_handshake_nonces: dict[str, float] = {}
         self._lock = threading.Lock()
@@ -742,12 +756,16 @@ class PeerNetwork:
         self.local_onchain_status = ""
         self.local_solana_owner = ""
         self.local_solana_worker = ""
+        self._last_candidate_refresh_unix = 0.0
+        self._observed_public_address = ""
+        self._nat_behavior = "unknown"
 
     def start(self) -> None:
         self._start_http_server()
         if self.config.gossip_enable:
             self._start_udp_listener()
         self._load_persisted_peers()
+        self.refresh_candidates(force=True)
         self._record_self_peer()
         if self.config.peer_sync_interval_s > 0:
             self._start_sync_loop()
@@ -778,12 +796,307 @@ class PeerNetwork:
 
     def peers_snapshot(self) -> dict[str, Any]:
         self._prune_stale_peers()
+        self._prune_expired_peer_candidates()
         with self._lock:
             peers = sorted(self._peers.values(), key=lambda item: str(item.get("node_id", "")))
         payload = {"schema_version": 1, "node_id": self.node_id, "count": len(peers), "peers": peers, "updated_utc": utc_now()}
         atomic_write_json(self.peers_path, payload)
         atomic_write_json(self.discovery_registry_path, payload)
         return payload
+
+    def local_candidates_snapshot(self) -> list[dict[str, Any]]:
+        now = int(time.time())
+        with self._lock:
+            self._local_candidates = [candidate for candidate in self._local_candidates if int(candidate.get("expires_unix", 0) or 0) > now]
+            candidates = [dict(candidate) for candidate in self._local_candidates]
+        self._write_candidate_snapshot(candidates)
+        return candidates
+
+    def candidate_diagnostics(self) -> dict[str, Any]:
+        candidates = self.local_candidates_snapshot()
+        selected = self._select_candidate(candidates)
+        return {
+            "candidate_count": len(candidates),
+            "candidate_types": sorted({str(candidate.get("candidate_type", "")) for candidate in candidates if candidate.get("candidate_type")}),
+            "selected_candidate": selected,
+            "observed_public_address": self._observed_public_address,
+            "nat_behavior": self._nat_behavior,
+        }
+
+    def refresh_candidates(self, *, force: bool = False) -> list[dict[str, Any]]:
+        now = int(time.time())
+        refresh_s = max(1, int(self.config.p2p_candidate_refresh_s))
+        with self._lock:
+            fresh = any(int(candidate.get("expires_unix", 0) or 0) > now for candidate in self._local_candidates)
+            recently_refreshed = (now - self._last_candidate_refresh_unix) < refresh_s
+        if not force and fresh and recently_refreshed:
+            return self.local_candidates_snapshot()
+        gathered = self._gather_host_candidates(now)
+        gathered.extend(self._discover_server_reflexive_candidates(now))
+        candidates = self._merge_candidate_list(gathered, self.node_id, now)
+        with self._lock:
+            self._local_candidates = candidates
+            self._last_candidate_refresh_unix = float(now)
+        self._write_candidate_snapshot(candidates)
+        return [dict(candidate) for candidate in candidates]
+
+    def record_observed_candidate(self, observed_ip: str, *, source: str = "server-observed", observed_port: int = 0) -> dict[str, Any] | None:
+        now = int(time.time())
+        candidate = self._server_reflexive_candidate(observed_ip, now, source=source, observed_port=observed_port)
+        if candidate is None:
+            return None
+        with self._lock:
+            merged = self._merge_candidate_list([*self._local_candidates, candidate], self.node_id, now)
+            self._local_candidates = merged
+            self._last_candidate_refresh_unix = float(now)
+        self._write_candidate_snapshot(self.local_candidates_snapshot())
+        self._record_self_peer()
+        return dict(candidate)
+
+    def _write_candidate_snapshot(self, candidates: list[dict[str, Any]]) -> None:
+        atomic_write_json(
+            self.candidates_path,
+            {
+                "schema_version": 1,
+                "node_id": self.node_id,
+                "updated_utc": utc_now(),
+                "observed_public_address": self._observed_public_address,
+                "nat_behavior": self._nat_behavior,
+                "selected_candidate": self._select_candidate(candidates),
+                "candidates": candidates,
+            },
+        )
+
+    def _select_candidate(self, candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+        if not candidates:
+            return None
+        ranked = sorted(
+            candidates,
+            key=lambda candidate: (
+                1 if bool(candidate.get("internet_routable", False)) else 0,
+                1 if str(candidate.get("candidate_type", "")) == "srflx" else 0,
+                int(candidate.get("priority", 0) or 0),
+            ),
+            reverse=True,
+        )
+        return dict(ranked[0]) if ranked else None
+
+    def _gather_host_candidates(self, now: int) -> list[dict[str, Any]]:
+        port = self._advertised_gossip_port()
+        if port <= 0:
+            return []
+        hosts: list[tuple[str, str]] = [
+            (self._advertised_gossip_host(), "advertised-gossip"),
+            (str(self.config.gossip_bind), "gossip-bind"),
+        ]
+        default_route = self._default_route_ip()
+        if default_route:
+            hosts.append((default_route, "default-route"))
+        try:
+            hosts.append((socket.gethostname(), "hostname"))
+        except Exception:
+            pass
+        candidates: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for host, source in hosts:
+            for ip in self._resolve_candidate_addresses(host):
+                if ip in seen:
+                    continue
+                seen.add(ip)
+                candidates.append(self._make_candidate("host", ip, port, source, 100, now))
+        return candidates
+
+    def _discover_server_reflexive_candidates(self, now: int) -> list[dict[str, Any]]:
+        targets = {self._normalize_http_target(seed) for seed in self.config.discovery_seeds + self.config.seed_peers}
+        targets.update(self._sync_targets())
+        targets.discard("")
+        targets.discard(self.advertised_http_base_url)
+        candidates: list[dict[str, Any]] = []
+        for base_url in sorted(target for target in targets if target):
+            path = "/discovery/observe"
+            request = urllib.request.Request(base_url.rstrip("/") + path, headers=self._signed_headers("GET", path, b""))
+            try:
+                with urllib.request.urlopen(request, timeout=3) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            candidate = self._server_reflexive_candidate(
+                str(payload.get("observed_ip", "")),
+                now,
+                source=f"observe:{base_url.rstrip('/')}",
+                observed_port=0,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return candidates
+
+    def _server_reflexive_candidate(self, observed_ip: str, now: int, *, source: str, observed_port: int = 0) -> dict[str, Any] | None:
+        port = int(observed_port or 0) or self._advertised_gossip_port()
+        if port <= 0:
+            return None
+        candidate = self._make_candidate("srflx", observed_ip, port, source, 900, now)
+        normalized = self._normalize_candidate(candidate, self.node_id, now)
+        if normalized is None:
+            return None
+        if bool(normalized.get("internet_routable", False)):
+            self._observed_public_address = str(normalized.get("ip", ""))
+            self._nat_behavior = "public_or_endpoint_independent" if self._has_matching_public_host(normalized) else "address_translated"
+        else:
+            self._nat_behavior = "private_or_unroutable_observed"
+        return normalized
+
+    def _make_candidate(self, candidate_type: str, ip: str, port: int, source: str, priority: int, now: int) -> dict[str, Any]:
+        ttl_s = max(1, int(self.config.p2p_candidate_ttl_s))
+        return {
+            "candidate_type": candidate_type,
+            "transport": "udp",
+            "ip": str(ip).strip(),
+            "port": int(port),
+            "priority": int(priority),
+            "observed_unix": now,
+            "expires_unix": now + ttl_s,
+            "source": str(source),
+        }
+
+    def _normalize_candidate_list(self, candidates: Any, peer_id: str, now: int | None = None) -> list[dict[str, Any]]:
+        if not isinstance(candidates, list):
+            return []
+        return self._merge_candidate_list(candidates, peer_id, int(now if now is not None else time.time()))
+
+    def _merge_candidate_list(self, candidates: list[dict[str, Any]], peer_id: str, now: int) -> list[dict[str, Any]]:
+        merged: dict[tuple[str, str, str, int], dict[str, Any]] = {}
+        for candidate in candidates:
+            normalized = self._normalize_candidate(candidate, peer_id, now)
+            if normalized is None:
+                continue
+            key = (
+                str(normalized.get("candidate_type", "")),
+                str(normalized.get("transport", "")),
+                str(normalized.get("ip", "")),
+                int(normalized.get("port", 0) or 0),
+            )
+            previous = merged.get(key)
+            if previous is None or int(normalized.get("priority", 0) or 0) >= int(previous.get("priority", 0) or 0):
+                merged[key] = normalized
+        return sorted(merged.values(), key=lambda candidate: str(candidate.get("candidate_id", "")))
+
+    def _normalize_candidate(self, candidate: Any, peer_id: str, now: int) -> dict[str, Any] | None:
+        if not isinstance(candidate, Mapping):
+            return None
+        candidate_type = str(candidate.get("candidate_type", "")).strip().lower()
+        if candidate_type not in {"host", "srflx", "relay"}:
+            return None
+        transport = str(candidate.get("transport", "udp")).strip().lower()
+        if transport != "udp":
+            return None
+        try:
+            ip_value = ipaddress.ip_address(str(candidate.get("ip", "")).strip().strip("[]"))
+            port = int(candidate.get("port", 0) or 0)
+            if "observed_unix" in candidate:
+                observed_unix = int(candidate.get("observed_unix", 0) or 0)
+            else:
+                observed_unix = int(int(candidate.get("observed_unix_ms", now * 1000) or 0) // 1000)
+            if "expires_unix" in candidate:
+                expires_unix = int(candidate.get("expires_unix", 0) or 0)
+            else:
+                expires_unix = int(int(candidate.get("expires_unix_ms", 0) or 0) // 1000)
+            priority = int(candidate.get("priority", 0) or 0)
+        except (TypeError, ValueError):
+            return None
+        if port <= 0 or port > 65535 or observed_unix <= 0 or expires_unix <= now:
+            return None
+        family = "ipv6" if ip_value.version == 6 else "ipv4"
+        metadata = self._ip_metadata(ip_value)
+        normalized = {
+            "candidate_id": safe_id(str(candidate.get("candidate_id", "")))
+            if str(candidate.get("candidate_id", "")).strip()
+            else self._candidate_id(peer_id, candidate_type, transport, ip_value.compressed, port),
+            "peer_id": safe_id(peer_id),
+            "address_family": family,
+            "transport": transport,
+            "ip": ip_value.compressed,
+            "port": port,
+            "candidate_type": candidate_type,
+            "priority": priority,
+            "observed_unix": observed_unix,
+            "expires_unix": expires_unix,
+            "source": str(candidate.get("source", candidate.get("source_interface", ""))).strip(),
+            "private": bool(metadata["private"]),
+            "local": bool(metadata["local"]),
+            "internet_routable": bool(metadata["public"]),
+        }
+        if "nat_behavior" in candidate:
+            normalized["nat_behavior"] = str(candidate.get("nat_behavior", "")).strip()
+        return normalized
+
+    def _candidate_id(self, peer_id: str, candidate_type: str, transport: str, ip: str, port: int) -> str:
+        digest = sha256_bytes(stable_json([safe_id(peer_id), candidate_type, transport, ip, int(port)]).encode("utf-8"))[:16]
+        return f"cand-{safe_id(peer_id)}-{candidate_type}-{digest}"
+
+    def _ip_metadata(self, ip_value: ipaddress.IPv4Address | ipaddress.IPv6Address) -> dict[str, bool]:
+        local = bool(ip_value.is_loopback or ip_value.is_link_local or ip_value.is_private or ip_value.is_unspecified)
+        public = not bool(
+            ip_value.is_loopback
+            or ip_value.is_link_local
+            or ip_value.is_private
+            or ip_value.is_multicast
+            or ip_value.is_reserved
+            or ip_value.is_unspecified
+        )
+        return {"local": local, "private": not public, "public": public}
+
+    def _resolve_candidate_addresses(self, host: str) -> list[str]:
+        value = str(host or "").strip().strip("[]")
+        if not value or value in {"0.0.0.0", "::"}:
+            return []
+        try:
+            return [ipaddress.ip_address(value).compressed]
+        except ValueError:
+            pass
+        addresses: set[str] = set()
+        try:
+            for family, _socktype, _proto, _canonname, sockaddr in socket.getaddrinfo(value, None):
+                if family not in {socket.AF_INET, socket.AF_INET6}:
+                    continue
+                addresses.add(ipaddress.ip_address(str(sockaddr[0])).compressed)
+        except OSError:
+            return []
+        return sorted(addresses)
+
+    def _default_route_ip(self) -> str:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                sock.connect(("8.8.8.8", 80))
+                return str(sock.getsockname()[0])
+            finally:
+                sock.close()
+        except OSError:
+            return ""
+
+    def _has_matching_public_host(self, observed: Mapping[str, Any]) -> bool:
+        observed_ip = str(observed.get("ip", ""))
+        for candidate in self._local_candidates:
+            if str(candidate.get("candidate_type", "")) == "host" and bool(candidate.get("internet_routable", False)) and str(candidate.get("ip", "")) == observed_ip:
+                return True
+        return False
+
+    def _prune_expired_peer_candidates(self) -> None:
+        now = int(time.time())
+        changed = False
+        with self._lock:
+            for peer in self._peers.values():
+                candidates = peer.get("candidates")
+                if not isinstance(candidates, list):
+                    continue
+                fresh = [candidate for candidate in candidates if isinstance(candidate, dict) and int(candidate.get("expires_unix", 0) or 0) > now]
+                if len(fresh) != len(candidates):
+                    peer["candidates"] = fresh
+                    changed = True
+        if changed:
+            atomic_write_json(self.peers_path, {"schema_version": 1, "node_id": self.node_id, "count": len(self._peers), "peers": list(self._peers.values()), "updated_utc": utc_now()})
 
     def set_local_profile(
         self,
@@ -854,6 +1167,7 @@ class PeerNetwork:
         self._broadcast(message)
 
     def announce(self) -> None:
+        candidates = self.refresh_candidates()
         message = {
             "message_type": "peer_announce",
             "node_id": self.node_id,
@@ -864,6 +1178,7 @@ class PeerNetwork:
             "mesh_post_url": self.mesh_post_url,
             "gossip_bind": self._advertised_gossip_host(),
             "gossip_port": self._advertised_gossip_port(),
+            "candidates": candidates,
             "relay_capable": bool(self.config.relay_enable),
             "capacity": self.local_capacity,
             "reputation_score": self.local_reputation_score,
@@ -880,6 +1195,23 @@ class PeerNetwork:
         }
         self._sign_message(message)
         self._record_self_peer()
+        self._broadcast(message)
+        self.announce_candidates(candidates)
+
+    def announce_candidates(self, candidates: list[dict[str, Any]] | None = None) -> None:
+        candidate_list = candidates if candidates is not None else self.refresh_candidates()
+        message = {
+            "message_type": "candidate_announce",
+            "peer_id": self.node_id,
+            "node_id": self.node_id,
+            "identity_id": self.identity.identity_id,
+            "public_key": self.identity.public_key_b64,
+            "candidates": candidate_list,
+            "timestamp_utc": utc_now(),
+            "timestamp_unix": int(time.time()),
+            "nonce": uuid.uuid4().hex,
+        }
+        self._sign_message(message)
         self._broadcast(message)
 
     def fetch_content(self, content_id: str, preferred_peer_id: str = "") -> tuple[bytes, dict[str, Any]]:
@@ -907,6 +1239,7 @@ class PeerNetwork:
         raise FileNotFoundError(f"peer_content_not_found:{content_id}")
 
     def _record_self_peer(self) -> None:
+        candidates = self.local_candidates_snapshot()
         with self._lock:
             self._peers[self.node_id] = {
                 "node_id": self.node_id,
@@ -917,6 +1250,7 @@ class PeerNetwork:
                 "mesh_post_url": self.mesh_post_url,
                 "gossip_bind": self._advertised_gossip_host(),
                 "gossip_port": self._advertised_gossip_port(),
+                "candidates": candidates,
                 "relay_capable": bool(self.config.relay_enable),
                 "capacity": self.local_capacity,
                 "reputation_score": self.local_reputation_score,
@@ -940,6 +1274,7 @@ class PeerNetwork:
         if not node_id:
             return False
         changed = False
+        candidates = self._normalize_candidate_list(message.get("candidates", []), node_id)
         with self._lock:
             current = dict(self._peers.get(node_id, {}))
             merged = {
@@ -951,6 +1286,7 @@ class PeerNetwork:
                 "mesh_post_url": str(message.get("mesh_post_url", "")),
                 "gossip_bind": str(message.get("gossip_bind", "")),
                 "gossip_port": int(message.get("gossip_port", 0) or 0),
+                "candidates": candidates,
                 "relay_capable": bool(message.get("relay_capable", False)),
                 "capacity": message.get("capacity", {}) if isinstance(message.get("capacity"), dict) else {},
                 "reputation_score": float(message.get("reputation_score", 0.0) or 0.0),
@@ -977,6 +1313,22 @@ class PeerNetwork:
             except Exception:
                 pass
         return changed
+
+    def _record_candidate_announce(self, message: dict[str, Any]) -> bool:
+        node_id = safe_id(str(message.get("peer_id", message.get("node_id", ""))))
+        if not node_id:
+            return False
+        candidates = self._normalize_candidate_list(message.get("candidates", []), node_id)
+        with self._lock:
+            current = dict(self._peers.get(node_id, {"node_id": node_id}))
+            existing = current.get("candidates", []) if isinstance(current.get("candidates"), list) else []
+            current["candidates"] = self._merge_candidate_list([*existing, *candidates], node_id, int(time.time()))
+            current["last_seen_unix"] = int(time.time())
+            current["updated_utc"] = str(message.get("timestamp_utc", utc_now()))
+            current["self"] = node_id == self.node_id
+            self._peers[node_id] = current
+        self.peers_snapshot()
+        return True
 
     def _record_event(self, message: dict[str, Any]) -> bool:
         event_id = str(message.get("event_id", "")).strip()
@@ -1110,6 +1462,10 @@ class PeerNetwork:
             target_peer_id=target_peer_id,
             session_id=session_id,
             purpose="nat_punch",
+            candidate_fingerprints=[
+                {"candidate_id": str(candidate.get("candidate_id", "")), "expires_unix": int(candidate.get("expires_unix", 0) or 0)}
+                for candidate in self.refresh_candidates()
+            ],
         )
         for relay in self.select_peers(required_roles=set(), limit=max(1, self.config.relay_hops), require_relay=True, exclude={target_peer_id}):
             relay_url = str(relay.get("http_base_url", "")).rstrip("/")
@@ -1369,6 +1725,9 @@ class PeerNetwork:
             if changed and safe_id(str(message.get("node_id", ""))) != self.node_id:
                 self.announce()
             return
+        if message_type == "candidate_announce":
+            self._record_candidate_announce(message)
+            return
         if message_type == "punch_probe":
             requester_handshake = message.get("requester_handshake")
             if isinstance(requester_handshake, dict) and safe_id(str(requester_handshake.get("peer_id", ""))) != self.node_id:
@@ -1390,6 +1749,7 @@ class PeerNetwork:
                     "mesh_post_url": self.mesh_post_url,
                     "gossip_bind": self._advertised_gossip_host(),
                     "gossip_port": self._advertised_gossip_port(),
+                    "candidates": self.refresh_candidates(),
                     "relay_capable": bool(self.config.relay_enable),
                     "capacity": self.local_capacity,
                     "reputation_score": self.local_reputation_score,
@@ -1422,6 +1782,8 @@ class PeerNetwork:
 
     def sync_once(self) -> None:
         self._prune_stale_peers()
+        self.refresh_candidates()
+        self._record_self_peer()
         targets = self._sync_targets()
         for base_url in targets:
             self._sync_peer_table(base_url)
@@ -1473,6 +1835,7 @@ class PeerNetwork:
             self._fetch_discovery_snapshot(base_url)
 
     def _register_with_discovery(self, base_url: str) -> None:
+        candidates = self.refresh_candidates()
         payload = {
             "node_id": self.node_id,
             "identity_id": self.identity.identity_id,
@@ -1482,6 +1845,7 @@ class PeerNetwork:
             "mesh_post_url": self.mesh_post_url,
             "gossip_bind": self._advertised_gossip_host(),
             "gossip_port": self._advertised_gossip_port(),
+            "candidates": candidates,
             "relay_capable": bool(self.config.relay_enable),
             "capacity": self.local_capacity,
             "reputation_score": self.local_reputation_score,
@@ -1734,6 +2098,25 @@ class PeerNetwork:
                         self.send_error(403)
                         return
                     raw = stable_json(read_json(peer_network.discovery_registry_path, peer_network.peers_snapshot())).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                if self.path == "/discovery/observe":
+                    if not peer_network._authorize_peer_request(self):
+                        self.send_error(403)
+                        return
+                    raw = stable_json(
+                        {
+                            "schema_version": 1,
+                            "node_id": peer_network.node_id,
+                            "observed_ip": str(self.client_address[0]),
+                            "observed_port": int(self.client_address[1]),
+                            "timestamp_unix": int(time.time()),
+                        }
+                    ).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(raw)))
@@ -2311,6 +2694,7 @@ class NetworkNode:
             solana_owner=self._solana_owner,
             solana_worker=self._solana_worker,
         )
+        p2p_candidates = self.peer_network.candidate_diagnostics()
         atomic_write_json(
             self.heartbeat_path,
             {
@@ -2328,6 +2712,11 @@ class NetworkNode:
                 "mesh_auth_enabled": bool(self.config.mesh_key),
                 "identity_id": self.peer_network.identity.identity_id,
                 "relay_enabled": self.config.relay_enable,
+                "p2p_candidate_count": p2p_candidates["candidate_count"],
+                "p2p_candidate_types": p2p_candidates["candidate_types"],
+                "p2p_selected_candidate": p2p_candidates["selected_candidate"],
+                "p2p_observed_public_address": p2p_candidates["observed_public_address"],
+                "p2p_nat_behavior": p2p_candidates["nat_behavior"],
                 "solana_owner": self._solana_owner,
                 "solana_worker": self._solana_worker,
                 "onchain_reputation": self._solana_onchain_reputation,
@@ -2940,6 +3329,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
+    parser.add_argument("--p2p-candidate-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_TTL_S", "60")))
+    parser.add_argument("--p2p-candidate-refresh-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_REFRESH_S", "20")))
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
     parser.add_argument("--scheduler-onchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_ONCHAIN_WEIGHT", "10")))
@@ -3027,6 +3418,8 @@ def main(argv: list[str] | None = None) -> int:
         remote_dispatch_enable=bool(args.remote_dispatch_enable),
         remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
         nat_punch_enable=bool(args.nat_punch_enable),
+        p2p_candidate_ttl_s=max(1, int(args.p2p_candidate_ttl_s)),
+        p2p_candidate_refresh_s=max(1, int(args.p2p_candidate_refresh_s)),
         solana_reputation_enable=bool(args.solana_reputation_enable),
         solana_reputation_refresh_s=max(1, int(args.solana_reputation_refresh_s)),
         scheduler_onchain_weight=float(args.scheduler_onchain_weight),

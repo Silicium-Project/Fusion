@@ -76,6 +76,8 @@ def _config(
     remote_dispatch_enable: bool = False,
     remote_dispatch_limit: int = 3,
     nat_punch_enable: bool = False,
+    p2p_candidate_ttl_s: int = 60,
+    p2p_candidate_refresh_s: int = 20,
     solana_enable: bool = False,
     solana_bridge: Path | None = None,
     solana_wallet: str | None = None,
@@ -129,6 +131,8 @@ def _config(
         remote_dispatch_enable=remote_dispatch_enable,
         remote_dispatch_limit=remote_dispatch_limit,
         nat_punch_enable=nat_punch_enable,
+        p2p_candidate_ttl_s=p2p_candidate_ttl_s,
+        p2p_candidate_refresh_s=p2p_candidate_refresh_s,
         solana_reputation_enable=solana_reputation_enable,
         solana_reputation_refresh_s=1,
         scheduler_onchain_weight=10.0,
@@ -256,6 +260,96 @@ def test_mesh_key_bearer_auth_requires_explicit_dev_flag(tmp_path: Path) -> None
         tmp_path / "dev-peer",
     )
     assert dev_peer._authorize_peer_request(request)
+
+
+def test_candidate_gathering_reports_host_and_server_observed_candidates(tmp_path: Path) -> None:
+    config = _config(tmp_path / "peer", "node-a", p2p_candidate_ttl_s=30, p2p_candidate_refresh_s=1)
+    config.gossip_port = 46101
+    config.gossip_advertise_host = "192.168.1.20"
+    peer = network_node.PeerNetwork(config, tmp_path / "peer")
+
+    host_candidates = peer.refresh_candidates(force=True)
+    host = next(candidate for candidate in host_candidates if candidate["ip"] == "192.168.1.20")
+    assert host["candidate_type"] == "host"
+    assert host["address_family"] == "ipv4"
+    assert host["private"] is True
+    assert host["internet_routable"] is False
+    assert host["expires_unix"] > int(time.time())
+
+    observed = peer.record_observed_candidate("93.184.216.34", source="observe:http://seed")
+    assert observed is not None
+    assert observed["candidate_type"] == "srflx"
+    assert observed["internet_routable"] is True
+    diagnostics = peer.candidate_diagnostics()
+    assert diagnostics["observed_public_address"] == "93.184.216.34"
+    assert diagnostics["selected_candidate"]["candidate_type"] == "srflx"
+    assert (tmp_path / "peer" / "p2p.candidates.json").exists()
+
+
+def test_candidate_validation_rejects_malformed_candidates(tmp_path: Path) -> None:
+    peer = network_node.PeerNetwork(_config(tmp_path / "peer", "node-a"), tmp_path / "peer")
+    now = int(time.time())
+
+    candidates = peer._normalize_candidate_list(
+        [
+            {"candidate_type": "host", "transport": "udp", "ip": "not-an-ip", "port": 46101, "observed_unix": now, "expires_unix": now + 30},
+            {"candidate_type": "host", "transport": "tcp", "ip": "127.0.0.1", "port": 46101, "observed_unix": now, "expires_unix": now + 30},
+            {"candidate_type": "invalid", "transport": "udp", "ip": "127.0.0.1", "port": 46101, "observed_unix": now, "expires_unix": now + 30},
+            {"candidate_type": "host", "transport": "udp", "ip": "127.0.0.1", "port": 0, "observed_unix": now, "expires_unix": now + 30},
+        ],
+        "node-b",
+        now,
+    )
+
+    assert candidates == []
+
+
+def test_candidate_validation_rejects_expired_candidates(tmp_path: Path) -> None:
+    peer = network_node.PeerNetwork(_config(tmp_path / "peer", "node-a"), tmp_path / "peer")
+    now = int(time.time())
+
+    candidates = peer._normalize_candidate_list(
+        [{"candidate_type": "host", "transport": "udp", "ip": "127.0.0.1", "port": 46101, "observed_unix": now - 60, "expires_unix": now - 1}],
+        "node-b",
+        now,
+    )
+
+    assert candidates == []
+
+
+def test_candidate_validation_deduplicates_candidates(tmp_path: Path) -> None:
+    peer = network_node.PeerNetwork(_config(tmp_path / "peer", "node-a"), tmp_path / "peer")
+    now = int(time.time())
+
+    candidates = peer._normalize_candidate_list(
+        [
+            {"candidate_type": "host", "transport": "udp", "ip": "10.0.0.5", "port": 46101, "priority": 10, "observed_unix": now, "expires_unix": now + 30},
+            {"candidate_type": "host", "transport": "udp", "ip": "10.0.0.5", "port": 46101, "priority": 30, "observed_unix": now, "expires_unix": now + 30},
+        ],
+        "node-b",
+        now,
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0]["priority"] == 30
+
+
+def test_candidate_validation_formats_ipv4_and_ipv6(tmp_path: Path) -> None:
+    peer = network_node.PeerNetwork(_config(tmp_path / "peer", "node-a"), tmp_path / "peer")
+    now = int(time.time())
+
+    candidates = peer._normalize_candidate_list(
+        [
+            {"candidate_type": "srflx", "transport": "udp", "ip": "93.184.216.34", "port": 46101, "observed_unix": now, "expires_unix": now + 30},
+            {"candidate_type": "srflx", "transport": "udp", "ip": "[2001:4860:4860::8888]", "port": 46102, "observed_unix": now, "expires_unix": now + 30},
+        ],
+        "node-b",
+        now,
+    )
+
+    by_ip = {candidate["ip"]: candidate for candidate in candidates}
+    assert by_ip["2001:4860:4860::8888"]["address_family"] == "ipv6"
+    assert by_ip["93.184.216.34"]["address_family"] == "ipv4"
 
 
 def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
@@ -603,6 +697,36 @@ def test_peer_network_syncs_over_http_with_public_identity(tmp_path: Path) -> No
                 time.sleep(0.05)
             assert (export_b / "gossip.events.ndjson").exists()
             assert '"topic":"fragment_result"' in (export_b / "gossip.events.ndjson").read_text(encoding="utf-8")
+        finally:
+            peer_b.stop()
+    finally:
+        peer_a.stop()
+
+
+def test_peer_network_discovers_server_observed_candidate_over_http(tmp_path: Path) -> None:
+    export_a = tmp_path / "a"
+    export_b = tmp_path / "b"
+    config_a = _config(export_a, "node-a", gossip_enable=False)
+    peer_a = network_node.PeerNetwork(config_a, export_a)
+    peer_a.start()
+    try:
+        config_b = _config(
+            export_b,
+            "node-b",
+            gossip_enable=False,
+            seed_peers=[peer_a.http_base_url],
+            p2p_candidate_ttl_s=30,
+            p2p_candidate_refresh_s=1,
+        )
+        config_b.gossip_port = 46102
+        peer_b = network_node.PeerNetwork(config_b, export_b)
+        peer_b.start()
+        try:
+            candidates = peer_b.refresh_candidates(force=True)
+            observed = [candidate for candidate in candidates if candidate["candidate_type"] == "srflx"]
+            assert observed
+            assert observed[0]["source"].startswith("observe:")
+            assert observed[0]["ip"] == "127.0.0.1"
         finally:
             peer_b.stop()
     finally:

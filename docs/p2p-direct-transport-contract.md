@@ -223,6 +223,33 @@ Candidate rules:
 - `relay` candidates are allocated by a relay service and scoped to one
   session.
 - Expired candidates must not be offered for new sessions.
+- Implementations must mark local/private addresses with `private: true` and
+  `internet_routable: false`. A private `host` candidate can be retained for
+  LAN/VPN attempts, but it must never be selected as a public Internet
+  endpoint.
+- Nodes persist their local candidate diagnostics in `p2p.candidates.json`,
+  including candidate type, selected candidate, observed public address, and
+  coarse NAT behavior.
+
+### DiscoveryObserve
+
+Project-native server-reflexive discovery endpoint. A node sends an
+authenticated `GET /discovery/observe` request to a signaling/discovery peer.
+The receiver returns the source address it observed for that request:
+
+```json
+{
+  "schema_version": 1,
+  "node_id": "seed-eu-1",
+  "observed_ip": "203.0.113.10",
+  "observed_port": 52044,
+  "timestamp_unix": 1784310001
+}
+```
+
+The observed TCP source port is diagnostic. Unless a UDP mapping is explicitly
+measured, the advertised UDP candidate port remains the node's configured UDP
+punch/gossip port.
 
 ### SessionRequest
 
@@ -488,6 +515,7 @@ Initial rollout flags and environment variables:
 | `--relay-policy` | `SILICIUM_RELAY_POLICY` | `fallback` | `disabled`, `fallback`, or `force`. |
 | `--p2p-bind-udp` | `SILICIUM_P2P_BIND_UDP` | `0.0.0.0:0` | UDP bind address for direct sessions. |
 | `--p2p-candidate-ttl-s` | `SILICIUM_P2P_CANDIDATE_TTL_S` | `60` | Candidate expiration window. |
+| `--p2p-candidate-refresh-s` | `SILICIUM_P2P_CANDIDATE_REFRESH_S` | `20` | Candidate refresh interval. |
 | `--p2p-session-timeout-ms` | `SILICIUM_P2P_SESSION_TIMEOUT_MS` | `2500` | Direct setup timeout. |
 | `--p2p-legacy-fallback` | `SILICIUM_P2P_LEGACY_FALLBACK` | `1` | Allows current HTTP paths during rollout. |
 
