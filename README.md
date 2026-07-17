@@ -36,8 +36,8 @@ Le script demarre:
 - les noeuds demo P2P `worker-1` et `verifier-1`;
 - une base SQLite locale dans `.silicium\site\silicium.db` par defaut;
 - le dashboard Devnet local sur `http://localhost:5174/`;
-- le backend du site sur `http://localhost:8080`;
-- le frontend du site sur `http://localhost:3000/dashboard`.
+- le service BackEnd sur `http://localhost:8080`;
+- le service FrontEnd sur `http://localhost:3000/dashboard`.
 
 Les logs sont ecrits dans `.silicium\logs\local-start`.
 
