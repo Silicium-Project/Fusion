@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=__SILICIUM_ROOT__/Site/FrontEnd
+WorkingDirectory=__SILICIUM_ROOT__/FrontEnd
 EnvironmentFile=/etc/silicium/frontend.env
 ExecStart=/usr/bin/node .output/server/index.mjs
 Restart=always
