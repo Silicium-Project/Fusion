@@ -1,0 +1,4 @@
+[submodule "Network"]
+	path = Network
+	url = https://github.com/Silicium-Project/Network.git
+	branch = main
