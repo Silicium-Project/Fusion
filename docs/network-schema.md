@@ -40,6 +40,12 @@ flowchart TD
 
 See `docs/mcp-connector-spec.md` for the MCP connector architecture, contracts, and rollout plan.
 
+## P2P direct transport extension
+
+See `docs/p2p-direct-transport-contract.md` for the target control-plane and
+data-plane contract for NAT traversal, direct peer sessions, relay fallback, and
+legacy HTTP compatibility.
+
 ## Execution flow (compute)
 
 ```mermaid
