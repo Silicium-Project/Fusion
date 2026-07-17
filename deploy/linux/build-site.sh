@@ -11,11 +11,11 @@ install_js_dependencies() {
   fi
 }
 
-cd "$ROOT/Site/FrontEnd-main"
+cd "$ROOT/Site/FrontEnd"
 install_js_dependencies
 npm run build
 
-cd "$ROOT/Site/BackEnd-main"
+cd "$ROOT/Site/BackEnd"
 go build -o "$ROOT/bin/silicium-backend" ./cmd
 
 cd "$ROOT/Network/silicium-layer-dashboard"
