@@ -14,8 +14,8 @@ function Ensure-Submodules {
     $gitmodules = Join-Path $Root ".gitmodules"
     $requiredPaths = @(
         (Join-Path $Root "Network"),
-        (Join-Path $Root "Site\BackEnd"),
-        (Join-Path $Root "Site\FrontEnd")
+        (Join-Path $Root "BackEnd"),
+        (Join-Path $Root "FrontEnd")
     )
 
     if (-not (Test-Path -LiteralPath $gitmodules -PathType Leaf)) {
@@ -306,7 +306,7 @@ Show-Version "solana" @("--version")
 Write-Step "Installing JavaScript dependencies"
 Invoke-NpmInstall (Join-Path $Root "Network\silicium-layer-dashboard") "Network Devnet dashboard"
 Invoke-NpmInstall (Join-Path $Root "Network\solana-layer") "Solana layer scripts"
-Invoke-NpmInstall (Join-Path $Root "Site\FrontEnd") "FrontEnd"
+Invoke-NpmInstall (Join-Path $Root "FrontEnd") "FrontEnd"
 Invoke-NpmInstall (Join-Path $Root "apps\silicium-node") "Silicium Node desktop app"
 
 Write-Step "Configuring raytracer workload runtime"

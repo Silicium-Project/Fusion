@@ -5,7 +5,7 @@ Network/.silicium/
 Network/.silicium-world/
 Network/%SystemDrive%/
 Network/Network/
-Site/BackEnd/storage/
+BackEnd/storage/
 
 # Python
 __pycache__/
@@ -23,16 +23,19 @@ apps/**/src-tauri/target/
 apps/**/src-tauri/gen/
 apps/silicium-node/src-tauri/resources/runtime/
 apps/silicium-node/*.exe
-Site/FrontEnd/public/downloads/*.exe
+FrontEnd/public/downloads/*.exe
 .data/
 .temp/
 *.tsbuildinfo
 Network/silicium-layer-dashboard/package-lock.json
 
-# Site imported repository metadata
-Site/**/.github/
-Site/**/.git/
-Site/**/.gitignore
+# Imported repository metadata
+BackEnd/.github/
+BackEnd/.git/
+BackEnd/.gitignore
+FrontEnd/.github/
+FrontEnd/.git/
+FrontEnd/.gitignore
 
 # Environment and logs
 .env

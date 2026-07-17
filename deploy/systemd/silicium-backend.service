@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=__SILICIUM_ROOT__/Site/BackEnd
+WorkingDirectory=__SILICIUM_ROOT__/BackEnd
 EnvironmentFile=/etc/silicium/backend.env
 ExecStart=__SILICIUM_ROOT__/bin/silicium-backend
 Restart=always

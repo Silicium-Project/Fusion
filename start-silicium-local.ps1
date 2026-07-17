@@ -36,8 +36,8 @@ function Ensure-Submodules {
     $gitmodules = Join-Path $Root ".gitmodules"
     $requiredPaths = @(
         (Join-Path $Root "Network"),
-        (Join-Path $Root "Site\BackEnd"),
-        (Join-Path $Root "Site\FrontEnd")
+        (Join-Path $Root "BackEnd"),
+        (Join-Path $Root "FrontEnd")
     )
 
     if (-not (Test-Path -LiteralPath $gitmodules -PathType Leaf)) {
@@ -71,8 +71,8 @@ Ensure-Submodules
 
 $NetworkRoot = Join-Path $Root "Network"
 $DashboardRoot = Join-Path $NetworkRoot "silicium-layer-dashboard"
-$BackendRoot = Join-Path $Root "Site\BackEnd"
-$FrontendRoot = Join-Path $Root "Site\FrontEnd"
+$BackendRoot = Join-Path $Root "BackEnd"
+$FrontendRoot = Join-Path $Root "FrontEnd"
 $LogRoot = Join-Path $Root ".silicium\logs\local-start"
 $DefaultSqlitePath = Join-Path $Root ".silicium\site\silicium.db"
 $RaytracerEnvFile = Join-Path $Root ".silicium\env\raytracer.env"
