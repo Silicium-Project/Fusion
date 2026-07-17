@@ -306,7 +306,7 @@ Show-Version "solana" @("--version")
 Write-Step "Installing JavaScript dependencies"
 Invoke-NpmInstall (Join-Path $Root "Network\silicium-layer-dashboard") "Network Devnet dashboard"
 Invoke-NpmInstall (Join-Path $Root "Network\solana-layer") "Solana layer scripts"
-Invoke-NpmInstall (Join-Path $Root "Site\FrontEnd-main") "Site frontend"
+Invoke-NpmInstall (Join-Path $Root "Site\FrontEnd-main") "FrontEnd"
 Invoke-NpmInstall (Join-Path $Root "apps\silicium-node") "Silicium Node desktop app"
 
 Write-Step "Configuring raytracer workload runtime"

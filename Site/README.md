@@ -4,10 +4,10 @@ This folder contains the client-facing site and backend API, both tracked as Git
 
 Responsibilities stay separated:
 
-- `FrontEnd-main`: user dashboard, task submission form, result display link, and
+- `FrontEnd`: user dashboard, task submission form, result display link, and
   link to the read-only Devnet dashboard.
-- `BackEnd-main`: authenticated API, job persistence, file upload, and bridge to
-  the Silicium network runner.
+- `BackEnd`: authenticated API, job persistence, file upload, and bridge to the
+  Silicium network runner.
 - `../Network`: P2P nodes, workers/verifiers, render workload, reassembly, and
   Devnet trace/dashboard.
 
