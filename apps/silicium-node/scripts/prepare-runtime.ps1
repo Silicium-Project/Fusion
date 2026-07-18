@@ -314,6 +314,21 @@ if (-not $pythonSource) {
 $pythonDestination = Join-Path $runtimeRoot "tools\python"
 $null = Copy-PythonRuntime -Source $pythonSource -Destination $pythonDestination
 
+$p2pRequirements = Join-Path $networkRoot "requirements-p2p.txt"
+$p2pSitePackages = Join-Path $pythonDestination "Lib\site-packages"
+if (Test-Path -LiteralPath $p2pRequirements -PathType Leaf) {
+    New-Item -ItemType Directory -Force -Path $p2pSitePackages | Out-Null
+    $pythonInstaller = Get-Command py -ErrorAction SilentlyContinue
+    if (-not $pythonInstaller) {
+        throw "Python launcher is required to bundle automatic ICE dependencies."
+    }
+    Write-Host "Installing automatic P2P dependencies into bundled runtime"
+    & $pythonInstaller.Source -m pip install --disable-pip-version-check --upgrade --target $p2pSitePackages -r $p2pRequirements
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to bundle automatic P2P dependencies."
+    }
+}
+
 $opensslSource = $OpenSslRuntime
 if (-not $opensslSource) {
     Write-Host "[skip] OpenSSL runtime not bundled. Desktop nodes use HMAC identity mode for the demo."

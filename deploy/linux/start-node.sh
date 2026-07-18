@@ -30,4 +30,6 @@ python3 silicium node start \
   --seed-peers "$SEED_URL" \
   --mesh-key "$MESH_KEY" \
   --reputation-score "$REPUTATION" \
+  --nat-punch-enable \
+  --p2p-direct-transport-backend auto \
   "${EXTRA_ARGS[@]}"
