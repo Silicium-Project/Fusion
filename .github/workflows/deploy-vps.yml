@@ -95,7 +95,7 @@ jobs:
               sudo rm -rf -- "$submodule_path"
             fi
           done
-          git_auth -C "$VPS_ROOT" submodule update --init --recursive
+          git_auth -C "$VPS_ROOT" submodule update --init --force --recursive
           unset GIT_AUTH VPS_GITHUB_TOKEN
           cd "$VPS_ROOT"
           sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
