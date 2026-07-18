@@ -18,6 +18,7 @@ apt-get install -y \
   docker-compose-plugin \
   postgresql \
   postgresql-client \
+  sqlite3 \
   openssl \
   python3 \
   python3-venv \

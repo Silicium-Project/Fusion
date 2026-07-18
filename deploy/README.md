@@ -95,18 +95,25 @@ The production services run with Docker Compose. PostgreSQL uses the bind mount
 `/var/lib/silicium/postgres`; the legacy PostgreSQL data is migrated with a
 verified logical dump and is never deleted automatically.
 
-Prepare the VPS once:
+Prepare the VPS once. The installer also installs `sqlite3` for converting the
+legacy database:
 
 ```bash
-sudo cp deploy/env/compose.example.env /etc/silicium/compose.env
-sudo cp deploy/env/backend.example.env /etc/silicium/backend.env
+sudo bash deploy/linux/install-vps.sh /opt/silicium
+sudo test -e /etc/silicium/compose.env || sudo cp deploy/env/compose.example.env /etc/silicium/compose.env
 sudo nano /etc/silicium/compose.env
-sudo nano /etc/silicium/backend.env
 sudo bash deploy/linux/migrate-postgres-to-compose.sh /opt/silicium
 ```
 
-Before the migration, inspect the existing PostgreSQL databases and set the
-source database name without changing the old data:
+Keep the existing `/etc/silicium/backend.env` and its secrets. Compose injects
+the container PostgreSQL URL at runtime; do not replace the backend environment
+file with the example file.
+
+For the current legacy SQLite installation, the migration detects
+`/var/lib/silicium/site/silicium.db`, checks its integrity, backs it up, creates
+the PostgreSQL schema, and imports the `users` table. For a legacy PostgreSQL
+installation, inspect the existing databases and set the source name without
+changing the old data:
 
 ```bash
 sudo bash deploy/linux/install-vps.sh /opt/silicium
@@ -118,11 +125,10 @@ Set `SOURCE_POSTGRES_DB` to the existing database, choose a new container
 password, and keep the database backup produced by the migration. Do not run
 `docker compose down -v`: that would remove container volumes.
 
-The migration requires a running legacy PostgreSQL service and the correct
-`SOURCE_POSTGRES_DB` in `/etc/silicium/compose.env`. It creates a timestamped backup
-under `/var/lib/silicium/backups/postgres`, refuses a non-empty new data
-directory, restores into the new PostgreSQL container, and only then starts
-the complete container stack. The old PostgreSQL data directory is retained.
+The migration creates a timestamped backup under
+`/var/lib/silicium/backups/postgres`, refuses a non-empty new data directory,
+checks the imported row count, and only then starts the complete container
+stack. Legacy SQLite and PostgreSQL data are retained.
 
 After the one-time migration, pushes to `main` run:
 

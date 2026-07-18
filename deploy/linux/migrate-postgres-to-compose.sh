@@ -6,6 +6,7 @@ COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
 COMPOSE_ENV="/etc/silicium/compose.env"
 BACKUP_DIR="/var/lib/silicium/backups/postgres"
 DATA_DIR="/var/lib/silicium/postgres"
+SQLITE_PATH="${SQLITE_PATH:-/var/lib/silicium/site/silicium.db}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/linux/migrate-postgres-to-compose.sh $ROOT" >&2
@@ -42,6 +43,25 @@ fi
 
 mkdir -p "$BACKUP_DIR" "$DATA_DIR"
 BACKUP_FILE="$BACKUP_DIR/legacy-$(date -u +%Y%m%dT%H%M%SZ).dump"
+SQLITE_BACKUP_FILE="$BACKUP_DIR/legacy-$(date -u +%Y%m%dT%H%M%SZ).sqlite"
+
+if [[ -f "$SQLITE_PATH" ]]; then
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    echo "sqlite3 is required to migrate $SQLITE_PATH." >&2
+    exit 1
+  fi
+  if [[ "$(sqlite3 "$SQLITE_PATH" 'PRAGMA integrity_check;')" != "ok" ]]; then
+    echo "SQLite integrity check failed: $SQLITE_PATH" >&2
+    exit 1
+  fi
+  if ! sqlite3 "$SQLITE_PATH" "SELECT 1 FROM sqlite_master WHERE type='table' AND name='users';" | grep -q '^1$'; then
+    echo "SQLite database has no users table: $SQLITE_PATH" >&2
+    exit 1
+  fi
+  SQLITE_USER_COUNT="$(sqlite3 "$SQLITE_PATH" 'SELECT count(*) FROM users;')"
+  cp --preserve=all "$SQLITE_PATH" "$SQLITE_BACKUP_FILE"
+  systemctl stop silicium-backend 2>/dev/null || true
+fi
 
 if systemctl is-active --quiet postgresql; then
   if ! command -v pg_dump >/dev/null 2>&1 || ! command -v psql >/dev/null 2>&1; then
@@ -58,12 +78,12 @@ elif [[ -n "$(docker ps --filter ancestor=postgres --format '{{.ID}}' | head -n 
   echo "A PostgreSQL container was detected, but automatic credentials are not guessed." >&2
   echo "Export it with pg_dump, verify the dump, then rerun this migration." >&2
   exit 1
-else
+elif [[ ! -f "$SQLITE_PATH" ]]; then
   echo "No running PostgreSQL service or container was detected." >&2
   exit 1
 fi
 
-if [[ ! -s "$BACKUP_FILE" ]] || ! pg_restore --list "$BACKUP_FILE" | grep -q 'TABLE DATA'; then
+if [[ -f "$BACKUP_FILE" && ( ! -s "$BACKUP_FILE" || ! pg_restore --list "$BACKUP_FILE" | grep -q 'TABLE DATA' ) ]]; then
   echo "The PostgreSQL dump is missing or contains no table data: $BACKUP_FILE" >&2
   exit 1
 fi
@@ -84,9 +104,41 @@ for attempt in $(seq 1 30); do
   sleep 2
 done
 
-"${COMPOSE[@]}" exec -T postgres pg_restore \
-  --clean --if-exists --no-owner \
-  -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$BACKUP_FILE"
+if [[ -f "$BACKUP_FILE" ]]; then
+  "${COMPOSE[@]}" exec -T postgres pg_restore \
+    --clean --if-exists --no-owner \
+    -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$BACKUP_FILE"
+fi
+
+if [[ -f "$SQLITE_PATH" ]]; then
+  SCHEMA_FILE="$ROOT/BackEnd/Database/schema.sql"
+  if [[ ! -f "$SCHEMA_FILE" ]]; then
+    echo "PostgreSQL schema file not found: $SCHEMA_FILE" >&2
+    exit 1
+  fi
+  "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 \
+    -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$SCHEMA_FILE"
+  SQLITE_CSV="$BACKUP_DIR/users-$(date -u +%Y%m%dT%H%M%SZ).csv"
+  sqlite3 "$SQLITE_PATH" <<'SQL' > "$SQLITE_CSV"
+.mode csv
+.headers off
+.nullvalue \N
+SELECT id, first_name, last_name, email, password_hash, username,
+       wallet_address, role, created_at, updated_at
+FROM users;
+SQL
+  "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 \
+    -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    -c "\\copy users (id, first_name, last_name, email, password_hash, username, wallet_address, role, created_at, updated_at) FROM STDIN WITH (FORMAT csv, NULL '\\N')" < "$SQLITE_CSV"
+  POSTGRES_USER_COUNT="$("${COMPOSE[@]}" exec -T postgres psql -Atqc 'SELECT count(*) FROM users;' -U "$POSTGRES_USER" -d "$POSTGRES_DB" | tr -d '\r')"
+  if [[ "$POSTGRES_USER_COUNT" != "$SQLITE_USER_COUNT" ]]; then
+    echo "User count mismatch after SQLite migration: SQLite=$SQLITE_USER_COUNT PostgreSQL=$POSTGRES_USER_COUNT" >&2
+    exit 1
+  fi
+  "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 \
+    -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    -c "SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM users;"
+fi
 
 "${COMPOSE[@]}" up -d --build
 
@@ -99,5 +151,6 @@ for service in silicium-backend silicium-frontend silicium-dashboard silicium-or
 done
 
 echo "PostgreSQL migration completed without deleting the legacy database."
-echo "Backup: $BACKUP_FILE"
+[[ -f "$BACKUP_FILE" ]] && echo "PostgreSQL backup: $BACKUP_FILE"
+[[ -f "$SQLITE_BACKUP_FILE" ]] && echo "SQLite backup: $SQLITE_BACKUP_FILE"
 echo "Stack: ${COMPOSE[*]} ps"
