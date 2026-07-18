@@ -9,6 +9,7 @@ import { WorkersPanel } from "./components/WorkersPanel";
 import { JobsList, JobGraph } from "./components/JobGraph";
 import { FragmentsPanel } from "./components/FragmentsPanel";
 import { StakingPanel } from "./components/StakingPanel";
+import { NetworkGraph } from "./components/NetworkGraph";
 
 export default function App() {
   const [idl, setIdl] = useState<Idl | null>(null);
@@ -114,6 +115,7 @@ export default function App() {
       </section>
 
       <StatCards snapshot={snapshot} />
+      <NetworkGraph />
 
       <div className="main-grid">
         <JobsList jobs={snapshot.jobs} selectedJob={selectedJob} onSelect={setSelectedJob} />

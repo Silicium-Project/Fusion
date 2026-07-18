@@ -93,6 +93,18 @@ tr:last-child td { border-bottom:none; }
 .timeline-item { display:flex; gap:12px; padding:12px; border:1px solid #e2e8f0; border-radius:16px; background:#f8fafc; }
 .timeline-item strong { min-width:220px; }
 .empty { min-height:240px; display:flex; align-items:center; justify-content:center; color:#64748b; }
+.network-panel { overflow:hidden; }
+.network-meta { margin:6px 0 0; color:#64748b; font-size:13px; }
+.network-canvas { min-height:420px; border:1px solid #dbe4ef; border-radius:18px; background:radial-gradient(circle at center, #eff6ff, #f8fafc 55%, #eef3f8); overflow:hidden; }
+.network-canvas svg { display:block; width:100%; min-height:420px; }
+.network-edge { stroke:#93c5fd; stroke-width:.45; stroke-dasharray:1.5 1.5; }
+.network-node { fill:#2563eb; stroke:#dbeafe; stroke-width:1.5; }
+.network-node.self { fill:#16a34a; stroke:#dcfce7; }
+.network-label { fill:#0f172a; font-size:2.8px; font-weight:800; }
+.network-role { fill:#64748b; font-size:2px; }
+.network-peer-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-top:16px; }
+.network-peer-card { display:grid; gap:5px; padding:12px; border:1px solid #dbe4ef; border-radius:14px; background:#f8fafc; }
+.network-peer-card span, .network-peer-card small { color:#64748b; overflow-wrap:anywhere; }
 @media (max-width: 1100px) {
   .hero { flex-direction:column; }
   .connector-grid { grid-template-columns:1fr; }
