@@ -11,6 +11,9 @@ on:
       - "deploy/**"
       - ".github/workflows/deploy-vps.yml"
 
+permissions:
+  contents: read
+
 concurrency:
   group: silicium-vps-deploy
   cancel-in-progress: false
@@ -45,6 +48,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
           VPS_ROOT: ${{ secrets.VPS_ROOT || '/opt/silicium' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "$VPS_HOST" ]; then
@@ -56,15 +60,15 @@ jobs:
             exit 1
           fi
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
-            "VPS_ROOT='$VPS_ROOT' bash -s" <<'REMOTE'
+            "VPS_ROOT='$VPS_ROOT' GITHUB_TOKEN='$GITHUB_TOKEN' bash -s" <<'REMOTE'
           set -euo pipefail
           sudo git config --system --add safe.directory "$VPS_ROOT"
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
-          sudo git -C "$VPS_ROOT" fetch origin main
+          sudo git -C "$VPS_ROOT" -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" fetch origin main
           sudo git -C "$VPS_ROOT" checkout main
-          sudo git -C "$VPS_ROOT" pull --ff-only origin main
+          sudo git -C "$VPS_ROOT" -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" pull --ff-only origin main
           sudo git -C "$VPS_ROOT" submodule sync --recursive
-          sudo git -C "$VPS_ROOT" submodule update --init --recursive
+          sudo git -C "$VPS_ROOT" -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" submodule update --init --recursive
           sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
           sudo systemctl restart silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
           REMOTE
