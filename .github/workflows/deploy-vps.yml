@@ -63,13 +63,20 @@ jobs:
             "VPS_ROOT='$VPS_ROOT' GITHUB_TOKEN='$GITHUB_TOKEN' bash -s" <<'REMOTE'
           set -euo pipefail
           GIT_AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w 0)"
+          git_auth() {
+            sudo env \
+              GIT_CONFIG_COUNT=1 \
+              GIT_CONFIG_KEY_0=http.extraHeader \
+              "GIT_CONFIG_VALUE_0=Authorization: Basic $GIT_AUTH" \
+              git "$@"
+          }
           sudo git config --system --add safe.directory "$VPS_ROOT"
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
-          sudo git -C "$VPS_ROOT" -c "http.extraHeader=Authorization: Basic $GIT_AUTH" fetch origin main
+          git_auth -C "$VPS_ROOT" fetch origin main
           sudo git -C "$VPS_ROOT" checkout main
-          sudo git -C "$VPS_ROOT" -c "http.extraHeader=Authorization: Basic $GIT_AUTH" pull --ff-only origin main
+          git_auth -C "$VPS_ROOT" pull --ff-only origin main
           sudo git -C "$VPS_ROOT" submodule sync --recursive
-          sudo git -C "$VPS_ROOT" -c "http.extraHeader=Authorization: Basic $GIT_AUTH" submodule update --init --recursive
+          git_auth -C "$VPS_ROOT" submodule update --init --recursive
           unset GIT_AUTH GITHUB_TOKEN
           sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
           sudo systemctl restart silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
