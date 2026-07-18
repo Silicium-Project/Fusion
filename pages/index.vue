@@ -43,7 +43,7 @@
         <img src="~assets/icons/Right.svg" alt="Right-Icon" class="w-8 h-8" />
       </button>
       <a
-        href="/downloads/Silicium-Node-0.2.1-x64-setup.exe"
+        href="https://github.com/Silicium-Project/Fusion/releases/latest/download/Silicium-Node-0.2.1-x64-setup.exe"
         download
         class="inline-flex items-center mt-4 px-6 py-3 text-base font-semibold rounded-full border border-white/20 text-white/80 hover:text-white hover:border-white/50 transition-colors"
       >
