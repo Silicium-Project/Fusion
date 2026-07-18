@@ -283,15 +283,19 @@ New-Item -ItemType Directory -Force -Path $runtimeNetwork | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $networkRoot "silicium") -Destination (Join-Path $runtimeNetwork "silicium") -Force
 Copy-Directory -Source (Join-Path $networkRoot "tools") -Destination (Join-Path $runtimeNetwork "tools")
-Copy-Directory -Source (Join-Path $networkRoot "workloads") -Destination (Join-Path $runtimeNetwork "workloads")
-Copy-Directory -Source (Join-Path $networkRoot "bin") -Destination (Join-Path $runtimeNetwork "bin")
-if (-not (Test-Path -LiteralPath (Join-Path $runtimeNetwork "bin\raytracer\raytracer.exe"))) {
-    throw "Raytracer executable is missing from packaged runtime: Network\bin\raytracer\raytracer.exe"
+$null = Copy-OptionalDirectory -Source (Join-Path $networkRoot "workloads") -Destination (Join-Path $runtimeNetwork "workloads") -Label "optional workloads"
+$null = Copy-OptionalDirectory -Source (Join-Path $networkRoot "bin") -Destination (Join-Path $runtimeNetwork "bin") -Label "optional workload binaries"
+$raytracerPath = Join-Path $runtimeNetwork "bin\raytracer\raytracer.exe"
+if (-not (Test-Path -LiteralPath $raytracerPath)) {
+    Write-Warning "Optional raytracer executable is not bundled: Network\bin\raytracer\raytracer.exe"
 }
 
 $networkedDemo = Join-Path $runtimeNetwork "demo\networked"
-New-Item -ItemType Directory -Force -Path $networkedDemo | Out-Null
-Copy-Item -LiteralPath (Join-Path $networkRoot "demo\networked\networked_runtime.py") -Destination $networkedDemo -Force
+$networkedDemoSource = Join-Path $networkRoot "demo\networked\networked_runtime.py"
+if (Test-Path -LiteralPath $networkedDemoSource -PathType Leaf) {
+    New-Item -ItemType Directory -Force -Path $networkedDemo | Out-Null
+    Copy-Item -LiteralPath $networkedDemoSource -Destination $networkedDemo -Force
+}
 
 $envDir = Join-Path $runtimeRoot ".silicium\env"
 New-Item -ItemType Directory -Force -Path $envDir | Out-Null
