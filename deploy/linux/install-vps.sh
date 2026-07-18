@@ -14,6 +14,8 @@ apt-get install -y \
   curl \
   git \
   nginx \
+  postgresql \
+  postgresql-client \
   openssl \
   python3 \
   python3-venv \

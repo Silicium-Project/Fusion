@@ -89,6 +89,36 @@ Verify the public asset:
 curl -I https://github.com/Silicium-Project/Fusion/releases/latest/download/Silicium-Node-0.2.1-x64-setup.exe
 ```
 
+## Containerized VPS deployment
+
+The production services run with Docker Compose. PostgreSQL uses the bind mount
+`/var/lib/silicium/postgres`; the legacy PostgreSQL data is migrated with a
+verified logical dump and is never deleted automatically.
+
+Prepare the VPS once:
+
+```bash
+sudo cp deploy/env/compose.example.env /etc/silicium/compose.env
+sudo cp deploy/env/backend.example.env /etc/silicium/backend.env
+sudo nano /etc/silicium/compose.env
+sudo nano /etc/silicium/backend.env
+sudo bash deploy/linux/migrate-postgres-to-compose.sh /opt/silicium
+```
+
+The migration requires a running legacy PostgreSQL service and a valid
+`DATABASE_URL` in `/etc/silicium/backend.env`. It creates a timestamped backup
+under `/var/lib/silicium/backups/postgres`, refuses a non-empty new data
+directory, restores into the new PostgreSQL container, and only then starts
+the complete container stack. The old PostgreSQL data directory is retained.
+
+After the one-time migration, pushes to `main` run:
+
+```bash
+sudo bash /opt/silicium/deploy/compose/deploy.sh /opt/silicium
+```
+
+Do not run the migration script again for normal deployments.
+
 ## Automatic VPS deployment
 
 `/.github/workflows/deploy-vps.yml` deploys every push to `main` that changes
@@ -110,12 +140,11 @@ Install the App on `Fusion`, `BackEnd`, `FrontEnd`, and `Network` with only
 `Contents: Read-only` permission. The workflow creates a short-lived token for
 each deployment and revokes it when the job completes.
 
-The deployment user must be able to run the existing `deploy/linux/build-site.sh`
-and the four `systemctl restart` commands through `sudo` without an interactive
-password prompt. The workflow performs a fast-forward pull, updates all
-submodules, rebuilds the services, and restarts the services. The Windows
-installer is served directly from the GitHub Release and is not copied to the
-VPS.
+The deployment user must be able to run the Compose deployment script through
+`sudo` without an interactive password prompt. The workflow performs a
+fast-forward pull, updates all submodules, rebuilds the containers, and starts
+the stack. The Windows installer is served directly from the GitHub Release and
+is not copied to the VPS.
 
 ## Remote workers
 

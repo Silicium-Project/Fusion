@@ -97,8 +97,5 @@ jobs:
           done
           git_auth -C "$VPS_ROOT" submodule update --init --force --recursive
           unset GIT_AUTH VPS_GITHUB_TOKEN
-          cd "$VPS_ROOT"
-          sudo bash deploy/linux/install-services.sh "$VPS_ROOT"
-          sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
-          sudo systemctl restart silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
+          sudo bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
           REMOTE
