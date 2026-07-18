@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="${1:-/opt/silicium}"
 COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
 COMPOSE_ENV="/etc/silicium/compose.env"
+BACKEND_ENV="/etc/silicium/backend.env"
 BACKUP_DIR="/var/lib/silicium/backups/postgres"
 DATA_DIR="/var/lib/silicium/postgres"
 SQLITE_PATH="${SQLITE_PATH:-/var/lib/silicium/site/silicium.db}"
@@ -58,6 +59,12 @@ if [[ -f "$SQLITE_PATH" ]]; then
     echo "SQLite database has no users table: $SQLITE_PATH" >&2
     exit 1
   fi
+  LEGACY_TABLES="$(sqlite3 "$SQLITE_PATH" "SELECT group_concat(name, ', ') FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'users';")"
+  if [[ -n "$LEGACY_TABLES" ]]; then
+    echo "Unsupported legacy SQLite tables detected: $LEGACY_TABLES" >&2
+    echo "Migration stopped to prevent data loss. Export these tables before retrying." >&2
+    exit 1
+  fi
   SQLITE_USER_COUNT="$(sqlite3 "$SQLITE_PATH" 'SELECT count(*) FROM users;')"
   cp --preserve=all "$SQLITE_PATH" "$SQLITE_BACKUP_FILE"
   systemctl stop silicium-backend 2>/dev/null || true
@@ -85,9 +92,11 @@ elif [[ ! -f "$SQLITE_PATH" ]]; then
   exit 1
 fi
 
-if [[ -f "$BACKUP_FILE" && ( ! -s "$BACKUP_FILE" || ! pg_restore --list "$BACKUP_FILE" | grep -q 'TABLE DATA' ) ]]; then
-  echo "The PostgreSQL dump is missing or contains no table data: $BACKUP_FILE" >&2
-  exit 1
+if [[ -f "$BACKUP_FILE" ]]; then
+  if [[ ! -s "$BACKUP_FILE" ]] || ! pg_restore --list "$BACKUP_FILE" | grep -q 'TABLE DATA'; then
+    echo "The PostgreSQL dump is missing or contains no table data: $BACKUP_FILE" >&2
+    exit 1
+  fi
 fi
 
 systemctl stop silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator nginx 2>/dev/null || true
@@ -152,7 +161,19 @@ for service in silicium-backend silicium-frontend silicium-dashboard silicium-or
   systemctl disable "$service" 2>/dev/null || true
 done
 
-echo "PostgreSQL migration completed without deleting the legacy database."
+if [[ -f "$SQLITE_PATH" ]]; then
+  if ! "${COMPOSE[@]}" ps --status running --services | grep -qx 'backend'; then
+    echo "The PostgreSQL-backed backend is not running; keeping the SQLite source." >&2
+    exit 1
+  fi
+  if [[ -f "$BACKEND_ENV" ]]; then
+    cp --preserve=all "$BACKEND_ENV" "$BACKUP_DIR/backend.env.pre-postgres-$(date -u +%Y%m%dT%H%M%SZ)"
+    sed -i '/^DATABASE_DRIVER=/d; /^SQLITE_PATH=/d' "$BACKEND_ENV"
+  fi
+  rm -f "$SQLITE_PATH"
+fi
+
+echo "PostgreSQL migration completed; SQLite is no longer active."
 [[ -f "$BACKUP_FILE" ]] && echo "PostgreSQL backup: $BACKUP_FILE"
 [[ -f "$SQLITE_BACKUP_FILE" ]] && echo "SQLite backup: $SQLITE_BACKUP_FILE"
 echo "Stack: ${COMPOSE[*]} ps"

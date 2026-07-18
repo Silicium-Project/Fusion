@@ -111,7 +111,10 @@ file with the example file.
 
 For the current legacy SQLite installation, the migration detects
 `/var/lib/silicium/site/silicium.db`, checks its integrity, backs it up, creates
-the PostgreSQL schema, and imports the `users` table. For a legacy PostgreSQL
+the PostgreSQL schema, and imports the `users` table. After the PostgreSQL
+backend is running and the row count is verified, the active SQLite file and
+its environment variables are removed. A timestamped recovery copy remains
+outside the runtime data path. For a legacy PostgreSQL
 installation, inspect the existing databases and set the source name without
 changing the old data:
 
@@ -128,7 +131,8 @@ password, and keep the database backup produced by the migration. Do not run
 The migration creates a timestamped backup under
 `/var/lib/silicium/backups/postgres`, refuses a non-empty new data directory,
 checks the imported row count, and only then starts the complete container
-stack. Legacy SQLite and PostgreSQL data are retained.
+stack. The legacy PostgreSQL data directory is retained; SQLite is removed from
+the active runtime after a successful import.
 
 After the one-time migration, pushes to `main` run:
 
