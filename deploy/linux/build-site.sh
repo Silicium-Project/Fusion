@@ -5,7 +5,10 @@ ROOT="${1:-/opt/silicium}"
 
 install_js_dependencies() {
   if [[ -f package-lock.json || -f npm-shrinkwrap.json ]]; then
-    npm ci
+    if ! npm ci; then
+      echo "npm ci could not use the lockfile; falling back to npm install."
+      npm install
+    fi
   else
     npm install
   fi
