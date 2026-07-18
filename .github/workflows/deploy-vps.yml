@@ -58,13 +58,12 @@ jobs:
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
             "VPS_ROOT='$VPS_ROOT' bash -s" <<'REMOTE'
           set -euo pipefail
-          git config --global --add safe.directory "$VPS_ROOT"
-          cd "$VPS_ROOT"
-          git fetch origin main
-          git checkout main
-          git pull --ff-only origin main
-          git submodule sync --recursive
-          git submodule update --init --recursive
+          sudo git config --system --add safe.directory "$VPS_ROOT"
+          sudo git -C "$VPS_ROOT" fetch origin main
+          sudo git -C "$VPS_ROOT" checkout main
+          sudo git -C "$VPS_ROOT" pull --ff-only origin main
+          sudo git -C "$VPS_ROOT" submodule sync --recursive
+          sudo git -C "$VPS_ROOT" submodule update --init --recursive
           sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
           sudo systemctl restart silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
           REMOTE
