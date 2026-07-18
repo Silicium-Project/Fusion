@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -79,6 +80,9 @@ def _config(
     p2p_candidate_ttl_s: int = 60,
     p2p_candidate_refresh_s: int = 20,
     p2p_session_ttl_s: int = 120,
+    p2p_punch_retry_count: int = 8,
+    p2p_punch_interval_ms: int = 20,
+    p2p_session_timeout_ms: int = 1000,
     solana_enable: bool = False,
     solana_bridge: Path | None = None,
     solana_wallet: str | None = None,
@@ -135,6 +139,9 @@ def _config(
         p2p_candidate_ttl_s=p2p_candidate_ttl_s,
         p2p_candidate_refresh_s=p2p_candidate_refresh_s,
         p2p_session_ttl_s=p2p_session_ttl_s,
+        p2p_punch_retry_count=p2p_punch_retry_count,
+        p2p_punch_interval_ms=p2p_punch_interval_ms,
+        p2p_session_timeout_ms=p2p_session_timeout_ms,
         solana_reputation_enable=solana_reputation_enable,
         solana_reputation_refresh_s=1,
         scheduler_onchain_weight=10.0,
@@ -194,6 +201,17 @@ def _signed_json_request(signer: network_node.PeerNetwork, base_url: str, path: 
     status, body = _signed_json_request_status(signer, base_url, path, payload)
     assert status in {200, 201, 202}
     return body
+
+
+def _signed_punch_start(signal: network_node.PeerNetwork, peer_a: network_node.PeerNetwork, peer_b: network_node.PeerNetwork, session_id: str = "p2p-sess-test") -> dict:
+    pairs = signal._candidate_pairs(_peer_registration_payload(peer_a), _peer_registration_payload(peer_b))
+    session = {
+        "session_id": session_id,
+        "initiator_peer_id": peer_a.node_id,
+        "target_peer_id": peer_b.node_id,
+        "candidate_pairs": pairs,
+    }
+    return signal._punch_start_message(session)
 
 
 def test_peer_identity_persists_across_restarts(tmp_path: Path) -> None:
@@ -922,6 +940,182 @@ def test_p2p_signaling_closes_session_on_peer_disconnect(tmp_path: Path) -> None
         assert body["error"] == "session_closed"
     finally:
         signal.stop()
+
+
+def test_udp_hole_punch_establishes_direct_session_between_local_nodes(tmp_path: Path) -> None:
+    config_a = _config(tmp_path / "peer-a", "node-a", gossip_enable=True, nat_punch_enable=True, p2p_punch_interval_ms=10, p2p_session_timeout_ms=2500)
+    config_b = _config(tmp_path / "peer-b", "node-b", gossip_enable=True, nat_punch_enable=True, p2p_punch_interval_ms=10, p2p_session_timeout_ms=2500)
+    config_a.gossip_advertise_host = "127.0.0.1"
+    config_b.gossip_advertise_host = "127.0.0.1"
+    peer_a = network_node.PeerNetwork(config_a, tmp_path / "peer-a")
+    peer_b = network_node.PeerNetwork(config_b, tmp_path / "peer-b")
+    signal = network_node.PeerNetwork(_config(tmp_path / "signal", "node-signal", gossip_enable=False), tmp_path / "signal")
+    peer_a.start()
+    peer_b.start()
+    try:
+        punch_start = _signed_punch_start(signal, peer_a, peer_b)
+        results: dict[str, dict] = {}
+        thread_a = threading.Thread(target=lambda: results.setdefault("a", peer_a.establish_direct_udp_session(punch_start)))
+        thread_b = threading.Thread(target=lambda: results.setdefault("b", peer_b.establish_direct_udp_session(punch_start)))
+        thread_a.start()
+        thread_b.start()
+        thread_a.join(timeout=3)
+        thread_b.join(timeout=3)
+
+        assert results["a"]["status"] == "direct"
+        assert results["b"]["status"] == "direct"
+        assert results["a"]["rtt_ms"] >= 0
+        assert results["a"]["selected_candidate_pair"]["local_candidate_id"]
+        assert (tmp_path / "peer-a" / "p2p.direct_sessions.json").exists()
+    finally:
+        peer_b.stop()
+        peer_a.stop()
+
+
+def test_udp_hole_punch_rejects_wrong_session_id(tmp_path: Path) -> None:
+    config_a = _config(tmp_path / "peer-a", "node-a", gossip_enable=True, nat_punch_enable=True, p2p_punch_retry_count=2, p2p_punch_interval_ms=10, p2p_session_timeout_ms=120)
+    config_b = _config(tmp_path / "peer-b", "node-b", gossip_enable=True, nat_punch_enable=True)
+    peer_a = network_node.PeerNetwork(config_a, tmp_path / "peer-a")
+    peer_b = network_node.PeerNetwork(config_b, tmp_path / "peer-b")
+    signal = network_node.PeerNetwork(_config(tmp_path / "signal", "node-signal", gossip_enable=False), tmp_path / "signal")
+    peer_a.start()
+    peer_b.start()
+    try:
+        punch_start = _signed_punch_start(signal, peer_a, peer_b, session_id="p2p-sess-a")
+        wrong_probe = {
+            "message_type": "punch_probe",
+            "session_id": "p2p-sess-wrong",
+            "peer_id": "node-b",
+            "target_peer_id": "node-a",
+            "candidate_id": "cand-b",
+            "nonce": "probe-wrong",
+            "timestamp_unix": int(time.time()),
+        }
+        peer_b._sign_message(wrong_probe)
+        peer_a._handle_network_message(wrong_probe, f"127.0.0.1:{config_b.gossip_port}")
+
+        result = peer_a.establish_direct_udp_session(punch_start)
+        assert result["status"] == "failed"
+        assert result["failure_reason"] == "timeout"
+    finally:
+        peer_b.stop()
+        peer_a.stop()
+
+
+def test_udp_hole_punch_rejects_wrong_peer_id(tmp_path: Path) -> None:
+    peer_a = network_node.PeerNetwork(
+        _config(tmp_path / "peer-a", "node-a", gossip_enable=False, nat_punch_enable=True),
+        tmp_path / "peer-a",
+    )
+    signal = network_node.PeerNetwork(_config(tmp_path / "signal", "node-signal", gossip_enable=False), tmp_path / "signal")
+    punch_start = {
+        "message_type": "punch_start",
+        "session_id": "p2p-sess-wrong-peer",
+        "peer_id": "node-signal",
+        "identity_id": signal.identity.identity_id,
+        "public_key": signal.identity.public_key_b64,
+        "initiator_peer_id": "node-x",
+        "target_peer_id": "node-y",
+        "candidate_pairs": [],
+        "timestamp_unix": int(time.time()),
+        "nonce": "punch-start-wrong-peer",
+    }
+    signal._sign_message(punch_start)
+
+    result = peer_a.establish_direct_udp_session(punch_start)
+    assert result["status"] == "failed"
+    assert result["failure_reason"] == "wrong_peer_id"
+
+
+def test_udp_hole_punch_times_out_with_unreachable_candidate(tmp_path: Path) -> None:
+    config_a = _config(tmp_path / "peer-a", "node-a", gossip_enable=True, nat_punch_enable=True, p2p_punch_retry_count=2, p2p_punch_interval_ms=10, p2p_session_timeout_ms=120)
+    peer_a = network_node.PeerNetwork(config_a, tmp_path / "peer-a")
+    signal = network_node.PeerNetwork(_config(tmp_path / "signal", "node-signal", gossip_enable=False), tmp_path / "signal")
+    peer_a.start()
+    try:
+        now = int(time.time())
+        local = next(candidate for candidate in peer_a.refresh_candidates(force=True) if candidate["address_family"] == "ipv4")
+        remote = {
+            "candidate_id": "cand-node-b-unreachable",
+            "peer_id": "node-b",
+            "address_family": "ipv4",
+            "transport": "udp",
+            "ip": "127.0.0.1",
+            "port": 9,
+            "candidate_type": "host",
+            "priority": 100,
+            "observed_unix": now,
+            "expires_unix": now + 30,
+            "source": "test",
+        }
+        punch_start = signal._punch_start_message(
+            {
+                "session_id": "p2p-sess-timeout",
+                "initiator_peer_id": "node-a",
+                "target_peer_id": "node-b",
+                "candidate_pairs": [
+                    {
+                        "local_candidate_id": local["candidate_id"],
+                        "remote_candidate_id": remote["candidate_id"],
+                        "transport": "udp",
+                        "address_family": "ipv4",
+                        "priority": 100,
+                        "local_candidate": local,
+                        "remote_candidate": remote,
+                    }
+                ],
+            }
+        )
+
+        result = peer_a.establish_direct_udp_session(punch_start)
+        assert result["status"] == "failed"
+        assert result["failure_reason"] == "timeout"
+    finally:
+        peer_a.stop()
+
+
+def test_udp_hole_punch_ignores_duplicate_acks(tmp_path: Path) -> None:
+    config_a = _config(tmp_path / "peer-a", "node-a", gossip_enable=True, nat_punch_enable=True, p2p_punch_interval_ms=10, p2p_session_timeout_ms=2500)
+    config_b = _config(tmp_path / "peer-b", "node-b", gossip_enable=True, nat_punch_enable=True, p2p_punch_interval_ms=10, p2p_session_timeout_ms=2500)
+    config_a.gossip_advertise_host = "127.0.0.1"
+    config_b.gossip_advertise_host = "127.0.0.1"
+    peer_a = network_node.PeerNetwork(config_a, tmp_path / "peer-a")
+    peer_b = network_node.PeerNetwork(config_b, tmp_path / "peer-b")
+    signal = network_node.PeerNetwork(_config(tmp_path / "signal", "node-signal", gossip_enable=False), tmp_path / "signal")
+    peer_a.start()
+    peer_b.start()
+    try:
+        punch_start = _signed_punch_start(signal, peer_a, peer_b, session_id="p2p-sess-dup")
+        results: dict[str, dict] = {}
+        thread_a = threading.Thread(target=lambda: results.setdefault("a", peer_a.establish_direct_udp_session(punch_start)))
+        thread_b = threading.Thread(target=lambda: results.setdefault("b", peer_b.establish_direct_udp_session(punch_start)))
+        thread_a.start()
+        thread_b.start()
+        thread_a.join(timeout=3)
+        thread_b.join(timeout=3)
+        assert results["a"]["status"] == "direct"
+
+        session = peer_a._direct_sessions["p2p-sess-dup"]
+        sent_probe_nonce = next(iter(session["sent_probes"].keys()))
+        ack = {
+            "message_type": "punch_ack",
+            "session_id": "p2p-sess-dup",
+            "peer_id": "node-b",
+            "target_peer_id": "node-a",
+            "probe_nonce": sent_probe_nonce,
+            "selected_remote_candidate_id": session["selected_candidate_pair"]["local_candidate_id"],
+            "selected_local_candidate_id": session["selected_candidate_pair"]["remote_candidate_id"],
+            "nonce": session["seen_ack_nonces"][0],
+            "timestamp_unix": int(time.time()),
+        }
+        peer_b._sign_message(ack)
+        before = list(peer_a._direct_sessions["p2p-sess-dup"]["seen_ack_nonces"])
+        peer_a._handle_network_message(ack, f"127.0.0.1:{config_b.gossip_port}")
+        after = list(peer_a._direct_sessions["p2p-sess-dup"]["seen_ack_nonces"])
+        assert after == before
+    finally:
+        peer_b.stop()
+        peer_a.stop()
 
 
 def test_peer_network_relay_fetches_unreachable_peer_content(tmp_path: Path) -> None:

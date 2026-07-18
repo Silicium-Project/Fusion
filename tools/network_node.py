@@ -234,6 +234,9 @@ class NodeConfig:
     p2p_candidate_ttl_s: int
     p2p_candidate_refresh_s: int
     p2p_session_ttl_s: int
+    p2p_punch_retry_count: int
+    p2p_punch_interval_ms: int
+    p2p_session_timeout_ms: int
     solana_reputation_enable: bool
     solana_reputation_refresh_s: int
     scheduler_onchain_weight: float
@@ -730,13 +733,16 @@ class PeerNetwork:
         self.candidates_path = export_dir / "p2p.candidates.json"
         self.sessions_path = export_dir / "p2p.sessions.json"
         self.session_events_path = export_dir / "p2p.sessions.ndjson"
+        self.direct_sessions_path = export_dir / "p2p.direct_sessions.json"
         self.gossip_events_path = export_dir / "gossip.events.ndjson"
         self.discovery_registry_path = export_dir / "mesh.discovery.json"
         self._peers: dict[str, dict[str, Any]] = {}
         self._sessions: dict[str, dict[str, Any]] = {}
+        self._direct_sessions: dict[str, dict[str, Any]] = {}
         self._local_candidates: list[dict[str, Any]] = []
         self._seen_events: set[str] = set()
         self._seen_handshake_nonces: dict[str, float] = {}
+        self._seen_punch_nonces: set[str] = set()
         self._lock = threading.Lock()
         self._http_server: http.server.ThreadingHTTPServer | None = None
         self._http_thread: threading.Thread | None = None
@@ -1681,7 +1687,14 @@ class PeerNetwork:
 
     def _send_udp(self, target: str, host: str, port: int, message: dict[str, Any]) -> None:
         payload = json.dumps(message, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        if self._udp_socket is not None:
+            try:
+                self._udp_socket.sendto(payload, (host, port))
+                return
+            except OSError:
+                pass
+        family = socket.AF_INET6 if ":" in str(host) else socket.AF_INET
+        sock = socket.socket(family, socket.SOCK_DGRAM)
         try:
             sock.sendto(payload, (host, port))
         finally:
@@ -1753,6 +1766,261 @@ class PeerNetwork:
         if report["stored"] > 0:
             self.publish("content_replicated", {"content_id": content_id, "stored": report["stored"], "quorum": report["quorum"]})
         return report
+
+    def direct_sessions_snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            sessions = sorted(self._direct_sessions.values(), key=lambda item: str(item.get("session_id", "")))
+        payload = {"schema_version": 1, "node_id": self.node_id, "count": len(sessions), "sessions": sessions, "updated_utc": utc_now()}
+        atomic_write_json(self.direct_sessions_path, payload)
+        return payload
+
+    def establish_direct_udp_session(self, punch_start: Mapping[str, Any]) -> dict[str, Any]:
+        if not self.config.nat_punch_enable:
+            return self._direct_failure("", "nat_punch_disabled")
+        if not isinstance(punch_start, Mapping) or str(punch_start.get("message_type", "")) != "punch_start":
+            return self._direct_failure("", "punch_start_invalid")
+        if punch_start.get("signature") and not self._verify_message(dict(punch_start)):
+            return self._direct_failure(str(punch_start.get("session_id", "")), "punch_start_signature_invalid")
+        session_id = str(punch_start.get("session_id", "")).strip()
+        initiator_peer_id = safe_id(str(punch_start.get("initiator_peer_id", "")))
+        target_peer_id = safe_id(str(punch_start.get("target_peer_id", "")))
+        if not session_id or self.node_id not in {initiator_peer_id, target_peer_id}:
+            return self._direct_failure(session_id, "wrong_peer_id")
+        remote_peer_id = target_peer_id if self.node_id == initiator_peer_id else initiator_peer_id
+        pairs = self._direct_candidate_pairs_for_local(punch_start)
+        if not pairs:
+            return self._direct_failure(session_id, "no_candidate_pair", remote_peer_id=remote_peer_id)
+        started = time.monotonic()
+        timeout_s = max(1, int(self.config.p2p_session_timeout_ms)) / 1000.0
+        retry_count = max(1, int(self.config.p2p_punch_retry_count))
+        interval_s = max(1, int(self.config.p2p_punch_interval_ms)) / 1000.0
+        with self._lock:
+            self._direct_sessions[session_id] = {
+                "schema_version": 1,
+                "session_id": session_id,
+                "status": "punching",
+                "local_peer_id": self.node_id,
+                "remote_peer_id": remote_peer_id,
+                "candidate_pairs": pairs,
+                "sent_probes": {},
+                "seen_ack_nonces": [],
+                "created_unix": int(time.time()),
+                "updated_utc": utc_now(),
+            }
+        self._write_direct_sessions_snapshot()
+        for _attempt in range(retry_count):
+            now = time.monotonic()
+            if now - started >= timeout_s:
+                break
+            for pair in pairs:
+                self._send_punch_probe(session_id, remote_peer_id, pair)
+            if self._direct_session_status(session_id) == "direct":
+                return self._direct_session_result(session_id)
+            time.sleep(min(interval_s, max(0.0, timeout_s - (time.monotonic() - started))))
+            if self._direct_session_status(session_id) == "direct":
+                return self._direct_session_result(session_id)
+        with self._lock:
+            session = self._direct_sessions.get(session_id, {})
+            if session.get("status") != "direct":
+                session["status"] = "failed"
+                session["failure_reason"] = "timeout"
+                session["updated_utc"] = utc_now()
+                self._direct_sessions[session_id] = session
+        self._write_direct_sessions_snapshot()
+        return self._direct_session_result(session_id)
+
+    def _direct_candidate_pairs_for_local(self, punch_start: Mapping[str, Any]) -> list[dict[str, Any]]:
+        initiator_peer_id = safe_id(str(punch_start.get("initiator_peer_id", "")))
+        target_peer_id = safe_id(str(punch_start.get("target_peer_id", "")))
+        raw_pairs = punch_start.get("candidate_pairs", [])
+        if not isinstance(raw_pairs, list):
+            return []
+        pairs: list[dict[str, Any]] = []
+        for raw_pair in raw_pairs:
+            if not isinstance(raw_pair, Mapping):
+                continue
+            local_candidate = raw_pair.get("local_candidate")
+            remote_candidate = raw_pair.get("remote_candidate")
+            if self.node_id == target_peer_id:
+                local_candidate, remote_candidate = remote_candidate, local_candidate
+            elif self.node_id != initiator_peer_id:
+                continue
+            local = self._normalize_candidate(local_candidate, self.node_id, int(time.time()))
+            remote = self._normalize_candidate(remote_candidate, target_peer_id if self.node_id == initiator_peer_id else initiator_peer_id, int(time.time()))
+            if local is None or remote is None:
+                continue
+            if str(local.get("transport", "")) != "udp" or str(remote.get("transport", "")) != "udp":
+                continue
+            if str(local.get("address_family", "")) != str(remote.get("address_family", "")):
+                continue
+            if not self._udp_candidate_family_supported(str(local.get("address_family", ""))):
+                continue
+            pairs.append(
+                {
+                    "local_candidate_id": str(local.get("candidate_id", "")),
+                    "remote_candidate_id": str(remote.get("candidate_id", "")),
+                    "transport": "udp",
+                    "address_family": str(local.get("address_family", "")),
+                    "priority": int(raw_pair.get("priority", 0) or 0),
+                    "local_candidate": local,
+                    "remote_candidate": remote,
+                }
+            )
+        pairs.sort(key=lambda pair: int(pair.get("priority", 0) or 0), reverse=True)
+        return pairs
+
+    def _udp_candidate_family_supported(self, address_family: str) -> bool:
+        if self._udp_socket is None:
+            return address_family == "ipv4"
+        if address_family == "ipv6":
+            return self._udp_socket.family == socket.AF_INET6
+        return self._udp_socket.family == socket.AF_INET
+
+    def _send_punch_probe(self, session_id: str, remote_peer_id: str, pair: Mapping[str, Any]) -> None:
+        remote = pair.get("remote_candidate") if isinstance(pair.get("remote_candidate"), Mapping) else {}
+        host = str(remote.get("ip", "")).strip()
+        port = int(remote.get("port", 0) or 0)
+        if not host or port <= 0:
+            return
+        nonce = uuid.uuid4().hex
+        message = {
+            "message_type": "punch_probe",
+            "session_id": session_id,
+            "peer_id": self.node_id,
+            "target_peer_id": remote_peer_id,
+            "candidate_id": str(pair.get("local_candidate_id", "")),
+            "remote_candidate_id": str(pair.get("remote_candidate_id", "")),
+            "nonce": nonce,
+            "timestamp_unix": int(time.time()),
+        }
+        self._sign_message(message)
+        with self._lock:
+            session = self._direct_sessions.get(session_id, {})
+            sent = session.get("sent_probes", {}) if isinstance(session.get("sent_probes"), dict) else {}
+            sent[nonce] = {
+                "sent_monotonic": time.monotonic(),
+                "local_candidate_id": str(pair.get("local_candidate_id", "")),
+                "remote_candidate_id": str(pair.get("remote_candidate_id", "")),
+            }
+            session["sent_probes"] = sent
+            self._direct_sessions[session_id] = session
+        self._send_udp(f"{host}:{port}", host, port, message)
+
+    def _handle_direct_punch_probe(self, message: Mapping[str, Any], sender: str) -> None:
+        session_id = str(message.get("session_id", "")).strip()
+        peer_id = safe_id(str(message.get("peer_id", "")))
+        target_peer_id = safe_id(str(message.get("target_peer_id", "")))
+        nonce = str(message.get("nonce", "")).strip()
+        if not session_id or not nonce or target_peer_id != self.node_id or peer_id == self.node_id:
+            return
+        replay_key = f"probe:{session_id}:{peer_id}:{nonce}"
+        with self._lock:
+            session = self._direct_sessions.get(session_id)
+            if not isinstance(session, dict) or str(session.get("remote_peer_id", "")) != peer_id:
+                return
+            if replay_key in self._seen_punch_nonces:
+                return
+            self._seen_punch_nonces.add(replay_key)
+        local_candidate_id = self._best_local_candidate_id(session)
+        host, port = self._parse_udp_target(sender)
+        if not host or port <= 0:
+            return
+        ack = {
+            "message_type": "punch_ack",
+            "session_id": session_id,
+            "peer_id": self.node_id,
+            "target_peer_id": peer_id,
+            "probe_nonce": nonce,
+            "selected_remote_candidate_id": str(message.get("candidate_id", "")),
+            "selected_local_candidate_id": local_candidate_id,
+            "nonce": uuid.uuid4().hex,
+            "timestamp_unix": int(time.time()),
+        }
+        self._sign_message(ack)
+        self._send_udp(sender, host, port, ack)
+
+    def _handle_punch_ack(self, message: Mapping[str, Any]) -> None:
+        session_id = str(message.get("session_id", "")).strip()
+        peer_id = safe_id(str(message.get("peer_id", "")))
+        target_peer_id = safe_id(str(message.get("target_peer_id", "")))
+        ack_nonce = str(message.get("nonce", "")).strip()
+        probe_nonce = str(message.get("probe_nonce", "")).strip()
+        if not session_id or not ack_nonce or target_peer_id != self.node_id:
+            return
+        replay_key = f"ack:{session_id}:{peer_id}:{ack_nonce}"
+        with self._lock:
+            session = self._direct_sessions.get(session_id)
+            if not isinstance(session, dict) or str(session.get("remote_peer_id", "")) != peer_id:
+                return
+            if replay_key in self._seen_punch_nonces:
+                return
+            self._seen_punch_nonces.add(replay_key)
+            sent = session.get("sent_probes", {}) if isinstance(session.get("sent_probes"), dict) else {}
+            sent_probe = sent.get(probe_nonce, {}) if isinstance(sent.get(probe_nonce, {}), dict) else {}
+            if not sent_probe:
+                return
+            rtt_ms = int(max(0.0, time.monotonic() - float(sent_probe.get("sent_monotonic", time.monotonic()))) * 1000)
+            current_rtt = int(session.get("rtt_ms", 2**31 - 1) or 2**31 - 1)
+            if str(session.get("status", "")) == "direct" and current_rtt <= rtt_ms:
+                seen = session.get("seen_ack_nonces", []) if isinstance(session.get("seen_ack_nonces"), list) else []
+                if ack_nonce not in seen:
+                    seen.append(ack_nonce)
+                session["seen_ack_nonces"] = seen[-32:]
+                self._direct_sessions[session_id] = session
+                return
+            selected = {
+                "local_candidate_id": str(sent_probe.get("local_candidate_id", "")),
+                "remote_candidate_id": str(sent_probe.get("remote_candidate_id", "")),
+                "ack_local_candidate_id": str(message.get("selected_remote_candidate_id", "")),
+                "ack_remote_candidate_id": str(message.get("selected_local_candidate_id", "")),
+            }
+            session["status"] = "direct"
+            session["rtt_ms"] = rtt_ms
+            session["selected_candidate_pair"] = selected
+            session["updated_utc"] = utc_now()
+            seen = session.get("seen_ack_nonces", []) if isinstance(session.get("seen_ack_nonces"), list) else []
+            if ack_nonce not in seen:
+                seen.append(ack_nonce)
+            session["seen_ack_nonces"] = seen[-32:]
+            self._direct_sessions[session_id] = session
+        self._write_direct_sessions_snapshot()
+
+    def _best_local_candidate_id(self, session: Mapping[str, Any]) -> str:
+        pairs = session.get("candidate_pairs", []) if isinstance(session.get("candidate_pairs"), list) else []
+        if not pairs:
+            return ""
+        first = pairs[0] if isinstance(pairs[0], Mapping) else {}
+        return str(first.get("local_candidate_id", ""))
+
+    def _direct_session_status(self, session_id: str) -> str:
+        with self._lock:
+            return str(self._direct_sessions.get(session_id, {}).get("status", ""))
+
+    def _direct_session_result(self, session_id: str) -> dict[str, Any]:
+        with self._lock:
+            session = dict(self._direct_sessions.get(session_id, {}))
+        if not session:
+            return self._direct_failure(session_id, "session_missing")
+        return dict(session)
+
+    def _direct_failure(self, session_id: str, reason: str, *, remote_peer_id: str = "") -> dict[str, Any]:
+        return {
+            "schema_version": 1,
+            "session_id": str(session_id),
+            "status": "failed",
+            "local_peer_id": self.node_id,
+            "remote_peer_id": safe_id(remote_peer_id) if remote_peer_id else "",
+            "failure_reason": reason,
+            "updated_utc": utc_now(),
+        }
+
+    def _write_direct_sessions_snapshot(self) -> None:
+        with self._lock:
+            sessions = sorted(self._direct_sessions.values(), key=lambda item: str(item.get("session_id", "")))
+        atomic_write_json(
+            self.direct_sessions_path,
+            {"schema_version": 1, "node_id": self.node_id, "count": len(sessions), "sessions": sessions, "updated_utc": utc_now()},
+        )
 
     def request_udp_punch(self, target_peer_id: str) -> bool:
         if not self.config.nat_punch_enable:
@@ -2030,12 +2298,13 @@ class PeerNetwork:
             return
         if message_type == "punch_probe":
             requester_handshake = message.get("requester_handshake")
+            if not isinstance(requester_handshake, dict):
+                self._handle_direct_punch_probe(message, sender)
+                return
             if isinstance(requester_handshake, dict) and safe_id(str(requester_handshake.get("peer_id", ""))) != self.node_id:
                 ok, _reason = self.verify_session_handshake(requester_handshake, expected_target_peer_id=self.node_id)
                 if not ok:
                     return
-            elif not isinstance(requester_handshake, dict):
-                return
             target_host = str(message.get("target_host", "")).strip()
             target_port = int(message.get("target_port", 0) or 0)
             if target_host and target_port > 0:
@@ -2057,6 +2326,9 @@ class PeerNetwork:
                 }
                 self._sign_message(probe)
                 self._send_udp(f"{target_host}:{target_port}", target_host, target_port, probe)
+            return
+        if message_type == "punch_ack":
+            self._handle_punch_ack(message)
             return
         if message_type != "gossip_event":
             return
@@ -3111,6 +3383,7 @@ class NetworkNode:
         )
         p2p_candidates = self.peer_network.candidate_diagnostics()
         p2p_sessions = self.peer_network.sessions_snapshot()
+        p2p_direct_sessions = self.peer_network.direct_sessions_snapshot()
         atomic_write_json(
             self.heartbeat_path,
             {
@@ -3134,6 +3407,7 @@ class NetworkNode:
                 "p2p_observed_public_address": p2p_candidates["observed_public_address"],
                 "p2p_nat_behavior": p2p_candidates["nat_behavior"],
                 "p2p_session_count": int(p2p_sessions.get("count", 0) or 0),
+                "p2p_direct_session_count": int(p2p_direct_sessions.get("count", 0) or 0),
                 "solana_owner": self._solana_owner,
                 "solana_worker": self._solana_worker,
                 "onchain_reputation": self._solana_onchain_reputation,
@@ -3749,6 +4023,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--p2p-candidate-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_TTL_S", "60")))
     parser.add_argument("--p2p-candidate-refresh-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_REFRESH_S", "20")))
     parser.add_argument("--p2p-session-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_SESSION_TTL_S", "120")))
+    parser.add_argument("--p2p-punch-retry-count", type=int, default=int(os.environ.get("SILICIUM_P2P_PUNCH_RETRY_COUNT", "8")))
+    parser.add_argument("--p2p-punch-interval-ms", type=int, default=int(os.environ.get("SILICIUM_P2P_PUNCH_INTERVAL_MS", "120")))
+    parser.add_argument("--p2p-session-timeout-ms", type=int, default=int(os.environ.get("SILICIUM_P2P_SESSION_TIMEOUT_MS", "2500")))
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
     parser.add_argument("--scheduler-onchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_ONCHAIN_WEIGHT", "10")))
@@ -3839,6 +4116,9 @@ def main(argv: list[str] | None = None) -> int:
         p2p_candidate_ttl_s=max(1, int(args.p2p_candidate_ttl_s)),
         p2p_candidate_refresh_s=max(1, int(args.p2p_candidate_refresh_s)),
         p2p_session_ttl_s=max(1, int(args.p2p_session_ttl_s)),
+        p2p_punch_retry_count=max(1, int(args.p2p_punch_retry_count)),
+        p2p_punch_interval_ms=max(1, int(args.p2p_punch_interval_ms)),
+        p2p_session_timeout_ms=max(1, int(args.p2p_session_timeout_ms)),
         solana_reputation_enable=bool(args.solana_reputation_enable),
         solana_reputation_refresh_s=max(1, int(args.solana_reputation_refresh_s)),
         scheduler_onchain_weight=float(args.scheduler_onchain_weight),

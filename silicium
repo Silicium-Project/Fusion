@@ -3133,6 +3133,9 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--p2p-candidate-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_TTL_S", "60")))
     parser.add_argument("--p2p-candidate-refresh-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_REFRESH_S", "20")))
     parser.add_argument("--p2p-session-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_SESSION_TTL_S", "120")))
+    parser.add_argument("--p2p-punch-retry-count", type=int, default=int(os.environ.get("SILICIUM_P2P_PUNCH_RETRY_COUNT", "8")))
+    parser.add_argument("--p2p-punch-interval-ms", type=int, default=int(os.environ.get("SILICIUM_P2P_PUNCH_INTERVAL_MS", "120")))
+    parser.add_argument("--p2p-session-timeout-ms", type=int, default=int(os.environ.get("SILICIUM_P2P_SESSION_TIMEOUT_MS", "2500")))
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
     parser.add_argument("--scheduler-onchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_ONCHAIN_WEIGHT", "10")))
@@ -3224,6 +3227,12 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.p2p_candidate_refresh_s),
         "--p2p-session-ttl-s",
         str(args.p2p_session_ttl_s),
+        "--p2p-punch-retry-count",
+        str(args.p2p_punch_retry_count),
+        "--p2p-punch-interval-ms",
+        str(args.p2p_punch_interval_ms),
+        "--p2p-session-timeout-ms",
+        str(args.p2p_session_timeout_ms),
         "--solana-reputation-refresh-s",
         str(args.solana_reputation_refresh_s),
         "--scheduler-onchain-weight",

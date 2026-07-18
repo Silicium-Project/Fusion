@@ -405,6 +405,23 @@ Confirms that the receiver validated the probe for the expected session.
 }
 ```
 
+Direct UDP establishment rules:
+
+- A peer must only accept a `punch_probe` for an active local direct session
+  whose `session_id`, `peer_id`, and `target_peer_id` match the expected remote
+  peer.
+- Probe packets must be sent from the bound UDP listener socket so the NAT
+  mapping and the ACK return path use the same local port.
+- `punch_ack` must include the original `probe_nonce`; duplicate ACK nonces are
+  ignored.
+- A direct session transitions to `direct` only after an authenticated ACK for a
+  locally sent probe is received.
+- The selected direct path records RTT and selected candidate ids in
+  `p2p.direct_sessions.json`.
+- Failed direct attempts must return a structured `failure_reason` such as
+  `timeout`, `wrong_peer_id`, `no_candidate_pair`, or `nat_punch_disabled`, then
+  remain eligible for relay fallback.
+
 ### TransferBegin
 
 Starts a payload transfer over an established direct or relay session.
@@ -552,6 +569,8 @@ Initial rollout flags and environment variables:
 | `--p2p-candidate-refresh-s` | `SILICIUM_P2P_CANDIDATE_REFRESH_S` | `20` | Candidate refresh interval. |
 | `--p2p-session-ttl-s` | `SILICIUM_P2P_SESSION_TTL_S` | `120` | Signaling session expiration window. |
 | `--p2p-session-timeout-ms` | `SILICIUM_P2P_SESSION_TIMEOUT_MS` | `2500` | Direct setup timeout. |
+| `--p2p-punch-retry-count` | `SILICIUM_P2P_PUNCH_RETRY_COUNT` | `8` | Bounded UDP punch retry bursts. |
+| `--p2p-punch-interval-ms` | `SILICIUM_P2P_PUNCH_INTERVAL_MS` | `120` | Delay between UDP punch bursts. |
 | `--p2p-legacy-fallback` | `SILICIUM_P2P_LEGACY_FALLBACK` | `1` | Allows current HTTP paths during rollout. |
 
 The existing `--nat-punch-enable`, `--relay-enable`, and peer HTTP flags remain
@@ -601,6 +620,7 @@ Recommended export file additions:
 
 - `p2p.sessions.ndjson`;
 - `p2p.candidates.json`;
+- `p2p.direct_sessions.json`;
 - `p2p.status.json`;
 
 ## Implementation Order
