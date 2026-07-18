@@ -1,6 +1,7 @@
 name: Deploy VPS
 
 on:
+  workflow_dispatch:
   push:
     branches: ["main"]
     paths:
@@ -25,8 +26,14 @@ jobs:
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          test -n "$VPS_SSH_KEY"
-          test -n "$VPS_KNOWN_HOSTS"
+          if [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error title=Missing secret::Configure VPS_SSH_KEY in repository Actions secrets."
+            exit 1
+          fi
+          if [ -z "$VPS_KNOWN_HOSTS" ]; then
+            echo "::error title=Missing secret::Configure VPS_KNOWN_HOSTS in repository Actions secrets."
+            exit 1
+          fi
           install -d -m 700 "$HOME/.ssh"
           printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
@@ -40,8 +47,14 @@ jobs:
           VPS_ROOT: ${{ secrets.VPS_ROOT || '/opt/silicium' }}
         run: |
           set -euo pipefail
-          test -n "$VPS_HOST"
-          test -n "$VPS_USER"
+          if [ -z "$VPS_HOST" ]; then
+            echo "::error title=Missing secret::Configure VPS_HOST in repository Actions secrets."
+            exit 1
+          fi
+          if [ -z "$VPS_USER" ]; then
+            echo "::error title=Missing secret::Configure VPS_USER in repository Actions secrets."
+            exit 1
+          fi
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
             "VPS_ROOT='$VPS_ROOT' bash -s" <<'REMOTE'
           set -euo pipefail
