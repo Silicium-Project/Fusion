@@ -92,8 +92,9 @@ curl -I https://github.com/Silicium-Project/Fusion/releases/latest/download/Sili
 ## Automatic VPS deployment
 
 `/.github/workflows/deploy-vps.yml` deploys every push to `main` that changes
-the site, backend, network, or deployment files. Configure these repository
-secrets before enabling it:
+the site, backend, network, or deployment files. It can also be started from
+the GitHub Actions interface with `Run workflow`. Configure these repository
+secrets before the first run:
 
 - `VPS_HOST`: public VPS hostname or IP;
 - `VPS_USER`: SSH deployment user;
@@ -105,8 +106,9 @@ secrets before enabling it:
 The deployment user must be able to run the existing `deploy/linux/build-site.sh`
 and the four `systemctl restart` commands through `sudo` without an interactive
 password prompt. The workflow performs a fast-forward pull, updates all
-submodules, rebuilds the services, publishes the Windows installer, and
-restarts the services.
+submodules, rebuilds the services, and restarts the services. The Windows
+installer is served directly from the GitHub Release and is not copied to the
+VPS.
 
 ## Remote workers
 
