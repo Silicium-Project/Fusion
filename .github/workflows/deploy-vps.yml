@@ -89,6 +89,12 @@ jobs:
           sudo git -C "$VPS_ROOT" checkout main
           git_auth -C "$VPS_ROOT" pull --ff-only origin main
           sudo git -C "$VPS_ROOT" submodule sync --recursive
+          for submodule in BackEnd FrontEnd Network; do
+            submodule_path="$VPS_ROOT/$submodule"
+            if [ -d "$submodule_path" ] && [ ! -e "$submodule_path/.git" ]; then
+              sudo rm -rf -- "$submodule_path"
+            fi
+          done
           git_auth -C "$VPS_ROOT" submodule update --init --recursive
           unset GIT_AUTH VPS_GITHUB_TOKEN
           sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
