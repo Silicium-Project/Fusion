@@ -11,6 +11,9 @@ import (
 
 func Init() *gorm.DB {
 	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		utils.LogFatal(os.ErrInvalid, "DATABASE_URL is required")
+	}
 
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{})
 	utils.LogFatal(err, "Failed to connect to database")
