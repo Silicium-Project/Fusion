@@ -83,6 +83,7 @@ def _config(
     p2p_punch_retry_count: int = 8,
     p2p_punch_interval_ms: int = 20,
     p2p_session_timeout_ms: int = 1000,
+    p2p_direct_transport_backend: str = "native-light",
     solana_enable: bool = False,
     solana_bridge: Path | None = None,
     solana_wallet: str | None = None,
@@ -142,6 +143,7 @@ def _config(
         p2p_punch_retry_count=p2p_punch_retry_count,
         p2p_punch_interval_ms=p2p_punch_interval_ms,
         p2p_session_timeout_ms=p2p_session_timeout_ms,
+        p2p_direct_transport_backend=p2p_direct_transport_backend,
         solana_reputation_enable=solana_reputation_enable,
         solana_reputation_refresh_s=1,
         scheduler_onchain_weight=10.0,
@@ -964,6 +966,8 @@ def test_udp_hole_punch_establishes_direct_session_between_local_nodes(tmp_path:
 
         assert results["a"]["status"] == "direct"
         assert results["b"]["status"] == "direct"
+        assert results["a"]["transport_backend"] == "native-light"
+        assert results["b"]["transport_backend"] == "native-light"
         assert results["a"]["rtt_ms"] >= 0
         assert results["a"]["selected_candidate_pair"]["local_candidate_id"]
         assert (tmp_path / "peer-a" / "p2p.direct_sessions.json").exists()
@@ -1000,6 +1004,21 @@ def test_udp_hole_punch_rejects_wrong_session_id(tmp_path: Path) -> None:
     finally:
         peer_b.stop()
         peer_a.stop()
+
+
+def test_direct_transport_backend_rejects_unknown_backend(tmp_path: Path) -> None:
+    config = _config(
+        tmp_path / "peer",
+        "node-a",
+        gossip_enable=False,
+        p2p_direct_transport_backend="custom-ice",
+    )
+
+    try:
+        network_node.PeerNetwork(config, tmp_path / "peer")
+        raise AssertionError("expected unsupported direct transport backend")
+    except ValueError as exc:
+        assert str(exc) == "unsupported_direct_transport_backend:custom-ice"
 
 
 def test_udp_hole_punch_rejects_wrong_peer_id(tmp_path: Path) -> None:
@@ -1146,6 +1165,14 @@ def test_peer_network_relay_fetches_unreachable_peer_content(tmp_path: Path) -> 
                 assert peer_b.peers_snapshot()["count"] >= 3
 
                 stored = p2p_a.put_local(b"relay-path")
+                content_id = str(stored["shared_ref"]["content_id"])
+                deadline = time.time() + 3.0
+                while time.time() < deadline:
+                    target_peer = peer_c._peers.get("node-a", {})
+                    if peer_c._fetch_direct_from_peer(target_peer, content_id) == b"relay-path":
+                        break
+                    peer_c.sync_once()
+                    time.sleep(0.05)
                 peer_b._peers["node-a"]["http_base_url"] = "http://127.0.0.1:9"
                 data, meta = p2p_b.fetch(stored["shared_ref"])
                 assert data == b"relay-path"

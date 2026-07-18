@@ -3136,6 +3136,7 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--p2p-punch-retry-count", type=int, default=int(os.environ.get("SILICIUM_P2P_PUNCH_RETRY_COUNT", "8")))
     parser.add_argument("--p2p-punch-interval-ms", type=int, default=int(os.environ.get("SILICIUM_P2P_PUNCH_INTERVAL_MS", "120")))
     parser.add_argument("--p2p-session-timeout-ms", type=int, default=int(os.environ.get("SILICIUM_P2P_SESSION_TIMEOUT_MS", "2500")))
+    parser.add_argument("--p2p-direct-transport-backend", default=os.environ.get("SILICIUM_P2P_DIRECT_TRANSPORT_BACKEND", "native-light"))
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
     parser.add_argument("--scheduler-onchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_ONCHAIN_WEIGHT", "10")))
@@ -3233,6 +3234,8 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.p2p_punch_interval_ms),
         "--p2p-session-timeout-ms",
         str(args.p2p_session_timeout_ms),
+        "--p2p-direct-transport-backend",
+        str(args.p2p_direct_transport_backend),
         "--solana-reputation-refresh-s",
         str(args.solana_reputation_refresh_s),
         "--scheduler-onchain-weight",
