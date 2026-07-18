@@ -100,6 +100,8 @@ secrets before the first run:
 - `VPS_USER`: SSH deployment user;
 - `VPS_SSH_KEY`: private Ed25519 key authorized on the VPS;
 - `VPS_KNOWN_HOSTS`: pinned `known_hosts` entry for the VPS;
+- `VPS_GITHUB_TOKEN`: read-only GitHub token with access to `Fusion`, `BackEnd`,
+  `FrontEnd`, and `Network`;
 - `VPS_PORT`: optional SSH port, default `22`;
 - `VPS_ROOT`: optional checkout path, default `/opt/silicium`.
 

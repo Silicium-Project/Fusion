@@ -48,9 +48,13 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
           VPS_ROOT: ${{ secrets.VPS_ROOT || '/opt/silicium' }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VPS_GITHUB_TOKEN: ${{ secrets.VPS_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "$VPS_GITHUB_TOKEN" ]; then
+            echo "::error title=Missing secret::Configure VPS_GITHUB_TOKEN with read access to Fusion, BackEnd, FrontEnd, and Network."
+            exit 1
+          fi
           if [ -z "$VPS_HOST" ]; then
             echo "::error title=Missing secret::Configure VPS_HOST in repository Actions secrets."
             exit 1
@@ -60,9 +64,9 @@ jobs:
             exit 1
           fi
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
-            "VPS_ROOT='$VPS_ROOT' GITHUB_TOKEN='$GITHUB_TOKEN' bash -s" <<'REMOTE'
+            "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' bash -s" <<'REMOTE'
           set -euo pipefail
-          GIT_AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w 0)"
+          GIT_AUTH="$(printf 'x-access-token:%s' "$VPS_GITHUB_TOKEN" | base64 -w 0)"
           git_auth() {
             sudo env \
               GIT_CONFIG_COUNT=1 \
@@ -77,7 +81,7 @@ jobs:
           git_auth -C "$VPS_ROOT" pull --ff-only origin main
           sudo git -C "$VPS_ROOT" submodule sync --recursive
           git_auth -C "$VPS_ROOT" submodule update --init --recursive
-          unset GIT_AUTH GITHUB_TOKEN
+          unset GIT_AUTH VPS_GITHUB_TOKEN
           sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
           sudo systemctl restart silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
           REMOTE
