@@ -105,8 +105,21 @@ sudo nano /etc/silicium/backend.env
 sudo bash deploy/linux/migrate-postgres-to-compose.sh /opt/silicium
 ```
 
-The migration requires a running legacy PostgreSQL service and a valid
-`DATABASE_URL` in `/etc/silicium/backend.env`. It creates a timestamped backup
+Before the migration, inspect the existing PostgreSQL databases and set the
+source database name without changing the old data:
+
+```bash
+sudo bash deploy/linux/install-vps.sh /opt/silicium
+sudo -u postgres psql -lqt
+sudo nano /etc/silicium/compose.env
+```
+
+Set `SOURCE_POSTGRES_DB` to the existing database, choose a new container
+password, and keep the database backup produced by the migration. Do not run
+`docker compose down -v`: that would remove container volumes.
+
+The migration requires a running legacy PostgreSQL service and the correct
+`SOURCE_POSTGRES_DB` in `/etc/silicium/compose.env`. It creates a timestamped backup
 under `/var/lib/silicium/backups/postgres`, refuses a non-empty new data
 directory, restores into the new PostgreSQL container, and only then starts
 the complete container stack. The old PostgreSQL data directory is retained.
