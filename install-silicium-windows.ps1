@@ -135,6 +135,20 @@ function Invoke-NpmInstall($Path, $Name) {
     }
 }
 
+function Install-P2PDependencies {
+    $requirements = Join-Path $Root "Network\requirements-p2p.txt"
+    if (-not (Test-Path -LiteralPath $requirements -PathType Leaf)) {
+        Write-Warning "P2P requirements file not found: $requirements"
+        return
+    }
+    if (-not (Test-Command "py")) {
+        Write-Warning "Python launcher not found; automatic ICE support cannot be installed."
+        return
+    }
+    Write-Step "Installing automatic P2P transport"
+    py -m pip install --disable-pip-version-check --upgrade -r $requirements
+}
+
 function Find-RaytracerBinary {
     param([string]$ExplicitPath)
 
@@ -304,6 +318,7 @@ Show-Version "go" @("version")
 Show-Version "solana" @("--version")
 
 Write-Step "Installing JavaScript dependencies"
+Install-P2PDependencies
 Invoke-NpmInstall (Join-Path $Root "Network\silicium-layer-dashboard") "Network Devnet dashboard"
 Invoke-NpmInstall (Join-Path $Root "Network\solana-layer") "Solana layer scripts"
 Invoke-NpmInstall (Join-Path $Root "FrontEnd") "FrontEnd"
