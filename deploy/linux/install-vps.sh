@@ -14,6 +14,8 @@ apt-get install -y \
   curl \
   git \
   nginx \
+  docker.io \
+  docker-compose-plugin \
   postgresql \
   postgresql-client \
   openssl \
@@ -28,6 +30,7 @@ if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'Number(process.versions.n
 fi
 
 mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana "$ROOT/bin"
+systemctl enable --now docker
 
 if [[ ! -d "$ROOT/.git" ]]; then
   echo "Expected repository cloned at $ROOT." >&2
@@ -38,5 +41,4 @@ fi
 echo "Base VPS dependencies installed."
 echo "Next:"
 echo "  sudo cp deploy/env/*.example.env /etc/silicium/"
-echo "  sudo bash deploy/linux/build-site.sh $ROOT"
-echo "  sudo bash deploy/linux/install-services.sh $ROOT"
+echo "  sudo bash deploy/linux/migrate-postgres-to-compose.sh $ROOT"
