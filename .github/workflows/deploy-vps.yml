@@ -87,7 +87,7 @@ jobs:
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
           git_auth -C "$VPS_ROOT" fetch origin main
           sudo git -C "$VPS_ROOT" checkout main
-          git_auth -C "$VPS_ROOT" pull --ff-only origin main
+          sudo git -C "$VPS_ROOT" reset --hard origin/main
           sudo git -C "$VPS_ROOT" submodule sync --recursive
           for submodule in BackEnd FrontEnd Network; do
             submodule_path="$VPS_ROOT/$submodule"
