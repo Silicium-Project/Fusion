@@ -7,6 +7,12 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5174,
+    allowedHosts: ["vps-910c1dbc.vps.ovh.net", "213.32.68.67"],
+  },
+  preview: {
+    host: "0.0.0.0",
+    port: 5174,
+    allowedHosts: ["vps-910c1dbc.vps.ovh.net", "213.32.68.67"],
   },
   resolve: {
     alias: {
