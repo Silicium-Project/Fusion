@@ -15,7 +15,6 @@ apt-get install -y \
   git \
   nginx \
   docker.io \
-  docker-compose-plugin \
   postgresql \
   postgresql-client \
   sqlite3 \
@@ -24,6 +23,16 @@ apt-get install -y \
   python3-venv \
   python3-pip \
   golang-go
+
+if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+  apt-get install -y docker-compose-plugin
+elif apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+  apt-get install -y docker-compose-v2
+else
+  echo "No Docker Compose v2 package is available in the configured apt repositories." >&2
+  echo "Enable the Docker or Ubuntu repository providing docker-compose-v2, then rerun this installer." >&2
+  exit 1
+fi
 
 if ! command -v node >/dev/null 2>&1 || [[ "$(node -p 'Number(process.versions.node.split(".")[0])')" -lt 20 ]]; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
