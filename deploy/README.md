@@ -100,10 +100,15 @@ secrets before the first run:
 - `VPS_USER`: SSH deployment user;
 - `VPS_SSH_KEY`: private Ed25519 key authorized on the VPS;
 - `VPS_KNOWN_HOSTS`: pinned `known_hosts` entry for the VPS;
-- `VPS_GITHUB_TOKEN`: read-only GitHub token with access to `Fusion`, `BackEnd`,
-  `FrontEnd`, and `Network`;
 - `VPS_PORT`: optional SSH port, default `22`;
 - `VPS_ROOT`: optional checkout path, default `/opt/silicium`.
+
+The workflow uses a private GitHub App instead of a personal access token. Store
+its client ID as the repository variable `SILICIUM_DEPLOY_APP_CLIENT_ID` and
+its private key as the repository secret `SILICIUM_DEPLOY_APP_PRIVATE_KEY`.
+Install the App on `Fusion`, `BackEnd`, `FrontEnd`, and `Network` with only
+`Contents: Read-only` permission. The workflow creates a short-lived token for
+each deployment and revokes it when the job completes.
 
 The deployment user must be able to run the existing `deploy/linux/build-site.sh`
 and the four `systemctl restart` commands through `sudo` without an interactive
