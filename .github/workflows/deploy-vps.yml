@@ -64,11 +64,11 @@ jobs:
           set -euo pipefail
           sudo git config --system --add safe.directory "$VPS_ROOT"
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
-          sudo git -C "$VPS_ROOT" -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" fetch origin main
+          sudo git -C "$VPS_ROOT" -c "http.extraHeader=Authorization: Bearer $GITHUB_TOKEN" fetch origin main
           sudo git -C "$VPS_ROOT" checkout main
-          sudo git -C "$VPS_ROOT" -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" pull --ff-only origin main
+          sudo git -C "$VPS_ROOT" -c "http.extraHeader=Authorization: Bearer $GITHUB_TOKEN" pull --ff-only origin main
           sudo git -C "$VPS_ROOT" submodule sync --recursive
-          sudo git -C "$VPS_ROOT" -c http.extraheader="AUTHORIZATION: bearer $GITHUB_TOKEN" submodule update --init --recursive
+          sudo git -C "$VPS_ROOT" -c "http.extraHeader=Authorization: Bearer $GITHUB_TOKEN" submodule update --init --recursive
           sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
           sudo systemctl restart silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
           REMOTE
