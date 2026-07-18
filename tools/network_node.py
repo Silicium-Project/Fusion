@@ -233,6 +233,7 @@ class NodeConfig:
     nat_punch_enable: bool
     p2p_candidate_ttl_s: int
     p2p_candidate_refresh_s: int
+    p2p_session_ttl_s: int
     solana_reputation_enable: bool
     solana_reputation_refresh_s: int
     scheduler_onchain_weight: float
@@ -727,9 +728,12 @@ class PeerNetwork:
         self.identity = NodeIdentity(config)
         self.peers_path = export_dir / f"node.{self.node_id}.peers.json"
         self.candidates_path = export_dir / "p2p.candidates.json"
+        self.sessions_path = export_dir / "p2p.sessions.json"
+        self.session_events_path = export_dir / "p2p.sessions.ndjson"
         self.gossip_events_path = export_dir / "gossip.events.ndjson"
         self.discovery_registry_path = export_dir / "mesh.discovery.json"
         self._peers: dict[str, dict[str, Any]] = {}
+        self._sessions: dict[str, dict[str, Any]] = {}
         self._local_candidates: list[dict[str, Any]] = []
         self._seen_events: set[str] = set()
         self._seen_handshake_nonces: dict[str, float] = {}
@@ -765,6 +769,7 @@ class PeerNetwork:
         if self.config.gossip_enable:
             self._start_udp_listener()
         self._load_persisted_peers()
+        self._load_persisted_sessions()
         self.refresh_candidates(force=True)
         self._record_self_peer()
         if self.config.peer_sync_interval_s > 0:
@@ -1097,6 +1102,301 @@ class PeerNetwork:
                     changed = True
         if changed:
             atomic_write_json(self.peers_path, {"schema_version": 1, "node_id": self.node_id, "count": len(self._peers), "peers": list(self._peers.values()), "updated_utc": utc_now()})
+
+    def sessions_snapshot(self) -> dict[str, Any]:
+        self._prune_expired_sessions()
+        with self._lock:
+            sessions = sorted(self._sessions.values(), key=lambda item: str(item.get("session_id", "")))
+        payload = {"schema_version": 1, "node_id": self.node_id, "count": len(sessions), "sessions": sessions, "updated_utc": utc_now()}
+        atomic_write_json(self.sessions_path, payload)
+        return payload
+
+    def create_signaling_session(self, payload: Mapping[str, Any], requester_node_id: str) -> tuple[int, dict[str, Any]]:
+        self._prune_expired_sessions()
+        requester_id = safe_id(str(payload.get("peer_id", requester_node_id)))
+        requester_node_id = safe_id(requester_node_id)
+        target_peer_id = safe_id(str(payload.get("target_peer_id", "")))
+        task_id = safe_id(str(payload.get("task_id", ""))) if str(payload.get("task_id", "")).strip() else ""
+        purpose = safe_id(str(payload.get("purpose", "direct_session")))
+        if requester_node_id and requester_id != requester_node_id:
+            return 403, {"ok": False, "error": "requester_mismatch"}
+        if not requester_id or not target_peer_id or requester_id == target_peer_id:
+            return 400, {"ok": False, "error": "invalid_peer_pair"}
+        allowed, reason = self._authorize_session_pair(requester_id, target_peer_id, task_id, purpose)
+        if not allowed:
+            return 403, {"ok": False, "error": reason}
+        requester_peer = self._peer_for_signaling(requester_id)
+        target_peer = self._peer_for_signaling(target_peer_id)
+        if requester_peer is None or target_peer is None:
+            return 404, {"ok": False, "error": "peer_not_registered"}
+        candidate_pairs = self._candidate_pairs(requester_peer, target_peer)
+        if not candidate_pairs:
+            return 409, {"ok": False, "error": "no_valid_candidate_pair"}
+        now = int(time.time())
+        ttl_s = max(1, int(self.config.p2p_session_ttl_s))
+        session_id = "p2p-sess-" + uuid.uuid4().hex
+        session = {
+            "schema_version": 1,
+            "session_id": session_id,
+            "status": "signaling",
+            "initiator_peer_id": requester_id,
+            "target_peer_id": target_peer_id,
+            "purpose": purpose,
+            "task_id": task_id,
+            "candidate_pairs": candidate_pairs,
+            "ready_peers": [],
+            "results": [],
+            "created_unix": now,
+            "expires_unix": now + ttl_s,
+            "updated_utc": utc_now(),
+        }
+        with self._lock:
+            self._sessions[session_id] = session
+        self._write_sessions_snapshot()
+        self._emit_signaling_event("session_created", session)
+        return 201, {"ok": True, "session": self._session_response(session)}
+
+    def mark_session_ready(self, session_id: str, requester_node_id: str) -> tuple[int, dict[str, Any]]:
+        session, error = self._session_for_peer(session_id, requester_node_id)
+        if session is None:
+            return error
+        peer_id = safe_id(requester_node_id)
+        ready = list(session.get("ready_peers", [])) if isinstance(session.get("ready_peers"), list) else []
+        if peer_id not in ready:
+            ready.append(peer_id)
+        session["ready_peers"] = sorted(ready)
+        session["status"] = "punching" if {session["initiator_peer_id"], session["target_peer_id"]}.issubset(set(ready)) else "ready_wait"
+        session["updated_utc"] = utc_now()
+        with self._lock:
+            self._sessions[str(session["session_id"])] = session
+        self._write_sessions_snapshot()
+        self._emit_signaling_event("session_ready", session, {"peer_id": peer_id})
+        return 200, {"ok": True, "session": self._session_response(session), "punch_start": self._punch_start_message(session)}
+
+    def record_session_result(self, session_id: str, payload: Mapping[str, Any], requester_node_id: str) -> tuple[int, dict[str, Any]]:
+        session, error = self._session_for_peer(session_id, requester_node_id)
+        if session is None:
+            return error
+        peer_id = safe_id(requester_node_id)
+        ok = bool(payload.get("ok", False))
+        transport = safe_id(str(payload.get("transport", "direct")))
+        result = {
+            "peer_id": peer_id,
+            "ok": ok,
+            "transport": transport,
+            "selected_local_candidate_id": str(payload.get("selected_local_candidate_id", "")),
+            "selected_remote_candidate_id": str(payload.get("selected_remote_candidate_id", "")),
+            "error": str(payload.get("error", "")),
+            "timestamp_unix": int(time.time()),
+        }
+        results = list(session.get("results", [])) if isinstance(session.get("results"), list) else []
+        results.append(result)
+        session["results"] = results[-8:]
+        session["status"] = transport if ok and transport in {"direct", "relay"} else ("failed" if not ok else "completed")
+        session["updated_utc"] = utc_now()
+        with self._lock:
+            self._sessions[str(session["session_id"])] = session
+        self._write_sessions_snapshot()
+        self._emit_signaling_event("session_result", session, result)
+        return 200, {"ok": True, "session": self._session_response(session)}
+
+    def close_session(self, session_id: str, payload: Mapping[str, Any], requester_node_id: str) -> tuple[int, dict[str, Any]]:
+        session, error = self._session_for_peer(session_id, requester_node_id)
+        if session is None:
+            return error
+        peer_id = safe_id(requester_node_id)
+        session["status"] = "closed"
+        session["closed_by"] = peer_id
+        session["close_reason"] = safe_id(str(payload.get("reason", "closed")))
+        session["updated_utc"] = utc_now()
+        with self._lock:
+            self._sessions[str(session["session_id"])] = session
+        self._write_sessions_snapshot()
+        self._emit_signaling_event("session_closed", session, {"peer_id": peer_id, "reason": session["close_reason"]})
+        return 200, {"ok": True, "session": self._session_response(session)}
+
+    def _load_persisted_sessions(self) -> None:
+        snapshot = read_json(self.sessions_path, {})
+        sessions = snapshot.get("sessions") if isinstance(snapshot, dict) else None
+        if not isinstance(sessions, list):
+            return
+        now = int(time.time())
+        with self._lock:
+            for session in sessions:
+                if not isinstance(session, dict):
+                    continue
+                session_id = str(session.get("session_id", "")).strip()
+                if not session_id or int(session.get("expires_unix", 0) or 0) <= now:
+                    continue
+                if str(session.get("status", "")) in {"closed", "failed"}:
+                    continue
+                self._sessions[session_id] = dict(session)
+
+    def _write_sessions_snapshot(self) -> None:
+        with self._lock:
+            sessions = sorted(self._sessions.values(), key=lambda item: str(item.get("session_id", "")))
+        atomic_write_json(
+            self.sessions_path,
+            {"schema_version": 1, "node_id": self.node_id, "count": len(sessions), "sessions": sessions, "updated_utc": utc_now()},
+        )
+
+    def _emit_signaling_event(self, event_type: str, session: Mapping[str, Any], extra: Mapping[str, Any] | None = None) -> None:
+        payload = {
+            "schema_version": 1,
+            "timestamp_utc": utc_now(),
+            "node_id": self.node_id,
+            "event_type": event_type,
+            "session_id": str(session.get("session_id", "")),
+            "status": str(session.get("status", "")),
+            "initiator_peer_id": str(session.get("initiator_peer_id", "")),
+            "target_peer_id": str(session.get("target_peer_id", "")),
+            "task_id": str(session.get("task_id", "")),
+        }
+        if extra:
+            payload.update(dict(extra))
+        append_jsonl(self.session_events_path, payload)
+
+    def _authorize_session_pair(self, requester_id: str, target_peer_id: str, task_id: str, purpose: str) -> tuple[bool, str]:
+        if not task_id:
+            return (purpose in {"nat_punch", "diagnostic"}), "task_required"
+        for directory in ("tasks", "requests"):
+            path = self.export_dir / directory / f"{safe_id(task_id)}.json"
+            envelope = read_json(path, {})
+            if not isinstance(envelope, dict) or not envelope:
+                continue
+            assigned = {
+                self._optional_peer_id(envelope.get("dispatched_to", "")),
+                self._optional_peer_id(envelope.get("assigned_peer_id", "")),
+                self._optional_peer_id(envelope.get("target_peer_id", "")),
+                self._optional_peer_id(envelope.get("handled_by", "")),
+            }
+            assigned.discard("")
+            owners = {
+                self._optional_peer_id(envelope.get("node_id", "")),
+                self._optional_peer_id(envelope.get("dispatched_by", "")),
+                self._optional_peer_id(envelope.get("requester_peer_id", "")),
+                self.node_id,
+            }
+            owners.discard("")
+            pair = {requester_id, target_peer_id}
+            if assigned.intersection(pair) and (owners.intersection(pair) or self.node_id in pair):
+                return True, "ok"
+            if {requester_id, target_peer_id}.issubset(assigned):
+                return True, "ok"
+            return False, "task_peer_pair_unauthorized"
+        return False, "task_not_found"
+
+    def _optional_peer_id(self, value: Any) -> str:
+        raw = str(value or "").strip()
+        return safe_id(raw) if raw else ""
+
+    def _peer_for_signaling(self, peer_id: str) -> dict[str, Any] | None:
+        safe_peer_id = safe_id(peer_id)
+        if safe_peer_id == self.node_id:
+            self._record_self_peer()
+        with self._lock:
+            peer = self._peers.get(safe_peer_id)
+            return dict(peer) if isinstance(peer, dict) else None
+
+    def _candidate_pairs(self, initiator_peer: Mapping[str, Any], target_peer: Mapping[str, Any]) -> list[dict[str, Any]]:
+        now = int(time.time())
+        local = self._normalize_candidate_list(initiator_peer.get("candidates", []), str(initiator_peer.get("node_id", "")), now)
+        remote = self._normalize_candidate_list(target_peer.get("candidates", []), str(target_peer.get("node_id", "")), now)
+        pairs: list[dict[str, Any]] = []
+        for local_candidate in local:
+            for remote_candidate in remote:
+                if str(local_candidate.get("transport", "")) != str(remote_candidate.get("transport", "")):
+                    continue
+                if str(local_candidate.get("address_family", "")) != str(remote_candidate.get("address_family", "")):
+                    continue
+                priority = self._candidate_pair_priority(local_candidate, remote_candidate)
+                pairs.append(
+                    {
+                        "local_candidate_id": str(local_candidate.get("candidate_id", "")),
+                        "remote_candidate_id": str(remote_candidate.get("candidate_id", "")),
+                        "transport": str(local_candidate.get("transport", "udp")),
+                        "address_family": str(local_candidate.get("address_family", "")),
+                        "priority": priority,
+                        "local_candidate": local_candidate,
+                        "remote_candidate": remote_candidate,
+                    }
+                )
+        pairs.sort(key=lambda pair: int(pair.get("priority", 0) or 0), reverse=True)
+        return pairs
+
+    def _candidate_pair_priority(self, local_candidate: Mapping[str, Any], remote_candidate: Mapping[str, Any]) -> int:
+        score = int(local_candidate.get("priority", 0) or 0) + int(remote_candidate.get("priority", 0) or 0)
+        if bool(local_candidate.get("internet_routable", False)):
+            score += 1000
+        if bool(remote_candidate.get("internet_routable", False)):
+            score += 1000
+        if str(local_candidate.get("candidate_type", "")) == "srflx":
+            score += 200
+        if str(remote_candidate.get("candidate_type", "")) == "srflx":
+            score += 200
+        return score
+
+    def _session_response(self, session: Mapping[str, Any]) -> dict[str, Any]:
+        response = dict(session)
+        response["candidate_pairs"] = list(session.get("candidate_pairs", [])) if isinstance(session.get("candidate_pairs"), list) else []
+        return response
+
+    def _punch_start_message(self, session: Mapping[str, Any]) -> dict[str, Any]:
+        message = {
+            "message_type": "punch_start",
+            "session_id": str(session.get("session_id", "")),
+            "peer_id": self.node_id,
+            "identity_id": self.identity.identity_id,
+            "public_key": self.identity.public_key_b64,
+            "initiator_peer_id": str(session.get("initiator_peer_id", "")),
+            "target_peer_id": str(session.get("target_peer_id", "")),
+            "candidate_pairs": list(session.get("candidate_pairs", [])) if isinstance(session.get("candidate_pairs"), list) else [],
+            "retry": {"count": 8, "interval_ms": 120, "timeout_ms": 2500},
+            "timestamp_unix": int(time.time()),
+            "nonce": uuid.uuid4().hex,
+        }
+        self._sign_message(message)
+        return message
+
+    def _session_for_peer(self, session_id: str, requester_node_id: str) -> tuple[dict[str, Any] | None, tuple[int, dict[str, Any]]]:
+        self._prune_expired_sessions()
+        safe_session_id = str(session_id).strip()
+        requester_id = safe_id(requester_node_id)
+        with self._lock:
+            session = dict(self._sessions.get(safe_session_id, {}))
+        if not session:
+            return None, (404, {"ok": False, "error": "session_not_found"})
+        if int(session.get("expires_unix", 0) or 0) <= int(time.time()):
+            self._expire_session(safe_session_id, session)
+            return None, (410, {"ok": False, "error": "session_expired"})
+        if str(session.get("status", "")) == "closed":
+            return None, (409, {"ok": False, "error": "session_closed"})
+        if requester_id not in {str(session.get("initiator_peer_id", "")), str(session.get("target_peer_id", "")), self.node_id}:
+            return None, (403, {"ok": False, "error": "session_peer_unauthorized"})
+        return session, (200, {"ok": True})
+
+    def _prune_expired_sessions(self) -> None:
+        now = int(time.time())
+        expired: list[dict[str, Any]] = []
+        with self._lock:
+            for session_id, session in list(self._sessions.items()):
+                if int(session.get("expires_unix", 0) or 0) <= now and str(session.get("status", "")) not in {"closed", "direct", "relay"}:
+                    expired_session = dict(session)
+                    expired_session["status"] = "expired"
+                    expired.append(expired_session)
+                    self._sessions.pop(session_id, None)
+        for session in expired:
+            self._emit_signaling_event("session_expired", session)
+        if expired:
+            self._write_sessions_snapshot()
+
+    def _expire_session(self, session_id: str, session: Mapping[str, Any]) -> None:
+        expired = dict(session)
+        expired["status"] = "expired"
+        with self._lock:
+            self._sessions.pop(session_id, None)
+        self._write_sessions_snapshot()
+        self._emit_signaling_event("session_expired", expired)
 
     def set_local_profile(
         self,
@@ -2139,6 +2439,17 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(raw)
                     return
+                if self.path == "/p2p/sessions":
+                    if not peer_network._authorize_peer_request(self):
+                        self.send_error(403)
+                        return
+                    raw = stable_json(peer_network.sessions_snapshot()).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
                 if self.path.startswith("/p2p/"):
                     if not peer_network._authorize_peer_request(self):
                         self.send_error(403)
@@ -2219,6 +2530,110 @@ class PeerNetwork:
                     peer_network._record_peer(payload)
                     body = b'{"ok":true}'
                     self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/p2p/peers/register":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    requester_node_id = safe_id(str(self.headers.get("X-Silicium-Node-Id", "")))
+                    payload_node_id = safe_id(str(payload.get("node_id", "")))
+                    if payload_node_id != requester_node_id:
+                        body = stable_json({"ok": False, "error": "requester_mismatch"}).encode("utf-8")
+                        self.send_response(403)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+                    peer_network._record_peer(payload)
+                    body = stable_json({"ok": True, "peer_id": requester_node_id}).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/p2p/candidates":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    requester_node_id = safe_id(str(self.headers.get("X-Silicium-Node-Id", "")))
+                    payload_peer_id = safe_id(str(payload.get("peer_id", payload.get("node_id", ""))))
+                    if payload_peer_id != requester_node_id:
+                        body = stable_json({"ok": False, "error": "requester_mismatch"}).encode("utf-8")
+                        self.send_response(403)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+                    peer_network._record_candidate_announce(payload)
+                    candidates = peer_network._normalize_candidate_list(payload.get("candidates", []), requester_node_id)
+                    body = stable_json({"ok": True, "peer_id": requester_node_id, "candidate_count": len(candidates)}).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/p2p/sessions/request":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    status, body_payload = peer_network.create_signaling_session(payload, str(self.headers.get("X-Silicium-Node-Id", "")))
+                    body = stable_json(body_payload).encode("utf-8")
+                    self.send_response(status)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path.startswith("/p2p/sessions/"):
+                    parts = [part for part in urlparse(self.path).path.split("/") if part]
+                    if len(parts) != 4 or parts[0] != "p2p" or parts[1] != "sessions":
+                        self.send_error(404)
+                        return
+                    session_id = parts[2]
+                    action = parts[3]
+                    try:
+                        payload = json.loads(raw.decode("utf-8")) if raw else {}
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    requester_node_id = str(self.headers.get("X-Silicium-Node-Id", ""))
+                    if action == "ready":
+                        status, body_payload = peer_network.mark_session_ready(session_id, requester_node_id)
+                    elif action == "result":
+                        status, body_payload = peer_network.record_session_result(session_id, payload, requester_node_id)
+                    elif action == "close":
+                        status, body_payload = peer_network.close_session(session_id, payload, requester_node_id)
+                    else:
+                        self.send_error(404)
+                        return
+                    body = stable_json(body_payload).encode("utf-8")
+                    self.send_response(status)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
@@ -2695,6 +3110,7 @@ class NetworkNode:
             solana_worker=self._solana_worker,
         )
         p2p_candidates = self.peer_network.candidate_diagnostics()
+        p2p_sessions = self.peer_network.sessions_snapshot()
         atomic_write_json(
             self.heartbeat_path,
             {
@@ -2717,6 +3133,7 @@ class NetworkNode:
                 "p2p_selected_candidate": p2p_candidates["selected_candidate"],
                 "p2p_observed_public_address": p2p_candidates["observed_public_address"],
                 "p2p_nat_behavior": p2p_candidates["nat_behavior"],
+                "p2p_session_count": int(p2p_sessions.get("count", 0) or 0),
                 "solana_owner": self._solana_owner,
                 "solana_worker": self._solana_worker,
                 "onchain_reputation": self._solana_onchain_reputation,
@@ -3331,6 +3748,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
     parser.add_argument("--p2p-candidate-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_TTL_S", "60")))
     parser.add_argument("--p2p-candidate-refresh-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_REFRESH_S", "20")))
+    parser.add_argument("--p2p-session-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_SESSION_TTL_S", "120")))
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
     parser.add_argument("--scheduler-onchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_ONCHAIN_WEIGHT", "10")))
@@ -3420,6 +3838,7 @@ def main(argv: list[str] | None = None) -> int:
         nat_punch_enable=bool(args.nat_punch_enable),
         p2p_candidate_ttl_s=max(1, int(args.p2p_candidate_ttl_s)),
         p2p_candidate_refresh_s=max(1, int(args.p2p_candidate_refresh_s)),
+        p2p_session_ttl_s=max(1, int(args.p2p_session_ttl_s)),
         solana_reputation_enable=bool(args.solana_reputation_enable),
         solana_reputation_refresh_s=max(1, int(args.solana_reputation_refresh_s)),
         scheduler_onchain_weight=float(args.scheduler_onchain_weight),

@@ -78,6 +78,7 @@ def _config(
     nat_punch_enable: bool = False,
     p2p_candidate_ttl_s: int = 60,
     p2p_candidate_refresh_s: int = 20,
+    p2p_session_ttl_s: int = 120,
     solana_enable: bool = False,
     solana_bridge: Path | None = None,
     solana_wallet: str | None = None,
@@ -133,6 +134,7 @@ def _config(
         nat_punch_enable=nat_punch_enable,
         p2p_candidate_ttl_s=p2p_candidate_ttl_s,
         p2p_candidate_refresh_s=p2p_candidate_refresh_s,
+        p2p_session_ttl_s=p2p_session_ttl_s,
         solana_reputation_enable=solana_reputation_enable,
         solana_reputation_refresh_s=1,
         scheduler_onchain_weight=10.0,
@@ -153,6 +155,45 @@ class _RequestStub:
         self.headers = headers
         self.command = command
         self.path = path
+
+
+def _peer_registration_payload(peer: network_node.PeerNetwork) -> dict:
+    return {
+        "node_id": peer.node_id,
+        "identity_id": peer.identity.identity_id,
+        "public_key": peer.identity.public_key_b64,
+        "roles": sorted(peer.config.roles),
+        "http_base_url": peer.advertised_http_base_url,
+        "mesh_post_url": peer.mesh_post_url,
+        "gossip_bind": peer._advertised_gossip_host(),
+        "gossip_port": peer._advertised_gossip_port(),
+        "candidates": peer.refresh_candidates(force=True),
+        "relay_capable": bool(peer.config.relay_enable),
+        "capacity": peer.local_capacity,
+        "reputation_score": peer.local_reputation_score,
+        "timestamp_utc": network_node.utc_now(),
+    }
+
+
+def _signed_json_request_status(signer: network_node.PeerNetwork, base_url: str, path: str, payload: dict) -> tuple[int, dict]:
+    raw = network_node.stable_json(payload).encode("utf-8")
+    request = urllib.request.Request(
+        base_url.rstrip("/") + path,
+        data=raw,
+        method="POST",
+        headers=signer._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+
+def _signed_json_request(signer: network_node.PeerNetwork, base_url: str, path: str, payload: dict) -> dict:
+    status, body = _signed_json_request_status(signer, base_url, path, payload)
+    assert status in {200, 201, 202}
+    return body
 
 
 def test_peer_identity_persists_across_restarts(tmp_path: Path) -> None:
@@ -731,6 +772,156 @@ def test_peer_network_discovers_server_observed_candidate_over_http(tmp_path: Pa
             peer_b.stop()
     finally:
         peer_a.stop()
+
+
+def test_p2p_signaling_creates_authorized_session_with_candidate_pairs(tmp_path: Path) -> None:
+    signal_export = tmp_path / "signal"
+    peer_a_export = tmp_path / "peer-a"
+    peer_b_export = tmp_path / "peer-b"
+    signal = network_node.PeerNetwork(_config(signal_export, "node-signal", gossip_enable=False), signal_export)
+    peer_a_config = _config(peer_a_export, "node-a", gossip_enable=False)
+    peer_b_config = _config(peer_b_export, "node-b", gossip_enable=False)
+    peer_a_config.gossip_port = 46111
+    peer_b_config.gossip_port = 46112
+    peer_a = network_node.PeerNetwork(peer_a_config, peer_a_export)
+    peer_b = network_node.PeerNetwork(peer_b_config, peer_b_export)
+    task_dir = signal_export / "tasks"
+    task_dir.mkdir(parents=True)
+    (task_dir / "compute_42.json").write_text(
+        json.dumps({"task_id": "compute_42", "requester_peer_id": "node-a", "dispatched_to": "node-b"}),
+        encoding="utf-8",
+    )
+
+    signal.start()
+    try:
+        assert _signed_json_request(peer_a, signal.http_base_url, "/p2p/peers/register", _peer_registration_payload(peer_a))["ok"]
+        assert _signed_json_request(peer_b, signal.http_base_url, "/p2p/peers/register", _peer_registration_payload(peer_b))["ok"]
+
+        status, body = _signed_json_request_status(
+            peer_a,
+            signal.http_base_url,
+            "/p2p/sessions/request",
+            {"peer_id": "node-a", "target_peer_id": "node-b", "task_id": "compute_42", "purpose": "fragment_fetch"},
+        )
+        assert status == 201
+        session = body["session"]
+        assert session["status"] == "signaling"
+        assert session["initiator_peer_id"] == "node-a"
+        assert session["target_peer_id"] == "node-b"
+        assert session["candidate_pairs"]
+        assert session["candidate_pairs"][0]["local_candidate"]["peer_id"] == "node-a"
+        assert session["candidate_pairs"][0]["remote_candidate"]["peer_id"] == "node-b"
+
+        session_id = session["session_id"]
+        ready_a = _signed_json_request(peer_a, signal.http_base_url, f"/p2p/sessions/{session_id}/ready", {})
+        assert ready_a["session"]["status"] == "ready_wait"
+        ready_b = _signed_json_request(peer_b, signal.http_base_url, f"/p2p/sessions/{session_id}/ready", {})
+        assert ready_b["session"]["status"] == "punching"
+        assert ready_b["punch_start"]["candidate_pairs"]
+        result = _signed_json_request(
+            peer_a,
+            signal.http_base_url,
+            f"/p2p/sessions/{session_id}/result",
+            {
+                "ok": True,
+                "transport": "direct",
+                "selected_local_candidate_id": session["candidate_pairs"][0]["local_candidate_id"],
+                "selected_remote_candidate_id": session["candidate_pairs"][0]["remote_candidate_id"],
+            },
+        )
+        assert result["session"]["status"] == "direct"
+        assert result["session"]["results"][0]["ok"] is True
+        assert (signal_export / "p2p.sessions.ndjson").exists()
+    finally:
+        signal.stop()
+
+
+def test_p2p_signaling_rejects_unauthorized_pairing(tmp_path: Path) -> None:
+    signal_export = tmp_path / "signal"
+    signal = network_node.PeerNetwork(_config(signal_export, "node-signal", gossip_enable=False), signal_export)
+    peer_a = network_node.PeerNetwork(_config(tmp_path / "peer-a", "node-a", gossip_enable=False), tmp_path / "peer-a")
+    peer_b = network_node.PeerNetwork(_config(tmp_path / "peer-b", "node-b", gossip_enable=False), tmp_path / "peer-b")
+    task_dir = signal_export / "tasks"
+    task_dir.mkdir(parents=True)
+    (task_dir / "compute_42.json").write_text(
+        json.dumps({"task_id": "compute_42", "requester_peer_id": "node-a", "dispatched_to": "node-c"}),
+        encoding="utf-8",
+    )
+
+    signal.start()
+    try:
+        assert _signed_json_request(peer_a, signal.http_base_url, "/p2p/peers/register", _peer_registration_payload(peer_a))["ok"]
+        assert _signed_json_request(peer_b, signal.http_base_url, "/p2p/peers/register", _peer_registration_payload(peer_b))["ok"]
+        status, body = _signed_json_request_status(
+            peer_a,
+            signal.http_base_url,
+            "/p2p/sessions/request",
+            {"peer_id": "node-a", "target_peer_id": "node-b", "task_id": "compute_42", "purpose": "fragment_fetch"},
+        )
+        assert status == 403
+        assert body["error"] == "task_peer_pair_unauthorized"
+    finally:
+        signal.stop()
+
+
+def test_p2p_signaling_expires_stale_session(tmp_path: Path) -> None:
+    signal_export = tmp_path / "signal"
+    signal = network_node.PeerNetwork(_config(signal_export, "node-signal", gossip_enable=False, p2p_session_ttl_s=1), signal_export)
+    peer_a_config = _config(tmp_path / "peer-a", "node-a", gossip_enable=False)
+    peer_b_config = _config(tmp_path / "peer-b", "node-b", gossip_enable=False)
+    peer_a_config.gossip_port = 46121
+    peer_b_config.gossip_port = 46122
+    peer_a = network_node.PeerNetwork(peer_a_config, tmp_path / "peer-a")
+    peer_b = network_node.PeerNetwork(peer_b_config, tmp_path / "peer-b")
+
+    signal.start()
+    try:
+        assert _signed_json_request(peer_a, signal.http_base_url, "/p2p/peers/register", _peer_registration_payload(peer_a))["ok"]
+        assert _signed_json_request(peer_b, signal.http_base_url, "/p2p/peers/register", _peer_registration_payload(peer_b))["ok"]
+        created = _signed_json_request(
+            peer_a,
+            signal.http_base_url,
+            "/p2p/sessions/request",
+            {"peer_id": "node-a", "target_peer_id": "node-b", "purpose": "nat_punch"},
+        )
+        session_id = created["session"]["session_id"]
+        time.sleep(1.2)
+        status, body = _signed_json_request_status(peer_a, signal.http_base_url, f"/p2p/sessions/{session_id}/ready", {})
+        assert status == 404
+        assert body["error"] == "session_not_found"
+        assert signal.sessions_snapshot()["count"] == 0
+    finally:
+        signal.stop()
+
+
+def test_p2p_signaling_closes_session_on_peer_disconnect(tmp_path: Path) -> None:
+    signal_export = tmp_path / "signal"
+    signal = network_node.PeerNetwork(_config(signal_export, "node-signal", gossip_enable=False), signal_export)
+    peer_a_config = _config(tmp_path / "peer-a", "node-a", gossip_enable=False)
+    peer_b_config = _config(tmp_path / "peer-b", "node-b", gossip_enable=False)
+    peer_a_config.gossip_port = 46131
+    peer_b_config.gossip_port = 46132
+    peer_a = network_node.PeerNetwork(peer_a_config, tmp_path / "peer-a")
+    peer_b = network_node.PeerNetwork(peer_b_config, tmp_path / "peer-b")
+
+    signal.start()
+    try:
+        assert _signed_json_request(peer_a, signal.http_base_url, "/p2p/peers/register", _peer_registration_payload(peer_a))["ok"]
+        assert _signed_json_request(peer_b, signal.http_base_url, "/p2p/peers/register", _peer_registration_payload(peer_b))["ok"]
+        created = _signed_json_request(
+            peer_a,
+            signal.http_base_url,
+            "/p2p/sessions/request",
+            {"peer_id": "node-a", "target_peer_id": "node-b", "purpose": "nat_punch"},
+        )
+        session_id = created["session"]["session_id"]
+        closed = _signed_json_request(peer_b, signal.http_base_url, f"/p2p/sessions/{session_id}/close", {"reason": "peer_disconnect"})
+        assert closed["session"]["status"] == "closed"
+        status, body = _signed_json_request_status(peer_a, signal.http_base_url, f"/p2p/sessions/{session_id}/ready", {})
+        assert status == 409
+        assert body["error"] == "session_closed"
+    finally:
+        signal.stop()
 
 
 def test_peer_network_relay_fetches_unreachable_peer_content(tmp_path: Path) -> None:

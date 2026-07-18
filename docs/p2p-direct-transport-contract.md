@@ -278,6 +278,40 @@ The signaling plane must reject requests when:
 - no compatible feature set exists;
 - the task/session has already reached a terminal state.
 
+### Signaling HTTP API
+
+All signaling HTTP endpoints require peer identity request signatures. The
+shared mesh key may only be accepted when the explicit development auth flag is
+enabled.
+
+Implemented control endpoints:
+
+- `POST /p2p/peers/register`: records a signed peer profile, including current
+  candidate set.
+- `POST /p2p/candidates`: publishes a signed `candidate_announce` payload for
+  one peer.
+- `POST /p2p/sessions/request`: creates a short-lived session for an authorized
+  peer pair and returns ordered candidate pairs.
+- `POST /p2p/sessions/{id}/ready`: marks one peer ready; once both peers are
+  ready, the session enters `punching` and returns a signed `punch_start`.
+- `POST /p2p/sessions/{id}/result`: records direct, relay, or failed punch
+  result.
+- `POST /p2p/sessions/{id}/close`: closes a session when a peer disconnects or
+  cancels.
+- `GET /p2p/sessions`: diagnostics snapshot of active non-expired sessions.
+
+Session requests with a `task_id` must match locally known work assignment
+metadata, such as `requester_peer_id` plus `dispatched_to`, `assigned_peer_id`,
+`target_peer_id`, or `handled_by`. Diagnostic NAT punch requests may omit
+`task_id`, but production data transfer sessions must be task-bound.
+
+Candidate pairs are returned in descending priority. Pairs are only created for
+matching address families and transports, and expired candidates are ignored.
+
+Session state is stored in `p2p.sessions.json`; lifecycle events are appended to
+`p2p.sessions.ndjson`. Non-terminal sessions expire automatically after
+`--p2p-session-ttl-s`.
+
 ### PunchStart
 
 Instructs both peers to attempt simultaneous UDP punching.
@@ -516,6 +550,7 @@ Initial rollout flags and environment variables:
 | `--p2p-bind-udp` | `SILICIUM_P2P_BIND_UDP` | `0.0.0.0:0` | UDP bind address for direct sessions. |
 | `--p2p-candidate-ttl-s` | `SILICIUM_P2P_CANDIDATE_TTL_S` | `60` | Candidate expiration window. |
 | `--p2p-candidate-refresh-s` | `SILICIUM_P2P_CANDIDATE_REFRESH_S` | `20` | Candidate refresh interval. |
+| `--p2p-session-ttl-s` | `SILICIUM_P2P_SESSION_TTL_S` | `120` | Signaling session expiration window. |
 | `--p2p-session-timeout-ms` | `SILICIUM_P2P_SESSION_TIMEOUT_MS` | `2500` | Direct setup timeout. |
 | `--p2p-legacy-fallback` | `SILICIUM_P2P_LEGACY_FALLBACK` | `1` | Allows current HTTP paths during rollout. |
 
