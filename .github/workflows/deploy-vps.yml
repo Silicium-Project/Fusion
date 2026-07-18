@@ -1,0 +1,60 @@
+name: Deploy VPS
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "FrontEnd/**"
+      - "BackEnd/**"
+      - "Network/**"
+      - "deploy/**"
+      - ".github/workflows/deploy-vps.yml"
+
+concurrency:
+  group: silicium-vps-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_SSH_KEY"
+          test -n "$VPS_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Pull and deploy on VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_ROOT: ${{ secrets.VPS_ROOT || '/opt/silicium' }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_HOST"
+          test -n "$VPS_USER"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "VPS_ROOT='$VPS_ROOT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$VPS_ROOT"
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          git submodule sync --recursive
+          git submodule update --init --recursive
+          sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
+          sudo install -d -o root -g root -m 0755 /var/lib/silicium/downloads
+          sudo install -o root -g root -m 0644 \
+            FrontEnd/public/downloads/Silicium-Node-0.2.1-x64-setup.exe \
+            /var/lib/silicium/downloads/silicium-node-windows.exe
+          sudo systemctl restart silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
+          REMOTE
