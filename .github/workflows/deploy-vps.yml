@@ -52,9 +52,5 @@ jobs:
           git submodule sync --recursive
           git submodule update --init --recursive
           sudo bash deploy/linux/build-site.sh "$VPS_ROOT"
-          sudo install -d -o root -g root -m 0755 /var/lib/silicium/downloads
-          sudo install -o root -g root -m 0644 \
-            FrontEnd/public/downloads/Silicium-Node-0.2.1-x64-setup.exe \
-            /var/lib/silicium/downloads/silicium-node-windows.exe
           sudo systemctl restart silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
           REMOTE

@@ -67,26 +67,26 @@ sudo certbot --nginx -d silicium.example.com -d api.silicium.example.com
 
 ## Windows desktop application
 
-Build and sign the Windows installer, then upload it to the persistent download
-directory using the exact public filename expected by the frontend:
-
-```bash
-scp "Silicium Node_0.2.0_x64-setup.exe" USER@VPS:/tmp/silicium-node-windows.exe
-ssh USER@VPS "sudo install -o root -g root -m 0644 /tmp/silicium-node-windows.exe /var/lib/silicium/downloads/silicium-node-windows.exe"
-```
-
-The frontend variable must remain:
+The frontend downloads the installer from the latest GitHub Release asset:
 
 ```text
-NUXT_PUBLIC_NODE_APP_WINDOWS_URL=/downloads/silicium-node-windows.exe
+https://github.com/Silicium-Project/Fusion/releases/latest/download/Silicium-Node-0.2.1-x64-setup.exe
 ```
 
-Nginx serves this file directly from `/var/lib/silicium/downloads`; rebuilding
-or restarting the frontend is not required when only replacing the installer.
-Verify the public download after upload:
+Publish a new installer without copying binaries to the VPS:
 
 ```bash
-curl -I https://YOUR_DOMAIN/downloads/silicium-node-windows.exe
+gh release create v0.2.1 \
+  "Silicium Node_0.2.1_x64-setup.exe" \
+  --repo Silicium-Project/Fusion \
+  --title "Silicium Node 0.2.1" \
+  --notes "Automatic ICE P2P desktop node."
+```
+
+Verify the public asset:
+
+```bash
+curl -I https://github.com/Silicium-Project/Fusion/releases/latest/download/Silicium-Node-0.2.1-x64-setup.exe
 ```
 
 ## Automatic VPS deployment
