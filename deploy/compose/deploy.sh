@@ -14,4 +14,7 @@ fi
 [[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
 
 docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" up -d --build --remove-orphans
+# Nginx resolves Compose service names at startup; recreate it after app
+# containers so its upstream IPs cannot remain stale after a deployment.
+docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" up -d --force-recreate proxy
 docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" ps
