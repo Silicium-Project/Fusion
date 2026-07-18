@@ -1,0 +1,3 @@
+# Optional standards-based direct transport backend.
+# The native-light backend remains available without this dependency.
+aioice>=0.10.2,<0.11

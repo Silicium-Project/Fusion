@@ -393,6 +393,27 @@ docker compose build --no-cache # rebuild complet (après changement d'entrypoin
 >
 > Pour le mesh inter-machines en mode `--world`, utilisez le compose dédié documenté dans [docs/world-mesh-docker.md](/home/luisfernandes/Bureau/Silicium/Network/docs/world-mesh-docker.md).
 
+### Transport direct P2P
+
+Le nœud utilise `native-light` par défaut pour les essais UDP locaux, LAN et VPN.
+Pour activer le transport standardisé ICE avec STUN/TURN, installez la dépendance
+optionnelle puis démarrez chaque nœud avec la même configuration de transport :
+
+```bash
+python -m pip install -r requirements-p2p.txt
+python silicium node start --world \
+  --p2p-direct-transport-backend ice \
+  --p2p-stun-server stun.example.org:3478 \
+  --p2p-turn-server turn.example.org:3478 \
+  --p2p-turn-username "$SILICIUM_P2P_TURN_USERNAME" \
+  --p2p-turn-password "$SILICIUM_P2P_TURN_PASSWORD"
+```
+
+La signalisation reste nécessaire pour échanger les identités, les credentials
+ICE et les candidats. Elle ne transporte pas les payloads après l’établissement
+du chemin direct. Si ICE est indisponible ou échoue, le nœud expose une raison
+structurée et applique les transports de repli autorisés par la session.
+
 ---
 
 ## Démarrage rapide (Localnet)

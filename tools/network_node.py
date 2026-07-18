@@ -15,6 +15,7 @@ import base64
 import hashlib
 import hmac
 import http.server
+import importlib.util
 import ipaddress
 import json
 import os
@@ -33,7 +34,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from tools.direct_transport import DirectTransportBackend, NativeLightDirectTransport
+from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
@@ -67,6 +68,11 @@ def utc_now() -> str:
 
 def safe_id(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in "_.:-" else "_" for ch in value.strip())
+    return cleaned or uuid.uuid4().hex
+
+
+def safe_path_id(value: str) -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value.strip())
     return cleaned or uuid.uuid4().hex
 
 
@@ -240,6 +246,11 @@ class NodeConfig:
     p2p_punch_interval_ms: int
     p2p_session_timeout_ms: int
     p2p_direct_transport_backend: str
+    p2p_stun_server: str
+    p2p_turn_server: str
+    p2p_turn_username: str
+    p2p_turn_password: str
+    p2p_turn_transport: str
     solana_reputation_enable: bool
     solana_reputation_refresh_s: int
     scheduler_onchain_weight: float
@@ -487,12 +498,16 @@ class P2PClient:
                 raise ValueError("peer_network_not_configured")
             data, peer_meta = self.peer_network.fetch_content(content_id, str(p2p_ref.get("peer_id", "")).strip())
             meta = {
-                "source": "silicium-peer",
+                "source": peer_meta.get("source", "silicium-peer"),
                 "content_id": content_id,
                 "peer_id": peer_meta.get("node_id", ""),
                 "peer_url": peer_meta.get("http_base_url", ""),
                 "size_bytes": len(data),
             }
+            if peer_meta.get("transport_backend"):
+                meta["transport_backend"] = peer_meta["transport_backend"]
+            if peer_meta.get("session_id"):
+                meta["session_id"] = peer_meta["session_id"]
             if peer_meta.get("relayed_via"):
                 meta["relayed_via"] = peer_meta.get("relayed_via", "")
             return data, meta
@@ -732,7 +747,8 @@ class PeerNetwork:
         self.export_dir = export_dir
         self.node_id = safe_id(config.node_id)
         self.identity = NodeIdentity(config)
-        self.peers_path = export_dir / f"node.{self.node_id}.peers.json"
+        self.node_path_id = safe_path_id(self.node_id)
+        self.peers_path = export_dir / f"node.{self.node_path_id}.peers.json"
         self.candidates_path = export_dir / "p2p.candidates.json"
         self.sessions_path = export_dir / "p2p.sessions.json"
         self.session_events_path = export_dir / "p2p.sessions.ndjson"
@@ -742,6 +758,7 @@ class PeerNetwork:
         self._peers: dict[str, dict[str, Any]] = {}
         self._sessions: dict[str, dict[str, Any]] = {}
         self._direct_sessions: dict[str, dict[str, Any]] = {}
+        self._ice_content_sessions: dict[str, str] = {}
         self._local_candidates: list[dict[str, Any]] = []
         self._seen_events: set[str] = set()
         self._seen_handshake_nonces: dict[str, float] = {}
@@ -775,9 +792,13 @@ class PeerNetwork:
         self.direct_transport = self._build_direct_transport_backend()
 
     def _build_direct_transport_backend(self) -> DirectTransportBackend:
-        backend_name = str(self.config.p2p_direct_transport_backend or "native-light").strip().lower()
+        backend_name = str(self.config.p2p_direct_transport_backend or "auto").strip().lower()
+        if backend_name in {"", "auto", "automatic"}:
+            backend_name = "ice" if importlib.util.find_spec("aioice") is not None else "native-light"
         if backend_name in {"native-light", "native_light", "native"}:
             return NativeLightDirectTransport(self, safe_id=safe_id, utc_now=utc_now, atomic_write_json=atomic_write_json)
+        if backend_name in {"ice", "aioice", "ice-stun-turn"}:
+            return IceDirectTransport(self, safe_id=safe_id, utc_now=utc_now, atomic_write_json=atomic_write_json)
         raise ValueError(f"unsupported_direct_transport_backend:{backend_name}")
 
     def start(self) -> None:
@@ -795,6 +816,7 @@ class PeerNetwork:
 
     def stop(self) -> None:
         self._stop_event.set()
+        self.direct_transport.close()
         if self._http_server is not None:
             self._http_server.shutdown()
             self._http_server.server_close()
@@ -842,6 +864,8 @@ class PeerNetwork:
             "selected_candidate": selected,
             "observed_public_address": self._observed_public_address,
             "nat_behavior": self._nat_behavior,
+            "direct_transport_backend": self.direct_transport.name,
+            "direct_transport_features": self.direct_transport.features(),
         }
 
     def refresh_candidates(self, *, force: bool = False) -> list[dict[str, Any]]:
@@ -1134,11 +1158,17 @@ class PeerNetwork:
         target_peer_id = safe_id(str(payload.get("target_peer_id", "")))
         task_id = safe_id(str(payload.get("task_id", ""))) if str(payload.get("task_id", "")).strip() else ""
         purpose = safe_id(str(payload.get("purpose", "direct_session")))
+        content_id = str(payload.get("content_id", "") or payload.get("payload_id", "")).strip()
+        allowed_transports = {
+            safe_id(str(item)).lower()
+            for item in (payload.get("allowed_transports", []) if isinstance(payload.get("allowed_transports", []), list) else [])
+            if str(item).strip()
+        }
         if requester_node_id and requester_id != requester_node_id:
             return 403, {"ok": False, "error": "requester_mismatch"}
         if not requester_id or not target_peer_id or requester_id == target_peer_id:
             return 400, {"ok": False, "error": "invalid_peer_pair"}
-        allowed, reason = self._authorize_session_pair(requester_id, target_peer_id, task_id, purpose)
+        allowed, reason = self._authorize_session_pair(requester_id, target_peer_id, task_id, purpose, content_id)
         if not allowed:
             return 403, {"ok": False, "error": reason}
         requester_peer = self._peer_for_signaling(requester_id)
@@ -1146,7 +1176,10 @@ class PeerNetwork:
         if requester_peer is None or target_peer is None:
             return 404, {"ok": False, "error": "peer_not_registered"}
         candidate_pairs = self._candidate_pairs(requester_peer, target_peer)
-        if not candidate_pairs:
+        allow_ice_ready_candidates = "ice" in allowed_transports or (
+            "ice_v1" in set(requester_peer.get("features", [])) and "ice_v1" in set(target_peer.get("features", []))
+        )
+        if not candidate_pairs and not allow_ice_ready_candidates:
             return 409, {"ok": False, "error": "no_valid_candidate_pair"}
         now = int(time.time())
         ttl_s = max(1, int(self.config.p2p_session_ttl_s))
@@ -1159,8 +1192,11 @@ class PeerNetwork:
             "target_peer_id": target_peer_id,
             "purpose": purpose,
             "task_id": task_id,
+            "content_id": content_id,
             "candidate_pairs": candidate_pairs,
+            "allowed_transports": sorted(allowed_transports),
             "ready_peers": [],
+            "ready_transports": {},
             "results": [],
             "created_unix": now,
             "expires_unix": now + ttl_s,
@@ -1172,15 +1208,24 @@ class PeerNetwork:
         self._emit_signaling_event("session_created", session)
         return 201, {"ok": True, "session": self._session_response(session)}
 
-    def mark_session_ready(self, session_id: str, requester_node_id: str) -> tuple[int, dict[str, Any]]:
+    def mark_session_ready(self, session_id: str, requester_node_id: str, payload: Mapping[str, Any] | None = None) -> tuple[int, dict[str, Any]]:
         session, error = self._session_for_peer(session_id, requester_node_id)
         if session is None:
             return error
+        payload = payload or {}
         peer_id = safe_id(requester_node_id)
         ready = list(session.get("ready_peers", [])) if isinstance(session.get("ready_peers"), list) else []
         if peer_id not in ready:
             ready.append(peer_id)
         session["ready_peers"] = sorted(ready)
+        if isinstance(payload, Mapping) and payload:
+            ready_transports = dict(session.get("ready_transports", {})) if isinstance(session.get("ready_transports"), dict) else {}
+            transport_payload = {
+                "direct_transport_backend": str(payload.get("direct_transport_backend", "")),
+                "ice": payload.get("ice", {}) if isinstance(payload.get("ice", {}), Mapping) else {},
+            }
+            ready_transports[peer_id] = transport_payload
+            session["ready_transports"] = ready_transports
         session["status"] = "punching" if {session["initiator_peer_id"], session["target_peer_id"]}.issubset(set(ready)) else "ready_wait"
         session["updated_utc"] = utc_now()
         with self._lock:
@@ -1272,11 +1317,20 @@ class PeerNetwork:
             payload.update(dict(extra))
         append_jsonl(self.session_events_path, payload)
 
-    def _authorize_session_pair(self, requester_id: str, target_peer_id: str, task_id: str, purpose: str) -> tuple[bool, str]:
+    def _authorize_session_pair(
+        self,
+        requester_id: str,
+        target_peer_id: str,
+        task_id: str,
+        purpose: str,
+        content_id: str = "",
+    ) -> tuple[bool, str]:
         if not task_id:
+            if purpose == "content_fetch" and content_id:
+                return True, "ok"
             return (purpose in {"nat_punch", "diagnostic"}), "task_required"
         for directory in ("tasks", "requests"):
-            path = self.export_dir / directory / f"{safe_id(task_id)}.json"
+            path = self.export_dir / directory / f"{safe_path_id(safe_id(task_id))}.json"
             envelope = read_json(path, {})
             if not isinstance(envelope, dict) or not envelope:
                 continue
@@ -1367,10 +1421,23 @@ class PeerNetwork:
             "initiator_peer_id": str(session.get("initiator_peer_id", "")),
             "target_peer_id": str(session.get("target_peer_id", "")),
             "candidate_pairs": list(session.get("candidate_pairs", [])) if isinstance(session.get("candidate_pairs"), list) else [],
-            "retry": {"count": 8, "interval_ms": 120, "timeout_ms": 2500},
+            "retry": {
+                "count": max(1, int(self.config.p2p_punch_retry_count)),
+                "interval_ms": max(1, int(self.config.p2p_punch_interval_ms)),
+                "timeout_ms": max(1, int(self.config.p2p_session_timeout_ms)),
+            },
             "timestamp_unix": int(time.time()),
             "nonce": uuid.uuid4().hex,
         }
+        ready_transports = session.get("ready_transports", {}) if isinstance(session.get("ready_transports"), Mapping) else {}
+        ice_peers: dict[str, Any] = {}
+        for peer_id in (str(session.get("initiator_peer_id", "")), str(session.get("target_peer_id", ""))):
+            transport = ready_transports.get(peer_id) if isinstance(ready_transports.get(peer_id), Mapping) else {}
+            ice = transport.get("ice") if isinstance(transport.get("ice"), Mapping) else {}
+            if ice.get("supported") is True:
+                ice_peers[peer_id] = dict(ice)
+        if ice_peers:
+            message["ice"] = {"peers": ice_peers}
         self._sign_message(message)
         return message
 
@@ -1490,6 +1557,7 @@ class PeerNetwork:
             "identity_id": self.identity.identity_id,
             "public_key": self.identity.public_key_b64,
             "roles": sorted(self.config.roles),
+            "features": self.direct_transport.features(),
             "http_base_url": self.advertised_http_base_url,
             "mesh_post_url": self.mesh_post_url,
             "gossip_bind": self._advertised_gossip_host(),
@@ -1537,6 +1605,9 @@ class PeerNetwork:
             candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) == preferred_peer_id])
         candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) != preferred_peer_id])
         for peer in candidates:
+            ice_result = self._fetch_direct_ice(peer, content_id)
+            if ice_result is not None:
+                return ice_result
             data = self._fetch_direct_from_peer(peer, content_id)
             if data is not None:
                 return data, peer
@@ -1554,6 +1625,89 @@ class PeerNetwork:
             return relayed
         raise FileNotFoundError(f"peer_content_not_found:{content_id}")
 
+    def _fetch_direct_ice(self, peer: dict[str, Any], content_id: str) -> tuple[bytes, dict[str, Any]] | None:
+        if self.direct_transport.name != "ice":
+            return None
+        features = peer.get("features", []) if isinstance(peer.get("features", []), list) else []
+        if "ice_v1" not in {str(feature) for feature in features}:
+            return None
+        peer_id = safe_id(str(peer.get("node_id", "")))
+        if not peer_id or peer_id == self.node_id:
+            return None
+        session_id = self._ice_content_sessions.get(peer_id, "")
+        if session_id:
+            result = self.direct_transport.request_content(session_id, content_id)
+            if result is not None:
+                return result
+            self._ice_content_sessions.pop(peer_id, None)
+        session_id = self._open_ice_content_session(peer, content_id)
+        if not session_id:
+            return None
+        result = self.direct_transport.request_content(session_id, content_id)
+        if result is None:
+            self._ice_content_sessions.pop(peer_id, None)
+            return None
+        self._ice_content_sessions[peer_id] = session_id
+        return result
+
+    def _open_ice_content_session(self, peer: dict[str, Any], content_id: str) -> str:
+        target_peer_id = safe_id(str(peer.get("node_id", "")))
+        base_url = str(peer.get("http_base_url", "")).rstrip("/")
+        if not target_peer_id or not base_url:
+            return ""
+        request_payload = {
+            "peer_id": self.node_id,
+            "target_peer_id": target_peer_id,
+            "purpose": "content_fetch",
+            "content_id": content_id,
+            "allowed_transports": ["ice"],
+        }
+        try:
+            response = self._post_peer_json(base_url, "/p2p/sessions/request", request_payload)
+            session = response.get("session") if isinstance(response.get("session"), dict) else {}
+            session_id = str(session.get("session_id", "")).strip()
+            if not session_id:
+                return ""
+            ready = self.build_session_ready_payload(session)
+            ready_response = self._post_peer_json(base_url, f"/p2p/sessions/{session_id}/ready", ready)
+            punch_start = ready_response.get("punch_start") if isinstance(ready_response.get("punch_start"), dict) else {}
+            if str(punch_start.get("message_type", "")) != "punch_start":
+                return ""
+            result = self.establish_direct_udp_session(punch_start)
+            return session_id if result.get("status") == "direct" else ""
+        except (OSError, TimeoutError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+            return ""
+
+    def _post_peer_json(self, base_url: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        raw = stable_json(payload).encode("utf-8")
+        request = urllib.request.Request(
+            base_url.rstrip("/") + path,
+            data=raw,
+            method="POST",
+            headers=self._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        if not isinstance(body, dict):
+            raise ValueError("peer_response_not_object")
+        return body
+
+    def _serve_direct_content(self, session_id: str, requester_peer_id: str, content_id: str) -> tuple[bool, bytes, str]:
+        requester_id = safe_id(requester_peer_id)
+        with self._lock:
+            session = dict(self._direct_sessions.get(str(session_id), {}))
+        if str(session.get("status", "")) != "direct" or safe_id(str(session.get("remote_peer_id", ""))) != requester_id:
+            return False, b"", "session_not_direct"
+        if not content_id or Path(content_id).name != content_id:
+            return False, b"", "content_id_invalid"
+        content_path = self.export_dir / "p2p" / content_id
+        try:
+            if not content_path.is_file():
+                return False, b"", "content_not_found"
+            return True, content_path.read_bytes(), ""
+        except OSError:
+            return False, b"", "content_read_failed"
+
     def _record_self_peer(self) -> None:
         candidates = self.local_candidates_snapshot()
         with self._lock:
@@ -1562,6 +1716,7 @@ class PeerNetwork:
                 "identity_id": self.identity.identity_id,
                 "public_key": self.identity.public_key_b64,
                 "roles": sorted(self.config.roles),
+                "features": self.direct_transport.features(),
                 "http_base_url": self.advertised_http_base_url,
                 "mesh_post_url": self.mesh_post_url,
                 "gossip_bind": self._advertised_gossip_host(),
@@ -1598,6 +1753,7 @@ class PeerNetwork:
                 "identity_id": str(message.get("identity_id", "")),
                 "public_key": str(message.get("public_key", "")),
                 "roles": list(message.get("roles", [])),
+                "features": [str(feature) for feature in message.get("features", [])] if isinstance(message.get("features", []), list) else [],
                 "http_base_url": str(message.get("http_base_url", "")),
                 "mesh_post_url": str(message.get("mesh_post_url", "")),
                 "gossip_bind": str(message.get("gossip_bind", "")),
@@ -1717,7 +1873,7 @@ class PeerNetwork:
         try:
             with urllib.request.urlopen(req, timeout=5):
                 return
-        except urllib.error.URLError:
+        except (urllib.error.URLError, TimeoutError, OSError):
             return
 
     def _fetch_direct_from_peer(self, peer: dict[str, Any], content_id: str) -> bytes | None:
@@ -1736,17 +1892,22 @@ class PeerNetwork:
         target_peer_id = preferred_peer_id or str(next((peer.get("node_id", "") for peer in candidates if peer.get("node_id")), ""))
         if not target_peer_id:
             return None
-        for relay in self.select_peers(required_roles=set(), limit=max(1, self.config.relay_hops), require_relay=True, exclude={target_peer_id}):
+        relays = self.select_peers(required_roles=set(), limit=max(1, self.config.relay_hops), require_relay=True, exclude={target_peer_id})
+        if not relays:
+            relays = [peer for peer in candidates if str(peer.get("node_id", "")) != target_peer_id and bool(peer.get("relay_capable", False))]
+        for relay in relays:
             relay_url = str(relay.get("http_base_url", "")).rstrip("/")
             if not relay_url:
                 continue
             path = f"/relay/fetch?peer_id={quote(target_peer_id, safe='')}&content_id={quote(content_id, safe='')}"
             request = urllib.request.Request(relay_url + path, headers=self._signed_headers("GET", path, b""))
-            try:
-                with urllib.request.urlopen(request, timeout=5) as response:
-                    return response.read(), {"node_id": target_peer_id, "http_base_url": relay_url, "relayed_via": relay.get("node_id", "")}
-            except urllib.error.URLError:
-                continue
+            for attempt in range(3):
+                try:
+                    with urllib.request.urlopen(request, timeout=5) as response:
+                        return response.read(), {"node_id": target_peer_id, "http_base_url": relay_url, "relayed_via": relay.get("node_id", "")}
+                except (urllib.error.URLError, TimeoutError, OSError):
+                    if attempt < 2:
+                        time.sleep(0.05)
         return None
 
     def replicate_content(
@@ -1780,8 +1941,53 @@ class PeerNetwork:
     def direct_sessions_snapshot(self) -> dict[str, Any]:
         return self.direct_transport.direct_sessions_snapshot()
 
+    def direct_transport_snapshot(self) -> dict[str, Any]:
+        requested = str(self.config.p2p_direct_transport_backend or "auto").strip().lower() or "auto"
+        features = self.direct_transport.features()
+        return {
+            "schema_version": 1,
+            "node_id": self.node_id,
+            "requested_backend": requested,
+            "active_backend": self.direct_transport.name,
+            "features": features,
+            "ice_enabled": "ice_v1" in features,
+            "nat_punch_enabled": bool(self.config.nat_punch_enable),
+            "stun_configured": bool(self.config.p2p_stun_server),
+            "turn_configured": bool(self.config.p2p_turn_server),
+            "updated_utc": utc_now(),
+        }
+
     def establish_direct_udp_session(self, punch_start: Mapping[str, Any]) -> dict[str, Any]:
         return self.direct_transport.establish_session(punch_start)
+
+    def _start_direct_session_background(self, punch_start: Mapping[str, Any]) -> None:
+        if not isinstance(punch_start, Mapping):
+            return
+        ice = punch_start.get("ice") if isinstance(punch_start.get("ice"), Mapping) else {}
+        peers = ice.get("peers") if isinstance(ice.get("peers"), Mapping) else {}
+        if len(peers) < 2:
+            return
+        session_id = str(punch_start.get("session_id", "")).strip()
+
+        def _establish_target_session() -> None:
+            result = self.establish_direct_udp_session(punch_start)
+            pair = result.get("selected_candidate_pair") if isinstance(result.get("selected_candidate_pair"), dict) else {}
+            self.record_session_result(
+                session_id,
+                {
+                    "ok": result.get("status") == "direct",
+                    "transport": "direct" if result.get("status") == "direct" else "failed",
+                    "error": result.get("failure_reason", ""),
+                    "selected_local_candidate_id": pair.get("local_candidate_id", ""),
+                    "selected_remote_candidate_id": pair.get("remote_candidate_id", ""),
+                },
+                self.node_id,
+            )
+
+        threading.Thread(target=_establish_target_session, name=f"ice-target-{session_id}", daemon=True).start()
+
+    def build_session_ready_payload(self, session: Mapping[str, Any]) -> dict[str, Any]:
+        return self.direct_transport.build_session_ready_payload(session)
 
     def _handle_direct_punch_probe(self, message: Mapping[str, Any], sender: str) -> None:
         self.direct_transport.handle_punch_probe(message, sender)
@@ -2489,6 +2695,17 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(raw)
                     return
+                if self.path == "/p2p/transport":
+                    if not peer_network._authorize_peer_request(self):
+                        self.send_error(403)
+                        return
+                    raw = stable_json(peer_network.direct_transport_snapshot()).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
                 if self.path.startswith("/p2p/"):
                     if not peer_network._authorize_peer_request(self):
                         self.send_error(403)
@@ -2517,9 +2734,19 @@ class PeerNetwork:
                         return
                     target_peer = peer_network._peers.get(peer_id)
                     if not isinstance(target_peer, dict):
-                        self.send_error(404)
-                        return
-                    data = peer_network._fetch_direct_from_peer(target_peer, content_id)
+                        target_peer = {}
+                    data = None
+                    for attempt in range(3):
+                        data = peer_network._fetch_direct_from_peer(target_peer, content_id)
+                        if data is not None:
+                            break
+                        try:
+                            peer_network.sync_once()
+                        except Exception:
+                            pass
+                        target_peer = peer_network._peers.get(peer_id, {})
+                        if attempt < 2:
+                            time.sleep(0.05)
                     if data is None:
                         self.send_error(404)
                         return
@@ -2639,6 +2866,14 @@ class PeerNetwork:
                         self.send_error(400)
                         return
                     status, body_payload = peer_network.create_signaling_session(payload, str(self.headers.get("X-Silicium-Node-Id", "")))
+                    session = body_payload.get("session") if isinstance(body_payload.get("session"), dict) else {}
+                    if status == 201 and str(session.get("target_peer_id", "")) == peer_network.node_id:
+                        local_ready = peer_network.build_session_ready_payload(session)
+                        ready_status, ready_body = peer_network.mark_session_ready(str(session.get("session_id", "")), peer_network.node_id, local_ready)
+                        if ready_status == 200:
+                            body_payload = ready_body
+                            punch_start = ready_body.get("punch_start") if isinstance(ready_body.get("punch_start"), dict) else {}
+                            peer_network._start_direct_session_background(punch_start)
                     body = stable_json(body_payload).encode("utf-8")
                     self.send_response(status)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -2663,7 +2898,10 @@ class PeerNetwork:
                         return
                     requester_node_id = str(self.headers.get("X-Silicium-Node-Id", ""))
                     if action == "ready":
-                        status, body_payload = peer_network.mark_session_ready(session_id, requester_node_id)
+                        status, body_payload = peer_network.mark_session_ready(session_id, requester_node_id, payload)
+                        ready_session = body_payload.get("session") if isinstance(body_payload.get("session"), dict) else {}
+                        if status == 200 and str(ready_session.get("status", "")) == "punching" and str(ready_session.get("target_peer_id", "")) == peer_network.node_id:
+                            peer_network._start_direct_session_background(body_payload.get("punch_start", {}))
                     elif action == "result":
                         status, body_payload = peer_network.record_session_result(session_id, payload, requester_node_id)
                     elif action == "close":
@@ -2914,7 +3152,7 @@ def enqueue_task_envelope(export_dir: Path, envelope: dict[str, Any]) -> None:
     encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
     tasks_dir = export_dir / "tasks"
     tasks_dir.mkdir(parents=True, exist_ok=True)
-    final_path = tasks_dir / f"{task_id}.json"
+    final_path = tasks_dir / f"{safe_path_id(task_id)}.json"
     tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
     tmp_path.write_text(encoded, encoding="utf-8")
     tmp_path.replace(final_path)
@@ -2936,7 +3174,7 @@ def enqueue_request_envelope(export_dir: Path, envelope: dict[str, Any]) -> None
     encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
     requests_dir = export_dir / "requests"
     requests_dir.mkdir(parents=True, exist_ok=True)
-    final_path = requests_dir / f"{request_id}.json"
+    final_path = requests_dir / f"{safe_path_id(request_id)}.json"
     tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
     tmp_path.write_text(encoded, encoding="utf-8")
     tmp_path.replace(final_path)
@@ -2957,7 +3195,8 @@ class NetworkNode:
     def __init__(self, config: NodeConfig) -> None:
         self.config = config
         self.state = QueueState(config.state_dir)
-        self.reputation = ReputationStore(config.export_dir / f"node.{safe_id(config.node_id)}.reputation.json", initial_score=config.reputation_score)
+        node_path_id = safe_path_id(safe_id(config.node_id))
+        self.reputation = ReputationStore(config.export_dir / f"node.{node_path_id}.reputation.json", initial_score=config.reputation_score)
         self.config.reputation_score = self.reputation.local_score()
         self.peer_network = PeerNetwork(config, config.export_dir)
         self.peer_network.node = self
@@ -2966,8 +3205,8 @@ class NetworkNode:
         self.solana = SolanaBridge(config)
         self.runtime = RoleRuntime(config, self.p2p)
         self.events_path = config.export_dir / "node.events.ndjson"
-        self.heartbeat_path = config.export_dir / f"node.{safe_id(config.node_id)}.heartbeat.json"
-        self.metrics_path = config.export_dir / f"node.{safe_id(config.node_id)}.metrics.json"
+        self.heartbeat_path = config.export_dir / f"node.{node_path_id}.heartbeat.json"
+        self.metrics_path = config.export_dir / f"node.{node_path_id}.metrics.json"
         self.metrics = read_json(
             self.metrics_path,
             {"schema_version": 1, "handled": 0, "failed": 0, "retried": 0, "dead_lettered": 0, "dispatched": 0, "dispatch_failed": 0},
@@ -3294,9 +3533,10 @@ class NetworkNode:
             }
         )
         safe_item = safe_id(item_id)
+        path_item = safe_path_id(safe_item)
         log_payload = {"schema_version": 1, "item_id": safe_item, "ok": ok, "error": error, "duration_ms": duration_ms}
-        atomic_write_json(self.config.export_dir / f"result.{safe_item}.json", result)
-        atomic_write_json(self.config.export_dir / f"logs.{safe_item}.json", log_payload)
+        atomic_write_json(self.config.export_dir / f"result.{path_item}.json", result)
+        atomic_write_json(self.config.export_dir / f"logs.{path_item}.json", log_payload)
         self.update_envelope_status(envelope, "completed" if ok else "failed", result)
         if ok:
             self.metrics["handled"] = int(self.metrics.get("handled", 0) or 0) + 1
@@ -3470,15 +3710,16 @@ class NetworkNode:
         item_id = safe_id(str(payload.get("item_id", "")))
         if not item_id:
             raise ValueError("missing_item_id")
+        path_item = safe_path_id(item_id)
         result = payload.get("result")
         log_payload = payload.get("log")
         if not isinstance(result, dict) or not isinstance(log_payload, dict):
             raise ValueError("missing_result_payload")
         kind = str(payload.get("envelope_kind") or "task")
-        atomic_write_json(self.config.export_dir / f"result.{item_id}.json", result)
-        atomic_write_json(self.config.export_dir / f"logs.{item_id}.json", log_payload)
+        atomic_write_json(self.config.export_dir / f"result.{path_item}.json", result)
+        atomic_write_json(self.config.export_dir / f"logs.{path_item}.json", log_payload)
         target_dir = self.config.export_dir / ("requests" if kind == "request" else "tasks")
-        envelope_path = target_dir / f"{item_id}.json"
+        envelope_path = target_dir / f"{path_item}.json"
         current = read_json(envelope_path, {})
         if not isinstance(current, dict):
             current = {}
@@ -3705,10 +3946,10 @@ class NetworkNode:
         kind = str(envelope.get("envelope_kind") or "task")
         if kind == "request":
             item_id = safe_id(str(envelope.get("request_id", "")))
-            path = self.config.export_dir / "requests" / f"{item_id}.json"
+            path = self.config.export_dir / "requests" / f"{safe_path_id(item_id)}.json"
         else:
             item_id = safe_id(str(envelope.get("task_id", "")))
-            path = self.config.export_dir / "tasks" / f"{item_id}.json"
+            path = self.config.export_dir / "tasks" / f"{safe_path_id(item_id)}.json"
         current = read_json(path, envelope)
         if not isinstance(current, dict):
             current = envelope
@@ -3793,7 +4034,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--p2p-punch-retry-count", type=int, default=int(os.environ.get("SILICIUM_P2P_PUNCH_RETRY_COUNT", "8")))
     parser.add_argument("--p2p-punch-interval-ms", type=int, default=int(os.environ.get("SILICIUM_P2P_PUNCH_INTERVAL_MS", "120")))
     parser.add_argument("--p2p-session-timeout-ms", type=int, default=int(os.environ.get("SILICIUM_P2P_SESSION_TIMEOUT_MS", "2500")))
-    parser.add_argument("--p2p-direct-transport-backend", default=os.environ.get("SILICIUM_P2P_DIRECT_TRANSPORT_BACKEND", "native-light"))
+    parser.add_argument("--p2p-direct-transport-backend", default=os.environ.get("SILICIUM_P2P_DIRECT_TRANSPORT_BACKEND", "auto"))
+    parser.add_argument("--p2p-stun-server", default=os.environ.get("SILICIUM_P2P_STUN_SERVER", ""))
+    parser.add_argument("--p2p-turn-server", default=os.environ.get("SILICIUM_P2P_TURN_SERVER", ""))
+    parser.add_argument("--p2p-turn-username", default=os.environ.get("SILICIUM_P2P_TURN_USERNAME", ""))
+    parser.add_argument("--p2p-turn-password", default=os.environ.get("SILICIUM_P2P_TURN_PASSWORD", ""))
+    parser.add_argument("--p2p-turn-transport", default=os.environ.get("SILICIUM_P2P_TURN_TRANSPORT", "udp"), choices=["udp", "tcp"])
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
     parser.add_argument("--scheduler-onchain-weight", type=float, default=float(os.environ.get("SILICIUM_SCHEDULER_ONCHAIN_WEIGHT", "10")))
@@ -3835,7 +4081,7 @@ def main(argv: list[str] | None = None) -> int:
         if not str(args.identity_key_path).strip():
             args.identity_key_path = (Path(".silicium") / "world-identities" / safe_id(str(args.node_id)) / "ed25519.pem").as_posix()
     export_dir = Path(args.export_dir).expanduser().resolve()
-    state_dir = Path(args.state_dir).expanduser().resolve() if args.state_dir else export_dir / "node-state" / safe_id(args.node_id)
+    state_dir = Path(args.state_dir).expanduser().resolve() if args.state_dir else export_dir / "node-state" / safe_path_id(safe_id(args.node_id))
     config = NodeConfig(
         export_dir=export_dir,
         roles=parse_roles(args.roles),
@@ -3888,6 +4134,11 @@ def main(argv: list[str] | None = None) -> int:
         p2p_punch_interval_ms=max(1, int(args.p2p_punch_interval_ms)),
         p2p_session_timeout_ms=max(1, int(args.p2p_session_timeout_ms)),
         p2p_direct_transport_backend=str(args.p2p_direct_transport_backend),
+        p2p_stun_server=str(args.p2p_stun_server),
+        p2p_turn_server=str(args.p2p_turn_server),
+        p2p_turn_username=str(args.p2p_turn_username),
+        p2p_turn_password=str(args.p2p_turn_password),
+        p2p_turn_transport=str(args.p2p_turn_transport),
         solana_reputation_enable=bool(args.solana_reputation_enable),
         solana_reputation_refresh_s=max(1, int(args.solana_reputation_refresh_s)),
         scheduler_onchain_weight=float(args.scheduler_onchain_weight),

@@ -1,6 +1,8 @@
 # Local IDE / tooling state
 .vscode/
 .pytest_cache/
+.pytest-basetemp*/
+.pytest_tmp*/
 tests/__pycache__/
 .cache/
 splitter/build/

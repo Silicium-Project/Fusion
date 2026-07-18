@@ -1,17 +1,24 @@
 import json
+import types
 import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from tools import network_node
+import pytest
+
+from tools import direct_transport, network_node
 
 
 def _write_jsonl(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
+
+
+def _path_id(value: str) -> str:
+    return network_node.safe_path_id(network_node.safe_id(value))
 
 
 def _fake_solana_bridge(path: Path) -> Path:
@@ -84,6 +91,11 @@ def _config(
     p2p_punch_interval_ms: int = 20,
     p2p_session_timeout_ms: int = 1000,
     p2p_direct_transport_backend: str = "native-light",
+    p2p_stun_server: str = "",
+    p2p_turn_server: str = "",
+    p2p_turn_username: str = "",
+    p2p_turn_password: str = "",
+    p2p_turn_transport: str = "udp",
     solana_enable: bool = False,
     solana_bridge: Path | None = None,
     solana_wallet: str | None = None,
@@ -144,6 +156,11 @@ def _config(
         p2p_punch_interval_ms=p2p_punch_interval_ms,
         p2p_session_timeout_ms=p2p_session_timeout_ms,
         p2p_direct_transport_backend=p2p_direct_transport_backend,
+        p2p_stun_server=p2p_stun_server,
+        p2p_turn_server=p2p_turn_server,
+        p2p_turn_username=p2p_turn_username,
+        p2p_turn_password=p2p_turn_password,
+        p2p_turn_transport=p2p_turn_transport,
         solana_reputation_enable=solana_reputation_enable,
         solana_reputation_refresh_s=1,
         scheduler_onchain_weight=10.0,
@@ -166,12 +183,83 @@ class _RequestStub:
         self.path = path
 
 
+class _FakeIceCandidate:
+    def __init__(
+        self,
+        foundation: str = "fake-foundation",
+        component: int = 1,
+        transport: str = "udp",
+        priority: int = 2130706431,
+        host: str = "127.0.0.1",
+        port: int = 49000,
+        type: str = "host",
+        **_kwargs: object,
+    ) -> None:
+        self.foundation = foundation
+        self.component = component
+        self.transport = transport
+        self.priority = priority
+        self.host = host
+        self.port = port
+        self.type = type
+
+    @classmethod
+    def from_sdp(cls, sdp: str) -> "_FakeIceCandidate":
+        parts = str(sdp).split()
+        candidate_type = parts[7] if len(parts) > 7 and parts[6] == "typ" else "host"
+        return cls(
+            foundation=parts[0] if len(parts) > 0 else "remote-foundation",
+            component=int(parts[1]) if len(parts) > 1 else 1,
+            transport=parts[2] if len(parts) > 2 else "udp",
+            priority=int(parts[3]) if len(parts) > 3 else 1,
+            host=parts[4] if len(parts) > 4 else "127.0.0.1",
+            port=int(parts[5]) if len(parts) > 5 else 49000,
+            type=candidate_type,
+        )
+
+    def to_sdp(self) -> str:
+        return f"{self.foundation} {self.component} {self.transport} {self.priority} {self.host} {self.port} typ {self.type}"
+
+
+class _FakeIceConnection:
+    _next_port = 49000
+
+    def __init__(self, ice_controlling: bool, **_kwargs: object) -> None:
+        _FakeIceConnection._next_port += 1
+        self.ice_controlling = ice_controlling
+        self.local_username = "ufrag-controlling" if ice_controlling else "ufrag-controlled"
+        self.local_password = "pwd-controlling" if ice_controlling else "pwd-controlled"
+        self.local_candidates: list[_FakeIceCandidate] = []
+        self.remote_candidates: list[_FakeIceCandidate | None] = []
+        self.remote_username = ""
+        self.remote_password = ""
+        self._candidate = _FakeIceCandidate(port=_FakeIceConnection._next_port)
+
+    async def gather_candidates(self) -> None:
+        self.local_candidates = [self._candidate]
+
+    def get_default_candidate(self, _component: int) -> _FakeIceCandidate:
+        return self._candidate
+
+    async def add_remote_candidate(self, candidate: _FakeIceCandidate | None) -> None:
+        self.remote_candidates.append(candidate)
+
+    async def connect(self) -> None:
+        if not self.remote_username or not self.remote_password:
+            raise ConnectionError("remote credentials missing")
+
+
+def _fake_aioice_module() -> types.SimpleNamespace:
+    return types.SimpleNamespace(Connection=_FakeIceConnection, Candidate=_FakeIceCandidate)
+
+
 def _peer_registration_payload(peer: network_node.PeerNetwork) -> dict:
     return {
         "node_id": peer.node_id,
         "identity_id": peer.identity.identity_id,
         "public_key": peer.identity.public_key_b64,
         "roles": sorted(peer.config.roles),
+        "features": peer.direct_transport.features(),
         "http_base_url": peer.advertised_http_base_url,
         "mesh_post_url": peer.mesh_post_url,
         "gossip_bind": peer._advertised_gossip_host(),
@@ -444,14 +532,14 @@ def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.storage:1.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / f"result.{_path_id('storage:1')}.json").read_text(encoding="utf-8"))
     assert result["success"] is True
     assert result["required_roles"] == ["storage"]
     assert result["input"]["source"] == "local-p2p-cache"
     assert result["role_result"] == "storage"
     assert result["stored_ref"]["hash"].startswith("sha256:")
 
-    stored = json.loads((export_dir / "tasks" / "storage:1.json").read_text(encoding="utf-8"))
+    stored = json.loads((export_dir / "tasks" / f"{_path_id('storage:1')}.json").read_text(encoding="utf-8"))
     assert stored["status"] == "completed"
     assert stored["handled_by"] == "node-a"
     assert (export_dir / "node.node-a.heartbeat.json").exists()
@@ -502,8 +590,8 @@ def test_network_node_prioritizes_urgent_requests(tmp_path: Path) -> None:
     )
     assert code == 0
 
-    assert (export_dir / "result.audit:now.json").exists()
-    assert not (export_dir / "result.compute:late.json").exists()
+    assert (export_dir / f"result.{_path_id('audit:now')}.json").exists()
+    assert not (export_dir / f"result.{_path_id('compute:late')}.json").exists()
     events = [json.loads(line) for line in (export_dir / "node.events.ndjson").read_text(encoding="utf-8").splitlines()]
     assert events[0]["kind"] == "request"
 
@@ -550,7 +638,7 @@ def test_network_node_submits_compute_result_on_chain_when_enabled(tmp_path: Pat
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.compute:on-chain.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / f"result.{_path_id('compute:on-chain')}.json").read_text(encoding="utf-8"))
     assert result["on_chain"][0]["op"] == "submit_fragment_result"
     assert result["on_chain"][0]["params"]["fragment_index"] == 0
     assert result["on_chain"][0]["params"]["result_hash"] == result["result_hash"]
@@ -597,7 +685,7 @@ def test_network_node_votes_on_audit_request_when_enabled(tmp_path: Path) -> Non
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.audit:on-chain.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / f"result.{_path_id('audit:on-chain')}.json").read_text(encoding="utf-8"))
     assert result["on_chain"][0]["op"] == "vote_fragment"
     assert result["on_chain"][0]["params"]["choice"] is True
 
@@ -624,7 +712,7 @@ def test_network_node_verifies_expected_hash(tmp_path: Path) -> None:
     code = network_node.main(["--export-dir", str(export_dir), "--roles", "verify", "--node-id", "node-a", "--once"])
     assert code == 0
 
-    result = json.loads((export_dir / "result.verify:1.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / f"result.{_path_id('verify:1')}.json").read_text(encoding="utf-8"))
     assert result["role_result"] == "verify"
     assert result["verified"] is True
     assert result["choice"] is True
@@ -659,7 +747,7 @@ def test_network_node_retries_then_dead_letters_failures(tmp_path: Path) -> None
     )
     assert code == 0
 
-    result = json.loads((export_dir / "result.storage:missing.json").read_text(encoding="utf-8"))
+    result = json.loads((export_dir / f"result.{_path_id('storage:missing')}.json").read_text(encoding="utf-8"))
     assert result["success"] is False
     assert (export_dir / "dead_letters.ndjson").exists()
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
@@ -1021,6 +1109,201 @@ def test_direct_transport_backend_rejects_unknown_backend(tmp_path: Path) -> Non
         assert str(exc) == "unsupported_direct_transport_backend:custom-ice"
 
 
+def test_direct_transport_auto_selects_ice_when_dependency_is_available(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(network_node.importlib.util, "find_spec", lambda name: object() if name == "aioice" else None)
+    peer = network_node.PeerNetwork(
+        _config(tmp_path / "auto-ice", "node-auto", gossip_enable=False, p2p_direct_transport_backend="auto"),
+        tmp_path / "auto-ice",
+    )
+    assert peer.direct_transport.name == "ice"
+
+
+def test_ice_direct_transport_builds_ready_payload_and_features(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(direct_transport.importlib, "import_module", lambda name: _fake_aioice_module() if name == "aioice" else None)
+    config = _config(
+        tmp_path / "peer",
+        "node-a",
+        gossip_enable=False,
+        nat_punch_enable=True,
+        p2p_direct_transport_backend="ice",
+        p2p_stun_server="stun.example.test:3478",
+        p2p_turn_server="turn.example.test:3478",
+        p2p_turn_username="turn-user",
+        p2p_turn_password="turn-pass",
+        p2p_turn_transport="tcp",
+    )
+    peer = network_node.PeerNetwork(config, tmp_path / "peer")
+
+    diagnostics = peer.candidate_diagnostics()
+    ready = peer.build_session_ready_payload({"session_id": "ice-sess", "initiator_peer_id": "node-a", "target_peer_id": "node-b"})
+
+    assert peer.direct_transport.name == "ice"
+    assert "ice_v1" in diagnostics["direct_transport_features"]
+    assert "stun_v1" in diagnostics["direct_transport_features"]
+    assert "turn_v1" in diagnostics["direct_transport_features"]
+    assert ready["direct_transport_backend"] == "ice"
+    assert ready["ice"]["supported"] is True
+    assert ready["ice"]["ufrag"] == "ufrag-controlling"
+    assert ready["ice"]["candidates"][0]["ice_sdp"]
+    assert ready["ice"]["turn_server"] == "turn.example.test:3478"
+    assert "turn-pass" not in json.dumps(ready)
+
+
+def test_ice_signaling_embeds_ready_candidates_in_punch_start(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(direct_transport.importlib, "import_module", lambda name: _fake_aioice_module() if name == "aioice" else None)
+    signal_export = tmp_path / "signal"
+    peer_a_export = tmp_path / "ice-a"
+    peer_b_export = tmp_path / "ice-b"
+    signal = network_node.PeerNetwork(_config(signal_export, "node-signal", gossip_enable=False), signal_export)
+    peer_a = network_node.PeerNetwork(
+        _config(peer_a_export, "node-a", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        peer_a_export,
+    )
+    peer_b = network_node.PeerNetwork(
+        _config(peer_b_export, "node-b", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        peer_b_export,
+    )
+
+    signal._record_peer(_peer_registration_payload(peer_a))
+    signal._record_peer(_peer_registration_payload(peer_b))
+    status, body = signal.create_signaling_session(
+        {"peer_id": "node-a", "target_peer_id": "node-b", "purpose": "nat_punch", "allowed_transports": ["ice"]},
+        "node-a",
+    )
+    assert status == 201
+    session = body["session"]
+    ready_a = peer_a.build_session_ready_payload(session)
+    ready_b = peer_b.build_session_ready_payload(session)
+
+    first_status, first_body = signal.mark_session_ready(session["session_id"], "node-a", ready_a)
+    second_status, second_body = signal.mark_session_ready(session["session_id"], "node-b", ready_b)
+
+    assert first_status == 200
+    assert first_body["session"]["status"] == "ready_wait"
+    assert second_status == 200
+    assert second_body["session"]["status"] == "punching"
+    punch_start = second_body["punch_start"]
+    assert punch_start["ice"]["peers"]["node-a"]["candidates"][0]["ice_sdp"]
+    assert punch_start["ice"]["peers"]["node-b"]["ufrag"] == "ufrag-controlled"
+
+
+def test_ice_backend_establishes_session_through_aioice_contract(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(direct_transport.importlib, "import_module", lambda name: _fake_aioice_module() if name == "aioice" else None)
+    signal = network_node.PeerNetwork(_config(tmp_path / "signal", "node-signal", gossip_enable=False), tmp_path / "signal")
+    peer_a = network_node.PeerNetwork(
+        _config(tmp_path / "ice-a", "node-a", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        tmp_path / "ice-a",
+    )
+    peer_b = network_node.PeerNetwork(
+        _config(tmp_path / "ice-b", "node-b", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        tmp_path / "ice-b",
+    )
+    session = {
+        "session_id": "ice-sess-direct",
+        "initiator_peer_id": "node-a",
+        "target_peer_id": "node-b",
+        "candidate_pairs": [],
+    }
+    ready_a = peer_a.build_session_ready_payload(session)
+    ready_b = peer_b.build_session_ready_payload(session)
+    punch_start = signal._punch_start_message({**session, "ready_transports": {"node-a": ready_a, "node-b": ready_b}})
+
+    result_a = peer_a.establish_direct_udp_session(punch_start)
+    result_b = peer_b.establish_direct_udp_session(punch_start)
+
+    assert result_a["status"] == "direct"
+    assert result_b["status"] == "direct"
+    assert result_a["transport_backend"] == "ice"
+    assert result_b["transport_backend"] == "ice"
+    assert result_a["selected_candidate_pair"]["remote_candidate_id"]
+    assert (tmp_path / "ice-a" / "p2p.direct_sessions.json").exists()
+
+
+def test_ice_backend_establishes_real_loopback_session_when_installed(tmp_path: Path) -> None:
+    pytest.importorskip("aioice")
+    signal = network_node.PeerNetwork(_config(tmp_path / "signal", "node-signal", gossip_enable=False), tmp_path / "signal")
+    peer_a = network_node.PeerNetwork(
+        _config(tmp_path / "real-ice-a", "node-a", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        tmp_path / "real-ice-a",
+    )
+    peer_b = network_node.PeerNetwork(
+        _config(tmp_path / "real-ice-b", "node-b", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        tmp_path / "real-ice-b",
+    )
+    session = {
+        "session_id": "real-ice-loopback",
+        "initiator_peer_id": "node-a",
+        "target_peer_id": "node-b",
+        "candidate_pairs": [],
+    }
+    try:
+        ready_a = peer_a.build_session_ready_payload(session)
+        ready_b = peer_b.build_session_ready_payload(session)
+        punch_start = signal._punch_start_message({**session, "ready_transports": {"node-a": ready_a, "node-b": ready_b}})
+        results: dict[str, dict] = {}
+        thread_a = threading.Thread(target=lambda: results.setdefault("a", peer_a.establish_direct_udp_session(punch_start)))
+        thread_b = threading.Thread(target=lambda: results.setdefault("b", peer_b.establish_direct_udp_session(punch_start)))
+        thread_a.start()
+        thread_b.start()
+        thread_a.join(timeout=10)
+        thread_b.join(timeout=10)
+        assert results["a"]["status"] == "direct"
+        assert results["b"]["status"] == "direct"
+        assert results["a"]["transport_backend"] == "ice"
+        assert results["b"]["transport_backend"] == "ice"
+    finally:
+        peer_a.direct_transport.close()
+        peer_b.direct_transport.close()
+
+
+def test_ice_data_plane_fetches_content_without_http_payload(tmp_path: Path) -> None:
+    pytest.importorskip("aioice")
+    export_a = tmp_path / "data-a"
+    export_b = tmp_path / "data-b"
+    peer_a = network_node.PeerNetwork(
+        _config(export_a, "node-a", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        export_a,
+    )
+    peer_b = network_node.PeerNetwork(
+        _config(export_b, "node-b", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        export_b,
+    )
+    peer_a.start()
+    peer_b.start()
+    try:
+        peer_a._record_peer(_peer_registration_payload(peer_b))
+        peer_b._record_peer(_peer_registration_payload(peer_a))
+        expected_data = b"ice-data-plane-" * 5000
+        stored = network_node.P2PClient(peer_b.config.p2p_gateway, export_b, peer_b).put_local(expected_data)
+        peer_a._fetch_direct_from_peer = lambda _peer, _content_id: None
+        result = network_node.P2PClient(peer_a.config.p2p_gateway, export_a, peer_a).fetch(stored["shared_ref"])
+        assert result[0] == expected_data
+        assert result[1]["source"] == "silicium-ice"
+        assert result[1]["transport_backend"] == "ice"
+    finally:
+        peer_a.stop()
+        peer_b.stop()
+
+
+def test_ice_backend_reports_missing_optional_dependency(tmp_path: Path, monkeypatch) -> None:
+    def _missing_aioice(name: str) -> object:
+        if name == "aioice":
+            raise ModuleNotFoundError("aioice")
+        raise ModuleNotFoundError(name)
+
+    monkeypatch.setattr(direct_transport.importlib, "import_module", _missing_aioice)
+    peer = network_node.PeerNetwork(
+        _config(tmp_path / "ice-missing", "node-a", gossip_enable=False, nat_punch_enable=True, p2p_direct_transport_backend="ice"),
+        tmp_path / "ice-missing",
+    )
+
+    ready = peer.build_session_ready_payload({"session_id": "ice-sess", "initiator_peer_id": "node-a", "target_peer_id": "node-b"})
+
+    assert ready["direct_transport_backend"] == "ice"
+    assert ready["ice"]["supported"] is False
+    assert ready["ice"]["error"] == "aioice_missing"
+
+
 def test_udp_hole_punch_rejects_wrong_peer_id(tmp_path: Path) -> None:
     peer_a = network_node.PeerNetwork(
         _config(tmp_path / "peer-a", "node-a", gossip_enable=False, nat_punch_enable=True),
@@ -1295,9 +1578,9 @@ def test_network_node_dispatches_task_to_remote_peer(tmp_path: Path) -> None:
             ]
         )
         assert code == 0
-        dispatched = json.loads((export_a / "tasks" / "compute:remote.json").read_text(encoding="utf-8"))
+        dispatched = json.loads((export_a / "tasks" / f"{_path_id('compute:remote')}.json").read_text(encoding="utf-8"))
         assert dispatched["status"] == "dispatched"
-        remote_task = json.loads((export_b / "tasks" / "compute:remote.json").read_text(encoding="utf-8"))
+        remote_task = json.loads((export_b / "tasks" / f"{_path_id('compute:remote')}.json").read_text(encoding="utf-8"))
         assert remote_task["task_id"] == "compute:remote"
         metrics = json.loads((export_a / "node.node-a.metrics.json").read_text(encoding="utf-8"))
         assert metrics["dispatched"] == 1
@@ -1341,13 +1624,13 @@ def test_network_node_ingests_remote_result_back_to_origin(tmp_path: Path) -> No
         _write_jsonl(export_a / "tasks.queue.ndjson", task)
         handled_a = node_a.sweep()
         assert handled_a == 1
-        dispatched = json.loads((export_a / "tasks" / "compute:return.json").read_text(encoding="utf-8"))
+        dispatched = json.loads((export_a / "tasks" / f"{_path_id('compute:return')}.json").read_text(encoding="utf-8"))
         assert dispatched["status"] == "dispatched"
         handled_b = node_b.sweep()
         assert handled_b == 1
-        result = json.loads((export_a / "result.compute:return.json").read_text(encoding="utf-8"))
+        result = json.loads((export_a / f"result.{_path_id('compute:return')}.json").read_text(encoding="utf-8"))
         assert result["node_id"] == "node-b"
-        origin_task = json.loads((export_a / "tasks" / "compute:return.json").read_text(encoding="utf-8"))
+        origin_task = json.loads((export_a / "tasks" / f"{_path_id('compute:return')}.json").read_text(encoding="utf-8"))
         assert origin_task["status"] == "completed"
         assert origin_task["handled_by"] == "node-b"
     finally:
@@ -1510,9 +1793,9 @@ def test_remote_dispatch_filters_peers_with_onchain_thresholds(tmp_path: Path) -
             ]
         )
         assert code == 0
-        remote_task = json.loads((export_b / "tasks" / "compute:threshold.json").read_text(encoding="utf-8"))
+        remote_task = json.loads((export_b / "tasks" / f"{_path_id('compute:threshold')}.json").read_text(encoding="utf-8"))
         assert remote_task["task_id"] == "compute:threshold"
-        assert not (export_c / "tasks" / "compute:threshold.json").exists()
+        assert not (export_c / "tasks" / f"{_path_id('compute:threshold')}.json").exists()
     finally:
         peer_b.stop()
         peer_c.stop()

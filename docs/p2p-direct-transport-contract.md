@@ -435,10 +435,13 @@ Direct transport backends:
 - `native-light` is not a full ICE replacement. It does not own STUN transaction
   pacing, ICE candidate pair checks, consent freshness, TURN relay allocation,
   or advanced NAT behavior classification.
-- A future ICE/STUN/TURN backend should own standards-based connectivity checks,
-  server-reflexive/relay allocation details, keepalives, consent, and NAT
-  traversal timing while reusing the same Silicium identity and signaling
-  contract.
+- `ice` is the standards-based backend and uses the optional `aioice` library.
+  It owns ICE candidate gathering, STUN server-reflexive candidates, TURN
+  relay candidates, pair checks, and connectivity timing while reusing the same
+  Silicium identity and signaling contract.
+- Install `requirements-p2p.txt` on nodes that enable
+  `--p2p-direct-transport-backend ice`. Without `aioice`, the node reports
+  `aioice_missing` and remains eligible for relay or legacy fallback.
 
 ### TransferBegin
 
@@ -543,6 +546,19 @@ Direct payload transfer must record:
 - content hash;
 - terminal result.
 
+For `protocol=silicium` content references, the `ice` backend now provides the
+data plane after the direct session is established. The requester opens a
+task-free, content-scoped `content_fetch` session with the target peer, then
+sends signed `content_request` frames over the ICE connection. Responses are
+signed, chunked into bounded UDP datagrams, reassembled by request id, and
+validated against the advertised SHA-256 hash. The implementation caps a
+content transfer at 64 MiB per request and retries lost request/response
+exchanges before falling back to the existing direct HTTP or relay path.
+
+The HTTP endpoints remain a control plane for peer registration, session
+signaling, and fallback compatibility; payload bytes do not pass through the
+signaling peer when ICE succeeds.
+
 ## Relay Path
 
 Relay transfer is selected when:
@@ -590,6 +606,11 @@ Initial rollout flags and environment variables:
 | `--p2p-punch-retry-count` | `SILICIUM_P2P_PUNCH_RETRY_COUNT` | `8` | Bounded UDP punch retry bursts. |
 | `--p2p-punch-interval-ms` | `SILICIUM_P2P_PUNCH_INTERVAL_MS` | `120` | Delay between UDP punch bursts. |
 | `--p2p-direct-transport-backend` | `SILICIUM_P2P_DIRECT_TRANSPORT_BACKEND` | `native-light` | Selects the direct transport backend. |
+| `--p2p-stun-server` | `SILICIUM_P2P_STUN_SERVER` | empty | STUN endpoint as `host:port` for the `ice` backend. |
+| `--p2p-turn-server` | `SILICIUM_P2P_TURN_SERVER` | empty | TURN endpoint as `host:port` for the `ice` backend. |
+| `--p2p-turn-username` | `SILICIUM_P2P_TURN_USERNAME` | empty | TURN username for the `ice` backend. |
+| `--p2p-turn-password` | `SILICIUM_P2P_TURN_PASSWORD` | empty | TURN password for the `ice` backend. |
+| `--p2p-turn-transport` | `SILICIUM_P2P_TURN_TRANSPORT` | `udp` | TURN transport: `udp` or `tcp`. |
 | `--p2p-legacy-fallback` | `SILICIUM_P2P_LEGACY_FALLBACK` | `1` | Allows current HTTP paths during rollout. |
 
 The existing `--nat-punch-enable`, `--relay-enable`, and peer HTTP flags remain
