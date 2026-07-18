@@ -59,13 +59,14 @@ if [[ -f "$SQLITE_PATH" ]]; then
     echo "SQLite database has no users table: $SQLITE_PATH" >&2
     exit 1
   fi
-  LEGACY_TABLES="$(sqlite3 "$SQLITE_PATH" "SELECT group_concat(name, ', ') FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> 'users';")"
+  LEGACY_TABLES="$(sqlite3 "$SQLITE_PATH" "SELECT group_concat(name, ', ') FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('users', 'jobs');")"
   if [[ -n "$LEGACY_TABLES" ]]; then
     echo "Unsupported legacy SQLite tables detected: $LEGACY_TABLES" >&2
     echo "Migration stopped to prevent data loss. Export these tables before retrying." >&2
     exit 1
   fi
   SQLITE_USER_COUNT="$(sqlite3 "$SQLITE_PATH" 'SELECT count(*) FROM users;')"
+  SQLITE_JOB_COUNT="$(sqlite3 "$SQLITE_PATH" 'SELECT count(*) FROM jobs;')"
   cp --preserve=all "$SQLITE_PATH" "$SQLITE_BACKUP_FILE"
   systemctl stop silicium-backend 2>/dev/null || true
 fi
@@ -148,7 +149,26 @@ SQL
   fi
   "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 \
     -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-    -c "SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM users;"
+    -c "\\copy jobs (id, user_id, title, description, workload, priority, status, silicium_job_id, input_path, result_path, summary_path, devnet_trace_path, devnet_job, dashboard_url, error_message, started_at, completed_at, created_at, updated_at) FROM STDIN WITH (FORMAT csv, NULL '\\N')" < <(
+      sqlite3 "$SQLITE_PATH" <<'SQL'
+.mode csv
+.headers off
+.nullvalue \N
+SELECT id, user_id, title, description, workload, priority, status,
+       silicium_job_id, input_path, result_path, summary_path,
+       devnet_trace_path, devnet_job, dashboard_url, error_message,
+       started_at, completed_at, created_at, updated_at
+FROM jobs;
+SQL
+    )
+  POSTGRES_JOB_COUNT="$("${COMPOSE[@]}" exec -T postgres psql -Atqc 'SELECT count(*) FROM jobs;' -U "$POSTGRES_USER" -d "$POSTGRES_DB" | tr -d '\r')"
+  if [[ "$POSTGRES_JOB_COUNT" != "$SQLITE_JOB_COUNT" ]]; then
+    echo "Job count mismatch after SQLite migration: SQLite=$SQLITE_JOB_COUNT PostgreSQL=$POSTGRES_JOB_COUNT" >&2
+    exit 1
+  fi
+  "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 \
+    -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+    -c "SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM users; SELECT setval(pg_get_serial_sequence('jobs', 'id'), COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM jobs;"
 fi
 
 "${COMPOSE[@]}" up -d --build
