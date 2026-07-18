@@ -63,7 +63,9 @@ if [[ -f "$SQLITE_PATH" ]]; then
   systemctl stop silicium-backend 2>/dev/null || true
 fi
 
-if systemctl is-active --quiet postgresql; then
+if [[ -f "$SQLITE_PATH" ]]; then
+  : "SQLite is the explicitly detected legacy source."
+elif systemctl is-active --quiet postgresql; then
   if ! command -v pg_dump >/dev/null 2>&1 || ! command -v psql >/dev/null 2>&1; then
     echo "pg_dump is required to export the existing PostgreSQL service." >&2
     exit 1
