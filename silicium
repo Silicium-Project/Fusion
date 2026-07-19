@@ -4341,6 +4341,9 @@ def build_parser(ctx: Context) -> argparse.ArgumentParser:
         default=os.environ.get("SILICIUM_LOCALE", ""),
         help="UI locale (e.g. en-US, fr-FR).",
     )
+    # Kept as no-op global options for supervisors from pre-2.0 desktop installs.
+    parser.add_argument("--pull-tasks-enable", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--pull-tasks-interval-s", type=int, default=0, help=argparse.SUPPRESS)
     registry = build_registry()
     registry.register(parser, ctx)
     return parser
