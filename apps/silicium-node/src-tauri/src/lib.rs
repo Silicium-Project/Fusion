@@ -876,7 +876,12 @@ fn claim_poll_health_path(repo_root: &Path) -> PathBuf {
 }
 
 fn claim_poll_is_fresh(repo_root: &Path, maximum_age: Duration) -> bool {
-    fs::metadata(claim_poll_health_path(repo_root))
+    let path = claim_poll_health_path(repo_root);
+    if !path.exists() {
+        // No claim has been polled yet; an idle node is still healthy.
+        return true;
+    }
+    fs::metadata(path)
         .and_then(|metadata| metadata.modified())
         .ok()
         .and_then(|modified| SystemTime::now().duration_since(modified).ok())
