@@ -83,6 +83,7 @@ services:
       SILICIUM_IDENTITY_DEV_MESH_AUTH: "0"
       SILICIUM_PEER_ADVERTISE_URL: https://vps-910c1dbc.vps.ovh.net/orchestrator
       SILICIUM_PEER_HTTP_BIND: 0.0.0.0
+      SILICIUM_PEER_HTTP_PORT: 46100
     command: ["python", "/opt/silicium/Network/silicium", "node", "start"]
     ports:
       - "46100:46100/tcp"
