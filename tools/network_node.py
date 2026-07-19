@@ -2524,7 +2524,8 @@ class PeerNetwork:
             return ""
         parsed = urlparse(value)
         if parsed.scheme in {"http", "https"} and parsed.netloc:
-            return f"{parsed.scheme}://{parsed.netloc}"
+            path = parsed.path.rstrip("/")
+            return f"{parsed.scheme}://{parsed.netloc}{path}"
         return ""
 
     def _parse_udp_target(self, target: str) -> tuple[str, int]:

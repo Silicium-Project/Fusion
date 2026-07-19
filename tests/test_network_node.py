@@ -318,6 +318,11 @@ def test_peer_identity_persists_across_restarts(tmp_path: Path) -> None:
     assert first.public_key_path.exists()
 
 
+def test_seed_url_preserves_reverse_proxy_path(tmp_path: Path) -> None:
+    peer = network_node.PeerNetwork(_config(tmp_path / "peer", "node-a"), tmp_path / "peer")
+    assert peer._normalize_http_target("https://vps.example/orchestrator/") == "https://vps.example/orchestrator"
+
+
 def test_session_handshake_accepts_valid_signed_payload(tmp_path: Path) -> None:
     source = network_node.PeerNetwork(_config(tmp_path / "source", "node-a", roles="compute", reputation_score=25), tmp_path / "source")
     target = network_node.PeerNetwork(_config(tmp_path / "target", "node-b", roles="verify"), tmp_path / "target")
