@@ -2,7 +2,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       adminToken: process.env.NUXT_PUBLIC_ADMIN_TOKEN || '',
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080',
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
     },
   },
   app: {
