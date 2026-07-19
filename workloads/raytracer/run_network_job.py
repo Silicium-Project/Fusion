@@ -311,8 +311,7 @@ def main(argv: list[str] | None = None) -> int:
             "public_url": orchestrator.public_url,
             "seed_peers": args.network_seed_peers,
         }
-        wait_for_network_role(export_dir, args.network_node_id, "compute")
-        wait_for_network_role(export_dir, args.network_node_id, "verify")
+
 
     try:
         scene_ref = task_input_ref(args, export_dir, local_scene)
