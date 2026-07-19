@@ -18,7 +18,11 @@ FROM alpine:latest
 
 WORKDIR /app
 
+RUN apk add --no-cache python3 libstdc++
+COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app/main .
+
+ENV PATH="/opt/venv/bin:$PATH"
 
 EXPOSE 8080
 
