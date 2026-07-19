@@ -18,7 +18,7 @@ FROM alpine:latest
 
 WORKDIR /app
 
-RUN apk add --no-cache python3 libstdc++
+RUN apk add --no-cache openssl python3 libstdc++
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app/main .
 
