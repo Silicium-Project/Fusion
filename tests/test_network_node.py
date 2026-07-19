@@ -128,6 +128,7 @@ def _config(
         gossip_port=0,
         peer_http_bind="127.0.0.1",
         peer_http_port=0,
+        peer_advertise_url="",
         peer_advertise_host="",
         peer_advertise_port=0,
         gossip_advertise_host="",

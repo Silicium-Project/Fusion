@@ -218,6 +218,7 @@ class NodeConfig:
     gossip_port: int
     peer_http_bind: str
     peer_http_port: int
+    peer_advertise_url: str
     peer_advertise_host: str
     peer_advertise_port: int
     gossip_advertise_host: str
@@ -3094,7 +3095,10 @@ class PeerNetwork:
         bind_host, bind_port = server.server_address[:2]
         local_host = "127.0.0.1" if bind_host in {"0.0.0.0", ""} else str(bind_host)
         self.http_base_url = f"http://{local_host}:{bind_port}"
-        self.advertised_http_base_url = f"http://{self._advertised_http_host()}:{self._advertised_http_port()}"
+        self.advertised_http_base_url = (
+            self.config.peer_advertise_url.strip().rstrip("/")
+            or f"http://{self._advertised_http_host()}:{self._advertised_http_port()}"
+        )
         self.mesh_post_url = self.advertised_http_base_url.rstrip("/") + "/mesh"
         self.gossip_target = f"{self._advertised_gossip_host()}:{self._advertised_gossip_port()}" if self._advertised_gossip_port() > 0 else ""
 
@@ -4002,6 +4006,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gossip-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_PORT", "0")))
     parser.add_argument("--peer-http-bind", default=os.environ.get("SILICIUM_PEER_HTTP_BIND", "127.0.0.1"))
     parser.add_argument("--peer-http-port", type=int, default=int(os.environ.get("SILICIUM_PEER_HTTP_PORT", "0")))
+    parser.add_argument("--peer-advertise-url", default=os.environ.get("SILICIUM_PEER_ADVERTISE_URL", ""))
     parser.add_argument("--peer-advertise-host", default=os.environ.get("SILICIUM_PEER_ADVERTISE_HOST", ""))
     parser.add_argument("--peer-advertise-port", type=int, default=int(os.environ.get("SILICIUM_PEER_ADVERTISE_PORT", "0")))
     parser.add_argument("--gossip-advertise-host", default=os.environ.get("SILICIUM_GOSSIP_ADVERTISE_HOST", ""))
@@ -4106,6 +4111,7 @@ def main(argv: list[str] | None = None) -> int:
         gossip_port=int(args.gossip_port),
         peer_http_bind=str(args.peer_http_bind),
         peer_http_port=int(args.peer_http_port),
+        peer_advertise_url=str(args.peer_advertise_url),
         peer_advertise_host=str(args.peer_advertise_host),
         peer_advertise_port=int(args.peer_advertise_port),
         gossip_advertise_host=str(args.gossip_advertise_host),
