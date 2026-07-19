@@ -364,6 +364,19 @@ class NodeIdentity:
         return sha256_bytes(public_pem)[:32]
 
     def _ensure_keypair(self) -> None:
+        if self.public_key_path.exists():
+            try:
+                legacy_marker = self.public_key_path.read_text(encoding="utf-8").startswith("SILICIUM-HMAC-SHA256:")
+            except OSError:
+                legacy_marker = False
+            if legacy_marker:
+                for path in (self.private_key_path, self.public_key_path):
+                    if path.exists():
+                        backup = path.with_name(path.name + ".legacy-hmac")
+                        try:
+                            path.replace(backup)
+                        except OSError:
+                            path.unlink(missing_ok=True)
         if not self.private_key_path.exists():
             completed = subprocess.run(
                 [self.openssl_bin, "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
