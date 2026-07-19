@@ -3747,6 +3747,7 @@ class NetworkNode:
         current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
         current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
         atomic_write_json(envelope_path, current)
+        self.return_dispatched_result(current, result, log_payload)
         append_jsonl(
             self.events_path,
             {
