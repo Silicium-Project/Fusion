@@ -27,6 +27,9 @@ services:
       - /etc/silicium/backend.env
     environment:
       DATABASE_URL: host=postgres user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable
+      HOST: 0.0.0.0
+      PORT: 8080
+      CORS_ALLOWED_ORIGINS: https://vps-910c1dbc.vps.ovh.net,https://213.32.68.67
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,6 +48,9 @@ services:
     restart: unless-stopped
     env_file:
       - /etc/silicium/frontend.env
+    environment:
+      NUXT_PUBLIC_API_BASE: /api
+      NUXT_PUBLIC_DEVNET_DASHBOARD_URL: /dashboard/
     ports:
       - "127.0.0.1:3000:3000"
     networks:
