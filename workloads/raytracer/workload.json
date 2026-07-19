@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "raytracer",
+  "name": "Silicium Raytracer Workload",
+  "description": "Adapter around an externally installed raytracer executable. It exposes the same split, compute, verify and reassemble contract as other Silicium workloads.",
+  "input": {
+    "kind": "scene",
+    "format": "raytracer-cfg",
+    "default_example": "Network/workloads/raytracer/examples/demo-scene.cfg"
+  },
+  "output": {
+    "fragment_format": "ppm/p6",
+    "result_format": "png"
+  },
+  "workload_ids": {
+    "compute": "calcul/rendering/raytracer",
+    "verify": "verification/rendering/raytracer",
+    "fragment_compute": "calcul/rendering/raytracer-fragment",
+    "fragment_verify": "verification/rendering/raytracer-fragment"
+  },
+  "entrypoints": {
+    "split": "python split.py <scene.cfg> --output <split.json>",
+    "compute": "python compute.py --scene <scene.cfg> --output <fragment.ppm> --y-start <start> --y-end <end>",
+    "verify": "python verify.py --scene <scene.cfg> --result <fragment.ppm> --expected-hash <sha256> --y-start <start> --y-end <end>",
+    "reassemble": "python reassemble.py --fragment <fragment-0.ppm> --fragment <fragment-1.ppm> --output <render.ppm> --png <render.png>"
+  },
+  "split_policy": {
+    "kind": "automatic-horizontal-bands",
+    "target_pixels_per_fragment": 120000,
+    "max_fragments": 32
+  },
+  "portability": {
+    "windows": true,
+    "linux": true,
+    "requires_gpu": false,
+    "external_dependencies": ["SILICIUM_RAYTRACER_BIN pointing to a worker-local raytracer executable", "raytracer runtime DLLs/libraries", "optional SILICIUM_RAYTRACER_ASSETS_DIR"]
+  }
+}
