@@ -381,7 +381,7 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
     let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
     let orchestrator_url = read_service_config(&root)
         .map(|config| config.orchestrator_url)
-        .unwrap_or_else(|_| "http://213.32.68.67:46100".to_string());
+        .unwrap_or_else(|_| "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string());
     let log_dir = node_app_log_path(&root, "silicium-node.err.log")
         .parent()
         .map(|path| path.display().to_string())
@@ -418,7 +418,7 @@ fn app_defaults() -> AppDefaults {
         orchestrator_url: saved_config
             .as_ref()
             .map(|config| config.orchestrator_url.clone())
-            .unwrap_or_else(|| "http://213.32.68.67:46100".to_string()),
+            .unwrap_or_else(|| "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string()),
         node_id: saved_config
             .map(|config| effective_node_id(&config.node_id))
             .unwrap_or_else(persistent_node_id),
@@ -805,7 +805,7 @@ pub fn run_supervisor_cli() -> i32 {
     let _ = write_supervisor_pid(&repo_root, std::process::id());
     let config = read_service_config(&repo_root).unwrap_or_else(|_| NodeConfig {
         repo_root: repo_root.display().to_string(),
-        orchestrator_url: "http://213.32.68.67:46100".to_string(),
+        orchestrator_url: "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string(),
         advertise_host: detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
         node_id: "silicium-desktop-node".to_string(),
         reputation_score: 100,
@@ -1342,7 +1342,7 @@ fn read_service_config(repo_root: &Path) -> Result<NodeConfig, String> {
         fs::read_to_string(service_config_path(repo_root)).map_err(|error| error.to_string())?;
     let mut config = NodeConfig {
         repo_root: repo_root.display().to_string(),
-        orchestrator_url: "http://213.32.68.67:46100".to_string(),
+        orchestrator_url: "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string(),
         advertise_host: String::new(),
         node_id: "silicium-desktop-node".to_string(),
         reputation_score: 100,
