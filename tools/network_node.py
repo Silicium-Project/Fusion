@@ -239,6 +239,8 @@ class NodeConfig:
     discovery_sync_interval_s: int
     remote_dispatch_enable: bool
     remote_dispatch_limit: int
+    pull_tasks_enable: bool
+    pull_tasks_interval_s: int
     nat_punch_enable: bool
     p2p_candidate_ttl_s: int
     p2p_candidate_refresh_s: int
@@ -4047,6 +4049,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--discovery-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_DISCOVERY_SYNC_INTERVAL_S", "30")))
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
+    parser.add_argument("--pull-tasks-enable", action="store_true", default=os.environ.get("SILICIUM_PULL_TASKS_ENABLE", "0") == "1")
+    parser.add_argument("--pull-tasks-interval-s", type=int, default=int(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "2")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
     parser.add_argument("--p2p-candidate-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_TTL_S", "60")))
     parser.add_argument("--p2p-candidate-refresh-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_REFRESH_S", "20")))
@@ -4147,6 +4151,8 @@ def main(argv: list[str] | None = None) -> int:
         discovery_sync_interval_s=max(0, int(args.discovery_sync_interval_s)),
         remote_dispatch_enable=bool(args.remote_dispatch_enable),
         remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
+        pull_tasks_enable=bool(args.pull_tasks_enable),
+        pull_tasks_interval_s=max(1, int(args.pull_tasks_interval_s)),
         nat_punch_enable=bool(args.nat_punch_enable),
         p2p_candidate_ttl_s=max(1, int(args.p2p_candidate_ttl_s)),
         p2p_candidate_refresh_s=max(1, int(args.p2p_candidate_refresh_s)),
