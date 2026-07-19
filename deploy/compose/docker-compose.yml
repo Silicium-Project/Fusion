@@ -30,7 +30,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8080
       CORS_ALLOWED_ORIGINS: https://vps-910c1dbc.vps.ovh.net,https://213.32.68.67
-      SILICIUM_SEED_PEERS: http://213.32.68.67:46100
+      SILICIUM_SEED_PEERS: https://vps-910c1dbc.vps.ovh.net/orchestrator
       SILICIUM_MESH_KEY: demo-mesh
     depends_on:
       postgres:
@@ -81,6 +81,7 @@ services:
       # installer default can announce and synchronize with this seed.
       SILICIUM_MESH_KEY: ""
       SILICIUM_IDENTITY_DEV_MESH_AUTH: "0"
+      SILICIUM_PEER_ADVERTISE_URL: https://vps-910c1dbc.vps.ovh.net/orchestrator
     command: ["python", "/opt/silicium/Network/silicium", "node", "start"]
     ports:
       - "46100:46100/tcp"
