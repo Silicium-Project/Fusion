@@ -1138,7 +1138,7 @@ fn identity_mode_check() -> CheckItem {
     CheckItem {
         name: "Identite reseau".to_string(),
         ok: true,
-        detail: "HMAC demo actif - OpenSSL non requis".to_string(),
+        detail: "Identite Ed25519 activee - OpenSSL requis pour le runtime reseau".to_string(),
     }
 }
 
