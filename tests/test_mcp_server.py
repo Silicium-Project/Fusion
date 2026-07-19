@@ -151,10 +151,10 @@ def test_mcp_server_submits_and_reads_tasks(tmp_path: Path) -> None:
         assert code == 202
         accepted = json.loads(body)
         assert accepted["ok"] is True
-        assert accepted["task_id"] == "render:tile_1"
+        assert accepted["task_id"] == "render_tile_1"
         assert (export_dir / "tasks.queue.ndjson").exists()
 
-        code, body = _http_get(base + "/tasks/render:tile_1")
+        code, body = _http_get(base + "/tasks/render_tile_1")
         assert code == 200
         task = json.loads(body)
         assert task["status"] == "queued"
@@ -164,7 +164,7 @@ def test_mcp_server_submits_and_reads_tasks(tmp_path: Path) -> None:
 
         code, body = _http_post(
             base + "/tools",
-            {"name": "tools.silicium.get_task", "args": {"task_id": "render:tile_1"}},
+            {"name": "tools.silicium.get_task", "args": {"task_id": "render_tile_1"}},
         )
         assert code == 200
         wrapped = json.loads(body)

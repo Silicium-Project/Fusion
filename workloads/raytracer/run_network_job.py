@@ -15,7 +15,7 @@ sys.path.insert(0, str(NETWORK_ROOT))
 sys.path.insert(0, str(NETWORK_ROOT / "demo"))
 
 from networked.networked_runtime import (  # noqa: E402
-    NetworkedOrchestrator,
+    LocalNetworkEmitter,
     fetch_network_content,
     store_network_content,
     store_network_file,
@@ -59,14 +59,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-pixels", type=int, default=120_000)
     parser.add_argument("--max-fragments", type=int, default=32)
     parser.add_argument("--fragments", type=int, default=0, help="Optional manual override; 0 keeps automatic split.")
-    parser.add_argument("--network-node-id", default="raytracer-orchestrator")
+    parser.add_argument("--network-node-id", default="raytracer-emitter")
     parser.add_argument("--network-bind", default="0.0.0.0")
     parser.add_argument("--network-port", type=int, default=46100)
     parser.add_argument("--network-advertise-host", default="127.0.0.1")
     parser.add_argument("--network-advertise-port", type=int, default=46100)
     parser.add_argument("--network-seed-peers", default="")
     parser.add_argument("--network-mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", "demo-mesh"))
-    parser.add_argument("--network-start-orchestrator", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--network-start-emitter", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--min-compute-reputation", type=float, default=float(os.environ.get("SILICIUM_MIN_COMPUTE_REPUTATION", "0")))
     parser.add_argument("--min-verify-reputation", type=float, default=float(os.environ.get("SILICIUM_MIN_VERIFY_REPUTATION", "0")))
     parser.add_argument("--solana-enable", action="store_true")
@@ -259,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
 
     node_runs: list[dict[str, Any]] = []
     submissions: list[dict[str, Any]] = []
-    orchestrator_result: dict[str, Any] = {"enabled": False}
+    emitter_result: dict[str, Any] = {"enabled": False}
     progress_fragments = {
         int(fragment["fragment_index"]): {**fragment, "status": "planned"}
         for fragment in fragments
@@ -284,18 +284,18 @@ def main(argv: list[str] | None = None) -> int:
                 "fragments": [progress_fragments[index] for index in sorted(progress_fragments)],
                 "submissions": submissions,
                 "node_runs": node_runs,
-                "network": orchestrator_result,
+                "network": emitter_result,
                 "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
         )
 
-    orchestrator: NetworkedOrchestrator | None = None
-    if args.node_mode == "network" and args.network_start_orchestrator:
+    emitter_node: LocalNetworkEmitter | None = None
+    if args.node_mode == "network" and args.network_start_emitter:
         if not args.network_mesh_key:
             raise RuntimeError("--network-mesh-key is required for network mode content fetches")
-        orchestrator = NetworkedOrchestrator(
+        emitter_node = LocalNetworkEmitter(
             export_dir=export_dir,
-            state_dir=job_dir / "_orchestrator_state",
+            state_dir=job_dir / "_emitter_state",
             node_id=args.network_node_id,
             bind=args.network_bind,
             port=args.network_port,
@@ -304,11 +304,11 @@ def main(argv: list[str] | None = None) -> int:
             seed_peers=args.network_seed_peers,
             mesh_key=args.network_mesh_key,
         )
-        orchestrator.start()
-        orchestrator_result = {
+        emitter_node.start()
+        emitter_result = {
             "enabled": True,
             "node_id": args.network_node_id,
-            "public_url": orchestrator.public_url,
+            "public_url": emitter_node.public_url,
             "seed_peers": args.network_seed_peers,
         }
 
@@ -463,8 +463,8 @@ def main(argv: list[str] | None = None) -> int:
             return 3
         return 0
     finally:
-        if orchestrator is not None:
-            orchestrator.stop()
+        if emitter_node is not None:
+            emitter_node.stop()
 
 
 if __name__ == "__main__":

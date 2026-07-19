@@ -14,7 +14,7 @@ py Network\workloads\raytracer\reassemble.py --fragment .silicium\fragment-0.ppm
 ```
 
 The split policy is automatic horizontal bands. The site only sends
-`workload=raytracer` and a `.cfg`; the orchestrator estimates the fragment count
+`workload=raytracer` and a `.cfg`; the emitter estimates the fragment count
 from the scene resolution, distributes fragments to workers, verifies them, then
 reassembles the final image.
 

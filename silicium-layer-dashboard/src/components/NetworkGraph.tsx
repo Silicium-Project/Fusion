@@ -18,7 +18,7 @@ type PeerSnapshot = {
   peers?: Peer[];
 };
 
-const snapshotUrl = "/network-state/node.orchestrator-1.peers.json";
+const snapshotUrl = "/network-state/node.emitter-1.peers.json";
 
 function shortId(value: string): string {
   return value.length > 18 ? `${value.slice(0, 9)}...${value.slice(-6)}` : value;

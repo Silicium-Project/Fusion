@@ -77,7 +77,7 @@ SUPPORTED_TOOLS = (
     TOOL_GET_REQUEST,
 )
 
-_SAFE_TASK_ID_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
+_SAFE_TASK_ID_RE = re.compile(r"[^a-zA-Z0-9_.-]+")
 _NETWORK_ROLES = frozenset({"compute", "verify", "storage", "audit", "resource"})
 _REQUEST_KINDS = frozenset({"audit", "resource", "challenge", "replicate", "retrieve", "pin", "unpin", "health"})
 _PRIORITIES = frozenset({"low", "normal", "high", "urgent"})

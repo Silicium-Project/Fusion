@@ -3,8 +3,8 @@
 Issue: #211
 
 This document defines the target contract for moving Silicium node payload
-traffic from orchestrator-mediated HTTP paths to authenticated peer-to-peer
-sessions. The orchestrator remains the control and signaling plane. Fragment,
+traffic from emitter-mediated HTTP paths to authenticated peer-to-peer
+sessions. The emitter remains the control and signaling plane. Fragment,
 result, verification, and health payloads should use a direct peer data plane
 when possible and a relay only when direct connectivity fails.
 
@@ -32,7 +32,7 @@ when possible and a relay only when direct connectivity fails.
 
 ```mermaid
 flowchart LR
-    Client[Client or scheduler] --> Signaling[Signaling/orchestrator]
+    Client[Client or scheduler] --> Signaling[Signaling/emitter]
     A[Peer A] -->|register, candidates, task intent| Signaling
     B[Peer B] -->|register, candidates, task intent| Signaling
     Signaling -->|session id and candidate pairs| A
@@ -72,7 +72,7 @@ The preferred data plane order is:
 
 1. Direct peer session.
 2. Relay session.
-3. Legacy HTTP/orchestrator path when compatibility mode allows it.
+3. Legacy HTTP/emitter path when compatibility mode allows it.
 4. Structured failure.
 
 ## Session State Machine
@@ -682,4 +682,4 @@ This document satisfies issue #211 by defining:
 - stable message field names and JSON examples;
 - direct, relay, and failure paths;
 - rollout flags;
-- backward compatibility with current HTTP/orchestrator behavior.
+- backward compatibility with current HTTP/emitter behavior.

@@ -89,18 +89,18 @@ def best_shared_ref(ref: dict[str, Any]) -> dict[str, Any]:
     return ref
 
 
-def _peer_snapshot(export_dir: Path, orchestrator_node_id: str) -> dict[str, Any]:
-    return read_json(export_dir / f"node.{orchestrator_node_id}.peers.json", {"peers": []}) or {"peers": []}
+def _peer_snapshot(export_dir: Path, emitter_node_id: str) -> dict[str, Any]:
+    return read_json(export_dir / f"node.{emitter_node_id}.peers.json", {"peers": []}) or {"peers": []}
 
 
-def peer_url(export_dir: Path, orchestrator_node_id: str, peer_id: str) -> str:
-    for peer in _peer_snapshot(export_dir, orchestrator_node_id).get("peers", []):
+def peer_url(export_dir: Path, emitter_node_id: str, peer_id: str) -> str:
+    for peer in _peer_snapshot(export_dir, emitter_node_id).get("peers", []):
         if isinstance(peer, dict) and str(peer.get("node_id", "")) == peer_id:
             return str(peer.get("http_base_url", "")).rstrip("/")
     return ""
 
 
-def fetch_network_content(export_dir: Path, orchestrator_node_id: str, ref: dict[str, Any], mesh_key: str) -> bytes:
+def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str, Any], mesh_key: str) -> bytes:
     ref = best_shared_ref(ref)
     protocol = str(ref.get("protocol", "")).lower()
     content_id = str(ref.get("content_id", "")).strip()
@@ -112,7 +112,7 @@ def fetch_network_content(export_dir: Path, orchestrator_node_id: str, ref: dict
     if local.exists():
         return local.read_bytes()
     peer_id = str(ref.get("peer_id", "")).strip()
-    base_url = str(ref.get("peer_url", "")).rstrip("/") or peer_url(export_dir, orchestrator_node_id, peer_id)
+    base_url = str(ref.get("peer_url", "")).rstrip("/") or peer_url(export_dir, emitter_node_id, peer_id)
     if not base_url:
         raise ValueError(f"unknown_peer_for_content:{peer_id}")
     headers = {"Authorization": f"Bearer {mesh_key}"} if mesh_key else {}
@@ -148,7 +148,7 @@ def wait_for_result(export_dir: Path, task_id: str, timeout_s: float) -> dict[st
     raise TimeoutError(f"missing network result after {timeout_s:.1f}s: {result_path}")
 
 
-class NetworkedOrchestrator:
+class LocalNetworkEmitter:
     def __init__(
         self,
         *,

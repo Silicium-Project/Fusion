@@ -7,10 +7,10 @@ This document provides a high-level schema of the Silicium Network stack and its
 ```mermaid
 flowchart TD
     %% Clients and orchestration
-    Client[Client / CLI] -->|job, workload| Orchestrator[Silicium CLI]
+    Client[Client / CLI] -->|job, workload| Emitter[Silicium CLI]
 
     %% Compute pipeline
-    Orchestrator --> Splitter[splitter]
+    Emitter --> Splitter[splitter]
     Splitter -->|summary.json + fragments| Executor[executor]
     Executor --> Worker[worker]
     Worker --> Results[Results / proofs]
@@ -20,10 +20,10 @@ flowchart TD
     Worker --> Viewer
 
     %% Catalog
-    Catalog[workloads catalog] --> Orchestrator
+    Catalog[workloads catalog] --> Emitter
 
     %% Infra / network stack
-    Orchestrator --> Compose[docker compose]
+    Emitter --> Compose[docker compose]
     Compose --> Solana[Silicium node (Solana)]
     Compose --> Proxy[Caddy TLS proxy]
     Compose --> WG[WireGuard secure stack]
