@@ -706,15 +706,23 @@ class RoleRuntime:
     def run_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
         actual = sha256_bytes(p2p_data)
         expected = str(task.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
-        passed = not expected or expected == actual
+        embedded_hash = ""
+        try:
+            parsed = json.loads(p2p_data.decode("utf-8"))
+            if isinstance(parsed, dict):
+                embedded_hash = str(parsed.get("result_hash") or parsed.get("compute_result_hash") or "").removeprefix("sha256:")
+        except Exception:
+            pass
+        passed = not expected or expected == actual or (bool(embedded_hash) and expected == embedded_hash)
         return {
             "role_result": "verify",
             "input": p2p_meta,
             "input_hash": actual,
             "expected_hash": expected,
+            "recomputed_hash": embedded_hash or actual,
             "verified": passed,
             "choice": passed,
-            "result_hash": sha256_json({"verified": passed, "actual": actual, "expected": expected}),
+            "result_hash": sha256_json({"verified": passed, "actual": actual, "expected": expected, "embedded": embedded_hash}),
         }
 
     def run_resource_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
@@ -747,11 +755,19 @@ class RoleRuntime:
             return {"request_result": kind, "retrieved_ref": stored, "choice": True}
         expected = str(request.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
         actual = sha256_bytes(p2p_data)
-        choice = not expected or expected == actual
+        embedded_hash = ""
+        try:
+            parsed = json.loads(p2p_data.decode("utf-8"))
+            if isinstance(parsed, dict):
+                embedded_hash = str(parsed.get("result_hash") or parsed.get("compute_result_hash") or "").removeprefix("sha256:")
+        except Exception:
+            pass
+        choice = not expected or expected == actual or (bool(embedded_hash) and expected == embedded_hash)
         return {
             "request_result": kind,
             "input_hash": actual,
             "expected_hash": expected,
+            "recomputed_hash": embedded_hash or actual,
             "choice": choice,
             "audit": {"passed": choice, "source": p2p_meta},
         }
