@@ -15,12 +15,15 @@ export default defineNuxtConfig({
       ],
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap" rel="stylesheet' }
+        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap' }
       ],
     },
   },
   nitro: {
     routeRules: {
+      '/': { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
+      '/auth': { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
+      '/dashboard': { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
       '/widget': {
         cors: true,
         headers: {
@@ -31,23 +34,19 @@ export default defineNuxtConfig({
         }
       }
     },
-    // Exclude @solana/web3.js from Nitro SSR bundle - it's browser-only
     externals: {
       external: ['@solana/web3.js'],
     },
   },
 
-  // @solana/web3.js v1.x requires Node built-ins polyfilled for browser
   vite: {
     define: {
-      // polyfill process and global for @solana/web3.js
       'process.env': '{}',
       'global': 'globalThis',
     },
     optimizeDeps: {
       include: ['@solana/web3.js', 'buffer'],
       esbuildOptions: {
-        // Node.js global to browser globalThis
         define: {
           global: 'globalThis',
         },
@@ -55,12 +54,10 @@ export default defineNuxtConfig({
     },
     resolve: {
       alias: {
-        // polyfill buffer for browser
         buffer: 'buffer',
       },
     },
     ssr: {
-      // Don't bundle @solana in SSR — it must only run in browser
       noExternal: [],
       external: ['@solana/web3.js'],
     },
