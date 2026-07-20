@@ -221,7 +221,7 @@ const user = ref<any>(null);
 const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
 const apiBase = config.public.apiBase;
-const devnetDashboardUrl = (config.public as any).devnetDashboardUrl ?? '#';
+const devnetDashboardUrl = config.public.devnetDashboardUrl;
 
 const workloadOptions = [
   { value: 'raytracer', label: 'Raytracer' },

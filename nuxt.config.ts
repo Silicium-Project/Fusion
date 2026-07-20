@@ -3,6 +3,7 @@ export default defineNuxtConfig({
     public: {
       adminToken: process.env.NUXT_PUBLIC_ADMIN_TOKEN || '',
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
+      devnetDashboardUrl: process.env.NUXT_PUBLIC_DEVNET_DASHBOARD_URL || '/network/',
     },
   },
   app: {
@@ -29,7 +30,40 @@ export default defineNuxtConfig({
           'Access-Control-Allow-Credentials': 'true'
         }
       }
-    }
+    },
+    // Exclude @solana/web3.js from Nitro SSR bundle - it's browser-only
+    externals: {
+      external: ['@solana/web3.js'],
+    },
+  },
+
+  // @solana/web3.js v1.x requires Node built-ins polyfilled for browser
+  vite: {
+    define: {
+      // polyfill process and global for @solana/web3.js
+      'process.env': '{}',
+      'global': 'globalThis',
+    },
+    optimizeDeps: {
+      include: ['@solana/web3.js', 'buffer'],
+      esbuildOptions: {
+        // Node.js global to browser globalThis
+        define: {
+          global: 'globalThis',
+        },
+      },
+    },
+    resolve: {
+      alias: {
+        // polyfill buffer for browser
+        buffer: 'buffer',
+      },
+    },
+    ssr: {
+      // Don't bundle @solana in SSR — it must only run in browser
+      noExternal: [],
+      external: ['@solana/web3.js'],
+    },
   },
 
   css: [
