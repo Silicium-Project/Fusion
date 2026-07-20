@@ -3778,6 +3778,7 @@ class NetworkNode:
         }
         output["result_hash"] = str(role_output.get("result_hash") or sha256_json(output))
         output_ref = self.p2p.put_local(stable_json(output).encode("utf-8"))
+        output["output_ref"] = output_ref
         output["proof_ref"] = output_ref
         on_chain = self.submit_task_on_chain(envelope, task, output, output_ref)
         if on_chain:

@@ -40,7 +40,7 @@ def clear_previous_result(export_dir: Path, task_id: str) -> None:
 
 
 def output_ref_from_compute(result: dict[str, Any]) -> dict[str, Any]:
-    ref = result.get("output_ref")
+    ref = result.get("output_ref") or result.get("proof_ref")
     if not isinstance(ref, dict):
         raise ValueError("compute result does not contain output_ref")
     return ref
