@@ -2040,23 +2040,44 @@ class PeerNetwork:
                 for candidate in self.refresh_candidates()
             ],
         )
-        for relay in self.select_peers(required_roles=set(), limit=max(1, self.config.relay_hops), require_relay=True, exclude={target_peer_id}):
+
+        target_urls: list[str] = []
+        target_peers = [p for p in self.refresh_peers() if str(p.get("node_id", "")) == target_peer_id]
+        if target_peers:
+            target_peer = target_peers[0]
+            if target_peer.get("http_base_url"):
+                target_urls.append(str(target_peer["http_base_url"]).rstrip("/"))
+            for cand in target_peer.get("candidates", []):
+                if isinstance(cand, dict) and cand.get("ip") and cand.get("port"):
+                    ip = str(cand["ip"])
+                    port = cand["port"]
+                    formatted_ip = f"[{ip}]" if ":" in ip else ip
+                    cand_url = f"http://{formatted_ip}:{port}".rstrip("/")
+                    if cand_url not in target_urls:
+                        target_urls.append(cand_url)
+
+        relays = self.select_peers(required_roles=set(), limit=max(1, self.config.relay_hops), require_relay=True, exclude={target_peer_id})
+        for relay in relays:
             relay_url = str(relay.get("http_base_url", "")).rstrip("/")
-            if not relay_url:
-                continue
-            payload = {"target_peer_id": target_peer_id, "session_id": session_id, "handshake": handshake}
-            raw = stable_json(payload).encode("utf-8")
-            path = "/relay/punch"
+            if relay_url and relay_url not in target_urls:
+                target_urls.append(relay_url)
+
+        payload = {"target_peer_id": target_peer_id, "session_id": session_id, "handshake": handshake}
+        raw = stable_json(payload).encode("utf-8")
+        path = "/relay/punch"
+
+        for base_url in target_urls:
             request = urllib.request.Request(
-                relay_url + path,
+                base_url + path,
                 data=raw,
                 method="POST",
                 headers=self._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
             )
             try:
-                with urllib.request.urlopen(request, timeout=5) as response:
-                    return response.status == 200
-            except urllib.error.URLError:
+                with urllib.request.urlopen(request, timeout=3) as response:
+                    if response.status in {200, 202}:
+                        return True
+            except Exception:
                 continue
         return False
 
@@ -3660,23 +3681,43 @@ class NetworkNode:
         payload["dispatched_by"] = self.config.node_id
         payload["dispatched_utc"] = utc_now()
         payload["result_return_url"] = self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
-        base_url = str(peer[0].get("http_base_url", "")).rstrip("/")
-        if not base_url:
+        base_urls = []
+        primary_url = str(peer[0].get("http_base_url", "")).rstrip("/")
+        if primary_url:
+            base_urls.append(primary_url)
+        for cand in peer[0].get("candidates", []):
+            if isinstance(cand, dict) and cand.get("ip") and cand.get("port"):
+                ip = str(cand["ip"])
+                port = cand["port"]
+                formatted_ip = f"[{ip}]" if ":" in ip else ip
+                cand_url = f"http://{formatted_ip}:{port}".rstrip("/")
+                if cand_url not in base_urls:
+                    base_urls.append(cand_url)
+
+        if not base_urls:
             self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
             return False
+
         path = "/requests/dispatch" if kind == "request" else "/tasks/dispatch"
         raw = stable_json(payload).encode("utf-8")
-        request = urllib.request.Request(
-            base_url + path,
-            data=raw,
-            method="POST",
-            headers=self.peer_network._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:
-                ok = response.status in {200, 202}
-        except urllib.error.URLError:
-            ok = False
+
+        ok = False
+        dispatched_url = ""
+        for base_url in base_urls:
+            request = urllib.request.Request(
+                base_url + path,
+                data=raw,
+                method="POST",
+                headers=self.peer_network._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=5) as response:
+                    if response.status in {200, 202}:
+                        ok = True
+                        dispatched_url = base_url
+                        break
+            except Exception:
+                continue
         if ok:
             self.metrics["dispatched"] = int(self.metrics.get("dispatched", 0) or 0) + 1
             item_id = str(envelope.get("request_id") or envelope.get("task_id") or "unknown")
