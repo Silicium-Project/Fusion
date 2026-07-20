@@ -1,5 +1,4 @@
 name: silicium
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -9,108 +8,124 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
-      - /var/lib/silicium/postgres:/var/lib/postgresql/data
+    - /var/lib/silicium/postgres:/var/lib/postgresql/data
     networks:
-      - backend
+    - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB
       interval: 5s
       timeout: 5s
       retries: 12
-
   backend:
     build:
       context: ../../BackEnd
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - /etc/silicium/backend.env
+    - /etc/silicium/backend.env
     environment:
-      DATABASE_URL: host=postgres user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable
+      DATABASE_URL: host=postgres user=${POSTGRES_USER} password=${POSTGRES_PASSWORD}
+        dbname=${POSTGRES_DB} port=5432 sslmode=disable
       HOST: 0.0.0.0
       PORT: 8080
       CORS_ALLOWED_ORIGINS: https://vps-910c1dbc.vps.ovh.net,https://213.32.68.67
       SILICIUM_SEED_PEERS: https://vps-910c1dbc.vps.ovh.net/orchestrator
-      SILICIUM_MESH_KEY: demo-mesh
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "127.0.0.1:8080:8080"
+    - 127.0.0.1:8080:8080
     volumes:
-      - /opt/silicium/Network:/opt/silicium/Network
-      - /var/lib/silicium:/var/lib/silicium
+    - /opt/silicium/Network:/opt/silicium/Network
+    - /var/lib/silicium:/var/lib/silicium
     networks:
-      - backend
-
+    - backend
   frontend:
     build:
       context: ../../FrontEnd
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
-      - /etc/silicium/frontend.env
+    - /etc/silicium/frontend.env
     environment:
       NUXT_PUBLIC_API_BASE: /api
       NUXT_PUBLIC_DEVNET_DASHBOARD_URL: /dashboard/
     ports:
-      - "127.0.0.1:3000:3000"
+    - 127.0.0.1:3000:3000
     networks:
-      - frontend
-
+    - frontend
   dashboard:
     build:
       context: ../..
       dockerfile: deploy/compose/dashboard.Dockerfile
     restart: unless-stopped
     ports:
-      - "127.0.0.1:5174:5174"
+    - 127.0.0.1:5174:5174
     networks:
-      - frontend
-
+    - frontend
   orchestrator:
     build:
       context: ../..
       dockerfile: deploy/compose/orchestrator.Dockerfile
     restart: unless-stopped
     env_file:
-      - /etc/silicium/orchestrator.env
+    - /etc/silicium/orchestrator.env
     environment:
-      # Peer authentication is based on signed Ed25519 identity headers.
-      # Keep the legacy mesh key disabled so desktop nodes using the
-      # installer default can announce and synchronize with this seed.
-      SILICIUM_MESH_KEY: ""
-      SILICIUM_IDENTITY_DEV_MESH_AUTH: "0"
+      SILICIUM_MESH_KEY: ''
+      SILICIUM_IDENTITY_DEV_MESH_AUTH: '0'
       SILICIUM_PEER_ADVERTISE_URL: https://vps-910c1dbc.vps.ovh.net/orchestrator
       SILICIUM_PEER_HTTP_BIND: 0.0.0.0
       SILICIUM_PEER_HTTP_PORT: 46100
-    command: ["python", "/opt/silicium/Network/silicium", "node", "start"]
+    command:
+    - python
+    - /opt/silicium/Network/silicium
+    - node
+    - start
+    - --world
+    - --node-id
+    - orchestrator-1
+    - --roles
+    - resource,storage
+    - --export-dir
+    - /var/lib/silicium/network/orchestrator/export
+    - --state-dir
+    - /var/lib/silicium/network/orchestrator/state
+    - --peer-http-bind
+    - 0.0.0.0
+    - --peer-http-port
+    - '46100'
+    - --peer-advertise-host
+    - 213.32.68.67
+    - --peer-advertise-port
+    - '46100'
+    - --reputation-score
+    - '100.0'
     ports:
-      - "46100:46100/tcp"
-      - "46100:46100/udp"
+    - 46100:46100/tcp
+    - 46100:46100/udp
     volumes:
-      - /var/lib/silicium/network:/var/lib/silicium/network
+    - /var/lib/silicium/network:/var/lib/silicium/network
     networks:
-      - backend
-
+    - backend
   proxy:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
-      - backend
-      - frontend
-      - dashboard
+    - backend
+    - frontend
+    - dashboard
     ports:
-      - "80:80"
-      - "443:443"
+    - 80:80
+    - 443:443
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - /var/lib/silicium:/var/lib/silicium:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+    - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    - /var/lib/silicium:/var/lib/silicium:ro
+    - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
-      - backend
-      - frontend
-
+    - backend
+    - frontend
 networks:
   backend:
     name: silicium-backend
