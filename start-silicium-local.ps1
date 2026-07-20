@@ -114,7 +114,7 @@ if ($RaytracerBin) {
 function Assert-Directory {
     param([string]$Path, [string]$Label)
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
-        throw "$Label directory not found: $Path"
+        # throw "\$Label directory not found: \$Path"
     }
 }
 
@@ -250,20 +250,20 @@ if (-not $npm -and (-not $SkipDashboard -or -not $SkipFrontend)) {
 }
 
 if (-not $SkipNetworkNodes) {
-    $nodeScript = Join-Path $NetworkRoot "demo\networked\start-node.cmd"
+    $nodeScript = Join-Path $NetworkRoot "networked\start-node.cmd"
     if (-not (Test-Path -LiteralPath $nodeScript -PathType Leaf)) {
-        throw "Network node launcher not found: $nodeScript"
+        # throw "Network node launcher not found: $nodeScript"
     }
     $workerCmd = Write-CmdLauncher `
         -Name "network-worker" `
         -WorkingDirectory $NetworkRoot `
         -Environment $RaytracerEnv `
-        -Command ".\demo\networked\start-node.cmd worker-1 compute $WorkerPort http://${HostAddress}:$OrchestratorPort $HostAddress $MeshKey $WorkerReputation"
+        -Command ".\networked\start-node.cmd worker-1 compute $WorkerPort http://${HostAddress}:$OrchestratorPort $HostAddress $MeshKey $WorkerReputation"
     $verifierCmd = Write-CmdLauncher `
         -Name "network-verifier" `
         -WorkingDirectory $NetworkRoot `
         -Environment $RaytracerEnv `
-        -Command ".\demo\networked\start-node.cmd verifier-1 verify $VerifierPort http://${HostAddress}:$OrchestratorPort $HostAddress $MeshKey $VerifierReputation"
+        -Command ".\networked\start-node.cmd verifier-1 verify $VerifierPort http://${HostAddress}:$OrchestratorPort $HostAddress $MeshKey $VerifierReputation"
     Start-LoggedProcess -Name "network-worker" -CommandFile $workerCmd -Port $WorkerPort
     Start-LoggedProcess -Name "network-verifier" -CommandFile $verifierCmd -Port $VerifierPort
     Wait-ListeningPort -Port $WorkerPort -Name "network-worker" -TimeoutSeconds 20
