@@ -199,7 +199,6 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue';
 import Cookies from 'js-cookie';
-import * as web3 from '@solana/web3.js';
 
 type Job = {
   id: number;
@@ -367,6 +366,7 @@ onMounted(async () => {
     user.value = fetchedUser;
 
     if (fetchedUser.walletAddress) {
+      const web3 = await import('@solana/web3.js');
       const connection = new web3.Connection(web3.clusterApiUrl('devnet'));
       const publicKey = new web3.PublicKey(fetchedUser.walletAddress);
       const balance = await connection.getBalance(publicKey);
