@@ -145,7 +145,10 @@
           <NetworkGraph :api-base="apiBase" />
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-6">
-          <highcharts :options="deviceTypesOptions" />
+          <ClientOnly>
+            <highcharts :options="deviceTypesOptions" />
+            <template #fallback><div class="flex items-center justify-center h-full text-white/20 text-sm">Chargement...</div></template>
+          </ClientOnly>
         </div>
       </div>
 
@@ -219,7 +222,7 @@ const user = ref<any>(null);
 const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
 const apiBase = config.public.apiBase;
-const devnetDashboardUrl = config.public.devnetDashboardUrl;
+const devnetDashboardUrl = (config.public as any).devnetDashboardUrl ?? '#';
 
 const workloadOptions = [
   { value: 'raytracer', label: 'Raytracer' },
