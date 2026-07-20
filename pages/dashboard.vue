@@ -140,9 +140,9 @@
         </div>
       </section>
 
-      <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div class="bg-[#1f2029] rounded-2xl p-6">
-          <highcharts :options="userGrowthOptions" />
+      <div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="lg:col-span-2">
+          <NetworkGraph :api-base="apiBase" />
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-6">
           <highcharts :options="deviceTypesOptions" />
