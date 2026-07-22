@@ -75,7 +75,7 @@ services:
     env_file:
     - /etc/silicium/orchestrator.env
     environment:
-      SILICIUM_MESH_KEY: ''
+      SILICIUM_MESH_KEY: ${SILICIUM_MESH_KEY:-demo-mesh}
       SILICIUM_IDENTITY_DEV_MESH_AUTH: '0'
       SILICIUM_PEER_ADVERTISE_URL: https://vps-910c1dbc.vps.ovh.net/orchestrator
       SILICIUM_PEER_HTTP_BIND: 0.0.0.0
