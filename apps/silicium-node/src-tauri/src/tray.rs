@@ -1,6 +1,6 @@
 use super::{
-    append_app_log, configured_node_service_running, restart_configured_node_service,
-    start_configured_node_service, stop_configured_node_service,
+    append_app_log, configured_node_service_running, migrate_configured_node_autostart,
+    restart_configured_node_service, start_configured_node_service, stop_configured_node_service,
 };
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -90,6 +90,12 @@ pub(super) fn setup(app: &mut App<Wry>, background: bool) -> tauri::Result<()> {
             if let Err(error) = start_configured_node_service() {
                 let _ = append_app_log(&format!("tray_background_start_failed: {error}\n"));
             }
+        });
+    } else {
+        thread::spawn(|| {
+            // Migrate existing installations whose scheduled task still launches
+            // the legacy supervisor-only mode.
+            let _ = migrate_configured_node_autostart();
         });
     }
     Ok(())
