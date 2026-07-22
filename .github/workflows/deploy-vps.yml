@@ -102,14 +102,84 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,Network
+
+      - name: Check out release sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          submodules: recursive
+
+      - name: Install Linux desktop prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file libayatana-appindicator3-dev libfuse2 \
+            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/silicium-node/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/silicium-node/src-tauri
+
+      - name: Build Linux development bundles
+        working-directory: apps/silicium-node
+        env:
+          SILICIUM_RELEASE_CHANNEL: dev
+          SILICIUM_RELEASE_VERSION: 0.2.9-dev.10
+          SILICIUM_RELEASE_BUILD: ${{ github.sha }}
+        run: |
+          npm ci
+          npm run build
+          cargo test --manifest-path src-tauri/Cargo.toml
+          npm run tauri:build:linux
+          install -d ci-artifacts
+          cp src-tauri/target/release/bundle/appimage/*.AppImage ci-artifacts/silicium-node-linux-dev.AppImage
+          cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux-dev.deb
+          sha256sum ci-artifacts/*
+
+      - name: Upload Linux bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: silicium-node-linux
+          path: apps/silicium-node/ci-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
   deploy:
-    needs: build-desktop
+    needs: [build-desktop, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Download desktop installers
         uses: actions/download-artifact@v4
         with:
           name: silicium-node-windows
+          path: release-artifacts
+
+      - name: Download Linux bundles
+        uses: actions/download-artifact@v4
+        with:
+          name: silicium-node-linux
           path: release-artifacts
 
       - name: Configure SSH
@@ -167,6 +237,8 @@ jobs:
           scp -P "$VPS_PORT" \
             release-artifacts/silicium-node-windows-dev.exe \
             release-artifacts/silicium-node-windows.exe \
+            release-artifacts/silicium-node-linux-dev.AppImage \
+            release-artifacts/silicium-node-linux-dev.deb \
             "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
             "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' RELEASE_STAGING='$RELEASE_STAGING' bash -s" <<'REMOTE'
@@ -195,6 +267,8 @@ jobs:
           unset GIT_AUTH VPS_GITHUB_TOKEN
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium/downloads/silicium-node-windows-dev.exe
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows.exe" /var/lib/silicium/downloads/silicium-node-windows.exe
+          sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.AppImage" /var/lib/silicium/downloads/silicium-node-linux-dev.AppImage
+          sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.deb" /var/lib/silicium/downloads/silicium-node-linux-dev.deb
           rm -rf -- "$RELEASE_STAGING"
           sudo bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
           sudo bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"

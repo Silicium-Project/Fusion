@@ -1,0 +1,78 @@
+name: Linux Client
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/silicium-node/**"
+      - "Network/**"
+      - ".github/workflows/linux-client.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,Network
+
+      - name: Check out release sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          submodules: recursive
+
+      - name: Install Linux desktop prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file libayatana-appindicator3-dev libfuse2 \
+            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/silicium-node/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/silicium-node/src-tauri
+
+      - name: Install app dependencies
+        working-directory: apps/silicium-node
+        run: npm ci
+
+      - name: Test and build Linux bundles
+        working-directory: apps/silicium-node
+        env:
+          SILICIUM_RELEASE_CHANNEL: dev
+          SILICIUM_RELEASE_VERSION: 0.2.9-dev.10
+          SILICIUM_RELEASE_BUILD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          npm run build
+          cargo test --manifest-path src-tauri/Cargo.toml
+          npm run tauri:build:linux
+
+      - name: Upload Linux bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: silicium-node-linux-pr
+          path: |
+            apps/silicium-node/src-tauri/target/release/bundle/appimage/*.AppImage
+            apps/silicium-node/src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+          retention-days: 7
