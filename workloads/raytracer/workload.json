@@ -20,17 +20,17 @@
   },
   "entrypoints": {
     "split": "python split.py <scene.cfg> --output <split.json>",
-    "compute": "python compute.py --scene <scene.cfg> --output <fragment.ppm> --y-start <start> --y-end <end>",
-    "verify": "python verify.py --scene <scene.cfg> --result <fragment.ppm> --expected-hash <sha256> --y-start <start> --y-end <end>",
-    "reassemble": "python reassemble.py --fragment <fragment-0.ppm> --fragment <fragment-1.ppm> --output <render.ppm> --png <render.png>"
+    "compute": "python compute.py --scene <scene.cfg> --output <fragment.ppm> --x-start <start> --x-end <end> --y-start <start> --y-end <end>",
+    "verify": "python verify.py --scene <scene.cfg> --result <fragment.ppm> --expected-hash <sha256> --x-start <start> --x-end <end> --y-start <start> --y-end <end>",
+    "reassemble": "python reassemble.py --fragment <fragment.ppm> --x-start <x> --y-start <y> --output <render.ppm> --png <render.png>"
   },
   "split_policy": {
-    "kind": "automatic-horizontal-bands",
+    "kind": "center-out-neighbour-grid",
     "target_pixels_per_fragment": 120000,
     "max_fragments": 32
   },
   "verification_policy": {
-    "strategy": "random-row-milestone-v1",
+    "strategy": "random-tile-row-milestone-v2",
     "default_batch_rows": 20,
     "samples_per_fragment": 1,
     "exclude_compute_worker": true

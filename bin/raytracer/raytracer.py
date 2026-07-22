@@ -149,11 +149,20 @@ def parse_cfg(path: Path) -> tuple[int, int, float, Vec3, list[Any], list[Light]
     return width, height, fov, cam_pos, primitives, lights
 
 
-def render(scene_path: Path, output_path: Path, y_start: int | None, y_end: int | None) -> None:
+def render(
+    scene_path: Path,
+    output_path: Path,
+    y_start: int | None,
+    y_end: int | None,
+    x_start: int | None,
+    x_end: int | None,
+) -> None:
     width, height, fov, cam_pos, primitives, lights = parse_cfg(scene_path)
 
     y0 = 0 if y_start is None else max(0, min(y_start, height))
     y1 = height if y_end is None else max(0, min(y_end, height))
+    x0 = 0 if x_start is None else max(0, min(x_start, width))
+    x1 = width if x_end is None else max(0, min(x_end, width))
 
     aspect_ratio = width / float(height)
     scale = math.tan(math.radians(fov * 0.5))
@@ -161,7 +170,7 @@ def render(scene_path: Path, output_path: Path, y_start: int | None, y_end: int 
     pixels = bytearray()
 
     for y in range(y0, y1):
-        for x in range(width):
+        for x in range(x0, x1):
             # Map pixel to camera space (looking along +X axis)
             px = (2.0 * (x + 0.5) / float(width) - 1.0) * aspect_ratio * scale
             py = (1.0 - 2.0 * (y + 0.5) / float(height)) * scale
@@ -207,7 +216,7 @@ def render(scene_path: Path, output_path: Path, y_start: int | None, y_end: int 
             pixels.extend([r_c, g_c, b_c])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    header = f"P6\n{width} {y1 - y0}\n255\n".encode("ascii")
+    header = f"P6\n{x1 - x0} {y1 - y0}\n255\n".encode("ascii")
     output_path.write_bytes(header + bytes(pixels))
 
 def main() -> None:
@@ -216,9 +225,11 @@ def main() -> None:
     parser.add_argument("--output", "-o", type=Path, required=True, help="Output PPM file path")
     parser.add_argument("--y-start", type=int, default=None, help="Start Y coordinate")
     parser.add_argument("--y-end", type=int, default=None, help="End Y coordinate")
+    parser.add_argument("--x-start", type=int, default=None, help="Start X coordinate")
+    parser.add_argument("--x-end", type=int, default=None, help="End X coordinate")
     args, _ = parser.parse_known_args()
 
-    render(args.scene, args.output, args.y_start, args.y_end)
+    render(args.scene, args.output, args.y_start, args.y_end, args.x_start, args.x_end)
 
 if __name__ == "__main__":
     main()

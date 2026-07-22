@@ -37,7 +37,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
 from tools.resource_intelligence import DualMemoryBayes, build_resource_profile, resource_baselines
-from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256
+from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256, scene_resolution
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
@@ -752,11 +752,17 @@ class RoleRuntime:
             scene_path = temp_path / "scene.cfg"
             output_path = temp_path / "fragment.ppm"
             scene_path.write_bytes(scene_bytes)
+            x_start = int(task.get("x_start", spec.get("x_start", 0)) or 0)
+            x_end = int(task.get("x_end", spec.get("x_end", 0)) or 0)
+            if x_end <= x_start:
+                x_end = scene_resolution(scene_path)[0]
             command = [
                 sys.executable,
                 str(compute_script),
                 "--scene", str(scene_path),
                 "--output", str(output_path),
+                "--x-start", str(x_start),
+                "--x-end", str(x_end),
                 "--y-start", str(int(task.get("y_start", spec.get("y_start", 0)) or 0)),
                 "--y-end", str(int(task.get("y_end", spec.get("y_end", 0)) or 0)),
                 "--verification-batch-rows", str(int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20)),
@@ -774,6 +780,7 @@ class RoleRuntime:
             output,
             int(task.get("y_start", spec.get("y_start", 0)) or 0),
             int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20),
+            int(task.get("x_start", spec.get("x_start", 0)) or 0),
         )
         return {
             "role_result": "compute",
@@ -797,7 +804,8 @@ class RoleRuntime:
             challenge = json.loads(p2p_data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"raytracer_verification_challenge_invalid:{exc}") from exc
-        if not isinstance(challenge, dict) or challenge.get("strategy") != "random-row-milestone-v1":
+        supported_strategies = {"random-row-milestone-v1", "random-tile-row-milestone-v2"}
+        if not isinstance(challenge, dict) or challenge.get("strategy") not in supported_strategies:
             raise RuntimeError("raytracer_verification_challenge_invalid")
 
         sample = challenge.get("milestone")
@@ -805,9 +813,11 @@ class RoleRuntime:
             raise RuntimeError("raytracer_verification_milestone_missing")
         y_start = int(sample.get("y_start", -1))
         y_end = int(sample.get("y_end", -1))
+        x_start = int(sample.get("x_start", 0))
+        x_end = int(sample.get("x_end", 0))
         sample_rows = y_end - y_start
         max_sample_rows = max(1, int(task.get("max_sample_rows", 256) or 256))
-        if y_start < 0 or sample_rows <= 0 or sample_rows > max_sample_rows:
+        if y_start < 0 or x_start < 0 or sample_rows <= 0 or sample_rows > max_sample_rows:
             raise RuntimeError("raytracer_verification_milestone_range_invalid")
         expected = str(sample.get("pixel_sha256", "")).removeprefix("sha256:").lower()
         if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
@@ -824,11 +834,17 @@ class RoleRuntime:
             scene_path = temp_path / "scene.cfg"
             output_path = temp_path / "sample.ppm"
             scene_path.write_bytes(scene_bytes)
+            if x_end <= x_start and challenge.get("strategy") == "random-row-milestone-v1":
+                x_end = scene_resolution(scene_path)[0]
+            if x_end <= x_start:
+                raise RuntimeError("raytracer_verification_milestone_range_invalid")
             command = [
                 sys.executable,
                 str(compute_script),
                 "--scene", str(scene_path),
                 "--output", str(output_path),
+                "--x-start", str(x_start),
+                "--x-end", str(x_end),
                 "--y-start", str(y_start),
                 "--y-end", str(y_end),
                 "--verification-batch-rows", str(sample_rows),
@@ -850,13 +866,15 @@ class RoleRuntime:
         passed = recomputed_hash == expected
         fragment_rows = max(sample_rows, int(challenge.get("fragment_rows", sample_rows) or sample_rows))
         verification = {
-            "mode": "random-row-milestone-v1",
+            "mode": str(challenge.get("strategy")),
             "challenge_nonce": str(challenge.get("challenge_nonce", "")),
             "commitment_hash": str(challenge.get("commitment_hash", "")),
             "milestone_index": int(sample.get("index", 0) or 0),
             "milestone_count": int(challenge.get("milestone_count", 1) or 1),
             "sample_y_start": y_start,
             "sample_y_end": y_end,
+            "sample_x_start": x_start,
+            "sample_x_end": x_end,
             "sample_rows": sample_rows,
             "fragment_rows": fragment_rows,
             "sample_ratio": sample_rows / fragment_rows,
@@ -870,7 +888,7 @@ class RoleRuntime:
             "input_hash": sha256_bytes(p2p_data),
             "expected_hash": expected,
             "recomputed_hash": recomputed_hash,
-            "verification_mode": "random-row-milestone-v1",
+            "verification_mode": str(challenge.get("strategy")),
             "verification": verification,
             "verified": passed,
             "choice": passed,

@@ -14,9 +14,16 @@ def test_verification_milestones_partition_rows_and_commit_pixels() -> None:
     width = 2
     height = 5
     rows = [bytes([value]) * width * 3 for value in range(height)]
-    manifest = build_verification_milestones(_ppm(width, height, b"".join(rows)), 100, batch_rows=2)
+    manifest = build_verification_milestones(
+        _ppm(width, height, b"".join(rows)),
+        100,
+        batch_rows=2,
+        fragment_x_start=40,
+    )
 
-    assert manifest["strategy"] == "random-row-milestone-v1"
+    assert manifest["strategy"] == "random-tile-row-milestone-v2"
+    assert manifest["fragment_x_start"] == 40
+    assert manifest["fragment_x_end"] == 42
     assert manifest["fragment_y_start"] == 100
     assert manifest["fragment_y_end"] == 105
     assert manifest["milestone_count"] == 3
@@ -25,6 +32,7 @@ def test_verification_milestones_partition_rows_and_commit_pixels() -> None:
         (102, 104),
         (104, 105),
     ]
+    assert {(item["x_start"], item["x_end"]) for item in manifest["milestones"]} == {(40, 42)}
 
 
 def test_verification_milestone_only_changes_for_tampered_batch() -> None:

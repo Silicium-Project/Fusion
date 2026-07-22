@@ -410,11 +410,17 @@ def make_split(args: argparse.Namespace, scene_path: Path, split_path: Path) -> 
     return json.loads(split_path.read_text(encoding="utf-8"))
 
 
-def reassemble_fragments(fragment_files: list[tuple[int, Path]], output_ppm: Path, output_png: Path, result_json: Path) -> dict[str, Any]:
+def reassemble_fragments(fragment_files: list[tuple[int, int, Path]], output_ppm: Path, output_png: Path, result_json: Path) -> dict[str, Any]:
     script = NETWORK_ROOT / "workloads" / "raytracer" / "reassemble.py"
     cmd = [sys.executable, str(script)]
-    for y_start, fragment_file in sorted(fragment_files, key=lambda item: item[0]):
-        cmd.extend(["--fragment", str(fragment_file), "--y-start", str(y_start)])
+    for x_start, y_start, fragment_file in fragment_files:
+        cmd.extend(
+            [
+                "--fragment", str(fragment_file),
+                "--x-start", str(x_start),
+                "--y-start", str(y_start),
+            ]
+        )
     cmd.extend(["--output", str(output_ppm), "--png", str(output_png), "--result-json", str(result_json)])
     completed = subprocess.run(cmd, text=True, capture_output=True, timeout=60, check=False)
     if completed.returncode != 0:
@@ -558,7 +564,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         scene_ref = task_input_ref(args, export_dir, local_scene)
         write_progress("split_ready")
-        fragment_files: list[tuple[int, Path]] = []
+        fragment_files: list[tuple[int, int, Path]] = []
 
         pipeline_fragments = []
         for fragment in fragments:
@@ -567,6 +573,8 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "fragment": fragment,
                     "index": index,
+                    "x_start": int(fragment["x_start"]),
+                    "x_end": int(fragment["x_end"]),
                     "y_start": int(fragment["y_start"]),
                     "y_end": int(fragment["y_end"]),
                     "fragment_id": f"{job_id}-frag-{index:03d}",
@@ -633,6 +641,8 @@ def main(argv: list[str] | None = None) -> int:
 
         def launch_compute(context: dict[str, Any]) -> dict[str, Any]:
             index = int(context["index"])
+            x_start = int(context["x_start"])
+            x_end = int(context["x_end"])
             y_start = int(context["y_start"])
             y_end = int(context["y_end"])
             fragment_id = str(context["fragment_id"])
@@ -642,6 +652,8 @@ def main(argv: list[str] | None = None) -> int:
             spec = {
                 "fragment_index": index,
                 "fragment_count": len(fragments),
+                "x_start": x_start,
+                "x_end": x_end,
                 "y_start": y_start,
                 "y_end": y_end,
                 "scene_p2p_ref": scene_ref,
@@ -665,6 +677,8 @@ def main(argv: list[str] | None = None) -> int:
                     "workload": RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
                     "fragment_index": index,
                     "fragment_count": len(fragments),
+                    "x_start": x_start,
+                    "x_end": x_end,
                     "y_start": y_start,
                     "y_end": y_end,
                     "verification_batch_rows": max(1, int(args.verification_batch_rows)),
@@ -698,6 +712,8 @@ def main(argv: list[str] | None = None) -> int:
             token: dict[str, Any],
         ) -> dict[str, Any] | RetryFragmentStage | None:
             index = int(context["index"])
+            x_start = int(context["x_start"])
+            x_end = int(context["x_end"])
             y_start = int(context["y_start"])
             y_end = int(context["y_end"])
             fragment_id = str(context["fragment_id"])
@@ -742,7 +758,7 @@ def main(argv: list[str] | None = None) -> int:
                 fragment_metadata = validate_fragment_ppm(
                     fragment_bytes,
                     task_id=task_id,
-                    expected_width=width,
+                    expected_width=x_end - x_start,
                     expected_height=y_end - y_start,
                     expected_hash=result_hash,
                 )
@@ -751,6 +767,7 @@ def main(argv: list[str] | None = None) -> int:
                     fragment_bytes,
                     y_start,
                     max(1, int(args.verification_batch_rows)),
+                    x_start,
                 )
                 if worker_milestones != expected_milestones:
                     raise RuntimeError("raytracer_milestone_commitment_invalid")
@@ -762,7 +779,7 @@ def main(argv: list[str] | None = None) -> int:
             fragment_png = fragments_dir / f"fragment-{index:03d}.png"
             fragment_file.write_bytes(fragment_bytes)
             preview = write_optional_png(fragment_bytes, fragment_png)
-            fragment_files.append((y_start, fragment_file))
+            fragment_files.append((x_start, y_start, fragment_file))
             progress_fragments[index].update(
                 {
                     "status": "computed",
@@ -792,6 +809,8 @@ def main(argv: list[str] | None = None) -> int:
 
         def launch_verify(context: dict[str, Any], computed: dict[str, Any]) -> dict[str, Any]:
             index = int(context["index"])
+            x_start = int(context["x_start"])
+            x_end = int(context["x_end"])
             y_start = int(context["y_start"])
             y_end = int(context["y_end"])
             fragment_id = str(context["fragment_id"])
@@ -850,6 +869,8 @@ def main(argv: list[str] | None = None) -> int:
                     "source_task_id": compute_task_id,
                     "fragment_index": index,
                     "fragment_count": len(fragments),
+                    "x_start": x_start,
+                    "x_end": x_end,
                     "y_start": y_start,
                     "y_end": y_end,
                     "timeout_s": int(args.node_timeout_s),

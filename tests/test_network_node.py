@@ -2265,13 +2265,15 @@ def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monk
     sample_ppm = b"P6\n2 2\n255\n" + bytes(range(12))
     expected = network_node.ppm_pixel_sha256(sample_ppm)
     challenge = {
-        "strategy": "random-row-milestone-v1",
+        "strategy": "random-tile-row-milestone-v2",
         "challenge_nonce": "nonce-test",
         "commitment_hash": "commitment-test",
         "fragment_rows": 20,
         "milestone_count": 10,
         "milestone": {
             "index": 4,
+            "x_start": 320,
+            "x_end": 322,
             "y_start": 108,
             "y_end": 110,
             "row_count": 2,
@@ -2288,6 +2290,8 @@ def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monk
         output_path.write_bytes(sample_ppm)
         assert command[command.index("--y-start") + 1] == "108"
         assert command[command.index("--y-end") + 1] == "110"
+        assert command[command.index("--x-start") + 1] == "320"
+        assert command[command.index("--x-end") + 1] == "322"
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr(network_node.subprocess, "run", fake_run)
@@ -2299,7 +2303,8 @@ def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monk
     )
 
     assert result["choice"] is True
-    assert result["verification_mode"] == "random-row-milestone-v1"
+    assert result["verification_mode"] == "random-tile-row-milestone-v2"
+    assert result["verification"]["sample_x_start"] == 320
     assert result["verification"]["sample_rows"] == 2
     assert result["verification"]["fragment_rows"] == 20
     assert result["verification"]["sample_ratio"] == pytest.approx(0.1)
