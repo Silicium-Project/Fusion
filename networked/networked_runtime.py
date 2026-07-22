@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -16,6 +17,7 @@ from typing import Any
 # embedded emitter: it must launch Network/silicium, not a repository-level
 # path that may not exist.
 NETWORK_ROOT = Path(__file__).resolve().parents[1]
+MAX_INLINE_CONTENT_BLOB_TOTAL_BYTES = 16 * 1024 * 1024
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -84,6 +86,45 @@ def store_network_content(export_dir: Path, data: bytes, owner_node_id: str) -> 
 
 def store_network_file(export_dir: Path, path: Path, owner_node_id: str) -> dict[str, Any]:
     return store_network_content(export_dir, path.read_bytes(), owner_node_id)
+
+
+def attach_network_content_blobs(export_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """Attach bounded, hash-verified Silicium inputs to a dispatched envelope.
+
+    P2P remains the primary content transport. These blobs make task delivery
+    resilient when a NATed origin cannot accept the worker's immediate fetch.
+    """
+    content_ids: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            protocol = str(value.get("protocol", "")).lower()
+            content_id = str(value.get("content_id", "")).strip().lower()
+            if protocol == "silicium" and len(content_id) == 64 and content_id not in content_ids:
+                content_ids.append(content_id)
+            for nested in value.values():
+                collect(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                collect(nested)
+
+    collect(payload)
+    blobs: list[dict[str, str]] = []
+    total_bytes = 0
+    for content_id in content_ids:
+        path = export_dir / "p2p" / content_id
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        if total_bytes + len(data) > MAX_INLINE_CONTENT_BLOB_TOTAL_BYTES or sha256_bytes(data) != content_id:
+            continue
+        blobs.append({"content_id": content_id, "data_b64": base64.b64encode(data).decode("ascii")})
+        total_bytes += len(data)
+    dispatched = dict(payload)
+    if blobs:
+        dispatched["content_blobs"] = blobs
+    return dispatched
 
 
 def best_shared_ref(ref: dict[str, Any]) -> dict[str, Any]:

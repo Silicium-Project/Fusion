@@ -210,6 +210,35 @@ def append_jsonl(path: Path, payload: Any) -> None:
         handle.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n")
 
 
+def ingest_content_blobs(export_dir: Path, payload: dict[str, Any]) -> list[str]:
+    stored: list[str] = []
+    total_bytes = 0
+    content_blobs = payload.get("content_blobs", [])
+    if not isinstance(content_blobs, list):
+        return stored
+    p2p_dir = export_dir / "p2p"
+    for blob in content_blobs:
+        if not isinstance(blob, dict):
+            continue
+        content_id = str(blob.get("content_id", "")).strip().lower()
+        encoded = str(blob.get("data_b64", ""))
+        if len(content_id) != 64 or any(char not in "0123456789abcdef" for char in content_id):
+            continue
+        try:
+            content = base64.b64decode(encoded.encode("ascii"), validate=True)
+        except (ValueError, UnicodeEncodeError):
+            continue
+        if total_bytes + len(content) > 16 * 1024 * 1024 or hashlib.sha256(content).hexdigest() != content_id:
+            continue
+        p2p_dir.mkdir(parents=True, exist_ok=True)
+        target = p2p_dir / content_id
+        if not target.exists():
+            target.write_bytes(content)
+        stored.append(content_id)
+        total_bytes += len(content)
+    return stored
+
+
 @dataclass
 class NodeConfig:
     export_dir: Path
@@ -3690,6 +3719,7 @@ class PeerNetwork:
                     if not isinstance(payload, dict):
                         self.send_error(400)
                         return
+                    ingest_content_blobs(peer_network.export_dir, payload)
                     enqueue_task_envelope(peer_network.export_dir, payload)
                     body = b'{"ok":true}'
                     self.send_response(202)
@@ -3707,6 +3737,7 @@ class PeerNetwork:
                     if not isinstance(payload, dict):
                         self.send_error(400)
                         return
+                    ingest_content_blobs(peer_network.export_dir, payload)
                     enqueue_request_envelope(peer_network.export_dir, payload)
                     body = b'{"ok":true}'
                     self.send_response(202)
@@ -4576,6 +4607,9 @@ class NetworkNode:
             },
         )
 
+    def ingest_content_blobs(self, payload: dict[str, Any]) -> list[str]:
+        return ingest_content_blobs(self.config.export_dir, payload)
+
     def ingest_dispatched_result(self, payload: dict[str, Any]) -> None:
         item_id = safe_id(str(payload.get("item_id", "")))
         if not item_id:
@@ -4585,26 +4619,7 @@ class NetworkNode:
         log_payload = payload.get("log")
         if not isinstance(result, dict) or not isinstance(log_payload, dict):
             raise ValueError("missing_result_payload")
-        content_blobs = payload.get("content_blobs", [])
-        if isinstance(content_blobs, list):
-            p2p_dir = self.config.export_dir / "p2p"
-            for blob in content_blobs:
-                if not isinstance(blob, dict):
-                    continue
-                content_id = str(blob.get("content_id", "")).strip().lower()
-                encoded = str(blob.get("data_b64", ""))
-                if len(content_id) != 64 or any(char not in "0123456789abcdef" for char in content_id):
-                    continue
-                try:
-                    content = base64.b64decode(encoded.encode("ascii"), validate=True)
-                except (ValueError, UnicodeEncodeError):
-                    continue
-                if len(content) > 16 * 1024 * 1024 or hashlib.sha256(content).hexdigest() != content_id:
-                    continue
-                p2p_dir.mkdir(parents=True, exist_ok=True)
-                target = p2p_dir / content_id
-                if not target.exists():
-                    target.write_bytes(content)
+        self.ingest_content_blobs(payload)
         kind = str(payload.get("envelope_kind") or "task")
         atomic_write_json(self.config.export_dir / f"result.{path_item}.json", result)
         atomic_write_json(self.config.export_dir / f"logs.{path_item}.json", log_payload)
@@ -4792,6 +4807,7 @@ class NetworkNode:
                         attempt["result"] = "no_task_available"
                     else:
                         claimed_task = payload["task"]
+                        self.ingest_content_blobs(claimed_task)
                         kind = str(claimed_task.get("envelope_kind") or "task")
                         claimed_item_id = safe_id(str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown"))
                         if kind == "request":

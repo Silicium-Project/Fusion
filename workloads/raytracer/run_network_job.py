@@ -18,6 +18,7 @@ sys.path.insert(0, str(NETWORK_ROOT / "demo"))
 
 from networked.networked_runtime import (  # noqa: E402
     LocalNetworkEmitter,
+    attach_network_content_blobs,
     dispatch_task_to_scheduler,
     fetch_network_content,
     store_network_content,
@@ -78,6 +79,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=int(os.environ.get("SILICIUM_RAYTRACER_MAX_VERIFY_IN_FLIGHT", "0")),
         help="Maximum concurrent fragment verifications; 0 verifies every ready result.",
+    )
+    parser.add_argument(
+        "--max-compute-attempts",
+        type=int,
+        default=int(os.environ.get("SILICIUM_RAYTRACER_MAX_COMPUTE_ATTEMPTS", "3")),
+        help="Maximum dispatch attempts for transient compute failures.",
+    )
+    parser.add_argument(
+        "--max-verify-attempts",
+        type=int,
+        default=int(os.environ.get("SILICIUM_RAYTRACER_MAX_VERIFY_ATTEMPTS", "3")),
+        help="Maximum dispatch attempts for transient verification failures.",
     )
     parser.add_argument(
         "--verification-batch-rows",
@@ -145,12 +158,40 @@ def read_ref_bytes(args: argparse.Namespace, export_dir: Path, ref: dict[str, An
     return p2p_file_path(ref).read_bytes()
 
 
+def task_failure_details(result: dict[str, Any]) -> tuple[str, str]:
+    error = str(result.get("error") or result.get("last_error") or "unknown_error")
+    node_id = str(result.get("node_id") or "")
+    return error, node_id
+
+
+def is_transient_task_failure(error: str) -> bool:
+    normalized = str(error).lower()
+    return any(
+        marker in normalized
+        for marker in (
+            "peer_content_not_found:",
+            "unknown_peer_for_content:",
+            "content_not_found",
+            "missing network result after deadline:",
+            "timed out",
+            "timeout",
+            "connection reset",
+            "connection refused",
+            "temporarily unavailable",
+        )
+    )
+
+
 def ensure_task_success(result: dict[str, Any], task_id: str) -> None:
     if result.get("success", True) is not False:
         return
-    error = str(result.get("error") or result.get("last_error") or "unknown_error")
-    node_id = str(result.get("node_id") or "")
+    error, node_id = task_failure_details(result)
     raise RuntimeError(f"task failed: {task_id} on {node_id}\n{error}")
+
+
+class RetryFragmentStage:
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
 
 
 def submit_network_task(
@@ -160,6 +201,7 @@ def submit_network_task(
     emitter_node: LocalNetworkEmitter | None,
 ) -> dict[str, Any]:
     """Queue locally for a shared scheduler, otherwise dispatch to the seed."""
+    payload = attach_network_content_blobs(export_dir, payload)
     task_id = str(payload.get("task_id", ""))
     required_roles = payload.get("required_roles", [])
     if emitter_node is None:
@@ -230,6 +272,10 @@ def run_bounded_fragment_pipeline(
             if computed is None:
                 continue
             computing.remove((fragment, compute_token))
+            if isinstance(computed, RetryFragmentStage):
+                pending_compute.append(fragment)
+                progressed = True
+                continue
             pending_verify.append((fragment, computed))
             progressed = True
 
@@ -243,6 +289,10 @@ def run_bounded_fragment_pipeline(
             if verified is None:
                 continue
             verifying.remove((fragment, computed, verify_token))
+            if isinstance(verified, RetryFragmentStage):
+                pending_verify.append((fragment, computed))
+                progressed = True
+                continue
             finish_verify(fragment, computed, verify_token, verified)
             finished += 1
             progressed = True
@@ -523,11 +573,72 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
 
+        def retry_transient_stage(
+            context: dict[str, Any],
+            token: dict[str, Any],
+            *,
+            stage: str,
+            error: str,
+            node_id: str = "",
+        ) -> RetryFragmentStage | None:
+            index = int(context["index"])
+            attempt = int(token.get("attempt", 1))
+            max_attempts = max(
+                1,
+                int(args.max_compute_attempts if stage == "compute" else args.max_verify_attempts),
+            )
+            if not is_transient_task_failure(error) or attempt >= max_attempts:
+                return None
+            excluded_key = f"{stage}_excluded_peer_ids"
+            excluded = {
+                str(value)
+                for value in context.get(excluded_key, [])
+                if str(value).strip()
+            }
+            relaxed_exclusions = False
+            if node_id:
+                excluded.add(node_id)
+            elif excluded and (
+                "missing network result after deadline:" in error.lower()
+                or "timeout" in error.lower()
+                or "timed out" in error.lower()
+            ):
+                # Prefer another worker once, but do not strand a fragment on
+                # a small network where the failed worker is the only peer.
+                excluded.clear()
+                relaxed_exclusions = True
+            context[excluded_key] = sorted(excluded)
+            retry = {
+                "stage": stage,
+                "attempt": attempt,
+                "next_attempt": attempt + 1,
+                "task_id": str(token.get("task_id", "")),
+                "failed_node_id": node_id,
+                "relaxed_exclusions": relaxed_exclusions,
+                "error": error,
+            }
+            retries = progress_fragments[index].setdefault("retries", [])
+            if isinstance(retries, list):
+                retries.append(retry)
+            progress_fragments[index].update(
+                {
+                    "status": f"{stage}_retrying",
+                    f"{stage}_attempt": attempt,
+                    f"{stage}_max_attempts": max_attempts,
+                    "last_transient_error": error,
+                }
+            )
+            write_progress(f"{stage}_retrying")
+            return RetryFragmentStage(error)
+
         def launch_compute(context: dict[str, Any]) -> dict[str, Any]:
             index = int(context["index"])
             y_start = int(context["y_start"])
             y_end = int(context["y_end"])
             fragment_id = str(context["fragment_id"])
+            attempt = int(context.get("compute_attempt", 0)) + 1
+            context["compute_attempt"] = attempt
+            task_id = fragment_id if attempt == 1 else f"{fragment_id}-compute-retry-{attempt:02d}"
             spec = {
                 "fragment_index": index,
                 "fragment_count": len(fragments),
@@ -536,11 +647,18 @@ def main(argv: list[str] | None = None) -> int:
                 "scene_p2p_ref": scene_ref,
                 "verification_batch_rows": max(1, int(args.verification_batch_rows)),
             }
-            progress_fragments[index]["status"] = "queued_compute"
+            progress_fragments[index].update(
+                {
+                    "status": "queued_compute",
+                    "compute_attempt": attempt,
+                    "compute_max_attempts": max(1, int(args.max_compute_attempts)),
+                }
+            )
             compute_payload = {
-                "task_id": fragment_id,
+                "task_id": task_id,
                 "required_roles": ["compute"],
                 "priority": args.priority,
+                "excluded_peer_ids": list(context.get("compute_excluded_peer_ids", [])),
                 "p2p_ref": bytes_input_ref(args, export_dir, json.dumps(spec, sort_keys=True).encode("utf-8")),
                 "task": {
                     "kind": "compute",
@@ -556,7 +674,7 @@ def main(argv: list[str] | None = None) -> int:
             }
             if emitter_node is not None:
                 compute_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
-            clear_previous_result(export_dir, fragment_id)
+            clear_previous_result(export_dir, task_id)
             if args.node_mode == "network":
                 submission = submit_network_task(args, export_dir, compute_payload, emitter_node)
             else:
@@ -570,18 +688,26 @@ def main(argv: list[str] | None = None) -> int:
                 raise
             write_progress("compute_queued")
             return {
-                "task_id": fragment_id,
+                "task_id": task_id,
+                "attempt": attempt,
                 "deadline": time.monotonic() + args.result_timeout_s,
             }
 
-        def poll_compute(context: dict[str, Any], token: dict[str, Any]) -> dict[str, Any] | None:
+        def poll_compute(
+            context: dict[str, Any],
+            token: dict[str, Any],
+        ) -> dict[str, Any] | RetryFragmentStage | None:
             index = int(context["index"])
             y_start = int(context["y_start"])
             y_end = int(context["y_end"])
             fragment_id = str(context["fragment_id"])
+            task_id = str(token["task_id"])
             try:
-                compute_result = poll_task_result(export_dir, fragment_id, float(token["deadline"]))
+                compute_result = poll_task_result(export_dir, task_id, float(token["deadline"]))
             except Exception as error:
+                retry = retry_transient_stage(context, token, stage="compute", error=str(error))
+                if retry is not None:
+                    return retry
                 progress_fragments[index].update({"status": "compute_failed", "error": str(error)})
                 write_progress("compute_failed")
                 raise
@@ -591,20 +717,31 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "role": "compute",
                     "mode": "network",
-                    "target_task_id": fragment_id,
+                    "target_task_id": task_id,
                     "target_result_ready": True,
                     "handled_by": compute_result.get("node_id", ""),
                 }
             )
+            if compute_result.get("success", True) is False:
+                task_error, failed_node_id = task_failure_details(compute_result)
+                retry = retry_transient_stage(
+                    context,
+                    token,
+                    stage="compute",
+                    error=task_error,
+                    node_id=failed_node_id,
+                )
+                if retry is not None:
+                    return retry
             try:
-                ensure_task_success(compute_result, fragment_id)
-                ensure_raytracer_compute_contract(compute_result, fragment_id)
+                ensure_task_success(compute_result, task_id)
+                ensure_raytracer_compute_contract(compute_result, task_id)
                 output_ref = output_ref_from_compute(compute_result)
                 result_hash = result_hash_from_compute(compute_result)
                 fragment_bytes = read_ref_bytes(args, export_dir, output_ref)
                 fragment_metadata = validate_fragment_ppm(
                     fragment_bytes,
-                    task_id=fragment_id,
+                    task_id=task_id,
                     expected_width=width,
                     expected_height=y_end - y_start,
                     expected_hash=result_hash,
@@ -647,6 +784,7 @@ def main(argv: list[str] | None = None) -> int:
             write_progress("fragment_computed")
             return {
                 "compute_result": compute_result,
+                "compute_task_id": task_id,
                 "expected_milestones": expected_milestones,
                 "result_hash": result_hash,
                 "output_ref": output_ref,
@@ -658,14 +796,21 @@ def main(argv: list[str] | None = None) -> int:
             y_end = int(context["y_end"])
             fragment_id = str(context["fragment_id"])
             compute_result = computed["compute_result"]
+            compute_task_id = str(computed["compute_task_id"])
             expected_milestones = computed["expected_milestones"]
-            verify_id = f"{fragment_id}-verify"
+            attempt = int(context.get("verify_attempt", 0)) + 1
+            context["verify_attempt"] = attempt
+            verify_id = (
+                f"{fragment_id}-verify"
+                if attempt == 1
+                else f"{fragment_id}-verify-retry-{attempt:02d}"
+            )
             challenged_milestone = secrets.choice(expected_milestones["milestones"])
             challenge = {
                 "schema_version": 1,
                 "strategy": expected_milestones["strategy"],
                 "challenge_nonce": secrets.token_hex(16),
-                "source_task_id": fragment_id,
+                "source_task_id": compute_task_id,
                 "fragment_index": index,
                 "fragment_rows": expected_milestones["fragment_rows"],
                 "milestone_count": expected_milestones["milestone_count"],
@@ -683,7 +828,17 @@ def main(argv: list[str] | None = None) -> int:
                 "priority": args.priority,
                 "p2p_ref": challenge_ref,
                 "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
-                "excluded_peer_ids": [str(compute_result.get("node_id", ""))] if compute_result.get("node_id") else [],
+                "excluded_peer_ids": sorted(
+                    {
+                        str(compute_result.get("node_id", "")),
+                        *{
+                            str(value)
+                            for value in context.get("verify_excluded_peer_ids", [])
+                            if str(value).strip()
+                        },
+                    }
+                    - {""}
+                ),
                 "scene_p2p_ref": scene_ref,
                 "task": {
                     "kind": "verify",
@@ -692,7 +847,7 @@ def main(argv: list[str] | None = None) -> int:
                     "verification_mode": expected_milestones["strategy"],
                     "max_sample_rows": max(1, int(args.verification_batch_rows)),
                     "scene_p2p_ref": scene_ref,
-                    "source_task_id": fragment_id,
+                    "source_task_id": compute_task_id,
                     "fragment_index": index,
                     "fragment_count": len(fragments),
                     "y_start": y_start,
@@ -718,6 +873,7 @@ def main(argv: list[str] | None = None) -> int:
             write_progress("verify_queued")
             return {
                 "task_id": verify_id,
+                "attempt": attempt,
                 "challenge": challenge,
                 "deadline": time.monotonic() + args.result_timeout_s,
             }
@@ -726,12 +882,15 @@ def main(argv: list[str] | None = None) -> int:
             context: dict[str, Any],
             _computed: dict[str, Any],
             token: dict[str, Any],
-        ) -> dict[str, Any] | None:
+        ) -> dict[str, Any] | RetryFragmentStage | None:
             index = int(context["index"])
             verify_id = str(token["task_id"])
             try:
                 verify_result = poll_task_result(export_dir, verify_id, float(token["deadline"]))
             except Exception as error:
+                retry = retry_transient_stage(context, token, stage="verify", error=str(error))
+                if retry is not None:
+                    return retry
                 progress_fragments[index].update({"status": "verify_failed", "error": str(error)})
                 write_progress("verify_failed")
                 raise
@@ -746,6 +905,17 @@ def main(argv: list[str] | None = None) -> int:
                     "handled_by": verify_result.get("node_id", ""),
                 }
             )
+            if verify_result.get("success", True) is False:
+                task_error, failed_node_id = task_failure_details(verify_result)
+                retry = retry_transient_stage(
+                    context,
+                    token,
+                    stage="verify",
+                    error=task_error,
+                    node_id=failed_node_id,
+                )
+                if retry is not None:
+                    return retry
             return verify_result
 
         def finish_verify(
@@ -756,7 +926,7 @@ def main(argv: list[str] | None = None) -> int:
         ) -> None:
             index = int(context["index"])
             fragment_id = str(context["fragment_id"])
-            verify_id = f"{fragment_id}-verify"
+            verify_id = str(token["task_id"])
             try:
                 ensure_task_success(verify_result, verify_id)
             except RuntimeError as error:

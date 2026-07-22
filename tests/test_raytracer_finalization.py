@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 
 import pytest
 
+from networked.networked_runtime import attach_network_content_blobs, store_network_content
 from workloads.common import ppm_to_png_bytes, sha256_bytes
 from workloads.raytracer import raytracer_workload
 from workloads.raytracer.run_network_job import (
     ensure_submission_success,
     ensure_raytracer_compute_contract,
+    is_transient_task_failure,
+    RetryFragmentStage,
     run_bounded_fragment_pipeline,
     submit_network_task,
     validate_fragment_ppm,
@@ -69,6 +73,75 @@ def test_scheduler_dispatch_failure_is_immediate() -> None:
                 },
             }
         )
+
+
+def test_task_dispatch_attaches_hash_verified_network_inputs(tmp_path) -> None:
+    scene = store_network_content(tmp_path, b"scene", "emitter")
+    spec = store_network_content(tmp_path, b"spec", "emitter")
+
+    payload = attach_network_content_blobs(
+        tmp_path,
+        {"p2p_ref": spec, "task": {"scene_p2p_ref": scene}},
+    )
+
+    blobs = {item["content_id"]: base64.b64decode(item["data_b64"]) for item in payload["content_blobs"]}
+    assert blobs[spec["content_id"]] == b"spec"
+    assert blobs[scene["content_id"]] == b"scene"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "peer_content_not_found:abc",
+        "unknown_peer_for_content:emitter",
+        "missing network result after deadline: result.json",
+        "connection reset by peer",
+    ],
+)
+def test_transient_task_failures_are_retryable(error: str) -> None:
+    assert is_transient_task_failure(error)
+
+
+def test_fragment_pipeline_requeues_transient_compute_and_verify_failures() -> None:
+    events: list[str] = []
+
+    def launch_compute(_fragment):
+        attempt = 1 + events.count("compute_launch")
+        events.append("compute_launch")
+        return {"attempt": attempt}
+
+    def poll_compute(_fragment, token):
+        if token["attempt"] == 1:
+            return RetryFragmentStage("peer_content_not_found:input")
+        return {"computed": True}
+
+    def launch_verify(_fragment, _computed):
+        attempt = 1 + events.count("verify_launch")
+        events.append("verify_launch")
+        return {"attempt": attempt}
+
+    def poll_verify(_fragment, _computed, token):
+        if token["attempt"] == 1:
+            return RetryFragmentStage("connection reset")
+        return {"verified": True}
+
+    def finish_verify(_fragment, _computed, _token, verified):
+        assert verified == {"verified": True}
+        events.append("finished")
+
+    run_bounded_fragment_pipeline(
+        [{"index": 0}],
+        max_compute_in_flight=1,
+        max_verify_in_flight=1,
+        launch_compute=launch_compute,
+        poll_compute=poll_compute,
+        launch_verify=launch_verify,
+        poll_verify=poll_verify,
+        finish_verify=finish_verify,
+        idle=lambda: None,
+    )
+
+    assert events == ["compute_launch", "compute_launch", "verify_launch", "verify_launch", "finished"]
 
 
 def test_fragment_pipeline_overlaps_compute_and_verification() -> None:

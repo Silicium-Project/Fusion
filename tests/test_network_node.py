@@ -1,3 +1,4 @@
+import base64
 import json
 import types
 import threading
@@ -820,6 +821,27 @@ def test_network_node_retries_then_dead_letters_failures(tmp_path: Path) -> None
     assert (export_dir / "dead_letters.ndjson").exists()
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
     assert metrics["dead_lettered"] == 1
+
+
+def test_network_node_ingests_bounded_dispatched_content(tmp_path: Path) -> None:
+    export_dir = tmp_path / "export"
+    node = network_node.NetworkNode(_config(export_dir, "worker-node"))
+    content = b"inline task input"
+    content_id = network_node.sha256_bytes(content)
+
+    stored = node.ingest_content_blobs(
+        {
+            "content_blobs": [
+                {
+                    "content_id": content_id,
+                    "data_b64": base64.b64encode(content).decode("ascii"),
+                }
+            ]
+        }
+    )
+
+    assert stored == [content_id]
+    assert (export_dir / "p2p" / content_id).read_bytes() == content
 
 
 def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
