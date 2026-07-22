@@ -916,6 +916,18 @@ $ErrorActionPreference = 'Stop'
 try {
   while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 250 }
   if ($NodePid -gt 0) { & taskkill.exe /PID $NodePid /T /F | Out-Null }
+  if ($RepoRoot) {
+    Get-CimInstance Win32_Process | Where-Object {
+      $_.ProcessId -ne $PID -and
+      $_.CommandLine -and
+      $_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+      $_.CommandLine.IndexOf($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+    } | ForEach-Object {
+      & taskkill.exe /PID $_.ProcessId /T /F | Out-Null
+      Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) stale_node_runtime_stopped pid=$($_.ProcessId)"
+    }
+    Remove-Item -LiteralPath (Join-Path $RepoRoot '.silicium\node-app\silicium-node.pid') -Force -ErrorAction SilentlyContinue
+  }
   Get-Process -Name 'silicium-node' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 1
   $process = $null
@@ -1572,6 +1584,16 @@ pub fn run_supervisor_cli() -> i32 {
     if validate_repo_root(&repo_root).is_err() {
         return 2;
     }
+    if let Ok(Some(existing_pid)) = read_supervisor_pid(&repo_root) {
+        if existing_pid != std::process::id() && process_is_running(existing_pid) {
+            return 0;
+        }
+    }
+    // An older updater may have lost silicium-node.pid while leaving the
+    // Python network runtime alive. Replace it on supervisor startup so the
+    // advertised app version/build always matches this executable.
+    kill_managed_node_processes(&repo_root);
+    remove_pid(&repo_root);
     let _ = write_supervisor_pid(&repo_root, std::process::id());
     thread::spawn(run_background_update_loop);
     let config = read_service_config(&repo_root).unwrap_or_else(|_| NodeConfig {
@@ -2283,6 +2305,29 @@ fn kill_known_silicium_processes(repo_root: Option<&Path>) {
     let _ = command.status();
 }
 
+fn kill_managed_node_processes(repo_root: &Path) {
+    if !cfg!(target_os = "windows") {
+        return;
+    }
+    let escaped = repo_root.display().to_string().replace('\'', "''");
+    let script = format!(
+        "$root = '{escaped}'; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 }} | ForEach-Object {{ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null }}"
+    );
+    let mut command = Command::new("powershell.exe");
+    command
+        .arg("-NoProfile")
+        .arg("-NonInteractive")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-Command")
+        .arg(script)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    configure_detached_process(&mut command);
+    let _ = command.status();
+}
+
 fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> {
     let path = node_app_log_path(repo_root, "silicium-supervisor.err.log");
     if let Some(parent) = path.parent() {
@@ -2925,6 +2970,10 @@ mod tests {
         assert!(source.contains("'--supervisor', '--repo-root'"));
         assert!(source.contains("installer_launch_retry"));
         assert!(source.contains("supervisor_recovered_after_update_failure"));
+        assert!(source.contains("stale_node_runtime_stopped"));
+        assert!(source.contains("Get-CimInstance Win32_Process"));
+        assert!(source.contains("IndexOf('silicium node start'"));
+        assert!(source.contains("kill_managed_node_processes(&repo_root)"));
     }
 
     #[test]
