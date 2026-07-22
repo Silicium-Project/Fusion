@@ -58,6 +58,14 @@
         Version dev (mises a jour 30s)
       </a>
 
+      <a
+        :href="nodeAppLinuxDevUrl"
+        download
+        class="inline-flex items-center ml-3 mt-4 px-5 py-3 text-sm font-semibold rounded-full border border-emerald-400/30 text-emerald-200 hover:text-emerald-100 hover:border-emerald-300/60 transition-colors"
+      >
+        Linux dev (AppImage)
+      </a>
+
       <!-- Dashboard Preview -->
       <div class="mt-20 w-full max-w-6xl mx-auto group">
         <img 
@@ -82,6 +90,7 @@ const router = useRouter();
 const { public: publicConfig } = useRuntimeConfig();
 const nodeAppWindowsUrl = publicConfig.nodeAppWindowsUrl;
 const nodeAppWindowsDevUrl = publicConfig.nodeAppWindowsDevUrl;
+const nodeAppLinuxDevUrl = publicConfig.nodeAppLinuxDevUrl;
 
 function handleRegister() {
   router.push(`/auth`);
