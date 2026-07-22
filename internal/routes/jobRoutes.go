@@ -16,4 +16,5 @@ func RegisterJobRoutes(router *mux.Router, h handler.Handler) {
 	jobsRouter.HandleFunc("/{id}", h.GetJob).Methods("GET")
 	jobsRouter.HandleFunc("/{id}/dashboard", h.GetJobDashboard).Methods("GET")
 	jobsRouter.HandleFunc("/{id}/result", h.GetJobResult).Methods("GET")
+	jobsRouter.HandleFunc("/{id}/fragments/{index}/preview", h.GetJobFragmentPreview).Methods("GET")
 }
