@@ -63,8 +63,11 @@
       <section v-if="payload" class="mb-6 bg-[#1f2029] rounded-2xl p-6">
         <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
           <div>
-            <h2 class="text-2xl font-bold">Puzzle du rendu</h2>
-            <p class="text-white/50">Les fragments se remplissent pendant le calcul, puis passent en vert apres verification.</p>
+            <div class="flex items-center gap-3">
+              <h2 class="text-2xl font-bold">Rendu distribue en direct</h2>
+              <span v-if="payload.job.status === 'running'" class="live-badge"><i></i> LIVE</span>
+            </div>
+            <p class="text-white/50">Chaque bande apparait des que son worker renvoie les pixels, avant meme la reassemblage final.</p>
           </div>
           <div class="text-right">
             <p class="text-white/50 text-sm">Etape courante</p>
@@ -74,18 +77,68 @@
         <div class="h-3 rounded-full bg-black/30 overflow-hidden mb-5">
           <div class="h-full bg-gradient-to-r from-purple-400 to-green-400 transition-all" :style="{ width: `${progressPercent}%` }"></div>
         </div>
-        <div class="grid gap-2" :style="{ gridTemplateColumns: `repeat(${puzzleColumns}, minmax(0, 1fr))` }">
+
+        <div class="live-render-layout">
+          <div class="live-render-stage">
+            <div class="live-render-canvas" :style="{ aspectRatio: `${imageWidth} / ${imageHeight}` }">
+              <div
+                v-for="tile in puzzleTiles"
+                :key="tile.id"
+                class="live-render-tile"
+                :class="tileVisualClass(tile)"
+                :style="tilePosition(tile)"
+              >
+                <img
+                  v-if="fragmentPreviewUrls[tile.index]"
+                  :src="fragmentPreviewUrls[tile.index]"
+                  :alt="`Fragment ${tile.index}`"
+                  draggable="false"
+                />
+                <div v-else class="tile-placeholder">
+                  <span class="tile-grid"></span>
+                  <strong>#{{ tile.index }}</strong>
+                  <small>{{ tileStatusLabel(tile.status) }}</small>
+                </div>
+                <div class="tile-state">
+                  <span>#{{ tile.index }}</span>
+                  <span>{{ tileStatusLabel(tile.status) }}</span>
+                </div>
+                <span v-if="tile.status === 'verified' || tile.status === 'reassembled'" class="verified-sweep"></span>
+              </div>
+              <div class="render-scanline" :class="{ active: payload.job.status === 'running' }"></div>
+              <div class="render-vignette"></div>
+              <div v-if="puzzleTiles.length === 0" class="render-empty">Preparation du decoupage...</div>
+            </div>
+          </div>
+
+          <div class="live-render-legend">
+            <div>
+              <strong>{{ previewFragmentCount }}</strong>
+              <span>tuiles visibles</span>
+            </div>
+            <div>
+              <strong>{{ verifiedFragments }}</strong>
+              <span>verifiees</span>
+            </div>
+            <div>
+              <strong>{{ expectedFragmentCount }}</strong>
+              <span>total</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 grid gap-2" :style="{ gridTemplateColumns: `repeat(${statusGridColumns}, minmax(0, 1fr))` }">
           <div
             v-for="tile in puzzleTiles"
-            :key="tile.id"
-            class="min-h-16 rounded-lg border p-3 transition-colors"
-            :class="tileClass(tile.status)"
+            :key="`${tile.id}-status`"
+            class="rounded-lg border px-3 py-2 transition-colors"
+            :class="tileStatusClass(tile.status)"
           >
             <div class="flex items-center justify-between gap-2">
               <span class="font-bold">#{{ tile.index }}</span>
-              <span class="text-xs">{{ tile.status }}</span>
+              <span class="text-xs">{{ tileStatusLabel(tile.status) }}</span>
             </div>
-            <p class="text-xs mt-2 opacity-70">y {{ tile.yStart }} -> {{ tile.yEnd }}</p>
+            <p class="text-xs mt-1 opacity-70">y {{ tile.yStart }} → {{ tile.yEnd }}</p>
           </div>
         </div>
       </section>
@@ -192,6 +245,7 @@
                 <th class="py-3">Parent</th>
                 <th class="py-3">Worker</th>
                 <th class="py-3">Verification</th>
+                <th class="py-3">Echantillon audite</th>
                 <th class="py-3">Hash resultat</th>
               </tr>
             </thead>
@@ -205,6 +259,7 @@
                     {{ fragment.status || (fragment.verify_choice ? 'verified' : 'pending') }}
                   </span>
                 </td>
+                <td class="py-4 text-sm text-white/70">{{ verificationSummary(fragment) }}</td>
                 <td class="py-4 font-mono text-sm break-all">{{ shortHash(fragment.compute_result_hash || fragment.expected_hash) }}</td>
               </tr>
             </tbody>
@@ -256,12 +311,23 @@ type TreeEdge = {
   y2: number;
 };
 
+type PuzzleTile = {
+  id: string;
+  index: number;
+  yStart: number;
+  yEnd: number;
+  status: string;
+  previewReady: boolean;
+};
+
 const route = useRoute();
 const config = useRuntimeConfig();
 const apiBase = config.public.apiBase;
 const payload = ref<DashboardPayload | null>(null);
 const errorMessage = ref('');
 const resultPreviewUrl = ref('');
+const fragmentPreviewUrls = ref<Record<number, string>>({});
+const fragmentPreviewLoading = new Set<number>();
 const refreshTimer = ref<ReturnType<typeof setInterval> | null>(null);
 
 const authHeaders = () => {
@@ -272,8 +338,12 @@ const authHeaders = () => {
 const fragments = computed<any[]>(() => Array.isArray(payload.value?.summary.fragments) ? payload.value?.summary.fragments : []);
 const finalHash = computed(() => payload.value?.summary.finalHash || payload.value?.summary.reassembledHash || payload.value?.summary.expectedFullHash || '');
 const splitTree = computed(() => payload.value?.summary.splitTree || payload.value?.devnet.splitTree || null);
+const imageWidth = computed(() => Math.max(1, Number(payload.value?.summary.image?.width || 1280)));
+const imageHeight = computed(() => Math.max(1, Number(payload.value?.summary.image?.height || 720)));
 const expectedFragmentCount = computed(() => Number(payload.value?.summary.fragmentCount || fragments.value.length || 0));
 const verifiedFragments = computed(() => fragments.value.filter((fragment) => fragment.verify_choice || ['verified', 'reassembled'].includes(String(fragment.status))).length);
+const previewFragmentCount = computed(() => Object.keys(fragmentPreviewUrls.value).length);
+const statusGridColumns = computed(() => Math.min(4, Math.max(1, expectedFragmentCount.value)));
 const progressPercent = computed(() => {
   const total = Math.max(1, expectedFragmentCount.value);
   const weighted = fragments.value.reduce((sum, fragment) => {
@@ -288,8 +358,7 @@ const progressPercent = computed(() => {
   }, 0);
   return Math.max(0, Math.min(100, Math.round((weighted / total) * 100)));
 });
-const puzzleColumns = computed(() => Math.max(1, Math.min(4, expectedFragmentCount.value || 1)));
-const puzzleTiles = computed(() => {
+const puzzleTiles = computed<PuzzleTile[]>(() => {
   const sorted = [...fragments.value].sort((a, b) => Number(a.y_start ?? 0) - Number(b.y_start ?? 0));
   return sorted.map((fragment, index) => ({
     id: String(fragment.fragment_id || fragment.fragment_index || index),
@@ -297,6 +366,7 @@ const puzzleTiles = computed(() => {
     yStart: Number(fragment.y_start ?? 0),
     yEnd: Number(fragment.y_end ?? 0),
     status: String(fragment.status || (fragment.verify_choice ? 'verified' : 'planned')),
+    previewReady: Boolean(fragment.preview_ready) || Boolean(fragment.compute_result_hash || fragment.result_hash),
   }));
 });
 const latestNodeRunText = computed(() => {
@@ -382,13 +452,43 @@ const loadResultPreview = async () => {
   resultPreviewUrl.value = URL.createObjectURL(blob);
 };
 
+const loadFragmentPreviews = async () => {
+  const jobId = payload.value?.job.id;
+  if (!jobId) return;
+  const pending = puzzleTiles.value.filter((tile) => (
+    tile.previewReady
+    && !fragmentPreviewUrls.value[tile.index]
+    && !fragmentPreviewLoading.has(tile.index)
+  ));
+  await Promise.allSettled(pending.map(async (tile) => {
+    fragmentPreviewLoading.add(tile.index);
+    try {
+      const response = await fetch(`${apiBase}/jobs/${jobId}/fragments/${tile.index}/preview`, {
+        headers: authHeaders(),
+        cache: 'no-store',
+      });
+      if (!response.ok) return;
+      const blob = await response.blob();
+      if (!blob.type.startsWith('image/')) return;
+      const previous = fragmentPreviewUrls.value[tile.index];
+      if (previous) URL.revokeObjectURL(previous);
+      fragmentPreviewUrls.value = {
+        ...fragmentPreviewUrls.value,
+        [tile.index]: URL.createObjectURL(blob),
+      };
+    } finally {
+      fragmentPreviewLoading.delete(tile.index);
+    }
+  }));
+};
+
 const loadDashboard = async () => {
   errorMessage.value = '';
   try {
     payload.value = await $fetch<DashboardPayload>(`${apiBase}/jobs/${route.params.id}/dashboard`, {
       headers: authHeaders(),
     });
-    await loadResultPreview();
+    await Promise.all([loadResultPreview(), loadFragmentPreviews()]);
     updateRefreshTimer();
   } catch (error: any) {
     errorMessage.value = error?.data || error?.message || 'Impossible de charger le dashboard du job.';
@@ -428,7 +528,7 @@ const shortHash = (value: any) => {
   return `${text.slice(0, 10)}...${text.slice(-8)}`;
 };
 
-const tileClass = (status: string) => {
+const tileStatusClass = (status: string) => {
   if (status === 'reassembled' || status === 'verified') return 'border-green-400/50 bg-green-500/20 text-green-100';
   if (status === 'queued_verify') return 'border-blue-400/50 bg-blue-500/20 text-blue-100';
   if (status === 'computed') return 'border-cyan-400/50 bg-cyan-500/20 text-cyan-100';
@@ -437,9 +537,323 @@ const tileClass = (status: string) => {
   return 'border-white/10 bg-black/20 text-white/60';
 };
 
+const verificationSummary = (fragment: any) => {
+  const audit = fragment?.verification_result;
+  if (!audit || typeof audit !== 'object' || !audit.sample_rows) return 'en attente';
+  const ratio = Math.round(Number(audit.sample_ratio || 0) * 1000) / 10;
+  return `${audit.sample_rows}/${audit.fragment_rows} lignes (${ratio} %) · batch #${audit.milestone_index}`;
+};
+
+const tileStatusLabel = (status: string) => {
+  const labels: Record<string, string> = {
+    planned: 'planifiee',
+    preparing: 'preparation',
+    queued_compute: 'calcul en attente',
+    computed: 'pixels recus',
+    queued_verify: 'verification',
+    verified: 'verifiee',
+    reassembled: 'assemblee',
+    compute_failed: 'calcul echoue',
+    verify_failed: 'verification echouee',
+  };
+  return labels[status] || status;
+};
+
+const tilePosition = (tile: PuzzleTile) => {
+  const height = imageHeight.value;
+  const top = Math.max(0, Math.min(100, (tile.yStart / height) * 100));
+  const tileHeight = Math.max(0.25, Math.min(100 - top, ((tile.yEnd - tile.yStart) / height) * 100));
+  return { top: `${top}%`, height: `${tileHeight}%` };
+};
+
+const tileVisualClass = (tile: PuzzleTile) => ({
+  'is-ready': Boolean(fragmentPreviewUrls.value[tile.index]),
+  'is-verified': tile.status === 'verified' || tile.status === 'reassembled',
+  'is-active': ['preparing', 'queued_compute', 'computed', 'queued_verify'].includes(tile.status),
+  'is-failed': ['compute_failed', 'verify_failed'].includes(tile.status),
+});
+
 onMounted(loadDashboard);
 onBeforeUnmount(() => {
   if (refreshTimer.value) clearInterval(refreshTimer.value);
   if (resultPreviewUrl.value) URL.revokeObjectURL(resultPreviewUrl.value);
+  Object.values(fragmentPreviewUrls.value).forEach((url) => URL.revokeObjectURL(url));
 });
 </script>
+
+<style scoped>
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgb(248 113 113 / 45%);
+  border-radius: 999px;
+  background: rgb(239 68 68 / 12%);
+  padding: 0.25rem 0.65rem;
+  color: rgb(254 202 202);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.live-badge i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: rgb(248 113 113);
+  box-shadow: 0 0 0 0 rgb(248 113 113 / 55%);
+  animation: live-pulse 1.6s infinite;
+}
+
+.live-render-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.live-render-stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(168 85 247 / 30%);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 50% 45%, rgb(88 28 135 / 30%), transparent 65%),
+    #07080d;
+  box-shadow: 0 22px 70px rgb(0 0 0 / 38%), inset 0 0 55px rgb(168 85 247 / 8%);
+}
+
+.live-render-stage::before {
+  content: '';
+  position: absolute;
+  inset: -35%;
+  z-index: 0;
+  background: conic-gradient(from 180deg, transparent, rgb(168 85 247 / 12%), transparent 32%);
+  animation: stage-aura 12s linear infinite;
+}
+
+.live-render-canvas {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  overflow: hidden;
+  background-color: #080910;
+  background-image:
+    linear-gradient(rgb(255 255 255 / 3%) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 3%) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.live-render-tile {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+  border-block: 1px solid rgb(168 85 247 / 20%);
+  background: rgb(15 16 25 / 90%);
+  transition: border-color 350ms ease, box-shadow 350ms ease, filter 350ms ease;
+}
+
+.live-render-tile img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: fill;
+  user-select: none;
+  animation: tile-reveal 700ms cubic-bezier(.2,.9,.2,1) both;
+}
+
+.live-render-tile.is-active:not(.is-ready) {
+  border-color: rgb(192 132 252 / 55%);
+  box-shadow: inset 0 0 24px rgb(168 85 247 / 16%);
+}
+
+.live-render-tile.is-verified {
+  border-color: rgb(74 222 128 / 70%);
+  box-shadow: inset 0 0 16px rgb(34 197 94 / 10%);
+}
+
+.live-render-tile.is-failed {
+  border-color: rgb(248 113 113 / 80%);
+  filter: saturate(0.45);
+}
+
+.tile-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  color: rgb(216 180 254 / 80%);
+  background: linear-gradient(110deg, transparent 15%, rgb(168 85 247 / 10%) 48%, transparent 82%);
+  background-size: 220% 100%;
+  animation: tile-loading 2.4s linear infinite;
+}
+
+.tile-placeholder strong {
+  font-size: clamp(0.65rem, 1.4vw, 1rem);
+}
+
+.tile-placeholder small {
+  color: rgb(255 255 255 / 42%);
+  font-size: clamp(0.5rem, 1vw, 0.72rem);
+}
+
+.tile-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.45;
+  background-image: repeating-linear-gradient(90deg, transparent 0 11px, rgb(168 85 247 / 10%) 12px);
+}
+
+.tile-state {
+  position: absolute;
+  top: 50%;
+  right: 0.75rem;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  transform: translateY(-50%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 999px;
+  background: rgb(5 6 10 / 76%);
+  padding: 0.22rem 0.55rem;
+  color: rgb(255 255 255 / 78%);
+  font-size: 0.65rem;
+  backdrop-filter: blur(8px);
+  transition: opacity 180ms ease;
+}
+
+.is-ready .tile-state {
+  opacity: 0;
+}
+
+.is-ready:hover .tile-state {
+  opacity: 1;
+}
+
+.verified-sweep {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-right: 2px solid rgb(74 222 128 / 75%);
+  background: linear-gradient(90deg, transparent 0 85%, rgb(74 222 128 / 12%));
+  animation: verified-flash 900ms ease-out both;
+}
+
+.render-scanline {
+  position: absolute;
+  z-index: 6;
+  top: -8%;
+  left: 0;
+  width: 100%;
+  height: 8%;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(180deg, transparent, rgb(216 180 254 / 22%), transparent);
+}
+
+.render-scanline.active {
+  opacity: 1;
+  animation: render-scan 4.5s linear infinite;
+}
+
+.render-vignette {
+  position: absolute;
+  z-index: 7;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 70px rgb(0 0 0 / 48%);
+}
+
+.render-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgb(255 255 255 / 35%);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+}
+
+.live-render-legend {
+  display: grid;
+  grid-template-rows: repeat(3, 1fr);
+  gap: 0.65rem;
+}
+
+.live-render-legend > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 0.85rem;
+  background: rgb(0 0 0 / 18%);
+  padding: 0.75rem;
+}
+
+.live-render-legend strong {
+  color: white;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.live-render-legend span {
+  margin-top: 0.4rem;
+  color: rgb(255 255 255 / 42%);
+  font-size: 0.68rem;
+}
+
+@keyframes live-pulse {
+  70% { box-shadow: 0 0 0 7px rgb(248 113 113 / 0%); }
+  100% { box-shadow: 0 0 0 0 rgb(248 113 113 / 0%); }
+}
+
+@keyframes stage-aura {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes tile-loading {
+  to { background-position: -220% 0; }
+}
+
+@keyframes tile-reveal {
+  from { opacity: 0; filter: brightness(2.2) saturate(0); transform: scaleX(1.018); }
+  to { opacity: 1; filter: brightness(1) saturate(1); transform: scaleX(1); }
+}
+
+@keyframes verified-flash {
+  from { opacity: 1; transform: translateX(-100%); }
+  to { opacity: 0; transform: translateX(0); }
+}
+
+@keyframes render-scan {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(1350%); }
+}
+
+@media (max-width: 700px) {
+  .live-render-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .live-render-legend {
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-badge i,
+  .live-render-stage::before,
+  .live-render-tile img,
+  .tile-placeholder,
+  .verified-sweep,
+  .render-scanline.active {
+    animation: none;
+  }
+}
+</style>
