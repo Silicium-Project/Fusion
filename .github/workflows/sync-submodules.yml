@@ -33,7 +33,6 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-          persist-credentials: false
           submodules: recursive
 
       - name: Resolve configured submodule branches
