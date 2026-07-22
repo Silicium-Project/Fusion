@@ -75,6 +75,11 @@ def safe_id(value: str) -> str:
     return cleaned or uuid.uuid4().hex
 
 
+def optional_peer_id(value: Any) -> str:
+    raw = str(value or "").strip()
+    return safe_id(raw) if raw else ""
+
+
 def safe_path_id(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value.strip())
     return cleaned or uuid.uuid4().hex
@@ -1613,8 +1618,7 @@ class PeerNetwork:
         return False, "task_not_found"
 
     def _optional_peer_id(self, value: Any) -> str:
-        raw = str(value or "").strip()
-        return safe_id(raw) if raw else ""
+        return optional_peer_id(value)
 
     def _peer_for_signaling(self, peer_id: str) -> dict[str, Any] | None:
         safe_peer_id = safe_id(peer_id)
@@ -4405,7 +4409,7 @@ class NetworkNode:
         if kind != "request":
             body = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
         excluded_peer_ids = {
-            self._optional_peer_id(value)
+            optional_peer_id(value)
             for value in (envelope.get("excluded_peer_ids", []) if isinstance(envelope.get("excluded_peer_ids"), list) else [])
         }
         excluded_peer_ids.discard("")

@@ -2071,6 +2071,34 @@ def test_remote_dispatch_filters_peers_with_onchain_thresholds(tmp_path: Path) -
         peer_c.stop()
 
 
+def test_remote_dispatch_normalizes_excluded_peer_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    export_dir = tmp_path / "remote-dispatch-excluded"
+    node = network_node.NetworkNode(
+        _config(export_dir, "node-a", roles="storage", gossip_enable=False, remote_dispatch_enable=True)
+    )
+    observed_exclude: set[str] = set()
+
+    def select_peers(**kwargs: object) -> list[dict[str, object]]:
+        observed_exclude.update(kwargs["exclude"])  # type: ignore[arg-type]
+        return []
+
+    monkeypatch.setattr(node.peer_network, "select_peers", select_peers)
+
+    dispatched = node.try_remote_dispatch(
+        {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": "verify:excluded",
+            "required_roles": ["verify"],
+            "excluded_peer_ids": ["compute worker", "", None],
+            "task": {"kind": "verify"},
+        }
+    )
+
+    assert dispatched is False
+    assert observed_exclude == {"node-a", "compute_worker"}
+
+
 def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
     export_seed = tmp_path / "seed"
     export_worker = tmp_path / "worker"
