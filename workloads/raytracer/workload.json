@@ -29,6 +29,12 @@
     "target_pixels_per_fragment": 120000,
     "max_fragments": 32
   },
+  "verification_policy": {
+    "strategy": "random-row-milestone-v1",
+    "default_batch_rows": 20,
+    "samples_per_fragment": 1,
+    "exclude_compute_worker": true
+  },
   "portability": {
     "windows": true,
     "linux": true,

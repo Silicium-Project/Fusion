@@ -3059,6 +3059,13 @@ def cmd_mcp_print_config(args: argparse.Namespace, ctx: Context) -> None:
 
 def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--export-dir", default="", help="MCP/network export directory (default: MCP config).")
+    parser.add_argument("--app-version", default=os.environ.get("SILICIUM_APP_VERSION", "unknown"))
+    parser.add_argument(
+        "--release-channel",
+        default=os.environ.get("SILICIUM_RELEASE_CHANNEL", "dev"),
+        choices=["dev", "prod"],
+    )
+    parser.add_argument("--release-build", default=os.environ.get("SILICIUM_RELEASE_BUILD", ""))
     parser.add_argument(
         "--world",
         action="store_true",
@@ -3165,6 +3172,12 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
         str(args.roles),
         "--node-id",
         node_id,
+        "--app-version",
+        str(args.app_version),
+        "--release-channel",
+        str(args.release_channel),
+        "--release-build",
+        str(args.release_build),
         "--idle-ms",
         str(args.idle_ms),
         "--max-items",

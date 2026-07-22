@@ -6,6 +6,7 @@ import os
 import math
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,7 @@ from typing import Any
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_TARGET_PIXELS_PER_FRAGMENT = 120_000
 DEFAULT_MAX_FRAGMENTS = 32
+DEFAULT_VERIFICATION_BATCH_ROWS = 20
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -44,6 +46,29 @@ def ppm_to_png_bytes(ppm_bytes: bytes) -> bytes:
     return convert(ppm_bytes)
 
 
+def write_optional_png(ppm_bytes: bytes, path: Path) -> dict[str, Any]:
+    path = path.resolve()
+    try:
+        png_bytes = ppm_to_png_bytes(ppm_bytes)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(png_bytes)
+    except Exception as exc:
+        if path.exists():
+            path.unlink()
+        return {
+            "ready": False,
+            "path": "",
+            "sha256": "",
+            "error": f"{type(exc).__name__}:{exc}",
+        }
+    return {
+        "ready": True,
+        "path": str(path),
+        "sha256": sha256_bytes(png_bytes),
+        "error": "",
+    }
+
+
 def raytracer_binary() -> Path:
     override = os.environ.get("SILICIUM_RAYTRACER_BIN", "").strip()
     if not override:
@@ -60,10 +85,15 @@ def prepare_runtime_dir(binary: Path, runtime_dir: Path) -> Path:
     assets = Path(assets_override).expanduser() if assets_override else binary.parent / "assets"
     if assets.exists() and assets.is_dir():
         shutil.copytree(assets, runtime_dir / "assets", dirs_exist_ok=True)
-    for dll in binary.parent.glob("*.dll"):
-        shutil.copy2(dll, runtime_dir / dll.name)
+    for companion in binary.parent.iterdir():
+        if companion != binary and companion.is_file():
+            shutil.copy2(companion, runtime_dir / companion.name)
     target = runtime_dir / binary.name
     shutil.copy2(binary, target)
+    if os.name != "nt":
+        # Deployment and P2P copies can arrive as 0644. This runtime copy is
+        # private to the process, so restore only the owner's execute bit.
+        target.chmod(target.stat().st_mode | stat.S_IXUSR)
     return target
 
 
@@ -100,8 +130,7 @@ def split_ranges(height: int, fragment_count: int) -> list[tuple[int, int]]:
     return ranges
 
 
-def read_ppm(path: Path) -> tuple[int, int, bytes]:
-    data = path.read_bytes()
+def parse_ppm_bytes(data: bytes, source: str = "<bytes>") -> tuple[int, int, bytes]:
     idx = 0
 
     def token() -> bytes:
@@ -119,19 +148,69 @@ def read_ppm(path: Path) -> tuple[int, int, bytes]:
 
     magic = token()
     if magic != b"P6":
-        raise ValueError(f"unsupported_ppm_magic:{path}")
+        raise ValueError(f"unsupported_ppm_magic:{source}")
     width = int(token())
     height = int(token())
     max_value = int(token())
     if max_value != 255:
         raise ValueError(f"unsupported_ppm_max_value:{max_value}")
-    while idx < len(data) and chr(data[idx]).isspace():
+    if idx >= len(data) or data[idx] not in b" \t\r\n":
+        raise ValueError(f"missing_ppm_raster_separator:{source}")
+    if data[idx : idx + 2] == b"\r\n":
+        idx += 2
+    else:
         idx += 1
     pixels = data[idx:]
     expected = width * height * 3
-    if len(pixels) < expected:
-        raise ValueError(f"truncated_ppm:{path}")
-    return width, height, pixels[:expected]
+    if len(pixels) != expected:
+        raise ValueError(f"invalid_ppm_payload_size:{source}:expected={expected}:actual={len(pixels)}")
+    return width, height, pixels
+
+
+def read_ppm(path: Path) -> tuple[int, int, bytes]:
+    return parse_ppm_bytes(path.read_bytes(), str(path))
+
+
+def ppm_pixel_sha256(ppm_bytes: bytes) -> str:
+    _, _, pixels = parse_ppm_bytes(ppm_bytes)
+    return sha256_bytes(pixels)
+
+
+def build_verification_milestones(
+    ppm_bytes: bytes,
+    fragment_y_start: int,
+    batch_rows: int = DEFAULT_VERIFICATION_BATCH_ROWS,
+) -> dict[str, Any]:
+    width, height, pixels = parse_ppm_bytes(ppm_bytes)
+    batch_rows = max(1, int(batch_rows))
+    fragment_y_start = int(fragment_y_start)
+    milestones: list[dict[str, Any]] = []
+    row_stride = width * 3
+    for index, local_y_start in enumerate(range(0, height, batch_rows)):
+        local_y_end = min(height, local_y_start + batch_rows)
+        pixel_slice = pixels[local_y_start * row_stride : local_y_end * row_stride]
+        milestones.append(
+            {
+                "index": index,
+                "y_start": fragment_y_start + local_y_start,
+                "y_end": fragment_y_start + local_y_end,
+                "row_count": local_y_end - local_y_start,
+                "pixel_sha256": sha256_bytes(pixel_slice),
+            }
+        )
+    commitment_material = json.dumps(milestones, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return {
+        "schema_version": 1,
+        "strategy": "random-row-milestone-v1",
+        "image_width": width,
+        "fragment_y_start": fragment_y_start,
+        "fragment_y_end": fragment_y_start + height,
+        "fragment_rows": height,
+        "batch_rows": batch_rows,
+        "milestone_count": len(milestones),
+        "commitment_hash": sha256_bytes(commitment_material),
+        "milestones": milestones,
+    }
 
 
 def write_ppm(path: Path, width: int, height: int, pixels: bytes) -> None:
@@ -148,7 +227,10 @@ def run_raytracer(scene: Path, output: Path, timeout_s: int = 240, y_start: int 
     with tempfile.TemporaryDirectory(prefix="silicium-raytracer-") as tmpdir:
         runtime_dir = Path(tmpdir)
         runtime_binary = prepare_runtime_dir(binary, runtime_dir)
-        cmd = [str(runtime_binary), str(scene), "--output", str(output)]
+        command_prefix = [str(runtime_binary)]
+        if runtime_binary.suffix.lower() == ".py":
+            command_prefix = [sys.executable, str(runtime_binary)]
+        cmd = [*command_prefix, str(scene), "--output", str(output)]
         if y_start is not None:
             cmd.extend(["--y-start", str(y_start)])
         if y_end is not None:
@@ -191,12 +273,18 @@ def command_compute(args: argparse.Namespace) -> int:
     y_start = int(args.y_start) if args.y_start != "" else None
     y_end = int(args.y_end) if args.y_end != "" else None
     result = run_raytracer(scene, output, int(args.timeout_s), y_start, y_end)
+    result["verification_milestones"] = build_verification_milestones(
+        output.read_bytes(),
+        y_start or 0,
+        int(args.verification_batch_rows),
+    )
     png_path = Path(args.png).resolve() if args.png else None
     if png_path:
-        png_path.parent.mkdir(parents=True, exist_ok=True)
-        png_path.write_bytes(ppm_to_png_bytes(output.read_bytes()))
-        result["result_png_path"] = str(png_path)
-        result["result_png_sha256"] = sha256_file(png_path)
+        png = write_optional_png(output.read_bytes(), png_path)
+        result["result_png_ready"] = png["ready"]
+        result["result_png_path"] = png["path"]
+        result["result_png_sha256"] = png["sha256"]
+        result["result_png_error"] = png["error"]
     result.update(
         {
             "schema_version": 1,
@@ -344,10 +432,11 @@ def command_reassemble(args: argparse.Namespace) -> int:
     }
     if args.png:
         png_path = Path(args.png).resolve()
-        png_path.parent.mkdir(parents=True, exist_ok=True)
-        png_path.write_bytes(ppm_to_png_bytes(output.read_bytes()))
-        payload["result_png_path"] = str(png_path)
-        payload["result_png_sha256"] = sha256_file(png_path)
+        png = write_optional_png(output.read_bytes(), png_path)
+        payload["result_png_ready"] = png["ready"]
+        payload["result_png_path"] = png["path"]
+        payload["result_png_sha256"] = png["sha256"]
+        payload["result_png_error"] = png["error"]
     if args.result_json:
         write_json(Path(args.result_json).resolve(), payload)
     print(json.dumps(payload, indent=2, sort_keys=True))
@@ -374,6 +463,7 @@ def build_parser() -> argparse.ArgumentParser:
     compute.add_argument("--timeout-s", default="240")
     compute.add_argument("--y-start", default="")
     compute.add_argument("--y-end", default="")
+    compute.add_argument("--verification-batch-rows", default=str(DEFAULT_VERIFICATION_BATCH_ROWS))
     compute.set_defaults(func=command_compute)
 
     verify = sub.add_parser("verify")

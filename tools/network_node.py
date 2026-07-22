@@ -23,6 +23,7 @@ import platform
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -35,6 +36,7 @@ from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
+from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
@@ -177,14 +179,14 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
     with ATOMIC_WRITE_LOCK:
-        for attempt in range(5):
+        for attempt in range(20):
             try:
                 tmp.replace(path)
                 return
             except PermissionError:
-                if attempt >= 4:
+                if attempt >= 19:
                     raise
-                time.sleep(0.02 * float(attempt + 1))
+                time.sleep(0.05 * float(attempt + 1))
 
 
 def append_jsonl(path: Path, payload: Any) -> None:
@@ -239,8 +241,6 @@ class NodeConfig:
     discovery_sync_interval_s: int
     remote_dispatch_enable: bool
     remote_dispatch_limit: int
-    pull_tasks_enable: bool
-    pull_tasks_interval_s: int
     nat_punch_enable: bool
     p2p_candidate_ttl_s: int
     p2p_candidate_refresh_s: int
@@ -259,6 +259,13 @@ class NodeConfig:
     scheduler_onchain_weight: float
     scheduler_offchain_weight: float
     scheduler_capacity_weight: float
+    world: bool = False
+    pull_tasks_enable: bool = False
+    pull_tasks_interval_s: int = 2
+    app_version: str = "unknown"
+    release_channel: str = "dev"
+    release_build: str = ""
+    gossip_max_hops: int = 8
 
 
 def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
@@ -499,6 +506,17 @@ class P2PClient:
         if not isinstance(p2p_ref, dict):
             raise ValueError("p2p_ref_not_object")
 
+        # Results retain a local file reference for the producing node and a
+        # portable content-addressed shared_ref. Prefer the latter whenever
+        # this node has already received the artifact from the return path.
+        shared_ref = p2p_ref.get("shared_ref")
+        if isinstance(shared_ref, dict):
+            shared_id = str(shared_ref.get("content_id", "")).strip().lower()
+            shared_path = self.export_dir / "p2p" / shared_id
+            if len(shared_id) == 64 and shared_path.exists():
+                data = shared_path.read_bytes()
+                return data, {"source": "local-shared-cache", "content_id": shared_id, "size_bytes": len(data)}
+
         protocol = str(p2p_ref.get("protocol", "ipfs")).lower()
         content_id = str(p2p_ref.get("content_id") or p2p_ref.get("cid") or p2p_ref.get("url") or "").strip()
         if not content_id:
@@ -630,6 +648,8 @@ class RoleRuntime:
         return self.run_compute_task(envelope, task, p2p_data, p2p_meta)
 
     def run_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        if str(task.get("workload", "")).strip().lower() == "calcul/rendering/raytracer-fragment":
+            return self.run_raytracer_fragment(task, p2p_data, p2p_meta)
         worker_result = self.try_worker_binary(task)
         material = {
             "task": task,
@@ -642,6 +662,149 @@ class RoleRuntime:
             "input_hash": sha256_bytes(p2p_data),
             "compute": worker_result,
             "result_hash": sha256_json(material),
+        }
+
+    def run_raytracer_fragment(self, task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        try:
+            spec = json.loads(p2p_data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"raytracer_fragment_spec_invalid:{exc}") from exc
+        if not isinstance(spec, dict):
+            raise RuntimeError("raytracer_fragment_spec_invalid")
+        scene_ref = task.get("scene_p2p_ref") or spec.get("scene_p2p_ref")
+        if not isinstance(scene_ref, dict):
+            raise RuntimeError("raytracer_scene_ref_missing")
+        scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
+        root = Path(__file__).resolve().parents[1]
+        compute_script = root / "workloads" / "raytracer" / "compute.py"
+        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-fragment-") as temp_dir:
+            temp_path = Path(temp_dir)
+            scene_path = temp_path / "scene.cfg"
+            output_path = temp_path / "fragment.ppm"
+            scene_path.write_bytes(scene_bytes)
+            command = [
+                sys.executable,
+                str(compute_script),
+                "--scene", str(scene_path),
+                "--output", str(output_path),
+                "--y-start", str(int(task.get("y_start", spec.get("y_start", 0)) or 0)),
+                "--y-end", str(int(task.get("y_end", spec.get("y_end", 0)) or 0)),
+                "--verification-batch-rows", str(int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20)),
+                "--timeout-s", str(int(task.get("timeout_s", 300) or 300)),
+            ]
+            completed = subprocess.run(command, text=True, capture_output=True, timeout=int(task.get("timeout_s", 300) or 300) + 15, check=False)
+            if completed.returncode != 0 or not output_path.exists():
+                raise RuntimeError(f"raytracer_fragment_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}")
+            output = output_path.read_bytes()
+        if not output.startswith(b"P6\n"):
+            raise RuntimeError("raytracer_fragment_invalid_ppm")
+        output_ref = self.p2p.put_local(output)
+        result_hash = sha256_bytes(output)
+        milestone_manifest = build_verification_milestones(
+            output,
+            int(task.get("y_start", spec.get("y_start", 0)) or 0),
+            int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20),
+        )
+        return {
+            "role_result": "compute",
+            "input": p2p_meta,
+            "scene": scene_meta,
+            "input_hash": sha256_bytes(p2p_data),
+            "compute": {"mode": "raytracer-fragment", "executed": True, "stdout": completed.stdout[-2048:], "stderr": completed.stderr[-2048:]},
+            "output_ref": output_ref,
+            "proof_ref": output_ref,
+            "result_hash": result_hash,
+            "verification_milestones": milestone_manifest,
+        }
+
+    def run_raytracer_milestone_verification(
+        self,
+        task: dict[str, Any],
+        p2p_data: bytes,
+        p2p_meta: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            challenge = json.loads(p2p_data.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"raytracer_verification_challenge_invalid:{exc}") from exc
+        if not isinstance(challenge, dict) or challenge.get("strategy") != "random-row-milestone-v1":
+            raise RuntimeError("raytracer_verification_challenge_invalid")
+
+        sample = challenge.get("milestone")
+        if not isinstance(sample, dict):
+            raise RuntimeError("raytracer_verification_milestone_missing")
+        y_start = int(sample.get("y_start", -1))
+        y_end = int(sample.get("y_end", -1))
+        sample_rows = y_end - y_start
+        max_sample_rows = max(1, int(task.get("max_sample_rows", 256) or 256))
+        if y_start < 0 or sample_rows <= 0 or sample_rows > max_sample_rows:
+            raise RuntimeError("raytracer_verification_milestone_range_invalid")
+        expected = str(sample.get("pixel_sha256", "")).removeprefix("sha256:").lower()
+        if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+            raise RuntimeError("raytracer_verification_milestone_hash_invalid")
+
+        scene_ref = task.get("scene_p2p_ref") or challenge.get("scene_p2p_ref")
+        if not isinstance(scene_ref, dict):
+            raise RuntimeError("raytracer_scene_ref_missing")
+        scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
+        root = Path(__file__).resolve().parents[1]
+        compute_script = root / "workloads" / "raytracer" / "compute.py"
+        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-milestone-verify-") as temp_dir:
+            temp_path = Path(temp_dir)
+            scene_path = temp_path / "scene.cfg"
+            output_path = temp_path / "sample.ppm"
+            scene_path.write_bytes(scene_bytes)
+            command = [
+                sys.executable,
+                str(compute_script),
+                "--scene", str(scene_path),
+                "--output", str(output_path),
+                "--y-start", str(y_start),
+                "--y-end", str(y_end),
+                "--verification-batch-rows", str(sample_rows),
+                "--timeout-s", str(int(task.get("timeout_s", 300) or 300)),
+            ]
+            completed = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                timeout=int(task.get("timeout_s", 300) or 300) + 15,
+                check=False,
+            )
+            if completed.returncode != 0 or not output_path.exists():
+                raise RuntimeError(
+                    f"raytracer_milestone_verification_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}"
+                )
+            recomputed_hash = ppm_pixel_sha256(output_path.read_bytes())
+
+        passed = recomputed_hash == expected
+        fragment_rows = max(sample_rows, int(challenge.get("fragment_rows", sample_rows) or sample_rows))
+        verification = {
+            "mode": "random-row-milestone-v1",
+            "challenge_nonce": str(challenge.get("challenge_nonce", "")),
+            "commitment_hash": str(challenge.get("commitment_hash", "")),
+            "milestone_index": int(sample.get("index", 0) or 0),
+            "milestone_count": int(challenge.get("milestone_count", 1) or 1),
+            "sample_y_start": y_start,
+            "sample_y_end": y_end,
+            "sample_rows": sample_rows,
+            "fragment_rows": fragment_rows,
+            "sample_ratio": sample_rows / fragment_rows,
+            "expected_pixel_hash": expected,
+            "recomputed_pixel_hash": recomputed_hash,
+        }
+        return {
+            "role_result": "verify",
+            "input": p2p_meta,
+            "scene": scene_meta,
+            "input_hash": sha256_bytes(p2p_data),
+            "expected_hash": expected,
+            "recomputed_hash": recomputed_hash,
+            "verification_mode": "random-row-milestone-v1",
+            "verification": verification,
+            "verified": passed,
+            "choice": passed,
+            "result_hash": sha256_json({"verified": passed, **verification}),
         }
 
     def try_worker_binary(self, task: dict[str, Any]) -> dict[str, Any]:
@@ -704,6 +867,8 @@ class RoleRuntime:
         }
 
     def run_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        if str(task.get("workload", "")).strip().lower() == "verification/rendering/raytracer-fragment":
+            return self.run_raytracer_milestone_verification(task, p2p_data, p2p_meta)
         actual = sha256_bytes(p2p_data)
         expected = str(task.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
         embedded_hash = ""
@@ -786,13 +951,17 @@ class PeerNetwork:
         self.session_events_path = export_dir / "p2p.sessions.ndjson"
         self.direct_sessions_path = export_dir / "p2p.direct_sessions.json"
         self.gossip_events_path = export_dir / "gossip.events.ndjson"
+        self.update_announcements_dir = export_dir / "software-updates"
         self.discovery_registry_path = export_dir / "mesh.discovery.json"
         self._peers: dict[str, dict[str, Any]] = {}
         self._sessions: dict[str, dict[str, Any]] = {}
         self._direct_sessions: dict[str, dict[str, Any]] = {}
         self._ice_content_sessions: dict[str, str] = {}
+        self._signaling_ready_payloads: dict[str, dict[str, Any]] = {}
+        self._started_direct_sessions: set[str] = set()
         self._local_candidates: list[dict[str, Any]] = []
         self._seen_events: set[str] = set()
+        self._update_fetches: set[str] = set()
         self._seen_handshake_nonces: dict[str, float] = {}
         self._seen_punch_nonces: set[str] = set()
         self._lock = threading.Lock()
@@ -843,8 +1012,24 @@ class PeerNetwork:
         self._record_self_peer()
         if self.config.peer_sync_interval_s > 0:
             self._start_sync_loop()
-        self.announce()
-        self.sync_once()
+        # A peer may be unreachable during startup.  Announcements and the
+        # initial HTTP sync each have network timeouts, so run them outside the
+        # critical path: callers can publish a heartbeat as soon as the local
+        # HTTP service is listening.
+        threading.Thread(
+            target=self._announce_and_sync_initial,
+            name=f"silicium-peer-bootstrap-{self.node_id}",
+            daemon=True,
+        ).start()
+
+    def _announce_and_sync_initial(self) -> None:
+        try:
+            self.announce()
+            self.sync_once()
+        except Exception:
+            # Peer convergence is best-effort and retried by the periodic sync
+            # loop; it must never prevent a node from becoming ready.
+            return
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -1244,6 +1429,8 @@ class PeerNetwork:
         session, error = self._session_for_peer(session_id, requester_node_id)
         if session is None:
             return error
+        if str(session.get("status", "")) in {"direct", "relay", "completed"}:
+            return 200, {"ok": True, "session": self._session_response(session), "punch_start": self._punch_start_message(session)}
         payload = payload or {}
         peer_id = safe_id(requester_node_id)
         ready = list(session.get("ready_peers", [])) if isinstance(session.get("ready_peers"), list) else []
@@ -1581,6 +1768,100 @@ class PeerNetwork:
         self._record_event(message)
         self._broadcast(message)
 
+    @staticmethod
+    def _normalize_update_announcement(payload: Any) -> dict[str, Any] | None:
+        if not isinstance(payload, dict):
+            return None
+        channel = str(payload.get("channel", "")).strip().lower()
+        version = str(payload.get("version", "")).strip()
+        digest = str(payload.get("sha256", "")).strip().lower()
+        content_id = str(payload.get("content_id", digest)).strip().lower()
+        signature = str(payload.get("signature", "")).strip()
+        try:
+            size_bytes = int(payload.get("size_bytes", 0) or 0)
+            check_interval = max(15, int(payload.get("check_interval_seconds", 0) or 0))
+        except (TypeError, ValueError):
+            return None
+        if channel not in {"dev", "prod"} or not version or len(version) > 80:
+            return None
+        if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+            return None
+        if content_id != digest or size_bytes <= 0 or size_bytes > 1024 * 1024 * 1024:
+            return None
+        if not signature or len(signature) > 256:
+            return None
+        return {
+            "schema_version": 1,
+            "channel": channel,
+            "version": version,
+            "url": str(payload.get("url", "")).strip(),
+            "sha256": digest,
+            "content_id": content_id,
+            "size_bytes": size_bytes,
+            "auto_install": bool(payload.get("auto_install", True)),
+            "check_interval_seconds": check_interval,
+            "signature": signature,
+            "signing_key_id": str(payload.get("signing_key_id", "")).strip(),
+        }
+
+    def _record_update_announcement(self, payload: Any, source_peer_id: str) -> bool:
+        release = self._normalize_update_announcement(payload)
+        if release is None:
+            return False
+        release["source_peer_id"] = safe_id(source_peer_id) if source_peer_id else ""
+        release["observed_utc"] = utc_now()
+        target = (
+            self.update_announcements_dir
+            / release["channel"]
+            / f"{safe_path_id(release['version'])}-{release['content_id']}.json"
+        )
+        atomic_write_json(target, release)
+        return True
+
+    def update_announcements(self) -> list[dict[str, Any]]:
+        releases: list[dict[str, Any]] = []
+        if self.update_announcements_dir.exists():
+            for path in self.update_announcements_dir.glob("*/*.json"):
+                payload = read_json(path, {})
+                normalized = self._normalize_update_announcement(payload)
+                if normalized is None:
+                    continue
+                normalized["source_peer_id"] = str(payload.get("source_peer_id", ""))
+                normalized["observed_utc"] = str(payload.get("observed_utc", ""))
+                normalized["cached"] = (self.export_dir / "p2p" / normalized["content_id"]).is_file()
+                releases.append(normalized)
+        releases.sort(key=lambda item: (str(item.get("channel", "")), str(item.get("version", "")), str(item.get("observed_utc", ""))))
+        return releases[-64:]
+
+    def fetch_update_content(self, content_id: str) -> bytes:
+        normalized = str(content_id).strip().lower()
+        if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
+            raise ValueError("update_content_id_invalid")
+        known = [release for release in self.update_announcements() if release.get("content_id") == normalized]
+        if not known:
+            raise FileNotFoundError("update_announcement_not_found")
+        target = self.export_dir / "p2p" / normalized
+        if target.is_file():
+            data = target.read_bytes()
+        else:
+            preferred_peer_id = str(known[-1].get("source_peer_id", ""))
+            data, _meta = self.fetch_content(normalized, preferred_peer_id)
+            expected_size = int(known[-1].get("size_bytes", 0) or 0)
+            if expected_size > 0 and len(data) != expected_size:
+                raise ValueError("update_size_mismatch")
+            if sha256_bytes(data) != normalized:
+                raise ValueError("update_sha256_mismatch")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if not target.exists():
+                target.write_bytes(data)
+            self.publish(
+                "software_update_cached",
+                {"content_id": normalized, "size_bytes": len(data), "cached_by": self.node_id},
+            )
+        if sha256_bytes(data) != normalized:
+            raise ValueError("update_sha256_mismatch")
+        return data
+
     def announce(self) -> None:
         candidates = self.refresh_candidates()
         message = {
@@ -1658,7 +1939,7 @@ class PeerNetwork:
         raise FileNotFoundError(f"peer_content_not_found:{content_id}")
 
     def _fetch_direct_ice(self, peer: dict[str, Any], content_id: str) -> tuple[bytes, dict[str, Any]] | None:
-        if self.direct_transport.name != "ice":
+        if not self.config.nat_punch_enable or self.direct_transport.name != "ice":
             return None
         features = peer.get("features", []) if isinstance(peer.get("features", []), list) else []
         if "ice_v1" not in {str(feature) for feature in features}:
@@ -1684,9 +1965,13 @@ class PeerNetwork:
 
     def _open_ice_content_session(self, peer: dict[str, Any], content_id: str) -> str:
         target_peer_id = safe_id(str(peer.get("node_id", "")))
-        base_url = str(peer.get("http_base_url", "")).rstrip("/")
-        if not target_peer_id or not base_url:
+        if not target_peer_id:
             return ""
+        signaling_targets = self._signaling_targets()
+        if not signaling_targets:
+            direct_target = str(peer.get("http_base_url", "")).rstrip("/")
+            if direct_target:
+                signaling_targets.append(direct_target)
         request_payload = {
             "peer_id": self.node_id,
             "target_peer_id": target_peer_id,
@@ -1694,21 +1979,74 @@ class PeerNetwork:
             "content_id": content_id,
             "allowed_transports": ["ice"],
         }
+        for base_url in signaling_targets:
+            try:
+                response = self._post_peer_json(base_url, "/p2p/sessions/request", request_payload)
+                session = response.get("session") if isinstance(response.get("session"), dict) else {}
+                session_id = str(session.get("session_id", "")).strip()
+                if not session_id:
+                    continue
+                ready = self.build_session_ready_payload(session)
+                self._signaling_ready_payloads[session_id] = ready
+                deadline = time.monotonic() + max(8.0, float(self.config.p2p_session_timeout_ms) / 1000.0)
+                while time.monotonic() < deadline:
+                    ready_response = self._post_peer_json(base_url, f"/p2p/sessions/{session_id}/ready", ready)
+                    ready_session = ready_response.get("session") if isinstance(ready_response.get("session"), dict) else {}
+                    punch_start = ready_response.get("punch_start") if isinstance(ready_response.get("punch_start"), dict) else {}
+                    ice = punch_start.get("ice") if isinstance(punch_start.get("ice"), dict) else {}
+                    ice_peers = ice.get("peers") if isinstance(ice.get("peers"), dict) else {}
+                    if str(ready_session.get("status", "")) == "punching" and len(ice_peers) >= 2:
+                        result = self.establish_direct_udp_session(punch_start)
+                        self._report_signaling_result(base_url, session_id, result)
+                        return session_id if result.get("status") == "direct" else ""
+                    time.sleep(0.1)
+            except (OSError, TimeoutError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+                continue
+        return ""
+
+    def _signaling_targets(self) -> list[str]:
+        targets: set[str] = set()
+        for seed in self.config.discovery_seeds + self.config.seed_peers:
+            normalized = self._normalize_http_target(seed)
+            if normalized and normalized != self.advertised_http_base_url:
+                targets.add(normalized)
+        return sorted(targets)
+
+    def _poll_signaling_sessions(self, base_url: str) -> None:
+        path = "/p2p/sessions/pending"
+        request = urllib.request.Request(
+            base_url.rstrip("/") + path,
+            headers=self._signed_headers("GET", path, b""),
+        )
         try:
-            response = self._post_peer_json(base_url, "/p2p/sessions/request", request_payload)
-            session = response.get("session") if isinstance(response.get("session"), dict) else {}
+            with urllib.request.urlopen(request, timeout=4) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError):
+            return
+        sessions = payload.get("sessions") if isinstance(payload, dict) else None
+        if not isinstance(sessions, list):
+            return
+        for session in sessions:
+            if not isinstance(session, dict) or safe_id(str(session.get("target_peer_id", ""))) != self.node_id:
+                continue
             session_id = str(session.get("session_id", "")).strip()
             if not session_id:
-                return ""
-            ready = self.build_session_ready_payload(session)
-            ready_response = self._post_peer_json(base_url, f"/p2p/sessions/{session_id}/ready", ready)
+                continue
+            with self._lock:
+                if session_id in self._started_direct_sessions:
+                    continue
+            ready = self._signaling_ready_payloads.get(session_id)
+            if ready is None:
+                ready = self.build_session_ready_payload(session)
+                self._signaling_ready_payloads[session_id] = ready
+            try:
+                ready_response = self._post_peer_json(base_url, f"/p2p/sessions/{session_id}/ready", ready)
+            except (OSError, TimeoutError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+                continue
+            ready_session = ready_response.get("session") if isinstance(ready_response.get("session"), dict) else {}
             punch_start = ready_response.get("punch_start") if isinstance(ready_response.get("punch_start"), dict) else {}
-            if str(punch_start.get("message_type", "")) != "punch_start":
-                return ""
-            result = self.establish_direct_udp_session(punch_start)
-            return session_id if result.get("status") == "direct" else ""
-        except (OSError, TimeoutError, ValueError, urllib.error.URLError, json.JSONDecodeError):
-            return ""
+            if str(ready_session.get("status", "")) == "punching":
+                self._start_direct_session_background(punch_start, base_url)
 
     def _post_peer_json(self, base_url: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         raw = stable_json(payload).encode("utf-8")
@@ -1723,6 +2061,23 @@ class PeerNetwork:
         if not isinstance(body, dict):
             raise ValueError("peer_response_not_object")
         return body
+
+    def _report_signaling_result(self, base_url: str, session_id: str, result: Mapping[str, Any]) -> None:
+        pair = result.get("selected_candidate_pair") if isinstance(result.get("selected_candidate_pair"), Mapping) else {}
+        try:
+            self._post_peer_json(
+                base_url,
+                f"/p2p/sessions/{session_id}/result",
+                {
+                    "ok": result.get("status") == "direct",
+                    "transport": "direct" if result.get("status") == "direct" else "failed",
+                    "error": result.get("failure_reason", ""),
+                    "selected_local_candidate_id": pair.get("local_candidate_id", ""),
+                    "selected_remote_candidate_id": pair.get("remote_candidate_id", ""),
+                },
+            )
+        except (OSError, TimeoutError, ValueError, urllib.error.URLError, json.JSONDecodeError):
+            pass
 
     def _serve_direct_content(self, session_id: str, requester_peer_id: str, content_id: str) -> tuple[bool, bytes, str]:
         requester_id = safe_id(requester_peer_id)
@@ -1748,6 +2103,9 @@ class PeerNetwork:
                 "identity_id": self.identity.identity_id,
                 "public_key": self.identity.public_key_b64,
                 "roles": sorted(self.config.roles),
+                "app_version": self.config.app_version,
+                "release_channel": self.config.release_channel,
+                "release_build": self.config.release_build,
                 "features": self.direct_transport.features(),
                 "http_base_url": self.advertised_http_base_url,
                 "mesh_post_url": self.mesh_post_url,
@@ -1780,29 +2138,39 @@ class PeerNetwork:
         candidates = self._normalize_candidate_list(message.get("candidates", []), node_id)
         with self._lock:
             current = dict(self._peers.get(node_id, {}))
+            roles = message.get("roles") if isinstance(message.get("roles"), list) else []
+            features = message.get("features") if isinstance(message.get("features"), list) else []
+            capacity = message.get("capacity") if isinstance(message.get("capacity"), dict) else {}
             merged = {
                 "node_id": node_id,
-                "identity_id": str(message.get("identity_id", "")),
-                "public_key": str(message.get("public_key", "")),
-                "roles": list(message.get("roles", [])),
-                "features": [str(feature) for feature in message.get("features", [])] if isinstance(message.get("features", []), list) else [],
-                "http_base_url": str(message.get("http_base_url", "")),
-                "mesh_post_url": str(message.get("mesh_post_url", "")),
-                "gossip_bind": str(message.get("gossip_bind", "")),
-                "gossip_port": int(message.get("gossip_port", 0) or 0),
-                "candidates": candidates,
-                "relay_capable": bool(message.get("relay_capable", False)),
-                "capacity": message.get("capacity", {}) if isinstance(message.get("capacity"), dict) else {},
-                "reputation_score": float(message.get("reputation_score", 0.0) or 0.0),
-                "onchain_reputation": float(message.get("onchain_reputation", 0.0) or 0.0),
-                "onchain_global_reputation": float(message.get("onchain_global_reputation", 0.0) or 0.0),
-                "onchain_compute_reputation": float(message.get("onchain_compute_reputation", 0.0) or 0.0),
-                "onchain_verify_reputation": float(message.get("onchain_verify_reputation", 0.0) or 0.0),
-                "onchain_storage_reputation": float(message.get("onchain_storage_reputation", 0.0) or 0.0),
-                "onchain_stake_amount": float(message.get("onchain_stake_amount", 0.0) or 0.0),
-                "onchain_status": str(message.get("onchain_status", "")),
-                "solana_owner": str(message.get("solana_owner", "")),
-                "solana_worker": str(message.get("solana_worker", "")),
+                # Peer tables are transitive and are not proof that a third
+                # party is authorised to change another peer's identity or
+                # routing profile. Keep established fields; signed candidate
+                # announcements refresh the mutable NAT addresses separately.
+                "identity_id": str(current.get("identity_id", "") or message.get("identity_id", "")),
+                "public_key": str(current.get("public_key", "") or message.get("public_key", "")),
+                "roles": list(current.get("roles", []) or roles),
+                "app_version": str(message.get("app_version", "") or current.get("app_version", "")),
+                "release_channel": str(message.get("release_channel", "") or current.get("release_channel", "")),
+                "release_build": str(message.get("release_build", "") or current.get("release_build", "")),
+                "features": [str(feature) for feature in (current.get("features", []) or features)],
+                "http_base_url": str(current.get("http_base_url", "") or message.get("http_base_url", "")),
+                "mesh_post_url": str(current.get("mesh_post_url", "") or message.get("mesh_post_url", "")),
+                "gossip_bind": str(current.get("gossip_bind", "") or message.get("gossip_bind", "")),
+                "gossip_port": int(current.get("gossip_port", 0) or message.get("gossip_port", 0) or 0),
+                "candidates": candidates or current.get("candidates", []),
+                "relay_capable": bool(message.get("relay_capable", current.get("relay_capable", False))),
+                "capacity": current.get("capacity", {}) or capacity,
+                "reputation_score": float(message.get("reputation_score", current.get("reputation_score", 0.0)) or 0.0),
+                "onchain_reputation": float(message.get("onchain_reputation", current.get("onchain_reputation", 0.0)) or 0.0),
+                "onchain_global_reputation": float(message.get("onchain_global_reputation", current.get("onchain_global_reputation", 0.0)) or 0.0),
+                "onchain_compute_reputation": float(message.get("onchain_compute_reputation", current.get("onchain_compute_reputation", 0.0)) or 0.0),
+                "onchain_verify_reputation": float(message.get("onchain_verify_reputation", current.get("onchain_verify_reputation", 0.0)) or 0.0),
+                "onchain_storage_reputation": float(message.get("onchain_storage_reputation", current.get("onchain_storage_reputation", 0.0)) or 0.0),
+                "onchain_stake_amount": float(message.get("onchain_stake_amount", current.get("onchain_stake_amount", 0.0)) or 0.0),
+                "onchain_status": str(message.get("onchain_status", "") or current.get("onchain_status", "")),
+                "solana_owner": str(message.get("solana_owner", "") or current.get("solana_owner", "")),
+                "solana_worker": str(message.get("solana_worker", "") or current.get("solana_worker", "")),
                 "updated_utc": str(message.get("timestamp_utc", utc_now())),
                 "last_seen_unix": int(time.time()),
                 "self": node_id == self.node_id,
@@ -1992,7 +2360,7 @@ class PeerNetwork:
     def establish_direct_udp_session(self, punch_start: Mapping[str, Any]) -> dict[str, Any]:
         return self.direct_transport.establish_session(punch_start)
 
-    def _start_direct_session_background(self, punch_start: Mapping[str, Any]) -> None:
+    def _start_direct_session_background(self, punch_start: Mapping[str, Any], signaling_base_url: str = "") -> None:
         if not isinstance(punch_start, Mapping):
             return
         ice = punch_start.get("ice") if isinstance(punch_start.get("ice"), Mapping) else {}
@@ -2000,21 +2368,30 @@ class PeerNetwork:
         if len(peers) < 2:
             return
         session_id = str(punch_start.get("session_id", "")).strip()
+        if not session_id:
+            return
+        with self._lock:
+            if session_id in self._started_direct_sessions:
+                return
+            self._started_direct_sessions.add(session_id)
 
         def _establish_target_session() -> None:
             result = self.establish_direct_udp_session(punch_start)
-            pair = result.get("selected_candidate_pair") if isinstance(result.get("selected_candidate_pair"), dict) else {}
-            self.record_session_result(
-                session_id,
-                {
-                    "ok": result.get("status") == "direct",
-                    "transport": "direct" if result.get("status") == "direct" else "failed",
-                    "error": result.get("failure_reason", ""),
-                    "selected_local_candidate_id": pair.get("local_candidate_id", ""),
-                    "selected_remote_candidate_id": pair.get("remote_candidate_id", ""),
-                },
-                self.node_id,
-            )
+            if signaling_base_url:
+                self._report_signaling_result(signaling_base_url, session_id, result)
+            else:
+                pair = result.get("selected_candidate_pair") if isinstance(result.get("selected_candidate_pair"), dict) else {}
+                self.record_session_result(
+                    session_id,
+                    {
+                        "ok": result.get("status") == "direct",
+                        "transport": "direct" if result.get("status") == "direct" else "failed",
+                        "error": result.get("failure_reason", ""),
+                        "selected_local_candidate_id": pair.get("local_candidate_id", ""),
+                        "selected_remote_candidate_id": pair.get("remote_candidate_id", ""),
+                    },
+                    self.node_id,
+                )
 
         threading.Thread(target=_establish_target_session, name=f"ice-target-{session_id}", daemon=True).start()
 
@@ -2042,7 +2419,11 @@ class PeerNetwork:
         )
 
         target_urls: list[str] = []
-        target_peers = [p for p in self.refresh_peers() if str(p.get("node_id", "")) == target_peer_id]
+        target_peers = [
+            peer
+            for peer in self.peers_snapshot().get("peers", [])
+            if str(peer.get("node_id", "")) == target_peer_id
+        ]
         if target_peers:
             target_peer = target_peers[0]
             if target_peer.get("http_base_url"):
@@ -2360,8 +2741,10 @@ class PeerNetwork:
             return
         if not self._record_event(message):
             return
+        if str(message.get("topic", "")) == "software_update":
+            self._record_update_announcement(message.get("payload"), str(message.get("node_id", "")))
         hops = int(message.get("hops", 0) or 0)
-        if hops >= 2:
+        if hops >= max(1, int(self.config.gossip_max_hops)):
             return
         forwarded = dict(message)
         forwarded["hops"] = hops + 1
@@ -2386,6 +2769,7 @@ class PeerNetwork:
         for base_url in targets:
             self._sync_peer_table(base_url)
             self._sync_recent_events(base_url)
+            self._poll_signaling_sessions(base_url)
         self._sync_discovery()
 
     def recent_events(self, limit: int) -> list[dict[str, Any]]:
@@ -2424,8 +2808,15 @@ class PeerNetwork:
                 self._peers[node_id] = loaded
 
     def _sync_discovery(self) -> None:
-        seeds = [seed for seed in self.config.discovery_seeds if seed.strip()]
-        for seed in seeds:
+        # A public HTTP seed is also a discovery rendezvous. Desktop nodes only
+        # receive --seed-peers from the installer, so restricting registration
+        # to --discovery-seeds left their ICE candidates local-only.
+        seeds = {
+            seed.strip()
+            for seed in self.config.discovery_seeds + self.config.seed_peers
+            if seed.strip()
+        }
+        for seed in sorted(seeds):
             base_url = self._normalize_http_target(seed)
             if not base_url:
                 continue
@@ -2439,6 +2830,7 @@ class PeerNetwork:
             "identity_id": self.identity.identity_id,
             "public_key": self.identity.public_key_b64,
             "roles": sorted(self.config.roles),
+            "features": self.direct_transport.features(),
             "http_base_url": self.advertised_http_base_url,
             "mesh_post_url": self.mesh_post_url,
             "gossip_bind": self._advertised_gossip_host(),
@@ -2555,7 +2947,13 @@ class PeerNetwork:
     def _advertised_gossip_port(self) -> int:
         if self.config.gossip_advertise_port > 0:
             return int(self.config.gossip_advertise_port)
-        return int(self.config.gossip_port)
+        if self.config.gossip_port > 0:
+            return int(self.config.gossip_port)
+        if self.config.peer_advertise_port > 0:
+            return int(self.config.peer_advertise_port)
+        if self.config.peer_http_port > 0:
+            return int(self.config.peer_http_port)
+        return 46101
 
     def _normalize_http_target(self, target: str) -> str:
         value = str(target or "").strip()
@@ -2672,6 +3070,14 @@ class PeerNetwork:
         peer_network = self
 
         class _PeerHandler(http.server.BaseHTTPRequestHandler):
+            def _local_or_authorized(self, body: bytes = b"") -> bool:
+                try:
+                    if ipaddress.ip_address(str(self.client_address[0])).is_loopback:
+                        return True
+                except ValueError:
+                    pass
+                return peer_network._authorize_peer_request(self, body)
+
             def do_GET(self) -> None:  # noqa: N802
                 if self.path == "/healthz":
                     raw = b'{"ok":true}'
@@ -2749,6 +3155,70 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(raw)
                     return
+                if self.path == "/updates/manifest":
+                    if not self._local_or_authorized():
+                        self.send_error(403)
+                        return
+                    raw = stable_json(
+                        {
+                            "schema_version": 1,
+                            "source": "silicium-gossip",
+                            "node_id": peer_network.node_id,
+                            "releases": peer_network.update_announcements(),
+                        }
+                    ).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                if self.path.startswith("/updates/content/"):
+                    if not self._local_or_authorized():
+                        self.send_error(403)
+                        return
+                    content_id = unquote(urlparse(self.path).path[len("/updates/content/") :]).strip()
+                    try:
+                        raw = peer_network.fetch_update_content(content_id)
+                    except FileNotFoundError:
+                        self.send_error(404)
+                        return
+                    except (OSError, ValueError):
+                        self.send_error(502)
+                        return
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Cache-Control", "private, max-age=31536000, immutable")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                if self.path == "/p2p/sessions/pending":
+                    if not peer_network._authorize_peer_request(self):
+                        self.send_error(403)
+                        return
+                    requester_node_id = safe_id(str(self.headers.get("X-Silicium-Node-Id", "")))
+                    now = int(time.time())
+                    with peer_network._lock:
+                        sessions = [
+                            peer_network._session_response(session)
+                            for session in peer_network._sessions.values()
+                            if requester_node_id
+                            in {
+                                safe_id(str(session.get("initiator_peer_id", ""))),
+                                safe_id(str(session.get("target_peer_id", ""))),
+                            }
+                            and int(session.get("expires_unix", 0) or 0) > now
+                            and str(session.get("status", "")) not in {"closed", "failed", "expired", "direct", "relay", "completed"}
+                        ]
+                    raw = stable_json({"ok": True, "sessions": sessions}).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
                 if self.path == "/p2p/transport":
                     if not peer_network._authorize_peer_request(self):
                         self.send_error(403)
@@ -2818,6 +3288,31 @@ class PeerNetwork:
                 except ValueError:
                     size = 0
                 raw = self.rfile.read(max(0, size))
+                if self.path.startswith("/updates/cache/") and self._local_or_authorized(raw):
+                    content_id = unquote(urlparse(self.path).path[len("/updates/cache/") :]).strip().lower()
+                    if (
+                        len(content_id) != 64
+                        or any(char not in "0123456789abcdef" for char in content_id)
+                        or len(raw) > 1024 * 1024 * 1024
+                        or sha256_bytes(raw) != content_id
+                    ):
+                        self.send_error(400)
+                        return
+                    target = peer_network.export_dir / "p2p" / content_id
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if not target.exists():
+                        target.write_bytes(raw)
+                    peer_network.publish(
+                        "software_update_cached",
+                        {"content_id": content_id, "size_bytes": len(raw), "cached_by": peer_network.node_id},
+                    )
+                    body = stable_json({"ok": True, "content_id": content_id}).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 if not peer_network._authorize_peer_request(self, raw):
                     self.send_error(403)
                     return
@@ -2833,6 +3328,26 @@ class PeerNetwork:
                     peer_network._handle_network_message(payload, self.client_address[0])
                     body = b'{"ok":true}'
                     self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/gossip/publish":
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    topic = str(payload.get("topic", "")).strip() if isinstance(payload, dict) else ""
+                    event_payload = payload.get("payload") if isinstance(payload, dict) else None
+                    if topic != "software_update" or peer_network._normalize_update_announcement(event_payload) is None:
+                        self.send_error(400)
+                        return
+                    peer_network._record_update_announcement(event_payload, peer_network.node_id)
+                    peer_network.publish(topic, event_payload)
+                    body = stable_json({"ok": True, "topic": topic}).encode("utf-8")
+                    self.send_response(202)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
@@ -2979,6 +3494,57 @@ class PeerNetwork:
                         target.write_bytes(raw)
                     peer_network.publish("content_available", {"content_id": content_id, "hash": "sha256:" + sha256_bytes(raw), "size_bytes": len(raw)})
                     body = stable_json({"ok": True, "content_id": content_id}).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/tasks/claim":
+                    try:
+                        payload = json.loads(raw.decode("utf-8")) if raw else {}
+                    except Exception:
+                        self.send_error(400)
+                        return
+                    if not isinstance(payload, dict):
+                        self.send_error(400)
+                        return
+                    requester_node_id = safe_id(str(payload.get("node_id", "") or self.headers.get("X-Silicium-Node-Id", "")))
+                    roles = payload.get("roles", [])
+                    if isinstance(roles, str):
+                        roles = split_csv(roles)
+                    roles_set = {str(r).lower() for r in roles if str(r).strip()}
+                    if requester_node_id:
+                        peer_network._record_peer(
+                            {
+                                "node_id": requester_node_id,
+                                "roles": sorted(roles_set),
+                                "capacity": payload.get("capacity", {}),
+                                "app_version": payload.get("app_version", ""),
+                                "release_channel": payload.get("release_channel", ""),
+                                "release_build": payload.get("release_build", ""),
+                                "timestamp_utc": utc_now(),
+                            }
+                        )
+                    claimed_envelope = peer_network.node.claim_task_for_worker(requester_node_id, roles_set) if peer_network.node else None
+                    if peer_network.node:
+                        append_jsonl(
+                            peer_network.node.events_path,
+                            {
+                                "schema_version": 1,
+                                "timestamp_utc": utc_now(),
+                                "node_id": peer_network.node.config.node_id,
+                                "kind": "claim_request",
+                                "worker_id": requester_node_id,
+                                "roles": sorted(roles_set),
+                                "app_version": str(payload.get("app_version", "")),
+                                "release_channel": str(payload.get("release_channel", "")),
+                                "release_build": str(payload.get("release_build", "")),
+                                "claimed": isinstance(claimed_envelope, dict),
+                                "item_id": safe_id(str((claimed_envelope or {}).get("request_id") or (claimed_envelope or {}).get("task_id") or "")),
+                            },
+                        )
+                    body = stable_json({"ok": True, "task": claimed_envelope}).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
@@ -3278,10 +3844,22 @@ class NetworkNode:
         self._solana_onchain_storage_reputation = 0.0
         self._solana_onchain_stake_amount = 0.0
         self._solana_onchain_status = ""
+        self._pull_thread: threading.Thread | None = None
+        self._pull_stop_event = threading.Event()
+        self._last_claim_poll_unix = 0.0
+        self._last_claim_poll_utc = ""
+        self._last_claim_error = ""
+        self._last_claim_result = "not_started"
+        self._last_claim_targets: list[dict[str, Any]] = []
         self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.reputation.local_score())
 
     def run(self) -> None:
         self.peer_network.start()
+        if self.config.once and self.config.remote_dispatch_enable:
+            # One-shot dispatch has no later convergence cycle to wait for.
+            self.peer_network.sync_once()
+        if self.config.pull_tasks_enable:
+            self._start_pull_tasks_loop()
         try:
             self.bootstrap()
             self.refresh_local_onchain_profile(force=True)
@@ -3296,6 +3874,7 @@ class NetworkNode:
                 if handled == 0:
                     time.sleep(max(0, self.config.idle_ms) / 1000.0)
         finally:
+            self._stop_pull_tasks_loop()
             self.peer_network.stop()
 
     def bootstrap(self) -> None:
@@ -3454,6 +4033,9 @@ class NetworkNode:
                 "node_id": self.config.node_id,
                 "timestamp_utc": utc_now(),
                 "roles": sorted(self.config.roles),
+                "app_version": self.config.app_version,
+                "release_channel": self.config.release_channel,
+                "release_build": self.config.release_build,
                 "capacity": capacity,
                 "reputation_score": current_reputation,
                 "peer_http_base_url": self.peer_network.http_base_url,
@@ -3471,6 +4053,11 @@ class NetworkNode:
                 "p2p_nat_behavior": p2p_candidates["nat_behavior"],
                 "p2p_session_count": int(p2p_sessions.get("count", 0) or 0),
                 "p2p_direct_session_count": int(p2p_direct_sessions.get("count", 0) or 0),
+                "last_claim_poll_unix": self._last_claim_poll_unix,
+                "last_claim_poll_utc": self._last_claim_poll_utc,
+                "last_claim_error": self._last_claim_error,
+                "last_claim_result": self._last_claim_result,
+                "last_claim_targets": self._last_claim_targets,
                 "solana_owner": self._solana_owner,
                 "solana_worker": self._solana_worker,
                 "onchain_reputation": self._solana_onchain_reputation,
@@ -3487,6 +4074,11 @@ class NetworkNode:
         atomic_write_json(self.metrics_path, self.metrics)
 
     def sweep(self) -> int:
+        # World nodes act as schedulers.  Claim handlers own their queue
+        # cursors, so a scheduler must not pre-scan these files in its main
+        # loop or it would hide work from pull-based workers.
+        if self.config.world:
+            return 0
         handled = 0
         for queue in self.queue_order():
             for envelope in self.read_new(queue):
@@ -3494,14 +4086,23 @@ class NetworkNode:
                 if self.state.seen(key):
                     continue
                 if not self.accepts(envelope):
+                    # A world node is the scheduler/broker.  It must retain
+                    # work for pull-based workers instead of consuming and
+                    # dead-lettering roles it does not execute itself.  The
+                    # same applies while remote dispatch is disabled: another
+                    # worker may still claim the canonical queued task.
+                    if self.config.world or not self.config.remote_dispatch_enable:
+                        continue
                     if self.try_remote_dispatch(envelope):
                         self.state.mark_seen(key)
                         handled += 1
                         if self.config.max_items > 0 and handled >= self.config.max_items:
                             return handled
                         continue
-                    self.schedule_retry_or_dead_letter(envelope, "no_local_role_and_dispatch_failed")
-                    self.state.mark_seen(key)
+                    # Direct dispatch is only an optimisation.  With NATed
+                    # workers it can fail even though the worker's regular
+                    # /tasks/claim pull will succeed moments later.  Keep the
+                    # canonical task pending rather than dead-lettering it.
                     continue
                 self.handle(envelope)
                 self.state.mark_seen(key)
@@ -3667,10 +4268,15 @@ class NetworkNode:
         body = envelope.get("request") if kind == "request" and isinstance(envelope.get("request"), dict) else {}
         if kind != "request":
             body = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
+        excluded_peer_ids = {
+            self._optional_peer_id(value)
+            for value in (envelope.get("excluded_peer_ids", []) if isinstance(envelope.get("excluded_peer_ids"), list) else [])
+        }
+        excluded_peer_ids.discard("")
         peer = self.peer_network.select_peers(
             required_roles={str(role).lower() for role in required_roles},
             limit=1,
-            exclude={self.config.node_id},
+            exclude={self.config.node_id, *excluded_peer_ids},
             constraints=_peer_constraints(body, envelope),
         )
         if not peer:
@@ -3748,6 +4354,34 @@ class NetworkNode:
         if not item_id:
             return
         safe_item = safe_id(item_id)
+        content_blobs: list[dict[str, str]] = []
+        seen_content: set[str] = set()
+        # A NATed worker can POST its result to the scheduler but cannot in
+        # general accept a later inbound HTTP fetch of its P2P content. Attach
+        # bounded result artifacts to that already-authenticated return so the
+        # scheduler becomes a durable, reachable content source.
+        for ref_name in ("output_ref", "proof_ref"):
+            ref = result.get(ref_name)
+            if not isinstance(ref, dict):
+                continue
+            candidates = [ref]
+            shared_ref = ref.get("shared_ref")
+            if isinstance(shared_ref, dict):
+                candidates.append(shared_ref)
+            for candidate in candidates:
+                content_id = str(candidate.get("content_id", "")).strip()
+                if content_id in seen_content or len(content_id) != 64 or any(char not in "0123456789abcdef" for char in content_id.lower()):
+                    continue
+                content_path = self.config.export_dir / "p2p" / content_id
+                try:
+                    content = content_path.read_bytes()
+                except OSError:
+                    continue
+                if len(content) > 16 * 1024 * 1024 or hashlib.sha256(content).hexdigest() != content_id:
+                    continue
+                content_blobs.append({"content_id": content_id, "data_b64": base64.b64encode(content).decode("ascii")})
+                seen_content.add(content_id)
+                break
         payload = {
             "schema_version": 1,
             "item_id": safe_item,
@@ -3757,6 +4391,8 @@ class NetworkNode:
             "handled_by": self.config.node_id,
             "status": "completed" if bool(result.get("success", True)) else "failed",
         }
+        if content_blobs:
+            payload["content_blobs"] = content_blobs
         raw = stable_json(payload).encode("utf-8")
         path = urlparse(return_url).path or "/results/dispatch"
         request = urllib.request.Request(
@@ -3765,11 +4401,15 @@ class NetworkNode:
             method="POST",
             headers=self.peer_network._signed_headers("POST", path, raw, {"Content-Type": "application/json"}),
         )
+        http_status = 0
+        error = ""
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
-                ok = response.status in {200, 202}
-        except urllib.error.URLError:
+                http_status = int(response.status)
+                ok = http_status in {200, 202}
+        except (urllib.error.URLError, OSError) as exc:
             ok = False
+            error = str(exc)
         append_jsonl(
             self.events_path,
             {
@@ -3780,6 +4420,9 @@ class NetworkNode:
                 "item_id": safe_item,
                 "target_node": origin_node_id,
                 "ok": ok,
+                "http_status": http_status,
+                "error": error,
+                "return_url": return_url,
             },
         )
 
@@ -3792,6 +4435,26 @@ class NetworkNode:
         log_payload = payload.get("log")
         if not isinstance(result, dict) or not isinstance(log_payload, dict):
             raise ValueError("missing_result_payload")
+        content_blobs = payload.get("content_blobs", [])
+        if isinstance(content_blobs, list):
+            p2p_dir = self.config.export_dir / "p2p"
+            for blob in content_blobs:
+                if not isinstance(blob, dict):
+                    continue
+                content_id = str(blob.get("content_id", "")).strip().lower()
+                encoded = str(blob.get("data_b64", ""))
+                if len(content_id) != 64 or any(char not in "0123456789abcdef" for char in content_id):
+                    continue
+                try:
+                    content = base64.b64decode(encoded.encode("ascii"), validate=True)
+                except (ValueError, UnicodeEncodeError):
+                    continue
+                if len(content) > 16 * 1024 * 1024 or hashlib.sha256(content).hexdigest() != content_id:
+                    continue
+                p2p_dir.mkdir(parents=True, exist_ok=True)
+                target = p2p_dir / content_id
+                if not target.exists():
+                    target.write_bytes(content)
         kind = str(payload.get("envelope_kind") or "task")
         atomic_write_json(self.config.export_dir / f"result.{path_item}.json", result)
         atomic_write_json(self.config.export_dir / f"logs.{path_item}.json", log_payload)
@@ -3819,6 +4482,222 @@ class NetworkNode:
             },
         )
 
+    def claim_task_for_worker(self, worker_id: str, worker_roles: set[str]) -> dict[str, Any] | None:
+        if not worker_id or not worker_roles:
+            return None
+
+        def try_claim(envelope: dict[str, Any]) -> dict[str, Any] | None:
+            """Claim one canonical pending envelope for a compatible worker."""
+            kind = str(envelope.get("envelope_kind") or "task")
+            item_id = str(envelope.get("request_id") if kind == "request" else envelope.get("task_id", ""))
+            if not item_id:
+                return None
+            item_path = self.config.export_dir / ("requests" if kind == "request" else "tasks") / f"{safe_path_id(safe_id(item_id))}.json"
+            # Queue files are append-only. A stale in-memory marker must not
+            # hide a task whose canonical state is still pending after an
+            # interrupted claim.
+            current = read_json(item_path, envelope)
+            if not isinstance(current, dict):
+                current = envelope
+            status = str(current.get("status", ""))
+            if status in {"dispatched", "completed", "failed", "dead_lettered", "cancelled"}:
+                return None
+            assigned_raw = str(current.get("assigned_peer_id", "") or current.get("target_peer_id", "")).strip()
+            assigned_peer_id = safe_id(assigned_raw) if assigned_raw else ""
+            if assigned_peer_id and assigned_peer_id != safe_id(worker_id):
+                return None
+            excluded_peer_ids = {
+                safe_id(str(value))
+                for value in (current.get("excluded_peer_ids", []) if isinstance(current.get("excluded_peer_ids"), list) else [])
+                if str(value).strip()
+            }
+            if safe_id(worker_id) in excluded_peer_ids:
+                return None
+            required_roles = current.get("target_roles", []) if kind == "request" else current.get("required_roles", [])
+            if not isinstance(required_roles, list):
+                required_roles = []
+            req_set = {str(role).lower() for role in required_roles if str(role).strip()}
+            if req_set and not req_set.issubset(worker_roles):
+                return None
+
+            key = self.envelope_key(current)
+            dispatch_hops = int(current.get("dispatch_hops", 0) or 0)
+            payload = dict(current)
+            payload["dispatch_hops"] = dispatch_hops + 1
+            payload["dispatched_by"] = self.config.node_id
+            payload["dispatched_to"] = worker_id
+            payload["dispatched_utc"] = utc_now()
+            origin_return_url = str(current.get("origin_result_return_url", "")).strip()
+            payload["result_return_url"] = origin_return_url if origin_return_url.startswith(("http://", "https://")) else self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
+
+            self.update_envelope_status(current, "dispatched", {"result_hash": "", "dispatched_to": worker_id})
+            self.state.mark_seen(key)
+            self.metrics["dispatched"] = int(self.metrics.get("dispatched", 0) or 0) + 1
+            append_jsonl(
+                self.events_path,
+                {
+                    "schema_version": 1,
+                    "timestamp_utc": utc_now(),
+                    "node_id": self.config.node_id,
+                    "kind": "claim_dispatch",
+                    "item_id": safe_id(str(current.get("request_id") or current.get("task_id") or "unknown")),
+                    "target_peer": worker_id,
+                    "roles": sorted(worker_roles),
+                },
+            )
+            return payload
+
+        with self.peer_network._lock:
+            for queue_path in self.queue_order():
+                for envelope in self.read_new(queue_path):
+                    if not isinstance(envelope, dict):
+                        continue
+                    claimed = try_claim(envelope)
+                    if claimed is not None:
+                        return claimed
+
+            # Queue cursors are persisted across restarts. If a cursor was
+            # advanced while a prior process died before dispatching, recover
+            # from the authoritative task files instead of leaving work stuck
+            # forever in compute_queued. Newest files are attempted first.
+            for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
+                if not directory.exists():
+                    continue
+                for item_path in sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True):
+                    envelope = read_json(item_path, {})
+                    if not isinstance(envelope, dict):
+                        continue
+                    claimed = try_claim(envelope)
+                    if claimed is not None:
+                        return claimed
+        return None
+
+    def _start_pull_tasks_loop(self) -> None:
+        self._pull_stop_event.clear()
+
+        def _loop() -> None:
+            interval = max(1, int(self.config.pull_tasks_interval_s))
+            while not self._pull_stop_event.wait(interval):
+                try:
+                    self._poll_and_claim_tasks_once()
+                except Exception:
+                    pass
+
+        self._pull_thread = threading.Thread(target=_loop, name=f"silicium-pull-tasks-{self.config.node_id}", daemon=True)
+        self._pull_thread.start()
+
+    def _stop_pull_tasks_loop(self) -> None:
+        self._pull_stop_event.set()
+        if self._pull_thread is not None:
+            self._pull_thread.join(timeout=1)
+            self._pull_thread = None
+
+    def _poll_and_claim_tasks_once(self) -> None:
+        targets: set[str] = set()
+        for seed in self.config.seed_peers + self.config.discovery_seeds:
+            normalized = self.peer_network._normalize_http_target(seed)
+            if normalized and normalized != self.peer_network.advertised_http_base_url:
+                targets.add(normalized)
+
+        polled_at = utc_now()
+        attempts: list[dict[str, Any]] = []
+        claimed_item_id = ""
+        raw_payload = stable_json({
+            "node_id": self.config.node_id,
+            "roles": sorted(self.config.roles),
+            "app_version": self.config.app_version,
+            "release_channel": self.config.release_channel,
+            "release_build": self.config.release_build,
+            "capacity": build_capacity_snapshot(self.config),
+        }).encode("utf-8")
+
+        for base_url in sorted(targets):
+            self.peer_network._poll_signaling_sessions(base_url)
+            path = "/tasks/claim"
+            url = base_url.rstrip("/") + path
+            attempt: dict[str, Any] = {"target": base_url, "url": url, "result": "unknown"}
+            request = urllib.request.Request(
+                url,
+                data=raw_payload,
+                method="POST",
+                headers=self.peer_network._signed_headers("POST", path, raw_payload, {"Content-Type": "application/json"}),
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=4) as response:
+                    attempt["http_status"] = int(response.status)
+                    payload = json.loads(response.read().decode("utf-8"))
+                    if not isinstance(payload, dict) or not bool(payload.get("ok")):
+                        attempt["result"] = "invalid_response"
+                    elif not isinstance(payload.get("task"), dict):
+                        attempt["result"] = "no_task_available"
+                    else:
+                        claimed_task = payload["task"]
+                        kind = str(claimed_task.get("envelope_kind") or "task")
+                        claimed_item_id = safe_id(str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown"))
+                        if kind == "request":
+                            enqueue_request_envelope(self.config.export_dir, claimed_task)
+                        else:
+                            enqueue_task_envelope(self.config.export_dir, claimed_task)
+                        attempt["result"] = "claimed"
+                        attempt["item_id"] = claimed_item_id
+                        append_jsonl(
+                            self.events_path,
+                            {
+                                "schema_version": 1,
+                                "timestamp_utc": polled_at,
+                                "node_id": self.config.node_id,
+                                "kind": "claimed_task_received",
+                                "item_id": claimed_item_id,
+                                "from_seed": base_url,
+                            },
+                        )
+            except urllib.error.HTTPError as error:
+                attempt["result"] = "http_error"
+                attempt["http_status"] = int(error.code)
+                attempt["error"] = str(error.reason or error)
+            except Exception as error:
+                attempt["result"] = "request_error"
+                attempt["error"] = f"{type(error).__name__}:{error}"
+            attempts.append(attempt)
+
+        errors = [f"{item.get('target')}: {item.get('error') or item.get('http_status')}" for item in attempts if item.get("result") in {"http_error", "request_error", "invalid_response"}]
+        result = "claimed" if claimed_item_id else (str(attempts[0].get("result")) if attempts else "no_scheduler_target")
+        self._last_claim_poll_unix = time.time()
+        self._last_claim_poll_utc = polled_at
+        self._last_claim_error = "; ".join(errors)
+        self._last_claim_result = result
+        self._last_claim_targets = attempts
+        atomic_write_json(
+            self.config.export_dir / "claim-poll.health.json",
+            {
+                "schema_version": 2,
+                "timestamp_utc": polled_at,
+                "node_id": self.config.node_id,
+                "targets_count": len(targets),
+                "roles": sorted(self.config.roles),
+                "app_version": self.config.app_version,
+                "release_channel": self.config.release_channel,
+                "release_build": self.config.release_build,
+                "result": result,
+                "claimed_item_id": claimed_item_id,
+                "last_error": self._last_claim_error,
+                "attempts": attempts,
+            },
+        )
+        append_jsonl(
+            self.events_path,
+            {
+                "schema_version": 1,
+                "timestamp_utc": polled_at,
+                "node_id": self.config.node_id,
+                "kind": "claim_poll",
+                "status": result,
+                "item_id": claimed_item_id,
+                "targets": attempts,
+                "error": self._last_claim_error,
+            },
+        )
+
     def handle_task(self, envelope: dict[str, Any]) -> dict[str, Any]:
         task = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
         p2p_data, p2p_meta = self.p2p.fetch(envelope.get("p2p_ref"))
@@ -3834,9 +4713,14 @@ class NetworkNode:
             **role_output,
         }
         output["result_hash"] = str(role_output.get("result_hash") or sha256_json(output))
-        output_ref = self.p2p.put_local(stable_json(output).encode("utf-8"))
+        # Workloads such as raytracer publish their actual binary artifact.
+        # Preserve that reference instead of replacing it with this JSON
+        # manifest; downstream reassembly expects the PPM bytes themselves.
+        output_ref = role_output.get("output_ref") if isinstance(role_output.get("output_ref"), dict) else None
+        if output_ref is None:
+            output_ref = self.p2p.put_local(stable_json(output).encode("utf-8"))
         output["output_ref"] = output_ref
-        output["proof_ref"] = output_ref
+        output["proof_ref"] = role_output.get("proof_ref") if isinstance(role_output.get("proof_ref"), dict) else output_ref
         on_chain = self.submit_task_on_chain(envelope, task, output, output_ref)
         if on_chain:
             output["on_chain"] = on_chain
@@ -4058,6 +4942,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--world-seeds", default=os.environ.get("SILICIUM_WORLD_SEEDS", ""))
     parser.add_argument("--roles", default=os.environ.get("SILICIUM_NODE_ROLES", "compute,verify,storage,audit,resource"))
     parser.add_argument("--node-id", default=os.environ.get("SILICIUM_NODE_ID", "node-" + uuid.uuid4().hex[:8]))
+    parser.add_argument("--app-version", default=os.environ.get("SILICIUM_APP_VERSION", "unknown"))
+    parser.add_argument("--release-channel", default=os.environ.get("SILICIUM_RELEASE_CHANNEL", "dev"), choices=["dev", "prod"])
+    parser.add_argument("--release-build", default=os.environ.get("SILICIUM_RELEASE_BUILD", ""))
     parser.add_argument("--idle-ms", type=int, default=int(os.environ.get("SILICIUM_NODE_IDLE_MS", "250")))
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--max-items", type=int, default=int(os.environ.get("SILICIUM_NODE_MAX_ITEMS", "0")))
@@ -4090,6 +4977,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", ""))
     parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", "15")))
     parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
+    parser.add_argument("--gossip-max-hops", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_MAX_HOPS", "8")))
     parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", "300")))
     parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
     parser.add_argument("--relay-hops", type=int, default=int(os.environ.get("SILICIUM_RELAY_HOPS", "2")))
@@ -4211,6 +5099,10 @@ def main(argv: list[str] | None = None) -> int:
         remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
         pull_tasks_enable=bool(args.pull_tasks_enable),
         pull_tasks_interval_s=max(1, int(args.pull_tasks_interval_s)),
+        app_version=str(args.app_version).strip() or "unknown",
+        release_channel=str(args.release_channel).strip().lower() or "dev",
+        release_build=str(args.release_build).strip(),
+        gossip_max_hops=max(1, min(32, int(args.gossip_max_hops))),
         nat_punch_enable=bool(args.nat_punch_enable),
         p2p_candidate_ttl_s=max(1, int(args.p2p_candidate_ttl_s)),
         p2p_candidate_refresh_s=max(1, int(args.p2p_candidate_refresh_s)),
@@ -4229,6 +5121,7 @@ def main(argv: list[str] | None = None) -> int:
         scheduler_onchain_weight=float(args.scheduler_onchain_weight),
         scheduler_offchain_weight=float(args.scheduler_offchain_weight),
         scheduler_capacity_weight=float(args.scheduler_capacity_weight),
+        world=bool(args.world),
     )
     export_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)

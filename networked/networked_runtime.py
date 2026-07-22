@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any
 
 
-NETWORK_ROOT = Path(__file__).resolve().parents[2]
+# This module lives in Network/networked, so the Network checkout is its
+# immediate parent. Keeping this path anchored here is important for the
+# embedded emitter: it must launch Network/silicium, not a repository-level
+# path that may not exist.
+NETWORK_ROOT = Path(__file__).resolve().parents[1]
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -121,6 +125,32 @@ def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str,
         return response.read()
 
 
+def dispatch_task_to_scheduler(task: dict[str, Any], seed_peers: str, mesh_key: str) -> dict[str, Any]:
+    """Submit a workload envelope to a scheduler that pull-based workers poll."""
+    payload = json.dumps(task, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if mesh_key:
+        headers["Authorization"] = f"Bearer {mesh_key}"
+    attempts: list[dict[str, Any]] = []
+    for raw_seed in str(seed_peers or "").split(","):
+        base_url = raw_seed.strip().rstrip("/")
+        if not base_url:
+            continue
+        url = base_url + "/tasks/dispatch"
+        try:
+            request = urllib.request.Request(url, data=payload, method="POST", headers=headers)
+            with urllib.request.urlopen(request, timeout=8) as response:
+                status = int(response.status)
+                attempts.append({"target": base_url, "http_status": status, "ok": status in {200, 202}})
+                if status in {200, 202}:
+                    return {"status": "dispatched", "target": base_url, "attempts": attempts}
+        except urllib.error.HTTPError as error:
+            attempts.append({"target": base_url, "http_status": int(error.code), "error": str(error.reason or error), "ok": False})
+        except Exception as error:
+            attempts.append({"target": base_url, "error": f"{type(error).__name__}:{error}", "ok": False})
+    return {"status": "dispatch_failed", "attempts": attempts}
+
+
 def wait_for_result(export_dir: Path, task_id: str, timeout_s: float) -> dict[str, Any]:
     result_path = export_dir / f"result.{task_id}.json"
     dead_letters_path = export_dir / "dead_letters.ndjson"
@@ -174,9 +204,18 @@ class LocalNetworkEmitter:
         self.mesh_key = mesh_key
         self.idle_ms = idle_ms
         self.process: subprocess.Popen[str] | None = None
+        self._public_url = ""
 
     @property
     def public_url(self) -> str:
+        if self._public_url:
+            return self._public_url
+        heartbeat = read_json(self.export_dir / f"node.{self.node_id}.heartbeat.json", {})
+        if isinstance(heartbeat, dict):
+            advertised = str(heartbeat.get("peer_public_base_url", "")).strip()
+            if advertised:
+                self._public_url = advertised.rstrip("/")
+                return self._public_url
         host = self.advertise_host or "127.0.0.1"
         port = self.advertise_port or self.port
         return f"http://{host}:{port}"
@@ -218,7 +257,11 @@ class LocalNetworkEmitter:
             "--remote-dispatch-enable",
             "--remote-dispatch-limit",
             "3",
+            "--identity-dev-mesh-auth",
         ]
+        heartbeat_path = self.export_dir / f"node.{self.node_id}.heartbeat.json"
+        if heartbeat_path.exists():
+            heartbeat_path.unlink()
         self.process = subprocess.Popen(
             command,
             cwd=str(NETWORK_ROOT),
@@ -227,6 +270,38 @@ class LocalNetworkEmitter:
             stderr=subprocess.PIPE,
             env=node_environment(),
         )
+        # Bootstrap refreshes peer and reputation data before the node writes its
+        # first heartbeat.  On a cold network this routinely exceeds a few
+        # seconds, so do not kill a healthy emitter before it becomes ready.
+        startup_timeout_s = 30.0
+        deadline = time.monotonic() + startup_timeout_s
+        while time.monotonic() < deadline:
+            if self.process.poll() is not None:
+                stdout, stderr = self.process.communicate(timeout=2)
+                self.process = None
+                detail = (stderr or stdout or "").strip()[-4000:]
+                raise RuntimeError(f"network_emitter_start_failed:{detail or 'process_exited'}")
+            heartbeat = read_json(heartbeat_path, {})
+            if isinstance(heartbeat, dict):
+                advertised = str(heartbeat.get("peer_public_base_url", "")).strip()
+                if advertised:
+                    self._public_url = advertised.rstrip("/")
+                    return
+            time.sleep(0.1)
+
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                stdout, stderr = self.process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                stdout, stderr = self.process.communicate(timeout=3)
+            self.process = None
+            detail = (stderr or stdout or "").strip()[-4000:]
+            raise RuntimeError(
+                f"network_emitter_start_timeout:waited_s={startup_timeout_s}:"
+                f"{detail or heartbeat_path}"
+            )
 
     def stop(self) -> dict[str, Any]:
         if self.process is None:

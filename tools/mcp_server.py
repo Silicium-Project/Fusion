@@ -604,6 +604,47 @@ class McpTaskStore:
             raise FileNotFoundError("missing_task_id")
         return (self._tasks_dir / f"{safe_task_id}.json").read_text(encoding="utf-8")
 
+    def list(self, limit: int = 100) -> list[dict[str, Any]]:
+        entries: list[dict[str, Any]] = []
+        paths = sorted(
+            self._tasks_dir.glob("*.json"),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        )
+        for path in paths[: max(1, min(1000, int(limit)))]:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(payload, dict):
+                entries.append(payload)
+        return entries
+
+    def cancel(self, task_id: str) -> dict[str, Any]:
+        safe_task_id = _sanitize_task_id(task_id)
+        if not safe_task_id:
+            raise FileNotFoundError("missing_task_id")
+        path = self._tasks_dir / f"{safe_task_id}.json"
+        with self._lock:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                raise
+            if not isinstance(payload, dict):
+                raise ValueError("task_invalid")
+            status = str(payload.get("status", "")).strip().lower()
+            if status in {"completed", "failed", "dead_lettered", "cancelled"}:
+                return payload
+            if status == "dispatched":
+                raise ValueError("task_already_dispatched")
+            payload["status"] = "cancelled"
+            payload["cancelled_utc"] = _utc_now()
+            encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary.write_text(encoded, encoding="utf-8")
+            temporary.replace(path)
+        return payload
+
 
 class McpRequestStore:
     """
@@ -964,6 +1005,18 @@ class McpHttpHandler(BaseHTTPRequestHandler):
             if path == "/tools/list":
                 _json_response(self, HTTPStatus.OK, {"tools": self._app.list_tools()})
                 return
+            if path == "/tasks":
+                query = parse_qs(parsed.query)
+                try:
+                    limit = int((query.get("limit") or ["100"])[0])
+                except ValueError:
+                    limit = 100
+                _json_response(
+                    self,
+                    HTTPStatus.OK,
+                    {"ok": True, "tasks": self._app.task_store.list(limit)},
+                )
+                return
             if path.startswith("/tasks/"):
                 task_id = path[len("/tasks/") :]
                 resource_uri = RESOURCE_TASK_PREFIX + task_id
@@ -1277,6 +1330,21 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                     transport="http_tasks",
                 )
                 _json_response(self, HTTPStatus.ACCEPTED, {"ok": True, **result})
+                return
+            if parsed.path.startswith("/tasks/") and parsed.path.endswith("/cancel"):
+                if not self._app.enable_tools:
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "tools_disabled"})
+                    return
+                task_id = parsed.path[len("/tasks/") : -len("/cancel")].strip("/")
+                try:
+                    result = self._app.task_store.cancel(task_id)
+                except FileNotFoundError:
+                    _json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+                    return
+                except ValueError as exc:
+                    _json_response(self, HTTPStatus.CONFLICT, {"error": str(exc)})
+                    return
+                _json_response(self, HTTPStatus.OK, {"ok": True, "task": result})
                 return
             if parsed.path == "/requests":
                 if not self._app.enable_tools:

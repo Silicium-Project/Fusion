@@ -169,6 +169,18 @@ def test_mcp_server_submits_and_reads_tasks(tmp_path: Path) -> None:
         assert code == 200
         wrapped = json.loads(body)
         assert json.loads(wrapped["result_json"])["task"]["kind"] == "render"
+
+        code, body = _http_get(base + "/tasks?limit=10")
+        assert code == 200
+        listed = json.loads(body)
+        assert listed["tasks"][0]["task_id"] == "render_tile_1"
+
+        code, body = _http_post(base + "/tasks/render_tile_1/cancel", {})
+        assert code == 200
+        assert json.loads(body)["task"]["status"] == "cancelled"
+        code, body = _http_get(base + "/tasks/render_tile_1")
+        assert code == 200
+        assert json.loads(body)["status"] == "cancelled"
     finally:
         proc.terminate()
         try:

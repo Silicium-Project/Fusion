@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,7 @@ sys.path.insert(0, str(NETWORK_ROOT / "demo"))
 
 from networked.networked_runtime import (  # noqa: E402
     LocalNetworkEmitter,
+    dispatch_task_to_scheduler,
     fetch_network_content,
     store_network_content,
     store_network_file,
@@ -33,7 +35,12 @@ from workloads.common import (  # noqa: E402
     submit_task,
     write_json,
 )
-from workloads.raytracer.raytracer_workload import scene_resolution  # noqa: E402
+from workloads.raytracer.raytracer_workload import (  # noqa: E402
+    build_verification_milestones,
+    parse_ppm_bytes,
+    scene_resolution,
+    write_optional_png,
+)
 
 
 def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -59,11 +66,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-pixels", type=int, default=120_000)
     parser.add_argument("--max-fragments", type=int, default=32)
     parser.add_argument("--fragments", type=int, default=0, help="Optional manual override; 0 keeps automatic split.")
+    parser.add_argument(
+        "--verification-batch-rows",
+        type=int,
+        default=int(os.environ.get("SILICIUM_RAYTRACER_VERIFY_BATCH_ROWS", "20")),
+        help="Rows committed by each verification milestone; one milestone is challenged after compute.",
+    )
     parser.add_argument("--network-node-id", default="raytracer-emitter")
     parser.add_argument("--network-bind", default="0.0.0.0")
-    parser.add_argument("--network-port", type=int, default=46100)
+    parser.add_argument("--network-port", type=int, default=0, help="Emitter HTTP port; 0 selects a free local port.")
     parser.add_argument("--network-advertise-host", default="127.0.0.1")
-    parser.add_argument("--network-advertise-port", type=int, default=46100)
+    parser.add_argument("--network-advertise-port", type=int, default=0, help="Advertised emitter port; 0 uses the bound port.")
     parser.add_argument("--network-seed-peers", default="")
     parser.add_argument("--network-mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", "demo-mesh"))
     parser.add_argument("--network-start-emitter", action=argparse.BooleanOptionalAction, default=True)
@@ -125,6 +138,46 @@ def ensure_task_success(result: dict[str, Any], task_id: str) -> None:
     error = str(result.get("error") or result.get("last_error") or "unknown_error")
     node_id = str(result.get("node_id") or "")
     raise RuntimeError(f"task failed: {task_id} on {node_id}\n{error}")
+
+
+def ensure_raytracer_compute_contract(result: dict[str, Any], task_id: str) -> None:
+    compute = result.get("compute")
+    mode = str(compute.get("mode", "")) if isinstance(compute, dict) else ""
+    executed = bool(compute.get("executed", False)) if isinstance(compute, dict) else False
+    milestones = result.get("verification_milestones")
+    if mode != "raytracer-fragment" or not executed or not isinstance(milestones, dict):
+        node_id = str(result.get("node_id") or "")
+        raise RuntimeError(
+            "raytracer_compute_contract_invalid:"
+            f"task={task_id}:node={node_id}:mode={mode or 'missing'}:executed={str(executed).lower()}"
+        )
+
+
+def validate_fragment_ppm(
+    fragment_bytes: bytes,
+    *,
+    task_id: str,
+    expected_width: int,
+    expected_height: int,
+    expected_hash: str,
+) -> dict[str, Any]:
+    try:
+        actual_width, actual_height, _ = parse_ppm_bytes(fragment_bytes, task_id)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"raytracer_fragment_invalid_ppm:task={task_id}:{exc}") from exc
+    if actual_width != expected_width or actual_height != expected_height:
+        raise RuntimeError(
+            "raytracer_fragment_dimensions_mismatch:"
+            f"task={task_id}:expected={expected_width}x{expected_height}:actual={actual_width}x{actual_height}"
+        )
+    actual_hash = sha256_bytes(fragment_bytes)
+    normalized_expected_hash = str(expected_hash).removeprefix("sha256:").lower()
+    if actual_hash != normalized_expected_hash:
+        raise RuntimeError(
+            "raytracer_fragment_hash_mismatch:"
+            f"task={task_id}:expected={normalized_expected_hash}:actual={actual_hash}"
+        )
+    return {"width": actual_width, "height": actual_height, "sha256": actual_hash}
 
 
 def wait_for_network_role(export_dir: Path, node_id: str, role: str, timeout_s: float = 20.0) -> None:
@@ -329,6 +382,7 @@ def main(argv: list[str] | None = None) -> int:
                 "y_start": y_start,
                 "y_end": y_end,
                 "scene_p2p_ref": scene_ref,
+                "verification_batch_rows": max(1, int(args.verification_batch_rows)),
             }
             progress_fragments[index]["status"] = "queued_compute"
             compute_payload = {
@@ -343,49 +397,115 @@ def main(argv: list[str] | None = None) -> int:
                     "fragment_count": len(fragments),
                     "y_start": y_start,
                     "y_end": y_end,
+                    "verification_batch_rows": max(1, int(args.verification_batch_rows)),
                     "scene_p2p_ref": scene_ref,
                     "timeout_s": int(args.node_timeout_s),
                 },
             }
+            if emitter_node is not None:
+                compute_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
             clear_previous_result(export_dir, fragment_id)
-            submissions.append(submit_task(export_dir, compute_payload))
+            if args.node_mode == "network":
+                scheduler_dispatch = dispatch_task_to_scheduler(
+                    compute_payload,
+                    args.network_seed_peers,
+                    args.network_mesh_key,
+                )
+                submission = {
+                    "task_id": fragment_id,
+                    "required_roles": ["compute"],
+                    "priority": args.priority,
+                    "status": scheduler_dispatch["status"],
+                    "queue": "scheduler://tasks/dispatch",
+                    "scheduler_dispatch": scheduler_dispatch,
+                }
+            else:
+                submission = submit_task(export_dir, compute_payload)
+            submissions.append(submission)
             write_progress("compute_queued")
             compute_result = wait_for_task_result(args, "compute", fragment_id, node_runs)
             try:
                 ensure_task_success(compute_result, fragment_id)
-            except RuntimeError as error:
+                ensure_raytracer_compute_contract(compute_result, fragment_id)
+                output_ref = output_ref_from_compute(compute_result)
+                result_hash = result_hash_from_compute(compute_result)
+                fragment_bytes = read_ref_bytes(args, export_dir, output_ref)
+                fragment_metadata = validate_fragment_ppm(
+                    fragment_bytes,
+                    task_id=fragment_id,
+                    expected_width=width,
+                    expected_height=y_end - y_start,
+                    expected_hash=result_hash,
+                )
+                worker_milestones = compute_result.get("verification_milestones")
+                expected_milestones = build_verification_milestones(
+                    fragment_bytes,
+                    y_start,
+                    max(1, int(args.verification_batch_rows)),
+                )
+                if worker_milestones != expected_milestones:
+                    raise RuntimeError("raytracer_milestone_commitment_invalid")
+            except Exception as error:
                 progress_fragments[index].update({"status": "compute_failed", "error": str(error)})
                 write_progress("compute_failed")
                 raise
-            output_ref = output_ref_from_compute(compute_result)
-            result_hash = result_hash_from_compute(compute_result)
             fragment_file = fragments_dir / f"fragment-{index:03d}.ppm"
-            fragment_file.write_bytes(read_ref_bytes(args, export_dir, output_ref))
+            fragment_png = fragments_dir / f"fragment-{index:03d}.png"
+            fragment_file.write_bytes(fragment_bytes)
+            preview = write_optional_png(fragment_bytes, fragment_png)
             fragment_files.append((y_start, fragment_file))
             progress_fragments[index].update(
                 {
                     "status": "computed",
+                    "preview_ready": preview["ready"],
+                    "preview_path": preview["path"],
+                    "preview_error": preview["error"],
+                    "fragment_width": fragment_metadata["width"],
+                    "fragment_height": fragment_metadata["height"],
                     "result_hash": result_hash,
                     "output_ref": output_ref,
                     "expected_hash": result_hash,
                     "compute_result_hash": result_hash,
                     "compute_output_ref": output_ref,
+                    "verification_mode": expected_milestones["strategy"],
+                    "verification_commitment_hash": expected_milestones["commitment_hash"],
+                    "verification_milestone_count": expected_milestones["milestone_count"],
                 }
             )
             write_progress("fragment_computed")
 
             verify_id = f"{fragment_id}-verify"
+            challenged_milestone = secrets.choice(expected_milestones["milestones"])
+            challenge = {
+                "schema_version": 1,
+                "strategy": expected_milestones["strategy"],
+                "challenge_nonce": secrets.token_hex(16),
+                "source_task_id": fragment_id,
+                "fragment_index": index,
+                "fragment_rows": expected_milestones["fragment_rows"],
+                "milestone_count": expected_milestones["milestone_count"],
+                "commitment_hash": expected_milestones["commitment_hash"],
+                "milestone": challenged_milestone,
+            }
+            challenge_ref = bytes_input_ref(
+                args,
+                export_dir,
+                json.dumps(challenge, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+            )
             verify_payload = {
                 "task_id": verify_id,
                 "required_roles": ["verify"],
                 "priority": args.priority,
-                "p2p_ref": output_ref,
-                "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
+                "p2p_ref": challenge_ref,
+                "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
+                "excluded_peer_ids": [str(compute_result.get("node_id", ""))] if compute_result.get("node_id") else [],
                 "scene_p2p_ref": scene_ref,
                 "task": {
                     "kind": "verify",
                     "workload": RAYTRACER_FRAGMENT_VERIFY_WORKLOAD,
-                    "expected_hash": "sha256:" + result_hash.removeprefix("sha256:"),
+                    "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
+                    "verification_mode": expected_milestones["strategy"],
+                    "max_sample_rows": max(1, int(args.verification_batch_rows)),
                     "scene_p2p_ref": scene_ref,
                     "source_task_id": fragment_id,
                     "fragment_index": index,
@@ -395,8 +515,26 @@ def main(argv: list[str] | None = None) -> int:
                     "timeout_s": int(args.node_timeout_s),
                 },
             }
+            if emitter_node is not None:
+                verify_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
             clear_previous_result(export_dir, verify_id)
-            submissions.append(submit_task(export_dir, verify_payload))
+            if args.node_mode == "network":
+                scheduler_dispatch = dispatch_task_to_scheduler(
+                    verify_payload,
+                    args.network_seed_peers,
+                    args.network_mesh_key,
+                )
+                submission = {
+                    "task_id": verify_id,
+                    "required_roles": ["verify"],
+                    "priority": args.priority,
+                    "status": scheduler_dispatch["status"],
+                    "queue": "scheduler://tasks/dispatch",
+                    "scheduler_dispatch": scheduler_dispatch,
+                }
+            else:
+                submission = submit_task(export_dir, verify_payload)
+            submissions.append(submission)
             progress_fragments[index]["status"] = "queued_verify"
             write_progress("verify_queued")
             verify_result = wait_for_task_result(args, "verify", verify_id, node_runs)
@@ -413,6 +551,8 @@ def main(argv: list[str] | None = None) -> int:
                     "verify_id": verify_id,
                     "verify_choice": verified,
                     "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
+                    "verification_challenge": challenge,
+                    "verification_result": verify_result.get("verification", {}),
                 }
             )
             write_progress("fragment_verified")
@@ -440,8 +580,11 @@ def main(argv: list[str] | None = None) -> int:
             "submissions": submissions,
             "node_runs": node_runs,
             "reassembled_ppm": str(reassembled_ppm),
-            "reassembled_png": str(reassembled_png),
+            "reassembled_png": str(reassembled.get("result_png_path") or ""),
+            "reassembled_png_ready": bool(reassembled.get("result_png_ready", False)),
+            "reassembled_png_error": str(reassembled.get("result_png_error") or ""),
             "reassembled_hash": reassembled.get("result_sha256", sha256_file(reassembled_ppm)),
+            "result_path": str(reassembled.get("result_png_path") or reassembled_ppm),
             "devnet_trace": {"enabled": False, "status": "not_requested"},
         }
         write_json(summary_path, summary)
