@@ -18,7 +18,10 @@ type RunnerConfig struct {
 	NetworkRoot          string
 	MeshKey              string
 	SeedPeers            string
+	OrchestratorNodeID   string
 	OrchestratorHost     string
+	EmitterPort          string
+	OrchestratorExportDir string
 	DashboardURL         string
 	DevnetTrace          bool
 	DevnetTxDelayMS      string
@@ -44,7 +47,10 @@ func ConfigFromEnv() RunnerConfig {
 		NetworkRoot:          networkRoot,
 		MeshKey:              envDefault("SILICIUM_MESH_KEY", "demo-mesh"),
 		SeedPeers:            os.Getenv("SILICIUM_SEED_PEERS"),
+		OrchestratorNodeID:   envDefault("SILICIUM_ORCHESTRATOR_NODE_ID", "orchestrator-1"),
 		OrchestratorHost:     envDefault("SILICIUM_ORCHESTRATOR_HOST", "127.0.0.1"),
+		EmitterPort:          envDefault("SILICIUM_EMITTER_PORT", "46102"),
+		OrchestratorExportDir: envDefault("SILICIUM_ORCHESTRATOR_EXPORT_DIR", filepath.Join(networkRoot, ".silicium", "networked", "orchestrator", "export")),
 		DashboardURL:         envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
 		DevnetTrace:          envDefault("SILICIUM_DEVNET_TRACE", "1") != "0",
 		DevnetTxDelayMS:      envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
@@ -78,7 +84,15 @@ func RunRaytracer(job models.Job, cfg RunnerConfig) RunResult {
 		job.InputPath,
 		"--job-id", job.SiliciumJobID,
 		"--node-mode", "network",
+		// The persistent orchestrator owns task/result ingress. Starting an
+		// embedded emitter here made the worker return URL disappear whenever
+		// this runner process stopped or was restarted.
+		"--no-network-start-emitter",
+		"--export-dir", cfg.OrchestratorExportDir,
+		"--network-node-id", cfg.OrchestratorNodeID,
 		"--network-advertise-host", cfg.OrchestratorHost,
+		"--network-port", cfg.EmitterPort,
+		"--network-advertise-port", cfg.EmitterPort,
 		"--network-seed-peers", cfg.SeedPeers,
 		"--network-mesh-key", cfg.MeshKey,
 		"--min-compute-reputation", cfg.MinComputeReputation,
@@ -147,12 +161,11 @@ func parseRaytracerSummary(summaryPath string) RunResult {
 		return RunResult{}
 	}
 	result := RunResult{Status: "completed"}
-	if value, ok := payload["reassembled_png"].(string); ok {
-		result.ResultPath = value
-	} else if value, ok := payload["result_png_path"].(string); ok {
-		result.ResultPath = value
-	} else if value, ok := payload["result_path"].(string); ok {
-		result.ResultPath = value
+	for _, key := range []string{"reassembled_png", "result_png_path", "result_path", "reassembled_ppm"} {
+		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+			result.ResultPath = value
+			break
+		}
 	}
 	if trace, ok := payload["devnet_trace"].(map[string]any); ok {
 		if path, ok := trace["trace_path"].(string); ok {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -190,6 +191,34 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, job.ResultPath)
+}
+
+func (h *Handler) GetJobFragmentPreview(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.jobForRequest(w, r)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(job.Workload) != "raytracer" {
+		http.Error(w, "Fragment previews are only available for raytracer jobs", http.StatusNotFound)
+		return
+	}
+	index, err := strconv.Atoi(mux.Vars(r)["index"])
+	if err != nil || index < 0 || index > 9999 {
+		http.Error(w, "Invalid fragment index", http.StatusBadRequest)
+		return
+	}
+
+	previewPath := filepath.Join(filepath.Dir(progressPathForJob(job)), "fragments", fmt.Sprintf("fragment-%03d.png", index))
+	info, err := os.Stat(previewPath)
+	if err != nil || !info.Mode().IsRegular() {
+		http.Error(w, "Fragment preview is not ready", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "private, max-age=3600, immutable")
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeFile(w, r, previewPath)
 }
 
 func (h *Handler) runSiliciumJob(jobID uint) {
