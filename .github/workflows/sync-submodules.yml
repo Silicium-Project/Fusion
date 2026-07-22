@@ -26,7 +26,7 @@ jobs:
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
-          permission-contents: read
+          permission-contents: write
 
       - name: Check out the pinned composition
         uses: actions/checkout@v4
@@ -78,6 +78,7 @@ jobs:
         if: steps.resolve.outputs.changed != '0'
         shell: bash
         env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -86,7 +87,7 @@ jobs:
           git config user.email "luis1454@users.noreply.github.com"
           git commit -m "chore: synchronize submodule gitlinks" \
             -m "$(cat '${{ steps.resolve.outputs.summary_file }}')"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             HEAD:main
 
           # Events emitted with GITHUB_TOKEN do not recursively start workflows.
