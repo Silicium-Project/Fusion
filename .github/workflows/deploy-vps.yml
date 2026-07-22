@@ -5,8 +5,11 @@ on:
   push:
     branches: ["main"]
     paths:
+      - "FrontEnd"
       - "FrontEnd/**"
+      - "BackEnd"
       - "BackEnd/**"
+      - "Network"
       - "Network/**"
       - "apps/silicium-node/**"
       - "deploy/**"

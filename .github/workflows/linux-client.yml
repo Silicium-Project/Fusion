@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "apps/silicium-node/**"
+      - "Network"
       - "Network/**"
       - ".github/workflows/linux-client.yml"
 
