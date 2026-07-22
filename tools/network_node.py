@@ -2769,6 +2769,7 @@ class PeerNetwork:
         for base_url in targets:
             self._sync_peer_table(base_url)
             self._sync_recent_events(base_url)
+            self._sync_update_manifest(base_url)
             self._poll_signaling_sessions(base_url)
         self._sync_discovery()
 
@@ -2915,6 +2916,38 @@ class PeerNetwork:
         for event in events:
             if isinstance(event, dict):
                 self._handle_network_message(event, base_url)
+
+    def _sync_update_manifest(self, base_url: str) -> None:
+        """Reconcile durable update announcements after transient gossip loss."""
+        path = "/updates/manifest"
+        request = urllib.request.Request(
+            base_url.rstrip("/") + path,
+            headers=self._signed_headers("GET", path, b""),
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            return
+        if not isinstance(payload, dict):
+            return
+        releases = payload.get("releases")
+        if not isinstance(releases, list):
+            return
+        source_peer_id = str(payload.get("node_id", "")).strip()
+        known = {
+            (str(item.get("channel", "")), str(item.get("version", "")), str(item.get("content_id", "")))
+            for item in self.update_announcements()
+        }
+        for release in releases:
+            normalized = self._normalize_update_announcement(release)
+            if normalized is None:
+                continue
+            key = (normalized["channel"], normalized["version"], normalized["content_id"])
+            if key in known:
+                continue
+            if self._record_update_announcement(normalized, source_peer_id):
+                known.add(key)
 
     def _prune_stale_peers(self) -> None:
         if self.config.peer_stale_after_s <= 0:

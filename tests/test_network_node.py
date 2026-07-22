@@ -1429,6 +1429,57 @@ def test_signed_update_announcement_and_artifact_cross_an_isolated_peer(tmp_path
         peer_a.stop()
 
 
+def test_update_manifest_anti_entropy_recovers_a_missed_gossip_event(tmp_path: Path) -> None:
+    export_a = tmp_path / "update-source"
+    export_b = tmp_path / "late-peer"
+    config_a = _config(export_a, "update-source", gossip_enable=False)
+    peer_a = network_node.PeerNetwork(config_a, export_a)
+    peer_a.start()
+    try:
+        artifact = b"durable-update-artifact" * 1024
+        digest = network_node.sha256_bytes(artifact)
+        source_path = export_a / "p2p" / digest
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_bytes(artifact)
+        release = {
+            "channel": "dev",
+            "version": "0.2.9-dev.100",
+            "url": "https://example.invalid/silicium-node-windows-dev.exe",
+            "sha256": digest,
+            "content_id": digest,
+            "size_bytes": len(artifact),
+            "auto_install": True,
+            "check_interval_seconds": 30,
+            "signature": "signed-by-release-authority",
+            "signing_key_id": "test-key",
+        }
+        assert peer_a._record_update_announcement(release, "update-source")
+        assert peer_a.recent_events(10) == []
+
+        config_b = _config(
+            export_b,
+            "late-peer",
+            gossip_enable=False,
+            seed_peers=[peer_a.http_base_url],
+        )
+        peer_b = network_node.PeerNetwork(config_b, export_b)
+        peer_b.start()
+        try:
+            peer_b.sync_once()
+            announcements = peer_b.update_announcements()
+            assert len(announcements) == 1
+            assert announcements[0]["content_id"] == digest
+            assert announcements[0]["source_peer_id"] == "update-source"
+
+            with urllib.request.urlopen(peer_b.http_base_url + f"/updates/content/{digest}", timeout=5) as response:
+                assert response.read() == artifact
+            assert (export_b / "p2p" / digest).read_bytes() == artifact
+        finally:
+            peer_b.stop()
+    finally:
+        peer_a.stop()
+
+
 def test_ice_backend_reports_missing_optional_dependency(tmp_path: Path, monkeypatch) -> None:
     def _missing_aioice(name: str) -> object:
         if name == "aioice":
