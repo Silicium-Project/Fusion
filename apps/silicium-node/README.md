@@ -17,8 +17,11 @@ capabilities. The network/orchestrator decides what work is assigned over time.
 
 The installed application keeps its managed runtime, node identity, logs and
 task history under `%APPDATA%\SiliciumNode`. Closing the window does not stop
-the activated worker: its supervisor continues in the background and is
-restored when the Windows session starts.
+the activated worker: the application remains available from the Windows
+notification area. Its menu can start, stop or restart the managed service,
+open the dashboard, or quit the desktop shell without stopping the worker.
+The notification-area shell and supervisor are restored when the Windows
+session starts.
 
 ## Development
 
