@@ -64,8 +64,9 @@ jobs:
           SILICIUM_RELEASE_BUILD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           npm run build
+          npm run prepare:runtime:linux
           cargo test --manifest-path src-tauri/Cargo.toml
-          npm run tauri:build:linux
+          npx tauri build --bundles deb,appimage
 
       - name: Upload Linux bundles
         uses: actions/upload-artifact@v4

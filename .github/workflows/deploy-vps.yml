@@ -151,8 +151,9 @@ jobs:
         run: |
           npm ci
           npm run build
+          npm run prepare:runtime:linux
           cargo test --manifest-path src-tauri/Cargo.toml
-          npm run tauri:build:linux
+          npx tauri build --bundles deb,appimage
           install -d ci-artifacts
           cp src-tauri/target/release/bundle/appimage/*.AppImage ci-artifacts/silicium-node-linux-dev.AppImage
           cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux-dev.deb
