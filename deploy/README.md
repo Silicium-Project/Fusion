@@ -159,9 +159,11 @@ secrets before the first run:
 The workflow uses a private GitHub App instead of a personal access token. Store
 its client ID as the repository secret `SILICIUM_DEPLOY_APP_CLIENT_ID` and
 its private key as the repository secret `SILICIUM_DEPLOY_APP_PRIVATE_KEY`.
-Install the App on `Fusion`, `BackEnd`, `FrontEnd`, and `Network` with only
-`Contents: Read-only` permission. The workflow creates a short-lived token for
-each deployment and revokes it when the job completes.
+Install the App on `Fusion`, `BackEnd`, `FrontEnd`, and `Network`. It needs
+`Contents: Read and write` and `Pull requests: Read and write` so the submodule
+sync workflow can maintain its exact-gitlink pull request. Deployment jobs only
+consume the read capabilities of their short-lived token. Tokens are revoked
+when their job completes.
 
 The deployment user must be able to run the Compose deployment script through
 `sudo` without an interactive password prompt. The workflow performs a

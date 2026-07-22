@@ -4,6 +4,17 @@ Silicium regroupe le reseau de calcul distribue, le layer Solana Devnet, le dash
 
 Les composants Network, BackEnd et FrontEnd sont suivis comme submodules Git pour garder leur cycle de vie independant tout en restant composes par Fusion.
 
+Fusion conserve des SHA exacts afin que chaque build, rollback et deploiement soit
+reproductible. Le workflow `Sync submodule gitlinks` compare toutes les cinq
+minutes les branches declarees dans `.gitmodules`, maintient une seule pull
+request de synchronisation et active son auto-merge. Il ne faut pas remplacer
+ce mecanisme par un `git submodule update --remote` pendant le deploiement: le
+contenu deploye ne correspondrait alors plus au commit Fusion audite.
+
+Le workflow utilise la GitHub App Silicium avec les permissions
+`Contents: Read and write` et `Pull requests: Read and write`. Ses jetons sont
+ephemeres; aucun personal access token n'est requis.
+
 ## Installation locale Windows
 
 Depuis la racine du repository:
