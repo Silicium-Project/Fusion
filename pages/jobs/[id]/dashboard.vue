@@ -138,7 +138,7 @@
               <span class="font-bold">#{{ tile.index }}</span>
               <span class="text-xs">{{ tileStatusLabel(tile.status) }}</span>
             </div>
-            <p class="text-xs mt-1 opacity-70">y {{ tile.yStart }} → {{ tile.yEnd }}</p>
+            <p class="text-xs mt-1 opacity-70">x {{ tile.xStart }} → {{ tile.xEnd }} · y {{ tile.yStart }} → {{ tile.yEnd }}</p>
           </div>
         </div>
       </section>
@@ -314,6 +314,8 @@ type TreeEdge = {
 type PuzzleTile = {
   id: string;
   index: number;
+  xStart: number;
+  xEnd: number;
   yStart: number;
   yEnd: number;
   status: string;
@@ -359,10 +361,11 @@ const progressPercent = computed(() => {
   return Math.max(0, Math.min(100, Math.round((weighted / total) * 100)));
 });
 const puzzleTiles = computed<PuzzleTile[]>(() => {
-  const sorted = [...fragments.value].sort((a, b) => Number(a.y_start ?? 0) - Number(b.y_start ?? 0));
-  return sorted.map((fragment, index) => ({
+  return fragments.value.map((fragment, index) => ({
     id: String(fragment.fragment_id || fragment.fragment_index || index),
     index: Number(fragment.fragment_index ?? index),
+    xStart: Number(fragment.x_start ?? 0),
+    xEnd: Number(fragment.x_end ?? imageWidth.value),
     yStart: Number(fragment.y_start ?? 0),
     yEnd: Number(fragment.y_end ?? 0),
     status: String(fragment.status || (fragment.verify_choice ? 'verified' : 'planned')),
@@ -560,10 +563,13 @@ const tileStatusLabel = (status: string) => {
 };
 
 const tilePosition = (tile: PuzzleTile) => {
+  const width = imageWidth.value;
   const height = imageHeight.value;
+  const left = Math.max(0, Math.min(100, (tile.xStart / width) * 100));
   const top = Math.max(0, Math.min(100, (tile.yStart / height) * 100));
+  const tileWidth = Math.max(0.25, Math.min(100 - left, ((tile.xEnd - tile.xStart) / width) * 100));
   const tileHeight = Math.max(0.25, Math.min(100 - top, ((tile.yEnd - tile.yStart) / height) * 100));
-  return { top: `${top}%`, height: `${tileHeight}%` };
+  return { left: `${left}%`, top: `${top}%`, width: `${tileWidth}%`, height: `${tileHeight}%` };
 };
 
 const tileVisualClass = (tile: PuzzleTile) => ({
@@ -646,10 +652,8 @@ onBeforeUnmount(() => {
 
 .live-render-tile {
   position: absolute;
-  left: 0;
-  width: 100%;
   overflow: hidden;
-  border-block: 1px solid rgb(168 85 247 / 20%);
+  border: 1px solid rgb(168 85 247 / 20%);
   background: rgb(15 16 25 / 90%);
   transition: border-color 350ms ease, box-shadow 350ms ease, filter 350ms ease;
 }

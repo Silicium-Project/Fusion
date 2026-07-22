@@ -179,6 +179,21 @@
                 </select>
               </label>
             </div>
+            <label v-if="jobForm.workload === 'raytracer'" class="block mb-6">
+              <span class="flex items-center justify-between text-white/50 mb-2">
+                <span>Nombre de parcelles</span>
+                <strong class="text-purple-200">{{ jobForm.fragmentCount }}</strong>
+              </span>
+              <input
+                v-model.number="jobForm.fragmentCount"
+                type="range"
+                min="1"
+                max="256"
+                step="1"
+                class="w-full accent-purple-400"
+              >
+              <span class="block text-xs text-white/35 mt-2">Les parcelles sont lancees depuis le centre, puis de proche en proche.</span>
+            </label>
             <input v-model="jobForm.title" type="text" placeholder="Nom de la tache" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400 mb-6">
             <textarea v-model="jobForm.description" placeholder="Description" class="w-full h-24 bg-black/20 rounded-lg px-4 py-2 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400 mb-6"></textarea>
             <div class="mb-6">
@@ -239,6 +254,7 @@ const jobForm = reactive({
   priority: 'high',
   title: 'Raytracer',
   description: '',
+  fragmentCount: 64,
 });
 
 const runningJobs = computed(() => jobs.value.filter((job) => ['queued', 'running'].includes(job.status)).length);
@@ -282,6 +298,7 @@ const submitJob = async () => {
     formData.append('priority', jobForm.priority);
     formData.append('title', jobForm.title);
     formData.append('description', jobForm.description);
+    formData.append('fragment_count', String(jobForm.fragmentCount));
     await $fetch(`${apiBase}/jobs`, {
       method: 'POST',
       headers: authHeaders(),
