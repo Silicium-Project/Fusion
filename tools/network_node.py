@@ -46,6 +46,7 @@ WORLD_DEFAULT_GOSSIP_PORT = 46000
 WORLD_DEFAULT_PEER_HTTP_PORT = 46001
 WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
+DEFAULT_PUBLIC_STUN_SERVER = "stun.l.google.com:19302"
 ATOMIC_WRITE_LOCK = threading.Lock()
 
 
@@ -137,6 +138,14 @@ def derive_world_mesh_key(world_name: str) -> str:
         return ""
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
     return f"world:{normalized}:{digest}"
+
+
+def apply_nat_traversal_defaults(args: argparse.Namespace) -> argparse.Namespace:
+    backend = str(getattr(args, "p2p_direct_transport_backend", "auto") or "auto").strip().lower()
+    stun_server = str(getattr(args, "p2p_stun_server", "") or "").strip()
+    if bool(getattr(args, "nat_punch_enable", False)) and backend not in {"native", "native-light", "native_light"} and not stun_server:
+        args.p2p_stun_server = DEFAULT_PUBLIC_STUN_SERVER
+    return args
 
 
 def fragment_status_name(fragment_account: dict[str, Any] | Any) -> str:
@@ -5083,6 +5092,7 @@ def main(argv: list[str] | None = None) -> int:
         args.discovery_sync_interval_s = max(int(args.discovery_sync_interval_s or 0), WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S)
         if not str(args.identity_key_path).strip():
             args.identity_key_path = (Path(".silicium") / "world-identities" / safe_id(str(args.node_id)) / "ed25519.pem").as_posix()
+    args = apply_nat_traversal_defaults(args)
     export_dir = Path(args.export_dir).expanduser().resolve()
     state_dir = Path(args.state_dir).expanduser().resolve() if args.state_dir else export_dir / "node-state" / safe_path_id(safe_id(args.node_id))
     config = NodeConfig(

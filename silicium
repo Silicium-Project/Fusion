@@ -183,6 +183,7 @@ WORLD_DEFAULT_GOSSIP_PORT = 46000
 WORLD_DEFAULT_PEER_HTTP_PORT = 46001
 WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
+DEFAULT_PUBLIC_STUN_SERVER = "stun.l.google.com:19302"
 
 
 def _split_csv(value: str) -> list[str]:
@@ -232,6 +233,14 @@ def _derive_world_mesh_key(world_name: str) -> str:
         return ""
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
     return f"world:{normalized}:{digest}"
+
+
+def _apply_nat_traversal_defaults(args: argparse.Namespace) -> argparse.Namespace:
+    backend = str(getattr(args, "p2p_direct_transport_backend", "auto") or "auto").strip().lower()
+    stun_server = str(getattr(args, "p2p_stun_server", "") or "").strip()
+    if bool(getattr(args, "nat_punch_enable", False)) and backend not in {"native", "native-light", "native_light"} and not stun_server:
+        args.p2p_stun_server = DEFAULT_PUBLIC_STUN_SERVER
+    return args
 
 
 def _apply_world_mode_defaults(args: argparse.Namespace, *, node_id: str) -> argparse.Namespace:
@@ -3165,6 +3174,7 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
 
     node_id = args.node_id or f"node-{secrets.token_hex(4)}"
     args = _apply_world_mode_defaults(args, node_id=node_id)
+    args = _apply_nat_traversal_defaults(args)
     argv = [
         "--export-dir",
         str(args.export_dir or settings["export_dir"]),

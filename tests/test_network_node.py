@@ -17,6 +17,34 @@ def _write_jsonl(path: Path, payload: dict) -> None:
         handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
 
 
+def test_nat_punch_defaults_to_public_stun_for_ice() -> None:
+    args = types.SimpleNamespace(
+        nat_punch_enable=True,
+        p2p_direct_transport_backend="auto",
+        p2p_stun_server="",
+    )
+
+    resolved = network_node.apply_nat_traversal_defaults(args)
+
+    assert resolved.p2p_stun_server == network_node.DEFAULT_PUBLIC_STUN_SERVER
+
+
+def test_nat_punch_preserves_explicit_stun_and_native_backend() -> None:
+    explicit = types.SimpleNamespace(
+        nat_punch_enable=True,
+        p2p_direct_transport_backend="ice",
+        p2p_stun_server="stun.example.test:3478",
+    )
+    native = types.SimpleNamespace(
+        nat_punch_enable=True,
+        p2p_direct_transport_backend="native-light",
+        p2p_stun_server="",
+    )
+
+    assert network_node.apply_nat_traversal_defaults(explicit).p2p_stun_server == "stun.example.test:3478"
+    assert network_node.apply_nat_traversal_defaults(native).p2p_stun_server == ""
+
+
 def _path_id(value: str) -> str:
     return network_node.safe_path_id(network_node.safe_id(value))
 
