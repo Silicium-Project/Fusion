@@ -53,6 +53,11 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/silicium-node/src-tauri
+
       - name: Install desktop dependencies
         working-directory: apps/silicium-node
         run: npm ci
@@ -79,6 +84,7 @@ jobs:
 
           $env:SILICIUM_RELEASE_CHANNEL = "prod"
           $env:SILICIUM_RELEASE_VERSION = $prodVersion
+          $env:SILICIUM_SKIP_RUNTIME_PREPARE = "1"
           & .\build-installer.cmd
           if ($LASTEXITCODE -ne 0) { throw "Production installer build failed" }
           $prodInstaller = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" |

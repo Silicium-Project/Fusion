@@ -8,6 +8,9 @@ if [[ "$(id -u)" -ne 0 ]]; then
   exit 1
 fi
 
+[[ -d "$ROOT/deploy/systemd" ]] || { echo "Missing deployment files under: $ROOT" >&2; exit 1; }
+cd "$ROOT"
+
 mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana /var/lib/silicium/downloads
 
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-backend.service > /etc/systemd/system/silicium-backend.service
@@ -21,6 +24,22 @@ cp deploy/systemd/silicium-update-manifest.timer /etc/systemd/system/silicium-up
 if [[ ! -f /etc/silicium/update-channels.env ]]; then
   cp deploy/env/update-channels.example.env /etc/silicium/update-channels.env
 fi
+# Release identifiers are source-controlled and must follow the artifacts built
+# by CI. Preserve operator-specific URLs, keys and cache paths in the existing
+# file while refreshing only the channel cadence/version fields.
+for release_key in \
+  SILICIUM_DEV_VERSION \
+  SILICIUM_PROD_VERSION \
+  SILICIUM_DEV_CHECK_INTERVAL_SECONDS \
+  SILICIUM_PROD_CHECK_INTERVAL_SECONDS; do
+  release_line="$(grep -E "^${release_key}=" deploy/env/update-channels.example.env | tail -n 1)"
+  [[ -n "$release_line" ]] || continue
+  if grep -q -E "^${release_key}=" /etc/silicium/update-channels.env; then
+    sed -i -E "s#^${release_key}=.*#${release_line}#" /etc/silicium/update-channels.env
+  else
+    printf '%s\n' "$release_line" >> /etc/silicium/update-channels.env
+  fi
+done
 if [[ ! -f /etc/silicium/experiment-api.env ]]; then
   cp deploy/env/experiment-api.example.env /etc/silicium/experiment-api.env
 fi

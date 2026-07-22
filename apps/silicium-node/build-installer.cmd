@@ -12,8 +12,10 @@ if "%SILICIUM_RELEASE_VERSION%"=="" (
 )
 if "%SILICIUM_RELEASE_BUILD%"=="" set "SILICIUM_RELEASE_BUILD=local"
 
-call npm.cmd run prepare:runtime
-if errorlevel 1 exit /b %errorlevel%
+if /I not "%SILICIUM_SKIP_RUNTIME_PREPARE%"=="1" (
+  call npm.cmd run prepare:runtime
+  if errorlevel 1 exit /b 1
+)
 
 if /I "%SILICIUM_RELEASE_CHANNEL%"=="prod" (
   call .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri\tauri.prod.conf.json
