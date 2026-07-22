@@ -13,6 +13,14 @@
       </div>
     </div>
 
+    <div
+      v-if="outdatedPeers.length > 0"
+      class="mb-4 z-10 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-100"
+    >
+      <strong class="block text-amber-300">{{ outdatedPeers.length }} node(s) a mettre a jour</strong>
+      <span>Une version ancienne ou inconnue peut provoquer des echecs P2P, de calcul ou de verification.</span>
+    </div>
+
     <!-- Main Visualizer Area -->
     <div class="flex-1 flex gap-6 min-h-0 z-10">
       <!-- SVG Network Canvas -->
@@ -177,6 +185,19 @@
             </div>
 
             <div>
+              <span class="text-white/40 block">Version active :</span>
+              <span class="text-white block mt-0.5">
+                {{ selectedNode.app_version || 'inconnue' }} ({{ selectedNode.release_channel || 'canal inconnu' }})
+              </span>
+              <span
+                v-if="selectedNode.outdated"
+                class="mt-1 inline-flex rounded bg-amber-500/15 px-2 py-1 text-[9px] font-bold text-amber-300"
+              >
+                Mise a jour requise{{ selectedNode.latest_version ? ` vers ${selectedNode.latest_version}` : '' }}
+              </span>
+            </div>
+
+            <div>
               <span class="text-white/40 block">Materiel :</span>
               <span class="text-white block mt-0.5">
                 {{ selectedNode.capacity?.cpu_count || '?' }} Cores CPU
@@ -237,6 +258,12 @@ type Peer = {
   http_base_url: string;
   last_seen_unix: number;
   candidates: Candidate[];
+  app_version?: string;
+  release_channel?: string;
+  release_build?: string;
+  latest_version?: string;
+  version_status?: string;
+  outdated?: boolean;
   capacity?: {
     platform?: string;
     cpu_count?: number;
@@ -249,6 +276,7 @@ const selectedNode = ref<Peer | null>(null);
 let intervalId: any = null;
 
 const center = { x: 250, y: 180 };
+const outdatedPeers = computed(() => peers.value.filter((peer) => peer.node_id !== 'orchestrator-1' && peer.outdated));
 
 const visualNodes = computed(() => {
   if (peers.value.length === 0) return [];
@@ -277,7 +305,9 @@ const visualNodes = computed(() => {
 
     // Determine status color based on candidate state
     let statusColor = '#10b981'; // Green (Online & ready)
-    if (!peer.candidates || peer.candidates.length === 0) {
+    if (peer.outdated) {
+      statusColor = '#ef4444'; // Red (release obsolete/unknown)
+    } else if (!peer.candidates || peer.candidates.length === 0) {
       statusColor = '#f59e0b'; // Yellow (Warning: NAT blocked/No candidates)
     }
 

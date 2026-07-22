@@ -43,11 +43,19 @@
         <img src="~assets/icons/Right.svg" alt="Right-Icon" class="w-8 h-8" />
       </button>
       <a
-        href="https://github.com/Silicium-Project/Fusion/releases/latest/download/Silicium-Node-0.2.1-x64-setup.exe"
+        :href="nodeAppWindowsUrl"
         download
         class="inline-flex items-center mt-4 px-6 py-3 text-base font-semibold rounded-full border border-white/20 text-white/80 hover:text-white hover:border-white/50 transition-colors"
       >
         Télécharger le node desktop Windows
+      </a>
+
+      <a
+        :href="nodeAppWindowsDevUrl"
+        download
+        class="inline-flex items-center ml-3 mt-4 px-5 py-3 text-sm font-semibold rounded-full border border-amber-400/30 text-amber-200 hover:text-amber-100 hover:border-amber-300/60 transition-colors"
+      >
+        Version dev (mises a jour 30s)
       </a>
 
       <!-- Dashboard Preview -->
@@ -71,6 +79,9 @@ import { jwtDecode } from "jwt-decode";
 import '~/assets/css/stars.css';
 
 const router = useRouter();
+const { public: publicConfig } = useRuntimeConfig();
+const nodeAppWindowsUrl = publicConfig.nodeAppWindowsUrl;
+const nodeAppWindowsDevUrl = publicConfig.nodeAppWindowsDevUrl;
 
 function handleRegister() {
   router.push(`/auth`);

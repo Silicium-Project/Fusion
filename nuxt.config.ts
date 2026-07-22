@@ -4,6 +4,8 @@ export default defineNuxtConfig({
       adminToken: process.env.NUXT_PUBLIC_ADMIN_TOKEN || '',
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
       devnetDashboardUrl: process.env.NUXT_PUBLIC_DEVNET_DASHBOARD_URL || '/network/',
+      nodeAppWindowsUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_URL || '/downloads/silicium-node-windows.exe',
+      nodeAppWindowsDevUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_DEV_URL || '/downloads/silicium-node-windows-dev.exe',
     },
   },
   app: {
