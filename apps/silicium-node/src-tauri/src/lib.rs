@@ -19,6 +19,9 @@ use std::{
 use tauri::State;
 
 #[cfg(target_os = "windows")]
+mod tray;
+
+#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
 #[cfg(target_os = "windows")]
@@ -313,6 +316,64 @@ fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<Stri
             config.orchestrator_url
         ))
     }
+}
+
+#[cfg(target_os = "windows")]
+fn start_configured_node_service() -> Result<String, String> {
+    let repo_root = resolve_repo_root_readonly("")?;
+    validate_repo_root(&repo_root)?;
+    read_service_config(&repo_root).map_err(|_| "node_not_configured".to_string())?;
+    cleanup_dead_pids(&repo_root);
+
+    if read_supervisor_pid(&repo_root)?
+        .map(process_is_running)
+        .unwrap_or(false)
+    {
+        return Ok("Le service Silicium est deja demarre.".to_string());
+    }
+
+    install_autostart_task(&repo_root)?;
+    let mut child = spawn_supervisor(&repo_root)?;
+    write_supervisor_pid(&repo_root, child.id())?;
+    wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
+    drop(child);
+    Ok("Le service Silicium est demarre.".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn stop_configured_node_service() -> Result<String, String> {
+    let repo_root = resolve_repo_root_readonly("")?;
+    stop_node_processes(&repo_root)?;
+    Ok("Le service Silicium est arrete jusqu'au prochain demarrage manuel.".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn restart_configured_node_service() -> Result<String, String> {
+    let repo_root = resolve_repo_root_readonly("")?;
+    read_service_config(&repo_root).map_err(|_| "node_not_configured".to_string())?;
+    stop_node_processes(&repo_root)?;
+    thread::sleep(Duration::from_millis(500));
+    start_configured_node_service()?;
+    Ok("Le service Silicium a ete redemarre.".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn configured_node_service_running() -> bool {
+    let Some(repo_root) = resolve_optional_repo_root(None) else {
+        return false;
+    };
+    cleanup_dead_pids(&repo_root);
+    read_supervisor_pid(&repo_root)
+        .ok()
+        .flatten()
+        .map(process_is_running)
+        .unwrap_or(false)
+        || read_pid(&repo_root)
+            .ok()
+            .flatten()
+            .map(process_is_running)
+            .unwrap_or(false)
+        || TcpStream::connect(("127.0.0.1", 46101)).is_ok()
 }
 
 #[tauri::command]
@@ -1437,11 +1498,7 @@ fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
         return Ok(());
     }
     let exe = env::current_exe().map_err(|error| error.to_string())?;
-    let task_command = format!(
-        "\"{}\" --supervisor --repo-root \"{}\"",
-        exe.display(),
-        repo_root.display()
-    );
+    let task_command = windows_autostart_command(&exe);
     let mut command = Command::new("schtasks");
     command
         .arg("/Create")
@@ -2206,6 +2263,17 @@ fn remove_global_repo_root() {
 }
 
 fn cleanup_node_installation(repo_root: &Path) -> Result<(), String> {
+    stop_node_processes(repo_root)?;
+    uninstall_autostart_task();
+    remove_global_repo_root();
+    Ok(())
+}
+
+fn windows_autostart_command(executable: &Path) -> String {
+    format!("\"{}\" --background", executable.display())
+}
+
+fn stop_node_processes(repo_root: &Path) -> Result<(), String> {
     if let Ok(config) = read_service_config(repo_root) {
         notify_peer_leave(&config);
     }
@@ -2218,8 +2286,6 @@ fn cleanup_node_installation(repo_root: &Path) -> Result<(), String> {
     kill_known_silicium_processes(Some(repo_root));
     remove_pid(repo_root);
     remove_supervisor_pid(repo_root);
-    uninstall_autostart_task();
-    remove_global_repo_root();
     Ok(())
 }
 
@@ -2856,8 +2922,22 @@ fn directory_size(path: &Path) -> u64 {
 pub fn run() {
     install_crash_log();
     thread::spawn(run_background_update_loop);
-    if let Err(error) = tauri::Builder::default()
-        .manage(ProcessState::default())
+    #[cfg(target_os = "windows")]
+    let background = env::args().any(|argument| argument == "--background");
+    let builder = tauri::Builder::default().manage(ProcessState::default());
+    #[cfg(target_os = "windows")]
+    let builder = builder.setup(move |app| {
+        tray::setup(app, background)?;
+        Ok(())
+    });
+    #[cfg(target_os = "windows")]
+    let builder = builder.on_window_event(|window, event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = window.hide();
+        }
+    });
+    if let Err(error) = builder
         .invoke_handler(tauri::generate_handler![
             start_node,
             stop_node,
@@ -2974,6 +3054,16 @@ mod tests {
         assert!(source.contains("Get-CimInstance Win32_Process"));
         assert!(source.contains("IndexOf('silicium node start'"));
         assert!(source.contains("kill_managed_node_processes(&repo_root)"));
+    }
+
+    #[test]
+    fn windows_login_starts_the_notification_shell() {
+        let command = windows_autostart_command(Path::new(r"C:\Program Files\Silicium Node.exe"));
+        assert_eq!(
+            command,
+            r#""C:\Program Files\Silicium Node.exe" --background"#
+        );
+        assert!(!command.contains("--supervisor"));
     }
 
     #[test]
