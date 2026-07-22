@@ -22,7 +22,7 @@ jobs:
           client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
-          repositories: Fusion,Network
+          repositories: Fusion,BackEnd,FrontEnd,Network
 
       - name: Check out release sources
         uses: actions/checkout@v4
