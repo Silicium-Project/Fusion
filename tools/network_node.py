@@ -36,6 +36,7 @@ from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
+from tools.resource_intelligence import DualMemoryBayes, build_resource_profile, resource_baselines
 from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256
 
 
@@ -290,6 +291,7 @@ def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
         "solana_enabled": config.solana_enable,
         "worker_binary": config.worker_binary,
         "worker_mode": config.worker_mode,
+        "resource_profile": build_resource_profile(config.export_dir),
     }
 
 
@@ -450,15 +452,19 @@ class QueueState:
 
 
 class ReputationStore:
-    def __init__(self, path: Path, initial_score: float = 0.0) -> None:
+    def __init__(self, path: Path, initial_score: float = 0.0, resource_profile: Mapping[str, Any] | None = None) -> None:
         self._path = path
         self._lock = threading.Lock()
         loaded = read_json(path, {})
         self._payload = loaded if isinstance(loaded, dict) else {}
-        self._payload.setdefault("schema_version", 1)
+        self._payload["schema_version"] = max(2, int(self._payload.get("schema_version", 1) or 1))
         self._payload.setdefault("local_score", float(initial_score))
         self._payload.setdefault("peer_scores", {})
         self._payload.setdefault("history", [])
+        self._payload.setdefault(
+            "resource_memory",
+            DualMemoryBayes(baselines=resource_baselines(resource_profile)).export_state(),
+        )
         self.save()
 
     def local_score(self) -> float:
@@ -494,6 +500,27 @@ class ReputationStore:
             peers[node_id] = float(score)
             self._payload["peer_scores"] = peers
         self.save()
+
+    def observe_resource(
+        self,
+        dimension: str,
+        success: bool,
+        *,
+        weight: float = 1.0,
+        event_class: str = "verified",
+    ) -> dict[str, Any]:
+        with self._lock:
+            model = DualMemoryBayes(self._payload.get("resource_memory"))
+            model.observe(dimension, success, weight=weight, event_class=event_class)
+            self._payload["resource_memory"] = model.export_state()
+            snapshot = model.snapshot()
+        self.save()
+        return snapshot
+
+    def resource_snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            model = DualMemoryBayes(self._payload.get("resource_memory"))
+        return model.snapshot()
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -987,6 +1014,7 @@ class PeerNetwork:
         self.mesh_post_url = ""
         self.local_capacity = build_capacity_snapshot(config)
         self.local_reputation_score = float(config.reputation_score)
+        self.local_resource_reputation: dict[str, Any] = DualMemoryBayes().snapshot()
         self.local_onchain_reputation = 0.0
         self.local_onchain_global_reputation = 0.0
         self.local_onchain_compute_reputation = 0.0
@@ -1714,6 +1742,7 @@ class PeerNetwork:
         *,
         capacity: dict[str, Any] | None = None,
         reputation_score: float | None = None,
+        resource_reputation: dict[str, Any] | None = None,
         onchain_reputation: float | None = None,
         onchain_global_reputation: float | None = None,
         onchain_compute_reputation: float | None = None,
@@ -1728,6 +1757,8 @@ class PeerNetwork:
             self.local_capacity = capacity
         if reputation_score is not None:
             self.local_reputation_score = float(reputation_score)
+        if resource_reputation is not None:
+            self.local_resource_reputation = dict(resource_reputation)
         if onchain_reputation is not None:
             self.local_onchain_reputation = float(onchain_reputation)
         if onchain_global_reputation is not None:
@@ -1888,6 +1919,7 @@ class PeerNetwork:
             "relay_capable": bool(self.config.relay_enable),
             "capacity": self.local_capacity,
             "reputation_score": self.local_reputation_score,
+            "resource_reputation": self.local_resource_reputation,
             "onchain_reputation": self.local_onchain_reputation,
             "onchain_global_reputation": self.local_onchain_global_reputation,
             "onchain_compute_reputation": self.local_onchain_compute_reputation,
@@ -2124,6 +2156,7 @@ class PeerNetwork:
                 "relay_capable": bool(self.config.relay_enable),
                 "capacity": self.local_capacity,
                 "reputation_score": self.local_reputation_score,
+                "resource_reputation": self.local_resource_reputation,
                 "onchain_reputation": self.local_onchain_reputation,
                 "onchain_global_reputation": self.local_onchain_global_reputation,
                 "onchain_compute_reputation": self.local_onchain_compute_reputation,
@@ -2150,6 +2183,7 @@ class PeerNetwork:
             roles = message.get("roles") if isinstance(message.get("roles"), list) else []
             features = message.get("features") if isinstance(message.get("features"), list) else []
             capacity = message.get("capacity") if isinstance(message.get("capacity"), dict) else {}
+            resource_reputation = message.get("resource_reputation") if isinstance(message.get("resource_reputation"), dict) else {}
             merged = {
                 "node_id": node_id,
                 # Peer tables are transitive and are not proof that a third
@@ -2169,8 +2203,9 @@ class PeerNetwork:
                 "gossip_port": int(current.get("gossip_port", 0) or message.get("gossip_port", 0) or 0),
                 "candidates": candidates or current.get("candidates", []),
                 "relay_capable": bool(message.get("relay_capable", current.get("relay_capable", False))),
-                "capacity": current.get("capacity", {}) or capacity,
+                "capacity": capacity or current.get("capacity", {}),
                 "reputation_score": float(message.get("reputation_score", current.get("reputation_score", 0.0)) or 0.0),
+                "resource_reputation": resource_reputation or current.get("resource_reputation", {}),
                 "onchain_reputation": float(message.get("onchain_reputation", current.get("onchain_reputation", 0.0)) or 0.0),
                 "onchain_global_reputation": float(message.get("onchain_global_reputation", current.get("onchain_global_reputation", 0.0)) or 0.0),
                 "onchain_compute_reputation": float(message.get("onchain_compute_reputation", current.get("onchain_compute_reputation", 0.0)) or 0.0),
@@ -2492,6 +2527,7 @@ class PeerNetwork:
             "task_id": str(task_id or ""),
             "roles": sorted(self.config.roles),
             "reputation_score": self.local_reputation_score,
+            "resource_reputation": self.local_resource_reputation,
             "onchain_reputation": self.local_onchain_reputation,
             "candidate_fingerprints": candidate_fingerprints or [],
             "timestamp_unix": now,
@@ -2643,6 +2679,24 @@ class PeerNetwork:
     def _peer_score(self, peer: dict[str, Any], required_roles: set[str]) -> tuple[float, float, float]:
         capacity = peer.get("capacity", {}) if isinstance(peer.get("capacity"), dict) else {}
         reputation = float(peer.get("reputation_score", 0.0) or 0.0)
+        resource_reputation = peer.get("resource_reputation") if isinstance(peer.get("resource_reputation"), dict) else {}
+        dimensions = resource_reputation.get("dimensions") if isinstance(resource_reputation.get("dimensions"), dict) else {}
+        if "verify" in required_roles:
+            resource_dimension = "verify"
+        elif "storage" in required_roles:
+            resource_dimension = "storage"
+        elif "compute" in required_roles:
+            resource_dimension = "compute"
+        else:
+            resource_dimension = "delegation"
+        role_memory = dimensions.get(resource_dimension) if isinstance(dimensions.get(resource_dimension), dict) else {}
+        connection_memory = dimensions.get("connection") if isinstance(dimensions.get("connection"), dict) else {}
+        role_combined = role_memory.get("combined") if isinstance(role_memory.get("combined"), dict) else {}
+        connection_combined = connection_memory.get("combined") if isinstance(connection_memory.get("combined"), dict) else {}
+        if "lower_bound" in role_combined:
+            role_lower = float(role_combined.get("lower_bound", 0.0) or 0.0)
+            connection_lower = float(connection_combined.get("lower_bound", role_lower) or role_lower)
+            reputation = 100.0 * ((role_lower * 0.75) + (connection_lower * 0.25))
         if "verify" in required_roles:
             onchain_reputation = float(peer.get("onchain_verify_reputation", peer.get("onchain_global_reputation", peer.get("onchain_reputation", 0.0))) or 0.0)
         elif "storage" in required_roles:
@@ -2738,6 +2792,7 @@ class PeerNetwork:
                     "relay_capable": bool(self.config.relay_enable),
                     "capacity": self.local_capacity,
                     "reputation_score": self.local_reputation_score,
+                    "resource_reputation": self.local_resource_reputation,
                     "timestamp_utc": utc_now(),
                 }
                 self._sign_message(probe)
@@ -2849,6 +2904,7 @@ class PeerNetwork:
             "relay_capable": bool(self.config.relay_enable),
             "capacity": self.local_capacity,
             "reputation_score": self.local_reputation_score,
+            "resource_reputation": self.local_resource_reputation,
             "timestamp_utc": utc_now(),
         }
         raw = stable_json(payload).encode("utf-8")
@@ -3868,7 +3924,11 @@ class NetworkNode:
         self.config = config
         self.state = QueueState(config.state_dir)
         node_path_id = safe_path_id(safe_id(config.node_id))
-        self.reputation = ReputationStore(config.export_dir / f"node.{node_path_id}.reputation.json", initial_score=config.reputation_score)
+        self.reputation = ReputationStore(
+            config.export_dir / f"node.{node_path_id}.reputation.json",
+            initial_score=config.reputation_score,
+            resource_profile=build_resource_profile(config.export_dir),
+        )
         self.config.reputation_score = self.reputation.local_score()
         self.peer_network = PeerNetwork(config, config.export_dir)
         self.peer_network.node = self
@@ -3900,7 +3960,11 @@ class NetworkNode:
         self._last_claim_error = ""
         self._last_claim_result = "not_started"
         self._last_claim_targets: list[dict[str, Any]] = []
-        self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.reputation.local_score())
+        self.peer_network.set_local_profile(
+            capacity=self.runtime.capacity(),
+            reputation_score=self.reputation.local_score(),
+            resource_reputation=self.reputation.resource_snapshot(),
+        )
 
     def run(self) -> None:
         self.peer_network.start()
@@ -4058,10 +4122,12 @@ class NetworkNode:
         self.refresh_known_peer_onchain_reputations()
         capacity = self.runtime.capacity()
         current_reputation = self.reputation.local_score()
+        resource_reputation = self.reputation.resource_snapshot()
         self.config.reputation_score = current_reputation
         self.peer_network.set_local_profile(
             capacity=capacity,
             reputation_score=current_reputation,
+            resource_reputation=resource_reputation,
             onchain_reputation=self._solana_onchain_reputation,
             onchain_global_reputation=self._solana_onchain_reputation,
             onchain_compute_reputation=getattr(self, "_solana_onchain_compute_reputation", 0.0),
@@ -4087,6 +4153,7 @@ class NetworkNode:
                 "release_build": self.config.release_build,
                 "capacity": capacity,
                 "reputation_score": current_reputation,
+                "resource_reputation": resource_reputation,
                 "peer_http_base_url": self.peer_network.http_base_url,
                 "peer_public_base_url": self.peer_network.advertised_http_base_url,
                 "peer_count": int(self.peer_network.peers_snapshot().get("count", 0)),
@@ -4302,6 +4369,15 @@ class NetworkNode:
             score = self.reputation.adjust_local(delta, f"{kind}_success")
         else:
             score = self.reputation.adjust_local(-0.5, f"{kind}_failure")
+        role = str(result.get("role_result", "")).strip().lower()
+        if role not in {"compute", "verify", "storage"}:
+            role = "delegation"
+        integrity_violation = bool(result.get("integrity_violation") or result.get("proof_invalid") or result.get("hash_mismatch"))
+        event_class = "integrity" if integrity_violation else ("verified" if ok else "transient")
+        self.reputation.observe_resource(role, ok, event_class=event_class)
+        input_metadata = result.get("input") if isinstance(result.get("input"), dict) else {}
+        if str(input_metadata.get("source", "")).startswith("silicium-"):
+            self.reputation.observe_resource("connection", ok, event_class="verified" if ok else "transient", weight=0.5)
         self.config.reputation_score = score  # keep announced score aligned
 
     def try_remote_dispatch(self, envelope: dict[str, Any]) -> bool:
