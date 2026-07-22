@@ -60,7 +60,7 @@ jobs:
         working-directory: apps/silicium-node
         env:
           SILICIUM_RELEASE_CHANNEL: dev
-          SILICIUM_RELEASE_VERSION: 0.2.9-dev.10
+          SILICIUM_RELEASE_VERSION: 0.2.9-dev.11
           SILICIUM_RELEASE_BUILD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           npm run build
