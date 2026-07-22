@@ -339,6 +339,42 @@ def test_world_mode_defaults_enable_mesh_bootstrap(monkeypatch) -> None:
     assert "world-identities/france-1/ed25519.pem" in resolved.identity_key_path
 
 
+def test_node_start_forwards_release_telemetry(monkeypatch) -> None:
+    cli = _load_silicium_module()
+    parser = argparse.ArgumentParser()
+    cli.configure_node_start(parser)
+    args = parser.parse_args(
+        [
+            "--app-version",
+            "0.2.9-dev.4",
+            "--release-channel",
+            "dev",
+            "--release-build",
+            "test-build",
+            "--node-id",
+            "telemetry-node",
+        ]
+    )
+    monkeypatch.setattr(
+        cli,
+        "_resolve_mcp_settings",
+        lambda _args: {"export_dir": ".silicium/test-export"},
+    )
+
+    from tools import network_node
+
+    captured: list[str] = []
+    monkeypatch.setattr(network_node, "main", lambda argv: captured.extend(argv) or 0)
+
+    with pytest.raises(SystemExit) as exited:
+        cli.cmd_node_start(args, _make_ctx(cli))
+
+    assert exited.value.code == 0
+    assert captured[captured.index("--app-version") + 1] == "0.2.9-dev.4"
+    assert captured[captured.index("--release-channel") + 1] == "dev"
+    assert captured[captured.index("--release-build") + 1] == "test-build"
+
+
 def test_world_mode_merges_discovery_seeds(monkeypatch) -> None:
     cli = _load_silicium_module()
     parser = argparse.ArgumentParser()

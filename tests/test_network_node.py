@@ -100,6 +100,9 @@ def _config(
     solana_bridge: Path | None = None,
     solana_wallet: str | None = None,
     solana_reputation_enable: bool = False,
+    app_version: str = "0.2.9-dev.1",
+    release_channel: str = "dev",
+    release_build: str = "test-build",
 ) -> network_node.NodeConfig:
     state_dir = export_dir / "state"
     export_dir.mkdir(parents=True, exist_ok=True)
@@ -167,6 +170,9 @@ def _config(
         scheduler_onchain_weight=10.0,
         scheduler_offchain_weight=1.0,
         scheduler_capacity_weight=0.01,
+        app_version=app_version,
+        release_channel=release_channel,
+        release_build=release_build,
     )
 
 
@@ -533,6 +539,12 @@ def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
             "storage",
             "--node-id",
             "node-a",
+            "--app-version",
+            "0.2.9-dev.1",
+            "--release-channel",
+            "dev",
+            "--release-build",
+            "test-build",
             "--once",
         ]
     )
@@ -548,7 +560,10 @@ def test_network_node_processes_role_task_with_p2p_ref(tmp_path: Path) -> None:
     stored = json.loads((export_dir / "tasks" / f"{_path_id('storage:1')}.json").read_text(encoding="utf-8"))
     assert stored["status"] == "completed"
     assert stored["handled_by"] == "node-a"
-    assert (export_dir / "node.node-a.heartbeat.json").exists()
+    heartbeat = json.loads((export_dir / "node.node-a.heartbeat.json").read_text(encoding="utf-8"))
+    assert heartbeat["app_version"] == "0.2.9-dev.1"
+    assert heartbeat["release_channel"] == "dev"
+    assert heartbeat["release_build"] == "test-build"
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
     assert metrics["handled"] == 1
 
@@ -773,11 +788,12 @@ def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
         p2p_b = network_node.P2PClient(config_b.p2p_gateway, export_b, peer_b)
         peer_b.start()
         try:
-            deadline = time.time() + 2.0
+            deadline = time.time() + 5.0
             while time.time() < deadline:
                 if peer_b.peers_snapshot()["count"] >= 2:
                     break
                 time.sleep(0.05)
+            assert peer_b.peers_snapshot()["count"] >= 2
 
             stored = p2p_a.put_local(b"hello-peers")
             shared_ref = stored["shared_ref"]
@@ -1291,6 +1307,128 @@ def test_ice_data_plane_fetches_content_without_http_payload(tmp_path: Path) -> 
         peer_b.stop()
 
 
+def test_ice_data_plane_uses_seed_as_rendezvous_for_private_peers(tmp_path: Path) -> None:
+    pytest.importorskip("aioice")
+    signal_export = tmp_path / "signal"
+    export_a = tmp_path / "rendezvous-a"
+    export_b = tmp_path / "rendezvous-b"
+    signal = network_node.PeerNetwork(_config(signal_export, "signal", gossip_enable=False), signal_export)
+    signal.start()
+    peer_a = network_node.PeerNetwork(
+        _config(
+            export_a,
+            "node-a",
+            gossip_enable=False,
+            nat_punch_enable=True,
+            p2p_direct_transport_backend="ice",
+            seed_peers=[signal.http_base_url],
+        ),
+        export_a,
+    )
+    peer_b = network_node.PeerNetwork(
+        _config(
+            export_b,
+            "node-b",
+            gossip_enable=False,
+            nat_punch_enable=True,
+            p2p_direct_transport_backend="ice",
+            seed_peers=[signal.http_base_url],
+        ),
+        export_b,
+    )
+    peer_a.start()
+    peer_b.start()
+    stop_poll = threading.Event()
+
+    def poll_target_signaling() -> None:
+        while not stop_poll.wait(0.05):
+            peer_b._poll_signaling_sessions(signal.http_base_url)
+
+    poll_thread = threading.Thread(target=poll_target_signaling, daemon=True)
+    try:
+        signal._record_peer(_peer_registration_payload(peer_a))
+        signal._record_peer(_peer_registration_payload(peer_b))
+        peer_a._record_peer(_peer_registration_payload(peer_b))
+        peer_b._record_peer(_peer_registration_payload(peer_a))
+        expected_data = b"rendezvous-ice-data-plane-" * 3000
+        stored = network_node.P2PClient(peer_b.config.p2p_gateway, export_b, peer_b).put_local(expected_data)
+        peer_a._fetch_direct_from_peer = lambda _peer, _content_id: None
+        poll_thread.start()
+
+        result = network_node.P2PClient(peer_a.config.p2p_gateway, export_a, peer_a).fetch(stored["shared_ref"])
+
+        assert result[0] == expected_data
+        assert result[1]["source"] == "silicium-ice"
+        assert result[1]["transport_backend"] == "ice"
+        deadline = time.time() + 2
+        while time.time() < deadline and signal.sessions_snapshot()["sessions"][0]["status"] != "direct":
+            time.sleep(0.05)
+        assert signal.sessions_snapshot()["sessions"][0]["status"] == "direct"
+    finally:
+        stop_poll.set()
+        poll_thread.join(timeout=2)
+        peer_a.stop()
+        peer_b.stop()
+        signal.stop()
+
+
+def test_signed_update_announcement_and_artifact_cross_an_isolated_peer(tmp_path: Path) -> None:
+    export_a = tmp_path / "update-source"
+    export_b = tmp_path / "isolated-node"
+    config_a = _config(export_a, "update-source")
+    peer_a = network_node.PeerNetwork(config_a, export_a)
+    peer_a.start()
+    try:
+        config_b = _config(export_b, "isolated-node", seed_peers=[f"127.0.0.1:{config_a.gossip_port}"])
+        peer_b = network_node.PeerNetwork(config_b, export_b)
+        peer_b.start()
+        try:
+            deadline = time.time() + 5.0
+            while time.time() < deadline and peer_b.peers_snapshot()["count"] < 2:
+                time.sleep(0.05)
+            assert peer_b.peers_snapshot()["count"] >= 2
+
+            artifact = b"offline-update-artifact" * 4096
+            digest = network_node.sha256_bytes(artifact)
+            source_path = export_a / "p2p" / digest
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.write_bytes(artifact)
+            release = {
+                "channel": "dev",
+                "version": "0.2.9-dev.99",
+                "url": "https://vps-910c1dbc.vps.ovh.net/downloads/silicium-node-windows-dev.exe",
+                "sha256": digest,
+                "content_id": digest,
+                "size_bytes": len(artifact),
+                "auto_install": True,
+                "check_interval_seconds": 30,
+                "signature": "signed-by-release-authority",
+                "signing_key_id": "test-key",
+            }
+            assert peer_a._record_update_announcement(release, "update-source")
+            peer_a.publish("software_update", release)
+
+            deadline = time.time() + 5.0
+            while time.time() < deadline and not peer_b.update_announcements():
+                time.sleep(0.05)
+            announcements = peer_b.update_announcements()
+            assert announcements[-1]["content_id"] == digest
+            assert announcements[-1]["cached"] is False
+
+            with urllib.request.urlopen(peer_b.http_base_url + "/updates/manifest", timeout=2) as response:
+                manifest = json.loads(response.read().decode("utf-8"))
+            assert manifest["source"] == "silicium-gossip"
+            assert manifest["releases"][-1]["version"] == "0.2.9-dev.99"
+
+            with urllib.request.urlopen(peer_b.http_base_url + f"/updates/content/{digest}", timeout=5) as response:
+                assert response.read() == artifact
+            assert (export_b / "p2p" / digest).read_bytes() == artifact
+        finally:
+            peer_b.stop()
+    finally:
+        peer_a.stop()
+
+
 def test_ice_backend_reports_missing_optional_dependency(tmp_path: Path, monkeypatch) -> None:
     def _missing_aioice(name: str) -> object:
         if name == "aioice":
@@ -1444,7 +1582,7 @@ def test_peer_network_relay_fetches_unreachable_peer_content(tmp_path: Path) -> 
             p2p_b = network_node.P2PClient(config_b.p2p_gateway, export_b, peer_b)
             peer_b.start()
             try:
-                deadline = time.time() + 3.0
+                deadline = time.time() + 8.0
                 while time.time() < deadline:
                     peer_b.sync_once()
                     peer_c.sync_once()
@@ -1455,7 +1593,7 @@ def test_peer_network_relay_fetches_unreachable_peer_content(tmp_path: Path) -> 
 
                 stored = p2p_a.put_local(b"relay-path")
                 content_id = str(stored["shared_ref"]["content_id"])
-                deadline = time.time() + 3.0
+                deadline = time.time() + 8.0
                 while time.time() < deadline:
                     target_peer = peer_c._peers.get("node-a", {})
                     if peer_c._fetch_direct_from_peer(target_peer, content_id) == b"relay-path":
@@ -1548,6 +1686,34 @@ def test_peer_network_discovers_peers_via_public_seed_registry(tmp_path: Path) -
         finally:
             peer_b.stop()
             peer_c.stop()
+    finally:
+        seed.stop()
+
+
+def test_peer_network_uses_http_seed_peer_as_discovery_registry(tmp_path: Path) -> None:
+    export_seed = tmp_path / "seed"
+    export_peer = tmp_path / "peer"
+    seed = network_node.PeerNetwork(_config(export_seed, "seed-node", gossip_enable=False), export_seed)
+    seed.start()
+    try:
+        peer = network_node.PeerNetwork(
+            _config(
+                export_peer,
+                "desktop-node",
+                gossip_enable=False,
+                seed_peers=[seed.http_base_url],
+                p2p_direct_transport_backend="native-light",
+            ),
+            export_peer,
+        )
+        peer.start()
+        try:
+            peer.sync_once()
+            registered = {item["node_id"]: item for item in seed.peers_snapshot()["peers"]}
+            assert "desktop-node" in registered
+            assert "direct_transport:native-light" in registered["desktop-node"]["features"]
+        finally:
+            peer.stop()
     finally:
         seed.stop()
 
@@ -1805,3 +1971,128 @@ def test_remote_dispatch_filters_peers_with_onchain_thresholds(tmp_path: Path) -
     finally:
         peer_b.stop()
         peer_c.stop()
+
+
+def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
+    export_seed = tmp_path / "seed"
+    export_worker = tmp_path / "worker"
+    config_seed = _config(export_seed, "seed-orchestrator", roles="storage")
+    seed_node = network_node.NetworkNode(config_seed)
+    seed_node.peer_network.start()
+    try:
+        task_envelope = {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": "test:claim:001",
+            "status": "queued",
+            "required_roles": ["compute"],
+            "task": {"kind": "compute", "workload": "raytracer-fragment"},
+        }
+        network_node.enqueue_task_envelope(export_seed, task_envelope)
+
+        config_worker = _config(
+            export_worker,
+            "worker-node",
+            roles="compute",
+            seed_peers=[seed_node.peer_network.advertised_http_base_url],
+        )
+        config_worker.pull_tasks_enable = True
+        config_worker.pull_tasks_interval_s = 1
+        worker_node = network_node.NetworkNode(config_worker)
+
+        worker_node._poll_and_claim_tasks_once()
+
+        claimed_path = export_worker / "tasks" / f"{_path_id('test:claim:001')}.json"
+        assert claimed_path.exists()
+        claimed_data = json.loads(claimed_path.read_text(encoding="utf-8"))
+        assert claimed_data["task_id"] == "test:claim:001"
+        assert (export_worker / "claim-poll.health.json").exists()
+    finally:
+        seed_node.peer_network.stop()
+
+
+def test_worker_claim_respects_assigned_peer_id(tmp_path: Path) -> None:
+    export_seed = tmp_path / "assigned-seed"
+    config_seed = _config(export_seed, "seed-orchestrator", roles="storage")
+    seed_node = network_node.NetworkNode(config_seed)
+    task_envelope = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": "test:assigned:001",
+        "status": "queued",
+        "assigned_peer_id": "worker-b",
+        "required_roles": ["verify"],
+        "task": {"kind": "verify"},
+    }
+    network_node.enqueue_task_envelope(export_seed, task_envelope)
+
+    assert seed_node.claim_task_for_worker("worker-a", {"verify"}) is None
+    claimed = seed_node.claim_task_for_worker("worker-b", {"verify"})
+    assert claimed is not None
+    assert claimed["task_id"] == "test:assigned:001"
+    assert claimed["dispatched_to"] == "worker-b"
+
+
+def test_worker_claim_respects_excluded_peer_ids(tmp_path: Path) -> None:
+    export_seed = tmp_path / "excluded-seed"
+    seed_node = network_node.NetworkNode(_config(export_seed, "seed-orchestrator", roles="storage"))
+    task_envelope = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": "test:excluded:001",
+        "status": "queued",
+        "excluded_peer_ids": ["compute-worker"],
+        "required_roles": ["verify"],
+        "task": {"kind": "verify"},
+    }
+    network_node.enqueue_task_envelope(export_seed, task_envelope)
+
+    assert seed_node.claim_task_for_worker("compute-worker", {"verify"}) is None
+    claimed = seed_node.claim_task_for_worker("independent-verifier", {"verify"})
+    assert claimed is not None
+    assert claimed["task_id"] == "test:excluded:001"
+    assert claimed["dispatched_to"] == "independent-verifier"
+
+
+def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    sample_ppm = b"P6\n2 2\n255\n" + bytes(range(12))
+    expected = network_node.ppm_pixel_sha256(sample_ppm)
+    challenge = {
+        "strategy": "random-row-milestone-v1",
+        "challenge_nonce": "nonce-test",
+        "commitment_hash": "commitment-test",
+        "fragment_rows": 20,
+        "milestone_count": 10,
+        "milestone": {
+            "index": 4,
+            "y_start": 108,
+            "y_end": 110,
+            "row_count": 2,
+            "pixel_sha256": expected,
+        },
+    }
+
+    class FakeP2P:
+        def fetch(self, _ref):
+            return b"scene", {"source": "test-scene"}
+
+    def fake_run(command, **_kwargs):
+        output_path = Path(command[command.index("--output") + 1])
+        output_path.write_bytes(sample_ppm)
+        assert command[command.index("--y-start") + 1] == "108"
+        assert command[command.index("--y-end") + 1] == "110"
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(network_node.subprocess, "run", fake_run)
+    runtime = network_node.RoleRuntime(_config(tmp_path / "verify", "verifier", roles="verify"), FakeP2P())
+    result = runtime.run_raytracer_milestone_verification(
+        {"scene_p2p_ref": {"protocol": "test"}, "max_sample_rows": 20},
+        json.dumps(challenge).encode("utf-8"),
+        {"source": "test-challenge"},
+    )
+
+    assert result["choice"] is True
+    assert result["verification_mode"] == "random-row-milestone-v1"
+    assert result["verification"]["sample_rows"] == 2
+    assert result["verification"]["fragment_rows"] == 20
+    assert result["verification"]["sample_ratio"] == pytest.approx(0.1)

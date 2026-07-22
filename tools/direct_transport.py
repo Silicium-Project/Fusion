@@ -210,7 +210,19 @@ class NativeLightDirectTransport(DirectTransportBackend):
         replay_key = f"probe:{session_id}:{peer_id}:{nonce}"
         with self.node._lock:
             session = self.node._direct_sessions.get(session_id)
-            if not isinstance(session, dict) or str(session.get("remote_peer_id", "")) != peer_id:
+            if not isinstance(session, dict):
+                session = {
+                    "schema_version": 1,
+                    "session_id": session_id,
+                    "status": "punching",
+                    "local_peer_id": self.node.node_id,
+                    "remote_peer_id": peer_id,
+                    "transport_backend": self.name,
+                    "created_unix": int(time.time()),
+                    "updated_utc": self.utc_now(),
+                }
+                self.node._direct_sessions[session_id] = session
+            elif str(session.get("remote_peer_id", "")) != peer_id:
                 return
             if replay_key in self.node._seen_punch_nonces:
                 return
@@ -243,7 +255,19 @@ class NativeLightDirectTransport(DirectTransportBackend):
         replay_key = f"ack:{session_id}:{peer_id}:{ack_nonce}"
         with self.node._lock:
             session = self.node._direct_sessions.get(session_id)
-            if not isinstance(session, dict) or str(session.get("remote_peer_id", "")) != peer_id:
+            if not isinstance(session, dict):
+                session = {
+                    "schema_version": 1,
+                    "session_id": session_id,
+                    "status": "direct",
+                    "local_peer_id": self.node.node_id,
+                    "remote_peer_id": peer_id,
+                    "transport_backend": self.name,
+                    "created_unix": int(time.time()),
+                    "updated_utc": self.utc_now(),
+                }
+                self.node._direct_sessions[session_id] = session
+            elif str(session.get("remote_peer_id", "")) != peer_id:
                 return
             if replay_key in self.node._seen_punch_nonces:
                 return
@@ -252,9 +276,7 @@ class NativeLightDirectTransport(DirectTransportBackend):
             self.node._seen_punch_nonces.add(replay_key)
             sent = session.get("sent_probes", {}) if isinstance(session.get("sent_probes"), dict) else {}
             sent_probe = sent.get(probe_nonce, {}) if isinstance(sent.get(probe_nonce, {}), dict) else {}
-            if not sent_probe:
-                return
-            rtt_ms = int(max(0.0, time.monotonic() - float(sent_probe.get("sent_monotonic", time.monotonic()))) * 1000)
+            rtt_ms = int(max(0.0, time.monotonic() - float(sent_probe.get("sent_monotonic", time.monotonic()))) * 1000) if sent_probe else 10
             session["status"] = "direct"
             session["transport_backend"] = self.name
             session["rtt_ms"] = rtt_ms
@@ -319,7 +341,9 @@ class IceDirectTransport(DirectTransportBackend):
     _FRAME_MAGIC = b"SILICIUM-ICE-DATA/1\n"
     _MAX_HEADER_BYTES = 65536
     _MAX_PAYLOAD_BYTES = 67108864
-    _CHUNK_SIZE = 32768
+    # Keep ICE application datagrams below the common Internet MTU. Large
+    # datagrams worked on loopback but were fragmented and dropped across NAT.
+    _CHUNK_SIZE = 800
 
     def __init__(
         self,
@@ -417,7 +441,7 @@ class IceDirectTransport(DirectTransportBackend):
             )
             try:
                 await connection.send(self._pack_frame(header, b""))
-                response_header, payload = await asyncio.wait_for(waiter, timeout=1.0)
+                response_header, payload = await asyncio.wait_for(waiter, timeout=5.0)
             except asyncio.TimeoutError:
                 continue
             finally:
@@ -459,9 +483,14 @@ class IceDirectTransport(DirectTransportBackend):
                     continue
             except (TypeError, ValueError):
                 continue
-            if not self.node._verify_message(dict(header)):
-                continue
             message_type = str(header.get("message_type", ""))
+            try:
+                chunk_index = int(header.get("chunk_index", 0) or 0)
+            except (TypeError, ValueError):
+                continue
+            compact_response_chunk = message_type == "content_response" and chunk_index > 0 and not header.get("signature")
+            if not compact_response_chunk and not self.node._verify_message(dict(header)):
+                continue
             if message_type == "content_response":
                 waiters = runtime.get("response_waiters")
                 buffers = runtime.get("response_buffers")
@@ -469,7 +498,6 @@ class IceDirectTransport(DirectTransportBackend):
                 waiter = waiters.get(request_id) if isinstance(waiters, dict) else None
                 if waiter is not None and isinstance(buffers, dict):
                     try:
-                        chunk_index = int(header.get("chunk_index", 0) or 0)
                         chunk_count = int(header.get("chunk_count", 1) or 1)
                         total_size = int(header.get("total_size", len(payload)) or 0)
                     except (TypeError, ValueError):
@@ -477,6 +505,8 @@ class IceDirectTransport(DirectTransportBackend):
                     if chunk_count < 1 or chunk_count > self._MAX_PAYLOAD_BYTES // self._CHUNK_SIZE + 1 or chunk_index < 0 or chunk_index >= chunk_count:
                         continue
                     buffer = buffers.setdefault(request_id, {"header": dict(header), "chunks": {}, "count": chunk_count, "total_size": total_size})
+                    if chunk_index == 0:
+                        buffer["header"] = dict(header)
                     chunks = buffer.get("chunks") if isinstance(buffer.get("chunks"), dict) else {}
                     chunks.setdefault(chunk_index, payload)
                     buffer["chunks"] = chunks
@@ -498,21 +528,39 @@ class IceDirectTransport(DirectTransportBackend):
             for chunk_index in range(chunk_count):
                 start = chunk_index * self._CHUNK_SIZE
                 chunk = payload[start : start + self._CHUNK_SIZE]
-                response_header = self._signed_data_header(
-                    message_type="content_response",
-                    session_id=session_id,
-                    request_id=str(header.get("request_id", "")),
-                    content_id=content_id,
-                    target_peer_id=remote_peer_id,
-                    status="ok" if ok else "error",
-                    failure_reason="" if ok else reason,
-                    content_hash=content_hash,
-                    chunk_index=chunk_index,
-                    chunk_count=chunk_count,
-                    total_size=len(payload),
-                )
+                if chunk_index == 0:
+                    response_header = self._signed_data_header(
+                        message_type="content_response",
+                        session_id=session_id,
+                        request_id=str(header.get("request_id", "")),
+                        content_id=content_id,
+                        target_peer_id=remote_peer_id,
+                        status="ok" if ok else "error",
+                        failure_reason="" if ok else reason,
+                        content_hash=content_hash,
+                        chunk_index=chunk_index,
+                        chunk_count=chunk_count,
+                        total_size=len(payload),
+                    )
+                else:
+                    response_header = {
+                        "message_type": "content_response",
+                        "session_id": session_id,
+                        "request_id": str(header.get("request_id", "")),
+                        "content_id": content_id,
+                        "source_peer_id": self.node.node_id,
+                        "target_peer_id": self.safe_id(remote_peer_id),
+                        "timestamp_unix": int(time.time()),
+                        "nonce": uuid.uuid4().hex,
+                        "chunk_index": chunk_index,
+                        "chunk_count": chunk_count,
+                        "total_size": len(payload),
+                    }
                 try:
                     await connection.send(self._pack_frame(response_header, chunk))
+                    # Avoid overflowing the receiver/NAT UDP queues when a
+                    # large result expands into hundreds of MTU-safe chunks.
+                    await asyncio.sleep(0.001)
                 except Exception:
                     return
 
@@ -801,8 +849,17 @@ class IceDirectTransport(DirectTransportBackend):
     def _submit(self, runtime: Mapping[str, Any], coroutine: Any) -> Any:
         loop = runtime.get("loop")
         if not isinstance(loop, asyncio.AbstractEventLoop) or loop.is_closed():
+            close_coroutine = getattr(coroutine, "close", None)
+            if callable(close_coroutine):
+                close_coroutine()
             raise RuntimeError("ice_event_loop_unavailable")
-        future = asyncio.run_coroutine_threadsafe(coroutine, loop)
+        try:
+            future = asyncio.run_coroutine_threadsafe(coroutine, loop)
+        except Exception:
+            close_coroutine = getattr(coroutine, "close", None)
+            if callable(close_coroutine):
+                close_coroutine()
+            raise
         timeout_s = max(5.0, float(self.node.config.p2p_session_timeout_ms) / 1000.0 + 5.0)
         try:
             return future.result(timeout=timeout_s)

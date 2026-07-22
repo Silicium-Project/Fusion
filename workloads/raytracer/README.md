@@ -13,10 +13,17 @@ py Network\workloads\raytracer\verify.py --scene Network\workloads\raytracer\exa
 py Network\workloads\raytracer\reassemble.py --fragment .silicium\fragment-0.ppm --y-start 0 --fragment .silicium\fragment-1.ppm --y-start 120 --output .silicium\raytracer-final.ppm --png .silicium\raytracer-final.png
 ```
 
-The split policy is automatic horizontal bands. The site only sends
-`workload=raytracer` and a `.cfg`; the emitter estimates the fragment count
-from the scene resolution, distributes fragments to workers, verifies them, then
-reassembles the final image.
+The split policy is automatic horizontal bands. Each compute worker commits the
+pixel hashes of smaller row milestones (20 rows by default). After the complete
+fragment has been returned, the orchestrator randomly selects one milestone and
+sends only that challenge plus the scene to a different verifier. The verifier
+re-renders the challenged rows instead of the complete fragment. Configure the
+batch size with `SILICIUM_RAYTRACER_VERIFY_BATCH_ROWS` or
+`--verification-batch-rows`.
+
+The site only sends `workload=raytracer` and a `.cfg`; the emitter estimates the
+fragment count from the scene resolution, distributes fragments to workers,
+challenges one milestone per fragment, then reassembles the final image.
 
 Runtime requirements:
 

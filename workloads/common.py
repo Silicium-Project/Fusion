@@ -72,7 +72,7 @@ def resolve_solana_wallet(raw: str) -> Path:
     return default_solana_wallet_path()
 
 
-def ppm_to_png_bytes(ppm: bytes) -> bytes:
+def parse_ppm_bytes(ppm: bytes) -> tuple[int, int, bytes]:
     offset = 0
 
     def read_token() -> bytes:
@@ -96,12 +96,23 @@ def ppm_to_png_bytes(ppm: bytes) -> bytes:
     max_value = int(read_token())
     if max_value != 255:
         raise ValueError("only 8-bit PPM files are supported")
-    while offset < len(ppm) and ppm[offset] in b" \t\r\n":
+    if offset >= len(ppm) or ppm[offset] not in b" \t\r\n":
+        raise ValueError("PPM header is missing its raster separator")
+    # The separator belongs to the header, but the next byte already belongs
+    # to the binary raster and may itself be whitespace (for example 0x0a).
+    if ppm[offset : offset + 2] == b"\r\n":
+        offset += 2
+    else:
         offset += 1
     rgb = ppm[offset:]
     expected = width * height * 3
     if len(rgb) != expected:
         raise ValueError(f"invalid PPM payload size: expected {expected}, got {len(rgb)}")
+    return width, height, rgb
+
+
+def ppm_to_png_bytes(ppm: bytes) -> bytes:
+    width, height, rgb = parse_ppm_bytes(ppm)
 
     def chunk(kind: bytes, data: bytes) -> bytes:
         return (
