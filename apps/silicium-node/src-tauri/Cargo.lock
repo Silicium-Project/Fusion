@@ -2803,6 +2803,7 @@ dependencies = [
  "ed25519-dalek",
  "serde",
  "serde_json",
+ "sha2",
  "tauri",
  "tauri-build",
  "windows-sys 0.59.0",

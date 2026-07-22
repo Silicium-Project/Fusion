@@ -1,6 +1,8 @@
 # Silicium Node
 
 Desktop app for people who want to join the Silicium network with their PC.
+Windows is the production channel; Linux AppImage/deb builds are available on
+the development channel.
 
 This app is intentionally separate from:
 
@@ -26,10 +28,18 @@ Requirements:
 - Rust stable
 - Tauri prerequisites for your OS
 
-From this folder:
+From this folder on Windows:
 
 ```bash
 npm install
+npm run tauri:dev
+```
+
+On Linux, install the Tauri 2 WebKitGTK prerequisites, then run:
+
+```bash
+npm ci
+npm run prepare:runtime:linux
 npm run tauri:dev
 ```
 
@@ -38,6 +48,18 @@ npm run tauri:dev
 ```bash
 npm run tauri:build
 ```
+
+Linux development bundles:
+
+```bash
+npm run tauri:build:linux
+```
+
+This produces an AppImage and a deb. The packaged runtime includes the Network
+Python sources and ICE dependencies, while Python 3, OpenSSL, curl and the
+desktop WebKit runtime are supplied by the Linux distribution. Activation
+installs an XDG autostart entry under `~/.config/autostart` so the supervisor
+returns after login.
 
 Before Tauri bundles the installer, `npm run prepare:runtime` stages a runtime
 under `src-tauri/resources/runtime` containing:

@@ -3,6 +3,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::{
     cmp::Ordering,
     env,
@@ -35,7 +36,8 @@ const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
 const SUPERVISOR_RUN_KEY_NAME: &str = "SiliciumNodeService";
 const CLAIM_POLL_STALE_AFTER: Duration = Duration::from_secs(20);
 const UPDATE_SIGNING_PUBLIC_KEY_B64: &str = "px9didtoGftLilUX8iA1Yoj4PjNiCvZD47GK6/fdzX8=";
-const UPDATE_SIGNING_KEY_ID: &str = "f8d1c0149d9fcc171a39f96e5b9965a235500b7fe20cd2348912d38ca91e6d4c";
+const UPDATE_SIGNING_KEY_ID: &str =
+    "f8d1c0149d9fcc171a39f96e5b9965a235500b7fe20cd2348912d38ca91e6d4c";
 const LOCAL_UPDATE_MANIFEST_URL: &str = "http://127.0.0.1:46101/updates/manifest";
 
 #[derive(Debug, Clone, Deserialize)]
@@ -185,6 +187,8 @@ struct UpdateRelease {
     version: String,
     #[serde(default)]
     channel: String,
+    #[serde(default)]
+    platform: String,
     url: String,
     sha256: String,
     #[serde(default)]
@@ -299,7 +303,7 @@ fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<Stri
     *node = None;
     if let Some(warning) = autostart_warning {
         Ok(format!(
-            "Silicium node started, but Windows autostart is not installed yet: {warning}"
+            "Silicium node started, but autostart is not installed yet: {warning}"
         ))
     } else {
         Ok(format!(
@@ -367,21 +371,19 @@ fn install_runtime(repo_root: String) -> Result<String, String> {
             .stderr(Stdio::null());
         configure_detached_process(&mut command);
         command.status()
-    } else {
-        let script = root
-            .join("deploy")
-            .join("linux")
-            .join("install-vps-deps.sh");
-        if !script.exists() {
-            return Err(format!("installer_not_found: {}", script.display()));
-        }
-        Command::new("bash")
-            .arg(script)
+    } else if cfg!(target_os = "linux") {
+        let mut command = Command::new(python_launcher(&root));
+        command
+            .arg("-c")
+            .arg("import aioice, cryptography")
             .current_dir(&root)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .stderr(Stdio::null());
+        apply_runtime_path(&mut command, &root);
+        command.status()
+    } else {
+        return Err(format!("runtime_install_unsupported:{}", env::consts::OS));
     };
     let status = status.map_err(|error| error.to_string())?;
     if !status.success() {
@@ -727,7 +729,10 @@ fn select_update_release(manifest: &Value) -> Result<UpdateRelease, String> {
         if release.channel.trim().is_empty() {
             release.channel = release_channel().to_string();
         }
-        if release.channel != release_channel() || validate_update_release(&release).is_err() {
+        if release.channel != release_channel()
+            || !update_platform_matches(&release.platform)
+            || validate_update_release(&release).is_err()
+        {
             continue;
         }
         valid.push(release);
@@ -736,6 +741,20 @@ fn select_update_release(manifest: &Value) -> Result<UpdateRelease, String> {
         .into_iter()
         .max_by(|left, right| compare_versions(&left.version, &right.version))
         .ok_or_else(|| format!("update_channel_missing_or_untrusted:{}", release_channel()))
+}
+
+fn update_platform() -> String {
+    format!("{}-{}", env::consts::OS, env::consts::ARCH)
+}
+
+fn update_platform_matches(platform: &str) -> bool {
+    let candidate = platform.trim().to_ascii_lowercase();
+    if candidate.is_empty() {
+        // Schema v1 only contained Windows NSIS releases. Keeping this legacy
+        // fallback Windows-only prevents a Linux client from installing .exe.
+        return cfg!(target_os = "windows");
+    }
+    candidate == update_platform()
 }
 
 fn validate_update_release(release: &UpdateRelease) -> Result<(), String> {
@@ -782,13 +801,13 @@ fn verify_update_signature(release: &UpdateRelease) -> Result<(), String> {
     let public_key: [u8; 32] = public_key
         .try_into()
         .map_err(|_| "update_public_key_invalid".to_string())?;
-    let verifying_key =
-        VerifyingKey::from_bytes(&public_key).map_err(|_| "update_public_key_invalid".to_string())?;
+    let verifying_key = VerifyingKey::from_bytes(&public_key)
+        .map_err(|_| "update_public_key_invalid".to_string())?;
     let signature = BASE64_STANDARD
         .decode(release.signature.trim())
         .map_err(|_| "update_signature_invalid".to_string())?;
-    let signature = Signature::from_slice(&signature)
-        .map_err(|_| "update_signature_invalid".to_string())?;
+    let signature =
+        Signature::from_slice(&signature).map_err(|_| "update_signature_invalid".to_string())?;
     verifying_key
         .verify(&update_signature_payload(release), &signature)
         .map_err(|_| "update_signature_untrusted".to_string())
@@ -808,7 +827,12 @@ fn download_update(release: &UpdateRelease) -> Result<PathBuf, String> {
             }
         })
         .collect::<String>();
-    let installer = updates_dir.join(format!("silicium-node-{safe_version}.exe"));
+    let extension = if cfg!(target_os = "windows") {
+        "exe"
+    } else {
+        "AppImage"
+    };
+    let installer = updates_dir.join(format!("silicium-node-{safe_version}.{extension}"));
     let primary_download = curl_download(&release.url, &installer, 300);
     if primary_download.is_err() {
         let fallback_url = format!(
@@ -818,7 +842,9 @@ fn download_update(release: &UpdateRelease) -> Result<PathBuf, String> {
         curl_download(&fallback_url, &installer, 600).map_err(|fallback_error| {
             format!(
                 "update_download_unavailable:primary={};gossip={fallback_error}",
-                primary_download.err().unwrap_or_else(|| "unknown".to_string())
+                primary_download
+                    .err()
+                    .unwrap_or_else(|| "unknown".to_string())
             )
         })?;
     }
@@ -831,11 +857,7 @@ fn download_update(release: &UpdateRelease) -> Result<PathBuf, String> {
             release.size_bytes
         ));
     }
-    let hash_script = format!(
-        "(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash.ToLowerInvariant()",
-        powershell_quote(&installer.display().to_string())
-    );
-    let actual_hash = powershell_output(&hash_script)?.trim().to_ascii_lowercase();
+    let actual_hash = sha256_file(&installer)?;
     if actual_hash != release.sha256.trim().to_ascii_lowercase() {
         let _ = fs::remove_file(&installer);
         return Err("update_sha256_mismatch".to_string());
@@ -850,7 +872,7 @@ fn cache_update_for_peers(installer: &Path, content_id: &str) {
         content_id.trim().to_ascii_lowercase()
     );
     let source = format!("@{}", installer.display());
-    let _ = Command::new("curl.exe")
+    let _ = Command::new(curl_command())
         .arg("--silent")
         .arg("--show-error")
         .arg("--fail")
@@ -867,6 +889,12 @@ fn cache_update_for_peers(installer: &Path, content_id: &str) {
 }
 
 fn schedule_update_install(installer: &Path) -> Result<(), String> {
+    if !cfg!(target_os = "windows") {
+        return Err(format!(
+            "automatic_update_installer_not_available:{}",
+            update_platform()
+        ));
+    }
     let script_path = app_state_dir().join("apply-update.ps1");
     let log_path = app_state_dir().join("update-install.log");
     let script = r#"param(
@@ -954,31 +982,8 @@ try {
     std::process::exit(0);
 }
 
-fn powershell_output(script: &str) -> Result<String, String> {
-    let mut command = Command::new("powershell.exe");
-    command
-        .arg("-NoProfile")
-        .arg("-NonInteractive")
-        .arg("-ExecutionPolicy")
-        .arg("Bypass")
-        .arg("-Command")
-        .arg(script)
-        .stdin(Stdio::null());
-    configure_detached_process(&mut command);
-    let output = command
-        .output()
-        .map_err(|error| format!("powershell_start_failed:{error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "powershell_failed:{}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
 fn curl_get(url: &str, timeout_seconds: u64) -> Result<String, String> {
-    let mut command = Command::new("curl.exe");
+    let mut command = Command::new(curl_command());
     command
         .arg("-4")
         .arg("--fail")
@@ -1003,7 +1008,7 @@ fn curl_get(url: &str, timeout_seconds: u64) -> Result<String, String> {
 }
 
 fn curl_download(url: &str, target: &Path, timeout_seconds: u64) -> Result<(), String> {
-    let mut command = Command::new("curl.exe");
+    let mut command = Command::new(curl_command());
     command
         .arg("-4")
         .arg("--fail")
@@ -1029,8 +1034,26 @@ fn curl_download(url: &str, target: &Path, timeout_seconds: u64) -> Result<(), S
     Ok(())
 }
 
-fn powershell_quote(value: &str) -> String {
-    value.replace('\'', "''")
+fn curl_command() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "curl.exe"
+    } else {
+        "curl"
+    }
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut digest = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+        if read == 0 {
+            break;
+        }
+        digest.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", digest.finalize()))
 }
 
 fn current_utc() -> String {
@@ -1309,6 +1332,12 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg(&advertise_host)
             .arg("demo-mesh")
             .arg(config.reputation_score.to_string())
+            .arg("--app-version")
+            .arg(release_version())
+            .arg("--release-channel")
+            .arg(release_channel())
+            .arg("--release-build")
+            .arg(release_build())
             .arg("--gossip-enable")
             .arg("--nat-punch-enable")
             .arg("--p2p-direct-transport-backend")
@@ -1365,6 +1394,9 @@ fn spawn_supervisor(repo_root: &Path) -> Result<Child, String> {
 }
 
 fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
+    if cfg!(target_os = "linux") {
+        return install_linux_autostart(repo_root);
+    }
     if !cfg!(target_os = "windows") {
         return Ok(());
     }
@@ -1410,6 +1442,27 @@ fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
     }
 }
 
+fn install_linux_autostart(repo_root: &Path) -> Result<(), String> {
+    let home = env::var("HOME").map_err(|_| "home_directory_not_found".to_string())?;
+    let autostart_dir = PathBuf::from(home).join(".config").join("autostart");
+    fs::create_dir_all(&autostart_dir).map_err(|error| error.to_string())?;
+    let executable = env::current_exe().map_err(|error| error.to_string())?;
+    let quote = |value: &Path| {
+        value
+            .display()
+            .to_string()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+    };
+    let entry = format!(
+        "[Desktop Entry]\nType=Application\nName=Silicium Node\nComment=Silicium P2P compute worker\nExec=\"{}\" --supervisor --repo-root \"{}\"\nTerminal=false\nX-GNOME-Autostart-enabled=true\n",
+        quote(&executable),
+        quote(repo_root),
+    );
+    fs::write(autostart_dir.join("network.silicium.node.desktop"), entry)
+        .map_err(|error| error.to_string())
+}
+
 fn install_autostart_run_key(task_command: &str) -> Result<(), String> {
     if !cfg!(target_os = "windows") {
         return Ok(());
@@ -1443,6 +1496,17 @@ fn install_autostart_run_key(task_command: &str) -> Result<(), String> {
 }
 
 fn uninstall_autostart_task() {
+    if cfg!(target_os = "linux") {
+        if let Ok(home) = env::var("HOME") {
+            let _ = fs::remove_file(
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("autostart")
+                    .join("network.silicium.node.desktop"),
+            );
+        }
+        return;
+    }
     if !cfg!(target_os = "windows") {
         return;
     }
@@ -1866,6 +1930,17 @@ fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
         let python_dir = repo_root.join("tools").join("python");
         if python_dir.exists() {
             path_entries.push(python_dir);
+        }
+    } else {
+        let site_packages = repo_root.join("tools").join("python").join("site-packages");
+        if site_packages.exists() {
+            let current = env::var("PYTHONPATH").unwrap_or_default();
+            let value = if current.is_empty() {
+                site_packages.display().to_string()
+            } else {
+                format!("{}:{}", site_packages.display(), current)
+            };
+            command.env("PYTHONPATH", value);
         }
     }
     if let Some(openssl_bin) = find_openssl(Some(repo_root)) {
@@ -2805,6 +2880,7 @@ mod tests {
         let release = UpdateRelease {
             version: "0.2.9-dev.8".to_string(),
             channel: "dev".to_string(),
+            platform: String::new(),
             url: "https://vps-910c1dbc.vps.ovh.net/downloads/silicium-node-windows-dev.exe".to_string(),
             sha256: "a".repeat(64),
             content_id: "a".repeat(64),
@@ -2821,6 +2897,31 @@ mod tests {
             validate_update_release(&tampered).unwrap_err(),
             "update_signature_untrusted"
         );
+    }
+
+    #[test]
+    fn update_release_platform_prevents_cross_os_installers() {
+        assert!(update_platform_matches(&update_platform()));
+        assert!(!update_platform_matches("unsupported-test-platform"));
+        assert_eq!(update_platform_matches(""), cfg!(target_os = "windows"));
+    }
+
+    #[test]
+    fn update_artifact_hash_is_portable() {
+        let path = env::temp_dir().join(format!(
+            "silicium-update-hash-{}-{}.bin",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&path, b"abc").unwrap();
+        assert_eq!(
+            sha256_file(&path).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        fs::remove_file(path).unwrap();
     }
 
     #[test]
