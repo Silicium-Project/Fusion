@@ -11,8 +11,10 @@ fi
 
 export SILICIUM_DOWNLOADS_DIR="${SILICIUM_DOWNLOADS_DIR:-/var/lib/silicium/downloads}"
 export SILICIUM_DOWNLOAD_BASE_URL="${SILICIUM_DOWNLOAD_BASE_URL:-https://vps-910c1dbc.vps.ovh.net/downloads}"
-export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-0.2.9-dev.10}"
-export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-0.2.16}"
+export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-0.2.9-dev.11}"
+export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-0.2.17}"
+SILICIUM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-$(git -C "$SILICIUM_ROOT" rev-parse HEAD 2>/dev/null || true)}"
 export SILICIUM_DEV_CHECK_INTERVAL_SECONDS="${SILICIUM_DEV_CHECK_INTERVAL_SECONDS:-30}"
 export SILICIUM_PROD_CHECK_INTERVAL_SECONDS="${SILICIUM_PROD_CHECK_INTERVAL_SECONDS:-21600}"
 export SILICIUM_UPDATE_SIGNING_KEY="${SILICIUM_UPDATE_SIGNING_KEY:-/etc/silicium/update-signing-key.pem}"
@@ -126,6 +128,7 @@ for channel, (version, filename, interval) in definitions.items():
         temporary_artifact.replace(cached_artifact)
     release = {
         "version": version,
+        "build": os.environ.get("SILICIUM_RELEASE_BUILD", "").strip(),
         "channel": channel,
         "url": f"{base_url}/{filename}",
         "sha256": digest,

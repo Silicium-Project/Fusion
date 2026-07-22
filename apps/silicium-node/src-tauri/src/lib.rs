@@ -186,6 +186,8 @@ struct UpdateStatus {
 struct UpdateRelease {
     version: String,
     #[serde(default)]
+    build: String,
+    #[serde(default)]
     channel: String,
     #[serde(default)]
     platform: String,
@@ -634,7 +636,12 @@ fn check_for_update_locked(status: &mut UpdateStatus, auto_install: bool) -> Res
     };
     status.automatic = release.auto_install;
     status.last_checked_utc = current_utc();
-    status.update_available = version_is_newer(&release.version, release_version());
+    status.update_available = release_requires_update(
+        &release.version,
+        &release.build,
+        release_version(),
+        release_build(),
+    );
     status.error.clear();
     status.state = if status.update_available {
         "available"
@@ -1067,8 +1074,25 @@ fn run_background_update_loop() {
     }
 }
 
+#[cfg(test)]
 fn version_is_newer(candidate: &str, current: &str) -> bool {
     compare_versions(candidate, current) == Ordering::Greater
+}
+
+fn release_requires_update(
+    candidate_version: &str,
+    candidate_build: &str,
+    current_version: &str,
+    current_build: &str,
+) -> bool {
+    match compare_versions(candidate_version, current_version) {
+        Ordering::Greater => true,
+        Ordering::Less => false,
+        Ordering::Equal => {
+            let candidate_build = candidate_build.trim();
+            !candidate_build.is_empty() && candidate_build != current_build.trim()
+        }
+    }
 }
 
 fn compare_versions(left: &str, right: &str) -> Ordering {
@@ -2865,6 +2889,34 @@ mod tests {
     }
 
     #[test]
+    fn same_version_with_a_different_published_build_requires_update() {
+        assert!(release_requires_update(
+            "0.2.9-dev.11",
+            "new-build",
+            "0.2.9-dev.11",
+            "old-build"
+        ));
+        assert!(!release_requires_update(
+            "0.2.9-dev.11",
+            "same-build",
+            "0.2.9-dev.11",
+            "same-build"
+        ));
+        assert!(!release_requires_update(
+            "0.2.9-dev.11",
+            "",
+            "0.2.9-dev.11",
+            "old-build"
+        ));
+        assert!(!release_requires_update(
+            "0.2.9-dev.10",
+            "other-build",
+            "0.2.9-dev.11",
+            "current-build"
+        ));
+    }
+
+    #[test]
     fn automatic_update_script_restarts_configured_supervisor() {
         let source = include_str!("lib.rs");
         assert!(source.contains("[string]$RepoRoot"));
@@ -2879,6 +2931,7 @@ mod tests {
     fn update_release_requires_the_pinned_ed25519_signature() {
         let release = UpdateRelease {
             version: "0.2.9-dev.8".to_string(),
+            build: "test-build".to_string(),
             channel: "dev".to_string(),
             platform: String::new(),
             url: "https://vps-910c1dbc.vps.ovh.net/downloads/silicium-node-windows-dev.exe".to_string(),

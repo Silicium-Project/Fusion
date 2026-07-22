@@ -11,14 +11,15 @@ Recommended production flow:
 The updater uses two independent channels published in
 `/downloads/update-manifest.json`:
 
-- `dev`: SemVer prereleases such as `0.2.9-dev.10`, checked every 30 seconds;
-- `prod`: stable SemVer releases such as `0.2.16`, checked every 6 hours.
+- `dev`: SemVer prereleases such as `0.2.9-dev.11`, checked every 30 seconds;
+- `prod`: stable SemVer releases such as `0.2.17`, checked every 6 hours.
 
 Builds must set `SILICIUM_RELEASE_CHANNEL`, `SILICIUM_RELEASE_VERSION`, and
 `SILICIUM_RELEASE_BUILD`. The supervisor reports those exact compiled values in
-the P2P heartbeat and installs a newer manifest release silently when the node
-is idle. The server-side `silicium-update-manifest.timer` refreshes hashes,
-sizes, and URLs every 30 seconds during development.
+the P2P heartbeat and installs a newer version or a different published build
+silently when the node is idle. The server-side
+`silicium-update-manifest.timer` refreshes build IDs, hashes, sizes, and URLs
+every 30 seconds during development.
 
 1. Build the desktop app on a Windows machine:
 
