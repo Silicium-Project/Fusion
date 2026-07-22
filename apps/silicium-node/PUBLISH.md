@@ -11,7 +11,7 @@ Recommended production flow:
 The updater uses two independent channels published in
 `/downloads/update-manifest.json`:
 
-- `dev`: SemVer prereleases such as `0.2.9-dev.11`, checked every 30 seconds;
+- `dev`: SemVer prereleases such as `0.2.9-dev.12`, checked every 30 seconds;
 - `prod`: stable SemVer releases such as `0.2.17`, checked every 6 hours.
 
 Builds must set `SILICIUM_RELEASE_CHANNEL`, `SILICIUM_RELEASE_VERSION`, and

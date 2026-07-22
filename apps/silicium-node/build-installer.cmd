@@ -7,7 +7,7 @@ if "%SILICIUM_RELEASE_VERSION%"=="" (
   if /I "%SILICIUM_RELEASE_CHANNEL%"=="prod" (
     set "SILICIUM_RELEASE_VERSION=0.2.17"
   ) else (
-    set "SILICIUM_RELEASE_VERSION=0.2.9-dev.11"
+    for /f "usebackq delims=" %%V in (`node -p "require('./package.json').version"`) do set "SILICIUM_RELEASE_VERSION=%%V"
   )
 )
 if "%SILICIUM_RELEASE_BUILD%"=="" set "SILICIUM_RELEASE_BUILD=local"

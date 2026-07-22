@@ -27,12 +27,17 @@ fi
 # Release identifiers are source-controlled and must follow the artifacts built
 # by CI. Preserve operator-specific URLs, keys and cache paths in the existing
 # file while refreshing only the channel cadence/version fields.
+dev_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")"
 for release_key in \
   SILICIUM_DEV_VERSION \
   SILICIUM_PROD_VERSION \
   SILICIUM_DEV_CHECK_INTERVAL_SECONDS \
   SILICIUM_PROD_CHECK_INTERVAL_SECONDS; do
-  release_line="$(grep -E "^${release_key}=" deploy/env/update-channels.example.env | tail -n 1)"
+  if [[ "$release_key" == "SILICIUM_DEV_VERSION" ]]; then
+    release_line="SILICIUM_DEV_VERSION=${dev_version}"
+  else
+    release_line="$(grep -E "^${release_key}=" deploy/env/update-channels.example.env | tail -n 1)"
+  fi
   [[ -n "$release_line" ]] || continue
   if grep -q -E "^${release_key}=" /etc/silicium/update-channels.env; then
     sed -i -E "s#^${release_key}=.*#${release_line}#" /etc/silicium/update-channels.env

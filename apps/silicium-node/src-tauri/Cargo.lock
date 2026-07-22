@@ -2796,7 +2796,7 @@ dependencies = [
 
 [[package]]
 name = "silicium-node"
-version = "0.2.9-dev.11"
+version = "0.2.9-dev.12"
 dependencies = [
  "base64 0.22.1",
  "chrono",

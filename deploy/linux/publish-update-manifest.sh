@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SILICIUM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG_PATH="${SILICIUM_UPDATE_CHANNELS_CONFIG:-/etc/silicium/update-channels.env}"
 if [[ -f "$CONFIG_PATH" ]]; then
   set -a
@@ -11,9 +12,9 @@ fi
 
 export SILICIUM_DOWNLOADS_DIR="${SILICIUM_DOWNLOADS_DIR:-/var/lib/silicium/downloads}"
 export SILICIUM_DOWNLOAD_BASE_URL="${SILICIUM_DOWNLOAD_BASE_URL:-https://vps-910c1dbc.vps.ovh.net/downloads}"
-export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-0.2.9-dev.11}"
+DEFAULT_DEV_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$SILICIUM_ROOT/apps/silicium-node/package.json")"
+export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-$DEFAULT_DEV_VERSION}"
 export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-0.2.17}"
-SILICIUM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-$(git -C "$SILICIUM_ROOT" rev-parse HEAD 2>/dev/null || true)}"
 export SILICIUM_DEV_CHECK_INTERVAL_SECONDS="${SILICIUM_DEV_CHECK_INTERVAL_SECONDS:-30}"
 export SILICIUM_PROD_CHECK_INTERVAL_SECONDS="${SILICIUM_PROD_CHECK_INTERVAL_SECONDS:-21600}"

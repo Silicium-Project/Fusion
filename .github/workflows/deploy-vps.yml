@@ -149,9 +149,9 @@ jobs:
         working-directory: apps/silicium-node
         env:
           SILICIUM_RELEASE_CHANNEL: dev
-          SILICIUM_RELEASE_VERSION: 0.2.9-dev.11
           SILICIUM_RELEASE_BUILD: ${{ github.sha }}
         run: |
+          export SILICIUM_RELEASE_VERSION="$(node -p "require('./package.json').version")"
           npm ci
           npm run build
           npm run prepare:runtime:linux
