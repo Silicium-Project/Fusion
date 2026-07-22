@@ -31,12 +31,14 @@ services:
       HOST: 0.0.0.0
       PORT: 8080
       CORS_ALLOWED_ORIGINS: https://vps-910c1dbc.vps.ovh.net,https://213.32.68.67
-      SILICIUM_SEED_PEERS: https://vps-910c1dbc.vps.ovh.net/orchestrator
+      SILICIUM_SEED_PEERS: http://213.32.68.67:46100
     depends_on:
       postgres:
         condition: service_healthy
     ports:
     - 127.0.0.1:8080:8080
+    - 46102:46102/tcp
+    - 46102:46102/udp
     volumes:
     - /opt/silicium/Network:/opt/silicium/Network
     - /var/lib/silicium:/var/lib/silicium
@@ -109,11 +111,37 @@ services:
     - /var/lib/silicium/network:/var/lib/silicium/network
     networks:
     - backend
+  experiment-api:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/orchestrator.Dockerfile
+    restart: unless-stopped
+    env_file:
+    - /etc/silicium/experiment-api.env
+    command:
+    - python
+    - /opt/silicium/Network/tools/mcp_server.py
+    - --bind
+    - 0.0.0.0
+    - --port
+    - '46110'
+    - --export-dir
+    - /var/lib/silicium/network/orchestrator/export
+    - --snapshot-dir
+    - /var/lib/silicium/network/experiment-api/snapshots
+    - --enable-tools
+    - --log-format
+    - json
+    volumes:
+    - /var/lib/silicium/network:/var/lib/silicium/network
+    networks:
+    - backend
   proxy:
     image: nginx:1.27-alpine
     restart: unless-stopped
     depends_on:
     - backend
+    - experiment-api
     - frontend
     - dashboard
     ports:

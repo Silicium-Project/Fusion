@@ -1,0 +1,18 @@
+[Unit]
+Description=Silicium authenticated experiment and MCP API
+After=network-online.target silicium-orchestrator.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__SILICIUM_ROOT__/Network
+EnvironmentFile=/etc/silicium/experiment-api.env
+ExecStart=/usr/bin/python3 tools/mcp_server.py --bind 127.0.0.1 --port ${SILICIUM_EXPERIMENT_API_PORT} --export-dir ${SILICIUM_EXPERIMENT_EXPORT_DIR} --snapshot-dir ${SILICIUM_EXPERIMENT_SNAPSHOT_DIR} --enable-tools --log-format json
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

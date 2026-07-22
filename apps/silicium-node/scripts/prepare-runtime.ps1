@@ -285,22 +285,25 @@ Copy-Item -LiteralPath (Join-Path $networkRoot "silicium") -Destination (Join-Pa
 Copy-Directory -Source (Join-Path $networkRoot "tools") -Destination (Join-Path $runtimeNetwork "tools")
 $null = Copy-OptionalDirectory -Source (Join-Path $networkRoot "workloads") -Destination (Join-Path $runtimeNetwork "workloads") -Label "optional workloads"
 $null = Copy-OptionalDirectory -Source (Join-Path $networkRoot "bin") -Destination (Join-Path $runtimeNetwork "bin") -Label "optional workload binaries"
-$raytracerPath = Join-Path $runtimeNetwork "bin\raytracer\raytracer.exe"
+$raytracerPath = Join-Path $runtimeNetwork "bin\raytracer\raytracer.py"
 if (-not (Test-Path -LiteralPath $raytracerPath)) {
-    Write-Warning "Optional raytracer executable is not bundled: Network\bin\raytracer\raytracer.exe"
+    throw "Bundled raytracer runtime missing: Network\bin\raytracer\raytracer.py"
 }
 
-$networkedDemo = Join-Path $runtimeNetwork "demo\networked"
-$networkedDemoSource = Join-Path $networkRoot "demo\networked\networked_runtime.py"
-if (Test-Path -LiteralPath $networkedDemoSource -PathType Leaf) {
-    New-Item -ItemType Directory -Force -Path $networkedDemo | Out-Null
-    Copy-Item -LiteralPath $networkedDemoSource -Destination $networkedDemo -Force
+$networkedSource = Join-Path $networkRoot "networked"
+if (-not (Test-Path -LiteralPath $networkedSource -PathType Container)) {
+    $networkedSource = Join-Path $networkRoot "demo\networked"
+}
+if (Test-Path -LiteralPath $networkedSource -PathType Container) {
+    $networkedDestination = Join-Path $runtimeNetwork "networked"
+    Copy-Directory -Source $networkedSource -Destination $networkedDestination
+    Write-Host "[ok] Bundled networked runtime -> $networkedDestination"
 }
 
 $envDir = Join-Path $runtimeRoot ".silicium\env"
 New-Item -ItemType Directory -Force -Path $envDir | Out-Null
 @(
-    "SILICIUM_RAYTRACER_BIN=Network\bin\raytracer\raytracer.exe",
+    "SILICIUM_RAYTRACER_BIN=Network\bin\raytracer\raytracer.py",
     "SILICIUM_RAYTRACER_ASSETS_DIR=Network\bin\raytracer"
 ) | Set-Content -Path (Join-Path $envDir "raytracer.env") -Encoding ASCII
 
@@ -315,6 +318,12 @@ if (-not $pythonSource) {
         (Join-Path $env:LOCALAPPDATA "Programs\Python\Python310")
     )
 }
+if (-not $pythonSource) {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCommand) {
+        $pythonSource = Split-Path -Parent $pythonCommand.Source
+    }
+}
 $pythonDestination = Join-Path $runtimeRoot "tools\python"
 $null = Copy-PythonRuntime -Source $pythonSource -Destination $pythonDestination
 
@@ -322,12 +331,12 @@ $p2pRequirements = Join-Path $networkRoot "requirements-p2p.txt"
 $p2pSitePackages = Join-Path $pythonDestination "Lib\site-packages"
 if (Test-Path -LiteralPath $p2pRequirements -PathType Leaf) {
     New-Item -ItemType Directory -Force -Path $p2pSitePackages | Out-Null
-    $pythonInstaller = Get-Command py -ErrorAction SilentlyContinue
-    if (-not $pythonInstaller) {
-        throw "Python launcher is required to bundle automatic ICE dependencies."
+    $pythonInstaller = Join-Path $pythonSource "python.exe"
+    if (-not (Test-Path -LiteralPath $pythonInstaller)) {
+        throw "Python executable is required to bundle automatic ICE dependencies."
     }
     Write-Host "Installing automatic P2P dependencies into bundled runtime"
-    & $pythonInstaller.Source -m pip install --disable-pip-version-check --upgrade --target $p2pSitePackages -r $p2pRequirements
+    & $pythonInstaller -m pip install --disable-pip-version-check --upgrade --target $p2pSitePackages -r $p2pRequirements
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to bundle automatic P2P dependencies."
     }
@@ -335,14 +344,22 @@ if (Test-Path -LiteralPath $p2pRequirements -PathType Leaf) {
 
 $opensslSource = $OpenSslRuntime
 if (-not $opensslSource) {
-    Write-Host "[skip] OpenSSL runtime not bundled. Desktop nodes use HMAC identity mode for the demo."
+    $opensslSource = Find-FirstExisting @(
+        (Join-Path $appRoot "vendor\openssl"),
+        "C:\Program Files\OpenSSL-Win64",
+        "C:\Program Files\OpenSSL-Win32",
+        "C:\Program Files (x86)\OpenSSL-Win32",
+        "C:\Program Files\Git\mingw64",
+        "C:\Program Files\Git\usr"
+    )
 }
-if ($opensslSource) {
-    $opensslDestination = Join-Path $runtimeRoot "tools\openssl"
-    $opensslBundled = Copy-OpenSslRuntime -Source $opensslSource -Destination $opensslDestination -PythonRuntimeDestination $pythonDestination
-    if ($opensslBundled) {
-        Test-OpenSslRuntime -Destination $opensslDestination
-    }
+if (-not $opensslSource) {
+    throw "OpenSSL runtime is required to build Silicium Node. Provide -OpenSslRuntime or add apps\silicium-node\vendor\openssl."
+}
+$opensslDestination = Join-Path $runtimeRoot "tools\openssl"
+$opensslBundled = Copy-OpenSslRuntime -Source $opensslSource -Destination $opensslDestination -PythonRuntimeDestination $pythonDestination
+if ($opensslBundled) {
+    Test-OpenSslRuntime -Destination $opensslDestination
 }
 
 Write-Host "Runtime prepared: $runtimeRoot"

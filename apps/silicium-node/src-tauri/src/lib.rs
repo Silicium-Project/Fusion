@@ -1,7 +1,10 @@
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use chrono::{DateTime, SecondsFormat, Utc};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
+    cmp::Ordering,
     env,
     fs::{self, OpenOptions},
     io::Read,
@@ -31,6 +34,9 @@ struct ProcessState {
 const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
 const SUPERVISOR_RUN_KEY_NAME: &str = "SiliciumNodeService";
 const CLAIM_POLL_STALE_AFTER: Duration = Duration::from_secs(20);
+const UPDATE_SIGNING_PUBLIC_KEY_B64: &str = "px9didtoGftLilUX8iA1Yoj4PjNiCvZD47GK6/fdzX8=";
+const UPDATE_SIGNING_KEY_ID: &str = "f8d1c0149d9fcc171a39f96e5b9965a235500b7fe20cd2348912d38ca91e6d4c";
+const LOCAL_UPDATE_MANIFEST_URL: &str = "http://127.0.0.1:46101/updates/manifest";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,17 +86,41 @@ struct NodeActivity {
 #[serde(rename_all = "camelCase")]
 struct MachineActivity {
     node_id: String,
+    identity_id: String,
     online: bool,
+    self_node: bool,
     scheduler_active: bool,
     status: String,
     roles: Vec<String>,
+    app_version: String,
+    release_channel: String,
+    release_build: String,
+    http_base_url: String,
+    mesh_post_url: String,
+    relay_capable: bool,
+    features: Vec<String>,
+    candidates: Vec<MachineCandidate>,
+    platform: String,
+    cpu_count: u64,
     active_tasks: Vec<MachineTaskActivity>,
+    last_seen_unix: u64,
     last_seen_utc: String,
     last_claim_poll_utc: String,
     last_claim_error: String,
     last_response_ok: Option<bool>,
     last_response_item_id: String,
     last_response_utc: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineCandidate {
+    candidate_type: String,
+    transport: String,
+    ip: String,
+    port: u64,
+    internet_routable: bool,
+    source: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -133,6 +163,42 @@ struct HistoryItem {
     fragment_index: String,
     ok: Option<bool>,
     peer_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateStatus {
+    current_version: String,
+    current_channel: String,
+    current_build: String,
+    latest_version: String,
+    state: String,
+    update_available: bool,
+    automatic: bool,
+    last_checked_utc: String,
+    error: String,
+    check_interval_seconds: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct UpdateRelease {
+    version: String,
+    #[serde(default)]
+    channel: String,
+    url: String,
+    sha256: String,
+    #[serde(default)]
+    content_id: String,
+    #[serde(default)]
+    signature: String,
+    #[serde(default)]
+    signing_key_id: String,
+    #[serde(default)]
+    size_bytes: u64,
+    #[serde(default = "default_true")]
+    auto_install: bool,
+    #[serde(default)]
+    check_interval_seconds: u64,
 }
 
 #[tauri::command]
@@ -425,6 +491,613 @@ fn app_defaults() -> AppDefaults {
     }
 }
 
+#[tauri::command]
+fn update_status() -> UpdateStatus {
+    read_update_status().unwrap_or_else(default_update_status)
+}
+
+#[tauri::command]
+fn check_for_updates() -> UpdateStatus {
+    check_for_update_once(false)
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn release_version() -> &'static str {
+    option_env!("SILICIUM_RELEASE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+}
+
+fn release_channel() -> &'static str {
+    option_env!("SILICIUM_RELEASE_CHANNEL").unwrap_or(if env!("CARGO_PKG_VERSION").contains('-') {
+        "dev"
+    } else {
+        "prod"
+    })
+}
+
+fn release_build() -> &'static str {
+    option_env!("SILICIUM_RELEASE_BUILD").unwrap_or("")
+}
+
+fn update_manifest_url() -> &'static str {
+    option_env!("SILICIUM_UPDATE_MANIFEST_URL")
+        .unwrap_or("https://vps-910c1dbc.vps.ovh.net/downloads/update-manifest.json")
+}
+
+fn default_update_interval() -> u64 {
+    if release_channel() == "dev" {
+        30
+    } else {
+        21_600
+    }
+}
+
+fn default_update_status() -> UpdateStatus {
+    UpdateStatus {
+        current_version: release_version().to_string(),
+        current_channel: release_channel().to_string(),
+        current_build: release_build().to_string(),
+        latest_version: String::new(),
+        state: "unknown".to_string(),
+        update_available: false,
+        automatic: true,
+        last_checked_utc: String::new(),
+        error: String::new(),
+        check_interval_seconds: default_update_interval(),
+    }
+}
+
+fn update_status_path() -> PathBuf {
+    app_state_dir().join("update-status.json")
+}
+
+fn update_lock_path() -> PathBuf {
+    app_state_dir().join("update-check.lock")
+}
+
+fn read_update_status() -> Option<UpdateStatus> {
+    fs::read_to_string(update_status_path())
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+}
+
+fn write_update_status(status: &UpdateStatus) {
+    let path = update_status_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(raw) = serde_json::to_vec_pretty(status) {
+        let _ = fs::write(path, raw);
+    }
+}
+
+fn acquire_update_lock() -> bool {
+    let path = update_lock_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(metadata) = fs::metadata(&path) {
+        let stale = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.elapsed().ok())
+            .map(|age| age > Duration::from_secs(300))
+            .unwrap_or(true);
+        if stale {
+            let _ = fs::remove_file(&path);
+        }
+    }
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .and_then(|mut file| {
+            use std::io::Write;
+            writeln!(file, "{}", std::process::id())
+        })
+        .is_ok()
+}
+
+fn release_update_lock() {
+    let _ = fs::remove_file(update_lock_path());
+}
+
+fn check_for_update_once(auto_install: bool) -> UpdateStatus {
+    if !acquire_update_lock() {
+        return read_update_status().unwrap_or_else(default_update_status);
+    }
+    let mut status = default_update_status();
+    status.state = "checking".to_string();
+    write_update_status(&status);
+    let result = check_for_update_locked(&mut status, auto_install);
+    if let Err(error) = result {
+        status.state = "error".to_string();
+        status.error = error;
+        status.last_checked_utc = current_utc();
+        write_update_status(&status);
+    }
+    release_update_lock();
+    status
+}
+
+fn check_for_update_locked(status: &mut UpdateStatus, auto_install: bool) -> Result<(), String> {
+    let release = fetch_update_release()?;
+    status.latest_version = release.version.clone();
+    status.check_interval_seconds = if release.check_interval_seconds > 0 {
+        release.check_interval_seconds.max(15)
+    } else {
+        default_update_interval()
+    };
+    status.automatic = release.auto_install;
+    status.last_checked_utc = current_utc();
+    status.update_available = version_is_newer(&release.version, release_version());
+    status.error.clear();
+    status.state = if status.update_available {
+        "available"
+    } else {
+        "current"
+    }
+    .to_string();
+    write_update_status(status);
+
+    if auto_install && status.update_available && release.auto_install {
+        if node_has_active_work() {
+            status.state = "waiting_for_idle".to_string();
+            write_update_status(status);
+            return Ok(());
+        }
+        status.state = "downloading".to_string();
+        write_update_status(status);
+        let installer = download_update(&release)?;
+        status.state = "installing".to_string();
+        write_update_status(status);
+        schedule_update_install(&installer)?;
+    }
+    Ok(())
+}
+
+fn node_has_active_work() -> bool {
+    let Some(root) = discover_managed_runtime_root() else {
+        return false;
+    };
+    let events_path = root
+        .join("Network")
+        .join(".silicium")
+        .join("networked")
+        .join("silicium-desktop-node")
+        .join("export")
+        .join("node.events.ndjson");
+    let Ok(raw) = fs::read_to_string(events_path) else {
+        return false;
+    };
+    for line in raw.lines().rev().take(500) {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        match event.get("kind").and_then(Value::as_str).unwrap_or("") {
+            "task_started" => return true,
+            "task" | "request" | "result_return" => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn fetch_update_release() -> Result<UpdateRelease, String> {
+    let primary = curl_get(update_manifest_url(), 15)
+        .and_then(|output| {
+            serde_json::from_str::<Value>(output.trim())
+                .map_err(|error| format!("update_manifest_invalid:{error}"))
+        })
+        .and_then(|manifest| select_update_release(&manifest));
+    let primary_error = match primary {
+        Ok(release) => return Ok(release),
+        Err(error) => error,
+    };
+    let fallback = curl_get(LOCAL_UPDATE_MANIFEST_URL, 10)
+        .and_then(|output| {
+            serde_json::from_str::<Value>(output.trim())
+                .map_err(|error| format!("update_gossip_manifest_invalid:{error}"))
+        })
+        .and_then(|manifest| select_update_release(&manifest));
+    fallback.map_err(|fallback_error| {
+        format!("update_manifest_unavailable:primary={primary_error};gossip={fallback_error}")
+    })
+}
+
+fn select_update_release(manifest: &Value) -> Result<UpdateRelease, String> {
+    let mut candidates = Vec::new();
+    if let Some(channel) = manifest
+        .get("channels")
+        .and_then(Value::as_object)
+        .and_then(|channels| channels.get(release_channel()))
+    {
+        candidates.push(channel.clone());
+    }
+    if let Some(releases) = manifest.get("releases").and_then(Value::as_array) {
+        candidates.extend(releases.iter().cloned());
+    }
+    let mut valid = Vec::new();
+    for candidate in candidates {
+        let Ok(mut release) = serde_json::from_value::<UpdateRelease>(candidate) else {
+            continue;
+        };
+        if release.channel.trim().is_empty() {
+            release.channel = release_channel().to_string();
+        }
+        if release.channel != release_channel() || validate_update_release(&release).is_err() {
+            continue;
+        }
+        valid.push(release);
+    }
+    valid
+        .into_iter()
+        .max_by(|left, right| compare_versions(&left.version, &right.version))
+        .ok_or_else(|| format!("update_channel_missing_or_untrusted:{}", release_channel()))
+}
+
+fn validate_update_release(release: &UpdateRelease) -> Result<(), String> {
+    if release.version.trim().is_empty() {
+        return Err("update_version_missing".to_string());
+    }
+    if !release
+        .url
+        .starts_with("https://vps-910c1dbc.vps.ovh.net/downloads/")
+    {
+        return Err("update_url_untrusted".to_string());
+    }
+    let hash = release.sha256.trim();
+    if hash.len() != 64 || !hash.chars().all(|character| character.is_ascii_hexdigit()) {
+        return Err("update_sha256_invalid".to_string());
+    }
+    if release.content_id.trim().to_ascii_lowercase() != hash.to_ascii_lowercase() {
+        return Err("update_content_id_mismatch".to_string());
+    }
+    if release.signing_key_id.trim() != UPDATE_SIGNING_KEY_ID {
+        return Err("update_signing_key_untrusted".to_string());
+    }
+    verify_update_signature(release)?;
+    Ok(())
+}
+
+fn update_signature_payload(release: &UpdateRelease) -> Vec<u8> {
+    format!(
+        "silicium-update-v1\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        release.channel,
+        release.version,
+        release.sha256.to_ascii_lowercase(),
+        release.size_bytes,
+        release.url,
+        release.content_id.to_ascii_lowercase(),
+    )
+    .into_bytes()
+}
+
+fn verify_update_signature(release: &UpdateRelease) -> Result<(), String> {
+    let public_key = BASE64_STANDARD
+        .decode(UPDATE_SIGNING_PUBLIC_KEY_B64)
+        .map_err(|_| "update_public_key_invalid".to_string())?;
+    let public_key: [u8; 32] = public_key
+        .try_into()
+        .map_err(|_| "update_public_key_invalid".to_string())?;
+    let verifying_key =
+        VerifyingKey::from_bytes(&public_key).map_err(|_| "update_public_key_invalid".to_string())?;
+    let signature = BASE64_STANDARD
+        .decode(release.signature.trim())
+        .map_err(|_| "update_signature_invalid".to_string())?;
+    let signature = Signature::from_slice(&signature)
+        .map_err(|_| "update_signature_invalid".to_string())?;
+    verifying_key
+        .verify(&update_signature_payload(release), &signature)
+        .map_err(|_| "update_signature_untrusted".to_string())
+}
+
+fn download_update(release: &UpdateRelease) -> Result<PathBuf, String> {
+    let updates_dir = app_state_dir().join("updates");
+    fs::create_dir_all(&updates_dir).map_err(|error| error.to_string())?;
+    let safe_version = release
+        .version
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let installer = updates_dir.join(format!("silicium-node-{safe_version}.exe"));
+    let primary_download = curl_download(&release.url, &installer, 300);
+    if primary_download.is_err() {
+        let fallback_url = format!(
+            "http://127.0.0.1:46101/updates/content/{}",
+            release.content_id.trim().to_ascii_lowercase()
+        );
+        curl_download(&fallback_url, &installer, 600).map_err(|fallback_error| {
+            format!(
+                "update_download_unavailable:primary={};gossip={fallback_error}",
+                primary_download.err().unwrap_or_else(|| "unknown".to_string())
+            )
+        })?;
+    }
+    let metadata = fs::metadata(&installer).map_err(|error| error.to_string())?;
+    if release.size_bytes > 0 && metadata.len() != release.size_bytes {
+        let _ = fs::remove_file(&installer);
+        return Err(format!(
+            "update_size_mismatch:{}:{}",
+            metadata.len(),
+            release.size_bytes
+        ));
+    }
+    let hash_script = format!(
+        "(Get-FileHash -Algorithm SHA256 -LiteralPath '{}').Hash.ToLowerInvariant()",
+        powershell_quote(&installer.display().to_string())
+    );
+    let actual_hash = powershell_output(&hash_script)?.trim().to_ascii_lowercase();
+    if actual_hash != release.sha256.trim().to_ascii_lowercase() {
+        let _ = fs::remove_file(&installer);
+        return Err("update_sha256_mismatch".to_string());
+    }
+    cache_update_for_peers(&installer, &release.content_id);
+    Ok(installer)
+}
+
+fn cache_update_for_peers(installer: &Path, content_id: &str) {
+    let url = format!(
+        "http://127.0.0.1:46101/updates/cache/{}",
+        content_id.trim().to_ascii_lowercase()
+    );
+    let source = format!("@{}", installer.display());
+    let _ = Command::new("curl.exe")
+        .arg("--silent")
+        .arg("--show-error")
+        .arg("--fail")
+        .arg("--max-time")
+        .arg("300")
+        .arg("--request")
+        .arg("POST")
+        .arg("--data-binary")
+        .arg(source)
+        .arg(url)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+fn schedule_update_install(installer: &Path) -> Result<(), String> {
+    let script_path = app_state_dir().join("apply-update.ps1");
+    let log_path = app_state_dir().join("update-install.log");
+    let script = r#"param(
+  [int]$ParentPid,
+  [int]$NodePid,
+  [string]$Installer,
+  [string]$Executable,
+  [string]$RepoRoot,
+  [string]$LogPath
+)
+$ErrorActionPreference = 'Stop'
+try {
+  while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 250 }
+  if ($NodePid -gt 0) { & taskkill.exe /PID $NodePid /T /F | Out-Null }
+  Get-Process -Name 'silicium-node' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
+  $process = $null
+  for ($attempt = 1; $attempt -le 30; $attempt++) {
+    try {
+      $process = Start-Process -FilePath $Installer -ArgumentList '/S' -Wait -PassThru
+      break
+    } catch {
+      Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) installer_launch_retry attempt=$attempt error=$($_.Exception.Message)"
+      if ($attempt -eq 30) { throw }
+      Start-Sleep -Seconds 2
+    }
+  }
+  if ($null -eq $process) { throw 'installer_not_started' }
+  if ($process.ExitCode -ne 0) { throw "installer_exit_$($process.ExitCode)" }
+  Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) update_installed $Installer"
+  if ($RepoRoot -and (Test-Path -LiteralPath (Join-Path $RepoRoot '.silicium\node-app\service-config.env'))) {
+    $quotedRepoRoot = '"' + $RepoRoot + '"'
+    Start-Process -FilePath $Executable -ArgumentList '--supervisor', '--repo-root', $quotedRepoRoot -WindowStyle Hidden
+    Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) supervisor_restarted $RepoRoot"
+  }
+  Start-Process -FilePath $Executable
+} catch {
+  Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) update_failed $($_.Exception.Message)"
+  if ($RepoRoot -and (Test-Path -LiteralPath (Join-Path $RepoRoot '.silicium\node-app\service-config.env'))) {
+    $quotedRepoRoot = '"' + $RepoRoot + '"'
+    Start-Process -FilePath $Executable -ArgumentList '--supervisor', '--repo-root', $quotedRepoRoot -WindowStyle Hidden
+    Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) supervisor_recovered_after_update_failure $RepoRoot"
+  }
+  Start-Process -FilePath $Executable
+  exit 1
+}
+"#;
+    fs::write(&script_path, script).map_err(|error| error.to_string())?;
+    let executable = env::current_exe().map_err(|error| error.to_string())?;
+    let runtime_root = discover_managed_runtime_root();
+    let node_pid = runtime_root
+        .as_ref()
+        .and_then(|root| read_pid(root).ok().flatten())
+        .unwrap_or(0);
+    let repo_root = runtime_root
+        .as_ref()
+        .map(|root| root.display().to_string())
+        .unwrap_or_default();
+    let mut command = Command::new("powershell.exe");
+    command
+        .arg("-NoProfile")
+        .arg("-NonInteractive")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-File")
+        .arg(&script_path)
+        .arg("-ParentPid")
+        .arg(std::process::id().to_string())
+        .arg("-NodePid")
+        .arg(node_pid.to_string())
+        .arg("-Installer")
+        .arg(installer)
+        .arg("-Executable")
+        .arg(executable)
+        .arg("-RepoRoot")
+        .arg(repo_root)
+        .arg("-LogPath")
+        .arg(log_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    configure_detached_process(&mut command);
+    command.spawn().map_err(|error| error.to_string())?;
+    release_update_lock();
+    std::process::exit(0);
+}
+
+fn powershell_output(script: &str) -> Result<String, String> {
+    let mut command = Command::new("powershell.exe");
+    command
+        .arg("-NoProfile")
+        .arg("-NonInteractive")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-Command")
+        .arg(script)
+        .stdin(Stdio::null());
+    configure_detached_process(&mut command);
+    let output = command
+        .output()
+        .map_err(|error| format!("powershell_start_failed:{error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "powershell_failed:{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn curl_get(url: &str, timeout_seconds: u64) -> Result<String, String> {
+    let mut command = Command::new("curl.exe");
+    command
+        .arg("-4")
+        .arg("--fail")
+        .arg("--silent")
+        .arg("--show-error")
+        .arg("--location")
+        .arg("--max-time")
+        .arg(timeout_seconds.to_string())
+        .arg(url)
+        .stdin(Stdio::null());
+    configure_detached_process(&mut command);
+    let output = command
+        .output()
+        .map_err(|error| format!("curl_start_failed:{error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "curl_failed:{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn curl_download(url: &str, target: &Path, timeout_seconds: u64) -> Result<(), String> {
+    let mut command = Command::new("curl.exe");
+    command
+        .arg("-4")
+        .arg("--fail")
+        .arg("--silent")
+        .arg("--show-error")
+        .arg("--location")
+        .arg("--max-time")
+        .arg(timeout_seconds.to_string())
+        .arg("--output")
+        .arg(target)
+        .arg(url)
+        .stdin(Stdio::null());
+    configure_detached_process(&mut command);
+    let output = command
+        .output()
+        .map_err(|error| format!("curl_start_failed:{error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "curl_failed:{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(())
+}
+
+fn powershell_quote(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
+fn current_utc() -> String {
+    DateTime::<Utc>::from(SystemTime::now()).to_rfc3339_opts(SecondsFormat::Secs, true)
+}
+
+fn run_background_update_loop() {
+    loop {
+        let status = check_for_update_once(true);
+        thread::sleep(Duration::from_secs(status.check_interval_seconds.max(15)));
+    }
+}
+
+fn version_is_newer(candidate: &str, current: &str) -> bool {
+    compare_versions(candidate, current) == Ordering::Greater
+}
+
+fn compare_versions(left: &str, right: &str) -> Ordering {
+    let parse = |value: &str| {
+        let clean = value.trim().trim_start_matches('v');
+        let mut sections = clean.splitn(2, '-');
+        let core = sections
+            .next()
+            .unwrap_or("")
+            .split('.')
+            .map(|part| part.parse::<u64>().unwrap_or(0))
+            .collect::<Vec<_>>();
+        let pre = sections.next().unwrap_or("").to_string();
+        (core, pre)
+    };
+    let (left_core, left_pre) = parse(left);
+    let (right_core, right_pre) = parse(right);
+    for index in 0..left_core.len().max(right_core.len()).max(3) {
+        let ordering = left_core
+            .get(index)
+            .copied()
+            .unwrap_or(0)
+            .cmp(&right_core.get(index).copied().unwrap_or(0));
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+    }
+    match (left_pre.is_empty(), right_pre.is_empty()) {
+        (true, false) => Ordering::Greater,
+        (false, true) => Ordering::Less,
+        (true, true) => Ordering::Equal,
+        (false, false) => {
+            let left_parts = left_pre.split('.').collect::<Vec<_>>();
+            let right_parts = right_pre.split('.').collect::<Vec<_>>();
+            for index in 0..left_parts.len().max(right_parts.len()) {
+                let left_part = left_parts.get(index).copied().unwrap_or("");
+                let right_part = right_parts.get(index).copied().unwrap_or("");
+                let ordering = match (left_part.parse::<u64>(), right_part.parse::<u64>()) {
+                    (Ok(left_number), Ok(right_number)) => left_number.cmp(&right_number),
+                    (Ok(_), Err(_)) => Ordering::Less,
+                    (Err(_), Ok(_)) => Ordering::Greater,
+                    (Err(_), Err(_)) => left_part.cmp(right_part),
+                };
+                if ordering != Ordering::Equal {
+                    return ordering;
+                }
+            }
+            Ordering::Equal
+        }
+    }
+}
+
 fn resolve_optional_repo_root(_repo_root: Option<&str>) -> Option<PathBuf> {
     if let Some(root) = discover_managed_runtime_root() {
         return Some(root);
@@ -584,6 +1257,12 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("compute,verify")
             .arg("--node-id")
             .arg(node_id)
+            .arg("--app-version")
+            .arg(release_version())
+            .arg("--release-channel")
+            .arg(release_channel())
+            .arg("--release-build")
+            .arg(release_build())
             .arg("--export-dir")
             .arg(".silicium\\networked\\silicium-desktop-node\\export")
             .arg("--state-dir")
@@ -598,15 +1277,17 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("46101")
             .arg("--seed-peers")
             .arg(&config.orchestrator_url)
-            .arg("--nat-punch-enable")
-            .arg("--p2p-direct-transport-backend")
-            .arg("auto")
             .arg("--mesh-key")
             .arg("demo-mesh")
             .arg("--reputation-score")
             .arg(config.reputation_score.to_string())
             .arg("--idle-ms")
             .arg("250")
+            .arg("--pull-tasks-enable")
+            .arg("--gossip-enable")
+            .arg("--nat-punch-enable")
+            .arg("--p2p-direct-transport-backend")
+            .arg("auto")
             .current_dir(&network_root);
         command.env("SILICIUM_IDENTITY_MODE", "hmac");
         command.env("SILICIUM_FORCE_HMAC_IDENTITY", "1");
@@ -628,6 +1309,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg(&advertise_host)
             .arg("demo-mesh")
             .arg(config.reputation_score.to_string())
+            .arg("--gossip-enable")
             .arg("--nat-punch-enable")
             .arg("--p2p-direct-transport-backend")
             .arg("auto")
@@ -803,6 +1485,7 @@ pub fn run_supervisor_cli() -> i32 {
         return 2;
     }
     let _ = write_supervisor_pid(&repo_root, std::process::id());
+    thread::spawn(run_background_update_loop);
     let config = read_service_config(&repo_root).unwrap_or_else(|_| NodeConfig {
         repo_root: repo_root.display().to_string(),
         orchestrator_url: "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string(),
@@ -1603,6 +2286,34 @@ fn read_node_log_tail(repo_root: &Path) -> Option<String> {
             parts.push(format!("{label}:\n{tail}"));
         }
     }
+    let network_export = repo_root
+        .join("Network")
+        .join(".silicium")
+        .join("networked")
+        .join("silicium-desktop-node")
+        .join("export");
+    let claim_health = network_export.join("claim-poll.health.json");
+    if let Ok(content) = fs::read_to_string(claim_health) {
+        if !content.trim().is_empty() {
+            parts.push(format!("scheduler claim health:\n{}", content.trim()));
+        }
+    }
+    let claim_events = network_export.join("node.events.ndjson");
+    if let Ok(content) = fs::read_to_string(claim_events) {
+        let tail = content
+            .lines()
+            .rev()
+            .filter(|line| line.contains("\"kind\":\"claim_"))
+            .take(12)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !tail.trim().is_empty() {
+            parts.push(format!("scheduler claim events:\n{tail}"));
+        }
+    }
     if parts.is_empty() {
         None
     } else {
@@ -1700,8 +2411,16 @@ fn collect_event_history(path: &Path, history: &mut Vec<HistoryItem>) {
             size_bytes: duration_ms,
             kind: kind.to_string(),
             item_id: item_id.to_string(),
-            role: value.get("role").and_then(Value::as_str).unwrap_or("").to_string(),
-            activity: value.get("activity").and_then(Value::as_str).unwrap_or("").to_string(),
+            role: value
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            activity: value
+                .get("activity")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string(),
             fragment_index: json_value_text(value.get("fragment_index")),
             ok: value.get("ok").and_then(Value::as_bool),
             peer_id: value
@@ -1743,11 +2462,54 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
         .flatten()
         .filter_map(|peer| {
             let node_id = peer.get("node_id")?.as_str()?.to_string();
-            let last_seen = peer.get("last_seen_unix").and_then(Value::as_u64).unwrap_or(0);
+            let last_seen = peer
+                .get("last_seen_unix")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
             let last_claim_poll = peer
                 .get("last_claim_poll_unix")
-                .and_then(|value| value.as_f64().or_else(|| value.as_u64().map(|item| item as f64)))
+                .and_then(|value| {
+                    value
+                        .as_f64()
+                        .or_else(|| value.as_u64().map(|item| item as f64))
+                })
                 .unwrap_or(0.0);
+            let candidates = peer
+                .get("candidates")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|candidate| {
+                    Some(MachineCandidate {
+                        candidate_type: candidate
+                            .get("candidate_type")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        transport: candidate
+                            .get("transport")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        ip: candidate
+                            .get("ip")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        port: candidate.get("port").and_then(Value::as_u64).unwrap_or(0),
+                        internet_routable: candidate
+                            .get("internet_routable")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                        source: candidate
+                            .get("source")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let capacity = peer.get("capacity").and_then(Value::as_object);
             let activity = peer.get("activity").and_then(Value::as_object);
             let active_tasks = activity
                 .and_then(|item| item.get("active_tasks"))
@@ -1757,9 +2519,21 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                 .filter_map(|task| {
                     Some(MachineTaskActivity {
                         item_id: task.get("item_id")?.as_str()?.to_string(),
-                        role: task.get("role").and_then(Value::as_str).unwrap_or("").to_string(),
-                        activity: task.get("activity").and_then(Value::as_str).unwrap_or("").to_string(),
-                        workload: task.get("workload").and_then(Value::as_str).unwrap_or("").to_string(),
+                        role: task
+                            .get("role")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        activity: task
+                            .get("activity")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        workload: task
+                            .get("workload")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
                         fragment_index: json_value_text(task.get("fragment_index")),
                     })
                 })
@@ -1769,13 +2543,23 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                 .and_then(Value::as_object);
             Some(MachineActivity {
                 node_id,
+                identity_id: peer
+                    .get("identity_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
                 online: last_seen > 0 && now.saturating_sub(last_seen) <= 45,
+                self_node: peer.get("self").and_then(Value::as_bool).unwrap_or(false),
                 scheduler_active: last_claim_poll > 0.0
                     && (now as f64 - last_claim_poll).max(0.0) <= 10.0,
                 status: activity
                     .and_then(|item| item.get("status"))
                     .and_then(Value::as_str)
-                    .unwrap_or(if active_tasks.is_empty() { "idle" } else { "working" })
+                    .unwrap_or(if active_tasks.is_empty() {
+                        "idle"
+                    } else {
+                        "working"
+                    })
                     .to_string(),
                 roles: peer
                     .get("roles")
@@ -1785,8 +2569,60 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                     .filter_map(Value::as_str)
                     .map(str::to_string)
                     .collect(),
+                app_version: peer
+                    .get("app_version")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                release_channel: peer
+                    .get("release_channel")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                release_build: peer
+                    .get("release_build")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                http_base_url: peer
+                    .get("http_base_url")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                mesh_post_url: peer
+                    .get("mesh_post_url")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                relay_capable: peer
+                    .get("relay_capable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                features: peer
+                    .get("features")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect(),
+                candidates,
+                platform: capacity
+                    .and_then(|item| item.get("platform"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                cpu_count: capacity
+                    .and_then(|item| item.get("cpu_count"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0),
                 active_tasks,
-                last_seen_utc: peer.get("updated_utc").and_then(Value::as_str).unwrap_or("").to_string(),
+                last_seen_unix: last_seen,
+                last_seen_utc: peer
+                    .get("updated_utc")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
                 last_claim_poll_utc: peer
                     .get("last_claim_poll_utc")
                     .and_then(Value::as_str)
@@ -1797,7 +2633,9 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_string(),
-                last_response_ok: last_response.and_then(|item| item.get("ok")).and_then(Value::as_bool),
+                last_response_ok: last_response
+                    .and_then(|item| item.get("ok"))
+                    .and_then(Value::as_bool),
                 last_response_item_id: last_response
                     .and_then(|item| item.get("item_id"))
                     .and_then(Value::as_str)
@@ -1811,7 +2649,12 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
             })
         })
         .collect::<Vec<_>>();
-    machines.sort_by(|left, right| right.online.cmp(&left.online).then_with(|| left.node_id.cmp(&right.node_id)));
+    machines.sort_by(|left, right| {
+        right
+            .online
+            .cmp(&left.online)
+            .then_with(|| left.node_id.cmp(&right.node_id))
+    });
     machines
 }
 
@@ -1868,6 +2711,7 @@ fn directory_size(path: &Path) -> u64 {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_crash_log();
+    thread::spawn(run_background_update_loop);
     if let Err(error) = tauri::Builder::default()
         .manage(ProcessState::default())
         .invoke_handler(tauri::generate_handler![
@@ -1878,7 +2722,9 @@ pub fn run() {
             install_runtime,
             node_activity,
             node_diagnostics,
-            app_defaults
+            app_defaults,
+            update_status,
+            check_for_updates
         ])
         .run(tauri::generate_context!())
     {
@@ -1936,15 +2782,61 @@ mod tests {
     }
 
     #[test]
+    fn release_versions_keep_dev_and_prod_ordering() {
+        assert!(version_is_newer("0.2.9-dev.2", "0.2.9-dev.1"));
+        assert!(version_is_newer("0.2.9", "0.2.9-dev.9"));
+        assert!(!version_is_newer("0.2.9-dev.1", "0.2.9"));
+        assert!(!version_is_newer("0.2.9-dev.1", "0.2.9-dev.1"));
+    }
+
+    #[test]
+    fn automatic_update_script_restarts_configured_supervisor() {
+        let source = include_str!("lib.rs");
+        assert!(source.contains("[string]$RepoRoot"));
+        assert!(source.contains("service-config.env"));
+        assert!(source.contains("supervisor_restarted"));
+        assert!(source.contains("'--supervisor', '--repo-root'"));
+        assert!(source.contains("installer_launch_retry"));
+        assert!(source.contains("supervisor_recovered_after_update_failure"));
+    }
+
+    #[test]
+    fn update_release_requires_the_pinned_ed25519_signature() {
+        let release = UpdateRelease {
+            version: "0.2.9-dev.8".to_string(),
+            channel: "dev".to_string(),
+            url: "https://vps-910c1dbc.vps.ovh.net/downloads/silicium-node-windows-dev.exe".to_string(),
+            sha256: "a".repeat(64),
+            content_id: "a".repeat(64),
+            signature: "sVOJv9gTgrP9GS5dcuvgvX/Ff6hsnlkguSgvnvIvZHVqD6YwP89jZzYPjuBk4eBaBGE9SkPE+ShmSnZw42XNCg==".to_string(),
+            signing_key_id: UPDATE_SIGNING_KEY_ID.to_string(),
+            size_bytes: 1234,
+            auto_install: true,
+            check_interval_seconds: 30,
+        };
+        assert!(validate_update_release(&release).is_ok());
+        let mut tampered = release.clone();
+        tampered.size_bytes += 1;
+        assert_eq!(
+            validate_update_release(&tampered).unwrap_err(),
+            "update_signature_untrusted"
+        );
+    }
+
+    #[test]
     fn machine_activity_reads_work_and_last_response() {
-        let directory = env::temp_dir().join(format!("silicium-machine-activity-{}", std::process::id()));
+        let directory =
+            env::temp_dir().join(format!("silicium-machine-activity-{}", std::process::id()));
         let _ = fs::remove_dir_all(&directory);
         fs::create_dir_all(&directory).unwrap();
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         fs::write(
             directory.join("mesh.discovery.json"),
             format!(
-                r#"{{"peers":[{{"node_id":"worker-a","roles":["compute"],"last_seen_unix":{now},"last_claim_poll_unix":{now},"last_claim_poll_utc":"2026-07-13T18:00:00Z","last_claim_error":"","updated_utc":"2026-07-13T18:00:00Z","activity":{{"status":"working","active_tasks":[{{"item_id":"render:1","role":"compute","activity":"fragment","workload":"raytracer-fragment","fragment_index":3}}],"last_response":{{"item_id":"verify:2","ok":true,"timestamp_utc":"2026-07-13T17:59:00Z"}}}}}}]}}"#
+                r#"{{"peers":[{{"node_id":"worker-a","roles":["compute"],"app_version":"0.2.9-dev.1","release_channel":"dev","release_build":"test","last_seen_unix":{now},"last_claim_poll_unix":{now},"last_claim_poll_utc":"2026-07-13T18:00:00Z","last_claim_error":"","updated_utc":"2026-07-13T18:00:00Z","activity":{{"status":"working","active_tasks":[{{"item_id":"render:1","role":"compute","activity":"fragment","workload":"raytracer-fragment","fragment_index":3}}],"last_response":{{"item_id":"verify:2","ok":true,"timestamp_utc":"2026-07-13T17:59:00Z"}}}}}}]}}"#
             ),
         )
         .unwrap();
@@ -1954,6 +2846,8 @@ mod tests {
         assert!(machines[0].online);
         assert!(machines[0].scheduler_active);
         assert_eq!(machines[0].status, "working");
+        assert_eq!(machines[0].app_version, "0.2.9-dev.1");
+        assert_eq!(machines[0].release_channel, "dev");
         assert_eq!(machines[0].active_tasks[0].fragment_index, "3");
         assert_eq!(machines[0].last_response_ok, Some(true));
         let _ = fs::remove_dir_all(&directory);

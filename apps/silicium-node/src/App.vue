@@ -17,6 +17,13 @@
 
     <p v-if="userMessage" class="app-banner info-banner">{{ userMessage }}</p>
     <p v-if="refreshError" class="app-banner error-banner">{{ refreshError }}</p>
+    <section class="app-banner release-banner" :class="{ warning: updateInfo.updateAvailable, error: updateInfo.state === 'error' }">
+      <div>
+        <strong>{{ releaseBannerTitle }}</strong>
+        <span>{{ releaseBannerDetail }}</span>
+      </div>
+      <span class="release-channel">{{ updateInfo.currentChannel }} · {{ updateInfo.currentVersion }}</span>
+    </section>
 
     <section v-if="!status.running" class="activation-card compact-activation">
       <div class="activation-copy">
@@ -121,35 +128,103 @@
             <strong>Calcul + verification</strong>
             <span>Reputation beta</span>
             <strong>{{ form.reputationScore }}</strong>
+            <span>Version active</span>
+            <strong>{{ updateInfo.currentVersion }} ({{ updateInfo.currentChannel }})</strong>
             <span>Dernier resultat</span>
             <strong>{{ shortResultName }}</strong>
           </div>
         </section>
       </section>
 
-      <section class="panel machines-panel">
-        <div class="panel-row history-header">
+      <section class="panel network-directory">
+        <div class="directory-heading">
           <div>
-            <h2>Machines du reseau</h2>
-            <p>Presence, travail actif et confirmation de la derniere reponse.</p>
+            <p class="eyebrow">Annuaire reseau connu</p>
+            <h2>Nodes observes par ce PC</h2>
+            <p>Presence, release, identite P2P, ICE et activite scheduler issues du dernier snapshot mesh.</p>
           </div>
-          <span class="machine-count">{{ onlineMachineCount }} en ligne</span>
+          <div class="directory-metrics">
+            <span><strong>{{ activity.machines.length }}</strong> connus</span>
+            <span class="metric-online"><strong>{{ onlineMachineCount }}</strong> en ligne</span>
+            <span :class="{ 'metric-warning': outdatedMachineCount > 0 }"><strong>{{ outdatedMachineCount }}</strong> a mettre a jour</span>
+            <span><strong>{{ directCandidateMachineCount }}</strong> avec candidats ICE</span>
+          </div>
         </div>
+
+        <div class="directory-toolbar">
+          <input v-model.trim="networkQuery" type="search" placeholder="Rechercher un node, role, endpoint, version..." />
+          <span>{{ filteredMachines.length }} resultat(s)</span>
+        </div>
+
         <div v-if="activity.machines.length === 0" class="empty-state">
-          Aucun autre PC annonce pour le moment. La liste apparait apres le prochain heartbeat reseau.
+          Aucun node dans l annuaire local. Les entrees apparaitront apres la prochaine synchronisation P2P.
         </div>
-        <div v-else class="machine-list">
-          <article v-for="machine in activity.machines" :key="machine.nodeId" class="machine-row">
-            <span class="machine-light" :class="{ online: machine.online }"></span>
-            <div class="machine-main">
-              <strong>{{ machine.nodeId }}</strong>
-              <small>{{ machinePresenceLabel(machine) }}</small>
+        <div v-else-if="filteredMachines.length === 0" class="empty-state">
+          Aucun node ne correspond a cette recherche.
+        </div>
+        <div v-else class="directory-table">
+          <div class="directory-columns" aria-hidden="true">
+            <span>Node / identite</span>
+            <span>Release</span>
+            <span>P2P / ICE</span>
+            <span>Scheduler</span>
+            <span>Derniere presence</span>
+          </div>
+
+          <article v-for="machine in filteredMachines" :key="machine.nodeId" class="directory-node" :class="{ offline: !machine.online }">
+            <div class="directory-summary">
+              <div class="directory-identity">
+                <span class="machine-light" :class="{ online: machine.online }"></span>
+                <div>
+                  <strong>{{ machine.nodeId }}</strong>
+                  <small>{{ machine.selfNode ? 'Ce PC' : shortIdentity(machine.identityId) }}</small>
+                </div>
+              </div>
+
+              <div class="directory-release">
+                <strong :class="{ 'machine-version-warning': machineNeedsUpdate(machine) }">{{ machine.appVersion || 'version inconnue' }}</strong>
+                <small>{{ machine.releaseChannel || 'canal inconnu' }}<template v-if="machine.releaseBuild"> · {{ machine.releaseBuild }}</template></small>
+              </div>
+
+              <div class="directory-p2p">
+                <span class="p2p-badge" :class="p2pStatusClass(machine)">{{ p2pStatusLabel(machine) }}</span>
+                <small>{{ candidateSummary(machine) }}</small>
+              </div>
+
+              <div class="directory-scheduler">
+                <strong>{{ machineWorkLabel(machine) }}</strong>
+                <small>{{ machine.schedulerActive ? 'poll actif' : 'poll inactif' }}</small>
+              </div>
+
+              <div class="directory-presence">
+                <strong>{{ formatRelativeTime(machine.lastSeenUnix) }}</strong>
+                <small>{{ machine.lastSeenUtc || 'date inconnue' }}</small>
+              </div>
             </div>
-            <div class="machine-work">
-              <strong>{{ machineWorkLabel(machine) }}</strong>
-              <small>{{ machineWorkDetail(machine) }}</small>
-            </div>
-            <span class="response-badge" :class="responseClass(machine)">{{ responseLabel(machine) }}</span>
+
+            <details class="directory-details">
+              <summary>Details techniques et candidats</summary>
+              <div class="directory-detail-grid">
+                <div><span>Roles</span><code>{{ machine.roles.join(', ') || 'aucun' }}</code></div>
+                <div><span>Endpoint HTTP annonce</span><code>{{ machine.httpBaseUrl || 'non annonce' }}</code></div>
+                <div><span>Endpoint mesh annonce</span><code>{{ machine.meshPostUrl || 'non annonce' }}</code></div>
+                <div><span>Identite P2P</span><code>{{ machine.identityId || 'inconnue' }}</code></div>
+                <div><span>Plateforme / CPU</span><code>{{ machine.platform || 'inconnue' }} · {{ machine.cpuCount || '?' }} coeur(s)</code></div>
+                <div><span>Fonctions transport</span><code>{{ machine.features.join(', ') || 'non annoncees' }}</code></div>
+                <div><span>Relay</span><code>{{ machine.relayCapable ? 'capable' : 'non annonce' }}</code></div>
+                <div><span>Dernier claim</span><code>{{ machine.lastClaimPollUtc || 'aucun' }}</code></div>
+                <div><span>Derniere reponse</span><code>{{ responseLabel(machine) }}<template v-if="machine.lastResponseItemId"> · {{ machine.lastResponseItemId }}</template></code></div>
+              </div>
+              <div v-if="machine.candidates.length" class="candidate-list">
+                <div v-for="(candidate, index) in machine.candidates" :key="`${machine.nodeId}-${candidate.ip}-${candidate.port}-${index}`" class="candidate-card">
+                  <strong>{{ candidate.candidateType || 'host' }} / {{ candidate.transport || 'udp' }}</strong>
+                  <code>{{ candidate.ip }}:{{ candidate.port }}</code>
+                  <small>{{ candidate.internetRoutable ? 'routable Internet' : 'adresse locale/NAT' }}<template v-if="candidate.source"> · {{ candidate.source }}</template></small>
+                </div>
+              </div>
+              <p v-else class="candidate-empty">Aucun candidat ICE annonce par ce node.</p>
+              <p v-if="machine.lastClaimError" class="directory-error">{{ machine.lastClaimError }}</p>
+            </details>
           </article>
         </div>
       </section>
@@ -256,8 +331,11 @@ import {
   nodeStatus,
   startNode,
   stopNode,
+  checkForUpdates,
+  updateStatus,
   type NodeActivity,
   type NodeDiagnostics,
+  type UpdateStatus,
 } from './tauri';
 
 const form = reactive({
@@ -291,9 +369,22 @@ const diagnostics = reactive<NodeDiagnostics>({
   python: { name: 'Python', ok: false, detail: 'non teste' },
   logTail: 'Ouvrez puis cliquez sur Verifier pour charger les diagnostics.',
 });
+const updateInfo = reactive<UpdateStatus>({
+  currentVersion: 'inconnue',
+  currentChannel: 'dev',
+  currentBuild: '',
+  latestVersion: '',
+  state: 'unknown',
+  updateAvailable: false,
+  automatic: true,
+  lastCheckedUtc: '',
+  error: '',
+  checkIntervalSeconds: 30,
+});
 const busy = ref(false);
 const userMessage = ref('');
 const refreshError = ref('');
+const networkQuery = ref('');
 let refreshTimer: number | undefined;
 let refreshInFlight = false;
 
@@ -362,6 +453,41 @@ const friendlyHistory = computed(() =>
 const recentFriendlyHistory = computed(() => friendlyHistory.value.slice(0, 5));
 const olderFriendlyHistory = computed(() => friendlyHistory.value.slice(5));
 const onlineMachineCount = computed(() => activity.machines.filter((machine) => machine.online).length);
+const outdatedMachineCount = computed(() => activity.machines.filter(machineNeedsUpdate).length);
+const directCandidateMachineCount = computed(() => activity.machines.filter((machine) => machine.candidates.length > 0).length);
+const filteredMachines = computed(() => {
+  const query = networkQuery.value.toLowerCase();
+  if (!query) return activity.machines;
+  return activity.machines.filter((machine) => {
+    const searchable = [
+      machine.nodeId,
+      machine.identityId,
+      machine.appVersion,
+      machine.releaseChannel,
+      machine.releaseBuild,
+      machine.httpBaseUrl,
+      machine.platform,
+      ...machine.roles,
+      ...machine.features,
+      ...machine.candidates.flatMap((candidate) => [candidate.candidateType, candidate.transport, candidate.ip, candidate.source]),
+    ].join(' ').toLowerCase();
+    return searchable.includes(query);
+  });
+});
+const releaseBannerTitle = computed(() => {
+  if (updateInfo.state === 'waiting_for_idle') return `Mise a jour ${updateInfo.latestVersion} en attente`;
+  if (updateInfo.state === 'installing') return 'Installation de la mise a jour...';
+  if (updateInfo.state === 'downloading') return 'Telechargement de la mise a jour...';
+  if (updateInfo.updateAvailable) return `Mise a jour ${updateInfo.latestVersion} requise`;
+  if (updateInfo.state === 'error') return 'Verification des mises a jour en erreur';
+  return 'Mises a jour automatiques actives';
+});
+const releaseBannerDetail = computed(() => {
+  if (updateInfo.state === 'waiting_for_idle') return 'Une tache est en cours. L installation demarrera automatiquement des que le node sera disponible.';
+  if (updateInfo.updateAvailable) return 'Le node sera mis a jour et redemarre automatiquement des que le paquet est verifie.';
+  if (updateInfo.state === 'error') return updateInfo.error || 'Le serveur de versions sera reinterroge automatiquement.';
+  return `Canal ${updateInfo.currentChannel}; verification toutes les ${formatUpdateInterval(updateInfo.checkIntervalSeconds)}.`;
+});
 
 const shortResultName = computed(() => {
   if (!activity.lastResult || activity.lastResult === 'Aucun resultat local') {
@@ -410,12 +536,21 @@ async function refreshActivity() {
   }
 }
 
+async function refreshUpdateStatus() {
+  try {
+    Object.assign(updateInfo, await updateStatus());
+  } catch {
+    // Le superviseur continuera les verifications en arriere-plan.
+  }
+}
+
 async function refreshAll() {
   if (refreshInFlight) return;
   refreshInFlight = true;
   try {
     await refreshStatus();
     await refreshActivity();
+    await refreshUpdateStatus();
     refreshError.value = '';
   } catch (error) {
     refreshError.value = `Impossible de lire l etat local : ${friendlyError(error)}`;
@@ -601,6 +736,62 @@ function responseClass(machine: NodeActivity['machines'][number]) {
   return '';
 }
 
+function machineNeedsUpdate(machine: NodeActivity['machines'][number]) {
+  if (!machine.appVersion) return true;
+  return machine.releaseChannel === updateInfo.currentChannel
+    && Boolean(updateInfo.latestVersion)
+    && machine.appVersion !== updateInfo.latestVersion;
+}
+
+function machineVersionLabel(machine: NodeActivity['machines'][number]) {
+  if (!machine.appVersion) return 'Version inconnue - mise a jour requise';
+  const channel = machine.releaseChannel || 'canal inconnu';
+  return machineNeedsUpdate(machine)
+    ? `${machine.appVersion} (${channel}) - mise a jour requise`
+    : `${machine.appVersion} (${channel})`;
+}
+
+function shortIdentity(identity: string) {
+  if (!identity) return 'identite non annoncee';
+  return identity.length > 22 ? `${identity.slice(0, 10)}...${identity.slice(-8)}` : identity;
+}
+
+function candidateSummary(machine: NodeActivity['machines'][number]) {
+  if (!machine.candidates.length) return 'aucun candidat annonce';
+  const types = [...new Set(machine.candidates.map((candidate) => candidate.candidateType || 'host'))];
+  return `${machine.candidates.length} candidat(s) · ${types.join(', ')}`;
+}
+
+function p2pStatusLabel(machine: NodeActivity['machines'][number]) {
+  if (!machine.online) return 'Hors ligne';
+  if (!machine.candidates.length) return 'Aucun candidat';
+  if (machine.candidates.some((candidate) => candidate.internetRoutable)) return 'ICE routable';
+  return 'ICE local / NAT';
+}
+
+function p2pStatusClass(machine: NodeActivity['machines'][number]) {
+  if (!machine.online) return 'offline';
+  if (!machine.candidates.length) return 'warning';
+  if (machine.candidates.some((candidate) => candidate.internetRoutable)) return 'ok';
+  return 'nat';
+}
+
+function formatRelativeTime(seconds: number) {
+  if (!seconds) return 'jamais';
+  const age = Math.max(0, Math.round(Date.now() / 1000 - seconds));
+  if (age < 5) return 'a l instant';
+  if (age < 60) return `il y a ${age}s`;
+  if (age < 3600) return `il y a ${Math.floor(age / 60)} min`;
+  if (age < 86400) return `il y a ${Math.floor(age / 3600)} h`;
+  return `il y a ${Math.floor(age / 86400)} j`;
+}
+
+function formatUpdateInterval(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  return `${Math.round(seconds / 3600)} h`;
+}
+
 function formatDurationMs(durationMs: number) {
   if (!durationMs) {
     return 'duree inconnue';
@@ -634,6 +825,11 @@ function scheduleRefresh() {
 
 onMounted(async () => {
   await loadDefaults();
+  try {
+    Object.assign(updateInfo, await checkForUpdates());
+  } catch {
+    // Une nouvelle tentative sera faite par le superviseur.
+  }
   await refreshAll();
   scheduleRefresh();
 });

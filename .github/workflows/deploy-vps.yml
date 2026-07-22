@@ -8,6 +8,7 @@ on:
       - "FrontEnd/**"
       - "BackEnd/**"
       - "Network/**"
+      - "apps/silicium-node/**"
       - "deploy/**"
       - ".github/workflows/deploy-vps.yml"
 
@@ -19,9 +20,92 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-desktop:
+    runs-on: windows-latest
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Check out release sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/silicium-node/package-lock.json
+
+      - name: Set up Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install desktop dependencies
+        working-directory: apps/silicium-node
+        run: npm ci
+
+      - name: Build development and production installers
+        shell: pwsh
+        working-directory: apps/silicium-node
+        run: |
+          $ErrorActionPreference = "Stop"
+          $artifacts = Join-Path $PWD "ci-artifacts"
+          $devVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $prodVersion = (Get-Content src-tauri/tauri.prod.conf.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+
+          $env:SILICIUM_RELEASE_CHANNEL = "dev"
+          $env:SILICIUM_RELEASE_VERSION = $devVersion
+          $env:SILICIUM_RELEASE_BUILD = "${{ github.sha }}"
+          & .\build-installer.cmd
+          if ($LASTEXITCODE -ne 0) { throw "Development installer build failed" }
+          $devInstaller = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $devInstaller) { throw "Development installer was not produced" }
+          Copy-Item $devInstaller.FullName (Join-Path $artifacts "silicium-node-windows-dev.exe") -Force
+
+          $env:SILICIUM_RELEASE_CHANNEL = "prod"
+          $env:SILICIUM_RELEASE_VERSION = $prodVersion
+          & .\build-installer.cmd
+          if ($LASTEXITCODE -ne 0) { throw "Production installer build failed" }
+          $prodInstaller = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $prodInstaller) { throw "Production installer was not produced" }
+          Copy-Item $prodInstaller.FullName (Join-Path $artifacts "silicium-node-windows.exe") -Force
+
+          Get-FileHash (Join-Path $artifacts "*.exe") -Algorithm SHA256
+
+      - name: Upload desktop installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: silicium-node-windows
+          path: apps/silicium-node/ci-artifacts/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
   deploy:
+    needs: build-desktop
     runs-on: ubuntu-latest
     steps:
+      - name: Download desktop installers
+        uses: actions/download-artifact@v4
+        with:
+          name: silicium-node-windows
+          path: release-artifacts
+
       - name: Configure SSH
         shell: bash
         env:
@@ -72,8 +156,14 @@ jobs:
             echo "::error title=Missing secret::Configure VPS_USER in repository Actions secrets."
             exit 1
           fi
+          RELEASE_STAGING="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
+          scp -P "$VPS_PORT" \
+            release-artifacts/silicium-node-windows-dev.exe \
+            release-artifacts/silicium-node-windows.exe \
+            "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
-            "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' bash -s" <<'REMOTE'
+            "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' RELEASE_STAGING='$RELEASE_STAGING' bash -s" <<'REMOTE'
           set -euo pipefail
           GIT_AUTH="$(printf 'x-access-token:%s' "$VPS_GITHUB_TOKEN" | base64 -w 0)"
           git_auth() {
@@ -97,5 +187,10 @@ jobs:
           done
           git_auth -C "$VPS_ROOT" submodule update --init --force --recursive
           unset GIT_AUTH VPS_GITHUB_TOKEN
+          sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium/downloads/silicium-node-windows-dev.exe
+          sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows.exe" /var/lib/silicium/downloads/silicium-node-windows.exe
+          rm -rf -- "$RELEASE_STAGING"
+          sudo bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
           sudo bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
+          sudo systemctl start silicium-update-manifest.service
           REMOTE

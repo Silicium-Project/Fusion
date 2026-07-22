@@ -229,6 +229,297 @@ label {
   color: #fecaca;
 }
 
+.release-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(34, 197, 94, 0.09);
+  color: #dcfce7;
+}
+
+.release-banner div,
+.release-banner strong,
+.release-banner span {
+  display: block;
+}
+
+.release-banner div > span {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.release-banner.warning {
+  border-color: rgba(251, 191, 36, 0.5);
+  background: rgba(245, 158, 11, 0.13);
+  color: #fde68a;
+}
+
+.release-banner.error {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fecaca;
+}
+
+.release-channel {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(0, 0, 0, 0.22);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.machine-version-warning {
+  color: #fbbf24 !important;
+  font-weight: 800;
+}
+
+.network-directory {
+  display: grid;
+  gap: 16px;
+}
+
+.directory-heading,
+.directory-toolbar,
+.directory-summary,
+.directory-identity {
+  display: flex;
+  align-items: center;
+}
+
+.directory-heading {
+  justify-content: space-between;
+  gap: 22px;
+}
+
+.directory-heading h2 {
+  margin-bottom: 6px;
+}
+
+.directory-heading > div:first-child > p:last-child {
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.directory-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 8px;
+  min-width: 360px;
+}
+
+.directory-metrics span {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 9px 11px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 11px;
+}
+
+.directory-metrics strong {
+  margin-right: 4px;
+  color: white;
+  font-size: 15px;
+}
+
+.directory-metrics .metric-online strong {
+  color: #86efac;
+}
+
+.directory-metrics .metric-warning strong {
+  color: #fbbf24;
+}
+
+.directory-toolbar {
+  justify-content: space-between;
+  gap: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 14px;
+}
+
+.directory-toolbar input {
+  max-width: 520px;
+  margin: 0;
+}
+
+.directory-toolbar > span {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.directory-table {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.directory-columns,
+.directory-summary {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.35fr) minmax(140px, 0.8fr) minmax(150px, 0.9fr) minmax(155px, 0.9fr) minmax(135px, 0.7fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.directory-columns {
+  padding: 0 14px 4px;
+  color: rgba(255, 255, 255, 0.36);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.directory-node {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(12, 13, 18, 0.5);
+  overflow: hidden;
+}
+
+.directory-node.offline {
+  opacity: 0.68;
+}
+
+.directory-summary {
+  min-height: 78px;
+  padding: 12px 14px;
+}
+
+.directory-identity {
+  gap: 12px;
+  min-width: 0;
+}
+
+.directory-identity > div,
+.directory-release,
+.directory-p2p,
+.directory-scheduler,
+.directory-presence {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.directory-summary strong,
+.directory-summary small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directory-summary small {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 11px;
+}
+
+.p2p-badge {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(96, 165, 250, 0.13);
+  color: #bfdbfe;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.p2p-badge.ok {
+  background: rgba(34, 197, 94, 0.14);
+  color: #bbf7d0;
+}
+
+.p2p-badge.warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fde68a;
+}
+
+.p2p-badge.offline {
+  background: rgba(100, 116, 139, 0.15);
+  color: #cbd5e1;
+}
+
+.directory-details {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0 14px;
+}
+
+.directory-details summary {
+  cursor: pointer;
+  padding: 10px 0;
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.directory-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.directory-detail-grid > div {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.directory-detail-grid span,
+.candidate-card small {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+}
+
+.directory-detail-grid code,
+.candidate-card code {
+  overflow-wrap: anywhere;
+  color: #bfdbfe;
+  font-size: 11px;
+}
+
+.candidate-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.candidate-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(59, 130, 246, 0.055);
+}
+
+.candidate-card strong {
+  color: #dbeafe;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.candidate-empty,
+.directory-error {
+  margin: 0 0 12px;
+  border-radius: 10px;
+  padding: 10px;
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.08);
+  font-size: 11px;
+}
+
+.directory-error {
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.08);
+}
+
 .dashboard {
   display: grid;
   gap: 18px;
@@ -880,6 +1171,23 @@ label {
   .machine-work {
     grid-column: 2 / -1;
   }
+
+  .directory-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .directory-metrics {
+    min-width: 0;
+  }
+
+  .directory-columns {
+    display: none;
+  }
+
+  .directory-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 620px) {
@@ -905,5 +1213,16 @@ label {
   .response-badge {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .directory-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .directory-summary,
+  .directory-detail-grid,
+  .directory-metrics {
+    grid-template-columns: 1fr;
   }
 }
