@@ -47,7 +47,10 @@ chmod 0755 "$ROOT/deploy/linux/publish-update-manifest.sh"
 
 systemctl daemon-reload
 systemctl enable --now silicium-update-manifest.timer
-systemctl enable --now silicium-experiment-api.service
+# The application stack is owned by Docker Compose. Keep the unit installed for
+# standalone/debug deployments, but prevent a legacy host process from racing
+# the Compose experiment-api container for ports and state files.
+systemctl disable --now silicium-experiment-api.service 2>/dev/null || true
 
 echo "Systemd services installed:"
 echo "  silicium-backend"
@@ -55,4 +58,4 @@ echo "  silicium-frontend"
 echo "  silicium-dashboard"
 echo "  silicium-orchestrator"
 echo "  silicium-update-manifest.timer"
-echo "  silicium-experiment-api"
+echo "  silicium-experiment-api (installed, Compose-managed)"
