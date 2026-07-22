@@ -339,6 +339,17 @@ def test_world_mode_defaults_enable_mesh_bootstrap(monkeypatch) -> None:
     assert "world-identities/france-1/ed25519.pem" in resolved.identity_key_path
 
 
+def test_node_start_enables_default_stun_with_nat_punch() -> None:
+    cli = _load_silicium_module()
+    parser = argparse.ArgumentParser()
+    cli.configure_node_start(parser)
+    args = parser.parse_args(["--nat-punch-enable", "--p2p-direct-transport-backend", "auto"])
+
+    resolved = cli._apply_nat_traversal_defaults(args)
+
+    assert resolved.p2p_stun_server == cli.DEFAULT_PUBLIC_STUN_SERVER
+
+
 def test_node_start_forwards_release_telemetry(monkeypatch) -> None:
     cli = _load_silicium_module()
     parser = argparse.ArgumentParser()
