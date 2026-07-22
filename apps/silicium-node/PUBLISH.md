@@ -8,6 +8,18 @@ The public site already points to:
 
 Recommended production flow:
 
+The updater uses two independent channels published in
+`/downloads/update-manifest.json`:
+
+- `dev`: SemVer prereleases such as `0.2.9-dev.9`, checked every 30 seconds;
+- `prod`: stable SemVer releases such as `0.2.16`, checked every 6 hours.
+
+Builds must set `SILICIUM_RELEASE_CHANNEL`, `SILICIUM_RELEASE_VERSION`, and
+`SILICIUM_RELEASE_BUILD`. The supervisor reports those exact compiled values in
+the P2P heartbeat and installs a newer manifest release silently when the node
+is idle. The server-side `silicium-update-manifest.timer` refreshes hashes,
+sizes, and URLs every 30 seconds during development.
+
 1. Build the desktop app on a Windows machine:
 
 ```powershell
@@ -15,6 +27,10 @@ cd apps\silicium-node
 npm.cmd install
 npm.cmd run tauri:build
 ```
+
+For a stable installer, set `SILICIUM_RELEASE_CHANNEL=prod` and run
+`build-installer.cmd`. It merges `tauri.prod.conf.json`, so both the NSIS
+installer and the compiled heartbeat telemetry report the stable version.
 
 2. Find the generated Windows installer in:
 

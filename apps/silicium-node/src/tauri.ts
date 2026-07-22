@@ -42,11 +42,24 @@ export type MachineTaskActivity = {
 
 export type MachineActivity = {
   nodeId: string;
+  identityId: string;
   online: boolean;
+  selfNode: boolean;
   schedulerActive: boolean;
   status: string;
   roles: string[];
+  appVersion: string;
+  releaseChannel: string;
+  releaseBuild: string;
+  httpBaseUrl: string;
+  meshPostUrl: string;
+  relayCapable: boolean;
+  features: string[];
+  candidates: MachineCandidate[];
+  platform: string;
+  cpuCount: number;
   activeTasks: MachineTaskActivity[];
+  lastSeenUnix: number;
   lastSeenUtc: string;
   lastClaimPollUtc: string;
   lastClaimError: string;
@@ -86,6 +99,28 @@ export type AppDefaults = {
   nodeId: string;
 };
 
+export type MachineCandidate = {
+  candidateType: string;
+  transport: string;
+  ip: string;
+  port: number;
+  internetRoutable: boolean;
+  source: string;
+};
+
+export type UpdateStatus = {
+  currentVersion: string;
+  currentChannel: string;
+  currentBuild: string;
+  latestVersion: string;
+  state: 'unknown' | 'checking' | 'current' | 'available' | 'waiting_for_idle' | 'downloading' | 'installing' | 'error';
+  updateAvailable: boolean;
+  automatic: boolean;
+  lastCheckedUtc: string;
+  error: string;
+  checkIntervalSeconds: number;
+};
+
 export async function startNode(config: NodeConfig): Promise<string> {
   return await invoke<string>('start_node', { config });
 }
@@ -116,4 +151,12 @@ export async function nodeDiagnostics(repoRoot: string): Promise<NodeDiagnostics
 
 export async function appDefaults(): Promise<AppDefaults> {
   return await invoke<AppDefaults>('app_defaults');
+}
+
+export async function updateStatus(): Promise<UpdateStatus> {
+  return await invoke<UpdateStatus>('update_status');
+}
+
+export async function checkForUpdates(): Promise<UpdateStatus> {
+  return await invoke<UpdateStatus>('check_for_updates');
 }

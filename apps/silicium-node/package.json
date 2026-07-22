@@ -1,6 +1,6 @@
 {
   "name": "silicium-node",
-  "version": "0.2.1",
+  "version": "0.2.9-dev.9",
   "private": true,
   "type": "module",
   "scripts": {

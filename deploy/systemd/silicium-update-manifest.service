@@ -1,0 +1,7 @@
+[Unit]
+Description=Publish Silicium desktop update manifest
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=__SILICIUM_ROOT__/deploy/linux/publish-update-manifest.sh
