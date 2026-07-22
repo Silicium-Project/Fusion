@@ -3105,8 +3105,15 @@ class PeerNetwork:
             return False
         if body_hash != sha256_bytes(body):
             return False
-        signing_payload = "\n".join([handler.command.upper(), handler.path, timestamp, body_hash, node_id, identity_id]).encode("utf-8")
-        return NodeIdentity.verify_bytes(signing_payload, signature, public_key)
+        signed_paths = [str(handler.path)]
+        original_uri = str(handler.headers.get("X-Silicium-Original-URI", "")).strip()
+        if original_uri.startswith("/") and len(original_uri) <= 4096 and original_uri not in signed_paths:
+            signed_paths.append(original_uri)
+        for signed_path in signed_paths:
+            signing_payload = "\n".join([handler.command.upper(), signed_path, timestamp, body_hash, node_id, identity_id]).encode("utf-8")
+            if NodeIdentity.verify_bytes(signing_payload, signature, public_key):
+                return True
+        return False
 
     def _start_http_server(self) -> None:
         peer_network = self

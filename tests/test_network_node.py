@@ -451,6 +451,25 @@ def test_mesh_key_bearer_auth_requires_explicit_dev_flag(tmp_path: Path) -> None
     assert dev_peer._authorize_peer_request(request)
 
 
+def test_signed_peer_auth_accepts_reverse_proxy_original_uri(tmp_path: Path) -> None:
+    signer = network_node.PeerNetwork(_config(tmp_path / "signer", "node-a"), tmp_path / "signer")
+    verifier = network_node.PeerNetwork(_config(tmp_path / "verifier", "node-b"), tmp_path / "verifier")
+    body = network_node.stable_json({"item_id": "result-1"}).encode("utf-8")
+    external_path = "/orchestrator/results/dispatch"
+    headers = signer._signed_headers("POST", external_path, body)
+    proxied_request = _RequestStub(
+        {**headers, "X-Silicium-Original-URI": external_path},
+        command="POST",
+        path="/results/dispatch",
+    )
+
+    assert verifier._authorize_peer_request(proxied_request, body)
+    assert not verifier._authorize_peer_request(
+        _RequestStub(headers, command="POST", path="/results/dispatch"),
+        body,
+    )
+
+
 def test_candidate_gathering_reports_host_and_server_observed_candidates(tmp_path: Path) -> None:
     config = _config(tmp_path / "peer", "node-a", p2p_candidate_ttl_s=30, p2p_candidate_refresh_s=1)
     config.gossip_port = 46101
