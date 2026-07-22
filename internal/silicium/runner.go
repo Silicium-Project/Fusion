@@ -15,18 +15,18 @@ import (
 )
 
 type RunnerConfig struct {
-	NetworkRoot          string
-	MeshKey              string
-	SeedPeers            string
-	OrchestratorNodeID   string
-	OrchestratorHost     string
-	EmitterPort          string
+	NetworkRoot           string
+	MeshKey               string
+	SeedPeers             string
+	OrchestratorNodeID    string
+	OrchestratorHost      string
+	EmitterPort           string
 	OrchestratorExportDir string
-	DashboardURL         string
-	DevnetTrace          bool
-	DevnetTxDelayMS      string
-	MinComputeReputation string
-	MinVerifyReputation  string
+	DashboardURL          string
+	DevnetTrace           bool
+	DevnetTxDelayMS       string
+	MinComputeReputation  string
+	MinVerifyReputation   string
 }
 
 type RunResult struct {
@@ -44,18 +44,18 @@ func ConfigFromEnv() RunnerConfig {
 		networkRoot = filepath.Clean(filepath.Join("..", "..", "Network"))
 	}
 	return RunnerConfig{
-		NetworkRoot:          networkRoot,
-		MeshKey:              envDefault("SILICIUM_MESH_KEY", "demo-mesh"),
-		SeedPeers:            os.Getenv("SILICIUM_SEED_PEERS"),
-		OrchestratorNodeID:   envDefault("SILICIUM_ORCHESTRATOR_NODE_ID", "orchestrator-1"),
-		OrchestratorHost:     envDefault("SILICIUM_ORCHESTRATOR_HOST", "127.0.0.1"),
-		EmitterPort:          envDefault("SILICIUM_EMITTER_PORT", "46102"),
+		NetworkRoot:           networkRoot,
+		MeshKey:               envDefault("SILICIUM_MESH_KEY", "demo-mesh"),
+		SeedPeers:             os.Getenv("SILICIUM_SEED_PEERS"),
+		OrchestratorNodeID:    envDefault("SILICIUM_ORCHESTRATOR_NODE_ID", "orchestrator-1"),
+		OrchestratorHost:      envDefault("SILICIUM_ORCHESTRATOR_HOST", "127.0.0.1"),
+		EmitterPort:           envDefault("SILICIUM_EMITTER_PORT", "46102"),
 		OrchestratorExportDir: envDefault("SILICIUM_ORCHESTRATOR_EXPORT_DIR", filepath.Join(networkRoot, ".silicium", "networked", "orchestrator", "export")),
-		DashboardURL:         envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
-		DevnetTrace:          envDefault("SILICIUM_DEVNET_TRACE", "1") != "0",
-		DevnetTxDelayMS:      envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
-		MinComputeReputation: envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
-		MinVerifyReputation:  envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
+		DashboardURL:          envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
+		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "1") != "0",
+		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
+		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
+		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
 	}
 }
 
@@ -79,28 +79,7 @@ func RunRaytracer(job models.Job, cfg RunnerConfig) RunResult {
 	if _, err := os.Stat(networkRoot); err != nil {
 		return RunResult{Status: "failed", ErrorMessage: fmt.Sprintf("network root not found: %s", networkRoot)}
 	}
-	args := []string{
-		"workloads/raytracer/run_network_job.py",
-		job.InputPath,
-		"--job-id", job.SiliciumJobID,
-		"--node-mode", "network",
-		// The persistent orchestrator owns task/result ingress. Starting an
-		// embedded emitter here made the worker return URL disappear whenever
-		// this runner process stopped or was restarted.
-		"--no-network-start-emitter",
-		"--export-dir", cfg.OrchestratorExportDir,
-		"--network-node-id", cfg.OrchestratorNodeID,
-		"--network-advertise-host", cfg.OrchestratorHost,
-		"--network-port", cfg.EmitterPort,
-		"--network-advertise-port", cfg.EmitterPort,
-		"--network-seed-peers", cfg.SeedPeers,
-		"--network-mesh-key", cfg.MeshKey,
-		"--min-compute-reputation", cfg.MinComputeReputation,
-		"--min-verify-reputation", cfg.MinVerifyReputation,
-	}
-	if cfg.DevnetTrace {
-		args = append(args, "--devnet-trace", "--devnet-tx-delay-ms", cfg.DevnetTxDelayMS)
-	}
+	args := raytracerArgs(job, cfg)
 	cmd := pythonCommand(networkRoot, args...)
 	output, err := cmd.CombinedOutput()
 	summaryPath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "raytracer-summary.json")
@@ -133,6 +112,35 @@ func RunRaytracer(job models.Job, cfg RunnerConfig) RunResult {
 		result.Status = "completed"
 	}
 	return result
+}
+
+func raytracerArgs(job models.Job, cfg RunnerConfig) []string {
+	args := []string{
+		"workloads/raytracer/run_network_job.py",
+		job.InputPath,
+		"--job-id", job.SiliciumJobID,
+		"--node-mode", "network",
+		// The persistent orchestrator owns task/result ingress. Starting an
+		// embedded emitter here made the worker return URL disappear whenever
+		// this runner process stopped or was restarted.
+		"--no-network-start-emitter",
+		"--export-dir", cfg.OrchestratorExportDir,
+		"--network-node-id", cfg.OrchestratorNodeID,
+		"--network-advertise-host", cfg.OrchestratorHost,
+		"--network-port", cfg.EmitterPort,
+		"--network-advertise-port", cfg.EmitterPort,
+		"--network-seed-peers", cfg.SeedPeers,
+		"--network-mesh-key", cfg.MeshKey,
+		"--min-compute-reputation", cfg.MinComputeReputation,
+		"--min-verify-reputation", cfg.MinVerifyReputation,
+	}
+	if job.FragmentCount > 0 {
+		args = append(args, "--fragments", fmt.Sprintf("%d", job.FragmentCount))
+	}
+	if cfg.DevnetTrace {
+		args = append(args, "--devnet-trace", "--devnet-tx-delay-ms", cfg.DevnetTxDelayMS)
+	}
+	return args
 }
 
 func NewJobID(userID uint) string {

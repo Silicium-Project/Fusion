@@ -3,7 +3,10 @@ package silicium
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+
+	"github.com/silicium/internal/models"
 )
 
 func TestParseRaytracerSummaryFallsBackToPPMWhenPNGIsUnavailable(t *testing.T) {
@@ -27,5 +30,17 @@ func TestParseRaytracerSummaryFallsBackToPPMWhenPNGIsUnavailable(t *testing.T) {
 	}
 	if result.ResultPath != "/tmp/render.ppm" {
 		t.Fatalf("expected PPM fallback, got %q", result.ResultPath)
+	}
+}
+
+func TestRaytracerArgsForwardRequestedFragmentCount(t *testing.T) {
+	args := raytracerArgs(
+		models.Job{InputPath: "/tmp/scene.cfg", SiliciumJobID: "render-1", FragmentCount: 73},
+		RunnerConfig{},
+	)
+
+	index := slices.Index(args, "--fragments")
+	if index < 0 || index+1 >= len(args) || args[index+1] != "73" {
+		t.Fatalf("expected --fragments 73, got %#v", args)
 	}
 }

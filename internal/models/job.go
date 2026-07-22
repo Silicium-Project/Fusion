@@ -9,6 +9,7 @@ type Job struct {
 	Description     string     `gorm:"type:text" json:"description"`
 	Workload        string     `gorm:"size:80;not null;default:'raytracer'" json:"workload"`
 	Priority        string     `gorm:"size:20;not null;default:'high'" json:"priority"`
+	FragmentCount   int        `gorm:"not null;default:0" json:"fragmentCount"`
 	Status          string     `gorm:"size:32;not null;default:'queued';index" json:"status"`
 	SiliciumJobID   string     `gorm:"size:128;uniqueIndex;not null" json:"siliciumJobId"`
 	InputPath       string     `gorm:"type:text;not null" json:"inputPath"`

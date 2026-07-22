@@ -36,6 +36,15 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	fragmentCount := 0
+	if raw := strings.TrimSpace(r.FormValue("fragment_count")); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 1 || parsed > 256 {
+			http.Error(w, "fragment_count must be between 1 and 256", http.StatusBadRequest)
+			return
+		}
+		fragmentCount = parsed
+	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -69,6 +78,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		Description:   strings.TrimSpace(r.FormValue("description")),
 		Workload:      workload,
 		Priority:      envDefaultValue(r.FormValue("priority"), "high"),
+		FragmentCount: fragmentCount,
 		Status:        "queued",
 		SiliciumJobID: jobID,
 		InputPath:     absoluteInput,
