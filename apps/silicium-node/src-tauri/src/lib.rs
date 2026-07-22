@@ -323,6 +323,7 @@ fn start_configured_node_service() -> Result<String, String> {
     let repo_root = resolve_repo_root_readonly("")?;
     validate_repo_root(&repo_root)?;
     read_service_config(&repo_root).map_err(|_| "node_not_configured".to_string())?;
+    install_autostart_task(&repo_root)?;
     cleanup_dead_pids(&repo_root);
 
     if read_supervisor_pid(&repo_root)?
@@ -332,12 +333,19 @@ fn start_configured_node_service() -> Result<String, String> {
         return Ok("Le service Silicium est deja demarre.".to_string());
     }
 
-    install_autostart_task(&repo_root)?;
     let mut child = spawn_supervisor(&repo_root)?;
     write_supervisor_pid(&repo_root, child.id())?;
     wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
     drop(child);
     Ok("Le service Silicium est demarre.".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn migrate_configured_node_autostart() -> Result<(), String> {
+    let repo_root = resolve_repo_root_readonly("")?;
+    validate_repo_root(&repo_root)?;
+    read_service_config(&repo_root).map_err(|_| "node_not_configured".to_string())?;
+    install_autostart_task(&repo_root)
 }
 
 #[cfg(target_os = "windows")]
@@ -1006,11 +1014,11 @@ try {
   if ($process.ExitCode -ne 0) { throw "installer_exit_$($process.ExitCode)" }
   Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) update_installed $Installer"
   if ($RepoRoot -and (Test-Path -LiteralPath (Join-Path $RepoRoot '.silicium\node-app\service-config.env'))) {
-    $quotedRepoRoot = '"' + $RepoRoot + '"'
-    Start-Process -FilePath $Executable -ArgumentList '--supervisor', '--repo-root', $quotedRepoRoot -WindowStyle Hidden
-    Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) supervisor_restarted $RepoRoot"
+    Start-Process -FilePath $Executable -ArgumentList '--background' -WindowStyle Hidden
+    Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) notification_shell_restarted $RepoRoot"
+  } else {
+    Start-Process -FilePath $Executable
   }
-  Start-Process -FilePath $Executable
 } catch {
   Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) update_failed $($_.Exception.Message)"
   if ($RepoRoot -and (Test-Path -LiteralPath (Join-Path $RepoRoot '.silicium\node-app\service-config.env'))) {
@@ -3042,12 +3050,12 @@ mod tests {
     }
 
     #[test]
-    fn automatic_update_script_restarts_configured_supervisor() {
+    fn automatic_update_script_restarts_the_notification_shell() {
         let source = include_str!("lib.rs");
         assert!(source.contains("[string]$RepoRoot"));
         assert!(source.contains("service-config.env"));
-        assert!(source.contains("supervisor_restarted"));
-        assert!(source.contains("'--supervisor', '--repo-root'"));
+        assert!(source.contains("notification_shell_restarted"));
+        assert!(source.contains("-ArgumentList '--background'"));
         assert!(source.contains("installer_launch_retry"));
         assert!(source.contains("supervisor_recovered_after_update_failure"));
         assert!(source.contains("stale_node_runtime_stopped"));
