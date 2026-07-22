@@ -572,6 +572,16 @@ class McpTaskStore:
             "response_mode": response_mode,
             "task": task,
         }
+        # Preserve authenticated scheduler routing metadata. These fields are
+        # consumed by pull-based workers and must survive local durable ingress.
+        for field in (
+            "assigned_peer_id",
+            "excluded_peer_ids",
+            "origin_result_return_url",
+            "requester_peer_id",
+        ):
+            if field in args:
+                payload[field] = args[field]
         if on_chain is not None:
             payload["on_chain"] = on_chain
         encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)

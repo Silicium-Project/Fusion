@@ -140,6 +140,50 @@ def ensure_task_success(result: dict[str, Any], task_id: str) -> None:
     raise RuntimeError(f"task failed: {task_id} on {node_id}\n{error}")
 
 
+def submit_network_task(
+    args: argparse.Namespace,
+    export_dir: Path,
+    payload: dict[str, Any],
+    emitter_node: LocalNetworkEmitter | None,
+) -> dict[str, Any]:
+    """Queue locally for a shared scheduler, otherwise dispatch to the seed."""
+    task_id = str(payload.get("task_id", ""))
+    required_roles = payload.get("required_roles", [])
+    if emitter_node is None:
+        submission = submit_task(export_dir, payload)
+        submission["scheduler_dispatch"] = {
+            "status": "queued_local",
+            "target": str(export_dir),
+        }
+        submission["queue"] = "scheduler://local-export"
+        return submission
+
+    scheduler_dispatch = dispatch_task_to_scheduler(
+        payload,
+        args.network_seed_peers,
+        args.network_mesh_key,
+    )
+    return {
+        "task_id": task_id,
+        "required_roles": required_roles,
+        "priority": args.priority,
+        "status": scheduler_dispatch["status"],
+        "queue": "scheduler://tasks/dispatch",
+        "scheduler_dispatch": scheduler_dispatch,
+    }
+
+
+def ensure_submission_success(submission: dict[str, Any]) -> None:
+    status = str(submission.get("status", ""))
+    if status in {"queued", "dispatched"}:
+        return
+    dispatch = submission.get("scheduler_dispatch", {})
+    raise RuntimeError(
+        "scheduler_dispatch_failed:"
+        + json.dumps(dispatch, sort_keys=True, separators=(",", ":"))
+    )
+
+
 def ensure_raytracer_compute_contract(result: dict[str, Any], task_id: str) -> None:
     compute = result.get("compute")
     mode = str(compute.get("mode", "")) if isinstance(compute, dict) else ""
@@ -406,22 +450,16 @@ def main(argv: list[str] | None = None) -> int:
                 compute_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
             clear_previous_result(export_dir, fragment_id)
             if args.node_mode == "network":
-                scheduler_dispatch = dispatch_task_to_scheduler(
-                    compute_payload,
-                    args.network_seed_peers,
-                    args.network_mesh_key,
-                )
-                submission = {
-                    "task_id": fragment_id,
-                    "required_roles": ["compute"],
-                    "priority": args.priority,
-                    "status": scheduler_dispatch["status"],
-                    "queue": "scheduler://tasks/dispatch",
-                    "scheduler_dispatch": scheduler_dispatch,
-                }
+                submission = submit_network_task(args, export_dir, compute_payload, emitter_node)
             else:
                 submission = submit_task(export_dir, compute_payload)
             submissions.append(submission)
+            try:
+                ensure_submission_success(submission)
+            except RuntimeError as error:
+                progress_fragments[index].update({"status": "compute_dispatch_failed", "error": str(error)})
+                write_progress("compute_dispatch_failed")
+                raise
             write_progress("compute_queued")
             compute_result = wait_for_task_result(args, "compute", fragment_id, node_runs)
             try:
@@ -519,22 +557,16 @@ def main(argv: list[str] | None = None) -> int:
                 verify_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
             clear_previous_result(export_dir, verify_id)
             if args.node_mode == "network":
-                scheduler_dispatch = dispatch_task_to_scheduler(
-                    verify_payload,
-                    args.network_seed_peers,
-                    args.network_mesh_key,
-                )
-                submission = {
-                    "task_id": verify_id,
-                    "required_roles": ["verify"],
-                    "priority": args.priority,
-                    "status": scheduler_dispatch["status"],
-                    "queue": "scheduler://tasks/dispatch",
-                    "scheduler_dispatch": scheduler_dispatch,
-                }
+                submission = submit_network_task(args, export_dir, verify_payload, emitter_node)
             else:
                 submission = submit_task(export_dir, verify_payload)
             submissions.append(submission)
+            try:
+                ensure_submission_success(submission)
+            except RuntimeError as error:
+                progress_fragments[index].update({"status": "verify_dispatch_failed", "error": str(error)})
+                write_progress("verify_dispatch_failed")
+                raise
             progress_fragments[index]["status"] = "queued_verify"
             write_progress("verify_queued")
             verify_result = wait_for_task_result(args, "verify", verify_id, node_runs)

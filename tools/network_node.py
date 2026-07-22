@@ -3623,8 +3623,19 @@ class PeerNetwork:
                         peer_network._record_peer(
                             {
                                 "node_id": requester_node_id,
+                                "identity_id": str(self.headers.get("X-Silicium-Identity-Id", "")),
+                                "public_key": str(self.headers.get("X-Silicium-Public-Key", "")),
                                 "roles": sorted(roles_set),
+                                "features": payload.get("features", []),
+                                "http_base_url": payload.get("http_base_url", ""),
+                                "mesh_post_url": payload.get("mesh_post_url", ""),
+                                "gossip_bind": payload.get("gossip_bind", ""),
+                                "gossip_port": payload.get("gossip_port", 0),
+                                "candidates": payload.get("candidates", []),
+                                "relay_capable": payload.get("relay_capable", False),
                                 "capacity": payload.get("capacity", {}),
+                                "reputation_score": payload.get("reputation_score", 0.0),
+                                "resource_reputation": payload.get("resource_reputation", {}),
                                 "app_version": payload.get("app_version", ""),
                                 "release_channel": payload.get("release_channel", ""),
                                 "release_build": payload.get("release_build", ""),
@@ -4727,13 +4738,23 @@ class NetworkNode:
         polled_at = utc_now()
         attempts: list[dict[str, Any]] = []
         claimed_item_id = ""
+        candidates = self.peer_network.refresh_candidates()
         raw_payload = stable_json({
             "node_id": self.config.node_id,
             "roles": sorted(self.config.roles),
             "app_version": self.config.app_version,
             "release_channel": self.config.release_channel,
             "release_build": self.config.release_build,
+            "features": self.peer_network.direct_transport.features(),
+            "http_base_url": self.peer_network.advertised_http_base_url,
+            "mesh_post_url": self.peer_network.mesh_post_url,
+            "gossip_bind": self.peer_network._advertised_gossip_host(),
+            "gossip_port": self.peer_network._advertised_gossip_port(),
+            "candidates": candidates,
+            "relay_capable": bool(self.config.relay_enable),
             "capacity": build_capacity_snapshot(self.config),
+            "reputation_score": self.reputation.local_score(),
+            "resource_reputation": self.reputation.resource_snapshot(),
         }).encode("utf-8")
 
         for base_url in sorted(targets):

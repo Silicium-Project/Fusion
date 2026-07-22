@@ -2096,6 +2096,7 @@ def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
         )
         config_worker.pull_tasks_enable = True
         config_worker.pull_tasks_interval_s = 1
+        config_worker.gossip_port = 46133
         worker_node = network_node.NetworkNode(config_worker)
 
         worker_node._poll_and_claim_tasks_once()
@@ -2105,6 +2106,13 @@ def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
         claimed_data = json.loads(claimed_path.read_text(encoding="utf-8"))
         assert claimed_data["task_id"] == "test:claim:001"
         assert (export_worker / "claim-poll.health.json").exists()
+        worker_peer = next(
+            peer
+            for peer in seed_node.peer_network.peers_snapshot()["peers"]
+            if peer["node_id"] == "worker-node"
+        )
+        assert worker_peer["candidates"]
+        assert worker_peer["features"]
     finally:
         seed_node.peer_network.stop()
 

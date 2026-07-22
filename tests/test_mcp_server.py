@@ -145,6 +145,7 @@ def test_mcp_server_submits_and_reads_tasks(tmp_path: Path) -> None:
             {
                 "task_id": "render:tile/1",
                 "task": {"kind": "render", "partition_id": "tile_1"},
+                "excluded_peer_ids": ["render-worker"],
                 "on_chain": {"job": "job-pubkey", "fragment_index": 1, "worker_token": "token-account"},
             },
         )
@@ -160,6 +161,7 @@ def test_mcp_server_submits_and_reads_tasks(tmp_path: Path) -> None:
         assert task["status"] == "queued"
         assert task["task"]["partition_id"] == "tile_1"
         assert task["required_roles"] == ["compute"]
+        assert task["excluded_peer_ids"] == ["render-worker"]
         assert task["on_chain"]["job"] == "job-pubkey"
 
         code, body = _http_post(
