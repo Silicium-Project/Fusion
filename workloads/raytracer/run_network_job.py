@@ -8,8 +8,9 @@ import shutil
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(NETWORK_ROOT))
@@ -66,6 +67,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-pixels", type=int, default=120_000)
     parser.add_argument("--max-fragments", type=int, default=32)
     parser.add_argument("--fragments", type=int, default=0, help="Optional manual override; 0 keeps automatic split.")
+    parser.add_argument(
+        "--max-compute-in-flight",
+        type=int,
+        default=int(os.environ.get("SILICIUM_RAYTRACER_MAX_COMPUTE_IN_FLIGHT", "0")),
+        help="Maximum concurrent fragment computes; 0 publishes every ready fragment.",
+    )
+    parser.add_argument(
+        "--max-verify-in-flight",
+        type=int,
+        default=int(os.environ.get("SILICIUM_RAYTRACER_MAX_VERIFY_IN_FLIGHT", "0")),
+        help="Maximum concurrent fragment verifications; 0 verifies every ready result.",
+    )
     parser.add_argument(
         "--verification-batch-rows",
         type=int,
@@ -182,6 +195,88 @@ def ensure_submission_success(submission: dict[str, Any]) -> None:
         "scheduler_dispatch_failed:"
         + json.dumps(dispatch, sort_keys=True, separators=(",", ":"))
     )
+
+
+def run_bounded_fragment_pipeline(
+    fragments: list[dict[str, Any]],
+    *,
+    max_compute_in_flight: int,
+    max_verify_in_flight: int,
+    launch_compute: Callable[[dict[str, Any]], Any],
+    poll_compute: Callable[[dict[str, Any], Any], Any | None],
+    launch_verify: Callable[[dict[str, Any], Any], Any],
+    poll_verify: Callable[[dict[str, Any], Any, Any], Any | None],
+    finish_verify: Callable[[dict[str, Any], Any, Any, Any], None],
+    idle: Callable[[], None] = lambda: time.sleep(0.1),
+) -> None:
+    """Drive independent compute/verify leaves without a global fragment barrier."""
+    compute_limit = max(1, max_compute_in_flight or len(fragments) or 1)
+    verify_limit = max(1, max_verify_in_flight or len(fragments) or 1)
+    pending_compute = deque(fragments)
+    pending_verify: deque[tuple[dict[str, Any], Any]] = deque()
+    computing: list[tuple[dict[str, Any], Any]] = []
+    verifying: list[tuple[dict[str, Any], Any, Any]] = []
+    finished = 0
+
+    while finished < len(fragments):
+        progressed = False
+        while pending_compute and len(computing) < compute_limit:
+            fragment = pending_compute.popleft()
+            computing.append((fragment, launch_compute(fragment)))
+            progressed = True
+
+        for fragment, compute_token in list(computing):
+            computed = poll_compute(fragment, compute_token)
+            if computed is None:
+                continue
+            computing.remove((fragment, compute_token))
+            pending_verify.append((fragment, computed))
+            progressed = True
+
+        while pending_verify and len(verifying) < verify_limit:
+            fragment, computed = pending_verify.popleft()
+            verifying.append((fragment, computed, launch_verify(fragment, computed)))
+            progressed = True
+
+        for fragment, computed, verify_token in list(verifying):
+            verified = poll_verify(fragment, computed, verify_token)
+            if verified is None:
+                continue
+            verifying.remove((fragment, computed, verify_token))
+            finish_verify(fragment, computed, verify_token, verified)
+            finished += 1
+            progressed = True
+
+        if not progressed:
+            idle()
+
+
+def poll_task_result(export_dir: Path, task_id: str, deadline: float) -> dict[str, Any] | None:
+    result_path = export_dir / f"result.{task_id}.json"
+    if result_path.exists():
+        try:
+            payload = json.loads(result_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            return payload
+
+    dead_letters_path = export_dir / "dead_letters.ndjson"
+    if dead_letters_path.exists():
+        for line in dead_letters_path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(item, dict) and str(item.get("task_id", "")) == task_id:
+                raise RuntimeError(
+                    "network task dead-lettered: "
+                    + str(item.get("last_error", "unknown_error"))
+                    + f" ({task_id})"
+                )
+    if time.monotonic() > deadline:
+        raise TimeoutError(f"missing network result after deadline: {result_path}")
+    return None
 
 
 def ensure_raytracer_compute_contract(result: dict[str, Any], task_id: str) -> None:
@@ -415,11 +510,24 @@ def main(argv: list[str] | None = None) -> int:
         write_progress("split_ready")
         fragment_files: list[tuple[int, Path]] = []
 
+        pipeline_fragments = []
         for fragment in fragments:
             index = int(fragment["fragment_index"])
-            y_start = int(fragment["y_start"])
-            y_end = int(fragment["y_end"])
-            fragment_id = f"{job_id}-frag-{index:03d}"
+            pipeline_fragments.append(
+                {
+                    "fragment": fragment,
+                    "index": index,
+                    "y_start": int(fragment["y_start"]),
+                    "y_end": int(fragment["y_end"]),
+                    "fragment_id": f"{job_id}-frag-{index:03d}",
+                }
+            )
+
+        def launch_compute(context: dict[str, Any]) -> dict[str, Any]:
+            index = int(context["index"])
+            y_start = int(context["y_start"])
+            y_end = int(context["y_end"])
+            fragment_id = str(context["fragment_id"])
             spec = {
                 "fragment_index": index,
                 "fragment_count": len(fragments),
@@ -461,7 +569,33 @@ def main(argv: list[str] | None = None) -> int:
                 write_progress("compute_dispatch_failed")
                 raise
             write_progress("compute_queued")
-            compute_result = wait_for_task_result(args, "compute", fragment_id, node_runs)
+            return {
+                "task_id": fragment_id,
+                "deadline": time.monotonic() + args.result_timeout_s,
+            }
+
+        def poll_compute(context: dict[str, Any], token: dict[str, Any]) -> dict[str, Any] | None:
+            index = int(context["index"])
+            y_start = int(context["y_start"])
+            y_end = int(context["y_end"])
+            fragment_id = str(context["fragment_id"])
+            try:
+                compute_result = poll_task_result(export_dir, fragment_id, float(token["deadline"]))
+            except Exception as error:
+                progress_fragments[index].update({"status": "compute_failed", "error": str(error)})
+                write_progress("compute_failed")
+                raise
+            if compute_result is None:
+                return None
+            node_runs.append(
+                {
+                    "role": "compute",
+                    "mode": "network",
+                    "target_task_id": fragment_id,
+                    "target_result_ready": True,
+                    "handled_by": compute_result.get("node_id", ""),
+                }
+            )
             try:
                 ensure_task_success(compute_result, fragment_id)
                 ensure_raytracer_compute_contract(compute_result, fragment_id)
@@ -511,7 +645,20 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
             write_progress("fragment_computed")
+            return {
+                "compute_result": compute_result,
+                "expected_milestones": expected_milestones,
+                "result_hash": result_hash,
+                "output_ref": output_ref,
+            }
 
+        def launch_verify(context: dict[str, Any], computed: dict[str, Any]) -> dict[str, Any]:
+            index = int(context["index"])
+            y_start = int(context["y_start"])
+            y_end = int(context["y_end"])
+            fragment_id = str(context["fragment_id"])
+            compute_result = computed["compute_result"]
+            expected_milestones = computed["expected_milestones"]
             verify_id = f"{fragment_id}-verify"
             challenged_milestone = secrets.choice(expected_milestones["milestones"])
             challenge = {
@@ -569,7 +716,47 @@ def main(argv: list[str] | None = None) -> int:
                 raise
             progress_fragments[index]["status"] = "queued_verify"
             write_progress("verify_queued")
-            verify_result = wait_for_task_result(args, "verify", verify_id, node_runs)
+            return {
+                "task_id": verify_id,
+                "challenge": challenge,
+                "deadline": time.monotonic() + args.result_timeout_s,
+            }
+
+        def poll_verify(
+            context: dict[str, Any],
+            _computed: dict[str, Any],
+            token: dict[str, Any],
+        ) -> dict[str, Any] | None:
+            index = int(context["index"])
+            verify_id = str(token["task_id"])
+            try:
+                verify_result = poll_task_result(export_dir, verify_id, float(token["deadline"]))
+            except Exception as error:
+                progress_fragments[index].update({"status": "verify_failed", "error": str(error)})
+                write_progress("verify_failed")
+                raise
+            if verify_result is None:
+                return None
+            node_runs.append(
+                {
+                    "role": "verify",
+                    "mode": "network",
+                    "target_task_id": verify_id,
+                    "target_result_ready": True,
+                    "handled_by": verify_result.get("node_id", ""),
+                }
+            )
+            return verify_result
+
+        def finish_verify(
+            context: dict[str, Any],
+            _computed: dict[str, Any],
+            token: dict[str, Any],
+            verify_result: dict[str, Any],
+        ) -> None:
+            index = int(context["index"])
+            fragment_id = str(context["fragment_id"])
+            verify_id = f"{fragment_id}-verify"
             try:
                 ensure_task_success(verify_result, verify_id)
             except RuntimeError as error:
@@ -583,13 +770,24 @@ def main(argv: list[str] | None = None) -> int:
                     "verify_id": verify_id,
                     "verify_choice": verified,
                     "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
-                    "verification_challenge": challenge,
+                    "verification_challenge": token["challenge"],
                     "verification_result": verify_result.get("verification", {}),
                 }
             )
             write_progress("fragment_verified")
             if not verified:
                 raise RuntimeError(f"raytracer fragment verification failed: {fragment_id}")
+
+        run_bounded_fragment_pipeline(
+            pipeline_fragments,
+            max_compute_in_flight=int(args.max_compute_in_flight),
+            max_verify_in_flight=int(args.max_verify_in_flight),
+            launch_compute=launch_compute,
+            poll_compute=poll_compute,
+            launch_verify=launch_verify,
+            poll_verify=poll_verify,
+            finish_verify=finish_verify,
+        )
 
         reassembled_ppm = reassembled_dir / "render.ppm"
         reassembled_png = reassembled_dir / "render.png"

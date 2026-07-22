@@ -10,6 +10,7 @@ from workloads.raytracer import raytracer_workload
 from workloads.raytracer.run_network_job import (
     ensure_submission_success,
     ensure_raytracer_compute_contract,
+    run_bounded_fragment_pipeline,
     submit_network_task,
     validate_fragment_ppm,
 )
@@ -68,6 +69,88 @@ def test_scheduler_dispatch_failure_is_immediate() -> None:
                 },
             }
         )
+
+
+def test_fragment_pipeline_overlaps_compute_and_verification() -> None:
+    tick = 0
+    events: list[tuple[str, int, int, tuple[int, ...]]] = []
+    active_compute: set[int] = set()
+    active_verify: set[int] = set()
+    compute_ready_at = {0: 1, 1: 6, 2: 3, 3: 4}
+    max_compute_seen = 0
+    max_verify_seen = 0
+
+    def launch_compute(fragment: dict[str, int]) -> dict[str, int]:
+        nonlocal max_compute_seen
+        index = fragment["index"]
+        active_compute.add(index)
+        max_compute_seen = max(max_compute_seen, len(active_compute))
+        events.append(("compute_started", index, tick, tuple(sorted(active_compute))))
+        return {"ready_at": compute_ready_at[index]}
+
+    def poll_compute(fragment: dict[str, int], token: dict[str, int]) -> dict[str, int] | None:
+        index = fragment["index"]
+        if tick < token["ready_at"]:
+            return None
+        active_compute.remove(index)
+        events.append(("compute_finished", index, tick, tuple(sorted(active_compute))))
+        return {"index": index}
+
+    def launch_verify(fragment: dict[str, int], _computed: dict[str, int]) -> dict[str, int]:
+        nonlocal max_verify_seen
+        index = fragment["index"]
+        active_verify.add(index)
+        max_verify_seen = max(max_verify_seen, len(active_verify))
+        events.append(("verify_started", index, tick, tuple(sorted(active_compute))))
+        return {"ready_at": tick + 1}
+
+    def poll_verify(
+        fragment: dict[str, int],
+        _computed: dict[str, int],
+        token: dict[str, int],
+    ) -> dict[str, bool] | None:
+        if tick < token["ready_at"]:
+            return None
+        index = fragment["index"]
+        active_verify.remove(index)
+        return {"verified": True}
+
+    def finish_verify(
+        fragment: dict[str, int],
+        _computed: dict[str, int],
+        _token: dict[str, int],
+        verified: dict[str, bool],
+    ) -> None:
+        assert verified["verified"] is True
+        events.append(("verify_finished", fragment["index"], tick, tuple(sorted(active_compute))))
+
+    def advance_clock() -> None:
+        nonlocal tick
+        tick += 1
+
+    run_bounded_fragment_pipeline(
+        [{"index": index} for index in range(4)],
+        max_compute_in_flight=2,
+        max_verify_in_flight=1,
+        launch_compute=launch_compute,
+        poll_compute=poll_compute,
+        launch_verify=launch_verify,
+        poll_verify=poll_verify,
+        finish_verify=finish_verify,
+        idle=advance_clock,
+    )
+
+    assert max_compute_seen == 2
+    assert max_verify_seen == 1
+    assert [(event[0], event[1]) for event in events[:2]] == [
+        ("compute_started", 0),
+        ("compute_started", 1),
+    ]
+    verify_zero = next(event for event in events if event[:2] == ("verify_finished", 0))
+    compute_one = next(event for event in events if event[:2] == ("compute_finished", 1))
+    assert verify_zero[2] < compute_one[2]
+    assert verify_zero[3]
+    assert sorted(event[1] for event in events if event[0] == "verify_finished") == [0, 1, 2, 3]
 
 
 def test_fragment_validation_checks_format_dimensions_and_hash() -> None:
