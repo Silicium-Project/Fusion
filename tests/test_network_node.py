@@ -1476,6 +1476,57 @@ def test_signed_update_announcement_and_artifact_cross_an_isolated_peer(tmp_path
         peer_a.stop()
 
 
+def test_update_gossip_publish_ack_does_not_wait_for_slow_fanout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    export_target = tmp_path / "update-publish-target"
+    export_signer = tmp_path / "update-publish-signer"
+    target = network_node.PeerNetwork(_config(export_target, "update-target", gossip_enable=False), export_target)
+    signer = network_node.PeerNetwork(_config(export_signer, "update-signer", gossip_enable=False), export_signer)
+    broadcast_started = threading.Event()
+    release_broadcast = threading.Event()
+
+    def slow_broadcast(_message: dict, exclude: str = "") -> None:
+        del exclude
+        broadcast_started.set()
+        release_broadcast.wait(timeout=2)
+
+    monkeypatch.setattr(target, "_broadcast", slow_broadcast)
+    target.start()
+    try:
+        digest = network_node.sha256_bytes(b"async-update")
+        release = {
+            "channel": "dev",
+            "version": "0.2.9-dev.async",
+            "url": "https://example.invalid/silicium-node-windows-dev.exe",
+            "sha256": digest,
+            "content_id": digest,
+            "size_bytes": 12,
+            "auto_install": True,
+            "check_interval_seconds": 30,
+            "signature": "signed-by-release-authority",
+            "signing_key_id": "test-key",
+        }
+        started = time.monotonic()
+        status, body = _signed_json_request_status(
+            signer,
+            target.http_base_url,
+            "/gossip/publish",
+            {"topic": "software_update", "payload": release},
+        )
+        elapsed = time.monotonic() - started
+
+        assert status == 202
+        assert body == {"ok": True, "topic": "software_update"}
+        assert elapsed < 1.0
+        assert broadcast_started.wait(timeout=1)
+        assert target.update_announcements()[-1]["version"] == "0.2.9-dev.async"
+    finally:
+        release_broadcast.set()
+        target.stop()
+
+
 def test_update_manifest_anti_entropy_recovers_a_missed_gossip_event(tmp_path: Path) -> None:
     export_a = tmp_path / "update-source"
     export_b = tmp_path / "late-peer"

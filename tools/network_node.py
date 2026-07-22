@@ -1798,7 +1798,7 @@ class PeerNetwork:
             self._peers[node_id] = current
         self.peers_snapshot()
 
-    def publish(self, topic: str, payload: dict[str, Any]) -> None:
+    def publish(self, topic: str, payload: dict[str, Any], *, background: bool = False) -> None:
         message = {
             "message_type": "gossip_event",
             "event_id": uuid.uuid4().hex,
@@ -1810,7 +1810,15 @@ class PeerNetwork:
         }
         self._sign_message(message)
         self._record_event(message)
-        self._broadcast(message)
+        if background:
+            threading.Thread(
+                target=self._broadcast,
+                args=(message,),
+                name=f"silicium-gossip-publish-{safe_path_id(topic)}",
+                daemon=True,
+            ).start()
+        else:
+            self._broadcast(message)
 
     @staticmethod
     def _normalize_update_announcement(payload: Any) -> dict[str, Any] | None:
@@ -3454,7 +3462,9 @@ class PeerNetwork:
                         self.send_error(400)
                         return
                     peer_network._record_update_announcement(event_payload, peer_network.node_id)
-                    peer_network.publish(topic, event_payload)
+                    # The announcement is durable locally before this call. Fan-out may
+                    # encounter slow/offline peers and must not hold the HTTP response.
+                    peer_network.publish(topic, event_payload, background=True)
                     body = stable_json({"ok": True, "topic": topic}).encode("utf-8")
                     self.send_response(202)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
