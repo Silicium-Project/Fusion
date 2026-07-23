@@ -484,6 +484,14 @@ import {
   type NodeDiagnostics,
   type UpdateStatus,
 } from './tauri';
+import {
+  clampProgress,
+  formatElapsed,
+  formatMetricPercent,
+  formatProgress,
+  phaseLabel,
+  taskStatusLabel,
+} from './format';
 
 const form = reactive({
   repoRoot: localStorage.getItem('silicium.repoRoot') || '',
@@ -704,26 +712,7 @@ const reputationLabel = (dimension: string) => ({
 }[dimension] || dimension);
 const percent = (value: number) => `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
 const formatEvidence = (value: number) => value >= 100 ? Math.round(value).toString() : value.toFixed(1);
-const clampProgress = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
-const formatProgress = (value: number) => `${clampProgress(value).toFixed(value > 0 && value < 10 ? 1 : 0)}%`;
-const formatMetricPercent = (value: number) => `${Math.max(0, Number(value) || 0).toFixed(1)}%`;
 const formatNumber = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(Number(value) || 0);
-const formatElapsed = (milliseconds: number) => {
-  const seconds = Math.max(0, Math.round((Number(milliseconds) || 0) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-};
-const phaseLabel = (phase: string) => ({
-  fetching_input: 'Recuperation',
-  executing: 'Execution',
-  rendering: 'Rendu',
-  publishing_result: 'Publication',
-  finalizing: 'Finalisation',
-  completed: 'Terminee',
-  failed: 'Echec',
-}[phase] || phase || 'Execution');
 const progressSourceLabel = (source: string) => source === 'measured' ? 'mesuree' : source === 'estimated' ? 'estimee' : 'indisponible';
 
 function queueActiveTask(task: NodeActivity['machines'][number]['taskQueue'][number]) {
@@ -955,13 +944,6 @@ function taskRoleLabel(role: string) {
   if (role === 'storage') return 'Stockage';
   if (role === 'audit') return 'Audit';
   return role || 'Tache';
-}
-
-function taskStatusLabel(status: string) {
-  if (status === 'running') return 'en cours';
-  if (status === 'dispatched') return 'attribuee';
-  if (status === 'retrying') return 'nouvel essai';
-  return 'en attente';
 }
 
 function machineWorkDetail(machine: NodeActivity['machines'][number]) {
