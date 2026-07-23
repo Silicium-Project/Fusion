@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-[#1f2029] border border-white/5 rounded-2xl p-6 flex flex-col h-[500px] relative overflow-hidden group">
+  <div class="bg-[#1f2029] border border-white/5 rounded-2xl p-6 flex flex-col min-h-[720px] relative overflow-hidden group">
     <div class="flex items-center justify-between mb-4 z-10">
       <div>
         <h3 class="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
@@ -19,6 +19,36 @@
     >
       <strong class="block text-amber-300">{{ outdatedPeers.length }} node(s) a mettre a jour</strong>
       <span>Une version ancienne ou inconnue peut provoquer des echecs P2P, de calcul ou de verification.</span>
+    </div>
+
+    <div v-if="allActiveTasks.length" class="mb-4 z-10 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+      <article
+        v-for="entry in allActiveTasks"
+        :key="`${entry.peer.node_id}-${entry.task.item_id}`"
+        class="relative overflow-hidden rounded-xl border border-cyan-400/20 bg-black/30 p-3 text-xs"
+      >
+        <span
+          class="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-600/30 to-cyan-400/20 transition-all duration-700"
+          :style="{ width: `${clampProgress(entry.task.progress_percent)}%` }"
+        ></span>
+        <div class="relative z-10 space-y-1">
+          <div class="flex items-center justify-between gap-3">
+            <strong class="truncate text-white">{{ entry.task.workload || entry.task.activity || 'Tache reseau' }}</strong>
+            <strong class="text-cyan-200">{{ progressLabel(entry.task.progress_percent) }}</strong>
+          </div>
+          <div class="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-white/55">
+            <span>{{ entry.peer.node_id }}</span>
+            <span>{{ roleLabel(entry.task.role) }}</span>
+            <span>{{ phaseLabel(entry.task.phase) }}</span>
+            <span>{{ sourceLabel(entry.task.progress_source) }}</span>
+          </div>
+          <div class="flex flex-wrap gap-x-3 text-[10px] text-white/70">
+            <span>{{ formatDurationMs(entry.task.elapsed_ms) }} ecoule</span>
+            <span>ETA {{ entry.task.eta_seconds ? formatDurationMs(entry.task.eta_seconds * 1000) : 'calcul...' }}</span>
+            <span v-if="entry.task.throughput_units_per_second">{{ formatNumber(entry.task.throughput_units_per_second) }} {{ entry.task.unit }}/s</span>
+          </div>
+        </div>
+      </article>
     </div>
 
     <!-- Main Visualizer Area -->
@@ -234,6 +264,41 @@
             </div>
 
             <div>
+              <span class="text-white/40 block">Telemetrie temps reel :</span>
+              <div class="mt-1 grid grid-cols-2 gap-1">
+                <div class="rounded bg-white/5 p-2"><span class="block text-[9px] text-white/40">CPU machine</span><strong class="text-cyan-200">{{ metricPercent(selectedTelemetry.system_cpu_percent) }}</strong></div>
+                <div class="rounded bg-white/5 p-2"><span class="block text-[9px] text-white/40">CPU Silicium</span><strong class="text-cyan-200">{{ metricPercent(selectedTelemetry.process_cpu_percent) }}</strong></div>
+                <div class="rounded bg-white/5 p-2"><span class="block text-[9px] text-white/40">RAM machine</span><strong class="text-cyan-200">{{ metricPercent(selectedTelemetry.system_memory_percent) }}</strong></div>
+                <div class="rounded bg-white/5 p-2"><span class="block text-[9px] text-white/40">RAM Silicium</span><strong class="text-cyan-200">{{ formatBytes(selectedTelemetry.process_rss_bytes) }}</strong></div>
+                <div class="rounded bg-white/5 p-2"><span class="block text-[9px] text-white/40">Stockage</span><strong class="text-cyan-200">{{ metricPercent(selectedTelemetry.storage_used_percent) }}</strong></div>
+                <div class="rounded bg-white/5 p-2"><span class="block text-[9px] text-white/40">Uptime</span><strong class="text-cyan-200">{{ formatDurationMs((selectedTelemetry.node_uptime_seconds || 0) * 1000) }}</strong></div>
+              </div>
+            </div>
+
+            <div v-if="selectedNode.activity?.active_tasks?.length">
+              <span class="text-white/40 block">Taches actives :</span>
+              <article
+                v-for="task in selectedNode.activity.active_tasks"
+                :key="task.item_id"
+                class="relative mt-1 overflow-hidden rounded-lg border border-cyan-400/20 bg-black/30 p-2"
+              >
+                <span class="absolute inset-y-0 left-0 bg-cyan-500/15" :style="{ width: `${clampProgress(task.progress_percent)}%` }"></span>
+                <div class="relative z-10 space-y-1">
+                  <div class="flex justify-between gap-2 font-semibold text-white"><span class="truncate">{{ roleLabel(task.role) }} / {{ task.workload }}</span><span>{{ progressLabel(task.progress_percent) }}</span></div>
+                  <div class="text-[9px] text-white/50">{{ phaseLabel(task.phase) }} / {{ sourceLabel(task.progress_source) }} / {{ formatDurationMs(task.elapsed_ms) }}</div>
+                  <div class="grid grid-cols-2 gap-1 text-[9px] text-white/70">
+                    <span>ETA {{ task.eta_seconds ? formatDurationMs(task.eta_seconds * 1000) : '...' }}</span>
+                    <span>{{ task.worker_threads || '?' }} threads</span>
+                    <span v-if="task.pixels_total">{{ formatNumber(task.pixels_completed) }}/{{ formatNumber(task.pixels_total) }} px</span>
+                    <span v-if="task.throughput_units_per_second">{{ formatNumber(task.throughput_units_per_second) }} {{ task.unit }}/s</span>
+                    <span>CPU {{ metricPercent(task.resource_usage?.system_cpu_percent) }}</span>
+                    <span>RAM {{ formatBytes(task.resource_usage?.process_rss_bytes) }}</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div>
               <span class="text-white/40 block">Chemins de transport signes :</span>
               <div class="mt-1 space-y-1">
                 <div
@@ -316,6 +381,44 @@ type TransportAttestation = {
   timestamp_unix: number;
 };
 
+type RuntimeTelemetry = {
+  system_cpu_percent?: number;
+  process_cpu_percent?: number;
+  process_cpu_percent_one_core?: number;
+  process_rss_bytes?: number;
+  process_peak_rss_bytes?: number;
+  system_memory_used_bytes?: number;
+  system_memory_total_bytes?: number;
+  system_memory_percent?: number;
+  storage_used_percent?: number;
+  storage_free_bytes?: number;
+  node_uptime_seconds?: number;
+  logical_cpu_count?: number;
+  python_thread_count?: number;
+};
+
+type ActiveTask = {
+  item_id: string;
+  role?: string;
+  activity?: string;
+  workload?: string;
+  phase?: string;
+  progress_percent?: number;
+  progress_source?: string;
+  elapsed_ms?: number;
+  eta_seconds?: number;
+  completed_units?: number;
+  total_units?: number;
+  unit?: string;
+  throughput_units_per_second?: number;
+  worker_threads?: number;
+  pixels_completed?: number;
+  pixels_total?: number;
+  attempt?: number;
+  max_retries?: number;
+  resource_usage?: RuntimeTelemetry;
+};
+
 type Peer = {
   node_id: string;
   roles: string[];
@@ -336,6 +439,12 @@ type Peer = {
   capacity?: {
     platform?: string;
     cpu_count?: number;
+  };
+  telemetry?: RuntimeTelemetry;
+  activity?: {
+    status?: string;
+    telemetry?: RuntimeTelemetry;
+    active_tasks?: ActiveTask[];
   };
   self?: boolean;
 };
@@ -359,6 +468,12 @@ let intervalId: any = null;
 
 const center = { x: 250, y: 180 };
 const outdatedPeers = computed(() => peers.value.filter((peer) => peer.node_id !== 'orchestrator-1' && peer.outdated));
+const allActiveTasks = computed(() => peers.value.flatMap((peer) => (
+  (peer.activity?.active_tasks || []).map((task) => ({ peer, task }))
+)));
+const selectedTelemetry = computed<RuntimeTelemetry>(() => (
+  selectedNode.value?.activity?.telemetry || selectedNode.value?.telemetry || {}
+));
 
 const visualNodes = computed(() => {
   if (peers.value.length === 0) return [];
@@ -463,6 +578,36 @@ const reputationLabel = (dimension: string) => ({
 }[dimension] || dimension);
 const percent = (value?: number) => `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
 const evidence = (value?: number) => (value || 0) >= 100 ? Math.round(value || 0) : (value || 0).toFixed(1);
+const clampProgress = (value?: number) => Math.max(0, Math.min(100, Number(value) || 0));
+const progressLabel = (value?: number) => `${clampProgress(value).toFixed(value && value < 10 ? 1 : 0)}%`;
+const metricPercent = (value?: number) => `${Math.max(0, Number(value) || 0).toFixed(1)}%`;
+const formatNumber = (value?: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(Number(value) || 0);
+const formatBytes = (value?: number) => {
+  let amount = Math.max(0, Number(value) || 0);
+  const units = ['o', 'Ko', 'Mo', 'Go', 'To'];
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+};
+const formatDurationMs = (value?: number) => {
+  const seconds = Math.max(0, Math.round((Number(value) || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+};
+const roleLabel = (role?: string) => role === 'verify' ? 'Verification' : role === 'compute' ? 'Calcul' : role || 'Tache';
+const phaseLabel = (phase?: string) => ({
+  fetching_input: 'Recuperation',
+  executing: 'Execution',
+  rendering: 'Rendu',
+  publishing_result: 'Publication',
+  finalizing: 'Finalisation',
+}[phase || ''] || phase || 'Execution');
+const sourceLabel = (source?: string) => source === 'measured' ? 'mesuree' : source === 'estimated' ? 'estimee' : 'indisponible';
 
 const proofLabel = (proof: TransportAttestation) => {
   if (proof.route === 'direct' && proof.transport_backend === 'ice') return 'Direct ICE prouve';
@@ -513,7 +658,7 @@ const fetchPeers = async () => {
 
 onMounted(() => {
   fetchPeers();
-  intervalId = setInterval(fetchPeers, 5000);
+  intervalId = setInterval(fetchPeers, 2000);
 });
 
 onUnmounted(() => {
