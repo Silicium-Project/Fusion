@@ -1803,6 +1803,12 @@ pub fn run_supervisor_cli() -> i32 {
     let Ok(repo_root) = resolve_repo_root_readonly(&repo_root) else {
         return 2;
     };
+    if let Err(error) = remove_legacy_runtime_assets(&repo_root) {
+        let _ = append_supervisor_log(
+            &repo_root,
+            &format!("legacy_runtime_cleanup_failed: {error}\n"),
+        );
+    }
     if validate_repo_root(&repo_root).is_err() {
         return 2;
     }
@@ -3246,6 +3252,9 @@ fn directory_size(path: &Path) -> u64 {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     install_crash_log();
+    if let Err(error) = remove_legacy_runtime_assets(&managed_runtime_root()) {
+        let _ = append_app_log(&format!("legacy_runtime_cleanup_failed: {error}\n"));
+    }
     thread::spawn(run_background_update_loop);
     #[cfg(target_os = "windows")]
     let background = env::args().any(|argument| argument == "--background");
@@ -3403,6 +3412,13 @@ mod tests {
         assert!(!directory.join("tools").join("openssl").exists());
         assert!(python_crypto.join("_rust.pyd").exists());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn legacy_runtime_cleanup_runs_for_gui_and_supervisor_startup() {
+        let source = include_str!("lib.rs");
+        assert!(source.contains("remove_legacy_runtime_assets(&managed_runtime_root())"));
+        assert!(source.contains("remove_legacy_runtime_assets(&repo_root)"));
     }
 
     #[test]
