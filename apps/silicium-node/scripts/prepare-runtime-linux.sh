@@ -7,10 +7,14 @@ REPO_ROOT="$(cd "$APP_ROOT/../.." && pwd)"
 NETWORK_ROOT="$REPO_ROOT/Network"
 RUNTIME_ROOT="$APP_ROOT/src-tauri/resources/runtime"
 RUNTIME_NETWORK="$RUNTIME_ROOT/Network"
+NATIVE_RAYTRACER_MANIFEST="$NETWORK_ROOT/workloads/raytracer/native/Cargo.toml"
+NATIVE_RAYTRACER_TARGET="$APP_ROOT/src-tauri/target/raytracer-native"
 
 [[ -f "$NETWORK_ROOT/silicium" ]] || { echo "Network runtime not found: $NETWORK_ROOT" >&2; exit 1; }
+[[ -f "$NATIVE_RAYTRACER_MANIFEST" ]] || { echo "Native raytracer manifest not found: $NATIVE_RAYTRACER_MANIFEST" >&2; exit 1; }
 [[ "$RUNTIME_ROOT" == "$APP_ROOT"/* ]] || { echo "Unsafe runtime target: $RUNTIME_ROOT" >&2; exit 1; }
 
+CARGO_TARGET_DIR="$NATIVE_RAYTRACER_TARGET" cargo build --release --manifest-path "$NATIVE_RAYTRACER_MANIFEST"
 rm -rf -- "$RUNTIME_ROOT"
 install -d "$RUNTIME_NETWORK" "$RUNTIME_ROOT/.silicium/env" "$RUNTIME_ROOT/tools/python/site-packages"
 install -d "$RUNTIME_ROOT/deploy/linux"
@@ -22,6 +26,9 @@ for optional in workloads bin; do
     cp -a "$NETWORK_ROOT/$optional" "$RUNTIME_NETWORK/$optional"
   fi
 done
+rm -rf -- "$RUNTIME_NETWORK/workloads/raytracer/native/target"
+install -d "$RUNTIME_NETWORK/bin/raytracer"
+install -m 0755 "$NATIVE_RAYTRACER_TARGET/release/silicium-raytracer" "$RUNTIME_NETWORK/bin/raytracer/silicium-raytracer"
 if [[ -d "$NETWORK_ROOT/networked" ]]; then
   cp -a "$NETWORK_ROOT/networked" "$RUNTIME_NETWORK/networked"
 elif [[ -d "$NETWORK_ROOT/demo/networked" ]]; then
@@ -29,7 +36,7 @@ elif [[ -d "$NETWORK_ROOT/demo/networked" ]]; then
 fi
 
 cat > "$RUNTIME_ROOT/.silicium/env/raytracer.env" <<'EOF'
-SILICIUM_RAYTRACER_BIN=Network/bin/raytracer/raytracer.py
+SILICIUM_RAYTRACER_BIN=Network/bin/raytracer/silicium-raytracer
 SILICIUM_RAYTRACER_ASSETS_DIR=Network/bin/raytracer
 EOF
 

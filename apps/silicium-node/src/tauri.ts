@@ -52,6 +52,15 @@ export type MachineQueueItem = MachineTaskActivity & {
   originNodeId: string;
 };
 
+export type BayesianResourceScore = {
+  dimension: string;
+  mean: number;
+  lowerBound: number;
+  evidence: number;
+  shortTermMean: number;
+  longTermMean: number;
+};
+
 export type MachineActivity = {
   nodeId: string;
   identityId: string;
@@ -71,6 +80,7 @@ export type MachineActivity = {
   transportAttestations: TransportAttestation[];
   platform: string;
   cpuCount: number;
+  resourceReputation: BayesianResourceScore[];
   activeTasks: MachineTaskActivity[];
   taskQueue: MachineQueueItem[];
   lastSeenUnix: number;
@@ -146,6 +156,8 @@ export type UpdateStatus = {
   currentChannel: string;
   currentBuild: string;
   latestVersion: string;
+  latestBuild: string;
+  latestContentId: string;
   state: 'unknown' | 'checking' | 'current' | 'available' | 'waiting_for_idle' | 'downloading' | 'installing' | 'error';
   updateAvailable: boolean;
   automatic: boolean;

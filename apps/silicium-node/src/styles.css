@@ -1371,3 +1371,55 @@ label {
   background: rgba(148, 163, 184, 0.12);
   color: #cbd5e1;
 }
+
+.reputation-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.reputation-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.reputation-grid.compact {
+  margin-top: 14px;
+}
+
+.reputation-card {
+  background: rgba(9, 12, 24, 0.72);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  border-radius: 14px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.reputation-heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.reputation-heading span {
+  color: #67e8f9;
+  font-weight: 800;
+}
+
+.reputation-meter {
+  background: rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  height: 7px;
+  overflow: hidden;
+}
+
+.reputation-meter span {
+  background: linear-gradient(90deg, #8b5cf6, #22d3ee, #4ade80);
+  display: block;
+  height: 100%;
+}
+
+.reputation-card small {
+  color: rgba(226, 232, 240, 0.64);
+}

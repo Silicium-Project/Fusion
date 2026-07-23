@@ -120,6 +120,29 @@
         </div>
       </section>
 
+      <section class="panel reputation-panel">
+        <div class="panel-row">
+          <div>
+            <p class="eyebrow">Confiance collective</p>
+            <h2>Reputation bayesienne de ce node</h2>
+            <p>Posteriors Beta issus des preuves reseau. La borne basse pilote le scheduler, pas le score manuel historique.</p>
+          </div>
+          <strong class="queue-count">{{ localReputation.length }}/5</strong>
+        </div>
+        <div v-if="localReputation.length" class="reputation-grid">
+          <article v-for="score in localReputation" :key="score.dimension" class="reputation-card">
+            <div class="reputation-heading">
+              <strong>{{ reputationLabel(score.dimension) }}</strong>
+              <span>{{ percent(score.mean) }}</span>
+            </div>
+            <div class="reputation-meter"><span :style="{ width: percent(score.mean) }"></span></div>
+            <small>Borne sure {{ percent(score.lowerBound) }} · {{ formatEvidence(score.evidence) }} preuves</small>
+            <small>Court {{ percent(score.shortTermMean) }} · Long {{ percent(score.longTermMean) }}</small>
+          </article>
+        </div>
+        <div v-else class="empty-state">Le node doit publier son premier heartbeat bayesien.</div>
+      </section>
+
       <section class="split-grid compact-grid">
         <section class="panel">
           <div class="panel-row">
@@ -157,8 +180,8 @@
             <strong>{{ form.nodeId }}</strong>
             <span>Capacites</span>
             <strong>Calcul + verification</strong>
-            <span>Reputation beta</span>
-            <strong>{{ form.reputationScore }}</strong>
+            <span>Score historique initial</span>
+            <strong>{{ form.reputationScore }} (compatibilite)</strong>
             <span>Version active</span>
             <strong>{{ updateInfo.currentVersion }} ({{ updateInfo.currentChannel }})</strong>
             <span>Dernier resultat</span>
@@ -246,6 +269,17 @@
                 <div><span>Dernier claim</span><code>{{ machine.lastClaimPollUtc || 'aucun' }}</code></div>
                 <div><span>Derniere reponse</span><code>{{ responseLabel(machine) }}<template v-if="machine.lastResponseItemId"> · {{ machine.lastResponseItemId }}</template></code></div>
                 <div><span>Queue annoncee</span><code>{{ machine.taskQueue.length }} tache(s)</code></div>
+              </div>
+              <div v-if="machine.resourceReputation.length" class="reputation-grid compact">
+                <article v-for="score in machine.resourceReputation" :key="`${machine.nodeId}-${score.dimension}`" class="reputation-card">
+                  <div class="reputation-heading">
+                    <strong>{{ reputationLabel(score.dimension) }}</strong>
+                    <span>{{ percent(score.mean) }}</span>
+                  </div>
+                  <div class="reputation-meter"><span :style="{ width: percent(score.mean) }"></span></div>
+                  <small>LCB {{ percent(score.lowerBound) }} · {{ formatEvidence(score.evidence) }} preuves</small>
+                  <small>Court {{ percent(score.shortTermMean) }} · Long {{ percent(score.longTermMean) }}</small>
+                </article>
               </div>
               <div v-if="machine.activeTasks.length" class="machine-task-list">
                 <article v-for="task in machine.activeTasks" :key="task.itemId" class="machine-task-card active">
@@ -441,6 +475,8 @@ const updateInfo = reactive<UpdateStatus>({
   currentChannel: 'dev',
   currentBuild: '',
   latestVersion: '',
+  latestBuild: '',
+  latestContentId: '',
   state: 'unknown',
   updateAvailable: false,
   automatic: true,
@@ -534,6 +570,9 @@ const outdatedMachineCount = computed(() => activity.machines.filter(machineNeed
 const directProofMachineCount = computed(() => activity.machines.filter((machine) => (
   machine.transportAttestations.some((proof) => proof.success && proof.route === 'direct')
 )).length);
+const localReputation = computed(() => (
+  activity.machines.find((machine) => machine.selfNode)?.resourceReputation || []
+));
 const networkTaskQueue = computed(() => {
   const tasks = new Map<string, NodeActivity['machines'][number]['taskQueue'][number] & { ownerNodeId: string }>();
   for (const machine of activity.machines) {
@@ -605,8 +644,19 @@ const releaseBannerDetail = computed(() => {
   if (updateInfo.state === 'waiting_for_idle') return 'Une tache est en cours. L installation demarrera automatiquement des que le node sera disponible.';
   if (updateInfo.updateAvailable) return 'Le node sera mis a jour et redemarre automatiquement des que le paquet est verifie.';
   if (updateInfo.state === 'error') return updateInfo.error || 'Le serveur de versions sera reinterroge automatiquement.';
-  return `Canal ${updateInfo.currentChannel}; verification toutes les ${formatUpdateInterval(updateInfo.checkIntervalSeconds)}.`;
+  const build = updateInfo.currentBuild ? ` build ${updateInfo.currentBuild.slice(0, 12)}` : '';
+  return `Canal ${updateInfo.currentChannel}${build}; verification toutes les ${formatUpdateInterval(updateInfo.checkIntervalSeconds)}.`;
 });
+
+const reputationLabel = (dimension: string) => ({
+  connection: 'Connexion',
+  storage: 'Stockage',
+  compute: 'Calcul',
+  verify: 'Verification',
+  delegation: 'Delegation',
+}[dimension] || dimension);
+const percent = (value: number) => `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
+const formatEvidence = (value: number) => value >= 100 ? Math.round(value).toString() : value.toFixed(1);
 
 const shortResultName = computed(() => {
   if (!activity.lastResult || activity.lastResult === 'Aucun resultat local') {
@@ -872,9 +922,11 @@ function responseClass(machine: NodeActivity['machines'][number]) {
 
 function machineNeedsUpdate(machine: NodeActivity['machines'][number]) {
   if (!machine.appVersion) return true;
-  return machine.releaseChannel === updateInfo.currentChannel
-    && Boolean(updateInfo.latestVersion)
-    && machine.appVersion !== updateInfo.latestVersion;
+  if (machine.releaseChannel !== updateInfo.currentChannel || !updateInfo.latestVersion) return false;
+  if (machine.appVersion !== updateInfo.latestVersion) return true;
+  return machine.releaseBuild.length === 40
+    && updateInfo.latestBuild.length === 40
+    && machine.releaseBuild !== updateInfo.latestBuild;
 }
 
 function machineVersionLabel(machine: NodeActivity['machines'][number]) {
