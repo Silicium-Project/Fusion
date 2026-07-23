@@ -108,6 +108,7 @@ struct MachineActivity {
     transport_attestations: Vec<TransportAttestation>,
     platform: String,
     cpu_count: u64,
+    resource_reputation: Vec<BayesianResourceScore>,
     active_tasks: Vec<MachineTaskActivity>,
     task_queue: Vec<MachineQueueItem>,
     last_seen_unix: u64,
@@ -223,6 +224,10 @@ struct UpdateStatus {
     current_channel: String,
     current_build: String,
     latest_version: String,
+    #[serde(default)]
+    latest_build: String,
+    #[serde(default)]
+    latest_content_id: String,
     state: String,
     update_available: bool,
     automatic: bool,
@@ -659,6 +664,8 @@ fn default_update_status() -> UpdateStatus {
         current_channel: release_channel().to_string(),
         current_build: release_build().to_string(),
         latest_version: String::new(),
+        latest_build: String::new(),
+        latest_content_id: String::new(),
         state: "unknown".to_string(),
         update_available: false,
         automatic: true,
@@ -674,6 +681,21 @@ fn update_status_path() -> PathBuf {
 
 fn update_lock_path() -> PathBuf {
     app_state_dir().join("update-check.lock")
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BayesianResourceScore {
+    dimension: String,
+    mean: f64,
+    lower_bound: f64,
+    evidence: f64,
+    short_term_mean: f64,
+    long_term_mean: f64,
+}
+
+fn update_install_lock_path() -> PathBuf {
+    app_state_dir().join("update-install.lock")
 }
 
 fn read_update_status() -> Option<UpdateStatus> {
@@ -723,6 +745,45 @@ fn release_update_lock() {
     let _ = fs::remove_file(update_lock_path());
 }
 
+fn acquire_update_install_lock(content_id: &str) -> Result<bool, String> {
+    let path = update_install_lock_path();
+    acquire_install_lock_at(&path, content_id, Duration::from_secs(30 * 60))
+}
+
+fn acquire_install_lock_at(
+    path: &Path,
+    content_id: &str,
+    stale_after: Duration,
+) -> Result<bool, String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    if let Ok(metadata) = fs::metadata(path) {
+        let stale = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.elapsed().ok())
+            .map(|age| age > stale_after)
+            .unwrap_or(true);
+        if stale {
+            let _ = fs::remove_file(path);
+        }
+    }
+    match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(mut file) => {
+            use std::io::Write;
+            writeln!(file, "{content_id}").map_err(|error| error.to_string())?;
+            Ok(true)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn release_update_install_lock() {
+    let _ = fs::remove_file(update_install_lock_path());
+}
+
 fn check_for_update_once(auto_install: bool) -> UpdateStatus {
     if !acquire_update_lock() {
         return read_update_status().unwrap_or_else(default_update_status);
@@ -744,6 +805,8 @@ fn check_for_update_once(auto_install: bool) -> UpdateStatus {
 fn check_for_update_locked(status: &mut UpdateStatus, auto_install: bool) -> Result<(), String> {
     let release = fetch_update_release()?;
     status.latest_version = release.version.clone();
+    status.latest_build = release.build.clone();
+    status.latest_content_id = release.content_id.clone();
     status.check_interval_seconds = if release.check_interval_seconds > 0 {
         release.check_interval_seconds.max(15)
     } else {
@@ -772,12 +835,26 @@ fn check_for_update_locked(status: &mut UpdateStatus, auto_install: bool) -> Res
             write_update_status(status);
             return Ok(());
         }
+        if !acquire_update_install_lock(&release.content_id)? {
+            status.state = "installing".to_string();
+            write_update_status(status);
+            return Ok(());
+        }
         status.state = "downloading".to_string();
         write_update_status(status);
-        let installer = download_update(&release)?;
+        let installer = match download_update(&release) {
+            Ok(installer) => installer,
+            Err(error) => {
+                release_update_install_lock();
+                return Err(error);
+            }
+        };
         status.state = "installing".to_string();
         write_update_status(status);
-        schedule_update_install(&installer)?;
+        if let Err(error) = schedule_update_install(&installer) {
+            release_update_install_lock();
+            return Err(error);
+        }
     }
     Ok(())
 }
@@ -955,6 +1032,14 @@ fn download_update(release: &UpdateRelease) -> Result<PathBuf, String> {
         "AppImage"
     };
     let installer = updates_dir.join(format!("silicium-node-{safe_version}.{extension}"));
+    if installer.is_file() {
+        let metadata = fs::metadata(&installer).map_err(|error| error.to_string())?;
+        let size_matches = release.size_bytes == 0 || metadata.len() == release.size_bytes;
+        if size_matches && sha256_file(&installer)? == release.sha256.trim().to_ascii_lowercase() {
+            cache_update_for_peers(&installer, &release.content_id);
+            return Ok(installer);
+        }
+    }
     let primary_download = curl_download(&release.url, &installer, 300);
     if primary_download.is_err() {
         let fallback_url = format!(
@@ -1025,7 +1110,8 @@ fn schedule_update_install(installer: &Path) -> Result<(), String> {
   [string]$Installer,
   [string]$Executable,
   [string]$RepoRoot,
-  [string]$LogPath
+  [string]$LogPath,
+  [string]$InstallLockPath
 )
 $ErrorActionPreference = 'Stop'
 try {
@@ -1074,6 +1160,10 @@ try {
   }
   Start-Process -FilePath $Executable
   exit 1
+} finally {
+  if ($InstallLockPath) {
+    Remove-Item -LiteralPath $InstallLockPath -Force -ErrorAction SilentlyContinue
+  }
 }
 "#;
     fs::write(&script_path, script).map_err(|error| error.to_string())?;
@@ -1107,6 +1197,8 @@ try {
         .arg(repo_root)
         .arg("-LogPath")
         .arg(log_path)
+        .arg("-InstallLockPath")
+        .arg(update_install_lock_path())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -2046,38 +2138,6 @@ fn identity_mode_check() -> CheckItem {
     }
 }
 
-fn find_openssl(repo_root: Option<&Path>) -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Some(root) = repo_root {
-        candidates.push(
-            root.join("tools")
-                .join("openssl")
-                .join("bin")
-                .join("openssl.exe"),
-        );
-        candidates.push(root.join("tools").join("openssl").join("openssl.exe"));
-        candidates.push(root.join("bin").join("openssl").join("openssl.exe"));
-        if is_managed_runtime_root(root) {
-            return candidates.into_iter().find(|path| path.exists());
-        }
-    }
-    if cfg!(target_os = "windows") {
-        candidates.extend([
-            PathBuf::from(r"C:\Program Files\OpenSSL-Win64\bin\openssl.exe"),
-            PathBuf::from(r"C:\Program Files\OpenSSL-Win32\bin\openssl.exe"),
-            PathBuf::from(r"C:\Program Files\Git\usr\bin\openssl.exe"),
-            PathBuf::from(r"C:\Program Files (x86)\OpenSSL-Win32\bin\openssl.exe"),
-            PathBuf::from(r"C:\Program Files (x86)\Git\usr\bin\openssl.exe"),
-        ]);
-    } else {
-        candidates.extend([
-            PathBuf::from("/usr/bin/openssl"),
-            PathBuf::from("/usr/local/bin/openssl"),
-        ]);
-    }
-    candidates.into_iter().find(|path| path.exists())
-}
-
 fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
     let mut path_entries = Vec::new();
     if is_managed_runtime_root(repo_root) {
@@ -2098,24 +2158,6 @@ fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
                 format!("{}:{}", site_packages.display(), current)
             };
             command.env("PYTHONPATH", value);
-        }
-    }
-    if let Some(openssl_bin) = find_openssl(Some(repo_root)) {
-        command.env("SILICIUM_OPENSSL_BIN", &openssl_bin);
-        if let Some(openssl_dir) = openssl_bin.parent() {
-            if let Some(openssl_root) = openssl_dir.parent() {
-                path_entries.push(openssl_root.to_path_buf());
-                let modules_dir = openssl_root.join("lib").join("ossl-modules");
-                if modules_dir.exists() {
-                    command.env("OPENSSL_MODULES", modules_dir);
-                } else {
-                    let bin_modules_dir = openssl_dir.join("ossl-modules");
-                    if bin_modules_dir.exists() {
-                        command.env("OPENSSL_MODULES", bin_modules_dir);
-                    }
-                }
-            }
-            path_entries.push(openssl_dir.to_path_buf());
         }
     }
     if !path_entries.is_empty() {
@@ -2727,6 +2769,35 @@ fn task_bounds(value: &Value) -> String {
     }
 }
 
+fn bayesian_number(value: Option<&Value>, key: &str) -> f64 {
+    value
+        .and_then(|item| item.get(key))
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+fn parse_resource_reputation(peer: &Value) -> Vec<BayesianResourceScore> {
+    let dimensions = peer
+        .get("resource_reputation")
+        .and_then(|item| item.get("dimensions"))
+        .and_then(Value::as_object);
+    ["connection", "storage", "compute", "verify", "delegation"]
+        .into_iter()
+        .filter_map(|dimension| {
+            let score = dimensions?.get(dimension)?;
+            let combined = score.get("combined");
+            Some(BayesianResourceScore {
+                dimension: dimension.to_string(),
+                mean: bayesian_number(combined, "mean"),
+                lower_bound: bayesian_number(combined, "lower_bound"),
+                evidence: bayesian_number(combined, "evidence"),
+                short_term_mean: bayesian_number(score.get("short_term"), "mean"),
+                long_term_mean: bayesian_number(score.get("long_term"), "mean"),
+            })
+        })
+        .collect()
+}
+
 fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
     let snapshot_path = export_dir.join("mesh.discovery.json");
     let Ok(raw) = fs::read_to_string(snapshot_path) else {
@@ -3059,6 +3130,7 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                     .and_then(|item| item.get("cpu_count"))
                     .and_then(Value::as_u64)
                     .unwrap_or(0),
+                resource_reputation: parse_resource_reputation(peer),
                 active_tasks,
                 task_queue,
                 last_seen_unix: last_seen,
@@ -3276,6 +3348,21 @@ mod tests {
     }
 
     #[test]
+    fn update_install_lease_allows_only_one_installer_for_a_content_id() {
+        let directory =
+            env::temp_dir().join(format!("silicium-update-lease-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("install.lock");
+        assert!(acquire_install_lock_at(&path, "content-a", Duration::from_secs(60)).unwrap());
+        assert!(!acquire_install_lock_at(&path, "content-a", Duration::from_secs(60)).unwrap());
+        assert!(!acquire_install_lock_at(&path, "content-b", Duration::from_secs(60)).unwrap());
+        fs::remove_file(&path).unwrap();
+        assert!(acquire_install_lock_at(&path, "content-b", Duration::from_secs(60)).unwrap());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn automatic_update_script_restarts_the_notification_shell() {
         let source = include_str!("lib.rs");
         assert!(source.contains("[string]$RepoRoot"));
@@ -3283,6 +3370,9 @@ mod tests {
         assert!(source.contains("notification_shell_restarted"));
         assert!(source.contains("-ArgumentList '--background'"));
         assert!(source.contains("installer_launch_retry"));
+        assert!(source.contains("acquire_update_install_lock"));
+        assert!(source.contains("[string]$InstallLockPath"));
+        assert!(source.contains("Remove-Item -LiteralPath $InstallLockPath"));
         assert!(source.contains("supervisor_recovered_after_update_failure"));
         assert!(source.contains("stale_node_runtime_stopped"));
         assert!(source.contains("Get-CimInstance Win32_Process"));

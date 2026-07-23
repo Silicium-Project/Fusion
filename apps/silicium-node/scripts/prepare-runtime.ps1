@@ -271,9 +271,25 @@ $repoRoot = Resolve-Path (Join-Path $appRoot "..\..")
 $networkRoot = Join-Path $repoRoot "Network"
 $runtimeRoot = Join-Path $appRoot "src-tauri\resources\runtime"
 $runtimeNetwork = Join-Path $runtimeRoot "Network"
+$nativeRaytracerManifest = Join-Path $networkRoot "workloads\raytracer\native\Cargo.toml"
+$nativeRaytracerTarget = Join-Path $appRoot "src-tauri\target\raytracer-native"
 
 if (-not (Test-Path -LiteralPath (Join-Path $networkRoot "silicium"))) {
     throw "Network runtime not found: $networkRoot"
+}
+if (-not (Test-Path -LiteralPath $nativeRaytracerManifest)) {
+    throw "Native raytracer manifest not found: $nativeRaytracerManifest"
+}
+
+$previousCargoTarget = $env:CARGO_TARGET_DIR
+try {
+    $env:CARGO_TARGET_DIR = $nativeRaytracerTarget
+    & cargo build --release --manifest-path $nativeRaytracerManifest
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build native raytracer."
+    }
+} finally {
+    $env:CARGO_TARGET_DIR = $previousCargoTarget
 }
 
 if (Test-Path -LiteralPath $runtimeRoot) {
@@ -285,9 +301,16 @@ Copy-Item -LiteralPath (Join-Path $networkRoot "silicium") -Destination (Join-Pa
 Copy-Directory -Source (Join-Path $networkRoot "tools") -Destination (Join-Path $runtimeNetwork "tools")
 $null = Copy-OptionalDirectory -Source (Join-Path $networkRoot "workloads") -Destination (Join-Path $runtimeNetwork "workloads") -Label "optional workloads"
 $null = Copy-OptionalDirectory -Source (Join-Path $networkRoot "bin") -Destination (Join-Path $runtimeNetwork "bin") -Label "optional workload binaries"
-$raytracerPath = Join-Path $runtimeNetwork "bin\raytracer\raytracer.py"
+$copiedNativeTarget = Join-Path $runtimeNetwork "workloads\raytracer\native\target"
+if (Test-Path -LiteralPath $copiedNativeTarget) {
+    Remove-Item -LiteralPath $copiedNativeTarget -Recurse -Force
+}
+$raytracerDirectory = Join-Path $runtimeNetwork "bin\raytracer"
+New-Item -ItemType Directory -Force -Path $raytracerDirectory | Out-Null
+$raytracerPath = Join-Path $raytracerDirectory "silicium-raytracer.exe"
+Copy-Item -LiteralPath (Join-Path $nativeRaytracerTarget "release\silicium-raytracer.exe") -Destination $raytracerPath -Force
 if (-not (Test-Path -LiteralPath $raytracerPath)) {
-    throw "Bundled raytracer runtime missing: Network\bin\raytracer\raytracer.py"
+    throw "Bundled native raytracer runtime missing: $raytracerPath"
 }
 
 $networkedSource = Join-Path $networkRoot "networked"
@@ -303,7 +326,7 @@ if (Test-Path -LiteralPath $networkedSource -PathType Container) {
 $envDir = Join-Path $runtimeRoot ".silicium\env"
 New-Item -ItemType Directory -Force -Path $envDir | Out-Null
 @(
-    "SILICIUM_RAYTRACER_BIN=Network\bin\raytracer\raytracer.py",
+    "SILICIUM_RAYTRACER_BIN=Network\bin\raytracer\silicium-raytracer.exe",
     "SILICIUM_RAYTRACER_ASSETS_DIR=Network\bin\raytracer"
 ) | Set-Content -Path (Join-Path $envDir "raytracer.env") -Encoding ASCII
 
@@ -340,26 +363,6 @@ if (Test-Path -LiteralPath $p2pRequirements -PathType Leaf) {
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to bundle automatic P2P dependencies."
     }
-}
-
-$opensslSource = $OpenSslRuntime
-if (-not $opensslSource) {
-    $opensslSource = Find-FirstExisting @(
-        (Join-Path $appRoot "vendor\openssl"),
-        "C:\Program Files\OpenSSL-Win64",
-        "C:\Program Files\OpenSSL-Win32",
-        "C:\Program Files (x86)\OpenSSL-Win32",
-        "C:\Program Files\Git\mingw64",
-        "C:\Program Files\Git\usr"
-    )
-}
-if (-not $opensslSource) {
-    throw "OpenSSL runtime is required to build Silicium Node. Provide -OpenSslRuntime or add apps\silicium-node\vendor\openssl."
-}
-$opensslDestination = Join-Path $runtimeRoot "tools\openssl"
-$opensslBundled = Copy-OpenSslRuntime -Source $opensslSource -Destination $opensslDestination -PythonRuntimeDestination $pythonDestination
-if ($opensslBundled) {
-    Test-OpenSslRuntime -Destination $opensslDestination
 }
 
 Write-Host "Runtime prepared: $runtimeRoot"
