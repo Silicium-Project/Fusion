@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -17,6 +19,7 @@ import (
 func main() {
 	DB := db.Init()
 	h := handler.New(DB)
+	go h.RunTerminalJobControlReconciler(context.Background(), 30*time.Second)
 
 	// CORS Setup
 	c := cors.New(cors.Options{

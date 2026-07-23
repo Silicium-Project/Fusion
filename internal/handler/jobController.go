@@ -351,20 +351,8 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) || (job.DeadlineAt != nil && time.Now().After(*job.DeadlineAt)) {
 		runResult.Status = "expired"
 		runResult.ErrorMessage = "job deadline exceeded"
-		expiredAt := time.Now()
-		control := silicium.TaskControl{
-			ControlID:   fmt.Sprintf("%s-expire-%d", job.SiliciumJobID, expiredAt.UnixNano()),
-			RootJobID:   job.SiliciumJobID,
-			Action:      "expire",
-			Reason:      runResult.ErrorMessage,
-			IssuerNode:  silicium.ConfigFromEnv().OrchestratorNodeID,
-			IssuedUTC:   expiredAt.UTC().Format(time.RFC3339Nano),
-			DeadlineUTC: job.DeadlineAt.UTC().Format(time.RFC3339Nano),
-		}
-		signalCtx, signalCancel := context.WithTimeout(context.Background(), 6*time.Second)
-		_ = silicium.PublishTaskControl(signalCtx, silicium.ConfigFromEnv(), control)
-		signalCancel()
 	}
+	completedAt := time.Now()
 	updates := map[string]any{
 		"status":               runResult.Status,
 		"result_path":          runResult.ResultPath,
@@ -375,9 +363,17 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 		"dashboard_url":        silicium.ConfigFromEnv().DashboardURL,
 		"billable_work_units":  runResult.BillableWorkUnits,
 		"compute_receipt_hash": runResult.ComputeReceiptHash,
-		"completed_at":         time.Now(),
+		"completed_at":         completedAt,
 	}
 	h.DB.Model(&models.Job{}).Where("id = ?", jobID).Updates(updates)
+	if runResult.Status == "failed" || runResult.Status == "expired" {
+		signalCtx, signalCancel := context.WithTimeout(context.Background(), 12*time.Second)
+		if err := publishTerminalTaskControl(signalCtx, job, runResult.Status, runResult.ErrorMessage); err != nil {
+			h.DB.Model(&models.Job{}).Where("id = ?", jobID).
+				Update("error_message", runResult.ErrorMessage+"\nnetwork terminal announcement pending: "+err.Error())
+		}
+		signalCancel()
+	}
 }
 
 func boundedQueryInt(r *http.Request, key string, fallback, minimum, maximum int) int {

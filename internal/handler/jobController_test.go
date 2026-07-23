@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/silicium/internal/models"
+	"github.com/silicium/internal/silicium"
 )
 
 func TestBoundedQueryInt(t *testing.T) {
@@ -43,5 +46,61 @@ func TestVerifiedBillingForCancelledJobOnlyCountsCosignedFragments(t *testing.T)
 	}
 	if receiptHash == "" {
 		t.Fatal("expected a receipt-set hash")
+	}
+}
+
+func TestActiveTaskRootIDsOnlyReturnsNonTerminalDescendants(t *testing.T) {
+	exportDir := t.TempDir()
+	tasksDir := filepath.Join(exportDir, "tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	envelopes := map[string]map[string]any{
+		"active.json": {
+			"task_id": "site-render-1-frag-004-compute-retry-02",
+			"status":  "dispatched",
+		},
+		"nested.json": {
+			"task_id": "custom-task",
+			"status":  "running",
+			"task":    map[string]any{"root_job_id": "site-render-2"},
+		},
+		"done.json": {
+			"task_id":     "site-render-3-frag-001",
+			"root_job_id": "site-render-3",
+			"status":      "completed",
+		},
+	}
+	for name, envelope := range envelopes {
+		raw, err := json.Marshal(envelope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tasksDir, name), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	roots, err := activeTaskRootIDs(exportDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !roots["site-render-1"] || !roots["site-render-2"] || roots["site-render-3"] || len(roots) != 2 {
+		t.Fatalf("unexpected active roots: %#v", roots)
+	}
+}
+
+func TestTerminalTaskControlIsStableAndRecursive(t *testing.T) {
+	deadline := time.Date(2026, 7, 24, 1, 2, 3, 0, time.UTC)
+	job := models.Job{SiliciumJobID: "site-render-9", DeadlineAt: &deadline}
+	cfg := silicium.RunnerConfig{OrchestratorNodeID: "orchestrator-1"}
+
+	failed := terminalTaskControl(job, "failed", "worker failed", deadline, cfg)
+	if failed.ControlID != "site-render-9-cancel-terminal" || failed.RootJobID != job.SiliciumJobID || failed.Action != "cancel" {
+		t.Fatalf("unexpected failed control: %#v", failed)
+	}
+	expired := terminalTaskControl(job, "expired", "deadline", deadline, cfg)
+	if expired.ControlID != "site-render-9-expire-terminal" || expired.Action != "expire" || expired.DeadlineUTC == "" {
+		t.Fatalf("unexpected expiry control: %#v", expired)
 	}
 }

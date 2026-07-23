@@ -3,7 +3,13 @@ package silicium
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +38,7 @@ type RunnerConfig struct {
 	MinComputeReputation  string
 	MinVerifyReputation   string
 	ControlURL            string
+	IdentityKeyPath       string
 }
 
 type RunResult struct {
@@ -62,7 +70,8 @@ func ConfigFromEnv() RunnerConfig {
 		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
 		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
 		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
-		ControlURL:            envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:"+envDefault("SILICIUM_EMITTER_PORT", "46102")+"/gossip/publish"),
+		ControlURL:            envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:46100/gossip/publish"),
+		IdentityKeyPath:       envDefault("SILICIUM_ORCHESTRATOR_IDENTITY_KEY", "/var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem"),
 	}
 }
 
@@ -86,10 +95,10 @@ func PublishTaskControl(ctx context.Context, cfg RunnerConfig, control TaskContr
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	if cfg.MeshKey != "" {
-		request.Header.Set("Authorization", "Bearer "+cfg.MeshKey)
+	if err := signPeerRequest(request, payload, cfg); err != nil {
+		return err
 	}
-	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
 	if err != nil {
 		return err
 	}
@@ -97,6 +106,62 @@ func PublishTaskControl(ctx context.Context, cfg RunnerConfig, control TaskContr
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("task control rejected: %s", response.Status)
 	}
+	return nil
+}
+
+func signPeerRequest(request *http.Request, body []byte, cfg RunnerConfig) error {
+	privatePEM, err := os.ReadFile(cfg.IdentityKeyPath)
+	if err != nil {
+		return fmt.Errorf("read orchestrator identity key: %w", err)
+	}
+	privateBlock, _ := pem.Decode(privatePEM)
+	if privateBlock == nil {
+		return errors.New("orchestrator identity key is not PEM")
+	}
+	parsedPrivate, err := x509.ParsePKCS8PrivateKey(privateBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse orchestrator identity key: %w", err)
+	}
+	privateKey, ok := parsedPrivate.(ed25519.PrivateKey)
+	if !ok {
+		return errors.New("orchestrator identity key is not Ed25519")
+	}
+
+	publicPath := strings.TrimSuffix(cfg.IdentityKeyPath, filepath.Ext(cfg.IdentityKeyPath)) + ".pub.pem"
+	publicPEM, err := os.ReadFile(publicPath)
+	if err != nil {
+		return fmt.Errorf("read orchestrator public key: %w", err)
+	}
+	publicBlock, _ := pem.Decode(publicPEM)
+	if publicBlock == nil {
+		return errors.New("orchestrator public key is not PEM")
+	}
+	parsedPublic, err := x509.ParsePKIXPublicKey(publicBlock.Bytes)
+	if err != nil {
+		return fmt.Errorf("parse orchestrator public key: %w", err)
+	}
+	publicKey, ok := parsedPublic.(ed25519.PublicKey)
+	if !ok || !bytes.Equal(publicKey, privateKey.Public().(ed25519.PublicKey)) {
+		return errors.New("orchestrator public key does not match private key")
+	}
+
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	bodyDigest := sha256.Sum256(body)
+	bodyHash := hex.EncodeToString(bodyDigest[:])
+	identityDigest := sha256.Sum256(publicPEM)
+	identityID := hex.EncodeToString(identityDigest[:])[:32]
+	signedPath := request.URL.EscapedPath()
+	signingPayload := strings.Join(
+		[]string{request.Method, signedPath, timestamp, bodyHash, cfg.OrchestratorNodeID, identityID},
+		"\n",
+	)
+	signature := ed25519.Sign(privateKey, []byte(signingPayload))
+	request.Header.Set("X-Silicium-Public-Key", base64.StdEncoding.EncodeToString(publicPEM))
+	request.Header.Set("X-Silicium-Signature", hex.EncodeToString(signature))
+	request.Header.Set("X-Silicium-Identity-Id", identityID)
+	request.Header.Set("X-Silicium-Timestamp", timestamp)
+	request.Header.Set("X-Silicium-Body-Hash", bodyHash)
+	request.Header.Set("X-Silicium-Node-Id", cfg.OrchestratorNodeID)
 	return nil
 }
 
