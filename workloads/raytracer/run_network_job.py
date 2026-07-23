@@ -43,7 +43,12 @@ from workloads.raytracer.raytracer_workload import (  # noqa: E402
     scene_resolution,
     write_optional_png,
 )
-from tools.network_node import NodeIdentity, sha256_json, stable_json  # noqa: E402
+from tools.receipt_verification import (  # noqa: E402
+    identity_id_for_key,
+    sha256_json,
+    stable_json,
+    verify_ed25519_signature,
+)
 
 
 def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -66,9 +71,9 @@ def validate_compute_receipt(result: dict[str, Any], task_id: str) -> dict[str, 
     if str(receipt.get("receipt_hash", "")) != expected_hash:
         raise RuntimeError(f"compute_receipt_hash_invalid:{task_id}")
     public_key = str(receipt.get("worker_public_key", ""))
-    if NodeIdentity.identity_id_for_key(public_key) != str(receipt.get("worker_identity_id", "")):
+    if identity_id_for_key(public_key) != str(receipt.get("worker_identity_id", "")):
         raise RuntimeError(f"compute_receipt_identity_invalid:{task_id}")
-    if not NodeIdentity.verify_bytes(
+    if not verify_ed25519_signature(
         stable_json(unsigned).encode("utf-8"),
         str(receipt.get("worker_signature", "")),
         public_key,
@@ -95,9 +100,9 @@ def validate_receipt_attestation(
     if str(attestation.get("compute_receipt_hash", "")) != compute_receipt_hash:
         raise RuntimeError(f"receipt_attestation_hash_mismatch:{verify_task_id}")
     public_key = str(attestation.get("verifier_public_key", ""))
-    if NodeIdentity.identity_id_for_key(public_key) != str(attestation.get("verifier_identity_id", "")):
+    if identity_id_for_key(public_key) != str(attestation.get("verifier_identity_id", "")):
         raise RuntimeError(f"receipt_attestation_identity_invalid:{verify_task_id}")
-    if not NodeIdentity.verify_bytes(
+    if not verify_ed25519_signature(
         stable_json(unsigned).encode("utf-8"),
         str(attestation.get("verifier_signature", "")),
         public_key,
