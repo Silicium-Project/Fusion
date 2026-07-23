@@ -32,6 +32,28 @@ export type HistoryItem = {
   peerId: string;
 };
 
+export type RuntimeTelemetry = {
+  sampledUnix: number;
+  sampleIntervalMs: number;
+  nodeUptimeSeconds: number;
+  processCpuPercent: number;
+  processCpuPercentOneCore: number;
+  processCpuSeconds: number;
+  processRssBytes: number;
+  processPeakRssBytes: number;
+  systemCpuPercent: number;
+  systemMemoryTotalBytes: number;
+  systemMemoryAvailableBytes: number;
+  systemMemoryUsedBytes: number;
+  systemMemoryPercent: number;
+  logicalCpuCount: number;
+  pythonThreadCount: number;
+  loadAverage: number[];
+  storageTotalBytes: number;
+  storageFreeBytes: number;
+  storageUsedPercent: number;
+};
+
 export type MachineTaskActivity = {
   itemId: string;
   role: string;
@@ -42,6 +64,24 @@ export type MachineTaskActivity = {
   sourceTaskId: string;
   sourceNodeId: string;
   bounds: string;
+  phase: string;
+  progressPercent: number;
+  progressSource: string;
+  elapsedMs: number;
+  etaSeconds: number;
+  completedUnits: number;
+  totalUnits: number;
+  unit: string;
+  throughputUnitsPerSecond: number;
+  workerThreads: number;
+  pixelsCompleted: number;
+  pixelsTotal: number;
+  inputBytes: number;
+  attempt: number;
+  maxRetries: number;
+  priority: string;
+  queuedUtc: string;
+  resourceUsage: RuntimeTelemetry;
 };
 
 export type MachineQueueItem = MachineTaskActivity & {
@@ -50,6 +90,7 @@ export type MachineQueueItem = MachineTaskActivity & {
   priority: string;
   assignedPeerId: string;
   originNodeId: string;
+  queuedUtc: string;
 };
 
 export type BayesianResourceScore = {
@@ -80,6 +121,7 @@ export type MachineActivity = {
   transportAttestations: TransportAttestation[];
   platform: string;
   cpuCount: number;
+  telemetry: RuntimeTelemetry;
   resourceReputation: BayesianResourceScore[];
   activeTasks: MachineTaskActivity[];
   taskQueue: MachineQueueItem[];
