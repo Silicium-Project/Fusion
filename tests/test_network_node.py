@@ -2477,8 +2477,8 @@ def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monk
         assert command[command.index("--x-end") + 1] == "322"
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr(network_node.subprocess, "run", fake_run)
     runtime = network_node.RoleRuntime(_config(tmp_path / "verify", "verifier", roles="verify"), FakeP2P())
+    monkeypatch.setattr(runtime, "run_process", fake_run)
     result = runtime.run_raytracer_milestone_verification(
         {"scene_p2p_ref": {"protocol": "test"}, "max_sample_rows": 20},
         json.dumps(challenge).encode("utf-8"),
@@ -2491,3 +2491,59 @@ def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monk
     assert result["verification"]["sample_rows"] == 2
     assert result["verification"]["fragment_rows"] == 20
     assert result["verification"]["sample_ratio"] == pytest.approx(0.1)
+
+
+def test_task_control_cancels_matching_active_work_and_rejects_spoofed_issuer(tmp_path: Path) -> None:
+    node = network_node.NetworkNode(_config(tmp_path / "control", "payer-node", roles="compute"))
+    with node._activity_lock:
+        node._active_tasks = [{"item_id": "job-42-frag-000", "phase": "executing"}]
+    control = {
+        "control_id": "control-1",
+        "root_job_id": "job-42",
+        "action": "cancel",
+        "reason": "payer request",
+        "issuer_node_id": "payer-node",
+        "issued_utc": network_node.utc_now(),
+    }
+
+    assert node.apply_task_control(control, signed_by="attacker") is False
+    assert node.runtime._cancel_event.is_set() is False
+    assert node.apply_task_control(control, signed_by="payer-node") is True
+    assert node.runtime._cancel_event.is_set() is True
+    assert node.task_control_for("job-42-frag-007")["control_id"] == "control-1"
+
+
+def test_compute_receipt_uses_deterministic_pixels_and_has_valid_signature(tmp_path: Path) -> None:
+    node = network_node.NetworkNode(_config(tmp_path / "receipt", "worker-a", roles="compute"))
+    envelope = {
+        "task_id": "job-1-frag-000",
+        "task": {
+            "root_job_id": "job-1",
+            "workload": "calcul/rendering/raytracer-fragment",
+            "x_start": 10,
+            "x_end": 30,
+            "y_start": 5,
+            "y_end": 15,
+        },
+    }
+    receipt = node.build_compute_receipt(
+        envelope,
+        {"role_result": "compute", "result_hash": "abc"},
+        {"duration_ms": 123, "process_cpu_seconds": 99},
+        started_utc="2026-07-23T10:00:00Z",
+        finished_utc="2026-07-23T10:00:01Z",
+    )
+
+    assert receipt["billable_work_units"] == 200
+    assert receipt["unit"] == "rendered_pixel"
+    unsigned = {
+        key: value
+        for key, value in receipt.items()
+        if key not in {"receipt_hash", "worker_identity_id", "worker_public_key", "worker_signature"}
+    }
+    assert receipt["receipt_hash"] == network_node.sha256_json(unsigned)
+    assert network_node.NodeIdentity.verify_bytes(
+        network_node.stable_json(unsigned).encode("utf-8"),
+        receipt["worker_signature"],
+        receipt["worker_public_key"],
+    )

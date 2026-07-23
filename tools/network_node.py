@@ -681,6 +681,35 @@ class RoleRuntime:
     def __init__(self, config: NodeConfig, p2p: P2PClient) -> None:
         self.config = config
         self.p2p = p2p
+        self._cancel_event = threading.Event()
+        self._cancel_reason = ""
+
+    def begin_task(self) -> None:
+        self._cancel_reason = ""
+        self._cancel_event.clear()
+
+    def cancel_task(self, reason: str) -> None:
+        self._cancel_reason = str(reason or "task cancelled")
+        self._cancel_event.set()
+
+    def run_process(self, command: list[str], *, timeout: int) -> subprocess.CompletedProcess[str]:
+        process = subprocess.Popen(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        deadline = time.monotonic() + max(1, timeout)
+        while True:
+            if self._cancel_event.wait(0.2):
+                process.kill()
+                stdout, stderr = process.communicate()
+                raise RuntimeError(f"task_cancelled:{self._cancel_reason}")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                process.kill()
+                stdout, stderr = process.communicate()
+                raise RuntimeError(f"task_timeout:{timeout}s:{stderr[-2048:]}")
+            try:
+                stdout, stderr = process.communicate(timeout=min(0.5, remaining))
+                return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+            except subprocess.TimeoutExpired:
+                continue
 
     def capacity(self) -> dict[str, Any]:
         return build_capacity_snapshot(self.config)
@@ -750,7 +779,7 @@ class RoleRuntime:
             progress_file = str(task.get("_runtime_progress_path", "")).strip()
             if progress_file:
                 command.extend(["--progress-file", progress_file])
-            completed = subprocess.run(command, text=True, capture_output=True, timeout=int(task.get("timeout_s", 300) or 300) + 15, check=False)
+            completed = self.run_process(command, timeout=int(task.get("timeout_s", 300) or 300) + 15)
             if completed.returncode != 0 or not output_path.exists():
                 raise RuntimeError(f"raytracer_fragment_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}")
             output = output_path.read_bytes()
@@ -809,6 +838,18 @@ class RoleRuntime:
         if not isinstance(scene_ref, dict):
             raise RuntimeError("raytracer_scene_ref_missing")
         scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
+        source_output_ref = task.get("source_output_ref")
+        handoff_meta: dict[str, Any] = {}
+        if isinstance(source_output_ref, dict):
+            source_output, handoff_meta = self.p2p.fetch(source_output_ref)
+            source_manifest = build_verification_milestones(
+                source_output,
+                int(task.get("y_start", 0) or 0),
+                max(1, int(task.get("max_sample_rows", 20) or 20)),
+                int(task.get("x_start", 0) or 0),
+            )
+            if str(source_manifest.get("commitment_hash", "")) != str(challenge.get("commitment_hash", "")):
+                raise RuntimeError("raytracer_source_handoff_commitment_invalid")
         root = Path(__file__).resolve().parents[1]
         compute_script = root / "workloads" / "raytracer" / "compute.py"
         with tempfile.TemporaryDirectory(prefix="silicium-raytracer-milestone-verify-") as temp_dir:
@@ -832,13 +873,7 @@ class RoleRuntime:
                 "--verification-batch-rows", str(sample_rows),
                 "--timeout-s", str(int(task.get("timeout_s", 300) or 300)),
             ]
-            completed = subprocess.run(
-                command,
-                text=True,
-                capture_output=True,
-                timeout=int(task.get("timeout_s", 300) or 300) + 15,
-                check=False,
-            )
+            completed = self.run_process(command, timeout=int(task.get("timeout_s", 300) or 300) + 15)
             if completed.returncode != 0 or not output_path.exists():
                 raise RuntimeError(
                     f"raytracer_milestone_verification_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}"
@@ -867,6 +902,11 @@ class RoleRuntime:
             "role_result": "verify",
             "input": p2p_meta,
             "scene": scene_meta,
+            "source_handoff": {
+                **handoff_meta,
+                "source_node_id": str(task.get("source_node_id", "")),
+                "direct": bool(handoff_meta),
+            },
             "input_hash": sha256_bytes(p2p_data),
             "expected_hash": expected,
             "recomputed_hash": recomputed_hash,
@@ -891,7 +931,7 @@ class RoleRuntime:
         inputs = (task.get("inputs") or {}) if isinstance(task.get("inputs"), dict) else {}
         for key, value in inputs.items():
             cmd.extend(["--input", f"{key}={value}"])
-        completed = subprocess.run(cmd, text=True, capture_output=True, timeout=int(task.get("timeout_s", 120)), check=False)
+        completed = self.run_process(cmd, timeout=int(task.get("timeout_s", 120)))
         parsed: Any
         try:
             parsed = json.loads(completed.stdout) if completed.stdout.strip() else {}
@@ -3177,8 +3217,13 @@ class PeerNetwork:
             return
         if not self._record_event(message):
             return
-        if str(message.get("topic", "")) == "software_update":
+        topic = str(message.get("topic", ""))
+        if topic == "software_update":
             self._record_update_announcement(message.get("payload"), str(message.get("node_id", "")))
+        elif topic == "task_control" and self.node is not None:
+            payload = message.get("payload")
+            if isinstance(payload, dict):
+                self.node.apply_task_control(payload, signed_by=str(message.get("node_id", "")))
         hops = int(message.get("hops", 0) or 0)
         if hops >= max(1, int(self.config.gossip_max_hops)):
             return
@@ -3853,10 +3898,22 @@ class PeerNetwork:
                         return
                     topic = str(payload.get("topic", "")).strip() if isinstance(payload, dict) else ""
                     event_payload = payload.get("payload") if isinstance(payload, dict) else None
-                    if topic != "software_update" or peer_network._normalize_update_announcement(event_payload) is None:
+                    valid_software_update = (
+                        topic == "software_update"
+                        and peer_network._normalize_update_announcement(event_payload) is not None
+                    )
+                    valid_task_control = (
+                        topic == "task_control"
+                        and peer_network.node is not None
+                        and peer_network.node.validate_task_control(event_payload, signed_by=peer_network.node_id)
+                    )
+                    if not valid_software_update and not valid_task_control:
                         self.send_error(400)
                         return
-                    peer_network._record_update_announcement(event_payload, peer_network.node_id)
+                    if valid_software_update:
+                        peer_network._record_update_announcement(event_payload, peer_network.node_id)
+                    else:
+                        peer_network.node.apply_task_control(event_payload, signed_by=peer_network.node_id)
                     # The announcement is durable locally before this call. Fan-out may
                     # encounter slow/offline peers and must not hold the HTTP response.
                     peer_network.publish(topic, event_payload, background=True)
@@ -4390,6 +4447,17 @@ class NetworkNode:
         self._telemetry: dict[str, Any] = self.telemetry_sampler.sample()
         self._task_monitor_stop = threading.Event()
         self._task_monitor_thread: threading.Thread | None = None
+        self._task_controls_lock = threading.Lock()
+        self._task_controls: dict[str, dict[str, Any]] = {}
+        self._task_controls_path = config.export_dir / "task-controls.ndjson"
+        if self._task_controls_path.exists():
+            for line in self._task_controls_path.read_text(encoding="utf-8").splitlines()[-2048:]:
+                try:
+                    control = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(control, dict) and str(control.get("control_id", "")).strip():
+                    self._task_controls[str(control["control_id"])] = control
         self.peer_network.set_local_profile(
             capacity=self.runtime.capacity(),
             reputation_score=self.reputation.local_score(),
@@ -4735,6 +4803,7 @@ class NetworkNode:
             "fragment_count": body.get("fragment_count", envelope.get("fragment_count", "")),
             "source_task_id": str(body.get("source_task_id", "")),
             "source_node_id": str(body.get("source_node_id", "")),
+            "origin_node_id": str(envelope.get("origin_node_id") or envelope.get("dispatched_by") or ""),
             "x_start": body.get("x_start", ""),
             "x_end": body.get("x_end", ""),
             "y_start": body.get("y_start", ""),
@@ -4760,6 +4829,155 @@ class NetworkNode:
         with self._activity_lock:
             if self._active_tasks:
                 self._active_tasks[0].update(updates)
+
+    def validate_task_control(self, payload: Any, *, signed_by: str) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        root_job_id = str(payload.get("root_job_id", "")).strip()
+        action = str(payload.get("action", "")).strip().lower()
+        issuer = str(payload.get("issuer_node_id", "")).strip()
+        control_id = str(payload.get("control_id", "")).strip()
+        return bool(
+            root_job_id
+            and control_id
+            and action in {"cancel", "expire"}
+            and issuer
+            and safe_id(issuer) == safe_id(signed_by)
+        )
+
+    def apply_task_control(self, payload: dict[str, Any], *, signed_by: str) -> bool:
+        if not self.validate_task_control(payload, signed_by=signed_by):
+            return False
+        control = dict(payload)
+        root_job_id = safe_id(str(control["root_job_id"]))
+        control["root_job_id"] = root_job_id
+        control["signed_by"] = safe_id(signed_by)
+        control["received_utc"] = utc_now()
+        with self._task_controls_lock:
+            if str(control["control_id"]) in self._task_controls:
+                return True
+            self._task_controls[str(control["control_id"])] = control
+        append_jsonl(self._task_controls_path, control)
+
+        matched_active = False
+        with self._activity_lock:
+            for activity in self._active_tasks:
+                item_id = safe_id(str(activity.get("item_id", "")))
+                origin_raw = str(activity.get("origin_node_id", "")).strip()
+                origin = safe_id(origin_raw) if origin_raw else ""
+                authorized = origin == safe_id(signed_by) if origin else safe_id(signed_by) == self.config.node_id
+                if authorized and (item_id == root_job_id or item_id.startswith(root_job_id + "-")):
+                    activity.update(
+                        {
+                            "phase": "cancelling",
+                            "cancel_reason": str(control.get("reason", "")),
+                            "control_id": str(control.get("control_id", "")),
+                        }
+                    )
+                    matched_active = True
+        if matched_active:
+            self.runtime.cancel_task(str(control.get("reason", "task cancelled")))
+
+        for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
+            if not directory.exists():
+                continue
+            for item_path in directory.glob("*.json"):
+                envelope = read_json(item_path, {})
+                if not isinstance(envelope, dict):
+                    continue
+                item_id = safe_id(str(envelope.get("task_id") or envelope.get("request_id") or ""))
+                origin_raw = str(envelope.get("origin_node_id") or envelope.get("dispatched_by") or "").strip()
+                origin = safe_id(origin_raw) if origin_raw else ""
+                if item_id != root_job_id and not item_id.startswith(root_job_id + "-"):
+                    continue
+                if origin != safe_id(signed_by) and not (not origin and safe_id(signed_by) == self.config.node_id):
+                    continue
+                self.update_envelope_status(
+                    envelope,
+                    "cancelled" if str(control.get("action")) == "cancel" else "expired",
+                    {"task_control": control},
+                )
+        append_jsonl(
+            self.events_path,
+            {
+                "schema_version": 1,
+                "timestamp_utc": utc_now(),
+                "node_id": self.config.node_id,
+                "kind": "task_control",
+                "item_id": root_job_id,
+                "action": str(control.get("action")),
+                "control_id": str(control.get("control_id")),
+                "signed_by": safe_id(signed_by),
+            },
+        )
+        self.publish_runtime_state(announce=True)
+        return True
+
+    def task_control_for(self, item_id: str, origin_node_id: str = "") -> dict[str, Any] | None:
+        normalized = safe_id(item_id)
+        origin_raw = str(origin_node_id).strip()
+        origin = safe_id(origin_raw) if origin_raw else ""
+        with self._task_controls_lock:
+            controls = list(self._task_controls.values())
+        for control in reversed(controls):
+            root_job_id = safe_id(str(control.get("root_job_id", "")))
+            signed_by = safe_id(str(control.get("signed_by") or control.get("issuer_node_id") or ""))
+            authorized = signed_by == origin if origin else signed_by == self.config.node_id
+            if authorized and (normalized == root_job_id or normalized.startswith(root_job_id + "-")):
+                return dict(control)
+        return None
+
+    def build_compute_receipt(
+        self,
+        envelope: dict[str, Any],
+        result: dict[str, Any],
+        performance: dict[str, Any],
+        *,
+        started_utc: str,
+        finished_utc: str,
+    ) -> dict[str, Any]:
+        task = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
+        role = str(result.get("role_result", "")).strip().lower()
+        width = max(0, int(task.get("x_end", 0) or 0) - int(task.get("x_start", 0) or 0))
+        height = max(0, int(task.get("y_end", 0) or 0) - int(task.get("y_start", 0) or 0))
+        unit = "deterministic_operation"
+        work_units = 0
+        if role == "compute" and width > 0 and height > 0:
+            unit = "rendered_pixel"
+            work_units = width * height
+        elif role == "verify" and isinstance(result.get("verification"), dict):
+            verification = result["verification"]
+            sample_width = max(
+                0,
+                int(verification.get("sample_x_end", 0) or 0)
+                - int(verification.get("sample_x_start", 0) or 0),
+            )
+            sample_rows = max(0, int(verification.get("sample_rows", 0) or 0))
+            unit = "verified_pixel"
+            work_units = sample_width * sample_rows
+        unsigned = {
+            "schema": "silicium.compute-receipt.v1",
+            "task_id": safe_id(str(envelope.get("task_id", ""))),
+            "root_job_id": safe_id(str(task.get("root_job_id") or task.get("job_id") or "")),
+            "worker_node_id": self.config.node_id,
+            "role": role or "delegation",
+            "workload": str(task.get("workload", "")),
+            "billable_work_units": work_units,
+            "unit": unit,
+            "task_hash": sha256_json(task),
+            "result_hash": str(result.get("result_hash", "")),
+            "started_utc": started_utc,
+            "finished_utc": finished_utc,
+            "performance": performance,
+        }
+        receipt_hash = sha256_json(unsigned)
+        return {
+            **unsigned,
+            "receipt_hash": receipt_hash,
+            "worker_identity_id": self.peer_network.identity.identity_id,
+            "worker_public_key": self.peer_network.identity.public_key_b64,
+            "worker_signature": self.peer_network.identity.sign_bytes(stable_json(unsigned).encode("utf-8")),
+        }
 
     def _task_progress_monitor(
         self,
@@ -4870,6 +5088,17 @@ class NetworkNode:
         active["started_utc"] = utc_now()
         body_key = "request" if kind == "request" else "task"
         body = envelope.get(body_key) if isinstance(envelope.get(body_key), dict) else {}
+        item_id_for_control = str(envelope.get("request_id") or envelope.get("task_id") or "")
+        control_origin = str(envelope.get("origin_node_id") or envelope.get("dispatched_by") or "")
+        existing_control = self.task_control_for(item_id_for_control, control_origin)
+        if existing_control is not None:
+            self.update_envelope_status(
+                envelope,
+                "cancelled" if existing_control.get("action") == "cancel" else "expired",
+                {"task_control": existing_control},
+            )
+            return
+        self.runtime.begin_task()
         timeout_seconds = max(1, int(body.get("timeout_s", 300) or 300))
         progress_path = self.config.export_dir / f"task-progress.{safe_path_id(active['item_id'])}.json"
         envelope["_runtime_progress_path"] = str(progress_path)
@@ -4943,27 +5172,77 @@ class NetworkNode:
             "system_memory_percent": float(end_telemetry.get("system_memory_percent", 0.0) or 0.0),
             "logical_cpu_count": int(end_telemetry.get("logical_cpu_count", 0) or 0),
         }
+        finished_utc = utc_now()
         result.update(
             {
                 "schema_version": 1,
                 "node_id": self.config.node_id,
                 "roles": sorted(self.config.roles),
-                "finished_utc": utc_now(),
+                "finished_utc": finished_utc,
                 "duration_ms": duration_ms,
                 "performance": performance,
             }
         )
+        compute_receipt = self.build_compute_receipt(
+            envelope,
+            result,
+            performance,
+            started_utc=str(active.get("started_utc", "")),
+            finished_utc=finished_utc,
+        )
+        result["compute_receipt"] = compute_receipt
+        if str(result.get("role_result", "")).strip().lower() == "verify":
+            accepted_receipt_hash = str(body.get("compute_receipt_hash", "")).strip()
+            attestation_unsigned = {
+                "schema": "silicium.receipt-attestation.v1",
+                "task_id": safe_id(str(envelope.get("task_id", ""))),
+                "compute_receipt_hash": accepted_receipt_hash,
+                "accepted": bool(result.get("choice", result.get("verified", False))),
+                "verifier_node_id": self.config.node_id,
+                "finished_utc": finished_utc,
+            }
+            result["receipt_attestation"] = {
+                **attestation_unsigned,
+                "verifier_identity_id": self.peer_network.identity.identity_id,
+                "verifier_public_key": self.peer_network.identity.public_key_b64,
+                "verifier_signature": self.peer_network.identity.sign_bytes(
+                    stable_json(attestation_unsigned).encode("utf-8")
+                ),
+            }
         safe_item = safe_id(item_id)
         path_item = safe_path_id(safe_item)
         log_payload = {"schema_version": 1, "item_id": safe_item, "ok": ok, "error": error, "duration_ms": duration_ms}
         atomic_write_json(self.config.export_dir / f"result.{path_item}.json", result)
         atomic_write_json(self.config.export_dir / f"logs.{path_item}.json", log_payload)
-        self.update_envelope_status(envelope, "completed" if ok else "failed", result)
+        active_control = self.task_control_for(item_id, control_origin)
+        cancelled = active_control is not None or error.startswith("task_cancelled:")
+        timed_out = error.startswith("task_timeout:")
+        terminal_status = (
+            "cancelled"
+            if cancelled
+            else "expired"
+            if timed_out
+            else "completed"
+            if ok
+            else "failed"
+        )
+        self.update_envelope_status(envelope, terminal_status, result)
         if ok:
             self.metrics["handled"] = int(self.metrics.get("handled", 0) or 0) + 1
-        else:
+        elif not cancelled and not timed_out:
             self.metrics["failed"] = int(self.metrics.get("failed", 0) or 0) + 1
             self.schedule_retry_or_dead_letter(envelope, error)
+        elif timed_out:
+            timeout_control = {
+                "control_id": f"{safe_item}-expire-{int(time.time() * 1000)}",
+                "root_job_id": safe_item,
+                "action": "expire",
+                "reason": error,
+                "issuer_node_id": self.config.node_id,
+                "issued_utc": utc_now(),
+            }
+            self.apply_task_control(timeout_control, signed_by=self.config.node_id)
+            self.peer_network.publish("task_control", timeout_control, background=True)
         self.metrics["duration_total_ms"] = int(self.metrics.get("duration_total_ms", 0) or 0) + duration_ms
         self.metrics["duration_max_ms"] = max(int(self.metrics.get("duration_max_ms", 0) or 0), duration_ms)
         self.metrics["last_duration_ms"] = duration_ms
@@ -4992,7 +5271,24 @@ class NetworkNode:
                     "result_hash": result.get("result_hash", ""),
                     "proof_ref": result.get("proof_ref", {}),
                 },
-        )
+            )
+            if str(result.get("role_result", "")).strip().lower() == "verify":
+                self.peer_network.publish(
+                    "worker_handoff",
+                    {
+                        "item_id": safe_item,
+                        "source_task_id": str(body.get("source_task_id", "")),
+                        "compute_node_id": str(body.get("source_node_id", "")),
+                        "verify_node_id": self.config.node_id,
+                        "content_id": str(
+                            (body.get("source_output_ref") or {}).get("content_id", "")
+                            if isinstance(body.get("source_output_ref"), dict)
+                            else ""
+                        ),
+                        "receipt_hash": str(body.get("compute_receipt_hash", "")),
+                        "verified": bool(result.get("choice", result.get("verified", False))),
+                    },
+                )
         self.update_reputation(ok, kind, result)
         if ok and result.get("on_chain"):
             self.refresh_local_onchain_profile(force=True)
@@ -5006,7 +5302,7 @@ class NetworkNode:
                 "error": error,
                 "duration_ms": duration_ms,
                 "progress_percent": 100.0 if ok else completed_activity.get("progress_percent", 0.0),
-                "phase": "completed" if ok else "failed",
+                "phase": terminal_status,
                 "timestamp_utc": utc_now(),
                 "performance": performance,
             }

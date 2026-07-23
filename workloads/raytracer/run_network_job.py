@@ -43,6 +43,7 @@ from workloads.raytracer.raytracer_workload import (  # noqa: E402
     scene_resolution,
     write_optional_png,
 )
+from tools.network_node import NodeIdentity, sha256_json, stable_json  # noqa: E402
 
 
 def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -50,6 +51,61 @@ def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
 
 RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/raytracer-fragment"
 RAYTRACER_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/raytracer-fragment"
+
+
+def validate_compute_receipt(result: dict[str, Any], task_id: str) -> dict[str, Any]:
+    receipt = result.get("compute_receipt")
+    if not isinstance(receipt, dict):
+        raise RuntimeError(f"compute_receipt_missing:{task_id}")
+    unsigned = {
+        key: value
+        for key, value in receipt.items()
+        if key not in {"receipt_hash", "worker_identity_id", "worker_public_key", "worker_signature"}
+    }
+    expected_hash = sha256_json(unsigned)
+    if str(receipt.get("receipt_hash", "")) != expected_hash:
+        raise RuntimeError(f"compute_receipt_hash_invalid:{task_id}")
+    public_key = str(receipt.get("worker_public_key", ""))
+    if NodeIdentity.identity_id_for_key(public_key) != str(receipt.get("worker_identity_id", "")):
+        raise RuntimeError(f"compute_receipt_identity_invalid:{task_id}")
+    if not NodeIdentity.verify_bytes(
+        stable_json(unsigned).encode("utf-8"),
+        str(receipt.get("worker_signature", "")),
+        public_key,
+    ):
+        raise RuntimeError(f"compute_receipt_signature_invalid:{task_id}")
+    if str(receipt.get("task_id", "")) != task_id:
+        raise RuntimeError(f"compute_receipt_task_invalid:{task_id}")
+    return receipt
+
+
+def validate_receipt_attestation(
+    verify_result: dict[str, Any],
+    compute_receipt_hash: str,
+    verify_task_id: str,
+) -> dict[str, Any]:
+    attestation = verify_result.get("receipt_attestation")
+    if not isinstance(attestation, dict):
+        raise RuntimeError(f"receipt_attestation_missing:{verify_task_id}")
+    unsigned = {
+        key: value
+        for key, value in attestation.items()
+        if key not in {"verifier_identity_id", "verifier_public_key", "verifier_signature"}
+    }
+    if str(attestation.get("compute_receipt_hash", "")) != compute_receipt_hash:
+        raise RuntimeError(f"receipt_attestation_hash_mismatch:{verify_task_id}")
+    public_key = str(attestation.get("verifier_public_key", ""))
+    if NodeIdentity.identity_id_for_key(public_key) != str(attestation.get("verifier_identity_id", "")):
+        raise RuntimeError(f"receipt_attestation_identity_invalid:{verify_task_id}")
+    if not NodeIdentity.verify_bytes(
+        stable_json(unsigned).encode("utf-8"),
+        str(attestation.get("verifier_signature", "")),
+        public_key,
+    ):
+        raise RuntimeError(f"receipt_attestation_signature_invalid:{verify_task_id}")
+    if not bool(attestation.get("accepted", False)):
+        raise RuntimeError(f"receipt_attestation_rejected:{verify_task_id}")
+    return attestation
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -684,6 +740,7 @@ def main(argv: list[str] | None = None) -> int:
                     "verification_batch_rows": max(1, int(args.verification_batch_rows)),
                     "scene_p2p_ref": scene_ref,
                     "timeout_s": int(args.node_timeout_s),
+                    "root_job_id": job_id,
                 },
             }
             if emitter_node is not None:
@@ -752,6 +809,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 ensure_task_success(compute_result, task_id)
                 ensure_raytracer_compute_contract(compute_result, task_id)
+                compute_receipt = validate_compute_receipt(compute_result, task_id)
                 output_ref = output_ref_from_compute(compute_result)
                 result_hash = result_hash_from_compute(compute_result)
                 fragment_bytes = read_ref_bytes(args, export_dir, output_ref)
@@ -796,6 +854,8 @@ def main(argv: list[str] | None = None) -> int:
                     "verification_mode": expected_milestones["strategy"],
                     "verification_commitment_hash": expected_milestones["commitment_hash"],
                     "verification_milestone_count": expected_milestones["milestone_count"],
+                    "compute_receipt_hash": compute_receipt["receipt_hash"],
+                    "compute_billable_work_units": int(compute_receipt.get("billable_work_units", 0) or 0),
                 }
             )
             write_progress("fragment_computed")
@@ -805,6 +865,7 @@ def main(argv: list[str] | None = None) -> int:
                 "expected_milestones": expected_milestones,
                 "result_hash": result_hash,
                 "output_ref": output_ref,
+                "compute_receipt": compute_receipt,
             }
 
         def launch_verify(context: dict[str, Any], computed: dict[str, Any]) -> dict[str, Any]:
@@ -816,6 +877,7 @@ def main(argv: list[str] | None = None) -> int:
             fragment_id = str(context["fragment_id"])
             compute_result = computed["compute_result"]
             compute_task_id = str(computed["compute_task_id"])
+            compute_receipt = computed["compute_receipt"]
             expected_milestones = computed["expected_milestones"]
             attempt = int(context.get("verify_attempt", 0)) + 1
             context["verify_attempt"] = attempt
@@ -876,6 +938,8 @@ def main(argv: list[str] | None = None) -> int:
                     "y_start": y_start,
                     "y_end": y_end,
                     "timeout_s": int(args.node_timeout_s),
+                    "root_job_id": job_id,
+                    "compute_receipt_hash": str(compute_receipt["receipt_hash"]),
                 },
             }
             if emitter_node is not None:
@@ -957,6 +1021,13 @@ def main(argv: list[str] | None = None) -> int:
                 write_progress("verify_failed")
                 raise
             verified = bool(verify_result.get("choice", verify_result.get("verified", False)))
+            compute_receipt = _computed["compute_receipt"]
+            receipt_attestation = validate_receipt_attestation(
+                verify_result,
+                str(compute_receipt["receipt_hash"]),
+                verify_id,
+            )
+            verify_receipt = validate_compute_receipt(verify_result, verify_id)
             progress_fragments[index].update(
                 {
                     "status": "verified" if verified else "verify_failed",
@@ -965,6 +1036,11 @@ def main(argv: list[str] | None = None) -> int:
                     "verify_recomputed_hash": verify_result.get("recomputed_hash", ""),
                     "verification_challenge": token["challenge"],
                     "verification_result": verify_result.get("verification", {}),
+                    "compute_receipt_hash": compute_receipt["receipt_hash"],
+                    "compute_billable_work_units": int(compute_receipt.get("billable_work_units", 0) or 0),
+                    "verify_receipt_hash": verify_receipt["receipt_hash"],
+                    "verify_billable_work_units": int(verify_receipt.get("billable_work_units", 0) or 0),
+                    "receipt_attestation": receipt_attestation,
                 }
             )
             write_progress("fragment_verified")
@@ -988,6 +1064,21 @@ def main(argv: list[str] | None = None) -> int:
         reassembled = reassemble_fragments(fragment_files, reassembled_ppm, reassembled_png, reassemble_json)
         for fragment in progress_fragments.values():
             fragment["status"] = "reassembled"
+        accepted_fragments = [
+            fragment
+            for fragment in progress_fragments.values()
+            if isinstance(fragment.get("receipt_attestation"), dict)
+            and fragment["receipt_attestation"].get("accepted") is True
+        ]
+        receipt_hashes = [
+            value
+            for fragment in accepted_fragments
+            for value in (
+                str(fragment.get("compute_receipt_hash", "")),
+                str(fragment.get("verify_receipt_hash", "")),
+            )
+            if value
+        ]
         summary = {
             "schema_version": 1,
             "mode": "raytracer_network_job",
@@ -1009,6 +1100,17 @@ def main(argv: list[str] | None = None) -> int:
             "reassembled_hash": reassembled.get("result_sha256", sha256_file(reassembled_ppm)),
             "result_path": str(reassembled.get("result_png_path") or reassembled_ppm),
             "devnet_trace": {"enabled": False, "status": "not_requested"},
+            "billing": {
+                "schema": "silicium.verified-billing.v1",
+                "billable_work_units": sum(
+                    int(fragment.get("compute_billable_work_units", 0) or 0)
+                    + int(fragment.get("verify_billable_work_units", 0) or 0)
+                    for fragment in accepted_fragments
+                ),
+                "unit_policy": "deterministic rendered and sampled pixels; self-reported CPU is non-billable",
+                "receipt_hashes": receipt_hashes,
+                "receipt_set_hash": sha256_json(receipt_hashes),
+            },
         }
         write_json(summary_path, summary)
         if args.devnet_trace:
