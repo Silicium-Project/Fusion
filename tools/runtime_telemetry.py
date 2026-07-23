@@ -56,8 +56,17 @@ def _process_memory() -> tuple[int, int]:
 
         counters = PROCESS_MEMORY_COUNTERS_EX()
         counters.cb = ctypes.sizeof(counters)
-        handle = ctypes.windll.kernel32.GetCurrentProcess()
-        if ctypes.windll.psapi.GetProcessMemoryInfo(
+        kernel32 = ctypes.windll.kernel32
+        psapi = ctypes.windll.psapi
+        kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+        psapi.GetProcessMemoryInfo.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(PROCESS_MEMORY_COUNTERS_EX),
+            ctypes.c_ulong,
+        ]
+        psapi.GetProcessMemoryInfo.restype = ctypes.c_int
+        handle = kernel32.GetCurrentProcess()
+        if psapi.GetProcessMemoryInfo(
             handle, ctypes.byref(counters), counters.cb
         ):
             return int(counters.WorkingSetSize), int(counters.PeakWorkingSetSize)
