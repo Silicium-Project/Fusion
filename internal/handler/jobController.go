@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -45,6 +48,16 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		}
 		fragmentCount = parsed
 	}
+	maxRuntimeSeconds := 3600
+	if raw := strings.TrimSpace(r.FormValue("max_runtime_seconds")); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 30 || parsed > 86400 {
+			http.Error(w, "max_runtime_seconds must be between 30 and 86400", http.StatusBadRequest)
+			return
+		}
+		maxRuntimeSeconds = parsed
+	}
+	deadline := time.Now().Add(time.Duration(maxRuntimeSeconds) * time.Second)
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -83,6 +96,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		SiliciumJobID: jobID,
 		InputPath:     absoluteInput,
 		DashboardURL:  silicium.ConfigFromEnv().DashboardURL,
+		DeadlineAt:    &deadline,
 	}
 	if result := h.DB.Create(&job); result.Error != nil {
 		http.Error(w, "Could not create job: "+result.Error.Error(), http.StatusInternalServerError)
@@ -100,12 +114,83 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
 		return
 	}
+	page := boundedQueryInt(r, "page", 1, 1, 1_000_000)
+	pageSize := boundedQueryInt(r, "page_size", 20, 1, 100)
+	query := h.DB.Model(&models.Job{}).Where("user_id = ?", userID)
+	if status := strings.TrimSpace(r.URL.Query().Get("status")); status != "" && status != "all" {
+		query = query.Where("status = ?", status)
+	}
+	var total int64
+	if result := query.Count(&total); result.Error != nil {
+		http.Error(w, "Could not count jobs", http.StatusInternalServerError)
+		return
+	}
 	var jobs []models.Job
-	if result := h.DB.Where("user_id = ?", userID).Order("created_at desc").Find(&jobs); result.Error != nil {
+	if result := query.Order("created_at desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&jobs); result.Error != nil {
 		http.Error(w, "Could not list jobs", http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("X-Total-Count", strconv.FormatInt(total, 10))
+	w.Header().Set("X-Page", strconv.Itoa(page))
+	w.Header().Set("X-Page-Size", strconv.Itoa(pageSize))
+	w.Header().Set("Access-Control-Expose-Headers", "X-Total-Count, X-Page, X-Page-Size")
 	writeJSON(w, http.StatusOK, jobs)
+}
+
+type cancelJobRequest struct {
+	Reason string `json:"reason"`
+}
+
+func (h *Handler) CancelJob(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.jobForRequest(w, r)
+	if !ok {
+		return
+	}
+	if job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled" || job.Status == "expired" {
+		writeJSON(w, http.StatusOK, job)
+		return
+	}
+	var request cancelJobRequest
+	_ = json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&request)
+	reason := strings.TrimSpace(request.Reason)
+	if reason == "" {
+		reason = "cancelled by payer"
+	}
+	now := time.Now()
+	updates := map[string]any{
+		"status":              "cancelling",
+		"cancel_requested_at": &now,
+		"cancel_reason":       reason,
+	}
+	if result := h.DB.Model(&job).Updates(updates); result.Error != nil {
+		http.Error(w, "Could not cancel job", http.StatusInternalServerError)
+		return
+	}
+	control := silicium.TaskControl{
+		ControlID:  fmt.Sprintf("%s-cancel-%d", job.SiliciumJobID, now.UnixNano()),
+		RootJobID:  job.SiliciumJobID,
+		Action:     "cancel",
+		Reason:     reason,
+		IssuerNode: silicium.ConfigFromEnv().OrchestratorNodeID,
+		IssuedUTC:  now.UTC().Format(time.RFC3339Nano),
+	}
+	signalCtx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	signalErr := silicium.PublishTaskControl(signalCtx, silicium.ConfigFromEnv(), control)
+	cancel()
+	h.cancelRun(job.ID, errors.New(reason))
+	billableUnits, receiptSetHash := verifiedBillingForJob(job)
+	if signalErr != nil {
+		h.DB.Model(&job).Update("error_message", "network cancellation announcement pending: "+signalErr.Error())
+	}
+	h.DB.Model(&job).Updates(map[string]any{
+		"status":               "cancelled",
+		"cancelled_at":         &now,
+		"completed_at":         &now,
+		"billable_work_units":  billableUnits,
+		"compute_receipt_hash": receiptSetHash,
+	})
+	h.DB.First(&job, job.ID)
+	writeJSON(w, http.StatusAccepted, job)
 }
 
 func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
@@ -136,19 +221,24 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 
 	payload := map[string]any{
 		"job": map[string]any{
-			"id":            job.ID,
-			"title":         job.Title,
-			"description":   job.Description,
-			"workload":      job.Workload,
-			"priority":      job.Priority,
-			"status":        job.Status,
-			"siliciumJobId": job.SiliciumJobID,
-			"devnetJob":     job.DevnetJob,
-			"dashboardUrl":  job.DashboardURL,
-			"errorMessage":  job.ErrorMessage,
-			"createdAt":     job.CreatedAt,
-			"startedAt":     job.StartedAt,
-			"completedAt":   job.CompletedAt,
+			"id":                 job.ID,
+			"title":              job.Title,
+			"description":        job.Description,
+			"workload":           job.Workload,
+			"priority":           job.Priority,
+			"status":             job.Status,
+			"siliciumJobId":      job.SiliciumJobID,
+			"devnetJob":          job.DevnetJob,
+			"dashboardUrl":       job.DashboardURL,
+			"errorMessage":       job.ErrorMessage,
+			"createdAt":          job.CreatedAt,
+			"startedAt":          job.StartedAt,
+			"completedAt":        job.CompletedAt,
+			"deadlineAt":         job.DeadlineAt,
+			"cancelledAt":        job.CancelledAt,
+			"cancelReason":       job.CancelReason,
+			"billableWorkUnits":  job.BillableWorkUnits,
+			"computeReceiptHash": job.ComputeReceiptHash,
 		},
 		"resultReady": job.ResultPath != "",
 		"resultUrl":   "/jobs/" + strconv.Itoa(int(job.ID)) + "/result",
@@ -236,21 +326,72 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 	if result := h.DB.First(&job, jobID); result.Error != nil {
 		return
 	}
+	if job.Status == "cancelled" || job.Status == "cancelling" {
+		return
+	}
 	now := time.Now()
 	h.DB.Model(&job).Updates(map[string]any{"status": "running", "started_at": &now})
 
-	runResult := silicium.RunJob(job, silicium.ConfigFromEnv())
+	baseCtx, cancel := context.WithCancelCause(context.Background())
+	ctx := context.Context(baseCtx)
+	deadlineCancel := func() {}
+	if job.DeadlineAt != nil {
+		ctx, deadlineCancel = context.WithDeadlineCause(baseCtx, *job.DeadlineAt, errors.New("job deadline exceeded"))
+	}
+	h.registerRun(job.ID, cancel)
+	defer h.unregisterRun(job.ID)
+	defer cancel(nil)
+	defer deadlineCancel()
+	runResult := silicium.RunJob(ctx, job, silicium.ConfigFromEnv())
+	var current models.Job
+	h.DB.First(&current, jobID)
+	if current.Status == "cancelled" || current.Status == "cancelling" {
+		return
+	}
+	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) || (job.DeadlineAt != nil && time.Now().After(*job.DeadlineAt)) {
+		runResult.Status = "expired"
+		runResult.ErrorMessage = "job deadline exceeded"
+		expiredAt := time.Now()
+		control := silicium.TaskControl{
+			ControlID:   fmt.Sprintf("%s-expire-%d", job.SiliciumJobID, expiredAt.UnixNano()),
+			RootJobID:   job.SiliciumJobID,
+			Action:      "expire",
+			Reason:      runResult.ErrorMessage,
+			IssuerNode:  silicium.ConfigFromEnv().OrchestratorNodeID,
+			IssuedUTC:   expiredAt.UTC().Format(time.RFC3339Nano),
+			DeadlineUTC: job.DeadlineAt.UTC().Format(time.RFC3339Nano),
+		}
+		signalCtx, signalCancel := context.WithTimeout(context.Background(), 6*time.Second)
+		_ = silicium.PublishTaskControl(signalCtx, silicium.ConfigFromEnv(), control)
+		signalCancel()
+	}
 	updates := map[string]any{
-		"status":            runResult.Status,
-		"result_path":       runResult.ResultPath,
-		"summary_path":      runResult.SummaryPath,
-		"devnet_trace_path": runResult.DevnetTracePath,
-		"devnet_job":        runResult.DevnetJob,
-		"error_message":     runResult.ErrorMessage,
-		"dashboard_url":     silicium.ConfigFromEnv().DashboardURL,
-		"completed_at":      time.Now(),
+		"status":               runResult.Status,
+		"result_path":          runResult.ResultPath,
+		"summary_path":         runResult.SummaryPath,
+		"devnet_trace_path":    runResult.DevnetTracePath,
+		"devnet_job":           runResult.DevnetJob,
+		"error_message":        runResult.ErrorMessage,
+		"dashboard_url":        silicium.ConfigFromEnv().DashboardURL,
+		"billable_work_units":  runResult.BillableWorkUnits,
+		"compute_receipt_hash": runResult.ComputeReceiptHash,
+		"completed_at":         time.Now(),
 	}
 	h.DB.Model(&models.Job{}).Where("id = ?", jobID).Updates(updates)
+}
+
+func boundedQueryInt(r *http.Request, key string, fallback, minimum, maximum int) int {
+	value, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get(key)))
+	if err != nil {
+		return fallback
+	}
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
 }
 
 func (h *Handler) jobForRequest(w http.ResponseWriter, r *http.Request) (models.Job, bool) {
@@ -317,6 +458,46 @@ func progressPathForJob(job models.Job) string {
 		return filepath.Join(filepath.Dir(job.SummaryPath), "auto-split-demo-progress.json")
 	}
 	return filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "raytracer-progress.json")
+}
+
+func verifiedBillingForJob(job models.Job) (uint64, string) {
+	payload := readJSONMap(job.SummaryPath)
+	if len(payload) == 0 {
+		payload = readJSONMap(progressPathForJob(job))
+	}
+	if billing, ok := payload["billing"].(map[string]any); ok {
+		units, _ := billing["billable_work_units"].(float64)
+		receiptHash, _ := billing["receipt_set_hash"].(string)
+		return uint64(max(0, units)), receiptHash
+	}
+	fragments, _ := payload["fragments"].([]any)
+	var units uint64
+	receiptHashes := make([]string, 0, len(fragments)*2)
+	for _, raw := range fragments {
+		fragment, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		attestation, ok := fragment["receipt_attestation"].(map[string]any)
+		if !ok || attestation["accepted"] != true {
+			continue
+		}
+		for _, key := range []string{"compute_billable_work_units", "verify_billable_work_units"} {
+			if value, ok := fragment[key].(float64); ok && value > 0 {
+				units += uint64(value)
+			}
+		}
+		for _, key := range []string{"compute_receipt_hash", "verify_receipt_hash"} {
+			if value, ok := fragment[key].(string); ok && value != "" {
+				receiptHashes = append(receiptHashes, value)
+			}
+		}
+	}
+	if len(receiptHashes) == 0 {
+		return units, ""
+	}
+	digest := sha256.Sum256([]byte(strings.Join(receiptHashes, "\n")))
+	return units, fmt.Sprintf("%x", digest)
 }
 
 func safeFilename(name string) string {

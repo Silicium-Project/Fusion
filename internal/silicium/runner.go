@@ -1,9 +1,12 @@
 package silicium
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,15 +30,18 @@ type RunnerConfig struct {
 	DevnetTxDelayMS       string
 	MinComputeReputation  string
 	MinVerifyReputation   string
+	ControlURL            string
 }
 
 type RunResult struct {
-	Status          string
-	ResultPath      string
-	SummaryPath     string
-	DevnetTracePath string
-	DevnetJob       string
-	ErrorMessage    string
+	Status             string
+	ResultPath         string
+	SummaryPath        string
+	DevnetTracePath    string
+	DevnetJob          string
+	ErrorMessage       string
+	BillableWorkUnits  uint64
+	ComputeReceiptHash string
 }
 
 func ConfigFromEnv() RunnerConfig {
@@ -56,19 +62,54 @@ func ConfigFromEnv() RunnerConfig {
 		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
 		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
 		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
+		ControlURL:            envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:"+envDefault("SILICIUM_EMITTER_PORT", "46102")+"/gossip/publish"),
 	}
 }
 
-func RunJob(job models.Job, cfg RunnerConfig) RunResult {
+type TaskControl struct {
+	ControlID   string `json:"control_id"`
+	RootJobID   string `json:"root_job_id"`
+	Action      string `json:"action"`
+	Reason      string `json:"reason"`
+	IssuerNode  string `json:"issuer_node_id"`
+	IssuedUTC   string `json:"issued_utc"`
+	DeadlineUTC string `json:"deadline_utc,omitempty"`
+}
+
+func PublishTaskControl(ctx context.Context, cfg RunnerConfig, control TaskControl) error {
+	payload, err := json.Marshal(map[string]any{"topic": "task_control", "payload": control})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.ControlURL, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	if cfg.MeshKey != "" {
+		request.Header.Set("Authorization", "Bearer "+cfg.MeshKey)
+	}
+	response, err := (&http.Client{Timeout: 5 * time.Second}).Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("task control rejected: %s", response.Status)
+	}
+	return nil
+}
+
+func RunJob(ctx context.Context, job models.Job, cfg RunnerConfig) RunResult {
 	switch strings.TrimSpace(job.Workload) {
 	case "", "raytracer":
-		return RunRaytracer(job, cfg)
+		return RunRaytracer(ctx, job, cfg)
 	default:
 		return RunResult{Status: "failed", ErrorMessage: "unsupported workload"}
 	}
 }
 
-func RunRaytracer(job models.Job, cfg RunnerConfig) RunResult {
+func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResult {
 	if strings.TrimSpace(cfg.SeedPeers) == "" {
 		return RunResult{Status: "failed", ErrorMessage: "SILICIUM_SEED_PEERS is required"}
 	}
@@ -80,7 +121,7 @@ func RunRaytracer(job models.Job, cfg RunnerConfig) RunResult {
 		return RunResult{Status: "failed", ErrorMessage: fmt.Sprintf("network root not found: %s", networkRoot)}
 	}
 	args := raytracerArgs(job, cfg)
-	cmd := pythonCommand(networkRoot, args...)
+	cmd := pythonCommand(ctx, networkRoot, args...)
 	output, err := cmd.CombinedOutput()
 	summaryPath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "raytracer-summary.json")
 	result := parseRaytracerSummary(summaryPath)
@@ -101,6 +142,11 @@ func RunRaytracer(job models.Job, cfg RunnerConfig) RunResult {
 		}
 	}
 	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			result.Status = "cancelled"
+			result.ErrorMessage = cause.Error()
+			return result
+		}
 		result.Status = "failed"
 		result.ErrorMessage = strings.TrimSpace(string(output))
 		if result.ErrorMessage == "" {
@@ -147,13 +193,13 @@ func NewJobID(userID uint) string {
 	return fmt.Sprintf("site-render-%d-%d", userID, time.Now().UnixNano())
 }
 
-func pythonCommand(networkRoot string, args ...string) *exec.Cmd {
+func pythonCommand(ctx context.Context, networkRoot string, args ...string) *exec.Cmd {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("py", args...)
+		cmd = exec.CommandContext(ctx, "py", args...)
 	} else {
 		fullArgs := append([]string{}, args...)
-		cmd = exec.Command("python3", fullArgs...)
+		cmd = exec.CommandContext(ctx, "python3", fullArgs...)
 	}
 	cmd.Dir = networkRoot
 	return cmd
@@ -190,6 +236,14 @@ func parseRaytracerSummary(summaryPath string) RunResult {
 			if msg, ok := trace["error"].(string); ok && strings.TrimSpace(msg) != "" {
 				result.ErrorMessage = msg
 			}
+		}
+	}
+	if billing, ok := payload["billing"].(map[string]any); ok {
+		if units, ok := billing["billable_work_units"].(float64); ok && units >= 0 {
+			result.BillableWorkUnits = uint64(units)
+		}
+		if receiptHash, ok := billing["receipt_set_hash"].(string); ok {
+			result.ComputeReceiptHash = receiptHash
 		}
 	}
 	return result
