@@ -109,6 +109,7 @@ struct MachineActivity {
     platform: String,
     cpu_count: u64,
     active_tasks: Vec<MachineTaskActivity>,
+    task_queue: Vec<MachineQueueItem>,
     last_seen_unix: u64,
     last_seen_utc: String,
     last_claim_poll_utc: String,
@@ -158,6 +159,29 @@ struct MachineTaskActivity {
     activity: String,
     workload: String,
     fragment_index: String,
+    fragment_count: String,
+    source_task_id: String,
+    source_node_id: String,
+    bounds: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MachineQueueItem {
+    item_id: String,
+    kind: String,
+    role: String,
+    activity: String,
+    workload: String,
+    fragment_index: String,
+    fragment_count: String,
+    source_task_id: String,
+    source_node_id: String,
+    status: String,
+    priority: String,
+    assigned_peer_id: String,
+    origin_node_id: String,
+    bounds: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -2018,7 +2042,7 @@ fn identity_mode_check() -> CheckItem {
     CheckItem {
         name: "Identite reseau".to_string(),
         ok: true,
-        detail: "Identite Ed25519 activee - OpenSSL requis pour le runtime reseau".to_string(),
+        detail: "Identite Ed25519 activee en processus - aucun openssl.exe lance".to_string(),
     }
 }
 
@@ -2683,6 +2707,26 @@ fn json_value_text(value: Option<&Value>) -> String {
     }
 }
 
+fn task_bounds(value: &Value) -> String {
+    let x_start = json_value_text(value.get("x_start"));
+    let x_end = json_value_text(value.get("x_end"));
+    let y_start = json_value_text(value.get("y_start"));
+    let y_end = json_value_text(value.get("y_end"));
+    if [
+        x_start.as_str(),
+        x_end.as_str(),
+        y_start.as_str(),
+        y_end.as_str(),
+    ]
+    .iter()
+    .any(|item| item.is_empty())
+    {
+        String::new()
+    } else {
+        format!("x {x_start}..{x_end}, y {y_start}..{y_end}")
+    }
+}
+
 fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
     let snapshot_path = export_dir.join("mesh.discovery.json");
     let Ok(raw) = fs::read_to_string(snapshot_path) else {
@@ -2857,6 +2901,82 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                             .unwrap_or("")
                             .to_string(),
                         fragment_index: json_value_text(task.get("fragment_index")),
+                        fragment_count: json_value_text(task.get("fragment_count")),
+                        source_task_id: task
+                            .get("source_task_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        source_node_id: task
+                            .get("source_node_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        bounds: task_bounds(task),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let task_queue = peer
+                .get("task_queue")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|task| {
+                    Some(MachineQueueItem {
+                        item_id: task.get("item_id")?.as_str()?.to_string(),
+                        kind: task
+                            .get("kind")
+                            .and_then(Value::as_str)
+                            .unwrap_or("task")
+                            .to_string(),
+                        role: task
+                            .get("role")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        activity: task
+                            .get("activity")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        workload: task
+                            .get("workload")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        fragment_index: json_value_text(task.get("fragment_index")),
+                        fragment_count: json_value_text(task.get("fragment_count")),
+                        source_task_id: task
+                            .get("source_task_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        source_node_id: task
+                            .get("source_node_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        status: task
+                            .get("status")
+                            .and_then(Value::as_str)
+                            .unwrap_or("queued")
+                            .to_string(),
+                        priority: task
+                            .get("priority")
+                            .and_then(Value::as_str)
+                            .unwrap_or("normal")
+                            .to_string(),
+                        assigned_peer_id: task
+                            .get("assigned_peer_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        origin_node_id: task
+                            .get("origin_node_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        bounds: task_bounds(task),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -2940,6 +3060,7 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                     .and_then(Value::as_u64)
                     .unwrap_or(0),
                 active_tasks,
+                task_queue,
                 last_seen_unix: last_seen,
                 last_seen_utc: peer
                     .get("updated_utc")
@@ -3242,7 +3363,7 @@ mod tests {
         fs::write(
             directory.join("mesh.discovery.json"),
             format!(
-                r#"{{"peers":[{{"node_id":"worker-a","roles":["compute"],"app_version":"0.2.9-dev.1","release_channel":"dev","release_build":"test","last_seen_unix":{now},"last_claim_poll_unix":{now},"last_claim_poll_utc":"2026-07-13T18:00:00Z","last_claim_error":"","updated_utc":"2026-07-13T18:00:00Z","activity":{{"status":"working","active_tasks":[{{"item_id":"render:1","role":"compute","activity":"fragment","workload":"raytracer-fragment","fragment_index":3}}],"last_response":{{"item_id":"verify:2","ok":true,"timestamp_utc":"2026-07-13T17:59:00Z"}}}}}}]}}"#
+                r#"{{"peers":[{{"node_id":"worker-a","roles":["compute"],"app_version":"0.2.9-dev.1","release_channel":"dev","release_build":"test","last_seen_unix":{now},"last_claim_poll_unix":{now},"last_claim_poll_utc":"2026-07-13T18:00:00Z","last_claim_error":"","updated_utc":"2026-07-13T18:00:00Z","activity":{{"status":"working","active_tasks":[{{"item_id":"render:1","role":"compute","activity":"fragment","workload":"raytracer-fragment","fragment_index":3,"fragment_count":16,"x_start":0,"x_end":100,"y_start":0,"y_end":100}}],"last_response":{{"item_id":"verify:2","ok":true,"timestamp_utc":"2026-07-13T17:59:00Z"}}}},"task_queue":[{{"item_id":"verify:3","kind":"task","role":"verify","activity":"verify","workload":"verification/rendering/raytracer-fragment","fragment_index":3,"fragment_count":16,"source_task_id":"render:1","source_node_id":"worker-b","status":"queued","priority":"high","assigned_peer_id":"","origin_node_id":"orchestrator-1","x_start":0,"x_end":100,"y_start":0,"y_end":100}}]}}]}}"#
             ),
         )
         .unwrap();
@@ -3255,6 +3376,10 @@ mod tests {
         assert_eq!(machines[0].app_version, "0.2.9-dev.1");
         assert_eq!(machines[0].release_channel, "dev");
         assert_eq!(machines[0].active_tasks[0].fragment_index, "3");
+        assert_eq!(machines[0].active_tasks[0].fragment_count, "16");
+        assert_eq!(machines[0].active_tasks[0].bounds, "x 0..100, y 0..100");
+        assert_eq!(machines[0].task_queue[0].role, "verify");
+        assert_eq!(machines[0].task_queue[0].source_node_id, "worker-b");
         assert_eq!(machines[0].last_response_ok, Some(true));
         let _ = fs::remove_dir_all(&directory);
     }

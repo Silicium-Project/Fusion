@@ -43,5 +43,5 @@ fi
 
 find "$RUNTIME_ROOT" -type d -name __pycache__ -prune -exec rm -rf -- {} +
 find "$RUNTIME_ROOT" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
-python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import aioice' "$RUNTIME_ROOT/tools/python/site-packages"
+python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import aioice, cryptography' "$RUNTIME_ROOT/tools/python/site-packages"
 echo "Linux runtime prepared: $RUNTIME_ROOT"

@@ -38,6 +38,18 @@ export type MachineTaskActivity = {
   activity: string;
   workload: string;
   fragmentIndex: string;
+  fragmentCount: string;
+  sourceTaskId: string;
+  sourceNodeId: string;
+  bounds: string;
+};
+
+export type MachineQueueItem = MachineTaskActivity & {
+  kind: string;
+  status: string;
+  priority: string;
+  assignedPeerId: string;
+  originNodeId: string;
 };
 
 export type MachineActivity = {
@@ -60,6 +72,7 @@ export type MachineActivity = {
   platform: string;
   cpuCount: number;
   activeTasks: MachineTaskActivity[];
+  taskQueue: MachineQueueItem[];
   lastSeenUnix: number;
   lastSeenUtc: string;
   lastClaimPollUtc: string;
