@@ -302,6 +302,7 @@ def run_raytracer(
     y_end: int | None = None,
     x_start: int | None = None,
     x_end: int | None = None,
+    progress_file: Path | None = None,
 ) -> dict[str, Any]:
     scene = scene.resolve()
     output = output.resolve()
@@ -323,6 +324,8 @@ def run_raytracer(
             cmd.extend(["--x-start", str(x_start)])
         if x_end is not None:
             cmd.extend(["--x-end", str(x_end)])
+        if progress_file is not None:
+            cmd.extend(["--progress-file", str(progress_file.resolve())])
         completed = subprocess.run(
             cmd,
             cwd=runtime_dir,
@@ -372,7 +375,17 @@ def command_compute(args: argparse.Namespace) -> int:
     y_end = int(args.y_end) if args.y_end != "" else None
     x_start = int(args.x_start) if args.x_start != "" else None
     x_end = int(args.x_end) if args.x_end != "" else None
-    result = run_raytracer(scene, output, int(args.timeout_s), y_start, y_end, x_start, x_end)
+    progress_file = Path(args.progress_file).resolve() if args.progress_file else None
+    result = run_raytracer(
+        scene,
+        output,
+        int(args.timeout_s),
+        y_start,
+        y_end,
+        x_start,
+        x_end,
+        progress_file,
+    )
     result["verification_milestones"] = build_verification_milestones(
         output.read_bytes(),
         y_start or 0,
@@ -581,6 +594,7 @@ def build_parser() -> argparse.ArgumentParser:
     compute.add_argument("--x-start", default="")
     compute.add_argument("--x-end", default="")
     compute.add_argument("--verification-batch-rows", default=str(DEFAULT_VERIFICATION_BATCH_ROWS))
+    compute.add_argument("--progress-file", default="")
     compute.set_defaults(func=command_compute)
 
     verify = sub.add_parser("verify")

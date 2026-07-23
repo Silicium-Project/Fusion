@@ -421,6 +421,7 @@ struct Arguments {
     y_start: Option<usize>,
     y_end: Option<usize>,
     threads: Option<usize>,
+    progress_file: Option<PathBuf>,
 }
 
 fn parse_arguments() -> Result<Arguments, String> {
@@ -445,6 +446,7 @@ fn parse_arguments() -> Result<Arguments, String> {
             "--y-start" => parsed.y_start = value.parse().ok(),
             "--y-end" => parsed.y_end = value.parse().ok(),
             "--threads" => parsed.threads = value.parse().ok(),
+            "--progress-file" => parsed.progress_file = Some(PathBuf::from(value)),
             _ => {}
         }
         index += 2;
@@ -453,6 +455,48 @@ fn parse_arguments() -> Result<Arguments, String> {
         return Err("--output is required".into());
     }
     Ok(parsed)
+}
+
+fn write_progress(
+    path: Option<&PathBuf>,
+    completed_rows: usize,
+    total_rows: usize,
+    width: usize,
+    threads: usize,
+    started: Instant,
+) {
+    let Some(path) = path else {
+        return;
+    };
+    let elapsed = started.elapsed().as_secs_f64();
+    let total_pixels = width.saturating_mul(total_rows);
+    let completed_pixels = width.saturating_mul(completed_rows);
+    let rate = if elapsed > 0.0 {
+        completed_pixels as f64 / elapsed
+    } else {
+        0.0
+    };
+    let remaining = total_pixels.saturating_sub(completed_pixels);
+    let eta = if rate > 0.0 {
+        remaining as f64 / rate
+    } else {
+        0.0
+    };
+    let progress = if total_rows > 0 {
+        100.0 * completed_rows as f64 / total_rows as f64
+    } else {
+        100.0
+    };
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let _ = fs::write(
+        path,
+        format!(
+            "{{\"schema\":\"silicium.task-progress.v1\",\"phase\":\"rendering\",\"progress_percent\":{progress:.3},\"completed_units\":{completed_rows},\"total_units\":{total_rows},\"unit\":\"rows\",\"pixels_completed\":{completed_pixels},\"pixels_total\":{total_pixels},\"throughput_units_per_second\":{rate:.3},\"eta_seconds\":{eta:.3},\"elapsed_ms\":{},\"threads\":{threads}}}",
+            started.elapsed().as_millis()
+        ),
+    );
 }
 
 fn render(scene: Arc<Scene>, args: &Arguments) -> (Vec<u8>, usize, usize, usize) {
@@ -482,6 +526,7 @@ fn render(scene: Arc<Scene>, args: &Arguments) -> (Vec<u8>, usize, usize, usize)
         .min(height.max(1));
     let next_row = Arc::new(AtomicUsize::new(0));
     let (sender, receiver) = mpsc::channel();
+    let started = Instant::now();
     let aspect = scene.width as f64 / scene.height as f64;
     let scale = (scene.fov.to_radians() * 0.5).tan();
     for _ in 0..thread_count {
@@ -518,9 +563,28 @@ fn render(scene: Arc<Scene>, args: &Arguments) -> (Vec<u8>, usize, usize, usize)
     }
     drop(sender);
     let mut pixels = vec![0_u8; width * height * 3];
-    for _ in 0..height {
+    write_progress(
+        args.progress_file.as_ref(),
+        0,
+        height,
+        width,
+        thread_count,
+        started,
+    );
+    let progress_step = (height / 100).max(1);
+    for completed in 1..=height {
         let (row, data) = receiver.recv().expect("renderer worker stopped");
         pixels[row * width * 3..(row + 1) * width * 3].copy_from_slice(&data);
+        if completed == height || completed % progress_step == 0 {
+            write_progress(
+                args.progress_file.as_ref(),
+                completed,
+                height,
+                width,
+                thread_count,
+                started,
+            );
+        }
     }
     (pixels, width, height, thread_count)
 }

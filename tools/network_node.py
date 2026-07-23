@@ -40,6 +40,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 
 from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
 from tools.resource_intelligence import DualMemoryBayes, build_resource_profile, resource_baselines
+from tools.runtime_telemetry import RuntimeTelemetrySampler
 from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256, scene_resolution
 
 
@@ -746,6 +747,9 @@ class RoleRuntime:
                 "--verification-batch-rows", str(int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20)),
                 "--timeout-s", str(int(task.get("timeout_s", 300) or 300)),
             ]
+            progress_file = str(task.get("_runtime_progress_path", "")).strip()
+            if progress_file:
+                command.extend(["--progress-file", progress_file])
             completed = subprocess.run(command, text=True, capture_output=True, timeout=int(task.get("timeout_s", 300) or 300) + 15, check=False)
             if completed.returncode != 0 or not output_path.exists():
                 raise RuntimeError(f"raytracer_fragment_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}")
@@ -4360,6 +4364,10 @@ class NetworkNode:
         self._activity_lock = threading.Lock()
         self._active_tasks: list[dict[str, Any]] = []
         self._last_response: dict[str, Any] = {}
+        self.telemetry_sampler = RuntimeTelemetrySampler(config.export_dir)
+        self._telemetry: dict[str, Any] = self.telemetry_sampler.sample()
+        self._task_monitor_stop = threading.Event()
+        self._task_monitor_thread: threading.Thread | None = None
         self.peer_network.set_local_profile(
             capacity=self.runtime.capacity(),
             reputation_score=self.reputation.local_score(),
@@ -4525,6 +4533,7 @@ class NetworkNode:
         capacity = self.runtime.capacity()
         current_reputation = self.reputation.local_score()
         resource_reputation = self.reputation.resource_snapshot()
+        self._telemetry = self.telemetry_sampler.sample()
         self.config.reputation_score = current_reputation
         self.peer_network.set_local_profile(
             capacity=capacity,
@@ -4580,6 +4589,7 @@ class NetworkNode:
                 "last_claim_result": self._last_claim_result,
                 "last_claim_targets": self._last_claim_targets,
                 "activity": self.activity_snapshot(),
+                "telemetry": self.telemetry_snapshot(),
                 "task_queue": self.task_queue_snapshot(),
                 "solana_owner": self._solana_owner,
                 "solana_worker": self._solana_worker,
@@ -4594,6 +4604,7 @@ class NetworkNode:
 
     def write_metrics(self) -> None:
         self.metrics["updated_utc"] = utc_now()
+        self.metrics["runtime"] = self.telemetry_snapshot()
         atomic_write_json(self.metrics_path, self.metrics)
 
     def sweep(self) -> int:
@@ -4717,7 +4728,74 @@ class NetworkNode:
             "status": "working" if active_tasks else "idle",
             "active_tasks": active_tasks,
             "last_response": last_response,
+            "telemetry": self.telemetry_snapshot(),
         }
+
+    def telemetry_snapshot(self) -> dict[str, Any]:
+        return dict(self._telemetry)
+
+    def update_active_task(self, **updates: Any) -> None:
+        with self._activity_lock:
+            if self._active_tasks:
+                self._active_tasks[0].update(updates)
+
+    def _task_progress_monitor(
+        self,
+        progress_path: Path,
+        *,
+        started_monotonic: float,
+        timeout_seconds: int,
+    ) -> None:
+        sequence = 0
+        while not self._task_monitor_stop.wait(1.0):
+            sequence += 1
+            self._telemetry = self.telemetry_sampler.sample()
+            elapsed = max(0.0, time.monotonic() - started_monotonic)
+            progress = read_json(progress_path, {})
+            updates: dict[str, Any] = {
+                "elapsed_ms": round(elapsed * 1000),
+                "resource_usage": self.telemetry_snapshot(),
+                "telemetry_sequence": sequence,
+                "updated_utc": utc_now(),
+            }
+            if isinstance(progress, dict) and progress.get("schema") == "silicium.task-progress.v1":
+                updates.update(
+                    {
+                        "phase": str(progress.get("phase", "executing")),
+                        "progress_percent": max(
+                            0.0, min(100.0, float(progress.get("progress_percent", 0.0) or 0.0))
+                        ),
+                        "progress_source": "measured",
+                        "completed_units": float(progress.get("completed_units", 0.0) or 0.0),
+                        "total_units": float(progress.get("total_units", 0.0) or 0.0),
+                        "unit": str(progress.get("unit", "")),
+                        "throughput_units_per_second": float(
+                            progress.get("throughput_units_per_second", 0.0) or 0.0
+                        ),
+                        "eta_seconds": float(progress.get("eta_seconds", 0.0) or 0.0),
+                        "worker_threads": int(progress.get("threads", 0) or 0),
+                        "pixels_completed": int(progress.get("pixels_completed", 0) or 0),
+                        "pixels_total": int(progress.get("pixels_total", 0) or 0),
+                    }
+                )
+            else:
+                estimated = min(
+                    90.0,
+                    10.0 + 80.0 * elapsed / max(1.0, float(timeout_seconds)),
+                )
+                updates.update(
+                    {
+                        "progress_percent": estimated,
+                        "progress_source": "estimated",
+                        "eta_seconds": max(0.0, timeout_seconds - elapsed),
+                    }
+                )
+            self.update_active_task(**updates)
+            self.peer_network.set_local_profile(activity=self.activity_snapshot())
+            if sequence % 2 == 0:
+                self.write_metrics()
+                self.write_heartbeat()
+                self.peer_network.announce()
 
     def task_queue_snapshot(self, limit: int = 64) -> list[dict[str, Any]]:
         items: list[tuple[float, dict[str, Any]]] = []
@@ -4764,11 +4842,47 @@ class NetworkNode:
 
     def handle(self, envelope: dict[str, Any]) -> None:
         started = time.monotonic()
+        start_telemetry = self.telemetry_sampler.sample()
         kind = str(envelope.get("envelope_kind") or "task")
         active = self.task_activity(envelope)
         active["started_utc"] = utc_now()
+        body_key = "request" if kind == "request" else "task"
+        body = envelope.get(body_key) if isinstance(envelope.get(body_key), dict) else {}
+        timeout_seconds = max(1, int(body.get("timeout_s", 300) or 300))
+        progress_path = self.config.export_dir / f"task-progress.{safe_path_id(active['item_id'])}.json"
+        envelope["_runtime_progress_path"] = str(progress_path)
+        active.update(
+            {
+                "phase": "accepted",
+                "progress_percent": 0.0,
+                "progress_source": "measured",
+                "elapsed_ms": 0,
+                "eta_seconds": float(timeout_seconds),
+                "completed_units": 0.0,
+                "total_units": 0.0,
+                "unit": "",
+                "throughput_units_per_second": 0.0,
+                "worker_threads": 0,
+                "pixels_completed": 0,
+                "pixels_total": 0,
+                "attempt": int(envelope.get("attempt", 0) or 0),
+                "max_retries": int(self.config.max_retries),
+                "priority": str(envelope.get("priority", "normal")),
+                "queued_utc": str(envelope.get("queued_utc") or envelope.get("created_utc") or ""),
+                "resource_usage": start_telemetry,
+            }
+        )
         with self._activity_lock:
             self._active_tasks = [active]
+        self._task_monitor_stop.clear()
+        self._task_monitor_thread = threading.Thread(
+            target=self._task_progress_monitor,
+            args=(progress_path,),
+            kwargs={"started_monotonic": started, "timeout_seconds": timeout_seconds},
+            name=f"silicium-task-telemetry-{safe_path_id(active['item_id'])}",
+            daemon=True,
+        )
+        self._task_monitor_thread.start()
         self.update_envelope_status(envelope, "running", {})
         self.publish_runtime_state(announce=True)
         try:
@@ -4787,6 +4901,26 @@ class NetworkNode:
             error = str(exc)
 
         duration_ms = int((time.monotonic() - started) * 1000)
+        self._task_monitor_stop.set()
+        if self._task_monitor_thread is not None:
+            self._task_monitor_thread.join(timeout=2.0)
+        end_telemetry = self.telemetry_sampler.sample()
+        self._telemetry = end_telemetry
+        performance = {
+            "duration_ms": duration_ms,
+            "process_cpu_seconds": round(
+                max(
+                    0.0,
+                    float(end_telemetry.get("process_cpu_seconds", 0.0) or 0.0)
+                    - float(start_telemetry.get("process_cpu_seconds", 0.0) or 0.0),
+                ),
+                3,
+            ),
+            "process_peak_rss_bytes": int(end_telemetry.get("process_peak_rss_bytes", 0) or 0),
+            "system_cpu_percent": float(end_telemetry.get("system_cpu_percent", 0.0) or 0.0),
+            "system_memory_percent": float(end_telemetry.get("system_memory_percent", 0.0) or 0.0),
+            "logical_cpu_count": int(end_telemetry.get("logical_cpu_count", 0) or 0),
+        }
         result.update(
             {
                 "schema_version": 1,
@@ -4794,6 +4928,7 @@ class NetworkNode:
                 "roles": sorted(self.config.roles),
                 "finished_utc": utc_now(),
                 "duration_ms": duration_ms,
+                "performance": performance,
             }
         )
         safe_item = safe_id(item_id)
@@ -4807,6 +4942,13 @@ class NetworkNode:
         else:
             self.metrics["failed"] = int(self.metrics.get("failed", 0) or 0) + 1
             self.schedule_retry_or_dead_letter(envelope, error)
+        self.metrics["duration_total_ms"] = int(self.metrics.get("duration_total_ms", 0) or 0) + duration_ms
+        self.metrics["duration_max_ms"] = max(int(self.metrics.get("duration_max_ms", 0) or 0), duration_ms)
+        self.metrics["last_duration_ms"] = duration_ms
+        handled_total = max(1, int(self.metrics.get("handled", 0) or 0) + int(self.metrics.get("failed", 0) or 0))
+        self.metrics["duration_average_ms"] = round(
+            int(self.metrics.get("duration_total_ms", 0) or 0) / handled_total, 2
+        )
         append_jsonl(
             self.events_path,
             {
@@ -4834,14 +4976,22 @@ class NetworkNode:
             self.refresh_local_onchain_profile(force=True)
         self.return_dispatched_result(envelope, result, log_payload)
         with self._activity_lock:
+            completed_activity = dict(self._active_tasks[0]) if self._active_tasks else dict(active)
             self._active_tasks = []
             self._last_response = {
-                **active,
+                **completed_activity,
                 "ok": ok,
                 "error": error,
                 "duration_ms": duration_ms,
+                "progress_percent": 100.0 if ok else completed_activity.get("progress_percent", 0.0),
+                "phase": "completed" if ok else "failed",
                 "timestamp_utc": utc_now(),
+                "performance": performance,
             }
+        try:
+            progress_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         self.publish_runtime_state(announce=True)
 
     def schedule_retry_or_dead_letter(self, envelope: dict[str, Any], error: str) -> None:
@@ -5388,9 +5538,18 @@ class NetworkNode:
         )
 
     def handle_task(self, envelope: dict[str, Any]) -> dict[str, Any]:
-        task = envelope.get("task") if isinstance(envelope.get("task"), dict) else {}
+        task = dict(envelope.get("task")) if isinstance(envelope.get("task"), dict) else {}
+        task["_runtime_progress_path"] = str(envelope.get("_runtime_progress_path", ""))
+        self.update_active_task(phase="fetching_input", progress_percent=2.0, progress_source="measured")
         p2p_data, p2p_meta = self.p2p.fetch(envelope.get("p2p_ref"))
+        self.update_active_task(
+            phase="executing",
+            progress_percent=10.0,
+            progress_source="estimated",
+            input_bytes=len(p2p_data),
+        )
         role_output = self.runtime.run_task(envelope, task, p2p_data, p2p_meta)
+        self.update_active_task(phase="publishing_result", progress_percent=92.0)
         output = {
             "success": True,
             "envelope_kind": "task",
@@ -5408,6 +5567,7 @@ class NetworkNode:
         output_ref = role_output.get("output_ref") if isinstance(role_output.get("output_ref"), dict) else None
         if output_ref is None:
             output_ref = self.p2p.put_local(stable_json(output).encode("utf-8"))
+        self.update_active_task(phase="finalizing", progress_percent=98.0)
         output["output_ref"] = output_ref
         output["proof_ref"] = role_output.get("proof_ref") if isinstance(role_output.get("proof_ref"), dict) else output_ref
         on_chain = self.submit_task_on_chain(envelope, task, output, output_ref)
@@ -5417,9 +5577,17 @@ class NetworkNode:
 
     def handle_request(self, envelope: dict[str, Any]) -> dict[str, Any]:
         request = envelope.get("request") if isinstance(envelope.get("request"), dict) else {}
+        self.update_active_task(phase="fetching_input", progress_percent=2.0, progress_source="measured")
         p2p_data, p2p_meta = self.p2p.fetch(envelope.get("p2p_ref"))
+        self.update_active_task(
+            phase="executing",
+            progress_percent=10.0,
+            progress_source="estimated",
+            input_bytes=len(p2p_data),
+        )
         request_kind = str(envelope.get("kind", "request"))
         role_response = self.runtime.run_request(envelope, request, p2p_data, p2p_meta)
+        self.update_active_task(phase="publishing_result", progress_percent=92.0)
         response = {
             "success": True,
             "envelope_kind": "request",
@@ -5434,6 +5602,7 @@ class NetworkNode:
             **role_response,
         }
         response_ref = self.p2p.put_local(stable_json(response).encode("utf-8"))
+        self.update_active_task(phase="finalizing", progress_percent=98.0)
         response["response_ref"] = response_ref
         on_chain = self.submit_request_on_chain(envelope, response, response_ref)
         if on_chain:
