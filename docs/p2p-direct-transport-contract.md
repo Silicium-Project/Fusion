@@ -661,7 +661,30 @@ Recommended export file additions:
 - `p2p.sessions.ndjson`;
 - `p2p.candidates.json`;
 - `p2p.direct_sessions.json`;
+- `p2p.transport_attestations.json`;
+- `p2p.transport_attestations.ndjson`;
 - `p2p.status.json`;
+
+### Signed transport-path attestations
+
+A candidate is only a connectivity possibility. User interfaces must not draw a
+P2P link until a valid `silicium.transport-path` attestation has been observed.
+The observer signs the canonical claim with its Ed25519 node identity. Claims
+classify the effective route as `direct`, `relay`, `central`, or `failed` and
+include the backend, proof scope, session, selected candidate pair, content
+hash, byte count, counterparty, and failure reason.
+
+For an ICE payload transfer, the claim also commits to the signed response
+header produced by the remote peer. `peer_proof_verified=true` therefore means
+both the remote response and the local path observation were authenticated.
+Legacy peer HTTP, relay HTTP, and scheduler task delivery remain explicit
+signed local observations and must not be presented as bilateral proof.
+
+Authenticated diagnostics are available from:
+
+- `GET /p2p/transport` for the active backend and recent path summary;
+- `GET /p2p/attestations` for the bounded signed claim registry;
+- peer/discovery snapshots through each peer's `transport_attestations` field.
 
 ## Implementation Order
 

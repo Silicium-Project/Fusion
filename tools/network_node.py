@@ -610,10 +610,14 @@ class P2PClient:
             }
             if peer_meta.get("transport_backend"):
                 meta["transport_backend"] = peer_meta["transport_backend"]
+            if peer_meta.get("transport_route"):
+                meta["transport_route"] = peer_meta["transport_route"]
             if peer_meta.get("session_id"):
                 meta["session_id"] = peer_meta["session_id"]
             if peer_meta.get("relayed_via"):
                 meta["relayed_via"] = peer_meta.get("relayed_via", "")
+            if isinstance(peer_meta.get("path_attestation"), dict):
+                meta["path_attestation"] = peer_meta["path_attestation"]
             return data, meta
 
         if protocol in {"http", "https"}:
@@ -1038,18 +1042,22 @@ class PeerNetwork:
         self.sessions_path = export_dir / "p2p.sessions.json"
         self.session_events_path = export_dir / "p2p.sessions.ndjson"
         self.direct_sessions_path = export_dir / "p2p.direct_sessions.json"
+        self.transport_attestations_path = export_dir / "p2p.transport_attestations.json"
+        self.transport_attestation_events_path = export_dir / "p2p.transport_attestations.ndjson"
         self.gossip_events_path = export_dir / "gossip.events.ndjson"
         self.update_announcements_dir = export_dir / "software-updates"
         self.discovery_registry_path = export_dir / "mesh.discovery.json"
         self._peers: dict[str, dict[str, Any]] = {}
         self._sessions: dict[str, dict[str, Any]] = {}
         self._direct_sessions: dict[str, dict[str, Any]] = {}
+        self._transport_attestations: list[dict[str, Any]] = []
         self._ice_content_sessions: dict[str, str] = {}
         self._signaling_ready_payloads: dict[str, dict[str, Any]] = {}
         self._started_direct_sessions: set[str] = set()
         self._local_candidates: list[dict[str, Any]] = []
         self._seen_events: set[str] = set()
         self._update_fetches: set[str] = set()
+        self._verified_transport_claims: set[str] = set()
         self._seen_handshake_nonces: dict[str, float] = {}
         self._seen_punch_nonces: set[str] = set()
         self._lock = threading.Lock()
@@ -1097,6 +1105,7 @@ class PeerNetwork:
             self._start_udp_listener()
         self._load_persisted_peers()
         self._load_persisted_sessions()
+        self._load_transport_attestations()
         self.refresh_candidates(force=True)
         self._record_self_peer()
         if self.config.peer_sync_interval_s > 0:
@@ -1457,6 +1466,174 @@ class PeerNetwork:
         atomic_write_json(self.sessions_path, payload)
         return payload
 
+    def record_transport_attestation(
+        self,
+        *,
+        route: str,
+        transport_backend: str,
+        remote_peer_id: str = "",
+        session_id: str = "",
+        proof_scope: str = "connectivity_check",
+        task_id: str = "",
+        content_id: str = "",
+        content_sha256: str = "",
+        size_bytes: int = 0,
+        endpoint: str = "",
+        relay_peer_id: str = "",
+        selected_candidate_pair: Mapping[str, Any] | None = None,
+        peer_proof: Mapping[str, Any] | None = None,
+        success: bool = True,
+        failure_reason: str = "",
+    ) -> dict[str, Any]:
+        normalized_route = safe_id(str(route)).lower()
+        if normalized_route not in {"direct", "relay", "central", "failed"}:
+            raise ValueError(f"unsupported_transport_route:{normalized_route}")
+        normalized_remote = self._optional_peer_id(remote_peer_id)
+        pair = selected_candidate_pair if isinstance(selected_candidate_pair, Mapping) else {}
+        proof = peer_proof if isinstance(peer_proof, Mapping) else {}
+        peer_proof_hash = sha256_bytes(stable_json(dict(proof)).encode("utf-8")) if proof else ""
+        peer_proof_verified = bool(
+            proof
+            and proof.get("signature")
+            and proof.get("public_key")
+            and self._verify_message(dict(proof))
+            and (
+                not normalized_remote
+                or safe_id(str(proof.get("node_id") or proof.get("source_peer_id") or "")) == normalized_remote
+            )
+        )
+        claim = {
+            "schema_version": 1,
+            "attestation_type": "silicium.transport-path",
+            "observer_peer_id": self.node_id,
+            "observer_identity_id": self.identity.identity_id,
+            "observer_public_key": self.identity.public_key_b64,
+            "remote_peer_id": normalized_remote,
+            "route": normalized_route,
+            "transport_backend": safe_id(str(transport_backend)).lower(),
+            "proof_scope": safe_id(str(proof_scope)).lower(),
+            "session_id": str(session_id).strip(),
+            "task_id": self._optional_peer_id(task_id),
+            "content_id": str(content_id).strip(),
+            "content_sha256": str(content_sha256).removeprefix("sha256:").strip().lower(),
+            "size_bytes": max(0, int(size_bytes)),
+            "endpoint": str(endpoint).strip(),
+            "relay_peer_id": self._optional_peer_id(relay_peer_id),
+            "selected_candidate_pair": {
+                str(key): value
+                for key, value in pair.items()
+                if str(key)
+                in {
+                    "local_candidate_id",
+                    "remote_candidate_id",
+                    "ack_local_candidate_id",
+                    "ack_remote_candidate_id",
+                    "local_candidate_type",
+                    "remote_candidate_type",
+                }
+            },
+            "peer_proof_hash": peer_proof_hash,
+            "peer_proof_verified": peer_proof_verified,
+            "success": bool(success),
+            "failure_reason": safe_id(str(failure_reason)).lower() if failure_reason else "",
+            "timestamp_unix": int(time.time()),
+            "timestamp_utc": utc_now(),
+        }
+        claim_hash = sha256_bytes(stable_json(claim).encode("utf-8"))
+        attestation = {
+            **claim,
+            "claim_hash": claim_hash,
+            "signature": self.identity.sign_bytes(stable_json(claim).encode("utf-8")),
+        }
+        with self._lock:
+            if not any(item.get("claim_hash") == claim_hash for item in self._transport_attestations):
+                self._transport_attestations.append(attestation)
+                self._transport_attestations = self._transport_attestations[-128:]
+        append_jsonl(self.transport_attestation_events_path, attestation)
+        self.transport_attestations_snapshot()
+        return dict(attestation)
+
+    def record_transport_attestation_background(self, **claim: Any) -> None:
+        def _record() -> None:
+            try:
+                self.record_transport_attestation(**claim)
+            except (OSError, RuntimeError, ValueError):
+                return
+
+        threading.Thread(
+            target=_record,
+            name=f"transport-attestation-{self.node_path_id}",
+            daemon=True,
+        ).start()
+
+    @staticmethod
+    def verify_transport_attestation(attestation: Mapping[str, Any]) -> bool:
+        if not isinstance(attestation, Mapping):
+            return False
+        signature = str(attestation.get("signature", "")).strip()
+        claim_hash = str(attestation.get("claim_hash", "")).strip().lower()
+        public_key = str(attestation.get("observer_public_key", "")).strip()
+        identity_id = str(attestation.get("observer_identity_id", "")).strip()
+        route = str(attestation.get("route", "")).strip().lower()
+        if not signature or not claim_hash or route not in {"direct", "relay", "central", "failed"}:
+            return False
+        if NodeIdentity.identity_id_for_key(public_key) != identity_id:
+            return False
+        claim = dict(attestation)
+        claim.pop("signature", None)
+        claim.pop("claim_hash", None)
+        encoded = stable_json(claim).encode("utf-8")
+        return PeerNetwork._transport_attestation_hash_valid(attestation) and NodeIdentity.verify_bytes(encoded, signature, public_key)
+
+    @staticmethod
+    def _transport_attestation_hash_valid(attestation: Mapping[str, Any]) -> bool:
+        claim_hash = str(attestation.get("claim_hash", "")).strip().lower()
+        if not claim_hash:
+            return False
+        claim = dict(attestation)
+        claim.pop("signature", None)
+        claim.pop("claim_hash", None)
+        return hmac.compare_digest(
+            sha256_bytes(stable_json(claim).encode("utf-8")),
+            claim_hash,
+        )
+
+    def recent_transport_attestations(self, limit: int = 8) -> list[dict[str, Any]]:
+        with self._lock:
+            ordered = sorted(
+                self._transport_attestations,
+                key=lambda item: (int(item.get("timestamp_unix", 0) or 0), str(item.get("claim_hash", ""))),
+                reverse=True,
+            )
+        return [dict(item) for item in ordered[: max(0, int(limit))]]
+
+    def transport_attestations_snapshot(self) -> dict[str, Any]:
+        attestations = self.recent_transport_attestations(128)
+        payload = {
+            "schema_version": 1,
+            "node_id": self.node_id,
+            "count": len(attestations),
+            "attestations": attestations,
+            "updated_utc": utc_now(),
+        }
+        atomic_write_json(self.transport_attestations_path, payload)
+        return payload
+
+    def _load_transport_attestations(self) -> None:
+        snapshot = read_json(self.transport_attestations_path, {})
+        attestations = snapshot.get("attestations") if isinstance(snapshot, dict) else None
+        if not isinstance(attestations, list):
+            return
+        verified = [
+            dict(attestation)
+            for attestation in attestations
+            if isinstance(attestation, Mapping)
+            and str(attestation.get("observer_peer_id", "")) == self.node_id
+            and self.verify_transport_attestation(attestation)
+        ]
+        with self._lock:
+            self._transport_attestations = verified[-128:]
+
     def create_signaling_session(self, payload: Mapping[str, Any], requester_node_id: str) -> tuple[int, dict[str, Any]]:
         self._prune_expired_sessions()
         requester_id = safe_id(str(payload.get("peer_id", requester_node_id)))
@@ -1549,6 +1726,16 @@ class PeerNetwork:
         peer_id = safe_id(requester_node_id)
         ok = bool(payload.get("ok", False))
         transport = safe_id(str(payload.get("transport", "direct")))
+        path_attestation = payload.get("path_attestation")
+        if path_attestation:
+            if (
+                not isinstance(path_attestation, Mapping)
+                or str(path_attestation.get("observer_peer_id", "")) != peer_id
+                or str(path_attestation.get("session_id", "")) != str(session_id)
+                or str(path_attestation.get("route", "")) != (transport if ok else "failed")
+                or not self.verify_transport_attestation(path_attestation)
+            ):
+                return 400, {"ok": False, "error": "transport_attestation_invalid"}
         result = {
             "peer_id": peer_id,
             "ok": ok,
@@ -1556,6 +1743,8 @@ class PeerNetwork:
             "selected_local_candidate_id": str(payload.get("selected_local_candidate_id", "")),
             "selected_remote_candidate_id": str(payload.get("selected_remote_candidate_id", "")),
             "error": str(payload.get("error", "")),
+            "path_attestation": dict(path_attestation) if isinstance(path_attestation, Mapping) else {},
+            "attestation_verified": bool(path_attestation) and isinstance(path_attestation, Mapping),
             "timestamp_unix": int(time.time()),
         }
         results = list(session.get("results", [])) if isinstance(session.get("results"), list) else []
@@ -1970,6 +2159,7 @@ class PeerNetwork:
             "public_key": self.identity.public_key_b64,
             "roles": sorted(self.config.roles),
             "features": self.direct_transport.features(),
+            "transport_attestations": self.recent_transport_attestations(4),
             "http_base_url": self.advertised_http_base_url,
             "mesh_post_url": self.mesh_post_url,
             "gossip_bind": self._advertised_gossip_host(),
@@ -2023,7 +2213,14 @@ class PeerNetwork:
                 return ice_result
             data = self._fetch_direct_from_peer(peer, content_id)
             if data is not None:
-                return data, peer
+                return data, self._attested_fetch_meta(
+                    peer,
+                    content_id=content_id,
+                    data=data,
+                    route="direct",
+                    transport_backend="peer-http",
+                    endpoint=str(peer.get("http_base_url", "")),
+                )
         if preferred_peer_id:
             self.request_udp_punch(preferred_peer_id)
             time.sleep(0.1)
@@ -2032,11 +2229,46 @@ class PeerNetwork:
                     continue
                 data = self._fetch_direct_from_peer(peer, content_id)
                 if data is not None:
-                    return data, peer
+                    return data, self._attested_fetch_meta(
+                        peer,
+                        content_id=content_id,
+                        data=data,
+                        route="direct",
+                        transport_backend="peer-http-after-punch",
+                        endpoint=str(peer.get("http_base_url", "")),
+                    )
         relayed = self._fetch_via_relays(content_id, preferred_peer_id, candidates)
         if relayed is not None:
             return relayed
         raise FileNotFoundError(f"peer_content_not_found:{content_id}")
+
+    def _attested_fetch_meta(
+        self,
+        peer: Mapping[str, Any],
+        *,
+        content_id: str,
+        data: bytes,
+        route: str,
+        transport_backend: str,
+        endpoint: str = "",
+        relay_peer_id: str = "",
+    ) -> dict[str, Any]:
+        meta = dict(peer)
+        meta["transport_route"] = route
+        meta["transport_backend"] = transport_backend
+        meta["path_attestation"] = self.record_transport_attestation(
+            route=route,
+            transport_backend=transport_backend,
+            remote_peer_id=str(peer.get("node_id", "")),
+            proof_scope="payload_transfer",
+            content_id=content_id,
+            content_sha256=sha256_bytes(data),
+            size_bytes=len(data),
+            endpoint=endpoint,
+            relay_peer_id=relay_peer_id,
+            success=True,
+        )
+        return meta
 
     def _fetch_direct_ice(self, peer: dict[str, Any], content_id: str) -> tuple[bytes, dict[str, Any]] | None:
         if not self.config.nat_punch_enable or self.direct_transport.name != "ice":
@@ -2164,6 +2396,15 @@ class PeerNetwork:
 
     def _report_signaling_result(self, base_url: str, session_id: str, result: Mapping[str, Any]) -> None:
         pair = result.get("selected_candidate_pair") if isinstance(result.get("selected_candidate_pair"), Mapping) else {}
+        path_attestation = next(
+            (
+                item
+                for item in self.recent_transport_attestations(16)
+                if str(item.get("session_id", "")) == session_id
+                and str(item.get("proof_scope", "")) == "connectivity_check"
+            ),
+            {},
+        )
         try:
             self._post_peer_json(
                 base_url,
@@ -2174,6 +2415,7 @@ class PeerNetwork:
                     "error": result.get("failure_reason", ""),
                     "selected_local_candidate_id": pair.get("local_candidate_id", ""),
                     "selected_remote_candidate_id": pair.get("remote_candidate_id", ""),
+                    "path_attestation": path_attestation,
                 },
             )
         except (OSError, TimeoutError, ValueError, urllib.error.URLError, json.JSONDecodeError):
@@ -2197,6 +2439,7 @@ class PeerNetwork:
 
     def _record_self_peer(self) -> None:
         candidates = self.local_candidates_snapshot()
+        transport_attestations = self.recent_transport_attestations(4)
         with self._lock:
             self._peers[self.node_id] = {
                 "node_id": self.node_id,
@@ -2207,6 +2450,7 @@ class PeerNetwork:
                 "release_channel": self.config.release_channel,
                 "release_build": self.config.release_build,
                 "features": self.direct_transport.features(),
+                "transport_attestations": transport_attestations,
                 "http_base_url": self.advertised_http_base_url,
                 "mesh_post_url": self.mesh_post_url,
                 "gossip_bind": self._advertised_gossip_host(),
@@ -2237,6 +2481,10 @@ class PeerNetwork:
             return False
         changed = False
         candidates = self._normalize_candidate_list(message.get("candidates", []), node_id)
+        transport_attestations = self._verified_peer_transport_attestations(
+            node_id,
+            message.get("transport_attestations", []),
+        )
         with self._lock:
             current = dict(self._peers.get(node_id, {}))
             roles = message.get("roles") if isinstance(message.get("roles"), list) else []
@@ -2256,6 +2504,7 @@ class PeerNetwork:
                 "release_channel": str(message.get("release_channel", "") or current.get("release_channel", "")),
                 "release_build": str(message.get("release_build", "") or current.get("release_build", "")),
                 "features": [str(feature) for feature in (current.get("features", []) or features)],
+                "transport_attestations": transport_attestations or current.get("transport_attestations", []),
                 "http_base_url": str(current.get("http_base_url", "") or message.get("http_base_url", "")),
                 "mesh_post_url": str(current.get("mesh_post_url", "") or message.get("mesh_post_url", "")),
                 "gossip_bind": str(current.get("gossip_bind", "") or message.get("gossip_bind", "")),
@@ -2288,6 +2537,28 @@ class PeerNetwork:
             except Exception:
                 pass
         return changed
+
+    def _verified_peer_transport_attestations(self, node_id: str, raw: Any) -> list[dict[str, Any]]:
+        if not isinstance(raw, list):
+            return []
+        verified: list[dict[str, Any]] = []
+        for item in raw[-8:]:
+            if not isinstance(item, Mapping) or str(item.get("observer_peer_id", "")) != node_id:
+                continue
+            claim_hash = str(item.get("claim_hash", "")).strip().lower()
+            if not claim_hash:
+                continue
+            with self._lock:
+                known = claim_hash in self._verified_transport_claims
+            if known and not self._transport_attestation_hash_valid(item):
+                continue
+            if not known and not self.verify_transport_attestation(item):
+                continue
+            with self._lock:
+                self._verified_transport_claims.add(claim_hash)
+            verified.append(dict(item))
+        verified.sort(key=lambda item: int(item.get("timestamp_unix", 0) or 0), reverse=True)
+        return verified[:8]
 
     def _record_candidate_announce(self, message: dict[str, Any]) -> bool:
         node_id = safe_id(str(message.get("peer_id", message.get("node_id", ""))))
@@ -2407,7 +2678,21 @@ class PeerNetwork:
             for attempt in range(3):
                 try:
                     with urllib.request.urlopen(request, timeout=5) as response:
-                        return response.read(), {"node_id": target_peer_id, "http_base_url": relay_url, "relayed_via": relay.get("node_id", "")}
+                        data = response.read()
+                        peer = {
+                            "node_id": target_peer_id,
+                            "http_base_url": relay_url,
+                            "relayed_via": relay.get("node_id", ""),
+                        }
+                        return data, self._attested_fetch_meta(
+                            peer,
+                            content_id=content_id,
+                            data=data,
+                            route="relay",
+                            transport_backend="relay-http",
+                            endpoint=relay_url,
+                            relay_peer_id=str(relay.get("node_id", "")),
+                        )
                 except (urllib.error.URLError, TimeoutError, OSError):
                     if attempt < 2:
                         time.sleep(0.05)
@@ -2447,6 +2732,7 @@ class PeerNetwork:
     def direct_transport_snapshot(self) -> dict[str, Any]:
         requested = str(self.config.p2p_direct_transport_backend or "auto").strip().lower() or "auto"
         features = self.direct_transport.features()
+        attestations = self.recent_transport_attestations(8)
         return {
             "schema_version": 1,
             "node_id": self.node_id,
@@ -2457,6 +2743,8 @@ class PeerNetwork:
             "nat_punch_enabled": bool(self.config.nat_punch_enable),
             "stun_configured": bool(self.config.p2p_stun_server),
             "turn_configured": bool(self.config.p2p_turn_server),
+            "latest_transport_route": str(attestations[0].get("route", "")) if attestations else "",
+            "transport_attestations": attestations,
             "updated_utc": utc_now(),
         }
 
@@ -2484,6 +2772,15 @@ class PeerNetwork:
                 self._report_signaling_result(signaling_base_url, session_id, result)
             else:
                 pair = result.get("selected_candidate_pair") if isinstance(result.get("selected_candidate_pair"), dict) else {}
+                path_attestation = next(
+                    (
+                        item
+                        for item in self.recent_transport_attestations(16)
+                        if str(item.get("session_id", "")) == session_id
+                        and str(item.get("proof_scope", "")) == "connectivity_check"
+                    ),
+                    {},
+                )
                 self.record_session_result(
                     session_id,
                     {
@@ -2492,6 +2789,7 @@ class PeerNetwork:
                         "error": result.get("failure_reason", ""),
                         "selected_local_candidate_id": pair.get("local_candidate_id", ""),
                         "selected_remote_candidate_id": pair.get("remote_candidate_id", ""),
+                        "path_attestation": path_attestation,
                     },
                     self.node_id,
                 )
@@ -2955,6 +3253,7 @@ class PeerNetwork:
             "public_key": self.identity.public_key_b64,
             "roles": sorted(self.config.roles),
             "features": self.direct_transport.features(),
+            "transport_attestations": self.recent_transport_attestations(4),
             "http_base_url": self.advertised_http_base_url,
             "mesh_post_url": self.mesh_post_url,
             "gossip_bind": self._advertised_gossip_host(),
@@ -3394,6 +3693,18 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(raw)
                     return
+                if self.path == "/p2p/attestations":
+                    if not peer_network._authorize_peer_request(self):
+                        self.send_error(403)
+                        return
+                    raw = stable_json(peer_network.transport_attestations_snapshot()).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
                 if self.path.startswith("/p2p/"):
                     if not peer_network._authorize_peer_request(self):
                         self.send_error(403)
@@ -3688,6 +3999,7 @@ class PeerNetwork:
                                 "public_key": str(self.headers.get("X-Silicium-Public-Key", "")),
                                 "roles": sorted(roles_set),
                                 "features": payload.get("features", []),
+                                "transport_attestations": payload.get("transport_attestations", []),
                                 "http_base_url": payload.get("http_base_url", ""),
                                 "mesh_post_url": payload.get("mesh_post_url", ""),
                                 "gossip_bind": payload.get("gossip_bind", ""),
@@ -4243,6 +4555,7 @@ class NetworkNode:
                 "p2p_nat_behavior": p2p_candidates["nat_behavior"],
                 "p2p_session_count": int(p2p_sessions.get("count", 0) or 0),
                 "p2p_direct_session_count": int(p2p_direct_sessions.get("count", 0) or 0),
+                "p2p_transport_attestations": self.peer_network.recent_transport_attestations(8),
                 "last_claim_poll_unix": self._last_claim_poll_unix,
                 "last_claim_poll_utc": self._last_claim_poll_utc,
                 "last_claim_error": self._last_claim_error,
@@ -4793,6 +5106,7 @@ class NetworkNode:
             "release_channel": self.config.release_channel,
             "release_build": self.config.release_build,
             "features": self.peer_network.direct_transport.features(),
+            "transport_attestations": self.peer_network.recent_transport_attestations(4),
             "http_base_url": self.peer_network.advertised_http_base_url,
             "mesh_post_url": self.peer_network.mesh_post_url,
             "gossip_bind": self.peer_network._advertised_gossip_host(),
@@ -4818,7 +5132,8 @@ class NetworkNode:
             try:
                 with urllib.request.urlopen(request, timeout=4) as response:
                     attempt["http_status"] = int(response.status)
-                    payload = json.loads(response.read().decode("utf-8"))
+                    response_raw = response.read()
+                    payload = json.loads(response_raw.decode("utf-8"))
                     if not isinstance(payload, dict) or not bool(payload.get("ok")):
                         attempt["result"] = "invalid_response"
                     elif not isinstance(payload.get("task"), dict):
@@ -4834,6 +5149,25 @@ class NetworkNode:
                             enqueue_task_envelope(self.config.export_dir, claimed_task)
                         attempt["result"] = "claimed"
                         attempt["item_id"] = claimed_item_id
+                        target_peer = next(
+                            (
+                                peer
+                                for peer in self.peer_network.peers_snapshot().get("peers", [])
+                                if str(peer.get("http_base_url", "")).rstrip("/") == base_url.rstrip("/")
+                            ),
+                            {},
+                        )
+                        self.peer_network.record_transport_attestation(
+                            route="central",
+                            transport_backend="scheduler-http",
+                            remote_peer_id=str(target_peer.get("node_id", "")),
+                            proof_scope="task_delivery",
+                            task_id=claimed_item_id,
+                            content_sha256=sha256_bytes(response_raw),
+                            size_bytes=len(response_raw),
+                            endpoint=base_url,
+                            success=True,
+                        )
                         append_jsonl(
                             self.events_path,
                             {

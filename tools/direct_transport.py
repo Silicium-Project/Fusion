@@ -119,6 +119,7 @@ class NativeLightDirectTransport(DirectTransportBackend):
                 session["updated_utc"] = self.utc_now()
                 self.node._direct_sessions[session_id] = session
         self._write_direct_sessions_snapshot()
+        self._attest_session(session_id)
         return self._direct_session_result(session_id)
 
     def _candidate_pairs_for_local(self, punch_start: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -290,6 +291,7 @@ class NativeLightDirectTransport(DirectTransportBackend):
             self._remember_ack_nonce(session, ack_nonce)
             self.node._direct_sessions[session_id] = session
         self._write_direct_sessions_snapshot()
+        self._attest_session(session_id)
 
     def _remember_ack_nonce(self, session: dict[str, Any], ack_nonce: str) -> None:
         seen = session.get("seen_ack_nonces", []) if isinstance(session.get("seen_ack_nonces"), list) else []
@@ -314,6 +316,22 @@ class NativeLightDirectTransport(DirectTransportBackend):
         if not session:
             return self._direct_failure(session_id, "session_missing")
         return dict(session)
+
+    def _attest_session(self, session_id: str) -> None:
+        session = self._direct_session_result(session_id)
+        status = str(session.get("status", ""))
+        if status not in {"direct", "failed"}:
+            return
+        self.node.record_transport_attestation_background(
+            route="direct" if status == "direct" else "failed",
+            transport_backend=self.name,
+            remote_peer_id=str(session.get("remote_peer_id", "")),
+            session_id=session_id,
+            proof_scope="connectivity_check",
+            selected_candidate_pair=session.get("selected_candidate_pair", {}),
+            success=status == "direct",
+            failure_reason=str(session.get("failure_reason", "")),
+        )
 
     def _direct_failure(self, session_id: str, reason: str, *, remote_peer_id: str = "") -> dict[str, Any]:
         return {
@@ -452,6 +470,21 @@ class IceDirectTransport(DirectTransportBackend):
             expected_hash = str(response_header.get("content_hash", "")).strip()
             if expected_hash and expected_hash != hashlib.sha256(payload).hexdigest():
                 return None
+            with self.node._lock:
+                session = dict(self.node._direct_sessions.get(session_id, {}))
+            attestation = self.node.record_transport_attestation(
+                route="direct",
+                transport_backend=self.name,
+                remote_peer_id=str(runtime.get("remote_peer_id", "")),
+                session_id=session_id,
+                proof_scope="payload_transfer",
+                content_id=content_id,
+                content_sha256=hashlib.sha256(payload).hexdigest(),
+                size_bytes=len(payload),
+                selected_candidate_pair=session.get("selected_candidate_pair", {}),
+                peer_proof=response_header,
+                success=True,
+            )
             return payload, {
                 "source": "silicium-ice",
                 "content_id": content_id,
@@ -459,6 +492,8 @@ class IceDirectTransport(DirectTransportBackend):
                 "node_id": str(runtime.get("remote_peer_id", "")),
                 "transport_backend": self.name,
                 "size_bytes": len(payload),
+                "transport_route": "direct",
+                "path_attestation": attestation,
             }
         return None
 
@@ -702,6 +737,8 @@ class IceDirectTransport(DirectTransportBackend):
             "selected_candidate_pair": {
                 "local_candidate_id": str((local_default or {}).get("candidate_id", "")),
                 "remote_candidate_id": str(remote_first.get("candidate_id", "")),
+                "local_candidate_type": str((local_default or {}).get("candidate_type", "")),
+                "remote_candidate_type": str(remote_first.get("candidate_type", "")),
             },
             "ice": {
                 "local_ufrag": str(local_ice.get("ufrag", "")),
@@ -720,6 +757,15 @@ class IceDirectTransport(DirectTransportBackend):
             if listener is None or listener.done():
                 runtime["listener_task"] = asyncio.create_task(self._data_loop(session_id, remote_peer_id, connection, runtime))
         self._write_direct_sessions_snapshot()
+        self.node.record_transport_attestation_background(
+            route="direct",
+            transport_backend=self.name,
+            remote_peer_id=remote_peer_id,
+            session_id=session_id,
+            proof_scope="connectivity_check",
+            selected_candidate_pair=session.get("selected_candidate_pair", {}),
+            success=True,
+        )
         return dict(session)
 
     def handle_punch_probe(self, message: Mapping[str, Any], sender: str) -> None:
@@ -797,6 +843,15 @@ class IceDirectTransport(DirectTransportBackend):
         with self.node._lock:
             self.node._direct_sessions[session_id] = session
         self._write_direct_sessions_snapshot()
+        self.node.record_transport_attestation_background(
+            route="failed",
+            transport_backend=self.name,
+            remote_peer_id=remote_peer_id,
+            session_id=session_id,
+            proof_scope="connectivity_check",
+            success=False,
+            failure_reason=reason,
+        )
         return dict(session)
 
     def _direct_failure(self, session_id: str, reason: str, *, remote_peer_id: str = "") -> dict[str, Any]:

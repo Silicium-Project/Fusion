@@ -296,6 +296,7 @@ def _peer_registration_payload(peer: network_node.PeerNetwork) -> dict:
         "public_key": peer.identity.public_key_b64,
         "roles": sorted(peer.config.roles),
         "features": peer.direct_transport.features(),
+        "transport_attestations": peer.recent_transport_attestations(4),
         "http_base_url": peer.advertised_http_base_url,
         "mesh_post_url": peer.mesh_post_url,
         "gossip_bind": peer._advertised_gossip_host(),
@@ -1017,6 +1018,13 @@ def test_p2p_signaling_creates_authorized_session_with_candidate_pairs(tmp_path:
         ready_b = _signed_json_request(peer_b, signal.http_base_url, f"/p2p/sessions/{session_id}/ready", {})
         assert ready_b["session"]["status"] == "punching"
         assert ready_b["punch_start"]["candidate_pairs"]
+        path_attestation = peer_a.record_transport_attestation(
+            route="direct",
+            transport_backend="native-light",
+            remote_peer_id="node-b",
+            session_id=session_id,
+            selected_candidate_pair=session["candidate_pairs"][0],
+        )
         result = _signed_json_request(
             peer_a,
             signal.http_base_url,
@@ -1026,10 +1034,12 @@ def test_p2p_signaling_creates_authorized_session_with_candidate_pairs(tmp_path:
                 "transport": "direct",
                 "selected_local_candidate_id": session["candidate_pairs"][0]["local_candidate_id"],
                 "selected_remote_candidate_id": session["candidate_pairs"][0]["remote_candidate_id"],
+                "path_attestation": path_attestation,
             },
         )
         assert result["session"]["status"] == "direct"
         assert result["session"]["results"][0]["ok"] is True
+        assert result["session"]["results"][0]["attestation_verified"] is True
         assert (signal_export / "p2p.sessions.ndjson").exists()
     finally:
         signal.stop()
@@ -1209,6 +1219,59 @@ def test_direct_transport_auto_selects_ice_when_dependency_is_available(tmp_path
     assert peer.direct_transport.name == "ice"
 
 
+def test_transport_path_attestation_is_signed_persisted_and_tamper_evident(tmp_path: Path) -> None:
+    export_dir = tmp_path / "attested"
+    peer = network_node.PeerNetwork(_config(export_dir, "node-a", gossip_enable=False), export_dir)
+
+    attestation = peer.record_transport_attestation(
+        route="direct",
+        transport_backend="ice",
+        remote_peer_id="node-b",
+        session_id="p2p-sess-attested",
+        proof_scope="payload_transfer",
+        content_id="a" * 64,
+        content_sha256="b" * 64,
+        size_bytes=4096,
+        selected_candidate_pair={
+            "local_candidate_id": "candidate-a",
+            "remote_candidate_id": "candidate-b",
+        },
+    )
+
+    assert network_node.PeerNetwork.verify_transport_attestation(attestation)
+    assert attestation["observer_peer_id"] == "node-a"
+    assert attestation["route"] == "direct"
+    assert attestation["signature"]
+    assert (export_dir / "p2p.transport_attestations.json").exists()
+    tampered = {**attestation, "route": "relay"}
+    assert not network_node.PeerNetwork.verify_transport_attestation(tampered)
+
+    reloaded = network_node.PeerNetwork(_config(export_dir, "node-a", gossip_enable=False), export_dir)
+    reloaded._load_transport_attestations()
+    assert reloaded.recent_transport_attestations(1)[0]["claim_hash"] == attestation["claim_hash"]
+
+
+def test_peer_registry_accepts_only_verified_path_attestations(tmp_path: Path) -> None:
+    peer_a = network_node.PeerNetwork(_config(tmp_path / "a", "node-a", gossip_enable=False), tmp_path / "a")
+    peer_b = network_node.PeerNetwork(_config(tmp_path / "b", "node-b", gossip_enable=False), tmp_path / "b")
+    attestation = peer_a.record_transport_attestation(
+        route="direct",
+        transport_backend="ice",
+        remote_peer_id="node-b",
+        session_id="p2p-sess-propagated",
+    )
+    payload = _peer_registration_payload(peer_a)
+
+    peer_b._record_peer(payload)
+    assert peer_b.peers_snapshot()["peers"][0]["transport_attestations"][0]["claim_hash"] == attestation["claim_hash"]
+
+    tampered = {**attestation, "transport_backend": "fake-central-proxy"}
+    peer_b._record_peer({**payload, "transport_attestations": [tampered]})
+    stored = next(item for item in peer_b.peers_snapshot()["peers"] if item["node_id"] == "node-a")
+    assert stored["transport_attestations"][0]["claim_hash"] == attestation["claim_hash"]
+    assert stored["transport_attestations"][0]["transport_backend"] == "ice"
+
+
 def test_ice_direct_transport_builds_ready_payload_and_features(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(direct_transport.importlib, "import_module", lambda name: _fake_aioice_module() if name == "aioice" else None)
     config = _config(
@@ -1308,6 +1371,13 @@ def test_ice_backend_establishes_session_through_aioice_contract(tmp_path: Path,
     assert result_b["transport_backend"] == "ice"
     assert result_a["selected_candidate_pair"]["remote_candidate_id"]
     assert (tmp_path / "ice-a" / "p2p.direct_sessions.json").exists()
+    deadline = time.time() + 5
+    while not peer_a.recent_transport_attestations(1) and time.time() < deadline:
+        time.sleep(0.05)
+    attestation = peer_a.recent_transport_attestations(1)[0]
+    assert attestation["route"] == "direct"
+    assert attestation["proof_scope"] == "connectivity_check"
+    assert network_node.PeerNetwork.verify_transport_attestation(attestation)
 
 
 def test_ice_backend_establishes_real_loopback_session_when_installed(tmp_path: Path) -> None:
@@ -1371,6 +1441,10 @@ def test_ice_data_plane_fetches_content_without_http_payload(tmp_path: Path) -> 
         assert result[0] == expected_data
         assert result[1]["source"] == "silicium-ice"
         assert result[1]["transport_backend"] == "ice"
+        assert result[1]["transport_route"] == "direct"
+        assert result[1]["path_attestation"]["proof_scope"] == "payload_transfer"
+        assert result[1]["path_attestation"]["peer_proof_verified"] is True
+        assert network_node.PeerNetwork.verify_transport_attestation(result[1]["path_attestation"])
     finally:
         peer_a.stop()
         peer_b.stop()
@@ -1775,6 +1849,9 @@ def test_peer_network_relay_fetches_unreachable_peer_content(tmp_path: Path) -> 
                 data, meta = p2p_b.fetch(stored["shared_ref"])
                 assert data == b"relay-path"
                 assert meta["relayed_via"] == "node-c"
+                assert meta["transport_route"] == "relay"
+                assert meta["path_attestation"]["route"] == "relay"
+                assert network_node.PeerNetwork.verify_transport_attestation(meta["path_attestation"])
             finally:
                 peer_b.stop()
         finally:
