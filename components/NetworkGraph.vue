@@ -186,12 +186,44 @@
               <span class="text-white block mt-0.5">
                 {{ selectedNode.app_version || 'inconnue' }} ({{ selectedNode.release_channel || 'canal inconnu' }})
               </span>
+              <span class="text-[9px] text-white/40 font-mono">
+                build {{ shortenHash(selectedNode.release_build || '') || 'inconnu' }}
+              </span>
               <span
                 v-if="selectedNode.outdated"
                 class="mt-1 inline-flex rounded bg-amber-500/15 px-2 py-1 text-[9px] font-bold text-amber-300"
               >
                 Mise a jour requise{{ selectedNode.latest_version ? ` vers ${selectedNode.latest_version}` : '' }}
               </span>
+            </div>
+
+            <div>
+              <span class="text-white/40 block">Reputation bayesienne :</span>
+              <div v-if="reputationRows(selectedNode).length" class="mt-1 space-y-1">
+                <div
+                  v-for="score in reputationRows(selectedNode)"
+                  :key="score.dimension"
+                  class="rounded bg-white/5 p-2"
+                >
+                  <div class="flex justify-between font-semibold text-cyan-200">
+                    <span>{{ reputationLabel(score.dimension) }}</span>
+                    <span>{{ percent(score.combined?.mean) }}</span>
+                  </div>
+                  <div class="my-1 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      class="h-full rounded-full bg-gradient-to-r from-purple-500 via-cyan-400 to-green-400"
+                      :style="{ width: percent(score.combined?.mean) }"
+                    ></div>
+                  </div>
+                  <div class="text-[9px] text-white/40">
+                    borne sure {{ percent(score.combined?.lower_bound) }} · {{ evidence(score.combined?.evidence) }} preuves
+                  </div>
+                  <div class="text-[9px] text-white/40">
+                    court {{ percent(score.short_term?.mean) }} · long {{ percent(score.long_term?.mean) }}
+                  </div>
+                </div>
+              </div>
+              <span v-else class="text-yellow-400/80 text-[9px]">Aucune reputation bayesienne annoncee.</span>
             </div>
 
             <div>
@@ -297,11 +329,28 @@ type Peer = {
   latest_version?: string;
   version_status?: string;
   outdated?: boolean;
+  resource_reputation?: {
+    schema?: string;
+    dimensions?: Record<string, BayesianDimension>;
+  };
   capacity?: {
     platform?: string;
     cpu_count?: number;
   };
   self?: boolean;
+};
+
+type BayesianSummary = {
+  mean?: number;
+  lower_bound?: number;
+  upper_bound?: number;
+  evidence?: number;
+};
+
+type BayesianDimension = {
+  short_term?: BayesianSummary;
+  long_term?: BayesianSummary;
+  combined?: BayesianSummary;
 };
 
 const peers = ref<Peer[]>([]);
@@ -399,6 +448,21 @@ const shortenId = (id: string) => {
 };
 
 const shortenHash = (hash: string) => hash.length > 24 ? `${hash.slice(0, 12)}...${hash.slice(-8)}` : hash;
+const reputationRows = (peer: Peer) => {
+  const dimensions = peer.resource_reputation?.dimensions || {};
+  return ['connection', 'storage', 'compute', 'verify', 'delegation']
+    .filter((dimension) => dimensions[dimension])
+    .map((dimension) => ({ dimension, ...dimensions[dimension] }));
+};
+const reputationLabel = (dimension: string) => ({
+  connection: 'Connexion',
+  storage: 'Stockage',
+  compute: 'Calcul',
+  verify: 'Verification',
+  delegation: 'Delegation',
+}[dimension] || dimension);
+const percent = (value?: number) => `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
+const evidence = (value?: number) => (value || 0) >= 100 ? Math.round(value || 0) : (value || 0).toFixed(1);
 
 const proofLabel = (proof: TransportAttestation) => {
   if (proof.route === 'direct' && proof.transport_backend === 'ice') return 'Direct ICE prouve';
