@@ -89,6 +89,37 @@
         <button class="danger" :disabled="busy" @click="deactivateNode">Retirer ce PC</button>
       </section>
 
+      <section class="panel task-queue-panel">
+        <div class="panel-row">
+          <div>
+            <p class="eyebrow">Task book partage</p>
+            <h2>Queue de taches connue</h2>
+            <p>Vue gossip des travaux en attente ou en cours, avec role, workload, parcelle et attribution.</p>
+          </div>
+          <strong class="queue-count">{{ networkTaskQueue.length }}</strong>
+        </div>
+        <div v-if="networkTaskQueue.length === 0" class="empty-state">
+          Aucune tache active dans le task book actuellement connu par ce node.
+        </div>
+        <div v-else class="task-queue-grid">
+          <article v-for="task in networkTaskQueue" :key="`${task.ownerNodeId}-${task.itemId}`" class="task-queue-card">
+            <div class="task-queue-heading">
+              <span class="task-role" :class="task.role">{{ taskRoleLabel(task.role) }}</span>
+              <span class="task-status">{{ taskStatusLabel(task.status) }}</span>
+            </div>
+            <strong>{{ task.workload || task.activity || task.kind }}</strong>
+            <code>{{ task.itemId }}</code>
+            <small v-if="task.fragmentIndex !== ''">
+              Parcelle {{ Number(task.fragmentIndex) + 1 }}<template v-if="task.fragmentCount"> / {{ task.fragmentCount }}</template>
+              <template v-if="task.bounds"> · {{ task.bounds }}</template>
+            </small>
+            <small>Annonceur : {{ task.ownerNodeId }}</small>
+            <small>Attribuee : {{ task.assignedPeerId || 'en attente de claim' }}</small>
+            <small v-if="task.sourceNodeId">Resultat source : {{ task.sourceNodeId }} · {{ task.sourceTaskId }}</small>
+          </article>
+        </div>
+      </section>
+
       <section class="split-grid compact-grid">
         <section class="panel">
           <div class="panel-row">
@@ -214,6 +245,18 @@
                 <div><span>Relay</span><code>{{ machine.relayCapable ? 'capable' : 'non annonce' }}</code></div>
                 <div><span>Dernier claim</span><code>{{ machine.lastClaimPollUtc || 'aucun' }}</code></div>
                 <div><span>Derniere reponse</span><code>{{ responseLabel(machine) }}<template v-if="machine.lastResponseItemId"> · {{ machine.lastResponseItemId }}</template></code></div>
+                <div><span>Queue annoncee</span><code>{{ machine.taskQueue.length }} tache(s)</code></div>
+              </div>
+              <div v-if="machine.activeTasks.length" class="machine-task-list">
+                <article v-for="task in machine.activeTasks" :key="task.itemId" class="machine-task-card active">
+                  <strong>{{ taskRoleLabel(task.role) }} · {{ task.workload || task.activity }}</strong>
+                  <code>{{ task.itemId }}</code>
+                  <small v-if="task.fragmentIndex !== ''">
+                    Parcelle {{ Number(task.fragmentIndex) + 1 }}<template v-if="task.fragmentCount"> / {{ task.fragmentCount }}</template>
+                    <template v-if="task.bounds"> · {{ task.bounds }}</template>
+                  </small>
+                  <small v-if="task.sourceNodeId">Verifie le resultat de {{ task.sourceNodeId }} · {{ task.sourceTaskId }}</small>
+                </article>
               </div>
               <div v-if="machine.transportAttestations.length" class="transport-proof-list">
                 <div
@@ -421,6 +464,16 @@ const nodePhase = computed(() => {
       detail: 'Activez votre PC pour rejoindre le reseau.',
     };
   }
+  const localTask = activity.machines.find((machine) => machine.selfNode)?.activeTasks[0];
+  if (localTask) {
+    const verify = localTask.role === 'verify' || localTask.activity === 'verify';
+    return {
+      key: verify ? 'verify' : 'compute',
+      label: verify ? 'Verification' : 'Calcul',
+      description: `${taskRoleLabel(localTask.role)} · ${localTask.workload || localTask.activity}`,
+      detail: `${localTask.itemId}${localTask.fragmentIndex !== '' ? ` · parcelle ${Number(localTask.fragmentIndex) + 1}/${localTask.fragmentCount || '?'}` : ''}${localTask.bounds ? ` · ${localTask.bounds}` : ''}`,
+    };
+  }
   const recentLimit = Date.now() / 1000 - 120;
   const names = activity.history
     .filter((item) => item.modifiedAt >= recentLimit)
@@ -481,6 +534,24 @@ const outdatedMachineCount = computed(() => activity.machines.filter(machineNeed
 const directProofMachineCount = computed(() => activity.machines.filter((machine) => (
   machine.transportAttestations.some((proof) => proof.success && proof.route === 'direct')
 )).length);
+const networkTaskQueue = computed(() => {
+  const tasks = new Map<string, NodeActivity['machines'][number]['taskQueue'][number] & { ownerNodeId: string }>();
+  for (const machine of activity.machines) {
+    for (const task of machine.taskQueue) {
+      const current = tasks.get(task.itemId);
+      const candidate = { ...task, ownerNodeId: machine.nodeId };
+      if (!current || (task.assignedPeerId && !current.assignedPeerId) || task.status === 'running') {
+        tasks.set(task.itemId, candidate);
+      }
+    }
+  }
+  return [...tasks.values()].sort((left, right) => {
+    const stateOrder = (value: string) => value === 'running' ? 0 : value === 'dispatched' ? 1 : 2;
+    return stateOrder(left.status) - stateOrder(right.status)
+      || Number(left.fragmentIndex || 0) - Number(right.fragmentIndex || 0)
+      || left.itemId.localeCompare(right.itemId);
+  });
+});
 const filteredMachines = computed(() => {
   const query = networkQuery.value.toLowerCase();
   if (!query) return activity.machines;
@@ -503,6 +574,20 @@ const filteredMachines = computed(() => {
         proof.remotePeerId,
         proof.sessionId,
         proof.claimHash,
+      ]),
+      ...machine.activeTasks.flatMap((task) => [
+        task.itemId,
+        task.role,
+        task.workload,
+        task.sourceNodeId,
+      ]),
+      ...machine.taskQueue.flatMap((task) => [
+        task.itemId,
+        task.role,
+        task.workload,
+        task.status,
+        task.assignedPeerId,
+        task.sourceNodeId,
       ]),
     ].join(' ').toLowerCase();
     return searchable.includes(query);
@@ -732,6 +817,21 @@ function machineWorkLabel(machine: NodeActivity['machines'][number]) {
   }
   if (!machine.schedulerActive) return 'En attente du scheduler';
   return 'Disponible';
+}
+
+function taskRoleLabel(role: string) {
+  if (role === 'verify') return 'Verification';
+  if (role === 'compute') return 'Calcul';
+  if (role === 'storage') return 'Stockage';
+  if (role === 'audit') return 'Audit';
+  return role || 'Tache';
+}
+
+function taskStatusLabel(status: string) {
+  if (status === 'running') return 'en cours';
+  if (status === 'dispatched') return 'attribuee';
+  if (status === 'retrying') return 'nouvel essai';
+  return 'en attente';
 }
 
 function machineWorkDetail(machine: NodeActivity['machines'][number]) {
