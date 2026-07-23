@@ -1063,6 +1063,7 @@ class PeerNetwork:
         self.transport_attestations_path = export_dir / "p2p.transport_attestations.json"
         self.transport_attestation_events_path = export_dir / "p2p.transport_attestations.ndjson"
         self.gossip_events_path = export_dir / "gossip.events.ndjson"
+        self.task_control_events_path = export_dir / "gossip.task-controls.ndjson"
         self.update_announcements_dir = export_dir / "software-updates"
         self.discovery_registry_path = export_dir / "mesh.discovery.json"
         self._peers: dict[str, dict[str, Any]] = {}
@@ -1124,6 +1125,9 @@ class PeerNetwork:
         raise ValueError(f"unsupported_direct_transport_backend:{backend_name}")
 
     def start(self) -> None:
+        # Upgrade old general gossip logs before any listener can append a new
+        # control and accidentally make the dedicated index look complete.
+        self.recent_task_control_events(2048)
         self._start_http_server()
         if self.config.gossip_enable:
             self._start_udp_listener()
@@ -2630,6 +2634,8 @@ class PeerNetwork:
                 return False
             self._seen_events.add(event_id)
         append_jsonl(self.gossip_events_path, message)
+        if str(message.get("topic", "")).strip() == "task_control":
+            append_jsonl(self.task_control_events_path, message)
         return True
 
     def _broadcast(self, message: dict[str, Any], exclude: str = "") -> None:
@@ -3266,6 +3272,7 @@ class PeerNetwork:
         targets = self._sync_targets()
         for base_url in targets:
             self._sync_peer_table(base_url)
+            self._sync_task_controls(base_url)
             self._sync_recent_events(base_url)
             self._sync_update_manifest(base_url)
             self._poll_signaling_sessions(base_url)
@@ -3285,6 +3292,49 @@ class PeerNetwork:
             except json.JSONDecodeError:
                 continue
             if isinstance(payload, dict):
+                events.append(payload)
+        return events
+
+    def recent_task_control_events(self, limit: int) -> list[dict[str, Any]]:
+        """Return durable signed controls even when normal gossip history is noisy.
+
+        Older nodes only persisted controls in the general event log. Bootstrap
+        the dedicated anti-entropy index from that log once so upgrades retain
+        every still-relevant cancellation.
+        """
+        if limit <= 0:
+            return []
+        with self._lock:
+            if not self.task_control_events_path.exists():
+                controls: list[dict[str, Any]] = []
+                if self.gossip_events_path.exists():
+                    try:
+                        lines = self.gossip_events_path.read_text(encoding="utf-8").splitlines()
+                    except Exception:
+                        lines = []
+                    for line in lines:
+                        try:
+                            payload = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(payload, dict) and str(payload.get("topic", "")).strip() == "task_control":
+                            controls.append(payload)
+                self.task_control_events_path.parent.mkdir(parents=True, exist_ok=True)
+                for control in controls:
+                    append_jsonl(self.task_control_events_path, control)
+                if not controls:
+                    self.task_control_events_path.touch(exist_ok=True)
+            try:
+                lines = self.task_control_events_path.read_text(encoding="utf-8").splitlines()[-limit:]
+            except Exception:
+                return []
+        events: list[dict[str, Any]] = []
+        for line in lines:
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict) and str(payload.get("topic", "")).strip() == "task_control":
                 events.append(payload)
         return events
 
@@ -3412,6 +3462,23 @@ class PeerNetwork:
         url = f"{base_url.rstrip('/')}{path}"
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers=self._signed_headers("GET", path, b"")), timeout=5) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            return
+        events = payload.get("events") if isinstance(payload, dict) else None
+        if not isinstance(events, list):
+            return
+        for event in events:
+            if isinstance(event, dict):
+                self._handle_network_message(event, base_url)
+
+    def _sync_task_controls(self, base_url: str) -> None:
+        """Reconcile signed cancellation controls outside the bounded event feed."""
+        path = "/events/task-controls?limit=2048"
+        url = f"{base_url.rstrip('/')}{path}"
+        try:
+            request = urllib.request.Request(url, headers=self._signed_headers("GET", path, b""))
+            with urllib.request.urlopen(request, timeout=5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except Exception:
             return
@@ -3683,6 +3750,28 @@ class PeerNetwork:
                     except ValueError:
                         limit = peer_network.config.peer_event_limit
                     raw = stable_json({"schema_version": 1, "node_id": peer_network.node_id, "events": peer_network.recent_events(limit)}).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(raw)))
+                    self.end_headers()
+                    self.wfile.write(raw)
+                    return
+                if self.path.startswith("/events/task-controls"):
+                    if not peer_network._authorize_peer_request(self):
+                        self.send_error(403)
+                        return
+                    query = parse_qs(urlparse(self.path).query)
+                    try:
+                        limit = int((query.get("limit") or ["2048"])[0])
+                    except ValueError:
+                        limit = 2048
+                    raw = stable_json(
+                        {
+                            "schema_version": 1,
+                            "node_id": peer_network.node_id,
+                            "events": peer_network.recent_task_control_events(min(max(1, limit), 4096)),
+                        }
+                    ).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(raw)))
@@ -5047,7 +5136,7 @@ class NetworkNode:
                 if not isinstance(envelope, dict):
                     continue
                 status = str(envelope.get("status", "queued"))
-                if status in {"completed", "failed", "dead_lettered", "cancelled"}:
+                if status in {"completed", "failed", "dead_lettered", "cancelled", "expired"}:
                     continue
                 summary = self.task_activity(envelope)
                 summary.update(
@@ -5622,7 +5711,27 @@ class NetworkNode:
             if not isinstance(current, dict):
                 current = envelope
             status = str(current.get("status", ""))
-            if status in {"dispatched", "completed", "failed", "dead_lettered", "cancelled"}:
+            if status in {"dispatched", "completed", "failed", "dead_lettered", "cancelled", "expired"}:
+                return None
+            control_origin = str(current.get("origin_node_id") or current.get("dispatched_by") or "")
+            active_control = self.task_control_for(item_id, control_origin)
+            if active_control is not None:
+                self.update_envelope_status(
+                    current,
+                    "cancelled" if active_control.get("action") == "cancel" else "expired",
+                    {"task_control": active_control},
+                )
+                append_jsonl(
+                    self.events_path,
+                    {
+                        "schema_version": 1,
+                        "timestamp_utc": utc_now(),
+                        "node_id": self.config.node_id,
+                        "kind": "claim_rejected_task_control",
+                        "item_id": safe_id(item_id),
+                        "control_id": str(active_control.get("control_id", "")),
+                    },
+                )
                 return None
             assigned_raw = str(current.get("assigned_peer_id", "") or current.get("target_peer_id", "")).strip()
             assigned_peer_id = safe_id(assigned_raw) if assigned_raw else ""
@@ -5749,6 +5858,9 @@ class NetworkNode:
 
         for base_url in sorted(targets):
             self.peer_network._poll_signaling_sessions(base_url)
+            # Controls have their own durable anti-entropy feed. Reconcile it
+            # immediately before claiming so a restart cannot revive old work.
+            self.peer_network._sync_task_controls(base_url)
             path = "/tasks/claim"
             url = base_url.rstrip("/") + path
             attempt: dict[str, Any] = {"target": base_url, "url": url, "result": "unknown"}
@@ -5769,45 +5881,60 @@ class NetworkNode:
                         attempt["result"] = "no_task_available"
                     else:
                         claimed_task = payload["task"]
-                        self.ingest_content_blobs(claimed_task)
                         kind = str(claimed_task.get("envelope_kind") or "task")
-                        claimed_item_id = safe_id(str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown"))
-                        if kind == "request":
-                            enqueue_request_envelope(self.config.export_dir, claimed_task)
+                        candidate_item_id = safe_id(
+                            str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown")
+                        )
+                        # Close the race where a control is published while the
+                        # claim request is in flight.
+                        self.peer_network._sync_task_controls(base_url)
+                        control_origin = str(
+                            claimed_task.get("origin_node_id") or claimed_task.get("dispatched_by") or ""
+                        )
+                        active_control = self.task_control_for(candidate_item_id, control_origin)
+                        if active_control is not None:
+                            attempt["result"] = "rejected_task_control"
+                            attempt["item_id"] = candidate_item_id
+                            attempt["control_id"] = str(active_control.get("control_id", ""))
                         else:
-                            enqueue_task_envelope(self.config.export_dir, claimed_task)
-                        attempt["result"] = "claimed"
-                        attempt["item_id"] = claimed_item_id
-                        target_peer = next(
-                            (
-                                peer
-                                for peer in self.peer_network.peers_snapshot().get("peers", [])
-                                if str(peer.get("http_base_url", "")).rstrip("/") == base_url.rstrip("/")
-                            ),
-                            {},
-                        )
-                        self.peer_network.record_transport_attestation(
-                            route="central",
-                            transport_backend="scheduler-http",
-                            remote_peer_id=str(target_peer.get("node_id", "")),
-                            proof_scope="task_delivery",
-                            task_id=claimed_item_id,
-                            content_sha256=sha256_bytes(response_raw),
-                            size_bytes=len(response_raw),
-                            endpoint=base_url,
-                            success=True,
-                        )
-                        append_jsonl(
-                            self.events_path,
-                            {
-                                "schema_version": 1,
-                                "timestamp_utc": polled_at,
-                                "node_id": self.config.node_id,
-                                "kind": "claimed_task_received",
-                                "item_id": claimed_item_id,
-                                "from_seed": base_url,
-                            },
-                        )
+                            self.ingest_content_blobs(claimed_task)
+                            claimed_item_id = candidate_item_id
+                            if kind == "request":
+                                enqueue_request_envelope(self.config.export_dir, claimed_task)
+                            else:
+                                enqueue_task_envelope(self.config.export_dir, claimed_task)
+                            attempt["result"] = "claimed"
+                            attempt["item_id"] = claimed_item_id
+                            target_peer = next(
+                                (
+                                    peer
+                                    for peer in self.peer_network.peers_snapshot().get("peers", [])
+                                    if str(peer.get("http_base_url", "")).rstrip("/") == base_url.rstrip("/")
+                                ),
+                                {},
+                            )
+                            self.peer_network.record_transport_attestation(
+                                route="central",
+                                transport_backend="scheduler-http",
+                                remote_peer_id=str(target_peer.get("node_id", "")),
+                                proof_scope="task_delivery",
+                                task_id=claimed_item_id,
+                                content_sha256=sha256_bytes(response_raw),
+                                size_bytes=len(response_raw),
+                                endpoint=base_url,
+                                success=True,
+                            )
+                            append_jsonl(
+                                self.events_path,
+                                {
+                                    "schema_version": 1,
+                                    "timestamp_utc": polled_at,
+                                    "node_id": self.config.node_id,
+                                    "kind": "claimed_task_received",
+                                    "item_id": claimed_item_id,
+                                    "from_seed": base_url,
+                                },
+                            )
             except urllib.error.HTTPError as error:
                 attempt["result"] = "http_error"
                 attempt["http_status"] = int(error.code)
@@ -6097,6 +6224,8 @@ class NetworkNode:
         current["handled_utc"] = utc_now()
         current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
         current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
+        if isinstance(result.get("task_control"), dict):
+            current["task_control"] = dict(result["task_control"])
         atomic_write_json(path, current)
 
 

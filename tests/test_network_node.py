@@ -2513,6 +2513,78 @@ def test_task_control_cancels_matching_active_work_and_rejects_spoofed_issuer(tm
     assert node.task_control_for("job-42-frag-007")["control_id"] == "control-1"
 
 
+def test_task_control_anti_entropy_reaches_a_late_worker(tmp_path: Path) -> None:
+    source = network_node.NetworkNode(
+        _config(tmp_path / "control-source", "payer-node", gossip_enable=False, roles="storage")
+    )
+    source.peer_network.start()
+    try:
+        control = {
+            "control_id": "job-late-cancel-terminal",
+            "root_job_id": "job-late",
+            "action": "cancel",
+            "reason": "payer request",
+            "issuer_node_id": "payer-node",
+            "issued_utc": network_node.utc_now(),
+        }
+        assert source.apply_task_control(control, signed_by="payer-node")
+        source.peer_network.publish("task_control", control)
+
+        worker = network_node.NetworkNode(
+            _config(
+                tmp_path / "late-worker",
+                "worker-node",
+                gossip_enable=False,
+                roles="compute",
+                seed_peers=[source.peer_network.http_base_url],
+            )
+        )
+        worker.peer_network.start()
+        try:
+            worker.peer_network.sync_once()
+            recovered = worker.task_control_for("job-late-frag-099", "payer-node")
+            assert recovered is not None
+            assert recovered["control_id"] == "job-late-cancel-terminal"
+            assert (tmp_path / "late-worker" / "gossip.task-controls.ndjson").exists()
+        finally:
+            worker.peer_network.stop()
+    finally:
+        source.peer_network.stop()
+
+
+def test_scheduler_refuses_task_enqueued_after_its_root_was_cancelled(tmp_path: Path) -> None:
+    export_dir = tmp_path / "cancelled-claim"
+    node = network_node.NetworkNode(_config(export_dir, "payer-node", gossip_enable=False, roles="storage"))
+    control = {
+        "control_id": "job-cancelled-cancel-terminal",
+        "root_job_id": "job-cancelled",
+        "action": "cancel",
+        "reason": "job is terminal",
+        "issuer_node_id": "payer-node",
+        "issued_utc": network_node.utc_now(),
+    }
+    assert node.apply_task_control(control, signed_by="payer-node")
+    network_node.enqueue_task_envelope(
+        export_dir,
+        {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": "job-cancelled-frag-001",
+            "status": "queued",
+            "origin_node_id": "payer-node",
+            "required_roles": ["compute"],
+            "task": {"kind": "compute", "root_job_id": "job-cancelled"},
+        },
+    )
+
+    assert node.claim_task_for_worker("worker-node", {"compute"}) is None
+    envelope = json.loads(
+        (export_dir / "tasks" / f"{_path_id('job-cancelled-frag-001')}.json").read_text(encoding="utf-8")
+    )
+    assert envelope["status"] == "cancelled"
+    assert envelope["task_control"]["control_id"] == "job-cancelled-cancel-terminal"
+
+
 def test_compute_receipt_uses_deterministic_pixels_and_has_valid_signature(tmp_path: Path) -> None:
     node = network_node.NetworkNode(_config(tmp_path / "receipt", "worker-a", roles="compute"))
     envelope = {
