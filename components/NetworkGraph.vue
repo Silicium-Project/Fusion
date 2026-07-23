@@ -3,9 +3,9 @@
     <div class="flex items-center justify-between mb-4 z-10">
       <div>
         <h3 class="text-xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
-          Topologie du Reseau
+          Topologie attestee du reseau
         </h3>
-        <p class="text-xs text-white/40">Visualisation en temps reel des noeuds P2P actifs</p>
+        <p class="text-xs text-white/40">Seuls les chemins observes et signes sont relies</p>
       </div>
       <div class="flex items-center space-x-2">
         <span class="w-2 h-2 rounded-full bg-green-500 animate-ping"></span>
@@ -42,34 +42,29 @@
             </linearGradient>
           </defs>
 
-          <!-- Links (Connections) -->
-          <g v-for="(node, index) in visualNodes" :key="'link-' + node.id">
+          <!-- Signed transport paths only: candidates alone never create a link. -->
+          <g v-for="link in visualLinks" :key="link.id">
             <line
-              v-if="node.id !== 'orchestrator-1'"
-              :x1="center.x"
-              :y1="center.y"
-              :x2="node.x"
-              :y2="node.y"
-              stroke="url(#line-gradient)"
-              stroke-width="1.5"
-              stroke-opacity="0.4"
+              :x1="link.source.x"
+              :y1="link.source.y"
+              :x2="link.target.x"
+              :y2="link.target.y"
+              :stroke="link.color"
+              :stroke-width="link.route === 'direct' ? 2.5 : 1.5"
+              :stroke-dasharray="link.route === 'direct' ? undefined : '6 5'"
+              stroke-opacity="0.7"
             />
-            <!-- Animated pulse along the line -->
             <circle
-              v-if="node.id !== 'orchestrator-1'"
               r="3"
-              fill="#60a5fa"
+              :fill="link.color"
             >
               <animateMotion
-                :path="`M ${center.x} ${center.y} L ${node.x} ${node.y}`"
+                :path="`M ${link.source.x} ${link.source.y} L ${link.target.x} ${link.target.y}`"
                 dur="3s"
                 repeatCount="indefinite"
               />
             </circle>
           </g>
-
-          <!-- Glow under Orchestrator -->
-          <circle :cx="center.x" :cy="center.y" r="50" fill="url(#glow)" />
 
           <!-- Nodes Drawing -->
           <g
@@ -92,7 +87,6 @@
 
             <!-- Glow Effect for Node -->
             <circle
-              v-if="node.id !== 'orchestrator-1'"
               :cx="node.x"
               :cy="node.y"
               :r="node.size + 12"
@@ -138,10 +132,13 @@
         <!-- Legend overlay -->
         <div class="absolute bottom-2 left-2 bg-black/50 backdrop-blur-sm rounded-lg p-2 border border-white/5 flex gap-3 text-[10px] text-white/60">
           <div class="flex items-center gap-1">
-            <span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span> Orchestrateur
+            <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span> Direct atteste
           </div>
           <div class="flex items-center gap-1">
-            <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> Worker Node
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span> Relay atteste
+          </div>
+          <div class="flex items-center gap-1">
+            <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> Flux central observe
           </div>
         </div>
       </div>
@@ -205,7 +202,30 @@
             </div>
 
             <div>
-              <span class="text-white/40 block">Candidats P2P/ICE :</span>
+              <span class="text-white/40 block">Chemins de transport signes :</span>
+              <div class="mt-1 space-y-1">
+                <div
+                  v-for="proof in selectedNode.transport_attestations || []"
+                  :key="proof.claim_hash"
+                  class="bg-white/5 p-2 rounded text-[9px] text-white/80"
+                >
+                  <div class="flex justify-between gap-2 font-bold" :class="proofColorClass(proof.route)">
+                    <span>{{ proofLabel(proof) }}</span>
+                    <span>{{ proof.proof_scope }}</span>
+                  </div>
+                  <div class="mt-1 break-all font-mono">{{ shortenHash(proof.claim_hash) }}</div>
+                  <div class="mt-1 text-white/40">
+                    {{ proof.peer_proof_verified ? 'preuve distante + observation locale signees' : 'observation locale signee' }}
+                  </div>
+                </div>
+                <div v-if="!selectedNode.transport_attestations || selectedNode.transport_attestations.length === 0" class="text-yellow-400/80 font-bold">
+                  Aucun chemin signe : le P2P n est pas atteste.
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <span class="text-white/40 block">Candidats P2P/ICE (possibilites) :</span>
               <div class="mt-1 space-y-1">
                 <div
                   v-for="cand in selectedNode.candidates"
@@ -219,7 +239,7 @@
                   <div class="truncate mt-0.5">{{ cand.ip }}:{{ cand.port }}</div>
                 </div>
                 <div v-if="!selectedNode.candidates || selectedNode.candidates.length === 0" class="text-yellow-400/80 font-bold">
-                  Aucun candidat (ICE bloque !)
+                  Aucun candidat ICE annonce.
                 </div>
               </div>
             </div>
@@ -252,12 +272,25 @@ type Candidate = {
   port: number;
 };
 
+type TransportAttestation = {
+  claim_hash: string;
+  route: 'direct' | 'relay' | 'central' | 'failed' | string;
+  transport_backend: string;
+  proof_scope: string;
+  remote_peer_id: string;
+  relay_peer_id?: string;
+  peer_proof_verified: boolean;
+  success: boolean;
+  timestamp_unix: number;
+};
+
 type Peer = {
   node_id: string;
   roles: string[];
   http_base_url: string;
   last_seen_unix: number;
   candidates: Candidate[];
+  transport_attestations?: TransportAttestation[];
   app_version?: string;
   release_channel?: string;
   release_build?: string;
@@ -281,42 +314,39 @@ const outdatedPeers = computed(() => peers.value.filter((peer) => peer.node_id !
 const visualNodes = computed(() => {
   if (peers.value.length === 0) return [];
 
-  const nodes = [];
-  const otherPeers = peers.value.filter((p) => p.node_id !== 'orchestrator-1');
-
-  // Central Orchestrator Node
-  const orchestrator = peers.value.find((p) => p.node_id === 'orchestrator-1');
-  nodes.push({
-    id: 'orchestrator-1',
-    x: center.x,
-    y: center.y,
-    size: 20,
-    color: '#a855f7', // Purple
-    statusColor: '#10b981', // Green
-    raw: orchestrator || { node_id: 'orchestrator-1', roles: ['orchestrator'], http_base_url: '', last_seen_unix: 0, candidates: [] },
-  });
-
-  // Calculate layout of peripheral nodes
-  const radius = 120;
-  otherPeers.forEach((peer, i) => {
-    const angle = (i * 2 * Math.PI) / otherPeers.length;
+  const nodes: Array<{
+    id: string;
+    x: number;
+    y: number;
+    size: number;
+    color: string;
+    statusColor: string;
+    raw: Peer;
+  }> = [];
+  const radius = peers.value.length === 1 ? 0 : 125;
+  peers.value.forEach((peer, i) => {
+    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / peers.value.length;
     const x = center.x + radius * Math.cos(angle);
     const y = center.y + radius * Math.sin(angle);
 
-    // Determine status color based on candidate state
-    let statusColor = '#10b981'; // Green (Online & ready)
+    const latestProof = peer.transport_attestations?.[0];
+    let statusColor = '#f59e0b';
     if (peer.outdated) {
-      statusColor = '#ef4444'; // Red (release obsolete/unknown)
-    } else if (!peer.candidates || peer.candidates.length === 0) {
-      statusColor = '#f59e0b'; // Yellow (Warning: NAT blocked/No candidates)
+      statusColor = '#ef4444';
+    } else if (latestProof?.route === 'direct' && latestProof.success) {
+      statusColor = '#10b981';
+    } else if (latestProof?.route === 'relay') {
+      statusColor = '#a855f7';
+    } else if (latestProof?.route === 'central') {
+      statusColor = '#f43f5e';
     }
 
     nodes.push({
       id: peer.node_id,
       x,
       y,
-      size: 14,
-      color: '#3b82f6', // Blue
+      size: peer.node_id === 'orchestrator-1' ? 17 : 14,
+      color: peer.node_id === 'orchestrator-1' ? '#a855f7' : '#3b82f6',
       statusColor,
       raw: peer,
     });
@@ -325,11 +355,64 @@ const visualNodes = computed(() => {
   return nodes;
 });
 
+const visualLinks = computed(() => {
+  const nodes = new Map(visualNodes.value.map((node) => [node.id, node]));
+  const links: Array<{
+    id: string;
+    route: string;
+    color: string;
+    source: (typeof visualNodes.value)[number];
+    target: (typeof visualNodes.value)[number];
+  }> = [];
+  const seen = new Set<string>();
+  for (const peer of peers.value) {
+    const source = nodes.get(peer.node_id);
+    if (!source) continue;
+    for (const proof of peer.transport_attestations || []) {
+      if (!proof.success || !['direct', 'relay', 'central'].includes(proof.route)) continue;
+      const targetId = proof.route === 'relay' && proof.relay_peer_id
+        ? proof.relay_peer_id
+        : proof.remote_peer_id;
+      const target = nodes.get(targetId);
+      if (!target || target.id === source.id) continue;
+      const pair = [source.id, target.id].sort().join(':');
+      const id = `${pair}:${proof.route}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      links.push({
+        id,
+        route: proof.route,
+        color: proof.route === 'direct' ? '#22c55e' : proof.route === 'relay' ? '#a855f7' : '#f43f5e',
+        source,
+        target,
+      });
+    }
+  }
+  return links;
+});
+
 const shortenId = (id: string) => {
   if (id.startsWith('silicium-')) {
     return id.substring(9);
   }
   return id;
+};
+
+const shortenHash = (hash: string) => hash.length > 24 ? `${hash.slice(0, 12)}...${hash.slice(-8)}` : hash;
+
+const proofLabel = (proof: TransportAttestation) => {
+  if (proof.route === 'direct' && proof.transport_backend === 'ice') return 'Direct ICE prouve';
+  if (proof.route === 'direct') return 'Direct pair observe';
+  if (proof.route === 'relay') return 'Relay observe';
+  if (proof.route === 'central') return 'Flux central observe';
+  return 'Connexion echouee';
+};
+
+const proofColorClass = (route: string) => {
+  if (route === 'direct') return 'text-green-300';
+  if (route === 'relay') return 'text-purple-300';
+  if (route === 'central') return 'text-rose-300';
+  return 'text-yellow-300';
 };
 
 const formatTime = (unix: number) => {
@@ -345,7 +428,7 @@ const selectNode = (node: Peer) => {
 const fetchPeers = async () => {
   try {
     const token = Cookies.get('auth_token');
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     const res = await $fetch<any>(`${props.apiBase}/jobs/network/peers`, { headers });
     if (res && res.peers) {
       peers.value = res.peers;
@@ -355,9 +438,8 @@ const fetchPeers = async () => {
         const updated = res.peers.find((p: Peer) => p.node_id === selectedNode.value?.node_id);
         if (updated) selectedNode.value = updated;
       } else if (res.peers.length > 0) {
-        // Default select orchestrator
         const orch = res.peers.find((p: Peer) => p.node_id === 'orchestrator-1');
-        if (orch) selectedNode.value = orch;
+        selectedNode.value = orch || res.peers[0];
       }
     }
   } catch (error) {
