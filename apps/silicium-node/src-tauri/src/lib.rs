@@ -1504,6 +1504,12 @@ fn copy_dir_all(source: &Path, target: &Path) -> Result<(), String> {
         let entry = entry.map_err(|error| error.to_string())?;
         let source_path = entry.path();
         let target_path = target.join(entry.file_name());
+        if source_path.is_dir() && source_path.ends_with(Path::new("tools").join("openssl")) {
+            // Old NSIS upgrades can retain this directory in the packaged
+            // resources. Never copy it back into the managed runtime, even
+            // when two runtime refreshes overlap.
+            continue;
+        }
         if source_path.is_dir() {
             copy_dir_all(&source_path, &target_path)?;
         } else {
@@ -3419,6 +3425,33 @@ mod tests {
         let source = include_str!("lib.rs");
         assert!(source.contains("remove_legacy_runtime_assets(&managed_runtime_root())"));
         assert!(source.contains("remove_legacy_runtime_assets(&repo_root)"));
+    }
+
+    #[test]
+    fn managed_runtime_copy_never_restores_the_legacy_openssl_cli() {
+        let directory =
+            env::temp_dir().join(format!("silicium-runtime-copy-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        let source = directory.join("source");
+        let target = directory.join("target");
+        fs::create_dir_all(source.join("tools").join("openssl").join("bin")).unwrap();
+        fs::create_dir_all(source.join("Network")).unwrap();
+        fs::write(
+            source
+                .join("tools")
+                .join("openssl")
+                .join("bin")
+                .join("openssl.exe"),
+            b"legacy",
+        )
+        .unwrap();
+        fs::write(source.join("Network").join("silicium"), b"keep").unwrap();
+
+        copy_dir_all(&source, &target).unwrap();
+
+        assert!(!target.join("tools").join("openssl").exists());
+        assert!(target.join("Network").join("silicium").exists());
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
