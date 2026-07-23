@@ -436,6 +436,16 @@ label {
   color: #fde68a;
 }
 
+.p2p-badge.relay {
+  background: rgba(168, 85, 247, 0.15);
+  color: #e9d5ff;
+}
+
+.p2p-badge.central {
+  background: rgba(244, 63, 94, 0.14);
+  color: #fecdd3;
+}
+
 .p2p-badge.offline {
   background: rgba(100, 116, 139, 0.15);
   color: #cbd5e1;
@@ -488,6 +498,56 @@ label {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 8px;
   padding-bottom: 12px;
+}
+
+.transport-proof-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+  padding-bottom: 12px;
+}
+
+.transport-proof-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(34, 197, 94, 0.18);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(34, 197, 94, 0.055);
+}
+
+.transport-proof-card.relay {
+  border-color: rgba(168, 85, 247, 0.2);
+  background: rgba(168, 85, 247, 0.055);
+}
+
+.transport-proof-card.central,
+.transport-proof-card.failed {
+  border-color: rgba(244, 63, 94, 0.2);
+  background: rgba(244, 63, 94, 0.055);
+}
+
+.transport-proof-card > div,
+.transport-proof-card small {
+  display: grid;
+  gap: 3px;
+}
+
+.transport-proof-card strong {
+  color: #dcfce7;
+  font-size: 11px;
+}
+
+.transport-proof-card small {
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+}
+
+.transport-proof-card code {
+  overflow-wrap: anywhere;
+  color: #86efac;
+  font-size: 10px;
 }
 
 .candidate-card {

@@ -56,6 +56,7 @@ export type MachineActivity = {
   relayCapable: boolean;
   features: string[];
   candidates: MachineCandidate[];
+  transportAttestations: TransportAttestation[];
   platform: string;
   cpuCount: number;
   activeTasks: MachineTaskActivity[];
@@ -106,6 +107,25 @@ export type MachineCandidate = {
   port: number;
   internetRoutable: boolean;
   source: string;
+};
+
+export type TransportAttestation = {
+  claimHash: string;
+  signature: string;
+  route: 'direct' | 'relay' | 'central' | 'failed' | string;
+  transportBackend: string;
+  proofScope: string;
+  remotePeerId: string;
+  sessionId: string;
+  taskId: string;
+  contentId: string;
+  sizeBytes: number;
+  endpoint: string;
+  relayPeerId: string;
+  peerProofVerified: boolean;
+  success: boolean;
+  failureReason: string;
+  timestampUnix: number;
 };
 
 export type UpdateStatus = {
