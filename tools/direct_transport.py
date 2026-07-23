@@ -212,6 +212,17 @@ class NativeLightDirectTransport(DirectTransportBackend):
         with self.node._lock:
             session = self.node._direct_sessions.get(session_id)
             if not isinstance(session, dict):
+                signaling = self.node._sessions.get(session_id)
+                signaling_peers = (
+                    {
+                        str(signaling.get("initiator_peer_id", "")),
+                        str(signaling.get("target_peer_id", "")),
+                    }
+                    if isinstance(signaling, Mapping)
+                    else set()
+                )
+                if {self.node.node_id, peer_id} != signaling_peers:
+                    return
                 session = {
                     "schema_version": 1,
                     "session_id": session_id,

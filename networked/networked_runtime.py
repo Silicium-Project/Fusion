@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
@@ -39,35 +38,8 @@ def write_json(path: Path, payload: Any) -> None:
     tmp.replace(path)
 
 
-def find_openssl() -> Path | None:
-    found = shutil.which("openssl")
-    if found:
-        return Path(found)
-    if os.name != "nt":
-        return None
-    program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
-    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
-    for candidate in [
-        Path(program_files) / "OpenSSL-Win64" / "bin" / "openssl.exe",
-        Path(program_files) / "OpenSSL-Win32" / "bin" / "openssl.exe",
-        Path(program_files_x86) / "OpenSSL-Win32" / "bin" / "openssl.exe",
-        Path(program_files) / "Git" / "usr" / "bin" / "openssl.exe",
-        Path(program_files_x86) / "Git" / "usr" / "bin" / "openssl.exe",
-    ]:
-        if candidate.exists():
-            return candidate
-    return None
-
-
 def node_environment() -> dict[str, str]:
-    env = os.environ.copy()
-    openssl = find_openssl()
-    if openssl is not None:
-        openssl_dir = str(openssl.parent)
-        parts = [part for part in env.get("PATH", "").split(os.pathsep) if part]
-        if openssl_dir not in parts:
-            env["PATH"] = openssl_dir + os.pathsep + env.get("PATH", "")
-    return env
+    return os.environ.copy()
 
 
 def store_network_content(export_dir: Path, data: bytes, owner_node_id: str) -> dict[str, Any]:
@@ -264,8 +236,6 @@ class LocalNetworkEmitter:
     def start(self) -> None:
         if self.process is not None:
             return
-        if find_openssl() is None:
-            raise RuntimeError("openssl_not_found_for_networked_node")
         self.export_dir.mkdir(parents=True, exist_ok=True)
         self.state_dir.mkdir(parents=True, exist_ok=True)
         command = [

@@ -354,6 +354,22 @@ def test_peer_identity_persists_across_restarts(tmp_path: Path) -> None:
     assert first.public_key_path.exists()
 
 
+def test_peer_identity_signs_in_process_without_openssl_subprocess(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_subprocess(*_args, **_kwargs):
+        raise AssertionError("identity signing must not launch openssl.exe")
+
+    monkeypatch.setattr(network_node.subprocess, "run", fail_subprocess)
+    identity = network_node.NodeIdentity(_config(tmp_path / "identity-native", "node-native"))
+    payload = b"signed without an external process"
+    signature = identity.sign_bytes(payload)
+
+    assert network_node.NodeIdentity.verify_bytes(payload, signature, identity.public_key_b64)
+    assert not network_node.NodeIdentity.verify_bytes(payload + b"!", signature, identity.public_key_b64)
+
+
 def test_seed_url_preserves_reverse_proxy_path(tmp_path: Path) -> None:
     peer = network_node.PeerNetwork(_config(tmp_path / "peer", "node-a"), tmp_path / "peer")
     assert peer._normalize_http_target("https://vps.example/emitter/") == "https://vps.example/emitter"
@@ -1186,6 +1202,10 @@ def test_udp_hole_punch_rejects_wrong_session_id(tmp_path: Path) -> None:
         }
         peer_b._sign_message(wrong_probe)
         peer_a._handle_network_message(wrong_probe, f"127.0.0.1:{config_b.gossip_port}")
+        assert all(
+            item.get("session_id") != "p2p-sess-wrong"
+            for item in peer_a.direct_sessions_snapshot().get("sessions", [])
+        )
 
         result = peer_a.establish_direct_udp_session(punch_start)
         assert result["status"] == "failed"
@@ -2336,6 +2356,74 @@ def test_worker_claim_respects_excluded_peer_ids(tmp_path: Path) -> None:
     assert claimed is not None
     assert claimed["task_id"] == "test:excluded:001"
     assert claimed["dispatched_to"] == "independent-verifier"
+
+
+def test_fragment_claims_are_balanced_by_index_across_compatible_workers(tmp_path: Path) -> None:
+    export_seed = tmp_path / "balanced-seed"
+    seed_node = network_node.NetworkNode(_config(export_seed, "seed-orchestrator", roles="storage"))
+    for worker_id in ("worker-a", "worker-b"):
+        seed_node.peer_network.update_peer_metadata(
+            worker_id,
+            {
+                "roles": ["compute", "verify"],
+                "last_seen_unix": int(time.time()),
+            },
+        )
+    for fragment_index in range(2):
+        network_node.enqueue_task_envelope(
+            export_seed,
+            {
+                "schema_version": 1,
+                "envelope_kind": "task",
+                "task_id": f"render-frag-{fragment_index:03d}",
+                "status": "queued",
+                "required_roles": ["compute"],
+                "task": {
+                    "kind": "compute",
+                    "workload": "calcul/rendering/raytracer-fragment",
+                    "fragment_index": fragment_index,
+                    "fragment_count": 2,
+                },
+            },
+        )
+
+    first = seed_node.claim_task_for_worker("worker-a", {"compute", "verify"})
+    assert first is not None
+    assert first["task"]["fragment_index"] == 0
+    assert seed_node.claim_task_for_worker("worker-a", {"compute", "verify"}) is None
+    second = seed_node.claim_task_for_worker("worker-b", {"compute", "verify"})
+    assert second is not None
+    assert second["task"]["fragment_index"] == 1
+
+
+def test_task_queue_and_live_activity_are_announced_in_peer_book(tmp_path: Path) -> None:
+    export_dir = tmp_path / "observable-node"
+    node = network_node.NetworkNode(_config(export_dir, "worker-a", roles="compute,verify"))
+    network_node.enqueue_task_envelope(
+        export_dir,
+        {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": "render-frag-007-verify",
+            "status": "queued",
+            "required_roles": ["verify"],
+            "task": {
+                "kind": "verify",
+                "workload": "verification/rendering/raytracer-fragment",
+                "fragment_index": 7,
+                "fragment_count": 16,
+                "source_task_id": "render-frag-007",
+                "source_node_id": "worker-b",
+            },
+        },
+    )
+    node.publish_runtime_state()
+
+    self_peer = next(peer for peer in node.peer_network.peers_snapshot()["peers"] if peer.get("self"))
+    assert self_peer["task_queue"][0]["item_id"] == "render-frag-007-verify"
+    assert self_peer["task_queue"][0]["role"] == "verify"
+    assert self_peer["task_queue"][0]["source_node_id"] == "worker-b"
+    assert self_peer["activity"]["status"] == "idle"
 
 
 def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

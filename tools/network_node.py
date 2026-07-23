@@ -35,6 +35,9 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+
 from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
 from tools.resource_intelligence import DualMemoryBayes, build_resource_profile, resource_baselines
 from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256, scene_resolution
@@ -49,21 +52,6 @@ WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 DEFAULT_PUBLIC_STUN_SERVER = "stun.l.google.com:19302"
 ATOMIC_WRITE_LOCK = threading.Lock()
-
-
-def find_openssl_bin() -> str:
-    candidates = [
-        os.environ.get("SILICIUM_OPENSSL_BIN", ""),
-        shutil.which("openssl") or "",
-        shutil.which("openssl.exe") or "",
-        r"C:\Program Files\Git\mingw64\bin\openssl.exe",
-        r"C:\Program Files\Git\usr\bin\openssl.exe",
-    ]
-    for candidate in candidates:
-        value = str(candidate or "").strip()
-        if value and Path(value).exists():
-            return value
-    return "openssl"
 
 
 def utc_now() -> str:
@@ -360,28 +348,21 @@ class NodeIdentity:
         default_key = config.state_dir / "peer_identity_ed25519.pem"
         self.private_key_path = Path(config.identity_key_path).expanduser() if str(config.identity_key_path).strip() else default_key
         self.public_key_path = self.private_key_path.with_suffix(".pub.pem")
-        self.openssl_bin = find_openssl_bin()
         self.private_key_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_keypair()
         self._harden_private_key_permissions()
         public_pem = self.public_key_path.read_bytes()
+        self._private_key = serialization.load_pem_private_key(
+            self.private_key_path.read_bytes(),
+            password=None,
+        )
+        if not isinstance(self._private_key, Ed25519PrivateKey):
+            raise RuntimeError("identity_private_key_is_not_ed25519")
         self.public_key_b64 = base64.b64encode(public_pem).decode("ascii")
         self.identity_id = sha256_bytes(public_pem)[:32]
 
     def sign_bytes(self, data: bytes) -> str:
-        with tempfile.TemporaryDirectory(prefix="silicium-sign-") as tmpdir:
-            msg_path = Path(tmpdir) / "message.bin"
-            sig_path = Path(tmpdir) / "signature.bin"
-            msg_path.write_bytes(data)
-            completed = subprocess.run(
-                [self.openssl_bin, "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private_key_path), "-in", str(msg_path), "-out", str(sig_path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if completed.returncode != 0:
-                raise RuntimeError(f"openssl_sign_failed:{completed.stderr.strip()}")
-            return sig_path.read_bytes().hex()
+        return self._private_key.sign(data).hex()
 
     @staticmethod
     def verify_bytes(data: bytes, signature_hex: str, public_key_b64: str) -> bool:
@@ -390,24 +371,13 @@ class NodeIdentity:
         try:
             public_pem = base64.b64decode(public_key_b64.encode("ascii"))
             signature = bytes.fromhex(signature_hex)
+            public_key = serialization.load_pem_public_key(public_pem)
+            if not isinstance(public_key, Ed25519PublicKey):
+                return False
+            public_key.verify(signature, data)
+            return True
         except Exception:
             return False
-        identity_id = sha256_bytes(public_pem)[:32]
-        with tempfile.TemporaryDirectory(prefix=f"silicium-verify-{identity_id}-") as tmpdir:
-            msg_path = Path(tmpdir) / "message.bin"
-            sig_path = Path(tmpdir) / "signature.bin"
-            pub_path = Path(tmpdir) / "public.pem"
-            msg_path.write_bytes(data)
-            sig_path.write_bytes(signature)
-            pub_path.write_bytes(public_pem)
-            openssl_bin = find_openssl_bin()
-            completed = subprocess.run(
-                [openssl_bin, "pkeyutl", "-verify", "-rawin", "-pubin", "-inkey", str(pub_path), "-in", str(msg_path), "-sigfile", str(sig_path)],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            return completed.returncode == 0
 
     @staticmethod
     def identity_id_for_key(public_key_b64: str) -> str:
@@ -432,23 +402,27 @@ class NodeIdentity:
                         except OSError:
                             path.unlink(missing_ok=True)
         if not self.private_key_path.exists():
-            completed = subprocess.run(
-                [self.openssl_bin, "genpkey", "-algorithm", "Ed25519", "-out", str(self.private_key_path)],
-                capture_output=True,
-                text=True,
-                check=False,
+            private_key = Ed25519PrivateKey.generate()
+            self.private_key_path.write_bytes(
+                private_key.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.NoEncryption(),
+                )
             )
-            if completed.returncode != 0:
-                raise RuntimeError(f"openssl_identity_generate_failed:{completed.stderr.strip()}")
         if not self.public_key_path.exists():
-            completed = subprocess.run(
-                [self.openssl_bin, "pkey", "-in", str(self.private_key_path), "-pubout", "-out", str(self.public_key_path)],
-                capture_output=True,
-                text=True,
-                check=False,
+            private_key = serialization.load_pem_private_key(
+                self.private_key_path.read_bytes(),
+                password=None,
             )
-            if completed.returncode != 0:
-                raise RuntimeError(f"openssl_identity_pubout_failed:{completed.stderr.strip()}")
+            if not isinstance(private_key, Ed25519PrivateKey):
+                raise RuntimeError("identity_private_key_is_not_ed25519")
+            self.public_key_path.write_bytes(
+                private_key.public_key().public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo,
+                )
+            )
 
     def _harden_private_key_permissions(self) -> None:
         if os.name == "nt":
@@ -1060,7 +1034,7 @@ class PeerNetwork:
         self._verified_transport_claims: set[str] = set()
         self._seen_handshake_nonces: dict[str, float] = {}
         self._seen_punch_nonces: set[str] = set()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._http_server: http.server.ThreadingHTTPServer | None = None
         self._http_thread: threading.Thread | None = None
         self._udp_socket: socket.socket | None = None
@@ -1075,6 +1049,12 @@ class PeerNetwork:
         self.local_capacity = build_capacity_snapshot(config)
         self.local_reputation_score = float(config.reputation_score)
         self.local_resource_reputation: dict[str, Any] = DualMemoryBayes().snapshot()
+        self.local_activity: dict[str, Any] = {
+            "status": "idle",
+            "active_tasks": [],
+            "last_response": {},
+        }
+        self.local_task_queue: list[dict[str, Any]] = []
         self.local_onchain_reputation = 0.0
         self.local_onchain_global_reputation = 0.0
         self.local_onchain_compute_reputation = 0.0
@@ -1992,6 +1972,8 @@ class PeerNetwork:
         onchain_status: str | None = None,
         solana_owner: str | None = None,
         solana_worker: str | None = None,
+        activity: dict[str, Any] | None = None,
+        task_queue: list[dict[str, Any]] | None = None,
     ) -> None:
         if capacity is not None:
             self.local_capacity = capacity
@@ -2017,6 +1999,10 @@ class PeerNetwork:
             self.local_solana_owner = str(solana_owner)
         if solana_worker is not None:
             self.local_solana_worker = str(solana_worker)
+        if activity is not None:
+            self.local_activity = dict(activity)
+        if task_queue is not None:
+            self.local_task_queue = [dict(item) for item in task_queue[:64] if isinstance(item, dict)]
         self._record_self_peer()
 
     def set_peer_score_sink(self, callback: Any) -> None:
@@ -2158,6 +2144,9 @@ class PeerNetwork:
             "identity_id": self.identity.identity_id,
             "public_key": self.identity.public_key_b64,
             "roles": sorted(self.config.roles),
+            "app_version": self.config.app_version,
+            "release_channel": self.config.release_channel,
+            "release_build": self.config.release_build,
             "features": self.direct_transport.features(),
             "transport_attestations": self.recent_transport_attestations(4),
             "http_base_url": self.advertised_http_base_url,
@@ -2169,6 +2158,8 @@ class PeerNetwork:
             "capacity": self.local_capacity,
             "reputation_score": self.local_reputation_score,
             "resource_reputation": self.local_resource_reputation,
+            "activity": self.local_activity,
+            "task_queue": self.local_task_queue,
             "onchain_reputation": self.local_onchain_reputation,
             "onchain_global_reputation": self.local_onchain_global_reputation,
             "onchain_compute_reputation": self.local_onchain_compute_reputation,
@@ -2460,6 +2451,8 @@ class PeerNetwork:
                 "capacity": self.local_capacity,
                 "reputation_score": self.local_reputation_score,
                 "resource_reputation": self.local_resource_reputation,
+                "activity": self.local_activity,
+                "task_queue": self.local_task_queue,
                 "onchain_reputation": self.local_onchain_reputation,
                 "onchain_global_reputation": self.local_onchain_global_reputation,
                 "onchain_compute_reputation": self.local_onchain_compute_reputation,
@@ -2491,6 +2484,8 @@ class PeerNetwork:
             features = message.get("features") if isinstance(message.get("features"), list) else []
             capacity = message.get("capacity") if isinstance(message.get("capacity"), dict) else {}
             resource_reputation = message.get("resource_reputation") if isinstance(message.get("resource_reputation"), dict) else {}
+            activity = message.get("activity") if isinstance(message.get("activity"), dict) else {}
+            task_queue = message.get("task_queue") if isinstance(message.get("task_queue"), list) else []
             merged = {
                 "node_id": node_id,
                 # Peer tables are transitive and are not proof that a third
@@ -2514,6 +2509,12 @@ class PeerNetwork:
                 "capacity": capacity or current.get("capacity", {}),
                 "reputation_score": float(message.get("reputation_score", current.get("reputation_score", 0.0)) or 0.0),
                 "resource_reputation": resource_reputation or current.get("resource_reputation", {}),
+                "activity": activity if "activity" in message else current.get("activity", {}),
+                "task_queue": (
+                    [dict(item) for item in task_queue[:64] if isinstance(item, dict)]
+                    if "task_queue" in message
+                    else current.get("task_queue", [])
+                ),
                 "onchain_reputation": float(message.get("onchain_reputation", current.get("onchain_reputation", 0.0)) or 0.0),
                 "onchain_global_reputation": float(message.get("onchain_global_reputation", current.get("onchain_global_reputation", 0.0)) or 0.0),
                 "onchain_compute_reputation": float(message.get("onchain_compute_reputation", current.get("onchain_compute_reputation", 0.0)) or 0.0),
@@ -3141,6 +3142,9 @@ class PeerNetwork:
                     "identity_id": self.identity.identity_id,
                     "public_key": self.identity.public_key_b64,
                     "roles": sorted(self.config.roles),
+                    "app_version": self.config.app_version,
+                    "release_channel": self.config.release_channel,
+                    "release_build": self.config.release_build,
                     "http_base_url": self.advertised_http_base_url,
                     "mesh_post_url": self.mesh_post_url,
                     "gossip_bind": self._advertised_gossip_host(),
@@ -3150,6 +3154,8 @@ class PeerNetwork:
                     "capacity": self.local_capacity,
                     "reputation_score": self.local_reputation_score,
                     "resource_reputation": self.local_resource_reputation,
+                    "activity": self.local_activity,
+                    "task_queue": self.local_task_queue,
                     "timestamp_utc": utc_now(),
                 }
                 self._sign_message(probe)
@@ -3252,6 +3258,9 @@ class PeerNetwork:
             "identity_id": self.identity.identity_id,
             "public_key": self.identity.public_key_b64,
             "roles": sorted(self.config.roles),
+            "app_version": self.config.app_version,
+            "release_channel": self.config.release_channel,
+            "release_build": self.config.release_build,
             "features": self.direct_transport.features(),
             "transport_attestations": self.recent_transport_attestations(4),
             "http_base_url": self.advertised_http_base_url,
@@ -3263,6 +3272,8 @@ class PeerNetwork:
             "capacity": self.local_capacity,
             "reputation_score": self.local_reputation_score,
             "resource_reputation": self.local_resource_reputation,
+            "activity": self.local_activity,
+            "task_queue": self.local_task_queue,
             "timestamp_utc": utc_now(),
         }
         raw = stable_json(payload).encode("utf-8")
@@ -4346,10 +4357,15 @@ class NetworkNode:
         self._last_claim_error = ""
         self._last_claim_result = "not_started"
         self._last_claim_targets: list[dict[str, Any]] = []
+        self._activity_lock = threading.Lock()
+        self._active_tasks: list[dict[str, Any]] = []
+        self._last_response: dict[str, Any] = {}
         self.peer_network.set_local_profile(
             capacity=self.runtime.capacity(),
             reputation_score=self.reputation.local_score(),
             resource_reputation=self.reputation.resource_snapshot(),
+            activity=self.activity_snapshot(),
+            task_queue=self.task_queue_snapshot(),
         )
 
     def run(self) -> None:
@@ -4523,6 +4539,8 @@ class NetworkNode:
             onchain_status=getattr(self, "_solana_onchain_status", ""),
             solana_owner=self._solana_owner,
             solana_worker=self._solana_worker,
+            activity=self.activity_snapshot(),
+            task_queue=self.task_queue_snapshot(),
         )
         p2p_candidates = self.peer_network.candidate_diagnostics()
         p2p_sessions = self.peer_network.sessions_snapshot()
@@ -4561,6 +4579,8 @@ class NetworkNode:
                 "last_claim_error": self._last_claim_error,
                 "last_claim_result": self._last_claim_result,
                 "last_claim_targets": self._last_claim_targets,
+                "activity": self.activity_snapshot(),
+                "task_queue": self.task_queue_snapshot(),
                 "solana_owner": self._solana_owner,
                 "solana_worker": self._solana_worker,
                 "onchain_reputation": self._solana_onchain_reputation,
@@ -4665,9 +4685,92 @@ class NetworkNode:
         required_roles = set(str(role) for role in envelope.get("required_roles", ["compute"]))
         return bool(required_roles.intersection(self.config.roles))
 
+    def task_activity(self, envelope: Mapping[str, Any]) -> dict[str, Any]:
+        kind = str(envelope.get("envelope_kind") or "task")
+        body_key = "request" if kind == "request" else "task"
+        body = envelope.get(body_key) if isinstance(envelope.get(body_key), Mapping) else {}
+        roles = envelope.get("target_roles", []) if kind == "request" else envelope.get("required_roles", [])
+        role = str(roles[0]) if isinstance(roles, list) and roles else str(body.get("kind", kind))
+        item_id = str(envelope.get("request_id") if kind == "request" else envelope.get("task_id", ""))
+        return {
+            "item_id": safe_id(item_id),
+            "kind": kind,
+            "role": role.lower(),
+            "activity": str(body.get("kind", role or kind)).lower(),
+            "workload": str(body.get("workload", "")),
+            "fragment_index": body.get("fragment_index", envelope.get("fragment_index", "")),
+            "fragment_count": body.get("fragment_count", envelope.get("fragment_count", "")),
+            "source_task_id": str(body.get("source_task_id", "")),
+            "source_node_id": str(body.get("source_node_id", "")),
+            "x_start": body.get("x_start", ""),
+            "x_end": body.get("x_end", ""),
+            "y_start": body.get("y_start", ""),
+            "y_end": body.get("y_end", ""),
+            "started_utc": str(envelope.get("started_utc", "")),
+        }
+
+    def activity_snapshot(self) -> dict[str, Any]:
+        with self._activity_lock:
+            active_tasks = [dict(item) for item in self._active_tasks]
+            last_response = dict(self._last_response)
+        return {
+            "status": "working" if active_tasks else "idle",
+            "active_tasks": active_tasks,
+            "last_response": last_response,
+        }
+
+    def task_queue_snapshot(self, limit: int = 64) -> list[dict[str, Any]]:
+        items: list[tuple[float, dict[str, Any]]] = []
+        for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
+            if not directory.exists():
+                continue
+            for item_path in directory.glob("*.json"):
+                envelope = read_json(item_path, {})
+                if not isinstance(envelope, dict):
+                    continue
+                status = str(envelope.get("status", "queued"))
+                if status in {"completed", "failed", "dead_lettered", "cancelled"}:
+                    continue
+                summary = self.task_activity(envelope)
+                summary.update(
+                    {
+                        "status": status,
+                        "priority": str(envelope.get("priority", "normal")),
+                        "assigned_peer_id": str(
+                            envelope.get("dispatched_to")
+                            or envelope.get("assigned_peer_id")
+                            or envelope.get("target_peer_id")
+                            or ""
+                        ),
+                        "origin_node_id": str(envelope.get("origin_node_id") or envelope.get("dispatched_by") or ""),
+                        "queued_utc": str(envelope.get("queued_utc") or envelope.get("created_utc") or ""),
+                    }
+                )
+                try:
+                    modified = item_path.stat().st_mtime
+                except OSError:
+                    modified = 0.0
+                items.append((modified, summary))
+        items.sort(key=lambda item: (-item[0], str(item[1].get("item_id", ""))))
+        return [summary for _, summary in items[: max(1, int(limit))]]
+
+    def publish_runtime_state(self, *, announce: bool = False) -> None:
+        self.peer_network.set_local_profile(
+            activity=self.activity_snapshot(),
+            task_queue=self.task_queue_snapshot(),
+        )
+        if announce:
+            self.peer_network.announce()
+
     def handle(self, envelope: dict[str, Any]) -> None:
         started = time.monotonic()
         kind = str(envelope.get("envelope_kind") or "task")
+        active = self.task_activity(envelope)
+        active["started_utc"] = utc_now()
+        with self._activity_lock:
+            self._active_tasks = [active]
+        self.update_envelope_status(envelope, "running", {})
+        self.publish_runtime_state(announce=True)
         try:
             if kind == "request":
                 result = self.handle_request(envelope)
@@ -4730,6 +4833,16 @@ class NetworkNode:
         if ok and result.get("on_chain"):
             self.refresh_local_onchain_profile(force=True)
         self.return_dispatched_result(envelope, result, log_payload)
+        with self._activity_lock:
+            self._active_tasks = []
+            self._last_response = {
+                **active,
+                "ok": ok,
+                "error": error,
+                "duration_ms": duration_ms,
+                "timestamp_utc": utc_now(),
+            }
+        self.publish_runtime_state(announce=True)
 
     def schedule_retry_or_dead_letter(self, envelope: dict[str, Any], error: str) -> None:
         attempt = int(envelope.get("attempt", 0) or 0)
@@ -4982,6 +5095,51 @@ class NetworkNode:
         if not worker_id or not worker_roles:
             return None
 
+        def preferred_worker(
+            current: Mapping[str, Any],
+            required_roles: set[str],
+            excluded_peer_ids: set[str],
+        ) -> str:
+            now = int(time.time())
+            compatible: set[str] = set()
+            for peer in self.peer_network.peers_snapshot().get("peers", []):
+                if not isinstance(peer, dict):
+                    continue
+                peer_id = optional_peer_id(peer.get("node_id", ""))
+                if not peer_id or peer_id in excluded_peer_ids or peer.get("self"):
+                    continue
+                last_seen = int(peer.get("last_seen_unix", 0) or 0)
+                if last_seen <= 0 or now - last_seen > 45:
+                    continue
+                roles = {
+                    str(role).lower()
+                    for role in peer.get("roles", [])
+                    if str(role).strip()
+                }
+                if required_roles and not required_roles.issubset(roles):
+                    continue
+                compatible.add(peer_id)
+
+            safe_worker_id = safe_id(worker_id)
+            if safe_worker_id not in excluded_peer_ids and (
+                not required_roles or required_roles.issubset(worker_roles)
+            ):
+                compatible.add(safe_worker_id)
+            ordered = sorted(compatible)
+            if len(ordered) <= 1:
+                return ordered[0] if ordered else ""
+
+            body_key = "request" if str(current.get("envelope_kind") or "task") == "request" else "task"
+            body = current.get(body_key) if isinstance(current.get(body_key), Mapping) else {}
+            fragment_index = body.get("fragment_index", current.get("fragment_index"))
+            try:
+                slot = int(fragment_index)
+            except (TypeError, ValueError):
+                item_id = str(current.get("request_id") or current.get("task_id") or "")
+                role_key = ",".join(sorted(required_roles))
+                slot = int(sha256_bytes(f"{item_id}|{role_key}".encode("utf-8"))[:16], 16)
+            return ordered[slot % len(ordered)]
+
         def try_claim(envelope: dict[str, Any]) -> dict[str, Any] | None:
             """Claim one canonical pending envelope for a compatible worker."""
             kind = str(envelope.get("envelope_kind") or "task")
@@ -5014,6 +5172,9 @@ class NetworkNode:
                 required_roles = []
             req_set = {str(role).lower() for role in required_roles if str(role).strip()}
             if req_set and not req_set.issubset(worker_roles):
+                return None
+            selected_worker = preferred_worker(current, req_set, excluded_peer_ids)
+            if selected_worker and selected_worker != safe_id(worker_id):
                 return None
 
             key = self.envelope_key(current)

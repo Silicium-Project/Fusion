@@ -867,6 +867,8 @@ def main(argv: list[str] | None = None) -> int:
                     "max_sample_rows": max(1, int(args.verification_batch_rows)),
                     "scene_p2p_ref": scene_ref,
                     "source_task_id": compute_task_id,
+                    "source_node_id": str(compute_result.get("node_id", "")),
+                    "source_output_ref": computed["output_ref"],
                     "fragment_index": index,
                     "fragment_count": len(fragments),
                     "x_start": x_start,
