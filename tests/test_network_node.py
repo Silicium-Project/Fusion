@@ -18,6 +18,24 @@ def _write_jsonl(path: Path, payload: dict) -> None:
         handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
 
 
+def test_udp_route_failure_does_not_escape_gossip_broadcast(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    peer = network_node.PeerNetwork(
+        _config(tmp_path / "peer", "node-a", gossip_enable=False),
+        tmp_path / "peer",
+    )
+
+    class UnreachableSocket:
+        def sendto(self, _payload: bytes, _target: tuple[str, int]) -> None:
+            raise OSError(10051, "network unreachable")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(network_node.socket, "socket", lambda *_args, **_kwargs: UnreachableSocket())
+    peer._udp_socket = None
+    peer._send_udp("192.0.2.1:46102", "192.0.2.1", 46102, {"message_type": "gossip_event"})
+
+
 def test_nat_punch_defaults_to_public_stun_for_ice() -> None:
     args = types.SimpleNamespace(
         nat_punch_enable=True,

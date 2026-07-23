@@ -2641,7 +2641,12 @@ class PeerNetwork:
         family = socket.AF_INET6 if ":" in str(host) else socket.AF_INET
         sock = socket.socket(family, socket.SOCK_DGRAM)
         try:
-            sock.sendto(payload, (host, port))
+            try:
+                sock.sendto(payload, (host, port))
+            except OSError:
+                # A stale LAN/ICE candidate or a transient route failure must
+                # never terminate gossip reconciliation.
+                return
         finally:
             sock.close()
 
@@ -3187,7 +3192,24 @@ class PeerNetwork:
     def _start_sync_loop(self) -> None:
         def _loop() -> None:
             while not self._stop_event.wait(max(1, self.config.peer_sync_interval_s)):
-                self.sync_once()
+                try:
+                    self.sync_once()
+                except Exception as exc:
+                    # Peer discovery is a permanent background responsibility.
+                    # Persist the incident for diagnostics, then keep reconciling.
+                    try:
+                        append_jsonl(
+                            self.export_dir / "peer-sync-errors.ndjson",
+                            {
+                                "schema_version": 1,
+                                "timestamp_utc": utc_now(),
+                                "node_id": self.node_id,
+                                "error_type": type(exc).__name__,
+                                "error": str(exc),
+                            },
+                        )
+                    except OSError:
+                        pass
 
         self._sync_thread = threading.Thread(target=_loop, name=f"silicium-peer-sync-{self.node_id}", daemon=True)
         self._sync_thread.start()
