@@ -7,6 +7,9 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:functional": "playwright test",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
@@ -24,7 +27,11 @@
     "vue-router": "latest"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/js-cookie": "^3.0.6",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.11.1",
+    "vitest": "^4.1.10",
     "vue-tsc": "^3.2.2"
   }
 }

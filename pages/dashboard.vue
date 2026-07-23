@@ -67,7 +67,7 @@
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div class="bg-[#1f2029] rounded-2xl p-6">
           <p class="text-white/50">Jobs</p>
-          <p class="text-2xl font-bold">{{ jobs.length }}</p>
+          <p class="text-2xl font-bold">{{ totalJobs }}</p>
         </div>
         <div class="bg-[#1f2029] rounded-2xl p-6">
           <p class="text-white/50">En cours</p>
@@ -86,14 +86,23 @@
       </div>
 
       <section id="jobs" class="mt-8 bg-[#1f2029] rounded-2xl p-6">
-        <div class="flex items-center justify-between gap-4 mb-4">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
           <div>
             <h3 class="text-2xl font-bold">Mes taches</h3>
             <p class="text-white/50">Le site soumet au backend, le backend orchestre Silicium, le dashboard observe le Devnet.</p>
           </div>
-          <button @click="loadJobs" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">
-            Rafraichir
-          </button>
+          <div class="flex items-center gap-2">
+            <select v-model="statusFilter" class="h-10 rounded-lg bg-black/20 px-3 text-white/80" @change="changeFilter">
+              <option value="all" class="bg-[#1f2029]">Tous les statuts</option>
+              <option value="running" class="bg-[#1f2029]">En cours</option>
+              <option value="queued" class="bg-[#1f2029]">En attente</option>
+              <option value="completed" class="bg-[#1f2029]">Terminés</option>
+              <option value="failed" class="bg-[#1f2029]">Échoués</option>
+              <option value="cancelled" class="bg-[#1f2029]">Annulés</option>
+              <option value="expired" class="bg-[#1f2029]">Expirés</option>
+            </select>
+            <button @click="loadJobs" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">Rafraichir</button>
+          </div>
         </div>
 
         <div v-if="jobs.length === 0" class="text-white/50 py-6">
@@ -115,7 +124,9 @@
                 <td class="py-4">
                   <div class="font-semibold">{{ job.title }}</div>
                   <div class="text-white/40 text-sm">{{ job.description }}</div>
-                  <div v-if="job.errorMessage" class="text-red-300 text-sm mt-1">{{ job.errorMessage }}</div>
+                  <div v-if="job.errorMessage" class="text-red-300 text-sm mt-1 max-w-xl truncate" :title="job.errorMessage">
+                    {{ compactError(job.errorMessage) }}
+                  </div>
                 </td>
                 <td class="py-4 text-white/70">{{ job.workload }}</td>
                 <td class="py-4">
@@ -132,11 +143,26 @@
                     <NuxtLink :to="`/jobs/${job.id}/dashboard`" class="px-3 py-2 rounded-lg bg-blue-500/20 text-blue-200 hover:bg-blue-500/30">
                       Dashboard
                     </NuxtLink>
+                    <button
+                      v-if="isCancellable(job)"
+                      :disabled="cancellingJobId === job.id"
+                      class="px-3 py-2 rounded-lg bg-red-500/20 text-red-200 hover:bg-red-500/30 disabled:opacity-50"
+                      @click="cancelJob(job)"
+                    >
+                      {{ cancellingJobId === job.id ? 'Arrêt…' : 'Annuler' }}
+                    </button>
                   </div>
                 </td>
               </tr>
             </tbody>
           </table>
+        </div>
+        <div v-if="totalPages > 1" class="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
+          <span class="text-sm text-white/50">Page {{ currentPage }} / {{ totalPages }} · {{ totalJobs }} tâches</span>
+          <div class="flex gap-2">
+            <button :disabled="currentPage <= 1" class="px-3 py-2 rounded-lg bg-black/20 disabled:opacity-30" @click="goToPage(currentPage - 1)">Précédente</button>
+            <button :disabled="currentPage >= totalPages" class="px-3 py-2 rounded-lg bg-black/20 disabled:opacity-30" @click="goToPage(currentPage + 1)">Suivante</button>
+          </div>
         </div>
       </section>
 
@@ -194,6 +220,14 @@
               >
               <span class="block text-xs text-white/35 mt-2">Les parcelles sont lancees depuis le centre, puis de proche en proche.</span>
             </label>
+            <label class="block mb-6">
+              <span class="flex items-center justify-between text-white/50 mb-2">
+                <span>Durée maximale</span>
+                <strong class="text-purple-200">{{ Math.round(jobForm.maxRuntimeSeconds / 60) }} min</strong>
+              </span>
+              <input v-model.number="jobForm.maxRuntimeSeconds" type="range" min="60" max="14400" step="60" class="w-full accent-purple-400">
+              <span class="block text-xs text-white/35 mt-2">À l’échéance, l’arrêt signé est propagé à tout le réseau.</span>
+            </label>
             <input v-model="jobForm.title" type="text" placeholder="Nom de la tache" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400 mb-6">
             <textarea v-model="jobForm.description" placeholder="Description" class="w-full h-24 bg-black/20 rounded-lg px-4 py-2 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400 mb-6"></textarea>
             <div class="mb-6">
@@ -214,6 +248,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue';
 import Cookies from 'js-cookie';
+import { clampJobPage, compactJobError, isJobCancellable } from '~/utils/jobs';
 
 type Job = {
   id: number;
@@ -232,6 +267,11 @@ const isSubmittingJob = ref(false);
 const selectedJobFile = ref<File | null>(null);
 const jobSubmitError = ref('');
 const jobs = ref<Job[]>([]);
+const totalJobs = ref(0);
+const currentPage = ref(1);
+const pageSize = 20;
+const statusFilter = ref('all');
+const cancellingJobId = ref<number | null>(null);
 const user = ref<any>(null);
 const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
@@ -255,6 +295,7 @@ const jobForm = reactive({
   title: 'Raytracer',
   description: '',
   fragmentCount: 64,
+  maxRuntimeSeconds: 3600,
 });
 
 const runningJobs = computed(() => jobs.value.filter((job) => ['queued', 'running'].includes(job.status)).length);
@@ -263,6 +304,7 @@ const latestDashboardPath = computed(() => {
   const latest = jobs.value.find((job) => job.status === 'completed') || jobs.value[0];
   return latest ? `/jobs/${latest.id}/dashboard` : '/dashboard';
 });
+const totalPages = computed(() => Math.max(1, Math.ceil(totalJobs.value / pageSize)));
 
 const authHeaders = () => {
   const token = Cookies.get('auth_token');
@@ -271,11 +313,49 @@ const authHeaders = () => {
 
 const loadJobs = async () => {
   try {
-    jobs.value = await $fetch<Job[]>(`${apiBase}/jobs`, {
+    const response = await $fetch.raw<Job[]>(`${apiBase}/jobs`, {
       headers: authHeaders(),
+      query: {
+        page: currentPage.value,
+        page_size: pageSize,
+        status: statusFilter.value,
+      },
     });
+    jobs.value = response._data || [];
+    totalJobs.value = Number(response.headers.get('x-total-count') || jobs.value.length);
   } catch (error) {
     console.error('Failed to fetch jobs:', error);
+  }
+};
+
+const goToPage = async (page: number) => {
+  currentPage.value = clampJobPage(page, totalJobs.value, pageSize);
+  await loadJobs();
+};
+
+const changeFilter = async () => {
+  currentPage.value = 1;
+  await loadJobs();
+};
+
+const compactError = compactJobError;
+
+const isCancellable = (job: Job) => isJobCancellable(job.status);
+
+const cancelJob = async (job: Job) => {
+  if (!window.confirm(`Annuler « ${job.title} » ? Le travail déjà vérifié restera facturable.`)) return;
+  cancellingJobId.value = job.id;
+  try {
+    await $fetch(`${apiBase}/jobs/${job.id}/cancel`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: { reason: 'cancelled from web dashboard' },
+    });
+    await loadJobs();
+  } catch (error) {
+    console.error('Failed to cancel job:', error);
+  } finally {
+    cancellingJobId.value = null;
   }
 };
 
@@ -299,6 +379,7 @@ const submitJob = async () => {
     formData.append('title', jobForm.title);
     formData.append('description', jobForm.description);
     formData.append('fragment_count', String(jobForm.fragmentCount));
+    formData.append('max_runtime_seconds', String(jobForm.maxRuntimeSeconds));
     await $fetch(`${apiBase}/jobs`, {
       method: 'POST',
       headers: authHeaders(),
@@ -336,7 +417,8 @@ const downloadResult = async (job: Job) => {
 
 const statusClass = (status: string) => {
   if (status === 'completed') return 'bg-green-500/20 text-green-200';
-  if (status === 'failed') return 'bg-red-500/20 text-red-200';
+  if (['failed', 'expired'].includes(status)) return 'bg-red-500/20 text-red-200';
+  if (['cancelled', 'cancelling'].includes(status)) return 'bg-orange-500/20 text-orange-200';
   if (status === 'running') return 'bg-blue-500/20 text-blue-200';
   return 'bg-yellow-500/20 text-yellow-200';
 };
