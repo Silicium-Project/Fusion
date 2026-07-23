@@ -1,8 +1,10 @@
 # Raytracer workload
 
-This folder adapts an externally installed raytracer executable to the Silicium
-workload contract. The repository contains the network adapter, not the
-raytracer source project.
+This folder contains the Silicium raytracer workload and its native renderer.
+`native/` is a deterministic Rust engine with recursive reflections, shadows,
+Phong highlights and row-parallel CPU execution. The desktop packaging scripts
+build it for the target platform. `SILICIUM_RAYTRACER_THREADS` or `--threads`
+can cap its worker count; otherwise it uses the logical CPU count.
 
 Entrypoints:
 
@@ -13,8 +15,9 @@ py Network\workloads\raytracer\verify.py --scene Network\workloads\raytracer\exa
 py Network\workloads\raytracer\reassemble.py --fragment .silicium\fragment-0.ppm --y-start 0 --fragment .silicium\fragment-1.ppm --y-start 120 --output .silicium\raytracer-final.ppm --png .silicium\raytracer-final.png
 ```
 
-The split policy is automatic horizontal bands. Each compute worker commits the
-pixel hashes of smaller row milestones (20 rows by default). After the complete
+The split policy uses rectangular center-out neighbour tiles. Each compute
+worker commits the pixel hashes of smaller row milestones (20 rows by default).
+After the complete
 fragment has been returned, the orchestrator randomly selects one milestone and
 sends only that challenge plus the scene to a different verifier. The verifier
 re-renders the challenged rows instead of the complete fragment. Configure the
@@ -27,8 +30,8 @@ challenges one milestone per fragment, then reassembles the final image.
 
 Runtime requirements:
 
-- Set `SILICIUM_RAYTRACER_BIN` to the absolute path of the raytracer executable
-  on every compute and verify worker.
+- The desktop runtime configures `SILICIUM_RAYTRACER_BIN` to its bundled native
+  executable. Set it manually only for source/development installations.
 - Make the raytracer runtime libraries available on the worker PATH or beside
   the executable.
 - If scenes reference external assets, set `SILICIUM_RAYTRACER_ASSETS_DIR` to

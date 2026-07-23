@@ -344,11 +344,21 @@ def run_raytracer(
             shutil.copy2(generated, output)
 
     result_bytes = output.read_bytes()
+    renderer_telemetry: dict[str, Any] = {}
+    for line in reversed(completed.stderr.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict) and candidate.get("renderer"):
+            renderer_telemetry = candidate
+            break
     return {
         "binary": str(binary),
         "returncode": completed.returncode,
         "stdout": completed.stdout[-4096:],
         "stderr": completed.stderr[-4096:],
+        "renderer_telemetry": renderer_telemetry,
         "result_sha256": sha256_bytes(result_bytes),
         "result_path": str(output),
         "result_format": "ppm/p6",

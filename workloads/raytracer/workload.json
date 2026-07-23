@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "raytracer",
   "name": "Silicium Raytracer Workload",
-  "description": "Adapter around an externally installed raytracer executable. It exposes the same split, compute, verify and reassemble contract as other Silicium workloads.",
+  "description": "Distributed native Rust raytracer with deterministic tiles, recursive reflections, shadows, specular highlights and CPU multithreading.",
   "input": {
     "kind": "scene",
     "format": "raytracer-cfg",
@@ -39,6 +39,8 @@
     "windows": true,
     "linux": true,
     "requires_gpu": false,
-    "external_dependencies": ["SILICIUM_RAYTRACER_BIN pointing to a worker-local raytracer executable", "raytracer runtime DLLs/libraries", "optional SILICIUM_RAYTRACER_ASSETS_DIR"]
+    "renderer": "rust-native",
+    "multithreaded": true,
+    "external_dependencies": ["optional SILICIUM_RAYTRACER_ASSETS_DIR"]
   }
 }
