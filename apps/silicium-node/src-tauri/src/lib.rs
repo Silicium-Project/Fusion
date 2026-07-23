@@ -1432,13 +1432,32 @@ fn ensure_managed_runtime() -> Result<PathBuf, String> {
         )
     })?;
     if same_path(&source, &root) {
+        remove_legacy_runtime_assets(&root)?;
         validate_repo_root(&root)?;
         return Ok(root);
     }
 
     copy_dir_all(&source, &root)?;
+    remove_legacy_runtime_assets(&root)?;
     validate_repo_root(&root)?;
     Ok(root)
+}
+
+fn remove_legacy_runtime_assets(root: &Path) -> Result<(), String> {
+    // Releases before dev.14 bundled the OpenSSL CLI and added it to PATH.
+    // NSIS upgrades and the managed-runtime copy are additive, so files that
+    // disappear from a newer bundle otherwise survive forever. Cryptography
+    // uses its own Python extension and does not need this executable.
+    let legacy_openssl = root.join("tools").join("openssl");
+    if legacy_openssl.exists() {
+        fs::remove_dir_all(&legacy_openssl).map_err(|error| {
+            format!(
+                "legacy_runtime_cleanup_failed:{}:{error}",
+                legacy_openssl.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn refresh_managed_runtime_if_needed(root: PathBuf) -> Result<PathBuf, String> {
@@ -3359,6 +3378,30 @@ mod tests {
         assert!(!acquire_install_lock_at(&path, "content-b", Duration::from_secs(60)).unwrap());
         fs::remove_file(&path).unwrap();
         assert!(acquire_install_lock_at(&path, "content-b", Duration::from_secs(60)).unwrap());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn managed_runtime_cleanup_removes_only_the_legacy_openssl_cli() {
+        let directory =
+            env::temp_dir().join(format!("silicium-runtime-cleanup-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        let legacy = directory.join("tools").join("openssl").join("bin");
+        let python_crypto = directory
+            .join("tools")
+            .join("python")
+            .join("Lib")
+            .join("site-packages")
+            .join("cryptography");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::create_dir_all(&python_crypto).unwrap();
+        fs::write(legacy.join("openssl.exe"), b"legacy").unwrap();
+        fs::write(python_crypto.join("_rust.pyd"), b"keep").unwrap();
+
+        remove_legacy_runtime_assets(&directory).unwrap();
+
+        assert!(!directory.join("tools").join("openssl").exists());
+        assert!(python_crypto.join("_rust.pyd").exists());
         fs::remove_dir_all(directory).unwrap();
     }
 
