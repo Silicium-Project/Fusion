@@ -59,9 +59,12 @@ func loadNetworkPeers(peersPath, manifestPath string) (map[string]any, error) {
 			channel = "unknown"
 		}
 		latest := ""
+		latestBuild := ""
 		if release, ok := channels[channel].(map[string]any); ok {
 			latest = stringField(release, "version")
+			latestBuild = stringField(release, "build")
 		}
+		build := stringField(peer, "release_build")
 		status := "current"
 		outdated := false
 		if stringField(peer, "node_id") == "orchestrator-1" {
@@ -73,12 +76,16 @@ func loadNetworkPeers(peersPath, manifestPath string) (map[string]any, error) {
 		} else if latest != "" && compareSemanticVersions(version, latest) < 0 {
 			status = "outdated"
 			outdated = true
+		} else if version == latest && len(build) == 40 && len(latestBuild) == 40 && build != latestBuild {
+			status = "outdated-build"
+			outdated = true
 		} else if latest == "" {
 			status = "untracked-channel"
 			outdated = true
 		}
 		peer["release_channel"] = channel
 		peer["latest_version"] = latest
+		peer["latest_build"] = latestBuild
 		peer["version_status"] = status
 		peer["outdated"] = outdated
 	}
