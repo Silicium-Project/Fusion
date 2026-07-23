@@ -1,6 +1,6 @@
 {
   "name": "silicium-node",
-  "version": "0.2.9-dev.20",
+  "version": "0.2.9-dev.21",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "prepare:runtime": "powershell -ExecutionPolicy Bypass -File ./scripts/prepare-runtime.ps1",
     "prepare:runtime:linux": "bash ./scripts/prepare-runtime-linux.sh",
     "preview": "vite preview --host 127.0.0.1 --port 1420",
+    "test": "vitest run",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build --bundles nsis",
     "tauri:build:linux": "npm run prepare:runtime:linux && tauri build --bundles deb,appimage"
@@ -22,6 +23,7 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
+    "vitest": "^4.1.10",
     "vue-tsc": "^2.2.0"
   }
 }
