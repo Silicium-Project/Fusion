@@ -147,7 +147,7 @@
             <span><strong>{{ activity.machines.length }}</strong> connus</span>
             <span class="metric-online"><strong>{{ onlineMachineCount }}</strong> en ligne</span>
             <span :class="{ 'metric-warning': outdatedMachineCount > 0 }"><strong>{{ outdatedMachineCount }}</strong> a mettre a jour</span>
-            <span><strong>{{ directCandidateMachineCount }}</strong> avec candidats ICE</span>
+            <span><strong>{{ directProofMachineCount }}</strong> avec preuve directe</span>
           </div>
         </div>
 
@@ -188,7 +188,7 @@
 
               <div class="directory-p2p">
                 <span class="p2p-badge" :class="p2pStatusClass(machine)">{{ p2pStatusLabel(machine) }}</span>
-                <small>{{ candidateSummary(machine) }}</small>
+                <small>{{ transportProofSummary(machine) }}</small>
               </div>
 
               <div class="directory-scheduler">
@@ -215,6 +215,30 @@
                 <div><span>Dernier claim</span><code>{{ machine.lastClaimPollUtc || 'aucun' }}</code></div>
                 <div><span>Derniere reponse</span><code>{{ responseLabel(machine) }}<template v-if="machine.lastResponseItemId"> · {{ machine.lastResponseItemId }}</template></code></div>
               </div>
+              <div v-if="machine.transportAttestations.length" class="transport-proof-list">
+                <div
+                  v-for="proof in machine.transportAttestations.slice(0, 4)"
+                  :key="proof.claimHash"
+                  class="transport-proof-card"
+                  :class="proof.route"
+                >
+                  <div>
+                    <strong>{{ transportRouteLabel(proof.route, proof.transportBackend) }}</strong>
+                    <small>{{ transportScopeLabel(proof.proofScope) }} · {{ formatRelativeTime(proof.timestampUnix) }}</small>
+                  </div>
+                  <code>{{ shortProof(proof.claimHash) }}</code>
+                  <small>
+                    {{ proof.remotePeerId || proof.endpoint || 'pair inconnu' }}
+                    <template v-if="proof.peerProofVerified"> · preuve distante signee</template>
+                    <template v-else> · observation locale signee</template>
+                  </small>
+                  <small v-if="proof.sessionId">session {{ proof.sessionId }}</small>
+                  <small v-if="proof.failureReason" class="directory-error">{{ proof.failureReason }}</small>
+                </div>
+              </div>
+              <p v-else class="candidate-empty">
+                Aucune preuve de chemin signee. Les candidats ci-dessous indiquent seulement une possibilite de connexion.
+              </p>
               <div v-if="machine.candidates.length" class="candidate-list">
                 <div v-for="(candidate, index) in machine.candidates" :key="`${machine.nodeId}-${candidate.ip}-${candidate.port}-${index}`" class="candidate-card">
                   <strong>{{ candidate.candidateType || 'host' }} / {{ candidate.transport || 'udp' }}</strong>
@@ -454,7 +478,9 @@ const recentFriendlyHistory = computed(() => friendlyHistory.value.slice(0, 5));
 const olderFriendlyHistory = computed(() => friendlyHistory.value.slice(5));
 const onlineMachineCount = computed(() => activity.machines.filter((machine) => machine.online).length);
 const outdatedMachineCount = computed(() => activity.machines.filter(machineNeedsUpdate).length);
-const directCandidateMachineCount = computed(() => activity.machines.filter((machine) => machine.candidates.length > 0).length);
+const directProofMachineCount = computed(() => activity.machines.filter((machine) => (
+  machine.transportAttestations.some((proof) => proof.success && proof.route === 'direct')
+)).length);
 const filteredMachines = computed(() => {
   const query = networkQuery.value.toLowerCase();
   if (!query) return activity.machines;
@@ -470,6 +496,14 @@ const filteredMachines = computed(() => {
       ...machine.roles,
       ...machine.features,
       ...machine.candidates.flatMap((candidate) => [candidate.candidateType, candidate.transport, candidate.ip, candidate.source]),
+      ...machine.transportAttestations.flatMap((proof) => [
+        proof.route,
+        proof.transportBackend,
+        proof.proofScope,
+        proof.remotePeerId,
+        proof.sessionId,
+        proof.claimHash,
+      ]),
     ].join(' ').toLowerCase();
     return searchable.includes(query);
   });
@@ -762,18 +796,51 @@ function candidateSummary(machine: NodeActivity['machines'][number]) {
   return `${machine.candidates.length} candidat(s) · ${types.join(', ')}`;
 }
 
+function latestTransportProof(machine: NodeActivity['machines'][number]) {
+  return machine.transportAttestations[0];
+}
+
+function transportProofSummary(machine: NodeActivity['machines'][number]) {
+  const proof = latestTransportProof(machine);
+  if (!proof) return `${candidateSummary(machine)} · aucune preuve de chemin`;
+  return `${transportScopeLabel(proof.proofScope)} · ${proof.peerProofVerified ? 'preuve distante signee' : 'observation locale signee'}`;
+}
+
 function p2pStatusLabel(machine: NodeActivity['machines'][number]) {
   if (!machine.online) return 'Hors ligne';
-  if (!machine.candidates.length) return 'Aucun candidat';
-  if (machine.candidates.some((candidate) => candidate.internetRoutable)) return 'ICE routable';
-  return 'ICE local / NAT';
+  const proof = latestTransportProof(machine);
+  if (!proof) return machine.candidates.length ? 'ICE non atteste' : 'Aucune preuve P2P';
+  return transportRouteLabel(proof.route, proof.transportBackend);
 }
 
 function p2pStatusClass(machine: NodeActivity['machines'][number]) {
   if (!machine.online) return 'offline';
-  if (!machine.candidates.length) return 'warning';
-  if (machine.candidates.some((candidate) => candidate.internetRoutable)) return 'ok';
-  return 'nat';
+  const proof = latestTransportProof(machine);
+  if (!proof) return 'warning';
+  if (proof.route === 'direct' && proof.success) return 'ok';
+  if (proof.route === 'relay') return 'relay';
+  if (proof.route === 'central') return 'central';
+  return 'warning';
+}
+
+function transportRouteLabel(route: string, backend: string) {
+  if (route === 'direct' && backend === 'ice') return 'Direct ICE prouve';
+  if (route === 'direct') return 'Direct pair observe';
+  if (route === 'relay') return 'Relay observe';
+  if (route === 'central') return 'Flux central observe';
+  if (route === 'failed') return 'Connexion directe echouee';
+  return 'Chemin inconnu';
+}
+
+function transportScopeLabel(scope: string) {
+  if (scope === 'payload_transfer') return 'transfert de contenu';
+  if (scope === 'task_delivery') return 'livraison de tache';
+  return 'test de connectivite';
+}
+
+function shortProof(value: string) {
+  if (!value) return 'hash indisponible';
+  return value.length > 24 ? `${value.slice(0, 12)}...${value.slice(-8)}` : value;
 }
 
 function formatRelativeTime(seconds: number) {

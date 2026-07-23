@@ -105,6 +105,7 @@ struct MachineActivity {
     relay_capable: bool,
     features: Vec<String>,
     candidates: Vec<MachineCandidate>,
+    transport_attestations: Vec<TransportAttestation>,
     platform: String,
     cpu_count: u64,
     active_tasks: Vec<MachineTaskActivity>,
@@ -126,6 +127,27 @@ struct MachineCandidate {
     port: u64,
     internet_routable: bool,
     source: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransportAttestation {
+    claim_hash: String,
+    signature: String,
+    route: String,
+    transport_backend: String,
+    proof_scope: String,
+    remote_peer_id: String,
+    session_id: String,
+    task_id: String,
+    content_id: String,
+    size_bytes: u64,
+    endpoint: String,
+    relay_peer_id: String,
+    peer_proof_verified: bool,
+    success: bool,
+    failure_reason: String,
+    timestamp_unix: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -2727,6 +2749,88 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                     })
                 })
                 .collect::<Vec<_>>();
+            let transport_attestations = peer
+                .get("transport_attestations")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|attestation| {
+                    Some(TransportAttestation {
+                        claim_hash: attestation.get("claim_hash")?.as_str()?.to_string(),
+                        signature: attestation
+                            .get("signature")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        route: attestation
+                            .get("route")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        transport_backend: attestation
+                            .get("transport_backend")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        proof_scope: attestation
+                            .get("proof_scope")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        remote_peer_id: attestation
+                            .get("remote_peer_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        session_id: attestation
+                            .get("session_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        task_id: attestation
+                            .get("task_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        content_id: attestation
+                            .get("content_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        size_bytes: attestation
+                            .get("size_bytes")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0),
+                        endpoint: attestation
+                            .get("endpoint")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        relay_peer_id: attestation
+                            .get("relay_peer_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        peer_proof_verified: attestation
+                            .get("peer_proof_verified")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                        success: attestation
+                            .get("success")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false),
+                        failure_reason: attestation
+                            .get("failure_reason")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        timestamp_unix: attestation
+                            .get("timestamp_unix")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(0),
+                    })
+                })
+                .collect::<Vec<_>>();
             let capacity = peer.get("capacity").and_then(Value::as_object);
             let activity = peer.get("activity").and_then(Value::as_object);
             let active_tasks = activity
@@ -2825,6 +2929,7 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                     .map(str::to_string)
                     .collect(),
                 candidates,
+                transport_attestations,
                 platform: capacity
                     .and_then(|item| item.get("platform"))
                     .and_then(Value::as_str)
