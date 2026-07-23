@@ -89,6 +89,25 @@
         <button class="danger" :disabled="busy" @click="deactivateNode">Retirer ce PC</button>
       </section>
 
+      <section v-if="localMachine" class="panel telemetry-panel">
+        <div class="panel-row">
+          <div>
+            <p class="eyebrow">Telemetrie temps reel</p>
+            <h2>Charge de ce PC</h2>
+            <p>Mesures du processus Silicium et de la machine, publiees dans l annuaire P2P.</p>
+          </div>
+          <span class="telemetry-live"><i></i> {{ formatRelativeTime(localMachine.telemetry.sampledUnix) }}</span>
+        </div>
+        <div class="telemetry-grid">
+          <article><span>CPU machine</span><strong>{{ formatMetricPercent(localMachine.telemetry.systemCpuPercent) }}</strong><small>{{ localMachine.telemetry.logicalCpuCount || localMachine.cpuCount }} coeurs logiques</small></article>
+          <article><span>CPU Silicium</span><strong>{{ formatMetricPercent(localMachine.telemetry.processCpuPercent) }}</strong><small>{{ formatMetricPercent(localMachine.telemetry.processCpuPercentOneCore) }} d un coeur</small></article>
+          <article><span>RAM machine</span><strong>{{ formatMetricPercent(localMachine.telemetry.systemMemoryPercent) }}</strong><small>{{ formatBytes(localMachine.telemetry.systemMemoryUsedBytes) }} / {{ formatBytes(localMachine.telemetry.systemMemoryTotalBytes) }}</small></article>
+          <article><span>RAM Silicium</span><strong>{{ formatBytes(localMachine.telemetry.processRssBytes) }}</strong><small>pic {{ formatBytes(localMachine.telemetry.processPeakRssBytes) }}</small></article>
+          <article><span>Stockage</span><strong>{{ formatMetricPercent(localMachine.telemetry.storageUsedPercent) }}</strong><small>{{ formatBytes(localMachine.telemetry.storageFreeBytes) }} libres</small></article>
+          <article><span>Uptime node</span><strong>{{ formatElapsed(localMachine.telemetry.nodeUptimeSeconds * 1000) }}</strong><small>{{ localMachine.telemetry.pythonThreadCount }} threads runtime</small></article>
+        </div>
+      </section>
+
       <section class="panel task-queue-panel">
         <div class="panel-row">
           <div>
@@ -102,7 +121,9 @@
           Aucune tache active dans le task book actuellement connu par ce node.
         </div>
         <div v-else class="task-queue-grid">
-          <article v-for="task in networkTaskQueue" :key="`${task.ownerNodeId}-${task.itemId}`" class="task-queue-card">
+          <article v-for="task in networkTaskQueue" :key="`${task.ownerNodeId}-${task.itemId}`" class="task-queue-card progress-card">
+            <span class="task-progress-background" :style="{ width: `${queueProgress(task)}%` }"></span>
+            <div class="task-card-content">
             <div class="task-queue-heading">
               <span class="task-role" :class="task.role">{{ taskRoleLabel(task.role) }}</span>
               <span class="task-status">{{ taskStatusLabel(task.status) }}</span>
@@ -116,6 +137,11 @@
             <small>Annonceur : {{ task.ownerNodeId }}</small>
             <small>Attribuee : {{ task.assignedPeerId || 'en attente de claim' }}</small>
             <small v-if="task.sourceNodeId">Resultat source : {{ task.sourceNodeId }} · {{ task.sourceTaskId }}</small>
+            <div v-if="queueActiveTask(task)" class="task-progress-detail">
+              <strong>{{ formatProgress(queueActiveTask(task)!.progressPercent) }}</strong>
+              <span>{{ phaseLabel(queueActiveTask(task)!.phase) }} / {{ progressSourceLabel(queueActiveTask(task)!.progressSource) }}</span>
+            </div>
+            </div>
           </article>
         </div>
       </section>
@@ -269,6 +295,10 @@
                 <div><span>Dernier claim</span><code>{{ machine.lastClaimPollUtc || 'aucun' }}</code></div>
                 <div><span>Derniere reponse</span><code>{{ responseLabel(machine) }}<template v-if="machine.lastResponseItemId"> · {{ machine.lastResponseItemId }}</template></code></div>
                 <div><span>Queue annoncee</span><code>{{ machine.taskQueue.length }} tache(s)</code></div>
+                <div><span>CPU machine / Silicium</span><code>{{ formatMetricPercent(machine.telemetry.systemCpuPercent) }} / {{ formatMetricPercent(machine.telemetry.processCpuPercent) }}</code></div>
+                <div><span>RAM machine</span><code>{{ formatBytes(machine.telemetry.systemMemoryUsedBytes) }} / {{ formatBytes(machine.telemetry.systemMemoryTotalBytes) }} ({{ formatMetricPercent(machine.telemetry.systemMemoryPercent) }})</code></div>
+                <div><span>RAM processus / pic</span><code>{{ formatBytes(machine.telemetry.processRssBytes) }} / {{ formatBytes(machine.telemetry.processPeakRssBytes) }}</code></div>
+                <div><span>Stockage / uptime</span><code>{{ formatMetricPercent(machine.telemetry.storageUsedPercent) }} utilise / {{ formatElapsed(machine.telemetry.nodeUptimeSeconds * 1000) }}</code></div>
               </div>
               <div v-if="machine.resourceReputation.length" class="reputation-grid compact">
                 <article v-for="score in machine.resourceReputation" :key="`${machine.nodeId}-${score.dimension}`" class="reputation-card">
@@ -282,7 +312,9 @@
                 </article>
               </div>
               <div v-if="machine.activeTasks.length" class="machine-task-list">
-                <article v-for="task in machine.activeTasks" :key="task.itemId" class="machine-task-card active">
+                <article v-for="task in machine.activeTasks" :key="task.itemId" class="machine-task-card active progress-card">
+                  <span class="task-progress-background" :style="{ width: `${clampProgress(task.progressPercent)}%` }"></span>
+                  <div class="task-card-content">
                   <strong>{{ taskRoleLabel(task.role) }} · {{ task.workload || task.activity }}</strong>
                   <code>{{ task.itemId }}</code>
                   <small v-if="task.fragmentIndex !== ''">
@@ -290,6 +322,20 @@
                     <template v-if="task.bounds"> · {{ task.bounds }}</template>
                   </small>
                   <small v-if="task.sourceNodeId">Verifie le resultat de {{ task.sourceNodeId }} · {{ task.sourceTaskId }}</small>
+                  <div class="task-metrics">
+                    <span>Progression <strong>{{ formatProgress(task.progressPercent) }}</strong></span>
+                    <span>Phase <strong>{{ phaseLabel(task.phase) }}</strong></span>
+                    <span>Mesure <strong>{{ progressSourceLabel(task.progressSource) }}</strong></span>
+                    <span>Ecoule <strong>{{ formatElapsed(task.elapsedMs) }}</strong></span>
+                    <span>ETA <strong>{{ task.etaSeconds > 0 ? formatElapsed(task.etaSeconds * 1000) : 'calcul...' }}</strong></span>
+                    <span v-if="task.totalUnits > 0">Unites <strong>{{ formatNumber(task.completedUnits) }} / {{ formatNumber(task.totalUnits) }} {{ task.unit }}</strong></span>
+                    <span v-if="task.throughputUnitsPerSecond > 0">Debit <strong>{{ formatNumber(task.throughputUnitsPerSecond) }} {{ task.unit }}/s</strong></span>
+                    <span v-if="task.pixelsTotal > 0">Pixels <strong>{{ formatNumber(task.pixelsCompleted) }} / {{ formatNumber(task.pixelsTotal) }}</strong></span>
+                    <span>Threads <strong>{{ task.workerThreads || task.resourceUsage.pythonThreadCount || '?' }}</strong></span>
+                    <span>CPU / RAM <strong>{{ formatMetricPercent(task.resourceUsage.systemCpuPercent) }} / {{ formatBytes(task.resourceUsage.processRssBytes) }}</strong></span>
+                    <span>Essai <strong>{{ task.attempt || 1 }} / {{ (task.maxRetries || 0) + 1 }}</strong></span>
+                  </div>
+                  </div>
                 </article>
               </div>
               <div v-if="machine.transportAttestations.length" class="transport-proof-list">
@@ -573,6 +619,7 @@ const directProofMachineCount = computed(() => activity.machines.filter((machine
 const localReputation = computed(() => (
   activity.machines.find((machine) => machine.selfNode)?.resourceReputation || []
 ));
+const localMachine = computed(() => activity.machines.find((machine) => machine.selfNode));
 const networkTaskQueue = computed(() => {
   const tasks = new Map<string, NodeActivity['machines'][number]['taskQueue'][number] & { ownerNodeId: string }>();
   for (const machine of activity.machines) {
@@ -657,6 +704,39 @@ const reputationLabel = (dimension: string) => ({
 }[dimension] || dimension);
 const percent = (value: number) => `${Math.round(Math.max(0, Math.min(1, value || 0)) * 100)}%`;
 const formatEvidence = (value: number) => value >= 100 ? Math.round(value).toString() : value.toFixed(1);
+const clampProgress = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
+const formatProgress = (value: number) => `${clampProgress(value).toFixed(value > 0 && value < 10 ? 1 : 0)}%`;
+const formatMetricPercent = (value: number) => `${Math.max(0, Number(value) || 0).toFixed(1)}%`;
+const formatNumber = (value: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(Number(value) || 0);
+const formatElapsed = (milliseconds: number) => {
+  const seconds = Math.max(0, Math.round((Number(milliseconds) || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+};
+const phaseLabel = (phase: string) => ({
+  fetching_input: 'Recuperation',
+  executing: 'Execution',
+  rendering: 'Rendu',
+  publishing_result: 'Publication',
+  finalizing: 'Finalisation',
+  completed: 'Terminee',
+  failed: 'Echec',
+}[phase] || phase || 'Execution');
+const progressSourceLabel = (source: string) => source === 'measured' ? 'mesuree' : source === 'estimated' ? 'estimee' : 'indisponible';
+
+function queueActiveTask(task: NodeActivity['machines'][number]['taskQueue'][number]) {
+  const preferred = task.assignedPeerId
+    ? activity.machines.find((machine) => machine.nodeId === task.assignedPeerId)
+    : undefined;
+  return preferred?.activeTasks.find((active) => active.itemId === task.itemId)
+    || activity.machines.flatMap((machine) => machine.activeTasks).find((active) => active.itemId === task.itemId);
+}
+
+function queueProgress(task: NodeActivity['machines'][number]['taskQueue'][number]) {
+  return clampProgress(queueActiveTask(task)?.progressPercent || 0);
+}
 
 const shortResultName = computed(() => {
   if (!activity.lastResult || activity.lastResult === 'Aucun resultat local') {
@@ -1039,7 +1119,7 @@ function scheduleRefresh() {
   refreshTimer = window.setTimeout(async () => {
     await refreshAll();
     scheduleRefresh();
-  }, 5000);
+  }, 2000);
 }
 
 onMounted(async () => {

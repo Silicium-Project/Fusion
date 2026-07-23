@@ -108,6 +108,7 @@ struct MachineActivity {
     transport_attestations: Vec<TransportAttestation>,
     platform: String,
     cpu_count: u64,
+    telemetry: RuntimeTelemetry,
     resource_reputation: Vec<BayesianResourceScore>,
     active_tasks: Vec<MachineTaskActivity>,
     task_queue: Vec<MachineQueueItem>,
@@ -164,6 +165,24 @@ struct MachineTaskActivity {
     source_task_id: String,
     source_node_id: String,
     bounds: String,
+    phase: String,
+    progress_percent: f64,
+    progress_source: String,
+    elapsed_ms: u64,
+    eta_seconds: f64,
+    completed_units: f64,
+    total_units: f64,
+    unit: String,
+    throughput_units_per_second: f64,
+    worker_threads: u64,
+    pixels_completed: u64,
+    pixels_total: u64,
+    input_bytes: u64,
+    attempt: u64,
+    max_retries: u64,
+    priority: String,
+    queued_utc: String,
+    resource_usage: RuntimeTelemetry,
 }
 
 #[derive(Debug, Serialize)]
@@ -183,6 +202,31 @@ struct MachineQueueItem {
     assigned_peer_id: String,
     origin_node_id: String,
     bounds: String,
+    queued_utc: String,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeTelemetry {
+    sampled_unix: u64,
+    sample_interval_ms: u64,
+    node_uptime_seconds: f64,
+    process_cpu_percent: f64,
+    process_cpu_percent_one_core: f64,
+    process_cpu_seconds: f64,
+    process_rss_bytes: u64,
+    process_peak_rss_bytes: u64,
+    system_cpu_percent: f64,
+    system_memory_total_bytes: u64,
+    system_memory_available_bytes: u64,
+    system_memory_used_bytes: u64,
+    system_memory_percent: f64,
+    logical_cpu_count: u64,
+    python_thread_count: u64,
+    load_average: Vec<f64>,
+    storage_total_bytes: u64,
+    storage_free_bytes: u64,
+    storage_used_percent: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -2807,6 +2851,50 @@ fn bayesian_number(value: Option<&Value>, key: &str) -> f64 {
         .unwrap_or(0.0)
 }
 
+fn telemetry_number(value: Option<&Value>, key: &str) -> f64 {
+    value
+        .and_then(|item| item.get(key))
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0)
+}
+
+fn telemetry_u64(value: Option<&Value>, key: &str) -> u64 {
+    value
+        .and_then(|item| item.get(key))
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+}
+
+fn parse_runtime_telemetry(value: Option<&Value>) -> RuntimeTelemetry {
+    RuntimeTelemetry {
+        sampled_unix: telemetry_u64(value, "sampled_unix"),
+        sample_interval_ms: telemetry_u64(value, "sample_interval_ms"),
+        node_uptime_seconds: telemetry_number(value, "node_uptime_seconds"),
+        process_cpu_percent: telemetry_number(value, "process_cpu_percent"),
+        process_cpu_percent_one_core: telemetry_number(value, "process_cpu_percent_one_core"),
+        process_cpu_seconds: telemetry_number(value, "process_cpu_seconds"),
+        process_rss_bytes: telemetry_u64(value, "process_rss_bytes"),
+        process_peak_rss_bytes: telemetry_u64(value, "process_peak_rss_bytes"),
+        system_cpu_percent: telemetry_number(value, "system_cpu_percent"),
+        system_memory_total_bytes: telemetry_u64(value, "system_memory_total_bytes"),
+        system_memory_available_bytes: telemetry_u64(value, "system_memory_available_bytes"),
+        system_memory_used_bytes: telemetry_u64(value, "system_memory_used_bytes"),
+        system_memory_percent: telemetry_number(value, "system_memory_percent"),
+        logical_cpu_count: telemetry_u64(value, "logical_cpu_count"),
+        python_thread_count: telemetry_u64(value, "python_thread_count"),
+        load_average: value
+            .and_then(|item| item.get("load_average"))
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_f64)
+            .collect(),
+        storage_total_bytes: telemetry_u64(value, "storage_total_bytes"),
+        storage_free_bytes: telemetry_u64(value, "storage_free_bytes"),
+        storage_used_percent: telemetry_number(value, "storage_used_percent"),
+    }
+}
+
 fn parse_resource_reputation(peer: &Value) -> Vec<BayesianResourceScore> {
     let dimensions = peer
         .get("resource_reputation")
@@ -3015,6 +3103,47 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                             .unwrap_or("")
                             .to_string(),
                         bounds: task_bounds(task),
+                        phase: task
+                            .get("phase")
+                            .and_then(Value::as_str)
+                            .unwrap_or("executing")
+                            .to_string(),
+                        progress_percent: telemetry_number(Some(task), "progress_percent"),
+                        progress_source: task
+                            .get("progress_source")
+                            .and_then(Value::as_str)
+                            .unwrap_or("unknown")
+                            .to_string(),
+                        elapsed_ms: telemetry_u64(Some(task), "elapsed_ms"),
+                        eta_seconds: telemetry_number(Some(task), "eta_seconds"),
+                        completed_units: telemetry_number(Some(task), "completed_units"),
+                        total_units: telemetry_number(Some(task), "total_units"),
+                        unit: task
+                            .get("unit")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        throughput_units_per_second: telemetry_number(
+                            Some(task),
+                            "throughput_units_per_second",
+                        ),
+                        worker_threads: telemetry_u64(Some(task), "worker_threads"),
+                        pixels_completed: telemetry_u64(Some(task), "pixels_completed"),
+                        pixels_total: telemetry_u64(Some(task), "pixels_total"),
+                        input_bytes: telemetry_u64(Some(task), "input_bytes"),
+                        attempt: telemetry_u64(Some(task), "attempt"),
+                        max_retries: telemetry_u64(Some(task), "max_retries"),
+                        priority: task
+                            .get("priority")
+                            .and_then(Value::as_str)
+                            .unwrap_or("normal")
+                            .to_string(),
+                        queued_utc: task
+                            .get("queued_utc")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        resource_usage: parse_runtime_telemetry(task.get("resource_usage")),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -3079,6 +3208,11 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                             .unwrap_or("")
                             .to_string(),
                         bounds: task_bounds(task),
+                        queued_utc: task
+                            .get("queued_utc")
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -3161,6 +3295,11 @@ fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
                     .and_then(|item| item.get("cpu_count"))
                     .and_then(Value::as_u64)
                     .unwrap_or(0),
+                telemetry: parse_runtime_telemetry(
+                    activity
+                        .and_then(|item| item.get("telemetry"))
+                        .or_else(|| peer.get("telemetry")),
+                ),
                 resource_reputation: parse_resource_reputation(peer),
                 active_tasks,
                 task_queue,
@@ -3564,5 +3703,29 @@ mod tests {
         assert_eq!(machines[0].task_queue[0].source_node_id, "worker-b");
         assert_eq!(machines[0].last_response_ok, Some(true));
         let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn runtime_telemetry_parser_preserves_resource_metrics() {
+        let payload: Value = serde_json::json!({
+            "sampled_unix": 1_784_000_000_u64,
+            "node_uptime_seconds": 42.5,
+            "process_cpu_percent": 37.25,
+            "process_rss_bytes": 134_217_728_u64,
+            "system_cpu_percent": 68.5,
+            "system_memory_total_bytes": 17_179_869_184_u64,
+            "system_memory_used_bytes": 8_589_934_592_u64,
+            "system_memory_percent": 50.0,
+            "logical_cpu_count": 16_u64,
+            "python_thread_count": 7_u64,
+            "storage_used_percent": 61.2
+        });
+        let telemetry = parse_runtime_telemetry(Some(&payload));
+        assert_eq!(telemetry.sampled_unix, 1_784_000_000);
+        assert_eq!(telemetry.process_rss_bytes, 134_217_728);
+        assert_eq!(telemetry.logical_cpu_count, 16);
+        assert_eq!(telemetry.python_thread_count, 7);
+        assert!((telemetry.process_cpu_percent - 37.25).abs() < f64::EPSILON);
+        assert!((telemetry.system_memory_percent - 50.0).abs() < f64::EPSILON);
     }
 }

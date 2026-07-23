@@ -1,6 +1,6 @@
 [package]
 name = "silicium-node"
-version = "0.2.9-dev.17"
+version = "0.2.9-dev.18"
 description = "Silicium desktop node launcher"
 authors = ["Silicium"]
 edition = "2021"
