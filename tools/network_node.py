@@ -5079,25 +5079,33 @@ class NetworkNode:
         if matched_active:
             self.runtime.cancel_task(str(control.get("reason", "task cancelled")))
 
-        for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
-            if not directory.exists():
-                continue
-            for item_path in directory.glob("*.json"):
-                envelope = read_json(item_path, {})
-                if not isinstance(envelope, dict):
+        def sweep_task_directories() -> None:
+            pattern = f"{safe_path_id(root_job_id)}*.json"
+            for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
+                if not directory.exists():
                     continue
-                item_id = safe_id(str(envelope.get("task_id") or envelope.get("request_id") or ""))
-                origin_raw = str(envelope.get("origin_node_id") or envelope.get("dispatched_by") or "").strip()
-                origin = safe_id(origin_raw) if origin_raw else ""
-                if item_id != root_job_id and not item_id.startswith(root_job_id + "-"):
-                    continue
-                if origin != safe_id(signed_by) and not (not origin and safe_id(signed_by) == self.config.node_id):
-                    continue
-                self.update_envelope_status(
-                    envelope,
-                    "cancelled" if str(control.get("action")) == "cancel" else "expired",
-                    {"task_control": control},
-                )
+                for item_path in directory.glob(pattern):
+                    envelope = read_json(item_path, {})
+                    if not isinstance(envelope, dict):
+                        continue
+                    item_id = safe_id(str(envelope.get("task_id") or envelope.get("request_id") or ""))
+                    origin_raw = str(envelope.get("origin_node_id") or envelope.get("dispatched_by") or "").strip()
+                    origin = safe_id(origin_raw) if origin_raw else ""
+                    if item_id != root_job_id and not item_id.startswith(root_job_id + "-"):
+                        continue
+                    if origin != safe_id(signed_by) and not (not origin and safe_id(signed_by) == self.config.node_id):
+                        continue
+                    self.update_envelope_status(
+                        envelope,
+                        "cancelled" if str(control.get("action")) == "cancel" else "expired",
+                        {"task_control": control},
+                    )
+
+        threading.Thread(
+            target=sweep_task_directories,
+            name=f"silicium-task-control-sweep-{safe_path_id(root_job_id)}",
+            daemon=True,
+        ).start()
         append_jsonl(
             self.events_path,
             {
@@ -5279,7 +5287,11 @@ class NetworkNode:
             task_queue=self.task_queue_snapshot(),
         )
         if announce:
-            self.peer_network.announce()
+            threading.Thread(
+                target=self.peer_network.announce,
+                name="silicium-peer-announce",
+                daemon=True,
+            ).start()
 
     def handle(self, envelope: dict[str, Any]) -> None:
         started = time.monotonic()
