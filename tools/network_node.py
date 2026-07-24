@@ -5917,11 +5917,11 @@ class NetworkNode:
             # Queue cursors are persisted across restarts. If a cursor was
             # advanced while a prior process died before dispatching, recover
             # from the authoritative task files instead of leaving work stuck
-            # forever in compute_queued. Newest files are attempted first.
+            # forever in compute_queued. Oldest files are attempted first.
             for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
                 if not directory.exists():
                     continue
-                for item_path in sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True):
+                for item_path in sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=False):
                     envelope = read_json(item_path, {})
                     if not isinstance(envelope, dict):
                         continue
