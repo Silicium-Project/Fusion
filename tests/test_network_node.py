@@ -879,6 +879,52 @@ def test_network_node_ingests_bounded_dispatched_content(tmp_path: Path) -> None
     assert (export_dir / "p2p" / content_id).read_bytes() == content
 
 
+def test_p2p_client_uses_verified_local_silicium_cache(tmp_path: Path) -> None:
+    export_dir = tmp_path / "cached-content"
+    content = b"cached silicium payload"
+    content_id = network_node.sha256_bytes(content)
+    content_path = export_dir / "p2p" / content_id
+    content_path.parent.mkdir(parents=True)
+    content_path.write_bytes(content)
+
+    class UnexpectedNetworkFetch:
+        def fetch_content(self, *_args):
+            raise AssertionError("network fetch should not run for verified local content")
+
+    client = network_node.P2PClient("http://127.0.0.1:5001", export_dir, UnexpectedNetworkFetch())
+    data, meta = client.fetch({"protocol": "silicium", "content_id": content_id})
+
+    assert data == content
+    assert meta["source"] == "local-silicium-cache"
+
+
+def test_public_peer_http_fast_path_precedes_ice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    export_dir = tmp_path / "public-http"
+    peer = network_node.PeerNetwork(_config(export_dir, "worker-a", gossip_enable=False), export_dir)
+    public_peer = {
+        "node_id": "orchestrator-1",
+        "http_base_url": "https://orchestrator.example.test",
+        "features": ["ice_v1"],
+    }
+    monkeypatch.setattr(peer, "peers_snapshot", lambda: {"peers": [public_peer]})
+    monkeypatch.setattr(peer, "_fetch_direct_from_peer", lambda _peer, _content_id: b"public-content")
+    monkeypatch.setattr(
+        peer,
+        "_fetch_direct_ice",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("ICE should not run before public HTTPS")),
+    )
+    monkeypatch.setattr(
+        peer,
+        "_attested_fetch_meta",
+        lambda selected, **_kwargs: {"node_id": selected["node_id"], "transport_backend": "peer-http"},
+    )
+
+    data, meta = peer.fetch_content("a" * 64, "orchestrator-1")
+
+    assert data == b"public-content"
+    assert meta["transport_backend"] == "peer-http"
+
+
 def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
     export_a = tmp_path / "a"
     export_b = tmp_path / "b"
@@ -2094,6 +2140,29 @@ def test_network_node_ingests_remote_result_back_to_origin(tmp_path: Path) -> No
     finally:
         node_a.peer_network.stop()
         node_b.peer_network.stop()
+
+
+@pytest.mark.parametrize("canonical_status", ["running", "dispatched", "completed", "failed", "cancelled", "expired"])
+def test_network_node_skips_canonical_queue_replays(tmp_path: Path, canonical_status: str) -> None:
+    export_dir = tmp_path / f"replay-{canonical_status}"
+    node = network_node.NetworkNode(_config(export_dir, "worker-a", roles="compute", gossip_enable=False))
+    queued = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": "render-old-fragment",
+        "status": "queued",
+        "required_roles": ["compute"],
+        "task": {"kind": "compute"},
+    }
+    _write_jsonl(export_dir / "tasks.compute.queue.ndjson", queued)
+    canonical = dict(queued)
+    canonical["status"] = canonical_status
+    network_node.atomic_write_json(export_dir / "tasks" / "render-old-fragment.json", canonical)
+
+    assert node.sweep() == 0
+    events = (export_dir / "node.events.ndjson").read_text(encoding="utf-8")
+    assert '"kind":"queue_replay_skipped"' in events
+    assert f'"status":"{canonical_status}"' in events
 
 
 def test_network_node_persists_reputation_updates(tmp_path: Path) -> None:

@@ -595,6 +595,15 @@ class P2PClient:
         if protocol == "silicium":
             if self.peer_network is None:
                 raise ValueError("peer_network_not_configured")
+            local_path = self.export_dir / "p2p" / content_id.lower()
+            if len(content_id) == 64 and local_path.is_file():
+                data = local_path.read_bytes()
+                if sha256_bytes(data) == content_id.lower():
+                    return data, {
+                        "source": "local-silicium-cache",
+                        "content_id": content_id.lower(),
+                        "size_bytes": len(data),
+                    }
             data, peer_meta = self.peer_network.fetch_content(content_id, str(p2p_ref.get("peer_id", "")).strip())
             meta = {
                 "source": peer_meta.get("source", "silicium-peer"),
@@ -2267,19 +2276,31 @@ class PeerNetwork:
             candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) == preferred_peer_id])
         candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) != preferred_peer_id])
         for peer in candidates:
+            if self._prefer_peer_http(peer):
+                data = self._fetch_direct_from_peer(peer, content_id)
+                if data is not None:
+                    return data, self._attested_fetch_meta(
+                        peer,
+                        content_id=content_id,
+                        data=data,
+                        route="direct",
+                        transport_backend="peer-http",
+                        endpoint=str(peer.get("http_base_url", "")),
+                    )
             ice_result = self._fetch_direct_ice(peer, content_id)
             if ice_result is not None:
                 return ice_result
-            data = self._fetch_direct_from_peer(peer, content_id)
-            if data is not None:
-                return data, self._attested_fetch_meta(
-                    peer,
-                    content_id=content_id,
-                    data=data,
-                    route="direct",
-                    transport_backend="peer-http",
-                    endpoint=str(peer.get("http_base_url", "")),
-                )
+            if not self._prefer_peer_http(peer):
+                data = self._fetch_direct_from_peer(peer, content_id)
+                if data is not None:
+                    return data, self._attested_fetch_meta(
+                        peer,
+                        content_id=content_id,
+                        data=data,
+                        route="direct",
+                        transport_backend="peer-http",
+                        endpoint=str(peer.get("http_base_url", "")),
+                    )
         if preferred_peer_id:
             self.request_udp_punch(preferred_peer_id)
             time.sleep(0.1)
@@ -2300,6 +2321,24 @@ class PeerNetwork:
         if relayed is not None:
             return relayed
         raise FileNotFoundError(f"peer_content_not_found:{content_id}")
+
+    @staticmethod
+    def _prefer_peer_http(peer: Mapping[str, Any]) -> bool:
+        """Use reachable public HTTP before paying the ICE setup cost."""
+        parsed = urlparse(str(peer.get("http_base_url", "")).strip())
+        if parsed.scheme.lower() == "https" and parsed.hostname:
+            return True
+        try:
+            address = ipaddress.ip_address(str(parsed.hostname or ""))
+        except ValueError:
+            return False
+        return not (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_unspecified
+            or address.is_reserved
+        )
 
     def _attested_fetch_meta(
         self,
@@ -4818,6 +4857,23 @@ class NetworkNode:
                 key = self.envelope_key(envelope)
                 if self.state.seen(key):
                     continue
+                canonical = self.canonical_envelope(envelope)
+                canonical_status = task_status(canonical.get("status"), default="")
+                if canonical_status in {"running", "dispatched"} or task_status_is_terminal(canonical_status):
+                    self._record_replay_skip(canonical, canonical_status)
+                    self.state.mark_seen(key)
+                    continue
+                kind = str(canonical.get("envelope_kind") or "task")
+                item_id = str(canonical.get("request_id") if kind == "request" else canonical.get("task_id", ""))
+                control_origin = str(canonical.get("origin_node_id") or canonical.get("dispatched_by") or "")
+                active_control = self.task_control_for(item_id, control_origin)
+                if active_control is not None:
+                    terminal_status = "cancelled" if active_control.get("action") == "cancel" else "expired"
+                    self.update_envelope_status(canonical, terminal_status, {"task_control": active_control})
+                    self._record_replay_skip(canonical, terminal_status)
+                    self.state.mark_seen(key)
+                    continue
+                envelope = canonical
                 if not self.accepts(envelope):
                     # A world node is the scheduler/broker.  It must retain
                     # work for pull-based workers instead of consuming and
@@ -4843,6 +4899,34 @@ class NetworkNode:
                 if self.config.max_items > 0 and handled >= self.config.max_items:
                     return handled
         return handled
+
+    def canonical_envelope(self, envelope: dict[str, Any]) -> dict[str, Any]:
+        kind = str(envelope.get("envelope_kind") or "task")
+        item_id = str(envelope.get("request_id") if kind == "request" else envelope.get("task_id", "")).strip()
+        if not item_id:
+            return envelope
+        directory = "requests" if kind == "request" else "tasks"
+        path = self.config.export_dir / directory / f"{safe_path_id(safe_id(item_id))}.json"
+        current = read_json(path, {})
+        if not isinstance(current, dict):
+            return envelope
+        current_id = str(current.get("request_id") if kind == "request" else current.get("task_id", "")).strip()
+        return current if current_id == item_id else envelope
+
+    def _record_replay_skip(self, envelope: Mapping[str, Any], status: str) -> None:
+        kind = str(envelope.get("envelope_kind") or "task")
+        item_id = str(envelope.get("request_id") if kind == "request" else envelope.get("task_id", ""))
+        append_jsonl(
+            self.events_path,
+            {
+                "schema_version": 1,
+                "timestamp_utc": utc_now(),
+                "node_id": self.config.node_id,
+                "kind": "queue_replay_skipped",
+                "item_id": safe_id(item_id),
+                "status": status,
+            },
+        )
 
     def queue_order(self) -> list[Path]:
         queues: list[Path] = [self.config.export_dir / "requests.urgent.ndjson", self.config.export_dir / "retries.ndjson"]
