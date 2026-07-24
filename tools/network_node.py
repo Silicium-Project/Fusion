@@ -53,10 +53,30 @@ WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 DEFAULT_PUBLIC_STUN_SERVER = "stun.l.google.com:19302"
 ATOMIC_WRITE_LOCK = threading.Lock()
+TERMINAL_TASK_STATUSES = frozenset(
+    {
+        "completed",
+        "failed",
+        "dead_lettered",
+        "cancelled",
+        "canceled",
+        "expired",
+        "finalized",
+        "resolved",
+    }
+)
 
 
 def utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def task_status(value: Any, default: str = "queued") -> str:
+    return str(value or default).strip().lower()
+
+
+def task_status_is_terminal(value: Any) -> bool:
+    return task_status(value) in TERMINAL_TASK_STATUSES
 
 
 def safe_id(value: str) -> str:
@@ -5135,8 +5155,8 @@ class NetworkNode:
                 envelope = read_json(item_path, {})
                 if not isinstance(envelope, dict):
                     continue
-                status = str(envelope.get("status", "queued"))
-                if status in {"completed", "failed", "dead_lettered", "cancelled", "expired"}:
+                status = task_status(envelope.get("status"))
+                if task_status_is_terminal(status):
                     continue
                 summary = self.task_activity(envelope)
                 summary.update(
@@ -5710,8 +5730,8 @@ class NetworkNode:
             current = read_json(item_path, envelope)
             if not isinstance(current, dict):
                 current = envelope
-            status = str(current.get("status", ""))
-            if status in {"dispatched", "completed", "failed", "dead_lettered", "cancelled", "expired"}:
+            status = task_status(current.get("status"), default="")
+            if status == "dispatched" or task_status_is_terminal(status):
                 return None
             control_origin = str(current.get("origin_node_id") or current.get("dispatched_by") or "")
             active_control = self.task_control_for(item_id, control_origin)

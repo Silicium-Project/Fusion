@@ -2444,6 +2444,39 @@ def test_task_queue_and_live_activity_are_announced_in_peer_book(tmp_path: Path)
     assert self_peer["activity"]["status"] == "idle"
 
 
+@pytest.mark.parametrize(
+    "status",
+    [
+        "completed",
+        "failed",
+        "dead_lettered",
+        "cancelled",
+        "canceled",
+        "expired",
+        "finalized",
+        "resolved",
+        "COMPLETED",
+    ],
+)
+def test_terminal_tasks_are_excluded_from_queue_and_claims(tmp_path: Path, status: str) -> None:
+    export_dir = tmp_path / f"terminal-{status.lower()}"
+    node = network_node.NetworkNode(_config(export_dir, "worker-a", roles="compute"))
+    network_node.enqueue_task_envelope(
+        export_dir,
+        {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": f"terminal-{status.lower()}",
+            "status": status,
+            "required_roles": ["compute"],
+            "task": {"kind": "compute"},
+        },
+    )
+
+    assert node.task_queue_snapshot() == []
+    assert node.claim_task_for_worker("worker-a", {"compute"}) is None
+
+
 def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sample_ppm = b"P6\n2 2\n255\n" + bytes(range(12))
     expected = network_node.ppm_pixel_sha256(sample_ppm)
