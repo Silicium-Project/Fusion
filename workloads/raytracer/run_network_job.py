@@ -19,6 +19,7 @@ sys.path.insert(0, str(NETWORK_ROOT / "demo"))
 from networked.networked_runtime import (  # noqa: E402
     LocalNetworkEmitter,
     attach_network_content_blobs,
+    best_shared_ref,
     dispatch_task_to_scheduler,
     fetch_network_content,
     store_network_content,
@@ -935,7 +936,7 @@ def main(argv: list[str] | None = None) -> int:
                     "scene_p2p_ref": scene_ref,
                     "source_task_id": compute_task_id,
                     "source_node_id": str(compute_result.get("node_id", "")),
-                    "source_output_ref": computed["output_ref"],
+                    "source_output_ref": best_shared_ref(computed["output_ref"]),
                     "fragment_index": index,
                     "fragment_count": len(fragments),
                     "x_start": x_start,

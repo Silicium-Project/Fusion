@@ -925,6 +925,43 @@ def test_public_peer_http_fast_path_precedes_ice(tmp_path: Path, monkeypatch: py
     assert meta["transport_backend"] == "peer-http"
 
 
+def test_p2p_fetch_falls_back_to_shared_ref_when_file_path_missing(tmp_path: Path) -> None:
+    export_a = tmp_path / "a"
+    export_b = tmp_path / "b"
+    config_a = _config(export_a, "node-a")
+    peer_a = network_node.PeerNetwork(config_a, export_a)
+    p2p_a = network_node.P2PClient(config_a.p2p_gateway, export_a, peer_a)
+    peer_a.start()
+    try:
+        config_b = _config(export_b, "node-b", seed_peers=[f"127.0.0.1:{config_a.gossip_port}"])
+        peer_b = network_node.PeerNetwork(config_b, export_b)
+        p2p_b = network_node.P2PClient(config_b.p2p_gateway, export_b, peer_b)
+        peer_b.start()
+        try:
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                if peer_b.peers_snapshot()["count"] >= 2:
+                    break
+                time.sleep(0.05)
+            assert peer_b.peers_snapshot()["count"] >= 2
+
+            stored = p2p_a.put_local(b"verify-handoff-bytes")
+            # Simulate a verify worker receiving the producer-local file ref: the
+            # absolute path is foreign, but shared_ref remains resolvable.
+            foreign_ref = {
+                **stored,
+                "content_id": str(tmp_path / "other-node" / "missing-export" / "p2p" / stored["shared_ref"]["content_id"]),
+            }
+            assert not Path(foreign_ref["content_id"]).exists()
+            data, meta = p2p_b.fetch(foreign_ref)
+            assert data == b"verify-handoff-bytes"
+            assert meta["source"] == "silicium-peer"
+        finally:
+            peer_b.stop()
+    finally:
+        peer_a.stop()
+
+
 def test_peer_network_gossips_and_serves_p2p_content(tmp_path: Path) -> None:
     export_a = tmp_path / "a"
     export_b = tmp_path / "b"

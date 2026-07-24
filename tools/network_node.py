@@ -589,7 +589,15 @@ class P2PClient:
 
         if protocol == "file":
             path = Path(content_id).expanduser()
-            data = path.read_bytes()
+            try:
+                data = path.read_bytes()
+            except FileNotFoundError:
+                # put_local embeds an absolute path that is only valid on the
+                # producing node. Cross-node consumers (verify handoff, pin,
+                # reassembly) must follow shared_ref over the mesh instead.
+                if isinstance(shared_ref, dict) and str(shared_ref.get("protocol", "")).lower() == "silicium":
+                    return self.fetch(shared_ref)
+                raise
             return data, {"source": "file", "path": str(path), "size_bytes": len(data)}
 
         if protocol == "silicium":
