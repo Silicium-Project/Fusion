@@ -4611,6 +4611,10 @@ class NetworkNode:
         self._activity_lock = threading.Lock()
         self._active_tasks: list[dict[str, Any]] = []
         self._last_response: dict[str, Any] = {}
+        self._task_queue_cache_lock = threading.Lock()
+        self._task_queue_cache: list[dict[str, Any]] = []
+        self._task_queue_cache_updated_monotonic = 0.0
+        self._task_queue_cache_refreshing = False
         self.telemetry_sampler = RuntimeTelemetrySampler(config.export_dir)
         self._telemetry: dict[str, Any] = self.telemetry_sampler.sample()
         self._task_monitor_stop = threading.Event()
@@ -4631,7 +4635,7 @@ class NetworkNode:
             reputation_score=self.reputation.local_score(),
             resource_reputation=self.reputation.resource_snapshot(),
             activity=self.activity_snapshot(),
-            task_queue=self.task_queue_snapshot(),
+            task_queue=self.cached_task_queue_snapshot(),
         )
 
     def run(self) -> None:
@@ -4792,6 +4796,7 @@ class NetworkNode:
         current_reputation = self.reputation.local_score()
         resource_reputation = self.reputation.resource_snapshot()
         self._telemetry = self.telemetry_sampler.sample()
+        task_queue = self.cached_task_queue_snapshot()
         self.config.reputation_score = current_reputation
         self.peer_network.set_local_profile(
             capacity=capacity,
@@ -4807,7 +4812,7 @@ class NetworkNode:
             solana_owner=self._solana_owner,
             solana_worker=self._solana_worker,
             activity=self.activity_snapshot(),
-            task_queue=self.task_queue_snapshot(),
+            task_queue=task_queue,
         )
         p2p_candidates = self.peer_network.candidate_diagnostics()
         p2p_sessions = self.peer_network.sessions_snapshot()
@@ -4848,7 +4853,7 @@ class NetworkNode:
                 "last_claim_targets": self._last_claim_targets,
                 "activity": self.activity_snapshot(),
                 "telemetry": self.telemetry_snapshot(),
-                "task_queue": self.task_queue_snapshot(),
+                "task_queue": task_queue,
                 "solana_owner": self._solana_owner,
                 "solana_worker": self._solana_worker,
                 "onchain_reputation": self._solana_onchain_reputation,
@@ -5293,10 +5298,42 @@ class NetworkNode:
         items.sort(key=lambda item: (-item[0], str(item[1].get("item_id", ""))))
         return [summary for _, summary in items[: max(1, int(limit))]]
 
+    def cached_task_queue_snapshot(
+        self,
+        limit: int = 64,
+        *,
+        force_refresh: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return queue telemetry without blocking task execution on disk scans."""
+        now = time.monotonic()
+        with self._task_queue_cache_lock:
+            cached = [dict(item) for item in self._task_queue_cache[: max(1, int(limit))]]
+            stale = force_refresh or (now - self._task_queue_cache_updated_monotonic) >= 5.0
+            if not stale or self._task_queue_cache_refreshing:
+                return cached
+            self._task_queue_cache_refreshing = True
+
+        def refresh() -> None:
+            try:
+                snapshot = self.task_queue_snapshot(limit=64)
+                with self._task_queue_cache_lock:
+                    self._task_queue_cache = snapshot
+                    self._task_queue_cache_updated_monotonic = time.monotonic()
+            finally:
+                with self._task_queue_cache_lock:
+                    self._task_queue_cache_refreshing = False
+
+        threading.Thread(
+            target=refresh,
+            name="silicium-task-queue-snapshot",
+            daemon=True,
+        ).start()
+        return cached
+
     def publish_runtime_state(self, *, announce: bool = False) -> None:
         self.peer_network.set_local_profile(
             activity=self.activity_snapshot(),
-            task_queue=self.task_queue_snapshot(),
+            task_queue=self.cached_task_queue_snapshot(force_refresh=True),
         )
         if announce:
             threading.Thread(

@@ -2546,7 +2546,13 @@ def test_task_queue_and_live_activity_are_announced_in_peer_book(tmp_path: Path)
     )
     node.publish_runtime_state()
 
-    self_peer = next(peer for peer in node.peer_network.peers_snapshot()["peers"] if peer.get("self"))
+    deadline = time.monotonic() + 2.0
+    while True:
+        node.publish_runtime_state()
+        self_peer = next(peer for peer in node.peer_network.peers_snapshot()["peers"] if peer.get("self"))
+        if self_peer["task_queue"] or time.monotonic() >= deadline:
+            break
+        time.sleep(0.01)
     assert self_peer["task_queue"][0]["item_id"] == "render-frag-007-verify"
     assert self_peer["task_queue"][0]["role"] == "verify"
     assert self_peer["task_queue"][0]["source_node_id"] == "worker-b"
