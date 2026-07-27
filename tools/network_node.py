@@ -5488,6 +5488,10 @@ class NetworkNode:
                 "duration_ms": duration_ms,
             },
         )
+        # Return the authoritative result before best-effort gossip. A slow or
+        # unreachable peer must never delay the scheduler from advancing the
+        # job to verification or to the next fragment.
+        self.return_dispatched_result(envelope, result, log_payload)
         if ok and kind == "task":
             self.peer_network.publish(
                 "fragment_result",
@@ -5496,6 +5500,7 @@ class NetworkNode:
                     "result_hash": result.get("result_hash", ""),
                     "proof_ref": result.get("proof_ref", {}),
                 },
+                background=True,
             )
             if str(result.get("role_result", "")).strip().lower() == "verify":
                 self.peer_network.publish(
@@ -5513,11 +5518,11 @@ class NetworkNode:
                         "receipt_hash": str(body.get("compute_receipt_hash", "")),
                         "verified": bool(result.get("choice", result.get("verified", False))),
                     },
+                    background=True,
                 )
         self.update_reputation(ok, kind, result)
         if ok and result.get("on_chain"):
             self.refresh_local_onchain_profile(force=True)
-        self.return_dispatched_result(envelope, result, log_payload)
         with self._activity_lock:
             completed_activity = dict(self._active_tasks[0]) if self._active_tasks else dict(active)
             self._active_tasks = []
