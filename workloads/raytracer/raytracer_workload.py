@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import hashlib
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -96,6 +97,48 @@ def prepare_runtime_dir(binary: Path, runtime_dir: Path) -> Path:
         # private to the process, so restore only the owner's execute bit.
         target.chmod(target.stat().st_mode | stat.S_IXUSR)
     return target
+
+
+def cached_runtime_binary(binary: Path) -> Path:
+    """Stage a worker binary/assets once instead of copying them per tile.
+
+    A tile is intentionally rendered in an isolated temporary output
+    directory, but copying a large native binary and its assets for every
+    tile can dominate the actual render time.  Keep the immutable runtime
+    staged for the lifetime of the worker process/cache and reuse it.
+    """
+    assets_override = os.environ.get("SILICIUM_RAYTRACER_ASSETS_DIR", "").strip()
+    assets = Path(assets_override).expanduser() if assets_override else binary.parent / "assets"
+    try:
+        stat = binary.stat()
+        fingerprint = f"{binary.resolve()}|{stat.st_size}|{stat.st_mtime_ns}|{assets.resolve()}"
+    except OSError:
+        fingerprint = str(binary)
+    key = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:24]
+    cache_root = Path(
+        os.environ.get(
+            "SILICIUM_RAYTRACER_RUNTIME_CACHE",
+            str(Path(tempfile.gettempdir()) / "silicium-raytracer-cache"),
+        )
+    ).expanduser()
+    runtime_dir = cache_root / key
+    target = runtime_dir / binary.name
+    if target.exists():
+        return target
+    staging = cache_root / f".{key}.staging-{os.getpid()}"
+    if staging.exists():
+        shutil.rmtree(staging, ignore_errors=True)
+    try:
+        staged = prepare_runtime_dir(binary, staging)
+        runtime_dir.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            staging.replace(runtime_dir)
+        except FileExistsError:
+            shutil.rmtree(staging, ignore_errors=True)
+        return runtime_dir / binary.name if target.exists() else staged
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
 
 
 def newest_ppm(directory: Path) -> Path:
@@ -310,8 +353,8 @@ def run_raytracer(
     output.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="silicium-raytracer-") as tmpdir:
-        runtime_dir = Path(tmpdir)
-        runtime_binary = prepare_runtime_dir(binary, runtime_dir)
+        runtime_binary = cached_runtime_binary(binary)
+        runtime_dir = runtime_binary.parent
         command_prefix = [str(runtime_binary)]
         if runtime_binary.suffix.lower() == ".py":
             command_prefix = [sys.executable, str(runtime_binary)]
