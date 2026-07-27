@@ -676,6 +676,10 @@ class P2PClient:
             self.peer_network.publish(
                 "content_available",
                 {"content_id": digest, "hash": "sha256:" + digest, "size_bytes": len(data)},
+                # Availability gossip is advisory.  Never make the worker
+                # wait for unreachable/NATed peers before returning a render
+                # result; the anti-entropy loop will retry the announcement.
+                background=True,
             )
             target_factor = max(0, int(replication_factor or 0))
             target_quorum = max(0, int(replication_quorum or 0))
