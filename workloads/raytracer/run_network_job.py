@@ -870,6 +870,7 @@ def main(argv: list[str] | None = None) -> int:
                 "task": {
                     "kind": "compute",
                     "workload": RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
+                    "inline_input": spec,
                     "fragment_index": index,
                     "fragment_count": len(fragments),
                     "x_start": x_start,
@@ -1074,6 +1075,7 @@ def main(argv: list[str] | None = None) -> int:
                 "task": {
                     "kind": "verify",
                     "workload": RAYTRACER_FRAGMENT_VERIFY_WORKLOAD,
+                    "inline_input": challenge,
                     "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
                     "verification_mode": expected_milestones["strategy"],
                     "max_sample_rows": max(1, int(args.verification_batch_rows)),

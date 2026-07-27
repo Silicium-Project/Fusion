@@ -6122,7 +6122,12 @@ class NetworkNode:
         task = dict(envelope.get("task")) if isinstance(envelope.get("task"), dict) else {}
         task["_runtime_progress_path"] = str(envelope.get("_runtime_progress_path", ""))
         self.update_active_task(phase="fetching_input", progress_percent=2.0, progress_source="measured")
-        p2p_data, p2p_meta = self.p2p.fetch(envelope.get("p2p_ref"))
+        inline_input = task.get("inline_input")
+        if isinstance(inline_input, dict):
+            p2p_data = stable_json(inline_input).encode("utf-8")
+            p2p_meta = {"source": "inline-task", "size_bytes": len(p2p_data)}
+        else:
+            p2p_data, p2p_meta = self.p2p.fetch(envelope.get("p2p_ref"))
         self.update_active_task(
             phase="executing",
             progress_percent=10.0,
