@@ -2427,6 +2427,9 @@ def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
         assert claimed_path.exists()
         claimed_data = json.loads(claimed_path.read_text(encoding="utf-8"))
         assert claimed_data["task_id"] == "test:claim:001"
+        assert claimed_data["result_return_url"] == (
+            seed_node.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
+        )
         assert (export_worker / "claim-poll.health.json").exists()
         worker_peer = next(
             peer

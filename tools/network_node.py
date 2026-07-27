@@ -6022,6 +6022,13 @@ class NetworkNode:
                         attempt["result"] = "no_task_available"
                     else:
                         claimed_task = payload["task"]
+                        # The claim request just proved that this scheduler URL
+                        # is reachable from the worker. Prefer that direct path
+                        # for locally originated tasks instead of routing the
+                        # result through a potentially slow public reverse
+                        # proxy. Explicit origin callbacks are preserved.
+                        if not str(claimed_task.get("origin_result_return_url", "")).strip():
+                            claimed_task["result_return_url"] = base_url.rstrip("/") + "/results/dispatch"
                         kind = str(claimed_task.get("envelope_kind") or "task")
                         candidate_item_id = safe_id(
                             str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown")
