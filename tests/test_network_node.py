@@ -2544,6 +2544,13 @@ def test_task_queue_and_live_activity_are_announced_in_peer_book(tmp_path: Path)
             },
         },
     )
+    node.remember_task_queue_envelope(
+        json.loads(
+            (export_dir / "tasks" / f"{_path_id('render-frag-007-verify')}.json").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
     node.publish_runtime_state()
 
     deadline = time.monotonic() + 2.0

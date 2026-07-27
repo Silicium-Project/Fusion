@@ -5308,7 +5308,7 @@ class NetworkNode:
         now = time.monotonic()
         with self._task_queue_cache_lock:
             cached = [dict(item) for item in self._task_queue_cache[: max(1, int(limit))]]
-            stale = force_refresh or (now - self._task_queue_cache_updated_monotonic) >= 5.0
+            stale = force_refresh or (now - self._task_queue_cache_updated_monotonic) >= 60.0
             if not stale or self._task_queue_cache_refreshing:
                 return cached
             self._task_queue_cache_refreshing = True
@@ -5330,10 +5330,43 @@ class NetworkNode:
         ).start()
         return cached
 
+    def remember_task_queue_envelope(self, envelope: dict[str, Any]) -> None:
+        status = task_status(envelope.get("status"))
+        item_id = safe_id(str(envelope.get("request_id") or envelope.get("task_id") or ""))
+        if not item_id:
+            return
+        with self._task_queue_cache_lock:
+            self._task_queue_cache = [
+                item
+                for item in self._task_queue_cache
+                if safe_id(str(item.get("item_id", ""))) != item_id
+            ]
+            if task_status_is_terminal(status):
+                return
+            summary = self.task_activity(envelope)
+            summary.update(
+                {
+                    "status": status,
+                    "priority": str(envelope.get("priority", "normal")),
+                    "assigned_peer_id": str(
+                        envelope.get("dispatched_to")
+                        or envelope.get("assigned_peer_id")
+                        or envelope.get("target_peer_id")
+                        or ""
+                    ),
+                    "origin_node_id": str(
+                        envelope.get("origin_node_id") or envelope.get("dispatched_by") or ""
+                    ),
+                    "queued_utc": str(envelope.get("queued_utc") or envelope.get("created_utc") or ""),
+                }
+            )
+            self._task_queue_cache.insert(0, summary)
+            del self._task_queue_cache[64:]
+
     def publish_runtime_state(self, *, announce: bool = False) -> None:
         self.peer_network.set_local_profile(
             activity=self.activity_snapshot(),
-            task_queue=self.cached_task_queue_snapshot(force_refresh=True),
+            task_queue=self.cached_task_queue_snapshot(),
         )
         if announce:
             threading.Thread(
@@ -5397,6 +5430,7 @@ class NetworkNode:
         )
         self._task_monitor_thread.start()
         self.update_envelope_status(envelope, "running", {})
+        self.remember_task_queue_envelope({**envelope, "status": "running"})
         self.publish_runtime_state(announce=True)
         try:
             if kind == "request":
@@ -5489,6 +5523,7 @@ class NetworkNode:
             else "failed"
         )
         self.update_envelope_status(envelope, terminal_status, result)
+        self.remember_task_queue_envelope({**envelope, "status": terminal_status})
         if ok:
             self.metrics["handled"] = int(self.metrics.get("handled", 0) or 0) + 1
         elif not cancelled and not timed_out:
@@ -6088,6 +6123,7 @@ class NetworkNode:
                                 enqueue_request_envelope(self.config.export_dir, claimed_task)
                             else:
                                 enqueue_task_envelope(self.config.export_dir, claimed_task)
+                            self.remember_task_queue_envelope(claimed_task)
                             attempt["result"] = "claimed"
                             attempt["item_id"] = claimed_item_id
                             target_peer = next(
