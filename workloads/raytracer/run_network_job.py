@@ -1054,23 +1054,23 @@ def main(argv: list[str] | None = None) -> int:
                 export_dir,
                 json.dumps(challenge, sort_keys=True, separators=(",", ":")).encode("utf-8"),
             )
+            verify_excluded_peer_ids = {
+                str(value)
+                for value in context.get("verify_excluded_peer_ids", [])
+                if str(value).strip()
+            }
+            # Preserve independent verification whenever another verifier is
+            # available. In a one-node network, excluding the compute node
+            # leaves every verify task permanently unclaimable.
+            if discovered_role_capacity(export_dir, args.network_node_id, "verify") > 1:
+                verify_excluded_peer_ids.add(str(compute_result.get("node_id", "")))
             verify_payload = {
                 "task_id": verify_id,
                 "required_roles": ["verify"],
                 "priority": args.priority,
                 "p2p_ref": challenge_ref,
                 "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
-                "excluded_peer_ids": sorted(
-                    {
-                        str(compute_result.get("node_id", "")),
-                        *{
-                            str(value)
-                            for value in context.get("verify_excluded_peer_ids", [])
-                            if str(value).strip()
-                        },
-                    }
-                    - {""}
-                ),
+                "excluded_peer_ids": sorted(verify_excluded_peer_ids - {""}),
                 "scene_p2p_ref": scene_ref,
                 "task": {
                     "kind": "verify",
