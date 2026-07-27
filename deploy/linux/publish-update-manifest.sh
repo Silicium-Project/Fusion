@@ -17,6 +17,8 @@ DEFAULT_DEV_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.arg
 export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-$DEFAULT_DEV_VERSION}"
 export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-0.2.17}"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-}"
+export SILICIUM_DEV_RELEASE_BUILD="${SILICIUM_DEV_RELEASE_BUILD:-$SILICIUM_RELEASE_BUILD}"
+export SILICIUM_PROD_RELEASE_BUILD="${SILICIUM_PROD_RELEASE_BUILD:-$SILICIUM_RELEASE_BUILD}"
 export SILICIUM_DEV_CHECK_INTERVAL_SECONDS="${SILICIUM_DEV_CHECK_INTERVAL_SECONDS:-30}"
 export SILICIUM_PROD_CHECK_INTERVAL_SECONDS="${SILICIUM_PROD_CHECK_INTERVAL_SECONDS:-21600}"
 export SILICIUM_UPDATE_SIGNING_KEY="${SILICIUM_UPDATE_SIGNING_KEY:-/etc/silicium/update-signing-key.pem}"
@@ -130,7 +132,7 @@ for channel, (version, filename, interval) in definitions.items():
         continue
     digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
     content_id = digest
-    requested_build = os.environ.get("SILICIUM_RELEASE_BUILD", "").strip()
+    requested_build = os.environ.get(f"SILICIUM_{channel.upper()}_RELEASE_BUILD", os.environ.get("SILICIUM_RELEASE_BUILD", "")).strip()
     existing_release = existing_channels.get(channel, {})
     unchanged_artifact = (
         isinstance(existing_release, dict)
