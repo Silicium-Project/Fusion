@@ -613,6 +613,14 @@ class P2PClient:
                         "size_bytes": len(data),
                     }
             data, peer_meta = self.peer_network.fetch_content(content_id, str(p2p_ref.get("peer_id", "")).strip())
+            # Scene/spec content is reused by every tile of a render. Cache a
+            # verified fetch locally so subsequent tasks do not pay another
+            # HTTPS/ICE handshake to the orchestrator.
+            if len(content_id) == 64 and sha256_bytes(data) == content_id.lower():
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                temporary = local_path.with_name(f".{content_id}.tmp-{os.getpid()}")
+                temporary.write_bytes(data)
+                temporary.replace(local_path)
             meta = {
                 "source": peer_meta.get("source", "silicium-peer"),
                 "content_id": content_id,
