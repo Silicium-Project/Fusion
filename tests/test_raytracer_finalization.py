@@ -10,10 +10,14 @@ from networked.networked_runtime import attach_network_content_blobs, store_netw
 from workloads.common import ppm_to_png_bytes, sha256_bytes
 from workloads.raytracer import raytracer_workload
 from workloads.raytracer.run_network_job import (
+    discovered_role_capacity,
     ensure_submission_success,
     ensure_raytracer_compute_contract,
     is_transient_task_failure,
+    poll_task_result_attempts,
+    refresh_attempt_deadline,
     RetryFragmentStage,
+    resolve_in_flight_limit,
     run_bounded_fragment_pipeline,
     submit_network_task,
     validate_fragment_ppm,
@@ -100,6 +104,73 @@ def test_task_dispatch_attaches_hash_verified_network_inputs(tmp_path) -> None:
 )
 def test_transient_task_failures_are_retryable(error: str) -> None:
     assert is_transient_task_failure(error)
+
+
+def test_late_successful_result_from_predecessor_wins_retry_race(tmp_path) -> None:
+    late_task_id = "fragment-007"
+    current_task_id = "fragment-007-compute-retry-02"
+    expected = {"task_id": late_task_id, "success": True, "result_hash": "abc"}
+    (tmp_path / f"result.{late_task_id}.json").write_text(json.dumps(expected), encoding="utf-8")
+
+    resolved = poll_task_result_attempts(
+        tmp_path,
+        current_task_id,
+        [late_task_id],
+        deadline=float("inf"),
+    )
+
+    assert resolved == (late_task_id, expected)
+
+
+def test_late_failed_result_does_not_override_current_attempt(tmp_path) -> None:
+    late_task_id = "fragment-007"
+    current_task_id = "fragment-007-compute-retry-02"
+    (tmp_path / f"result.{late_task_id}.json").write_text(
+        json.dumps({"task_id": late_task_id, "success": False}),
+        encoding="utf-8",
+    )
+
+    assert (
+        poll_task_result_attempts(
+            tmp_path,
+            current_task_id,
+            [late_task_id],
+            deadline=float("inf"),
+        )
+        is None
+    )
+
+
+def test_claim_starts_a_fresh_execution_deadline(tmp_path, monkeypatch) -> None:
+    task_id = "fragment-007"
+    tasks_dir = tmp_path / "tasks"
+    tasks_dir.mkdir()
+    (tasks_dir / f"{task_id}.json").write_text(
+        json.dumps({"task_id": task_id, "status": "running"}),
+        encoding="utf-8",
+    )
+    token = {"task_id": task_id, "queue_deadline": 150.0}
+    monkeypatch.setattr("workloads.raytracer.run_network_job.time.monotonic", lambda: 125.0)
+
+    assert refresh_attempt_deadline(tmp_path, token, 300.0) == 425.0
+    assert token["execution_deadline"] == 425.0
+
+
+def test_automatic_in_flight_limit_tracks_discovered_role_capacity(tmp_path) -> None:
+    peers = {
+        "peers": [
+            {"node_id": "compute-a", "roles": ["compute", "verify"], "http_base_url": "http://a"},
+            {"node_id": "compute-b", "roles": ["compute"], "http_base_url": "http://b"},
+            {"node_id": "storage", "roles": ["storage"], "http_base_url": "http://storage"},
+            {"node_id": "offline", "roles": ["compute"], "http_base_url": ""},
+        ]
+    }
+    (tmp_path / "node.orchestrator.peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    assert discovered_role_capacity(tmp_path, "orchestrator", "compute") == 2
+    assert discovered_role_capacity(tmp_path, "orchestrator", "verify") == 1
+    assert resolve_in_flight_limit(0, tmp_path, "orchestrator", "compute") == 2
+    assert resolve_in_flight_limit(7, tmp_path, "orchestrator", "compute") == 7
 
 
 def test_fragment_pipeline_requeues_transient_compute_and_verify_failures() -> None:
