@@ -653,6 +653,23 @@ def main(argv: list[str] | None = None) -> int:
     fragments_dir.mkdir(parents=True, exist_ok=True)
     reassembled_dir.mkdir(parents=True, exist_ok=True)
     export_dir.mkdir(parents=True, exist_ok=True)
+    if args.node_mode == "network":
+        # The orchestrator peer snapshot is populated asynchronously.  Resolve
+        # the pipeline limits only after workers have had a chance to announce
+        # their roles; otherwise a cold start silently freezes the whole job at
+        # the fallback capacity of one worker.
+        for role in ("compute", "verify"):
+            try:
+                wait_for_network_role(
+                    export_dir,
+                    args.network_node_id,
+                    role,
+                    timeout_s=max(1.0, min(60.0, float(args.result_timeout_s))),
+                )
+            except TimeoutError:
+                # A single-role or temporarily empty network still gets the
+                # safe fallback limit and can proceed locally.
+                pass
     compute_in_flight_limit = resolve_in_flight_limit(
         int(args.max_compute_in_flight),
         export_dir,

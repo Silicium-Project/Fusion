@@ -21,6 +21,7 @@ from workloads.raytracer.run_network_job import (
     run_bounded_fragment_pipeline,
     submit_network_task,
     validate_fragment_ppm,
+    wait_for_network_role,
 )
 
 
@@ -171,6 +172,17 @@ def test_automatic_in_flight_limit_tracks_discovered_role_capacity(tmp_path) -> 
     assert discovered_role_capacity(tmp_path, "orchestrator", "verify") == 1
     assert resolve_in_flight_limit(0, tmp_path, "orchestrator", "compute") == 2
     assert resolve_in_flight_limit(7, tmp_path, "orchestrator", "compute") == 7
+
+
+def test_wait_for_network_role_accepts_a_discovered_worker(tmp_path) -> None:
+    peers = {
+        "peers": [
+            {"node_id": "compute-a", "roles": ["compute"], "http_base_url": "http://a"},
+        ]
+    }
+    (tmp_path / "node.orchestrator.peers.json").write_text(json.dumps(peers), encoding="utf-8")
+
+    wait_for_network_role(tmp_path, "orchestrator", "compute", timeout_s=1.0)
 
 
 def test_fragment_pipeline_requeues_transient_compute_and_verify_failures() -> None:
