@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SILICIUM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+export SILICIUM_ROOT
 CONFIG_PATH="${SILICIUM_UPDATE_CHANNELS_CONFIG:-/etc/silicium/update-channels.env}"
 if [[ -f "$CONFIG_PATH" ]]; then
   set -a
@@ -15,7 +16,7 @@ export SILICIUM_DOWNLOAD_BASE_URL="${SILICIUM_DOWNLOAD_BASE_URL:-https://vps-910
 DEFAULT_DEV_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$SILICIUM_ROOT/apps/silicium-node/package.json")"
 export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-$DEFAULT_DEV_VERSION}"
 export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-0.2.17}"
-export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-$(git -C "$SILICIUM_ROOT" rev-parse HEAD 2>/dev/null || true)}"
+export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-}"
 export SILICIUM_DEV_CHECK_INTERVAL_SECONDS="${SILICIUM_DEV_CHECK_INTERVAL_SECONDS:-30}"
 export SILICIUM_PROD_CHECK_INTERVAL_SECONDS="${SILICIUM_PROD_CHECK_INTERVAL_SECONDS:-21600}"
 export SILICIUM_UPDATE_SIGNING_KEY="${SILICIUM_UPDATE_SIGNING_KEY:-/etc/silicium/update-signing-key.pem}"
@@ -45,6 +46,16 @@ from pathlib import Path
 downloads = Path(os.environ["SILICIUM_DOWNLOADS_DIR"])
 base_url = os.environ["SILICIUM_DOWNLOAD_BASE_URL"].rstrip("/")
 channels = {}
+manifest_path = downloads / "update-manifest.json"
+try:
+    existing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+except (FileNotFoundError, json.JSONDecodeError, OSError):
+    existing_manifest = {}
+existing_channels = (
+    existing_manifest.get("channels", {})
+    if isinstance(existing_manifest, dict) and isinstance(existing_manifest.get("channels"), dict)
+    else {}
+)
 signing_key = Path(os.environ["SILICIUM_UPDATE_SIGNING_KEY"])
 p2p_dir = Path(os.environ["SILICIUM_UPDATE_P2P_DIR"])
 if not signing_key.is_file():
@@ -119,6 +130,24 @@ for channel, (version, filename, interval) in definitions.items():
         continue
     digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
     content_id = digest
+    requested_build = os.environ.get("SILICIUM_RELEASE_BUILD", "").strip()
+    existing_release = existing_channels.get(channel, {})
+    unchanged_artifact = (
+        isinstance(existing_release, dict)
+        and str(existing_release.get("version", "")).strip() == version
+        and str(existing_release.get("sha256", "")).strip().lower() == digest
+        and int(existing_release.get("size_bytes", 0) or 0) == artifact.stat().st_size
+    )
+    release_build = requested_build
+    if not release_build and unchanged_artifact:
+        release_build = str(existing_release.get("build", "")).strip()
+    if not release_build:
+        release_build = subprocess.run(
+            ["git", "-C", os.environ["SILICIUM_ROOT"], "rev-parse", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
     cached_artifact = p2p_dir / content_id
     if not cached_artifact.is_file() or cached_artifact.stat().st_size != artifact.stat().st_size:
         temporary_artifact = p2p_dir / f".{content_id}.tmp"
@@ -129,7 +158,7 @@ for channel, (version, filename, interval) in definitions.items():
         temporary_artifact.replace(cached_artifact)
     release = {
         "version": version,
-        "build": os.environ.get("SILICIUM_RELEASE_BUILD", "").strip(),
+        "build": release_build,
         "channel": channel,
         "url": f"{base_url}/{filename}",
         "sha256": digest,
@@ -169,7 +198,7 @@ payload = {
 }
 temporary = downloads / ".update-manifest.json.tmp"
 temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-temporary.replace(downloads / "update-manifest.json")
+temporary.replace(manifest_path)
 
 gossip_url = os.environ.get("SILICIUM_UPDATE_GOSSIP_URL", "").strip()
 mesh_key = os.environ.get("SILICIUM_MESH_KEY", "").strip()
