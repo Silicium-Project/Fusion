@@ -146,6 +146,32 @@ def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str,
     if not base_urls:
         raise ValueError(f"unknown_peer_for_content:{peer_id}")
     headers = {"Authorization": f"Bearer {mesh_key}"} if mesh_key else {}
+    # Production peers disable bearer-only development auth. Sign GETs with
+    # the emitter identity when the bundled state key is available.
+    try:
+        from cryptography.hazmat.primitives import serialization
+        state_dir = export_dir.parent / "state"
+        private_path = state_dir / "peer_identity_ed25519.pem"
+        public_path = private_path.with_suffix(".pub.pem")
+        if private_path.exists() and public_path.exists():
+            private_key = serialization.load_pem_private_key(private_path.read_bytes(), password=None)
+            public_pem = public_path.read_bytes()
+            identity_id = sha256_bytes(public_pem)[:32]
+            public_b64 = base64.b64encode(public_pem).decode("ascii")
+            timestamp = str(int(time.time()))
+            body_hash = sha256_bytes(b"")
+            signed_path = "/p2p/" + urllib.request.quote(content_id, safe="")
+            signing_payload = "\n".join(["GET", signed_path, timestamp, body_hash, emitter_node_id, identity_id]).encode("utf-8")
+            headers.update({
+                "X-Silicium-Node-Id": emitter_node_id,
+                "X-Silicium-Identity-Id": identity_id,
+                "X-Silicium-Public-Key": public_b64,
+                "X-Silicium-Timestamp": timestamp,
+                "X-Silicium-Body-Hash": body_hash,
+                "X-Silicium-Signature": private_key.sign(signing_payload).hex(),
+            })
+    except Exception:
+        pass
     last_error: Exception | None = None
     path = "/p2p/" + urllib.request.quote(content_id, safe="")
     for base_url in base_urls:
