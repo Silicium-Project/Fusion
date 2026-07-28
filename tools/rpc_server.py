@@ -25,11 +25,15 @@ class RpcGateway:
                 if path.exists():
                     try: out[name[:-5]] = json.loads(path.read_text(encoding="utf-8"))
                     except Exception: pass
-            tasks = []
+            tasks, recent_tasks = [], []
+            terminal = {"completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved"}
             for path in sorted((self.export_dir / "tasks").glob("*.json"), key=lambda p: p.stat().st_mtime_ns, reverse=True)[:200]:
-                try: tasks.append(json.loads(path.read_text(encoding="utf-8")))
+                try:
+                    item = json.loads(path.read_text(encoding="utf-8"))
+                    (recent_tasks if str(item.get("status", "")).lower() in terminal else tasks).append(item)
                 except Exception: pass
             out["tasks"] = tasks
+            out["recent_tasks"] = recent_tasks[:50]
             return out
         if method == "task.submit":
             from mcp_server import McpTaskStore
