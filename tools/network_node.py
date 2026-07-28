@@ -6085,7 +6085,12 @@ class NetworkNode:
             for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
                 if not directory.exists():
                     continue
-                for item_path in sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=False):
+                # The append-only queue is authoritative for new work. The
+                # directory scan is only crash recovery; bounding it to the
+                # newest entries prevents thousands of historical results from
+                # turning every worker claim into an O(total-history) pause.
+                recovery_paths = sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)[:1024]
+                for item_path in recovery_paths:
                     envelope = read_json(item_path, {})
                     if not isinstance(envelope, dict):
                         continue
