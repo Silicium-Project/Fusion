@@ -26,14 +26,30 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 	})
 	terminal := map[string]bool{"completed":true,"failed":true,"dead_lettered":true,"cancelled":true,"canceled":true,"expired":true,"finalized":true,"resolved":true}
 	active, recent := []map[string]any{}, []map[string]any{}
+	groups := map[string]map[string]any{}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
 		raw, readErr := os.ReadFile(filepath.Join(networkTasksPath, entry.Name())); if readErr != nil { continue }
 		var item map[string]any; if json.Unmarshal(raw, &item) != nil { continue }
-		if terminal[strings.ToLower(stringField(item, "status"))] { recent = append(recent, item) } else { active = append(active, item) }
+		status := strings.ToLower(stringField(item, "status"))
+		if terminal[status] { recent = append(recent, item) } else { active = append(active, item) }
+		rootID := stringField(item, "root_job_id")
+		if rootID == "" { if task, ok := item["task"].(map[string]any); ok { rootID = stringField(task, "root_job_id") } }
+		if rootID == "" { rootID = stringField(item, "task_id") }
+		group := groups[rootID]
+		if group == nil { group = map[string]any{"work_id": rootID, "status": status, "total": 0, "completed": 0, "failed": 0, "active": 0, "subtasks": []map[string]any{}, "updated_at": ""}; groups[rootID] = group }
+		group["total"] = group["total"].(int) + 1
+		if status == "completed" { group["completed"] = group["completed"].(int) + 1 }
+		if status == "failed" { group["failed"] = group["failed"].(int) + 1 }
+		if !terminal[status] { group["active"] = group["active"].(int) + 1; group["status"] = status }
+		if task, ok := item["task"].(map[string]any); ok && group["workload"] == nil { group["workload"] = stringField(task, "workload"); group["kind"] = stringField(task, "kind") }
+		if updated := stringField(item, "handled_utc"); updated != "" { group["updated_at"] = updated }
+		subs := group["subtasks"].([]map[string]any); if len(subs) < 8 { subs = append(subs, map[string]any{"task_id": stringField(item, "task_id"), "status": status, "handled_by": stringField(item, "handled_by")}) }; group["subtasks"] = subs
 	}
+	workloads := make([]map[string]any, 0, len(groups)); for _, group := range groups { workloads = append(workloads, group) }
+	sort.Slice(workloads, func(i, j int) bool { return stringField(workloads[i], "updated_at") > stringField(workloads[j], "updated_at") })
 	w.Header().Set("Content-Type", "application/json"); w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent})
+	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": workloads})
 }
 
 func (h *Handler) GetNetworkPeers(w http.ResponseWriter, r *http.Request) {
