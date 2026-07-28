@@ -4372,7 +4372,16 @@ class PeerNetwork:
                                 "timestamp_utc": utc_now(),
                             }
                         )
-                    claimed_envelope = peer_network.node.claim_task_for_worker(requester_node_id, roles_set) if peer_network.node else None
+                    claim_features = {
+                        str(feature).strip()
+                        for feature in (payload.get("features", []) if isinstance(payload.get("features", []), list) else [])
+                        if str(feature).strip()
+                    }
+                    claimed_envelope = (
+                        peer_network.node.claim_task_for_worker(requester_node_id, roles_set, claim_features)
+                        if peer_network.node
+                        else None
+                    )
                     if peer_network.node:
                         append_jsonl(
                             peer_network.node.events_path,
@@ -5956,9 +5965,15 @@ class NetworkNode:
             },
         )
 
-    def claim_task_for_worker(self, worker_id: str, worker_roles: set[str]) -> dict[str, Any] | None:
+    def claim_task_for_worker(
+        self,
+        worker_id: str,
+        worker_roles: set[str],
+        worker_features: set[str] | None = None,
+    ) -> dict[str, Any] | None:
         if not worker_id or not worker_roles:
             return None
+        worker_features = worker_features or set()
 
         def preferred_worker(
             current: Mapping[str, Any],
@@ -5982,6 +5997,21 @@ class NetworkNode:
                     if str(role).strip()
                 }
                 if required_roles and not required_roles.issubset(roles):
+                    continue
+                required_features = {
+                    str(feature).strip()
+                    for feature in (current.get("required_features", []) if isinstance(current.get("required_features", []), list) else [])
+                    if str(feature).strip()
+                }
+                body = current.get("request" if str(current.get("envelope_kind") or "task") == "request" else "task")
+                if isinstance(body, Mapping):
+                    required_features.update(
+                        str(feature).strip()
+                        for feature in (body.get("required_features", []) if isinstance(body.get("required_features", []), list) else [])
+                        if str(feature).strip()
+                    )
+                peer_features = {str(feature).strip() for feature in peer.get("features", []) if str(feature).strip()}
+                if not required_features.issubset(peer_features):
                     continue
                 compatible.add(peer_id)
 
@@ -6057,6 +6087,20 @@ class NetworkNode:
                 required_roles = []
             req_set = {str(role).lower() for role in required_roles if str(role).strip()}
             if req_set and not req_set.issubset(worker_roles):
+                return None
+            body = current.get("request" if kind == "request" else "task")
+            required_features = {
+                str(feature).strip()
+                for feature in (current.get("required_features", []) if isinstance(current.get("required_features", []), list) else [])
+                if str(feature).strip()
+            }
+            if isinstance(body, Mapping):
+                required_features.update(
+                    str(feature).strip()
+                    for feature in (body.get("required_features", []) if isinstance(body.get("required_features", []), list) else [])
+                    if str(feature).strip()
+                )
+            if not required_features.issubset(worker_features):
                 return None
             selected_worker = preferred_worker(current, req_set, excluded_peer_ids)
             if selected_worker and selected_worker != safe_id(worker_id):
@@ -6156,7 +6200,7 @@ class NetworkNode:
             "app_version": self.config.app_version,
             "release_channel": self.config.release_channel,
             "release_build": self.config.release_build,
-            "features": self.peer_network.direct_transport.features(),
+            "features": sorted({*self.peer_network.direct_transport.features(), "raytracer_fastpath_v1"}),
             "transport_attestations": self.peer_network.recent_transport_attestations(4),
             "http_base_url": self.peer_network.advertised_http_base_url,
             "mesh_post_url": self.peer_network.mesh_post_url,

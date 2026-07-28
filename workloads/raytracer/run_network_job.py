@@ -886,12 +886,16 @@ def main(argv: list[str] | None = None) -> int:
             compute_payload = {
                 "task_id": task_id,
                 "required_roles": ["compute"],
+                # Do not send latency-sensitive tiles to a legacy worker
+                # whose renderer progress writes serialize the pixel loop.
+                "required_features": ["raytracer_fastpath_v1"],
                 "priority": args.priority,
                 "excluded_peer_ids": list(context.get("compute_excluded_peer_ids", [])),
                 "p2p_ref": bytes_input_ref(args, export_dir, json.dumps(spec, sort_keys=True).encode("utf-8")),
                 "task": {
                     "kind": "compute",
                     "workload": RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
+                    "required_features": ["raytracer_fastpath_v1"],
                     "inline_input": spec,
                     "fragment_index": index,
                     "fragment_count": len(fragments),
@@ -1089,6 +1093,7 @@ def main(argv: list[str] | None = None) -> int:
             verify_payload = {
                 "task_id": verify_id,
                 "required_roles": ["verify"],
+                "required_features": ["raytracer_fastpath_v1"],
                 "priority": args.priority,
                 "p2p_ref": challenge_ref,
                 "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
@@ -1097,6 +1102,7 @@ def main(argv: list[str] | None = None) -> int:
                 "task": {
                     "kind": "verify",
                     "workload": RAYTRACER_FRAGMENT_VERIFY_WORKLOAD,
+                    "required_features": ["raytracer_fastpath_v1"],
                     "inline_input": challenge,
                     "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
                     "verification_mode": expected_milestones["strategy"],
