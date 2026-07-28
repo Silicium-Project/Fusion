@@ -42,7 +42,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
 from tools.resource_intelligence import DualMemoryBayes, build_resource_profile, resource_baselines
 from tools.runtime_telemetry import RuntimeTelemetrySampler
-from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256, scene_resolution
+from workloads.raytracer.raytracer_workload import (
+    build_verification_milestones,
+    ppm_pixel_sha256,
+    run_raytracer,
+    scene_resolution,
+)
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
@@ -793,6 +798,8 @@ class RoleRuntime:
         }
 
     def run_raytracer_fragment(self, task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        started = time.perf_counter()
+        timings_ms: dict[str, int] = {}
         try:
             spec = json.loads(p2p_data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -802,53 +809,64 @@ class RoleRuntime:
         scene_ref = task.get("scene_p2p_ref") or spec.get("scene_p2p_ref")
         if not isinstance(scene_ref, dict):
             raise RuntimeError("raytracer_scene_ref_missing")
+        phase_started = time.perf_counter()
         scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
-        root = Path(__file__).resolve().parents[1]
-        compute_script = root / "workloads" / "raytracer" / "compute.py"
+        timings_ms["scene_fetch"] = int((time.perf_counter() - phase_started) * 1000)
         with tempfile.TemporaryDirectory(prefix="silicium-raytracer-fragment-") as temp_dir:
             temp_path = Path(temp_dir)
             scene_path = temp_path / "scene.cfg"
             output_path = temp_path / "fragment.ppm"
+            phase_started = time.perf_counter()
             scene_path.write_bytes(scene_bytes)
+            timings_ms["scene_write"] = int((time.perf_counter() - phase_started) * 1000)
             x_start = int(task.get("x_start", spec.get("x_start", 0)) or 0)
             x_end = int(task.get("x_end", spec.get("x_end", 0)) or 0)
             if x_end <= x_start:
                 x_end = scene_resolution(scene_path)[0]
-            command = [
-                sys.executable,
-                str(compute_script),
-                "--scene", str(scene_path),
-                "--output", str(output_path),
-                "--x-start", str(x_start),
-                "--x-end", str(x_end),
-                "--y-start", str(int(task.get("y_start", spec.get("y_start", 0)) or 0)),
-                "--y-end", str(int(task.get("y_end", spec.get("y_end", 0)) or 0)),
-                "--verification-batch-rows", str(int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20)),
-                "--timeout-s", str(int(task.get("timeout_s", 300) or 300)),
-            ]
+            y_start = int(task.get("y_start", spec.get("y_start", 0)) or 0)
+            y_end = int(task.get("y_end", spec.get("y_end", 0)) or 0)
             progress_file = str(task.get("_runtime_progress_path", "")).strip()
-            if progress_file:
-                command.extend(["--progress-file", progress_file])
-            completed = self.run_process(command, timeout=int(task.get("timeout_s", 300) or 300) + 15)
-            if completed.returncode != 0 or not output_path.exists():
-                raise RuntimeError(f"raytracer_fragment_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}")
+            phase_started = time.perf_counter()
+            rendered = run_raytracer(
+                scene_path,
+                output_path,
+                int(task.get("timeout_s", 300) or 300),
+                y_start,
+                y_end,
+                x_start,
+                x_end,
+                Path(progress_file) if progress_file else None,
+            )
+            timings_ms["renderer"] = int((time.perf_counter() - phase_started) * 1000)
             output = output_path.read_bytes()
         if not output.startswith(b"P6\n"):
             raise RuntimeError("raytracer_fragment_invalid_ppm")
+        phase_started = time.perf_counter()
         output_ref = self.p2p.put_local(output)
+        timings_ms["output_store"] = int((time.perf_counter() - phase_started) * 1000)
         result_hash = sha256_bytes(output)
+        phase_started = time.perf_counter()
         milestone_manifest = build_verification_milestones(
             output,
             int(task.get("y_start", spec.get("y_start", 0)) or 0),
             int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20),
             int(task.get("x_start", spec.get("x_start", 0)) or 0),
         )
+        timings_ms["milestones"] = int((time.perf_counter() - phase_started) * 1000)
+        timings_ms["total"] = int((time.perf_counter() - started) * 1000)
         return {
             "role_result": "compute",
             "input": p2p_meta,
             "scene": scene_meta,
             "input_hash": sha256_bytes(p2p_data),
-            "compute": {"mode": "raytracer-fragment", "executed": True, "stdout": completed.stdout[-2048:], "stderr": completed.stderr[-2048:]},
+            "compute": {
+                "mode": "raytracer-fragment",
+                "executed": True,
+                "stdout": str(rendered.get("stdout", ""))[-2048:],
+                "stderr": str(rendered.get("stderr", ""))[-2048:],
+                "renderer_telemetry": rendered.get("renderer_telemetry", {}),
+                "timings_ms": timings_ms,
+            },
             "output_ref": output_ref,
             "proof_ref": output_ref,
             "result_hash": result_hash,
@@ -861,6 +879,8 @@ class RoleRuntime:
         p2p_data: bytes,
         p2p_meta: dict[str, Any],
     ) -> dict[str, Any]:
+        started = time.perf_counter()
+        timings_ms: dict[str, int] = {}
         try:
             challenge = json.loads(p2p_data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -887,7 +907,9 @@ class RoleRuntime:
         scene_ref = task.get("scene_p2p_ref") or challenge.get("scene_p2p_ref")
         if not isinstance(scene_ref, dict):
             raise RuntimeError("raytracer_scene_ref_missing")
+        phase_started = time.perf_counter()
         scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
+        timings_ms["scene_fetch"] = int((time.perf_counter() - phase_started) * 1000)
         source_output_ref = task.get("source_output_ref")
         handoff_meta: dict[str, Any] = {}
         if isinstance(source_output_ref, dict):
@@ -900,8 +922,6 @@ class RoleRuntime:
             )
             if str(source_manifest.get("commitment_hash", "")) != str(challenge.get("commitment_hash", "")):
                 raise RuntimeError("raytracer_source_handoff_commitment_invalid")
-        root = Path(__file__).resolve().parents[1]
-        compute_script = root / "workloads" / "raytracer" / "compute.py"
         with tempfile.TemporaryDirectory(prefix="silicium-raytracer-milestone-verify-") as temp_dir:
             temp_path = Path(temp_dir)
             scene_path = temp_path / "scene.cfg"
@@ -911,24 +931,20 @@ class RoleRuntime:
                 x_end = scene_resolution(scene_path)[0]
             if x_end <= x_start:
                 raise RuntimeError("raytracer_verification_milestone_range_invalid")
-            command = [
-                sys.executable,
-                str(compute_script),
-                "--scene", str(scene_path),
-                "--output", str(output_path),
-                "--x-start", str(x_start),
-                "--x-end", str(x_end),
-                "--y-start", str(y_start),
-                "--y-end", str(y_end),
-                "--verification-batch-rows", str(sample_rows),
-                "--timeout-s", str(int(task.get("timeout_s", 300) or 300)),
-            ]
-            completed = self.run_process(command, timeout=int(task.get("timeout_s", 300) or 300) + 15)
-            if completed.returncode != 0 or not output_path.exists():
-                raise RuntimeError(
-                    f"raytracer_milestone_verification_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}"
-                )
+            phase_started = time.perf_counter()
+            rendered = run_raytracer(
+                scene_path,
+                output_path,
+                int(task.get("timeout_s", 300) or 300),
+                y_start,
+                y_end,
+                x_start,
+                x_end,
+            )
+            timings_ms["renderer"] = int((time.perf_counter() - phase_started) * 1000)
+            phase_started = time.perf_counter()
             recomputed_hash = ppm_pixel_sha256(output_path.read_bytes())
+            timings_ms["ppm_hash"] = int((time.perf_counter() - phase_started) * 1000)
 
         passed = recomputed_hash == expected
         fragment_rows = max(sample_rows, int(challenge.get("fragment_rows", sample_rows) or sample_rows))
@@ -962,6 +978,8 @@ class RoleRuntime:
             "recomputed_hash": recomputed_hash,
             "verification_mode": str(challenge.get("strategy")),
             "verification": verification,
+            "timings_ms": {**timings_ms, "total": int((time.perf_counter() - started) * 1000)},
+            "renderer_telemetry": rendered.get("renderer_telemetry", {}),
             "verified": passed,
             "choice": passed,
             "result_hash": sha256_json({"verified": passed, **verification}),

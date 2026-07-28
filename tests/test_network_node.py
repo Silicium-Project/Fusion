@@ -2645,17 +2645,16 @@ def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monk
         def fetch(self, _ref):
             return b"scene", {"source": "test-scene"}
 
-    def fake_run(command, **_kwargs):
-        output_path = Path(command[command.index("--output") + 1])
+    def fake_raytracer(scene_path, output_path, _timeout, y_start, y_end, x_start, x_end, *_args):
         output_path.write_bytes(sample_ppm)
-        assert command[command.index("--y-start") + 1] == "108"
-        assert command[command.index("--y-end") + 1] == "110"
-        assert command[command.index("--x-start") + 1] == "320"
-        assert command[command.index("--x-end") + 1] == "322"
-        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        assert y_start == 108
+        assert y_end == 110
+        assert x_start == 320
+        assert x_end == 322
+        return {"stdout": "", "stderr": "", "renderer_telemetry": {"renderer": "test"}}
 
     runtime = network_node.RoleRuntime(_config(tmp_path / "verify", "verifier", roles="verify"), FakeP2P())
-    monkeypatch.setattr(runtime, "run_process", fake_run)
+    monkeypatch.setattr(network_node, "run_raytracer", fake_raytracer)
     result = runtime.run_raytracer_milestone_verification(
         {"scene_p2p_ref": {"protocol": "test"}, "max_sample_rows": 20},
         json.dumps(challenge).encode("utf-8"),
