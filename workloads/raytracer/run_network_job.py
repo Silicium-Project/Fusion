@@ -10,7 +10,7 @@ import sys
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(NETWORK_ROOT))
@@ -480,7 +480,12 @@ def refresh_attempt_deadline(
     return float(token["queue_deadline"])
 
 
-def discovered_role_capacity(export_dir: Path, node_id: str, role: str) -> int:
+def discovered_role_capacity(
+    export_dir: Path,
+    node_id: str,
+    role: str,
+    required_features: Iterable[str] = (),
+) -> int:
     """Count currently discovered HTTP peers that advertise a workload role."""
     peers_path = export_dir / f"node.{node_id}.peers.json"
     try:
@@ -489,6 +494,7 @@ def discovered_role_capacity(export_dir: Path, node_id: str, role: str) -> int:
         payload = {}
     peers = payload.get("peers", []) if isinstance(payload, dict) else []
     wanted = role.strip().lower()
+    wanted_features = {str(feature).strip() for feature in required_features if str(feature).strip()}
     eligible = {
         str(peer.get("node_id", "")).strip()
         for peer in peers
@@ -500,6 +506,9 @@ def discovered_role_capacity(export_dir: Path, node_id: str, role: str) -> int:
         }
         and str(peer.get("http_base_url", "")).strip()
         and str(peer.get("node_id", "")).strip()
+        and wanted_features.issubset(
+            {str(feature).strip() for feature in (peer.get("features", []) if isinstance(peer.get("features"), list) else [])}
+        )
     }
     return max(1, len(eligible))
 
@@ -1088,7 +1097,12 @@ def main(argv: list[str] | None = None) -> int:
             # Preserve independent verification whenever another verifier is
             # available. In a one-node network, excluding the compute node
             # leaves every verify task permanently unclaimable.
-            if discovered_role_capacity(export_dir, args.network_node_id, "verify") > 1:
+            if discovered_role_capacity(
+                export_dir,
+                args.network_node_id,
+                "verify",
+                ("raytracer_fastpath_v1",),
+            ) > 1:
                 verify_excluded_peer_ids.add(str(compute_result.get("node_id", "")))
             verify_payload = {
                 "task_id": verify_id,

@@ -6080,8 +6080,6 @@ class NetworkNode:
                 for value in (current.get("excluded_peer_ids", []) if isinstance(current.get("excluded_peer_ids"), list) else [])
                 if str(value).strip()
             }
-            if safe_id(worker_id) in excluded_peer_ids:
-                return None
             required_roles = current.get("target_roles", []) if kind == "request" else current.get("required_roles", [])
             if not isinstance(required_roles, list):
                 required_roles = []
@@ -6100,6 +6098,14 @@ class NetworkNode:
                     for feature in (body.get("required_features", []) if isinstance(body.get("required_features", []), list) else [])
                     if str(feature).strip()
                 )
+            # Older job controllers may exclude the compute worker because a
+            # legacy verifier is merely visible.  If that verifier cannot
+            # satisfy the required capability, permit the compatible compute
+            # worker rather than leave verification permanently queued.
+            if required_features and safe_id(worker_id) in excluded_peer_ids:
+                excluded_peer_ids.discard(safe_id(worker_id))
+            if safe_id(worker_id) in excluded_peer_ids:
+                return None
             if not required_features.issubset(worker_features):
                 return None
             selected_worker = preferred_worker(current, req_set, excluded_peer_ids)
