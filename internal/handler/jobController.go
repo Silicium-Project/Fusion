@@ -141,11 +141,12 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jobs)
 }
 
+type networkJobAggregate struct { status string; total, done, failed int; latest time.Time; subtasks []any; roles map[string]bool; nodes map[string]bool; workload, kind string }
+
 func (h *Handler) syncNetworkJobs(userID uint) error {
 	const dir = "/var/lib/silicium/network/orchestrator/export/tasks"
 	entries, err := os.ReadDir(dir); if err != nil { return err }
-	type aggregate struct { status string; total, done, failed int; latest time.Time }
-	aggs := map[string]*aggregate{}
+	aggs := map[string]*networkJobAggregate{}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
 		item := readJSONMap(filepath.Join(dir, entry.Name())); if len(item) == 0 { continue }
@@ -154,7 +155,16 @@ func (h *Handler) syncNetworkJobs(userID uint) error {
 		// Site-submitted raytracer jobs already live in the canonical Job table;
 		// their fragment registry entries must not be imported as extra jobs.
 		if strings.HasPrefix(id, "site-render-") { continue }
-		status := strings.ToLower(stringValue(item["status"])); a := aggs[id]; if a == nil { a=&aggregate{status: status}; aggs[id]=a }; a.total++; if status == "completed" { a.done++ }; if status == "failed" { a.failed++ }; if status != "completed" && status != "failed" && status != "cancelled" && status != "expired" { a.status = status }
+		status := strings.ToLower(stringValue(item["status"])); a := aggs[id]; if a == nil { a=&networkJobAggregate{status: status, roles: map[string]bool{}, nodes: map[string]bool{}}; aggs[id]=a }; a.total++; if status == "completed" { a.done++ }; if status == "failed" { a.failed++ }; if status != "completed" && status != "failed" && status != "cancelled" && status != "expired" { a.status = status }
+		role := stringValue(item["required_role"]); if role == "" { role = stringValue(item["role"]) }; if role != "" { a.roles[role] = true }
+		node := stringValue(item["handled_by"]); if node == "" { node = stringValue(item["claimed_by"]) }; if node != "" { a.nodes[node] = true }
+		if taskWorkload := stringValue(task["workload"]); taskWorkload != "" { a.workload = taskWorkload }; if taskKind := stringValue(task["kind"]); taskKind != "" { a.kind = taskKind }
+		if len(a.subtasks) < 512 {
+			timing := map[string]any{}
+			if taskID := stringValue(item["task_id"]); taskID != "" { resultName := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(taskID); result := readJSONMap(filepath.Join(dir, "..", "result."+resultName+".json")); if value, ok := result["duration_ms"]; ok { timing["durationMs"] = value }; if value, ok := result["performance"]; ok { timing["performance"] = value } }
+			subtask := map[string]any{"taskId": stringValue(item["task_id"]), "status": status, "role": role, "handledBy": node, "submittedUtc": stringValue(item["submitted_utc"]), "claimedUtc": stringValue(item["claimed_utc"]), "handledUtc": stringValue(item["handled_utc"]), "fragmentIndex": task["fragment_index"], "fragmentCount": task["fragment_count"], "transport": item["transport"]}
+			for key, value := range timing { subtask[key] = value }; a.subtasks = append(a.subtasks, subtask)
+		}
 		if raw := stringValue(item["handled_utc"]); raw != "" { if parsed, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil && parsed.After(a.latest) { a.latest = parsed } }
 	}
 	for id, a := range aggs {
@@ -163,17 +173,24 @@ func (h *Handler) syncNetworkJobs(userID uint) error {
 		var job models.Job; result := h.DB.Where("silicium_job_id = ?", id).First(&job)
 		if result.Error == nil {
 			if strings.HasPrefix(job.InputPath, "rpc://") {
-				updates := map[string]any{"status": status, "fragment_count": a.total, "updated_at": now}
+				updates := map[string]any{"status": status, "fragment_count": a.total, "updated_at": now, "network_metadata": networkJobMetadata(id, a, status)}
 				if status == "completed" || status == "failed" || status == "cancelled" || status == "expired" { updates["completed_at"] = now }
 				h.DB.Model(&job).Updates(updates)
 			}
 			continue
 		}
-		job = models.Job{UserID:userID, Title:"Raytracer", Description:"Travail réseau RPC", Workload:"raytracer", Priority:"normal", FragmentCount:a.total, Status:status, SiliciumJobID:id, InputPath:"rpc://"+id, CreatedAt:now, UpdatedAt:now}
+		job = models.Job{UserID:userID, Title:"Raytracer", Description:"Travail réseau RPC", Workload:"raytracer", Priority:"normal", FragmentCount:a.total, Status:status, SiliciumJobID:id, InputPath:"rpc://"+id, NetworkMetadata: networkJobMetadata(id, a, status), CreatedAt:now, UpdatedAt:now}
 		if status == "completed" || status == "failed" || status == "cancelled" { job.CompletedAt = &now }
 		if createErr := h.DB.Create(&job).Error; createErr != nil && !strings.Contains(strings.ToLower(createErr.Error()), "unique") { return createErr }
 	}
 	return nil
+}
+
+func networkJobMetadata(id string, a *networkJobAggregate, status string) map[string]any {
+	progress := 0.0; if a.total > 0 { progress = float64(a.done) * 100 / float64(a.total) }
+	roles := make([]string, 0, len(a.roles)); for role := range a.roles { roles = append(roles, role) }
+	nodes := make([]string, 0, len(a.nodes)); for node := range a.nodes { nodes = append(nodes, node) }
+	return map[string]any{"workId": id, "status": status, "progressPercent": progress, "total": a.total, "completed": a.done, "failed": a.failed, "workload": a.workload, "kind": a.kind, "roles": roles, "nodes": nodes, "subtasks": a.subtasks, "updatedUtc": a.latest.UTC().Format(time.RFC3339Nano)}
 }
 
 type cancelJobRequest struct {
@@ -281,6 +298,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"cancelReason":       job.CancelReason,
 			"billableWorkUnits":  job.BillableWorkUnits,
 			"computeReceiptHash": job.ComputeReceiptHash,
+			"network":            job.NetworkMetadata,
 		},
 		"resultReady": job.ResultPath != "",
 		"resultUrl":   "/jobs/" + strconv.Itoa(int(job.ID)) + "/result",
