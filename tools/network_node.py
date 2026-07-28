@@ -2368,7 +2368,10 @@ class PeerNetwork:
             candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) == preferred_peer_id])
         candidates.extend([peer for peer in peers if str(peer.get("node_id", "")) != preferred_peer_id])
         for peer in candidates:
-            if self._prefer_peer_http(peer):
+            ice_capable = bool(self.config.nat_punch_enable and "ice_v1" in {
+                str(feature) for feature in (peer.get("features", []) if isinstance(peer.get("features", []), list) else [])
+            })
+            if self._prefer_peer_http(peer) and not ice_capable:
                 data = self._fetch_direct_from_peer(peer, content_id)
                 if data is not None:
                     return data, self._attested_fetch_meta(
@@ -2382,7 +2385,7 @@ class PeerNetwork:
             ice_result = self._fetch_direct_ice(peer, content_id)
             if ice_result is not None:
                 return ice_result
-            if not self._prefer_peer_http(peer):
+            if self._prefer_peer_http(peer):
                 data = self._fetch_direct_from_peer(peer, content_id)
                 if data is not None:
                     return data, self._attested_fetch_meta(

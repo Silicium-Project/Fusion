@@ -898,20 +898,21 @@ def test_p2p_client_uses_verified_local_silicium_cache(tmp_path: Path) -> None:
     assert meta["source"] == "local-silicium-cache"
 
 
-def test_public_peer_http_fast_path_precedes_ice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_public_ice_peer_is_tried_before_http_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     export_dir = tmp_path / "public-http"
-    peer = network_node.PeerNetwork(_config(export_dir, "worker-a", gossip_enable=False), export_dir)
+    peer = network_node.PeerNetwork(_config(export_dir, "worker-a", gossip_enable=False, nat_punch_enable=True), export_dir)
     public_peer = {
         "node_id": "orchestrator-1",
         "http_base_url": "https://orchestrator.example.test",
         "features": ["ice_v1"],
     }
     monkeypatch.setattr(peer, "peers_snapshot", lambda: {"peers": [public_peer]})
-    monkeypatch.setattr(peer, "_fetch_direct_from_peer", lambda _peer, _content_id: b"public-content")
+    events: list[str] = []
+    monkeypatch.setattr(peer, "_fetch_direct_from_peer", lambda _peer, _content_id: (events.append("http"), b"public-content")[1])
     monkeypatch.setattr(
         peer,
         "_fetch_direct_ice",
-        lambda *_args: (_ for _ in ()).throw(AssertionError("ICE should not run before public HTTPS")),
+        lambda *_args: (events.append("ice"), None)[1],
     )
     monkeypatch.setattr(
         peer,
@@ -923,6 +924,7 @@ def test_public_peer_http_fast_path_precedes_ice(tmp_path: Path, monkeypatch: py
 
     assert data == b"public-content"
     assert meta["transport_backend"] == "peer-http"
+    assert events == ["ice", "http"]
 
 
 def test_p2p_fetch_falls_back_to_shared_ref_when_file_path_missing(tmp_path: Path) -> None:
