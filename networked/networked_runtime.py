@@ -138,6 +138,7 @@ def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str,
         str(ref.get("peer_url", "")).rstrip("/"),
         peer_url(export_dir, emitter_node_id, peer_id),
         str(os.environ.get("SILICIUM_ORCHESTRATOR_URL", "")).rstrip("/"),
+        str(os.environ.get("SILICIUM_PEER_ADVERTISE_URL", "")).rstrip("/"),
         *[item.strip().rstrip("/") for item in str(os.environ.get("SILICIUM_SEED_PEERS", "")).split(",")],
     ):
         if candidate and candidate not in base_urls:
