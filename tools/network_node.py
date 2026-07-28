@@ -825,8 +825,11 @@ class RoleRuntime:
                 x_end = scene_resolution(scene_path)[0]
             y_start = int(task.get("y_start", spec.get("y_start", 0)) or 0)
             y_end = int(task.get("y_end", spec.get("y_end", 0)) or 0)
-            progress_file = str(task.get("_runtime_progress_path", "")).strip()
             phase_started = time.perf_counter()
+            # The Rust renderer serializes a progress-file update from its
+            # hot pixel loop.  On Windows this changes a 20 ms tile into a
+            # ~900 ms tile.  The node monitor still exposes queue/execution
+            # phases; completion is the meaningful granularity for a tile.
             rendered = run_raytracer(
                 scene_path,
                 output_path,
@@ -835,7 +838,6 @@ class RoleRuntime:
                 y_end,
                 x_start,
                 x_end,
-                Path(progress_file) if progress_file else None,
             )
             timings_ms["renderer"] = int((time.perf_counter() - phase_started) * 1000)
             output = output_path.read_bytes()
