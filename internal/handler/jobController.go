@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -114,6 +115,9 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
 		return
 	}
+	// RPC work is imported into the same durable Job model before querying so
+	// the site has one canonical list/dashboard/action surface.
+	if err := h.syncNetworkJobs(uint(userID)); err != nil { log.Printf("network job sync: %v", err) }
 	page := boundedQueryInt(r, "page", 1, 1, 1_000_000)
 	pageSize := boundedQueryInt(r, "page_size", 20, 1, 100)
 	query := h.DB.Model(&models.Job{}).Where("user_id = ?", userID)
@@ -135,6 +139,41 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Page-Size", strconv.Itoa(pageSize))
 	w.Header().Set("Access-Control-Expose-Headers", "X-Total-Count, X-Page, X-Page-Size")
 	writeJSON(w, http.StatusOK, jobs)
+}
+
+func (h *Handler) syncNetworkJobs(userID uint) error {
+	const dir = "/var/lib/silicium/network/orchestrator/export/tasks"
+	entries, err := os.ReadDir(dir); if err != nil { return err }
+	type aggregate struct { status string; total, done, failed int; latest time.Time }
+	aggs := map[string]*aggregate{}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
+		item := readJSONMap(filepath.Join(dir, entry.Name())); if len(item) == 0 { continue }
+		id := stringValue(item["root_job_id"]); task, _ := item["task"].(map[string]any); if id == "" { id = stringValue(task["root_job_id"]) }; if id == "" { id = stringValue(item["task_id"]) }
+		if marker := strings.Index(id, "-frag-"); marker > 0 { id = id[:marker] }; if id == "" { continue }
+		// Site-submitted raytracer jobs already live in the canonical Job table;
+		// their fragment registry entries must not be imported as extra jobs.
+		if strings.HasPrefix(id, "site-render-") { continue }
+		status := strings.ToLower(stringValue(item["status"])); a := aggs[id]; if a == nil { a=&aggregate{status: status}; aggs[id]=a }; a.total++; if status == "completed" { a.done++ }; if status == "failed" { a.failed++ }; if status != "completed" && status != "failed" && status != "cancelled" && status != "expired" { a.status = status }
+		if raw := stringValue(item["handled_utc"]); raw != "" { if parsed, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil && parsed.After(a.latest) { a.latest = parsed } }
+	}
+	for id, a := range aggs {
+		status := a.status; if status == "" { status = "queued" }; if a.failed > 0 && a.done < a.total { status = "failed" }; if a.done == a.total && a.total > 0 { status = "completed" }
+		now := a.latest; if now.IsZero() { now = time.Now() }
+		var job models.Job; result := h.DB.Where("silicium_job_id = ?", id).First(&job)
+		if result.Error == nil {
+			if strings.HasPrefix(job.InputPath, "rpc://") {
+				updates := map[string]any{"status": status, "fragment_count": a.total, "updated_at": now}
+				if status == "completed" || status == "failed" || status == "cancelled" || status == "expired" { updates["completed_at"] = now }
+				h.DB.Model(&job).Updates(updates)
+			}
+			continue
+		}
+		job = models.Job{UserID:userID, Title:"Raytracer", Description:"Travail réseau RPC", Workload:"raytracer", Priority:"normal", FragmentCount:a.total, Status:status, SiliciumJobID:id, InputPath:"rpc://"+id, CreatedAt:now, UpdatedAt:now}
+		if status == "completed" || status == "failed" || status == "cancelled" { job.CompletedAt = &now }
+		if createErr := h.DB.Create(&job).Error; createErr != nil && !strings.Contains(strings.ToLower(createErr.Error()), "unique") { return createErr }
+	}
+	return nil
 }
 
 type cancelJobRequest struct {
@@ -211,6 +250,9 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 	if len(summary) == 0 {
 		summary = readJSONMap(progressPathForJob(job))
 	}
+	if strings.HasPrefix(job.InputPath, "rpc://") {
+		summary = h.networkJobSummary(job.SiliciumJobID, summary)
+	}
 	trace := readJSONMap(job.DevnetTracePath)
 	devnetTrace, _ := summary["devnet_trace"].(map[string]any)
 	if len(trace) == 0 {
@@ -279,6 +321,38 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	writeJSON(w, http.StatusOK, payload)
+}
+
+// networkJobSummary gives imported RPC jobs the same dashboard contract as a
+// site-submitted job. The source of truth remains the task registry; no second
+// frontend-specific task model is needed.
+func (h *Handler) networkJobSummary(rootID string, fallback map[string]any) map[string]any {
+	const dir = "/var/lib/silicium/network/orchestrator/export/tasks"
+	if fallback == nil { fallback = map[string]any{} }
+	fragments := make([]map[string]any, 0)
+	completed, failed, total := 0, 0, 0
+	var latest string
+	entries, err := os.ReadDir(dir)
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
+			item := readJSONMap(filepath.Join(dir, entry.Name())); if len(item) == 0 { continue }
+			id := stringValue(item["root_job_id"]); task, _ := item["task"].(map[string]any)
+			if id == "" { id = stringValue(task["root_job_id"]) }; if id == "" { id = stringValue(item["task_id"]) }
+			if marker := strings.Index(id, "-frag-"); marker > 0 { id = id[:marker] }
+			if id != rootID { continue }
+			status := strings.ToLower(stringValue(item["status"])); total++
+			if status == "completed" { completed++ }; if status == "failed" { failed++ }
+			if updated := stringValue(item["handled_utc"]); updated > latest { latest = updated }
+			fragment := map[string]any{"taskId": stringValue(item["task_id"]), "status": status, "handledBy": stringValue(item["handled_by"]), "stage": stringValue(task["kind"]), "fragmentIndex": task["fragment_index"], "fragmentCount": task["fragment_count"]}
+			fragments = append(fragments, fragment)
+		}
+	}
+	progress := 0.0; if total > 0 { progress = float64(completed) * 100 / float64(total) }
+	status := "running"; if total == 0 { status = "queued" }; if failed > 0 && completed < total { status = "failed" }; if completed == total && total > 0 { status = "completed" }
+	if jobStatus, ok := fallback["status"].(string); ok && jobStatus != "" { status = jobStatus }
+	fallback["success"] = status == "completed"; fallback["progress"] = progress; fallback["stage"] = status; fallback["updated_utc"] = latest; fallback["job_id"] = rootID; fallback["fragment_count"] = total; fallback["fragments"] = fragments
+	return fallback
 }
 
 func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
