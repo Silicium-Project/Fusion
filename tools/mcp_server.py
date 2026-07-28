@@ -1678,6 +1678,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--resource-denylist", default="", help="Comma-separated denied resource URI patterns")
     p.add_argument("--token", default="", help="Optional bearer token (or env SILICIUM_MCP_TOKEN)")
     p.add_argument("--no-auth", action="store_true", help="Disable bearer auth even if token env/flag is set")
+    p.add_argument("--rpc-bind", default=os.environ.get("SILICIUM_RPC_BIND", ""), help="Optional ZeroMQ RPC control endpoint, e.g. tcp://127.0.0.1:9770")
     p.add_argument("--log-format", choices=["text", "json"], default="text", help="Structured logs format (default: text)")
     return p
 
@@ -1726,6 +1727,18 @@ def main(argv: list[str] | None = None) -> int:
         access_policy=access_policy,
     )
 
+    # Keep RPC in the same process/export directory so task submission and
+    # feedback observe identical durable state. The thread is daemonized and
+    # therefore cannot change the historical MCP shutdown semantics.
+    if args.rpc_bind:
+        from rpc_server import serve as serve_rpc
+        threading.Thread(
+            target=serve_rpc,
+            args=(str(args.rpc_bind), export_path, token or ""),
+            name="silicium-rpc",
+            daemon=True,
+        ).start()
+
     server = ThreadingHTTPServer((args.bind, args.port), McpHttpHandler)
     server.daemon_threads = True
     server.app = app  # type: ignore[attr-defined]
@@ -1747,6 +1760,7 @@ def main(argv: list[str] | None = None) -> int:
         token_enabled=bool(token),
         metrics_endpoint="/metrics",
         mcp_endpoint="/mcp",
+        rpc_endpoint=str(args.rpc_bind or ""),
     )
     try:
         server.serve_forever(poll_interval=0.2)

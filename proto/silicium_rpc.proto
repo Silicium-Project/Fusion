@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package silicium.rpc;
+
+// Control-plane envelope. JSON is carried as bytes so the existing task
+// schema remains compatible while the transport is strongly framed/versioned.
+message RpcRequest {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  string method = 3;
+  bytes payload_json = 4;
+  string bearer_token = 5;
+}
+
+message RpcResponse {
+  uint32 schema_version = 1;
+  string request_id = 2;
+  bool ok = 3;
+  bytes payload_json = 4;
+  string error = 5;
+  uint64 duration_us = 6;
+}

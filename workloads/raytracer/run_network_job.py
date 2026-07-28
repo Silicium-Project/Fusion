@@ -275,6 +275,26 @@ def submit_network_task(
         submission["queue"] = "scheduler://local-export"
         return submission
 
+    # Optional local protobuf/ZeroMQ control plane. It avoids an HTTP round
+    # trip when a scheduler gateway is colocated with the node, while retaining
+    # the signed HTTP path as a transparent fallback for older releases.
+    rpc_endpoint = str(os.environ.get("SILICIUM_RPC_ENDPOINT", "")).strip()
+    if rpc_endpoint:
+        try:
+            from rpc_client import RpcClient
+            rpc_result = RpcClient(rpc_endpoint, os.environ.get("SILICIUM_RPC_TOKEN", ""), timeout_ms=3000).call("task.dispatch", payload)
+            return {
+                "task_id": task_id,
+                "required_roles": required_roles,
+                "priority": args.priority,
+                "status": str(rpc_result.get("status", "dispatched")),
+                "queue": "rpc://task.dispatch",
+                "scheduler_dispatch": {"status": "dispatched", "target": rpc_endpoint, "transport": "protobuf+zeromq"},
+            }
+        except Exception:
+            # A rolling upgrade must not strand work when the sidecar is absent.
+            pass
+
     scheduler_dispatch = dispatch_task_to_scheduler(
         payload,
         args.network_seed_peers,
