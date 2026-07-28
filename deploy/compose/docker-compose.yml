@@ -175,6 +175,8 @@ services:
     - --enable-tools
     - --log-format
     - json
+    - --rpc-bind
+    - tcp://0.0.0.0:9770
     volumes:
     - /var/lib/silicium/network:/var/lib/silicium/network
     networks:
