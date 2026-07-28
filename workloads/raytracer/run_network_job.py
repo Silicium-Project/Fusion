@@ -22,6 +22,7 @@ from networked.networked_runtime import (  # noqa: E402
     best_shared_ref,
     dispatch_task_to_scheduler,
     fetch_network_content,
+    RpcTaskEventListener,
     store_network_content,
     store_network_file,
     wait_for_result as wait_for_network_result,
@@ -1252,16 +1253,24 @@ def main(argv: list[str] | None = None) -> int:
             if not verified:
                 raise RuntimeError(f"raytracer fragment verification failed: {fragment_id}")
 
-        run_bounded_fragment_pipeline(
-            pipeline_fragments,
-            max_compute_in_flight=compute_in_flight_limit,
-            max_verify_in_flight=verify_in_flight_limit,
-            launch_compute=launch_compute,
-            poll_compute=poll_compute,
-            launch_verify=launch_verify,
-            poll_verify=poll_verify,
-            finish_verify=finish_verify,
-        )
+        # Task completion is signalled immediately by the scheduler's PUB
+        # stream.  The next poll still reads the shared durable result, so a
+        # missed ZeroMQ message can never lose work or alter correctness.
+        event_listener = RpcTaskEventListener()
+        try:
+            run_bounded_fragment_pipeline(
+                pipeline_fragments,
+                max_compute_in_flight=compute_in_flight_limit,
+                max_verify_in_flight=verify_in_flight_limit,
+                launch_compute=launch_compute,
+                poll_compute=poll_compute,
+                launch_verify=launch_verify,
+                poll_verify=poll_verify,
+                finish_verify=finish_verify,
+                idle=lambda: event_listener.wait(0.1),
+            )
+        finally:
+            event_listener.close()
 
         reassembled_ppm = reassembled_dir / "render.ppm"
         reassembled_png = reassembled_dir / "render.png"

@@ -225,6 +225,24 @@ def append_jsonl(path: Path, payload: Any) -> None:
         handle.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n")
 
 
+def emit_rpc_event(export_dir: Path, event: str, item_id: str, **details: Any) -> None:
+    """Persist control-plane events for the RPC PUB bridge.
+
+    Tile bytes deliberately never enter this journal: consumers receive only
+    the content-addressed result reference and fetch it over the data plane.
+    """
+    append_jsonl(
+        export_dir / "rpc.events.ndjson",
+        {
+            "schema_version": 1,
+            "event": event,
+            "item_id": safe_id(item_id),
+            "timestamp_utc": utc_now(),
+            **details,
+        },
+    )
+
+
 def ingest_content_blobs(export_dir: Path, payload: dict[str, Any]) -> list[str]:
     stored: list[str] = []
     total_bytes = 0
@@ -5952,6 +5970,15 @@ class NetworkNode:
         current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
         current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
         atomic_write_json(envelope_path, current)
+        emit_rpc_event(
+            self.config.export_dir,
+            "task.terminal",
+            item_id,
+            status=current["status"],
+            handled_by=current["handled_by"],
+            result_hash=str(current.get("result_hash", "")),
+            result_resource=current["result_resource"],
+        )
         self.return_dispatched_result(current, result, log_payload)
         append_jsonl(
             self.events_path,
@@ -6123,6 +6150,13 @@ class NetworkNode:
             payload["result_return_url"] = origin_return_url if origin_return_url.startswith(("http://", "https://")) else self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
 
             self.update_envelope_status(current, "dispatched", {"result_hash": "", "dispatched_to": worker_id})
+            emit_rpc_event(
+                self.config.export_dir,
+                "task.claimed",
+                item_id,
+                worker_id=worker_id,
+                required_roles=sorted(req_set),
+            )
             self.state.mark_seen(key)
             self.metrics["dispatched"] = int(self.metrics.get("dispatched", 0) or 0) + 1
             append_jsonl(

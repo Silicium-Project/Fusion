@@ -20,6 +20,64 @@ NETWORK_ROOT = Path(__file__).resolve().parents[1]
 MAX_INLINE_CONTENT_BLOB_TOTAL_BYTES = 16 * 1024 * 1024
 
 
+class RpcTaskEventListener:
+    """Best-effort task wake-up channel for a network workload.
+
+    The filesystem journal/result remains the source of truth.  This listener
+    merely replaces needless sleep/poll cycles while a task is remote.  It is
+    optional so an older scheduler or a standalone node keeps the exact
+    historical behaviour.
+    """
+
+    def __init__(self, endpoint: str | None = None) -> None:
+        self.endpoint = str(endpoint or os.environ.get("SILICIUM_RPC_EVENTS_CONNECT", "")).strip()
+        self._context: Any = None
+        self._socket: Any = None
+        if not self.endpoint:
+            return
+        try:
+            import zmq
+
+            self._context = zmq.Context()
+            self._socket = self._context.socket(zmq.SUB)
+            self._socket.setsockopt(zmq.LINGER, 0)
+            self._socket.setsockopt(zmq.SUBSCRIBE, b"task.")
+            self._socket.connect(self.endpoint)
+        except Exception:
+            self.close()
+
+    @property
+    def enabled(self) -> bool:
+        return self._socket is not None
+
+    def wait(self, timeout_s: float = 0.1) -> bool:
+        """Wait for a task transition, returning false on timeout/unavailable."""
+        if self._socket is None:
+            time.sleep(max(0.0, timeout_s))
+            return False
+        try:
+            if not self._socket.poll(max(0, int(timeout_s * 1000))):
+                return False
+            self._socket.recv_multipart(flags=0)
+            return True
+        except Exception:
+            return False
+
+    def close(self) -> None:
+        if self._socket is not None:
+            try:
+                self._socket.close(0)
+            except Exception:
+                pass
+        self._socket = None
+        if self._context is not None:
+            try:
+                self._context.term()
+            except Exception:
+                pass
+        self._context = None
+
+
 def sha256_bytes(data: bytes) -> str:
     import hashlib
 

@@ -1679,6 +1679,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--token", default="", help="Optional bearer token (or env SILICIUM_MCP_TOKEN)")
     p.add_argument("--no-auth", action="store_true", help="Disable bearer auth even if token env/flag is set")
     p.add_argument("--rpc-bind", default=os.environ.get("SILICIUM_RPC_BIND", ""), help="Optional ZeroMQ RPC control endpoint, e.g. tcp://127.0.0.1:9770")
+    p.add_argument("--rpc-events-bind", default=os.environ.get("SILICIUM_RPC_EVENTS_BIND", "tcp://127.0.0.1:9771"), help="ZeroMQ PUB endpoint for task state events")
     p.add_argument("--log-format", choices=["text", "json"], default="text", help="Structured logs format (default: text)")
     return p
 
@@ -1734,7 +1735,7 @@ def main(argv: list[str] | None = None) -> int:
         from rpc_server import serve as serve_rpc
         threading.Thread(
             target=serve_rpc,
-            args=(str(args.rpc_bind), export_path, token or ""),
+            args=(str(args.rpc_bind), export_path, token or "", str(args.rpc_events_bind)),
             name="silicium-rpc",
             daemon=True,
         ).start()
@@ -1761,6 +1762,7 @@ def main(argv: list[str] | None = None) -> int:
         metrics_endpoint="/metrics",
         mcp_endpoint="/mcp",
         rpc_endpoint=str(args.rpc_bind or ""),
+        rpc_events_endpoint=str(args.rpc_events_bind or "") if args.rpc_bind else "",
     )
     try:
         server.serve_forever(poll_interval=0.2)
