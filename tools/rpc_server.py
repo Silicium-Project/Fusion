@@ -7,6 +7,7 @@ machine-readable for dashboards and automation.
 from __future__ import annotations
 
 import argparse, base64, hashlib, hmac, json, os, time
+from datetime import datetime, timezone
 from pathlib import Path
 import zmq
 
@@ -50,7 +51,7 @@ class RpcGateway:
                 except Exception: continue
                 if len(cid) == 64 and hashlib.sha256(data).hexdigest() == cid:
                     target = self.export_dir / "p2p" / cid; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(data)
-            payload = dict(payload); payload["envelope_kind"] = "task"
+            payload = dict(payload); payload["envelope_kind"] = "task"; payload["status"] = "queued"; payload["submitted_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
             tasks_dir = self.export_dir / "tasks"; tasks_dir.mkdir(parents=True, exist_ok=True)
             (tasks_dir / f"{task_id}.json").write_text(encoded, encoding="utf-8")
