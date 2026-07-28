@@ -6145,10 +6145,9 @@ class NetworkNode:
         }).encode("utf-8")
 
         for base_url in sorted(targets):
-            self.peer_network._poll_signaling_sessions(base_url)
-            # Controls have their own durable anti-entropy feed. Reconcile it
-            # immediately before claiming so a restart cannot revive old work.
-            self.peer_network._sync_task_controls(base_url)
+            # Signaling and task-control anti-entropy run in the peer-sync
+            # loop. Doing either synchronously in the claim hot path makes a
+            # stale peer (or TURN endpoint) block dispatch for several seconds.
             path = "/tasks/claim"
             url = base_url.rstrip("/") + path
             attempt: dict[str, Any] = {"target": base_url, "url": url, "result": "unknown"}
@@ -6159,7 +6158,7 @@ class NetworkNode:
                 headers=self.peer_network._signed_headers("POST", path, raw_payload, {"Content-Type": "application/json"}),
             )
             try:
-                with urllib.request.urlopen(request, timeout=4) as response:
+                with urllib.request.urlopen(request, timeout=1.5) as response:
                     attempt["http_status"] = int(response.status)
                     response_raw = response.read()
                     payload = json.loads(response_raw.decode("utf-8"))
@@ -6180,9 +6179,8 @@ class NetworkNode:
                         candidate_item_id = safe_id(
                             str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown")
                         )
-                        # Close the race where a control is published while the
-                        # claim request is in flight.
-                        self.peer_network._sync_task_controls(base_url)
+                        # Controls are reconciled by the background sync loop;
+                        # do not add a blocking network round-trip here.
                         control_origin = str(
                             claimed_task.get("origin_node_id") or claimed_task.get("dispatched_by") or ""
                         )
