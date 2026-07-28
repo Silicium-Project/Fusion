@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import heapq
 import hashlib
 import hmac
 import http.server
@@ -1105,6 +1106,7 @@ class PeerNetwork:
         self.identity = NodeIdentity(config)
         self.node_path_id = safe_path_id(self.node_id)
         self.peers_path = export_dir / f"node.{self.node_path_id}.peers.json"
+        self.routes_path = export_dir / f"node.{self.node_path_id}.routes.json"
         self.candidates_path = export_dir / "p2p.candidates.json"
         self.sessions_path = export_dir / "p2p.sessions.json"
         self.session_events_path = export_dir / "p2p.sessions.ndjson"
@@ -1234,10 +1236,80 @@ class PeerNetwork:
         self._prune_expired_peer_candidates()
         with self._lock:
             peers = sorted(self._peers.values(), key=lambda item: str(item.get("node_id", "")))
-        payload = {"schema_version": 1, "node_id": self.node_id, "count": len(peers), "peers": peers, "updated_utc": utc_now()}
+        payload = {
+            "schema_version": 1,
+            "node_id": self.node_id,
+            "count": len(peers),
+            "peers": peers,
+            "routes": self.route_table_snapshot(),
+            "updated_utc": utc_now(),
+        }
         atomic_write_json(self.peers_path, payload)
         atomic_write_json(self.discovery_registry_path, payload)
         return payload
+
+    def route_table_snapshot(self) -> list[dict[str, Any]]:
+        """Compute shortest known peer paths, preferring direct ICE/UDP links."""
+        with self._lock:
+            peers = {str(peer.get("node_id", "")): dict(peer) for peer in self._peers.values() if peer.get("node_id")}
+        peers[self.node_id] = {"node_id": self.node_id}
+        graph: dict[str, list[tuple[float, str, str]]] = {node_id: [] for node_id in peers}
+        weights = {"direct": 1.0, "relay": 2.0, "central": 8.0, "peer-http": 8.0}
+        for observer, peer in peers.items():
+            attestations = peer.get("transport_attestations", [])
+            if not isinstance(attestations, list):
+                attestations = []
+            for claim in attestations:
+                if not isinstance(claim, Mapping) or not bool(claim.get("success", False)):
+                    continue
+                target = str(claim.get("remote_peer_id", "")).strip()
+                route = str(claim.get("route", "")).strip().lower()
+                if target not in peers or route not in weights:
+                    continue
+                graph.setdefault(observer, []).append((weights[route], target, route))
+            if observer != self.node_id and str(peer.get("http_base_url", "")).strip():
+                graph.setdefault(self.node_id, []).append((weights["central"], observer, "central"))
+        distances: dict[str, float] = {self.node_id: 0.0}
+        previous: dict[str, tuple[str, str]] = {}
+        queue: list[tuple[float, str]] = [(0.0, self.node_id)]
+        while queue:
+            cost, current = heapq.heappop(queue)
+            if cost != distances.get(current):
+                continue
+            for edge_cost, target, route in graph.get(current, []):
+                candidate = cost + edge_cost
+                if candidate < distances.get(target, float("inf")):
+                    distances[target] = candidate
+                    previous[target] = (current, route)
+                    heapq.heappush(queue, (candidate, target))
+        routes: list[dict[str, Any]] = []
+        for target in sorted(node_id for node_id in peers if node_id != self.node_id):
+            if target not in distances:
+                routes.append({"target_peer_id": target, "reachable": False, "path": [], "cost": None, "hops": 0})
+                continue
+            path = [target]
+            route_kinds: list[str] = []
+            cursor = target
+            while cursor != self.node_id:
+                parent, route = previous[cursor]
+                route_kinds.append(route)
+                path.append(parent)
+                cursor = parent
+            path.reverse()
+            route_kinds.reverse()
+            routes.append(
+                {
+                    "target_peer_id": target,
+                    "reachable": True,
+                    "path": path,
+                    "next_hop": path[1] if len(path) > 1 else target,
+                    "hops": len(path) - 1,
+                    "cost": distances[target],
+                    "transport": route_kinds[-1] if route_kinds else "local",
+                }
+            )
+        atomic_write_json(self.routes_path, {"schema_version": 1, "node_id": self.node_id, "routes": routes, "updated_utc": utc_now()})
+        return routes
 
     def local_candidates_snapshot(self) -> list[dict[str, Any]]:
         now = int(time.time())

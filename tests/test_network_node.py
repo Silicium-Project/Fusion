@@ -2442,6 +2442,26 @@ def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
         seed_node.peer_network.stop()
 
 
+def test_route_table_prefers_direct_path_with_dijkstra(tmp_path: Path) -> None:
+    node = network_node.NetworkNode(_config(tmp_path / "routes", "node-a", roles="storage"))
+    node.peer_network._peers.update(
+        {
+            "node-b": {
+                "node_id": "node-b",
+                "http_base_url": "http://node-b",
+                "transport_attestations": [
+                    {"remote_peer_id": "node-c", "route": "direct", "success": True}
+                ],
+            },
+            "node-c": {"node_id": "node-c"},
+        }
+    )
+    routes = {item["target_peer_id"]: item for item in node.peer_network.route_table_snapshot()}
+    assert routes["node-b"]["transport"] == "central"
+    assert routes["node-c"]["path"] == ["node-a", "node-b", "node-c"]
+    assert routes["node-c"]["cost"] == 9.0
+
+
 def test_worker_claim_respects_assigned_peer_id(tmp_path: Path) -> None:
     export_seed = tmp_path / "assigned-seed"
     config_seed = _config(export_seed, "seed-orchestrator", roles="storage")
