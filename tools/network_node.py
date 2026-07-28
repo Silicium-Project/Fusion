@@ -315,7 +315,7 @@ class NodeConfig:
     scheduler_capacity_weight: float
     world: bool = False
     pull_tasks_enable: bool = False
-    pull_tasks_interval_s: int = 2
+    pull_tasks_interval_s: float = 1.0
     app_version: str = "unknown"
     release_channel: str = "dev"
     release_build: str = ""
@@ -6098,7 +6098,7 @@ class NetworkNode:
         self._pull_stop_event.clear()
 
         def _loop() -> None:
-            interval = max(1, int(self.config.pull_tasks_interval_s))
+            interval = max(0.25, float(self.config.pull_tasks_interval_s))
             while not self._pull_stop_event.wait(interval):
                 try:
                     self._poll_and_claim_tasks_once()
@@ -6602,7 +6602,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
     parser.add_argument("--pull-tasks-enable", action="store_true", default=os.environ.get("SILICIUM_PULL_TASKS_ENABLE", "0") == "1")
-    parser.add_argument("--pull-tasks-interval-s", type=int, default=int(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "2")))
+    parser.add_argument("--pull-tasks-interval-s", type=float, default=float(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "1")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
     parser.add_argument("--p2p-candidate-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_TTL_S", "60")))
     parser.add_argument("--p2p-candidate-refresh-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_REFRESH_S", "20")))
@@ -6613,8 +6613,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--p2p-direct-transport-backend", default=os.environ.get("SILICIUM_P2P_DIRECT_TRANSPORT_BACKEND", "auto"))
     parser.add_argument("--p2p-stun-server", default=os.environ.get("SILICIUM_P2P_STUN_SERVER", ""))
     parser.add_argument("--p2p-turn-server", default=os.environ.get("SILICIUM_P2P_TURN_SERVER", ""))
-    parser.add_argument("--p2p-turn-username", default=os.environ.get("SILICIUM_P2P_TURN_USERNAME", ""))
-    parser.add_argument("--p2p-turn-password", default=os.environ.get("SILICIUM_P2P_TURN_PASSWORD", ""))
+    parser.add_argument("--p2p-turn-username", default=os.environ.get("SILICIUM_P2P_TURN_USERNAME", "silicium"))
+    parser.add_argument("--p2p-turn-password", default=os.environ.get("SILICIUM_P2P_TURN_PASSWORD", os.environ.get("SILICIUM_MESH_KEY", "")))
     parser.add_argument("--p2p-turn-transport", default=os.environ.get("SILICIUM_P2P_TURN_TRANSPORT", "udp"), choices=["udp", "tcp"])
     parser.add_argument("--solana-reputation-enable", action="store_true", default=os.environ.get("SILICIUM_SOLANA_REPUTATION_ENABLE", "0") == "1")
     parser.add_argument("--solana-reputation-refresh-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_REPUTATION_REFRESH_S", "60")))
@@ -6705,7 +6705,7 @@ def main(argv: list[str] | None = None) -> int:
         remote_dispatch_enable=bool(args.remote_dispatch_enable),
         remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
         pull_tasks_enable=bool(args.pull_tasks_enable),
-        pull_tasks_interval_s=max(1, int(args.pull_tasks_interval_s)),
+        pull_tasks_interval_s=max(0.25, float(args.pull_tasks_interval_s)),
         app_version=str(args.app_version).strip() or "unknown",
         release_channel=str(args.release_channel).strip().lower() or "dev",
         release_build=str(args.release_build).strip(),

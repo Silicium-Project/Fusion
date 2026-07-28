@@ -372,7 +372,10 @@ class IceDirectTransport(DirectTransportBackend):
     _MAX_PAYLOAD_BYTES = 67108864
     # Keep ICE application datagrams below the common Internet MTU. Large
     # datagrams worked on loopback but were fragmented and dropped across NAT.
-    _CHUNK_SIZE = 800
+    # Stay below the common Internet MTU while reducing Python/aioice frame
+    # overhead for fragment payloads. TURN and ICE already provide loss
+    # recovery; smaller chunks only add scheduler-visible latency.
+    _CHUNK_SIZE = 1200
 
     def __init__(
         self,
