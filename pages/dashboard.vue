@@ -172,7 +172,7 @@
           <button @click="loadNetworkTasks" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">Rafraichir</button>
         </div>
         <div v-if="networkTasks.length === 0" class="text-white/50">Aucune tache RPC.</div>
-        <div v-else class="overflow-x-auto"><table class="w-full text-left"><thead class="text-white/50 text-sm"><tr><th class="py-3">Identifiant</th><th class="py-3">Workload</th><th class="py-3">Statut</th><th class="py-3">Worker</th></tr></thead><tbody><tr v-for="task in networkTasks" :key="task.task_id" class="border-t border-white/10"><td class="py-3 font-mono text-sm">{{ task.task_id }}</td><td class="py-3 text-white/70">{{ task.task?.workload || task.task?.kind || 'compute' }}</td><td class="py-3"><span class="px-3 py-1 rounded-full text-sm" :class="statusClass(task.status)">{{ task.status }}</span></td><td class="py-3 text-white/70">{{ task.handled_by || 'en attente' }}</td></tr></tbody></table></div>
+        <div v-else class="overflow-x-auto"><table class="w-full text-left"><thead class="text-white/50 text-sm"><tr><th class="py-3">Travail</th><th class="py-3">Workload</th><th class="py-3">Statut</th><th class="py-3">Progression</th><th class="py-3">Sous-taches</th></tr></thead><tbody><tr v-for="task in networkTasks" :key="task.work_id" class="border-t border-white/10"><td class="py-3 font-mono text-sm">{{ task.work_id }}</td><td class="py-3 text-white/70">{{ task.workload || task.kind || 'compute' }}</td><td class="py-3"><span class="px-3 py-1 rounded-full text-sm" :class="statusClass(task.status)">{{ task.status }}</span></td><td class="py-3 text-white/70">{{ task.completed }}/{{ task.total }}</td><td class="py-3 text-white/70">{{ task.total }} ({{ task.active }} active)</td></tr></tbody></table></div>
       </section>
 
       <div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -341,7 +341,7 @@ const loadJobs = async () => {
 const loadNetworkTasks = async () => {
   try {
     const payload = await $fetch<{ active: any[]; recent: any[] }>(`${apiBase}/jobs/network/tasks`, { headers: authHeaders() });
-    networkTasks.value = [...(payload.active || []), ...(payload.recent || []).slice(0, 20)];
+    networkTasks.value = payload.workloads || [];
   } catch (error) { console.error('Failed to fetch network tasks:', error); }
 };
 
