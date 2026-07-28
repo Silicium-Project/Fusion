@@ -107,6 +107,10 @@ services:
     - 213.32.68.67
     - --peer-advertise-port
     - '46100'
+    - --gossip-advertise-host
+    - 213.32.68.67
+    - --gossip-advertise-port
+    - '46100'
     - --reputation-score
     - '100.0'
     ports:
