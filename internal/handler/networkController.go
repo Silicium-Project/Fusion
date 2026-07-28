@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -18,6 +19,11 @@ const (
 func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 	entries, err := os.ReadDir(networkTasksPath)
 	if err != nil { http.Error(w, "Could not read network task registry: "+err.Error(), http.StatusInternalServerError); return }
+	sort.Slice(entries, func(i, j int) bool {
+		left, leftErr := entries[i].Info(); right, rightErr := entries[j].Info()
+		if leftErr != nil || rightErr != nil { return entries[i].Name() > entries[j].Name() }
+		return left.ModTime().After(right.ModTime())
+	})
 	terminal := map[string]bool{"completed":true,"failed":true,"dead_lettered":true,"cancelled":true,"canceled":true,"expired":true,"finalized":true,"resolved":true}
 	active, recent := []map[string]any{}, []map[string]any{}
 	for _, entry := range entries {
