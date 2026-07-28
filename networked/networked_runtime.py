@@ -150,8 +150,11 @@ def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str,
     # the emitter identity when the bundled state key is available.
     try:
         from cryptography.hazmat.primitives import serialization
-        state_dir = export_dir.parent / "state"
-        private_path = state_dir / "peer_identity_ed25519.pem"
+        key_candidates = [
+            export_dir.parent / "state" / "peer_identity_ed25519.pem",
+            export_dir.parent / "_emitter_state" / "peer_identity_ed25519.pem",
+        ]
+        private_path = next((item for item in key_candidates if item.exists()), key_candidates[0])
         public_path = private_path.with_suffix(".pub.pem")
         if private_path.exists() and public_path.exists():
             private_key = serialization.load_pem_private_key(private_path.read_bytes(), password=None)
