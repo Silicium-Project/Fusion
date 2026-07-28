@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -129,13 +130,40 @@ def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str,
     if local.exists():
         return local.read_bytes()
     peer_id = str(ref.get("peer_id", "")).strip()
-    base_url = str(ref.get("peer_url", "")).rstrip("/") or peer_url(export_dir, emitter_node_id, peer_id)
-    if not base_url:
+    # A worker can advertise a private/NAT address in its result reference.
+    # Prefer every known endpoint and let the scheduler/relay copy win when
+    # the result was already returned with an attached content blob.
+    base_urls: list[str] = []
+    for candidate in (
+        str(ref.get("peer_url", "")).rstrip("/"),
+        peer_url(export_dir, emitter_node_id, peer_id),
+        str(os.environ.get("SILICIUM_ORCHESTRATOR_URL", "")).rstrip("/"),
+        *[item.strip().rstrip("/") for item in str(os.environ.get("SILICIUM_SEED_PEERS", "")).split(",")],
+    ):
+        if candidate and candidate not in base_urls:
+            base_urls.append(candidate)
+    if not base_urls:
         raise ValueError(f"unknown_peer_for_content:{peer_id}")
     headers = {"Authorization": f"Bearer {mesh_key}"} if mesh_key else {}
-    request = urllib.request.Request(base_url + "/p2p/" + urllib.request.quote(content_id, safe=""), headers=headers)
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return response.read()
+    last_error: Exception | None = None
+    path = "/p2p/" + urllib.request.quote(content_id, safe="")
+    for base_url in base_urls:
+        # Keep a failed NAT/private endpoint from blocking the entire job for
+        # 30 seconds. A returned result is retried briefly, then other peers
+        # and the central scheduler are attempted.
+        for attempt in range(2):
+            try:
+                request = urllib.request.Request(base_url + path, headers=headers)
+                with urllib.request.urlopen(request, timeout=6) as response:
+                    data = response.read()
+                if sha256_bytes(data) != content_id:
+                    raise ValueError(f"content_hash_mismatch:{content_id}")
+                return data
+            except Exception as error:  # noqa: BLE001 - continue to next transport endpoint
+                last_error = error
+                if attempt == 0:
+                    time.sleep(0.15)
+    raise urllib.error.URLError(f"content_fetch_failed:{content_id}:{last_error}")
 
 
 def dispatch_task_to_scheduler(task: dict[str, Any], seed_peers: str, mesh_key: str) -> dict[str, Any]:
