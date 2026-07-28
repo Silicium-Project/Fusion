@@ -279,6 +279,8 @@ def submit_network_task(
         payload,
         args.network_seed_peers,
         args.network_mesh_key,
+        export_dir=export_dir,
+        node_id=args.network_node_id,
     )
     return {
         "task_id": task_id,

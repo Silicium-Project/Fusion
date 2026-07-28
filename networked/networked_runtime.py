@@ -118,6 +118,36 @@ def peer_url(export_dir: Path, emitter_node_id: str, peer_id: str) -> str:
     return ""
 
 
+def _identity_headers(export_dir: Path, node_id: str, method: str, path: str, body: bytes) -> dict[str, str]:
+    """Build production peer-auth headers from the emitter's local identity."""
+    key_candidates = [
+        export_dir.parent / "state" / "peer_identity_ed25519.pem",
+        export_dir.parent / "_emitter_state" / "peer_identity_ed25519.pem",
+    ]
+    private_path = next((item for item in key_candidates if item.exists()), None)
+    if private_path is None:
+        return {}
+    from cryptography.hazmat.primitives import serialization
+    public_path = private_path.with_suffix(".pub.pem")
+    if not public_path.exists():
+        return {}
+    private_key = serialization.load_pem_private_key(private_path.read_bytes(), password=None)
+    public_pem = public_path.read_bytes()
+    identity_id = sha256_bytes(public_pem)[:32]
+    public_b64 = base64.b64encode(public_pem).decode("ascii")
+    timestamp = str(int(time.time()))
+    body_hash = sha256_bytes(body)
+    signing_payload = "\n".join([method.upper(), path, timestamp, body_hash, node_id, identity_id]).encode("utf-8")
+    return {
+        "X-Silicium-Node-Id": node_id,
+        "X-Silicium-Identity-Id": identity_id,
+        "X-Silicium-Public-Key": public_b64,
+        "X-Silicium-Timestamp": timestamp,
+        "X-Silicium-Body-Hash": body_hash,
+        "X-Silicium-Signature": private_key.sign(signing_payload).hex(),
+    }
+
+
 def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str, Any], mesh_key: str) -> bytes:
     ref = best_shared_ref(ref)
     protocol = str(ref.get("protocol", "")).lower()
@@ -149,30 +179,7 @@ def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str,
     # Production peers disable bearer-only development auth. Sign GETs with
     # the emitter identity when the bundled state key is available.
     try:
-        from cryptography.hazmat.primitives import serialization
-        key_candidates = [
-            export_dir.parent / "state" / "peer_identity_ed25519.pem",
-            export_dir.parent / "_emitter_state" / "peer_identity_ed25519.pem",
-        ]
-        private_path = next((item for item in key_candidates if item.exists()), key_candidates[0])
-        public_path = private_path.with_suffix(".pub.pem")
-        if private_path.exists() and public_path.exists():
-            private_key = serialization.load_pem_private_key(private_path.read_bytes(), password=None)
-            public_pem = public_path.read_bytes()
-            identity_id = sha256_bytes(public_pem)[:32]
-            public_b64 = base64.b64encode(public_pem).decode("ascii")
-            timestamp = str(int(time.time()))
-            body_hash = sha256_bytes(b"")
-            signed_path = "/p2p/" + urllib.request.quote(content_id, safe="")
-            signing_payload = "\n".join(["GET", signed_path, timestamp, body_hash, emitter_node_id, identity_id]).encode("utf-8")
-            headers.update({
-                "X-Silicium-Node-Id": emitter_node_id,
-                "X-Silicium-Identity-Id": identity_id,
-                "X-Silicium-Public-Key": public_b64,
-                "X-Silicium-Timestamp": timestamp,
-                "X-Silicium-Body-Hash": body_hash,
-                "X-Silicium-Signature": private_key.sign(signing_payload).hex(),
-            })
+        headers.update(_identity_headers(export_dir, emitter_node_id, "GET", "/p2p/" + urllib.request.quote(content_id, safe=""), b""))
     except Exception:
         pass
     last_error: Exception | None = None
@@ -196,7 +203,14 @@ def fetch_network_content(export_dir: Path, emitter_node_id: str, ref: dict[str,
     raise urllib.error.URLError(f"content_fetch_failed:{content_id}:{last_error}")
 
 
-def dispatch_task_to_scheduler(task: dict[str, Any], seed_peers: str, mesh_key: str) -> dict[str, Any]:
+def dispatch_task_to_scheduler(
+    task: dict[str, Any],
+    seed_peers: str,
+    mesh_key: str,
+    *,
+    export_dir: Path | None = None,
+    node_id: str = "",
+) -> dict[str, Any]:
     """Submit a workload envelope to a scheduler that pull-based workers poll."""
     payload = json.dumps(task, sort_keys=True, separators=(",", ":")).encode("utf-8")
     headers = {"Content-Type": "application/json"}
@@ -209,7 +223,10 @@ def dispatch_task_to_scheduler(task: dict[str, Any], seed_peers: str, mesh_key: 
             continue
         url = base_url + "/tasks/dispatch"
         try:
-            request = urllib.request.Request(url, data=payload, method="POST", headers=headers)
+            request_headers = dict(headers)
+            if export_dir is not None and node_id:
+                request_headers.update(_identity_headers(export_dir, node_id, "POST", "/tasks/dispatch", payload))
+            request = urllib.request.Request(url, data=payload, method="POST", headers=request_headers)
             with urllib.request.urlopen(request, timeout=8) as response:
                 status = int(response.status)
                 attempts.append({"target": base_url, "http_status": status, "ok": status in {200, 202}})
