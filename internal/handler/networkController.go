@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -11,7 +12,23 @@ import (
 const (
 	networkPeersPath   = "/var/lib/silicium/network/orchestrator/export/node.orchestrator-1.peers.json"
 	updateManifestPath = "/var/lib/silicium/downloads/update-manifest.json"
+	networkTasksPath   = "/var/lib/silicium/network/orchestrator/export/tasks"
 )
+
+func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
+	entries, err := os.ReadDir(networkTasksPath)
+	if err != nil { http.Error(w, "Could not read network task registry: "+err.Error(), http.StatusInternalServerError); return }
+	terminal := map[string]bool{"completed":true,"failed":true,"dead_lettered":true,"cancelled":true,"canceled":true,"expired":true,"finalized":true,"resolved":true}
+	active, recent := []map[string]any{}, []map[string]any{}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
+		raw, readErr := os.ReadFile(filepath.Join(networkTasksPath, entry.Name())); if readErr != nil { continue }
+		var item map[string]any; if json.Unmarshal(raw, &item) != nil { continue }
+		if terminal[strings.ToLower(stringField(item, "status"))] { recent = append(recent, item) } else { active = append(active, item) }
+	}
+	w.Header().Set("Content-Type", "application/json"); w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent})
+}
 
 func (h *Handler) GetNetworkPeers(w http.ResponseWriter, r *http.Request) {
 	payload, err := loadNetworkPeers(networkPeersPath, updateManifestPath)
