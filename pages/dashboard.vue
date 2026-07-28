@@ -166,6 +166,15 @@
         </div>
       </section>
 
+      <section class="mt-8 bg-[#1f2029] rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <div><h3 class="text-2xl font-bold">Taches reseau RPC</h3><p class="text-white/50">Registre canonique du VPS, y compris les executions hors job du site.</p></div>
+          <button @click="loadNetworkTasks" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">Rafraichir</button>
+        </div>
+        <div v-if="networkTasks.length === 0" class="text-white/50">Aucune tache RPC.</div>
+        <div v-else class="overflow-x-auto"><table class="w-full text-left"><thead class="text-white/50 text-sm"><tr><th class="py-3">Identifiant</th><th class="py-3">Workload</th><th class="py-3">Statut</th><th class="py-3">Worker</th></tr></thead><tbody><tr v-for="task in networkTasks" :key="task.task_id" class="border-t border-white/10"><td class="py-3 font-mono text-sm">{{ task.task_id }}</td><td class="py-3 text-white/70">{{ task.task?.workload || task.task?.kind || 'compute' }}</td><td class="py-3"><span class="px-3 py-1 rounded-full text-sm" :class="statusClass(task.status)">{{ task.status }}</span></td><td class="py-3 text-white/70">{{ task.handled_by || 'en attente' }}</td></tr></tbody></table></div>
+      </section>
+
       <div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div class="lg:col-span-2">
           <NetworkGraph :api-base="apiBase" />
@@ -267,6 +276,7 @@ const isSubmittingJob = ref(false);
 const selectedJobFile = ref<File | null>(null);
 const jobSubmitError = ref('');
 const jobs = ref<Job[]>([]);
+const networkTasks = ref<any[]>([]);
 const totalJobs = ref(0);
 const currentPage = ref(1);
 const pageSize = 20;
@@ -326,6 +336,13 @@ const loadJobs = async () => {
   } catch (error) {
     console.error('Failed to fetch jobs:', error);
   }
+};
+
+const loadNetworkTasks = async () => {
+  try {
+    const payload = await $fetch<{ active: any[]; recent: any[] }>(`${apiBase}/jobs/network/tasks`, { headers: authHeaders() });
+    networkTasks.value = [...(payload.active || []), ...(payload.recent || []).slice(0, 20)];
+  } catch (error) { console.error('Failed to fetch network tasks:', error); }
 };
 
 const goToPage = async (page: number) => {
@@ -472,6 +489,7 @@ onMounted(async () => {
       solBalance.value = balance / web3.LAMPORTS_PER_SOL;
     }
     await loadJobs();
+    await loadNetworkTasks();
   } catch (error) {
     console.error('Failed to fetch dashboard data:', error);
   }
