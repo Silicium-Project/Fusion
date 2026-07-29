@@ -1,0 +1,352 @@
+name: Full repository audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - audit/full-repo-2026-07-29
+    paths-ignore:
+      - docs/audit/generated/**
+
+permissions:
+  contents: write
+
+concurrency:
+  group: full-repository-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Create scoped GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+          permission-contents: write
+
+      - name: Checkout the exact four-repository composition
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node.js
+        continue-on-error: true
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Go
+        continue-on-error: true
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: BackEnd/go.mod
+
+      - name: Set up Rust
+        continue-on-error: true
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native build dependencies
+        continue-on-error: true
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config libssl-dev libsqlite3-dev \
+            qt6-base-dev libayatana-appindicator3-dev libfuse2 librsvg2-dev \
+            libwebkit2gtk-4.1-dev patchelf
+
+      - name: Inspect every tracked file
+        shell: bash
+        run: |
+          rm -rf docs/audit/generated
+          mkdir -p docs/audit/generated/logs
+          python - <<'PY'
+          from __future__ import annotations
+          import csv, hashlib, json, re, subprocess
+          from collections import Counter, defaultdict
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path.cwd()
+          output = root / 'docs/audit/generated'
+          repositories = [('Fusion', root)] + [(name, root / name) for name in ('Network', 'BackEnd', 'FrontEnd')]
+          source_suffixes = {'.c','.cc','.cpp','.go','.h','.hpp','.js','.jsx','.mjs','.proto','.ps1','.py','.rs','.sh','.ts','.tsx','.vue'}
+          text_suffixes = source_suffixes | {'','.cmd','.cmake','.conf','.css','.csv','.env','.example','.gitattributes','.gitignore','.gitmodules','.html','.ini','.json','.jsonl','.lock','.md','.properties','.sql','.svg','.toml','.txt','.xml','.yaml','.yml'}
+          generated_parts = {'.nuxt','.output','__pycache__','build','coverage','dist','generated','node_modules','out','target','vendor'}
+          legacy_parts = {'archive','archived','deprecated','experimental','legacy'}
+          test_parts = {'test','tests','testing','fixtures','mocks','golden'}
+          demo_parts = {'demo','demos','example','examples','sample','samples'}
+          docs_parts = {'doc','docs','documentation'}
+          production_prefixes = {
+              'Fusion': ('apps/silicium-node/','deploy/','.github/workflows/deploy-vps.yml','install-silicium-windows.cmd','start-silicium-local.cmd'),
+              'Network': ('silicium','tools/','networked/','workloads/raytracer/','proto/','silicium-layer-dashboard/','bin/raytracer/','requirements-p2p.txt'),
+              'BackEnd': ('cmd/','internal/','Dockerfile','go.mod','go.sum'),
+              'FrontEnd': ('pages/','components/','composables/','utils/','assets/','Dockerfile','nuxt.config.'),
+          }
+          patterns = [
+              ('critical','security.aws-key',re.compile(r'\bAKIA[0-9A-Z]{16}\b'),'AWS access-key-shaped value is tracked.'),
+              ('high','security.private-key',re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'),'Private key material marker is tracked.'),
+              ('high','security.demo-secret',re.compile(r'(?i)(demo[-_ ]?mesh|changeme|insecure[-_ ]?default)'),'Demo credential fallback is present.'),
+              ('high','security.secret-default',re.compile(r'''(?i)(password|passwd|secret|token|api[_-]?key)\s*[:=]\s*["']?(demo|changeme|default|password|secret|test|dev)[\w.-]*'''),'Secret-like setting has a literal development default.'),
+              ('high','security.cors-wildcard',re.compile(r'''(?i)(allowedorigins|cors_allowed_origins).{0,80}["']\*["']'''),'Wildcard CORS configuration detected.'),
+              ('high','python.shell-true',re.compile(r'subprocess\.(run|Popen|call|check_call|check_output)\([^\n]{0,300}shell\s*=\s*True'),'subprocess shell=True detected.'),
+              ('high','python.eval-exec',re.compile(r'(?<![\w.])(eval|exec)\s*\('),'eval/exec detected.'),
+              ('high','ci.opt-in-gate',re.compile(r'''(?m)^\s*if:\s*\$\{\{\s*vars\.[A-Z0-9_]+\s*==\s*["']1["']\s*\}\}'''),'Quality job is disabled unless a repository variable is enabled.'),
+              ('medium','security.public-ip',re.compile(r'\b(?!(10|127|169\.254|192\.168|172\.(1[6-9]|2\d|3[01]))\.)(\d{1,3}\.){3}\d{1,3}\b'),'Hard-coded public IPv4 address detected.'),
+              ('medium','python.exception-pass',re.compile(r'except\s+(Exception|BaseException)(\s+as\s+\w+)?\s*:\s*(#.*\n\s*)?pass\b'),'Broad exception is silently ignored.'),
+              ('medium','typescript.any',re.compile(r'(?<![\w])any(\[\])?(?![\w])'),'Explicit TypeScript any detected.'),
+              ('medium','typescript.ignore',re.compile(r'@ts-(ignore|nocheck)'),'TypeScript checking is suppressed.'),
+              ('medium','go.listenandserve',re.compile(r'http\.ListenAndServe\s*\('),'HTTP server uses ListenAndServe directly.'),
+              ('medium','go.untyped-json',re.compile(r'map\[string\]any'),'Untyped map is used at a Go boundary.'),
+              ('medium','docker.latest',re.compile(r'(?im)^\s*(FROM|image:)\s+[^\s:@]+:latest\b'),'Mutable latest container image tag detected.'),
+              ('medium','style.todo',re.compile(r'\b(TODO|FIXME|HACK|XXX)\b',re.I),'Unresolved maintenance marker.'),
+              ('low','frontend.console',re.compile(r'\bconsole\.(log|error|warn|debug)\s*\('),'Console logging remains in application source.'),
+              ('low','encoding.mojibake',re.compile(r'(Ã.|Â.|â€|�)'),'Likely mojibake marker detected.'),
+          ]
+
+          inventory, findings = [], []
+          exact = defaultdict(list)
+          commits = {}
+          def classify(repo, rel):
+              parts = {part.lower() for part in Path(rel).parts}
+              generated = bool(parts & generated_parts) or rel.endswith(('.min.js','.map'))
+              production = any(rel == p or rel.startswith(p) for p in production_prefixes.get(repo, ()))
+              name = Path(rel).name.lower()
+              if generated: kind = 'generated'
+              elif parts & test_parts or name.startswith('test_') or name.endswith(('_test.go','.spec.ts','.test.ts','.test.js')): kind = 'test'
+              elif parts & docs_parts or Path(rel).suffix.lower() == '.md': kind = 'documentation'
+              elif parts & demo_parts: kind = 'demo'
+              elif parts & legacy_parts: kind = 'legacy-candidate'
+              elif production: kind = 'production-candidate'
+              elif Path(rel).suffix.lower() in source_suffixes: kind = 'source-unclassified'
+              else: kind = 'asset-config-build'
+              return kind, production, generated
+
+          for repo, repo_root in repositories:
+              if not repo_root.exists():
+                  findings.append([repo,'.',1,'critical','audit.repository-missing','Checked-out repository is missing.'])
+                  continue
+              commits[repo] = subprocess.check_output(['git','-C',str(repo_root),'rev-parse','HEAD'], text=True).strip()
+              raw = subprocess.check_output(['git','-C',str(repo_root),'ls-files','-z'])
+              for item in raw.split(b'\0'):
+                  if not item: continue
+                  rel = item.decode('utf-8','surrogateescape')
+                  path = repo_root / rel
+                  if not (path.is_file() or path.is_symlink()): continue
+                  try: data = path.read_bytes()
+                  except OSError as exc:
+                      findings.append([repo,rel,1,'high','audit.read-failed',type(exc).__name__])
+                      continue
+                  suffix = path.suffix.lower()
+                  binary = b'\0' in data[:8192] if suffix not in text_suffixes else False
+                  digest = hashlib.sha256(data).hexdigest()
+                  exact[digest].append(f'{repo}/{rel}')
+                  kind, production, generated = classify(repo, rel)
+                  utf8, lines, max_line = True, 0, 0
+                  if not binary:
+                      try: text = data.decode('utf-8')
+                      except UnicodeDecodeError:
+                          utf8 = False; text = data.decode('utf-8','replace')
+                          findings.append([repo,rel,1,'high','encoding.invalid-utf8','Tracked text file is not valid UTF-8.'])
+                      split = text.splitlines()
+                      lines = len(split); max_line = max((len(x) for x in split), default=0)
+                      if suffix in source_suffixes and lines > 1200:
+                          findings.append([repo,rel,1,'high','maintainability.very-large-source',f'Source file has {lines} lines.'])
+                      elif suffix in source_suffixes and lines > 600:
+                          findings.append([repo,rel,1,'medium','maintainability.large-source',f'Source file has {lines} lines.'])
+                      if text and not text.endswith(('\n','\r')):
+                          findings.append([repo,rel,max(lines,1),'low','style.final-newline','File has no final newline.'])
+                      if '\r\n' in text and '\n' in text.replace('\r\n',''):
+                          findings.append([repo,rel,1,'medium','style.mixed-line-endings','File mixes CRLF and LF.'])
+                      for number, line in enumerate(split,1):
+                          if line.rstrip(' \t') != line:
+                              findings.append([repo,rel,number,'low','style.trailing-whitespace','Trailing whitespace.'])
+                          if suffix in source_suffixes and len(line) > 160:
+                              findings.append([repo,rel,number,'low','style.long-line',f'Line has {len(line)} characters.'])
+                      for severity, rule, regex, message in patterns:
+                          for match in regex.finditer(text):
+                              findings.append([repo,rel,text.count('\n',0,match.start())+1,severity,rule,message])
+                  inventory.append([repo,rel,len(data),digest,binary,utf8,lines,max_line,suffix,kind,production,generated])
+
+          empty_hash = hashlib.sha256(b'').hexdigest()
+          for digest, paths in exact.items():
+              if len(paths) > 1 and digest != empty_hash:
+                  for full in paths:
+                      repo, rel = full.split('/',1)
+                      findings.append([repo,rel,1,'low','duplication.exact',f'Exact duplicate group has {len(paths)} files.'])
+          severity_order = {'critical':0,'high':1,'medium':2,'low':3}
+          inventory.sort(key=lambda row:(row[0],row[1]))
+          findings.sort(key=lambda row:(severity_order.get(row[3],9),row[0],row[1],row[2],row[4]))
+          with (output/'file-inventory.csv').open('w',newline='',encoding='utf-8') as f:
+              w=csv.writer(f); w.writerow(['repository','path','size_bytes','sha256','binary','utf8_valid','line_count','max_line_length','suffix','classification','production_candidate','generated_candidate']); w.writerows(inventory)
+          with (output/'static-findings.csv').open('w',newline='',encoding='utf-8') as f:
+              w=csv.writer(f); w.writerow(['repository','path','line','severity','rule','message']); w.writerows(findings)
+          by_repo={}
+          for repo in commits:
+              rows=[x for x in inventory if x[0]==repo]; fs=[x for x in findings if x[0]==repo]
+              by_repo[repo]={'files':len(rows),'bytes':sum(x[2] for x in rows),'text_lines':sum(x[6] for x in rows),'findings':len(fs),'severity':dict(Counter(x[3] for x in fs)),'classification':dict(Counter(x[9] for x in rows))}
+          data={'generated_at':datetime.now(timezone.utc).isoformat(),'commits':commits,'totals':{'files':len(inventory),'bytes':sum(x[2] for x in inventory),'text_lines':sum(x[6] for x in inventory),'findings':len(findings)},'by_repository':by_repo,'by_severity':dict(Counter(x[3] for x in findings)),'by_rule':dict(Counter(x[4] for x in findings)),'by_classification':dict(Counter(x[9] for x in inventory)),'largest_sources':sorted([x for x in inventory if x[8] in source_suffixes],key=lambda x:x[6],reverse=True)[:100],'duplicate_groups':[x for x in exact.values() if len(x)>1]}
+          (output/'audit-data.json').write_text(json.dumps(data,indent=2,sort_keys=True),encoding='utf-8')
+          md=['# Exhaustive tracked-file inventory','',f"Generated: `{data['generated_at']}`",'',"Every path returned by `git ls-files` in Fusion and its three submodules was opened and hashed. Text files were decoded and scanned; binary files were inventoried without pretending to interpret them.",'','| Repository | Commit | Files | Bytes | Text lines | Findings |','|---|---:|---:|---:|---:|---:|']
+          for repo, sha in commits.items():
+              x=by_repo[repo]; md.append(f"| {repo} | `{sha[:12]}` | {x['files']} | {x['bytes']:,} | {x['text_lines']:,} | {x['findings']} |")
+          md += ['','## Findings by severity','','| Severity | Count |','|---|---:|']
+          for sev in ('critical','high','medium','low'): md.append(f"| {sev} | {data['by_severity'].get(sev,0)} |")
+          md += ['','## Lifecycle classification','','| Classification | Files |','|---|---:|']
+          for key,value in sorted(data['by_classification'].items(),key=lambda x:(-x[1],x[0])): md.append(f'| {key} | {value} |')
+          md += ['','## Most frequent rules','','| Rule | Count |','|---|---:|']
+          for key,value in Counter(data['by_rule']).most_common(30): md.append(f'| `{key}` | {value} |')
+          md += ['','## Largest source files','','| Repository/path | Lines | Bytes | Classification |','|---|---:|---:|---|']
+          for row in data['largest_sources'][:40]: md.append(f'| `{row[0]}/{row[1]}` | {row[6]:,} | {row[2]:,} | {row[9]} |')
+          md += ['','## Artifacts','','- `file-inventory.csv`: one row per tracked file.','- `static-findings.csv`: rule matches without captured secret values.','- `audit-data.json`: aggregate data and duplicate groups.','']
+          (output/'inventory-summary.md').write_text('\n'.join(md),encoding='utf-8')
+          PY
+
+      - name: Execute all declared project surfaces
+        shell: bash
+        env:
+          CI: '1'
+          SILICIUM_ENABLE_HOSTED_CI: '1'
+          POSTGRES_DB: silicium_audit
+          POSTGRES_USER: silicium_audit
+          POSTGRES_PASSWORD: audit-only-not-production
+          SILICIUM_MESH_KEY: audit-only-not-production-mesh-key
+          SILICIUM_TURN_PASSWORD: audit-only-not-production-turn-key
+          SILICIUM_APP_VERSION: 0.0.0-audit
+          SILICIUM_RELEASE_BUILD: ${{ github.sha }}
+          SILICIUM_RELEASE_CHANNEL: dev
+          NUXT_TELEMETRY_DISABLED: '1'
+        run: |
+          set +e
+          OUT="$GITHUB_WORKSPACE/docs/audit/generated"
+          RESULTS="$OUT/execution-results.tsv"
+          printf 'command_id\trepository\tcategory\trequired\tstatus\texit_code\tduration_seconds\tlog_path\n' > "$RESULTS"
+          run_cmd() {
+            id="$1"; repo="$2"; category="$3"; required="$4"; seconds="$5"; cwd="$6"; command="$7"
+            log="$OUT/logs/$id.log"
+            start=$(date +%s)
+            {
+              printf 'command_id: %s\nrepository: %s\ncwd: %s\ncommand: %s\nstarted_at: %s\n\n' "$id" "$repo" "$cwd" "$command" "$(date -u +%FT%TZ)"
+              if [ ! -d "$GITHUB_WORKSPACE/$cwd" ]; then
+                echo 'SKIPPED: working directory does not exist.'
+                exit 125
+              fi
+              cd "$GITHUB_WORKSPACE/$cwd" || exit 125
+              timeout --signal=TERM "$seconds" bash -lc "$command"
+            } > "$log" 2>&1
+            code=$?
+            if [ "$code" -eq 0 ]; then status=passed
+            elif [ "$code" -eq 124 ]; then status=timeout
+            elif [ "$code" -eq 125 ]; then status=skipped
+            else status=failed
+            fi
+            end=$(date +%s); duration=$((end-start))
+            size=$(stat -c %s "$log" 2>/dev/null || echo 0)
+            if [ "$size" -gt 1000000 ]; then
+              { head -c 200000 "$log"; printf '\n\n--- LOG TRUNCATED BY AUDIT HARNESS ---\n\n'; tail -c 780000 "$log"; } > "$log.tmp"
+              mv "$log.tmp" "$log"
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\tlogs/%s.log\n' "$id" "$repo" "$category" "$required" "$status" "$code" "$duration" "$id" >> "$RESULTS"
+          }
+
+          run_cmd env-toolchain Fusion environment yes 120 . 'python --version; node --version; npm --version; go version; rustc --version; cargo --version; docker --version; docker compose version; cmake --version | head -1; make --version | head -1; gcc --version | head -1'
+          run_cmd fusion-submodules Fusion integrity yes 120 . 'git submodule status --recursive'
+          run_cmd fusion-compose-config Fusion configuration yes 180 . 'docker compose -f deploy/compose/docker-compose.yml config --quiet'
+          run_cmd fusion-node-npm-ci Fusion dependencies yes 900 apps/silicium-node 'npm ci'
+          run_cmd fusion-node-test Fusion test yes 600 apps/silicium-node 'npm test'
+          run_cmd fusion-node-build Fusion build yes 900 apps/silicium-node 'npm run build'
+          run_cmd fusion-node-rust-test Fusion test no 1200 apps/silicium-node 'cargo test --manifest-path src-tauri/Cargo.toml'
+
+          run_cmd backend-gofmt BackEnd style yes 180 BackEnd 'files=$(find . -name "*.go" -type f -print); unformatted=$(gofmt -l $files); printf "%s\n" "$unformatted"; test -z "$unformatted"'
+          run_cmd backend-mod-download BackEnd dependencies yes 600 BackEnd 'go mod download'
+          run_cmd backend-vet BackEnd static-analysis yes 600 BackEnd 'go vet ./...'
+          run_cmd backend-test BackEnd test yes 900 BackEnd 'go test ./...'
+          run_cmd backend-build BackEnd build yes 600 BackEnd 'go build -o /tmp/silicium-backend ./cmd/main.go'
+          run_cmd backend-docker-build BackEnd container-build no 1200 . 'docker build -f BackEnd/Dockerfile -t silicium-audit-backend:local BackEnd'
+
+          run_cmd frontend-npm-ci FrontEnd dependencies yes 900 FrontEnd 'npm ci'
+          run_cmd frontend-test FrontEnd test yes 600 FrontEnd 'npm test'
+          run_cmd frontend-build FrontEnd build yes 1200 FrontEnd 'npm run build'
+          run_cmd frontend-playwright-install FrontEnd dependencies no 1200 FrontEnd 'npx playwright install --with-deps chromium'
+          run_cmd frontend-functional FrontEnd test no 1200 FrontEnd 'npm run test:functional'
+          run_cmd frontend-docker-build FrontEnd container-build no 1200 . 'docker build -f FrontEnd/Dockerfile -t silicium-audit-frontend:local FrontEnd'
+
+          run_cmd network-python-dev-deps Network dependencies yes 900 Network 'python -m pip install --disable-pip-version-check -r requirements-dev.txt'
+          run_cmd network-python-p2p-deps Network dependencies no 900 Network 'python -m pip install --disable-pip-version-check -r requirements-p2p.txt'
+          run_cmd network-compileall Network build yes 600 Network 'python -m compileall -q silicium tools networked workloads'
+          run_cmd network-utf8 Network style yes 300 Network 'python tools/check_utf8.py'
+          run_cmd network-i18n Network style yes 300 Network 'python tools/check_i18n_locales.py --strict'
+          run_cmd network-style-contract Network style yes 300 Network 'python tools/style_check.py --rules cpp.interface_contract_naming'
+          run_cmd network-workload-lint Network static-analysis yes 300 Network './silicium workload lint'
+          run_cmd network-golden Network test yes 600 Network './silicium workload golden --strict'
+          run_cmd network-python-tests Network test yes 1800 Network './silicium test'
+          run_cmd network-raytracer-rust Network test yes 1200 Network 'cargo test --manifest-path workloads/raytracer/native/Cargo.toml'
+          run_cmd network-executor-build Network build no 1200 Network 'make -C executor'
+          run_cmd network-worker-test Network test no 1800 Network 'make -C worker test'
+          run_cmd network-splitter-test Network test no 1200 Network 'if [ -f splitter/Makefile ]; then make -C splitter test; else echo "No splitter Makefile"; fi'
+          run_cmd network-viewer-configure Network configuration no 600 Network 'cmake -S viewer -B /tmp/silicium-viewer-build -DCMAKE_BUILD_TYPE=Release'
+          run_cmd network-viewer-build Network build no 900 Network 'cmake --build /tmp/silicium-viewer-build --parallel 2'
+          run_cmd network-dashboard-npm-ci Network dependencies yes 900 Network/silicium-layer-dashboard 'npm ci'
+          run_cmd network-dashboard-build Network build yes 1200 Network/silicium-layer-dashboard 'npm run build'
+          run_cmd network-solana-npm-ci Network dependencies no 900 Network/solana-layer 'npm ci'
+          run_cmd network-solana-lint Network style no 600 Network/solana-layer 'npm run lint'
+          run_cmd network-smoke Network integration no 1200 Network './silicium smoke'
+          run_cmd fusion-compose-build Fusion container-build no 2400 . 'docker compose -f deploy/compose/docker-compose.yml build backend frontend dashboard orchestrator experiment-api'
+          exit 0
+
+      - name: Summarize execution
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv, json
+          from collections import Counter
+          from datetime import datetime, timezone
+          from pathlib import Path
+          out=Path('docs/audit/generated')
+          path=out/'execution-results.tsv'
+          rows=[]
+          if path.exists():
+              with path.open(encoding='utf-8') as f: rows=list(csv.DictReader(f,delimiter='\t'))
+          totals=Counter(row['status'] for row in rows)
+          required=[row['command_id'] for row in rows if row['required']=='yes' and row['status']!='passed']
+          payload={'generated_at':datetime.now(timezone.utc).isoformat(),'totals':dict(totals),'required_failures':required,'results':rows}
+          (out/'execution-results.json').write_text(json.dumps(payload,indent=2,sort_keys=True),encoding='utf-8')
+          md=['# Project execution report','',f"Generated: `{payload['generated_at']}`",'',"Commands were executed independently so one failure could not hide later failures.",'','| ID | Repo | Category | Required | Status | Exit | Duration | Log |','|---|---|---|---:|---|---:|---:|---|']
+          for row in rows:
+              md.append(f"| `{row['command_id']}` | {row['repository']} | {row['category']} | {row['required']} | **{row['status']}** | {row['exit_code']} | {row['duration_seconds']}s | [`{row['log_path']}`]({row['log_path']}) |")
+          md += ['','## Required failures','']
+          md += [f'- `{x}`' for x in required] if required else ['None.']
+          md += ['','A failed optional command is still a remediation signal, but may be platform- or toolchain-specific.','']
+          (out/'execution-summary.md').write_text('\n'.join(md),encoding='utf-8')
+          PY
+
+      - name: Commit audit evidence to the audit branch
+        if: always()
+        shell: bash
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'silicium-audit[bot]'
+          git config user.email 'silicium-audit[bot]@users.noreply.github.com'
+          git add -f docs/audit/generated
+          if git diff --cached --quiet; then
+            echo 'No audit result changed.'
+            exit 0
+          fi
+          git commit -m 'audit: record exhaustive inventory and execution results [skip audit]'
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:audit/full-repo-2026-07-29
