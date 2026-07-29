@@ -1,0 +1,287 @@
+name: Apply repository refactor issue plan
+
+on:
+  push:
+    branches:
+      - audit/full-repo-2026-07-29
+    paths:
+      - .github/workflows/apply-refactor-issue-plan.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create scoped GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+          permission-contents: write
+          permission-issues: write
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Create and triage issues idempotently
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          mkdir -p docs/audit/generated-issues
+          python - <<'PY'
+          from __future__ import annotations
+          import json
+          import os
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          issues = [
+            {
+              'repo': 'Silicium-Project/Fusion',
+              'title': '[Epic] Sanitize repositories and declare production/legacy lifecycle',
+              'body': '''## Goal
+Create one auditable lifecycle model across Fusion, Network, BackEnd and FrontEnd so production code, supported development tooling, experiments, generated artifacts and archived code are no longer mixed.
+
+## Scope
+- version a machine-readable component manifest with owner, status, entrypoints, deploy targets and tests;
+- classify every tracked path as production, supported-dev, experimental, legacy-candidate, generated or documentation;
+- define archive/removal rules and compatibility windows;
+- add CI checks preventing undeclared production dependencies and generated artifacts from returning to `main`;
+- coordinate the child remediation issues in all four repositories.
+
+## Constraints
+- do not move code merely because a directory is named `experimental`;
+- prove non-use from build manifests, imports, runtime traces and CI before archival;
+- preserve history through tags/archived branches or extracted archived repositories, not an `archive/` dumping ground on `main`;
+- Network#247 owns native runtime migration; Network#257 owns the no-central-scheduler protocol.
+
+## Acceptance
+- every tracked path has an accountable lifecycle classification;
+- production images/installers are built from explicit manifests;
+- all archive candidates have evidence, rollback instructions and no production references;
+- child issues are linked and ordered by dependency.'''
+            },
+            {
+              'repo': 'Silicium-Project/Fusion',
+              'title': '[Security] Remove demo credentials and hard-coded production endpoints',
+              'body': '''## Problem
+Production Compose and application defaults currently include demo credential fallbacks and deployment-specific public IP/domain values. This permits insecure starts and makes environments non-portable.
+
+## Remediation
+- make mesh/TURN/JWT/database secrets mandatory in production with `${VAR:?required}` semantics;
+- remove `demo-mesh`, test passwords and wildcard production CORS fallbacks;
+- move public IPs, domains, ports and URLs to validated environment files;
+- add startup validation that distinguishes development and production modes;
+- rotate any value that has been used outside local development;
+- add secret scanning and configuration tests without logging secret values.
+
+## Acceptance
+- production refuses to start with missing/default credentials;
+- no tracked production file contains a deploy-specific public IP or literal secret fallback;
+- development remains one-command through explicit `.example.env` values;
+- Compose config and a production-negative test run in CI.'''
+            },
+            {
+              'repo': 'Silicium-Project/Fusion',
+              'title': '[Build] Package only the declared production runtime',
+              'body': '''## Problem
+The orchestrator image copies the complete Network checkout, while desktop packaging also copies broad directories. Tests, documentation, legacy prototypes and unrelated tools can therefore enter production artifacts.
+
+## Work
+- derive server and desktop manifests from the lifecycle inventory;
+- copy/build only required modules, schemas, workloads and native binaries;
+- replace broad `COPY Network/` and whole-directory bundling with explicit stages;
+- generate an artifact bill of materials containing paths, versions, licenses and hashes;
+- add negative checks for tests, coverage, viewer, caches, source-only tools and secrets;
+- coordinate with Network#253 for the final no-Python artifact.
+
+## Acceptance
+- server image and desktop bundles have reviewed allowlists;
+- runtime smoke tests pass from the reduced artifacts;
+- SBOM/path manifest is published by CI;
+- unexpected files fail the build rather than silently shipping.'''
+            },
+            {
+              'repo': 'Silicium-Project/Network',
+              'title': '[Refactor] Freeze compatibility contracts and characterization tests before native migration',
+              'body': '''## Context
+Network#247 and Network#257 require replacing monolithic Python paths without breaking desktop, web, RPC, queue, signature, task-state or workload contracts.
+
+## Work
+- inventory all externally observed JSON/protobuf/HTTP/MCP/CLI/file contracts;
+- create canonical fixtures and golden cross-language tests;
+- characterize restart, cancellation, retries, result return, signatures, routing and task-state derivation;
+- record current intentional behavior separately from known bugs;
+- run old/new implementations against the same fixture corpus during dual-write migration.
+
+## Rules
+- no behavior refactor and global formatting in the same PR;
+- no new central scheduler abstraction: Network#257 is normative;
+- every removed legacy entrypoint requires an equivalent compatibility test or an explicit breaking-version decision.
+
+## Acceptance
+- compatibility matrix and golden fixtures are versioned;
+- CI detects wire/storage/CLI drift;
+- Network#248–#254 can migrate one boundary at a time with measurable parity.'''
+            },
+            {
+              'repo': 'Silicium-Project/Network',
+              'title': '[CI] Make quality gates unconditional and add formatter/linter ratchets',
+              'body': '''## Problem
+Core Python/CI checks are gated by an opt-in repository variable, while several languages lack standard format/lint/type gates. This allows main to advance without consistent validation.
+
+## Work
+- remove opt-in gating from required host-independent checks;
+- add Ruff format/lint and Pyright for Python incrementally;
+- enforce gofmt/go vet/staticcheck in BackEnd integration checks;
+- add ESLint/Prettier/type checks for Vue/Nuxt/React packages;
+- run cargo fmt/clippy/test, clang-format/clang-tidy where supported, ShellCheck/shfmt, PSScriptAnalyzer and actionlint;
+- start with changed-file ratchets, then reduce the baseline deliberately;
+- separate generated coverage publication from source commits.
+
+## Acceptance
+- every PR runs deterministic required checks without hidden variables;
+- format-only changes are isolated from behavior changes;
+- baseline debt is measurable and cannot increase;
+- Windows/Linux-specific skips are explicit and reported.'''
+            },
+            {
+              'repo': 'Silicium-Project/Network',
+              'title': '[Repository hygiene] Remove generated artifacts and archive verified legacy components',
+              'body': '''## Goal
+Reduce repository noise and agent context without deleting code still used by production, CI or compatibility tests.
+
+## Candidates to prove
+- committed coverage HTML/JSON/SVG and other regenerable reports;
+- historical splitter/executor implementations identified by documentation;
+- Qt viewer if no supported product/build consumes it;
+- demo and fallback paths after dependency removal;
+- obsolete Dockerfiles, fixtures and scripts discovered by the exhaustive inventory.
+
+## Required evidence per candidate
+- no import/build/package/deploy/runtime reference;
+- last meaningful commit and owner review;
+- replacement path and compatibility impact;
+- tests passing after removal;
+- recovery tag/branch or extracted archived repository.
+
+## Acceptance
+- generated reports are artifacts/Pages, not source commits;
+- confirmed legacy code is absent from `main` and agent search context;
+- active worker/executor/runtime code is not archived based on directory names alone;
+- CI prevents removed generated paths from returning.'''
+            },
+            {
+              'repo': 'Silicium-Project/BackEnd',
+              'title': '[Refactor] Extract typed network registry service and harden HTTP lifecycle',
+              'body': '''## Problem
+The network registry handler mixes production filesystem paths, untyped JSON maps, aggregation, semantic-version logic and HTTP encoding. The server also uses direct `ListenAndServe` without explicit timeouts or graceful shutdown.
+
+## Work
+- introduce typed DTO/domain models for peers, tasks, workloads and responses;
+- inject filesystem/repository paths through validated configuration;
+- separate repository, service and HTTP handler layers;
+- isolate semantic version comparison and terminal-status policy;
+- add table-driven tests for malformed files, ordering, aggregation and versions;
+- configure `http.Server` timeouts, signal cancellation and graceful shutdown;
+- validate production CORS and remove wildcard credentialed fallback.
+
+## Acceptance
+- handlers contain no filesystem or aggregation implementation;
+- public response contracts have typed tests;
+- server shuts down cleanly and rejects unsafe production configuration;
+- `gofmt`, `go vet`, tests and build are required in CI.'''
+            },
+            {
+              'repo': 'Silicium-Project/FrontEnd',
+              'title': '[Refactor] Split dashboard into typed components and composables',
+              'body': '''## Problem
+`pages/dashboard.vue` owns navigation, job state, RPC task state, submission, cancellation, Solana wallet queries and charts in one large component. It contains explicit `any`, hard-coded chart data and response-type drift.
+
+## Work
+- define typed API contracts for jobs, network workloads and user/wallet data;
+- extract `useJobs`, `useNetworkTasks`, `useCurrentUser` and `useSolanaBalance`;
+- split sidebar, stats, job table, network table, submit modal and charts into components;
+- centralize authenticated API client/error handling;
+- remove unused options and demo data from production views;
+- add component/composable tests, accessibility checks and responsive Playwright scenarios;
+- add ESLint/Prettier/type-check gates.
+
+## Acceptance
+- dashboard page is an orchestration shell, not a business monolith;
+- no explicit `any` at API boundaries;
+- `workloads` response shape is typed and tested;
+- no placeholder links or fabricated metrics appear as production data;
+- unit, production build and functional tests pass.'''
+            },
+          ]
+
+          close_targets = [
+              ('Silicium-Project/Fusion', 67),
+              ('Silicium-Project/Network', 145),
+              ('Silicium-Project/Network', 199),
+              ('Silicium-Project/Network', 200),
+              ('Silicium-Project/Network', 201),
+          ]
+
+          def run(args: list[str], *, check: bool = True) -> str:
+              proc = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              if check and proc.returncode:
+                  raise RuntimeError(f"command failed ({proc.returncode}): {' '.join(args)}\n{proc.stdout}")
+              return proc.stdout.strip()
+
+          applied=[]
+          for spec in issues:
+              raw=run(['gh','issue','list','--repo',spec['repo'],'--state','all','--limit','500','--json','number,title,url,state'])
+              existing=next((x for x in json.loads(raw or '[]') if x.get('title')==spec['title']),None)
+              if existing:
+                  applied.append({'action':'existing',**spec,'number':existing['number'],'url':existing['url'],'state':existing['state']})
+                  continue
+              url=run(['gh','issue','create','--repo',spec['repo'],'--title',spec['title'],'--body',spec['body']])
+              number=int(url.rstrip('/').split('/')[-1])
+              applied.append({'action':'created',**spec,'number':number,'url':url,'state':'OPEN'})
+
+          closed=[]
+          for repo, number in close_targets:
+              raw=run(['gh','issue','view',str(number),'--repo',repo,'--json','state,title,url'])
+              item=json.loads(raw)
+              if item.get('state')=='OPEN':
+                  run(['gh','issue','close',str(number),'--repo',repo,'--reason','completed'])
+                  action='closed'
+              else:
+                  action='already-closed'
+              closed.append({'repo':repo,'number':number,'title':item.get('title'),'url':item.get('url'),'action':action})
+
+          result={'generated_at':datetime.now(timezone.utc).isoformat(),'issues':applied,'closures':closed}
+          out=Path('docs/audit/generated-issues')
+          (out/'issue-application.json').write_text(json.dumps(result,indent=2,sort_keys=True),encoding='utf-8')
+          lines=['# Applied refactor issue plan','',f"Generated: `{result['generated_at']}`",'','## Created/existing issues','']
+          for item in applied: lines.append(f"- **{item['action']}** `{item['repo']}#{item['number']}` — {item['title']}")
+          lines += ['','## Closed/already closed','']
+          for item in closed: lines.append(f"- **{item['action']}** `{item['repo']}#{item['number']}` — {item['title']}")
+          (out/'issue-application.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
+          PY
+
+      - name: Commit issue application evidence
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'silicium-audit[bot]'
+          git config user.email 'silicium-audit[bot]@users.noreply.github.com'
+          git add -f docs/audit/generated-issues
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'audit: record applied refactor issue plan [skip audit]'
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:audit/full-repo-2026-07-29
