@@ -283,7 +283,12 @@ def submit_network_task(
     if rpc_endpoint:
         try:
             from rpc_client import RpcClient
-            rpc_result = RpcClient(rpc_endpoint, os.environ.get("SILICIUM_RPC_TOKEN", ""), timeout_ms=3000).call("task.dispatch", payload)
+            # The experiment API already uses the MCP bearer for the same
+            # authenticated control plane.  Reuse it when a dedicated RPC
+            # token is not configured; otherwise an in-container renderer
+            # silently falls back to the legacy HTTP dispatcher.
+            rpc_token = os.environ.get("SILICIUM_RPC_TOKEN", "") or os.environ.get("SILICIUM_MCP_TOKEN", "")
+            rpc_result = RpcClient(rpc_endpoint, rpc_token, timeout_ms=3000).call("task.dispatch", payload)
             return {
                 "task_id": task_id,
                 "required_roles": required_roles,
