@@ -71,6 +71,41 @@ class RpcGateway:
                     events.append(event)
         return {"events": events, "cursor": cursor}
 
+    def terminalize_task(self, payload: object, status: str) -> dict[str, object]:
+        """Resolve an orphaned scheduler envelope without fabricating a result.
+
+        This is deliberately limited to the authenticated control plane.  A
+        normal queued task still uses ``task.cancel``; this operation is for a
+        task already dispatched to a worker that has demonstrably disappeared
+        or can no longer run it.  The durable state and event journal change
+        together so dashboards cannot retain a phantom running task.
+        """
+        request = payload if isinstance(payload, dict) else {}
+        task_id = str(request.get("task_id", "")).strip()
+        reason = str(request.get("reason", "")).strip() or "operator_resolved_orphan"
+        if not task_id or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for c in task_id):
+            raise ValueError("missing_task_id")
+        path = self.export_dir / "tasks" / f"{task_id}.json"
+        try:
+            task = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise
+        if not isinstance(task, dict):
+            raise ValueError("task_invalid")
+        current = str(task.get("status", "")).lower()
+        terminal = {"completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved"}
+        if current in terminal:
+            return task
+        task["status"] = status
+        task["terminal_reason"] = reason
+        task["terminal_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        task["handled_by"] = "rpc-control"
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(json.dumps(task, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
+        temporary.replace(path)
+        append_rpc_event(self.export_dir, "task.terminal", task_id, status=status, handled_by="rpc-control", reason=reason)
+        return task
+
     def call(self, method: str, payload: object) -> object:
         if method == "network.snapshot":
             out = {}
@@ -136,6 +171,8 @@ class RpcGateway:
         if method == "task.cancel":
             from mcp_server import McpTaskStore
             return McpTaskStore(self.export_dir).cancel(str((payload or {}).get("task_id", "")))
+        if method == "task.expire":
+            return self.terminalize_task(payload, "expired")
         raise ValueError("unsupported_method")
 
 
