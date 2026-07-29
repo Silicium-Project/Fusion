@@ -182,7 +182,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def wait_for_task_result(args: argparse.Namespace, role: str, task_id: str, node_runs: list[dict[str, Any]]) -> dict[str, Any]:
-    if args.node_mode == "network":
+    if args.node_mode == "network" and (
+        int(args.max_compute_in_flight) <= 0 or int(args.max_verify_in_flight) <= 0
+    ):
         export_dir = Path(args.export_dir).resolve()
         result = wait_for_network_result(export_dir, task_id, args.result_timeout_s)
         node_runs.append(
@@ -695,7 +697,12 @@ def main(argv: list[str] | None = None) -> int:
         # the pipeline limits only after workers have had a chance to announce
         # their roles; otherwise a cold start silently freezes the whole job at
         # the fallback capacity of one worker.
-        for role in ("compute", "verify"):
+        roles_to_discover = []
+        if int(args.max_compute_in_flight) <= 0:
+            roles_to_discover.append("compute")
+        if int(args.max_verify_in_flight) <= 0:
+            roles_to_discover.append("verify")
+        for role in roles_to_discover:
             try:
                 wait_for_network_role(
                     export_dir,
