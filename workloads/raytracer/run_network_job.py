@@ -282,9 +282,10 @@ def submit_network_task(
     # trip when a scheduler gateway is colocated with the node, while retaining
     # the signed HTTP path as a transparent fallback for older releases.
     rpc_endpoint = str(os.environ.get("SILICIUM_RPC_ENDPOINT", "")).strip()
+    rpc_fallback_error = ""
     if rpc_endpoint:
         try:
-            from rpc_client import RpcClient
+            from tools.rpc_client import RpcClient
             # The experiment API already uses the MCP bearer for the same
             # authenticated control plane.  Reuse it when a dedicated RPC
             # token is not configured; otherwise an in-container renderer
@@ -299,9 +300,9 @@ def submit_network_task(
                 "queue": "rpc://task.dispatch",
                 "scheduler_dispatch": {"status": "dispatched", "target": rpc_endpoint, "transport": "protobuf+zeromq"},
             }
-        except Exception:
+        except Exception as error:
             # A rolling upgrade must not strand work when the sidecar is absent.
-            pass
+            rpc_fallback_error = f"{type(error).__name__}:{error}"
 
     scheduler_dispatch = dispatch_task_to_scheduler(
         payload,
@@ -310,6 +311,8 @@ def submit_network_task(
         export_dir=export_dir,
         node_id=args.network_node_id,
     )
+    if rpc_fallback_error:
+        scheduler_dispatch = {**scheduler_dispatch, "rpc_fallback_error": rpc_fallback_error}
     return {
         "task_id": task_id,
         "required_roles": required_roles,
