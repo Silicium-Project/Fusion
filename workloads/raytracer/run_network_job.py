@@ -919,7 +919,14 @@ def main(argv: list[str] | None = None) -> int:
                     "root_job_id": job_id,
                 },
             }
-            if emitter_node is not None:
+            # The scheduler is the durable result sink.  An emitter launched
+            # inside a backend/API container usually advertises 127.0.0.1 or
+            # an ephemeral port; placing that URL in the envelope makes a
+            # remote worker return the tile to *its own* localhost.  Keep a
+            # direct return as an explicit opt-in for externally reachable
+            # emitters only, and otherwise let the scheduler set its public
+            # /results/dispatch endpoint during the claim.
+            if emitter_node is not None and os.environ.get("SILICIUM_RAYTRACER_DIRECT_RESULT_RETURN", "") == "1":
                 compute_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
             clear_previous_result(export_dir, task_id)
             if args.node_mode == "network":
@@ -1137,7 +1144,7 @@ def main(argv: list[str] | None = None) -> int:
                     "compute_receipt_hash": str(compute_receipt["receipt_hash"]),
                 },
             }
-            if emitter_node is not None:
+            if emitter_node is not None and os.environ.get("SILICIUM_RAYTRACER_DIRECT_RESULT_RETURN", "") == "1":
                 verify_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
             clear_previous_result(export_dir, verify_id)
             if args.node_mode == "network":
