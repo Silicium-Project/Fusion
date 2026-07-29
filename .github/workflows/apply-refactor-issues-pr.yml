@@ -1,0 +1,56 @@
+name: Apply refactor issues from audit PR
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - docs/audit/ISSUE_PLAN.json
+      - .github/scripts/apply_refactor_issue_plan.py
+      - .github/workflows/apply-refactor-issues-pr.yml
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'audit/full-repo-2026-07-29'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create scoped GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+          permission-contents: write
+          permission-issues: write
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Apply issue plan
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          python .github/scripts/apply_refactor_issue_plan.py \
+            --plan docs/audit/ISSUE_PLAN.json \
+            --output docs/audit/generated-issues
+
+      - name: Commit application evidence
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'silicium-audit[bot]'
+          git config user.email 'silicium-audit[bot]@users.noreply.github.com'
+          git add -f docs/audit/generated-issues
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'audit: record applied refactor issue plan [skip audit]'
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:audit/full-repo-2026-07-29
