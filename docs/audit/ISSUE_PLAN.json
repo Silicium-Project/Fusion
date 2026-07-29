@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "generated_for": "Silicium repository sanitation and refactor",
+  "issues": [
+    {
+      "repository": "Silicium-Project/Fusion",
+      "title": "[Epic] Sanitize repositories and declare production/legacy lifecycle",
+      "body": "## Goal\nCreate one auditable lifecycle model across Fusion, Network, BackEnd and FrontEnd so production code, supported development tooling, experiments, generated artifacts and archived code are no longer mixed.\n\n## Scope\n- version a machine-readable component manifest with owner, status, entrypoints, deploy targets and tests;\n- classify every tracked path as production, supported-dev, experimental, legacy-candidate, generated or documentation;\n- define archive/removal rules and compatibility windows;\n- add CI checks preventing undeclared production dependencies and generated artifacts from returning to `main`;\n- coordinate the child remediation issues in all four repositories.\n\n## Constraints\n- do not move code merely because a directory is named `experimental`;\n- prove non-use from build manifests, imports, runtime traces and CI before archival;\n- preserve history through tags/archived branches or extracted archived repositories, not an `archive/` dumping ground on `main`;\n- Network#247 owns native runtime migration; Network#257 owns the no-central-scheduler protocol.\n\n## Acceptance\n- every tracked path has an accountable lifecycle classification;\n- production images/installers are built from explicit manifests;\n- all archive candidates have evidence, rollback instructions and no production references;\n- child issues are linked and ordered by dependency."
+    },
+    {
+      "repository": "Silicium-Project/Fusion",
+      "title": "[Security] Remove demo credentials and hard-coded production endpoints",
+      "body": "## Problem\nProduction Compose and application defaults currently include demo credential fallbacks and deployment-specific public IP/domain values. This permits insecure starts and makes environments non-portable.\n\n## Remediation\n- make mesh/TURN/JWT/database secrets mandatory in production with `${VAR:?required}` semantics;\n- remove `demo-mesh`, test passwords and wildcard production CORS fallbacks;\n- move public IPs, domains, ports and URLs to validated environment files;\n- add startup validation that distinguishes development and production modes;\n- rotate any value that has been used outside local development;\n- add secret scanning and configuration tests without logging secret values.\n\n## Acceptance\n- production refuses to start with missing/default credentials;\n- no tracked production file contains a deploy-specific public IP or literal secret fallback;\n- development remains one-command through explicit `.example.env` values;\n- Compose config and a production-negative test run in CI."
+    },
+    {
+      "repository": "Silicium-Project/Fusion",
+      "title": "[Build] Package only the declared production runtime",
+      "body": "## Problem\nThe orchestrator image copies the complete Network checkout, while desktop packaging also copies broad directories. Tests, documentation, legacy prototypes and unrelated tools can therefore enter production artifacts.\n\n## Work\n- derive server and desktop manifests from the lifecycle inventory;\n- copy/build only required modules, schemas, workloads and native binaries;\n- replace broad `COPY Network/` and whole-directory bundling with explicit stages;\n- generate an artifact bill of materials containing paths, versions, licenses and hashes;\n- add negative checks for tests, coverage, viewer, caches, source-only tools and secrets;\n- coordinate with Network#253 for the final no-Python artifact.\n\n## Acceptance\n- server image and desktop bundles have reviewed allowlists;\n- runtime smoke tests pass from the reduced artifacts;\n- SBOM/path manifest is published by CI;\n- unexpected files fail the build rather than silently shipping."
+    },
+    {
+      "repository": "Silicium-Project/Network",
+      "title": "[Refactor] Freeze compatibility contracts and characterization tests before native migration",
+      "body": "## Context\nNetwork#247 and Network#257 require replacing monolithic Python paths without breaking desktop, web, RPC, queue, signature, task-state or workload contracts.\n\n## Work\n- inventory all externally observed JSON/protobuf/HTTP/MCP/CLI/file contracts;\n- create canonical fixtures and golden cross-language tests;\n- characterize restart, cancellation, retries, result return, signatures, routing and task-state derivation;\n- record current intentional behavior separately from known bugs;\n- run old/new implementations against the same fixture corpus during dual-write migration.\n\n## Rules\n- no behavior refactor and global formatting in the same PR;\n- no new central scheduler abstraction: Network#257 is normative;\n- every removed legacy entrypoint requires an equivalent compatibility test or an explicit breaking-version decision.\n\n## Acceptance\n- compatibility matrix and golden fixtures are versioned;\n- CI detects wire/storage/CLI drift;\n- Network#248–#254 can migrate one boundary at a time with measurable parity."
+    },
+    {
+      "repository": "Silicium-Project/Network",
+      "title": "[CI] Make quality gates unconditional and add formatter/linter ratchets",
+      "body": "## Problem\nCore Python/CI checks are gated by an opt-in repository variable, while several languages lack standard format/lint/type gates. This allows main to advance without consistent validation.\n\n## Work\n- remove opt-in gating from required host-independent checks;\n- add Ruff format/lint and Pyright for Python incrementally;\n- enforce gofmt/go vet/staticcheck in BackEnd integration checks;\n- add ESLint/Prettier/type checks for Vue/Nuxt/React packages;\n- run cargo fmt/clippy/test, clang-format/clang-tidy where supported, ShellCheck/shfmt, PSScriptAnalyzer and actionlint;\n- start with changed-file ratchets, then reduce the baseline deliberately;\n- separate generated coverage publication from source commits.\n\n## Acceptance\n- every PR runs deterministic required checks without hidden variables;\n- format-only changes are isolated from behavior changes;\n- baseline debt is measurable and cannot increase;\n- Windows/Linux-specific skips are explicit and reported."
+    },
+    {
+      "repository": "Silicium-Project/Network",
+      "title": "[Repository hygiene] Remove generated artifacts and archive verified legacy components",
+      "body": "## Goal\nReduce repository noise and agent context without deleting code still used by production, CI or compatibility tests.\n\n## Candidates to prove\n- committed coverage HTML/JSON/SVG and other regenerable reports;\n- historical splitter/executor implementations identified by documentation;\n- Qt viewer if no supported product/build consumes it;\n- demo and fallback paths after dependency removal;\n- obsolete Dockerfiles, fixtures and scripts discovered by the exhaustive inventory.\n\n## Required evidence per candidate\n- no import/build/package/deploy/runtime reference;\n- last meaningful commit and owner review;\n- replacement path and compatibility impact;\n- tests passing after removal;\n- recovery tag/branch or extracted archived repository.\n\n## Acceptance\n- generated reports are artifacts/Pages, not source commits;\n- confirmed legacy code is absent from `main` and agent search context;\n- active worker/executor/runtime code is not archived based on directory names alone;\n- CI prevents removed generated paths from returning."
+    },
+    {
+      "repository": "Silicium-Project/BackEnd",
+      "title": "[Refactor] Extract typed network registry service and harden HTTP lifecycle",
+      "body": "## Problem\nThe network registry handler mixes production filesystem paths, untyped JSON maps, aggregation, semantic-version logic and HTTP encoding. The server also uses direct `ListenAndServe` without explicit timeouts or graceful shutdown.\n\n## Work\n- introduce typed DTO/domain models for peers, tasks, workloads and responses;\n- inject filesystem/repository paths through validated configuration;\n- separate repository, service and HTTP handler layers;\n- isolate semantic version comparison and terminal-status policy;\n- add table-driven tests for malformed files, ordering, aggregation and versions;\n- configure `http.Server` timeouts, signal cancellation and graceful shutdown;\n- validate production CORS and remove wildcard credentialed fallback.\n\n## Acceptance\n- handlers contain no filesystem or aggregation implementation;\n- public response contracts have typed tests;\n- server shuts down cleanly and rejects unsafe production configuration;\n- `gofmt`, `go vet`, tests and build are required in CI."
+    },
+    {
+      "repository": "Silicium-Project/FrontEnd",
+      "title": "[Refactor] Split dashboard into typed components and composables",
+      "body": "## Problem\n`pages/dashboard.vue` owns navigation, job state, RPC task state, submission, cancellation, Solana wallet queries and charts in one large component. It contains explicit `any`, hard-coded chart data and response-type drift.\n\n## Work\n- define typed API contracts for jobs, network workloads and user/wallet data;\n- extract `useJobs`, `useNetworkTasks`, `useCurrentUser` and `useSolanaBalance`;\n- split sidebar, stats, job table, network table, submit modal and charts into components;\n- centralize authenticated API client/error handling;\n- remove unused options and demo data from production views;\n- add component/composable tests, accessibility checks and responsive Playwright scenarios;\n- add ESLint/Prettier/type-check gates.\n\n## Acceptance\n- dashboard page is an orchestration shell, not a business monolith;\n- no explicit `any` at API boundaries;\n- `workloads` response shape is typed and tested;\n- no placeholder links or fabricated metrics appear as production data;\n- unit, production build and functional tests pass."
+    }
+  ],
+  "close_as_completed": [
+    {"repository": "Silicium-Project/Fusion", "number": 67},
+    {"repository": "Silicium-Project/Network", "number": 145},
+    {"repository": "Silicium-Project/Network", "number": 199},
+    {"repository": "Silicium-Project/Network", "number": 200},
+    {"repository": "Silicium-Project/Network", "number": 201}
+  ]
+}
