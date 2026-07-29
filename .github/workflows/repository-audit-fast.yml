@@ -1,0 +1,180 @@
+name: Repository audit fast evidence
+
+on:
+  push:
+    branches:
+      - audit/full-repo-2026-07-29
+    paths-ignore:
+      - docs/audit/generated-fast/**
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repository-audit-fast-evidence
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Create scoped GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+          permission-contents: write
+
+      - name: Checkout exact composition
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: BackEnd/go.mod
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Open and inventory every tracked file
+        shell: bash
+        run: |
+          rm -rf docs/audit/generated-fast
+          mkdir -p docs/audit/generated-fast/logs
+          python - <<'PY'
+          from __future__ import annotations
+          import csv, hashlib, json, subprocess
+          from collections import Counter
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path.cwd()
+          out = root / 'docs/audit/generated-fast'
+          repos = [('Fusion', root)] + [(name, root / name) for name in ('Network', 'BackEnd', 'FrontEnd')]
+          source = {'.c','.cc','.cpp','.go','.h','.hpp','.js','.jsx','.mjs','.proto','.ps1','.py','.rs','.sh','.ts','.tsx','.vue'}
+          rows=[]; errors=[]; commits={}
+          for repo, repo_root in repos:
+              commits[repo]=subprocess.check_output(['git','-C',str(repo_root),'rev-parse','HEAD'],text=True).strip()
+              tracked=subprocess.check_output(['git','-C',str(repo_root),'ls-files','-z'])
+              for raw in tracked.split(b'\0'):
+                  if not raw: continue
+                  rel=raw.decode('utf-8','surrogateescape'); path=repo_root/rel
+                  if not path.is_file(): continue
+                  try: data=path.read_bytes()
+                  except OSError as exc:
+                      errors.append({'repository':repo,'path':rel,'error':f'{type(exc).__name__}:{exc}'})
+                      continue
+                  digest=hashlib.sha256(data).hexdigest(); binary=b'\0' in data[:8192]
+                  utf8=True; lines=0; max_line=0
+                  if not binary:
+                      try: text=data.decode('utf-8')
+                      except UnicodeDecodeError: utf8=False; text=data.decode('utf-8','replace')
+                      split=text.splitlines(); lines=len(split); max_line=max((len(x) for x in split),default=0)
+                  rows.append({'repository':repo,'path':rel,'bytes':len(data),'sha256':digest,'binary':binary,'utf8':utf8,'lines':lines,'max_line':max_line,'suffix':path.suffix.lower(),'source':path.suffix.lower() in source})
+          rows.sort(key=lambda x:(x['repository'],x['path']))
+          with (out/'file-inventory.csv').open('w',newline='',encoding='utf-8') as f:
+              w=csv.DictWriter(f,fieldnames=list(rows[0]) if rows else ['repository','path']); w.writeheader(); w.writerows(rows)
+          summary={'generated_at':datetime.now(timezone.utc).isoformat(),'commits':commits,'files':len(rows),'bytes':sum(x['bytes'] for x in rows),'text_lines':sum(x['lines'] for x in rows),'read_errors':errors,'by_repository':{repo:{'files':sum(1 for x in rows if x['repository']==repo),'bytes':sum(x['bytes'] for x in rows if x['repository']==repo),'text_lines':sum(x['lines'] for x in rows if x['repository']==repo)} for repo,_ in repos},'largest_sources':sorted([x for x in rows if x['source']],key=lambda x:x['lines'],reverse=True)[:100],'suffixes':dict(Counter(x['suffix'] or '[none]' for x in rows))}
+          (out/'inventory.json').write_text(json.dumps(summary,indent=2,sort_keys=True),encoding='utf-8')
+          md=['# Fast exhaustive inventory','',f"Generated: `{summary['generated_at']}`",'',"Every tracked regular file in the four checked-out repositories was opened and SHA-256 hashed.",'','| Repository | Commit | Files | Bytes | Text lines |','|---|---:|---:|---:|---:|']
+          for repo in ('Fusion','Network','BackEnd','FrontEnd'):
+              item=summary['by_repository'][repo]; md.append(f"| {repo} | `{commits[repo][:12]}` | {item['files']} | {item['bytes']:,} | {item['text_lines']:,} |")
+          md += ['','## Largest source files','','| File | Lines | Bytes |','|---|---:|---:|']
+          for item in summary['largest_sources'][:50]: md.append(f"| `{item['repository']}/{item['path']}` | {item['lines']:,} | {item['bytes']:,} |")
+          md += ['','## Read errors','']
+          md += [f"- `{x['repository']}/{x['path']}`: {x['error']}" for x in errors] if errors else ['None.']
+          (out/'inventory-summary.md').write_text('\n'.join(md)+'\n',encoding='utf-8')
+          PY
+
+      - name: Run core validation surfaces independently
+        shell: bash
+        env:
+          CI: '1'
+          SILICIUM_ENABLE_HOSTED_CI: '1'
+          NUXT_TELEMETRY_DISABLED: '1'
+        run: |
+          set +e
+          OUT="$GITHUB_WORKSPACE/docs/audit/generated-fast"
+          RESULTS="$OUT/results.tsv"
+          printf 'id\trepository\tstatus\texit_code\tduration_seconds\tcommand\n' > "$RESULTS"
+          run_one() {
+            id="$1"; repo="$2"; seconds="$3"; cwd="$4"; command="$5"
+            start=$(date +%s); log="$OUT/logs/$id.log"
+            (cd "$GITHUB_WORKSPACE/$cwd" && timeout --signal=TERM "$seconds" bash -lc "$command") >"$log" 2>&1
+            code=$?; [ "$code" -eq 0 ] && status=passed || status=failed
+            [ "$code" -eq 124 ] && status=timeout
+            duration=$(($(date +%s)-start))
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$repo" "$status" "$code" "$duration" "$command" >> "$RESULTS"
+          }
+          run_one fusion-submodules Fusion 60 . 'git submodule status --recursive'
+          run_one fusion-node-install Fusion 600 apps/silicium-node 'npm ci'
+          run_one fusion-node-test Fusion 600 apps/silicium-node 'npm test'
+          run_one fusion-node-build Fusion 900 apps/silicium-node 'npm run build'
+          run_one fusion-node-rust-test Fusion 900 apps/silicium-node 'cargo test --manifest-path src-tauri/Cargo.toml'
+          run_one backend-format BackEnd 120 BackEnd 'files=$(find . -name "*.go" -type f -print); bad=$(gofmt -l $files); printf "%s\n" "$bad"; test -z "$bad"'
+          run_one backend-vet BackEnd 600 BackEnd 'go vet ./...'
+          run_one backend-test BackEnd 900 BackEnd 'go test ./...'
+          run_one backend-build BackEnd 600 BackEnd 'go build -o /tmp/silicium-backend ./cmd/main.go'
+          run_one frontend-install FrontEnd 600 FrontEnd 'npm ci'
+          run_one frontend-test FrontEnd 600 FrontEnd 'npm test'
+          run_one frontend-build FrontEnd 900 FrontEnd 'npm run build'
+          run_one network-dev-deps Network 600 Network 'python -m pip install --disable-pip-version-check -r requirements-dev.txt'
+          run_one network-compile Network 300 Network 'python -m compileall -q silicium tools networked workloads'
+          run_one network-utf8 Network 180 Network 'python tools/check_utf8.py'
+          run_one network-i18n Network 180 Network 'python tools/check_i18n_locales.py --strict'
+          run_one network-style Network 180 Network 'python tools/style_check.py --rules cpp.interface_contract_naming'
+          run_one network-workload-lint Network 180 Network './silicium workload lint'
+          run_one network-golden Network 300 Network './silicium workload golden --strict'
+          run_one network-tests Network 1200 Network './silicium test'
+          run_one network-raytracer-rust Network 900 Network 'cargo test --manifest-path workloads/raytracer/native/Cargo.toml'
+          run_one network-dashboard-install Network 600 Network/silicium-layer-dashboard 'npm ci'
+          run_one network-dashboard-build Network 900 Network/silicium-layer-dashboard 'npm run build'
+          exit 0
+
+      - name: Summarize core validation
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import csv,json
+          from collections import Counter
+          from pathlib import Path
+          out=Path('docs/audit/generated-fast'); rows=[]
+          p=out/'results.tsv'
+          if p.exists():
+              with p.open(encoding='utf-8') as f: rows=list(csv.DictReader(f,delimiter='\t'))
+          payload={'counts':dict(Counter(x['status'] for x in rows)),'results':rows}
+          (out/'results.json').write_text(json.dumps(payload,indent=2,sort_keys=True),encoding='utf-8')
+          md=['# Core execution evidence','','Each command ran independently; failures did not suppress subsequent checks.','','| ID | Repo | Status | Exit | Duration | Command | Log |','|---|---|---|---:|---:|---|---|']
+          for x in rows: md.append(f"| `{x['id']}` | {x['repository']} | **{x['status']}** | {x['exit_code']} | {x['duration_seconds']}s | `{x['command']}` | [`log`](logs/{x['id']}.log) |")
+          (out/'execution-summary.md').write_text('\n'.join(md)+'\n',encoding='utf-8')
+          PY
+
+      - name: Commit evidence to audit branch
+        if: always() && github.event_name != 'pull_request'
+        shell: bash
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'silicium-audit[bot]'
+          git config user.email 'silicium-audit[bot]@users.noreply.github.com'
+          git add -f docs/audit/generated-fast
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'audit: record exhaustive core validation evidence [skip audit]'
+          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:audit/full-repo-2026-07-29
