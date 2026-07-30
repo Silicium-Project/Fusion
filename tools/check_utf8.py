@@ -23,6 +23,7 @@ DEFAULT_EXCLUDE_DIRS = {
     "run_output",
     "run_build",
     ".worker_tmp",
+    ".silicium",
 }
 
 DEFAULT_EXCLUDE_EXTS = {
@@ -61,6 +62,7 @@ DEFAULT_EXCLUDE_EXTS = {
     ".woff2",
     ".ttf",
     ".eot",
+    ".ppm",
 }
 
 
