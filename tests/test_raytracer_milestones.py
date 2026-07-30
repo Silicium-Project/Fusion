@@ -72,3 +72,73 @@ def test_runtime_copy_includes_binary_companion_files(tmp_path) -> None:
 
     assert runtime_binary.read_bytes() == b"launcher"
     assert (runtime_binary.parent / "raytracer.py").read_bytes() == b"implementation"
+
+
+def test_calculate_sampling_rate_scales_with_reputation() -> None:
+    from workloads.raytracer.raytracer_workload import calculate_sampling_rate
+
+    # Worker with 0 reputation -> 1.0 (100% full verification)
+    assert calculate_sampling_rate(0.0) == 1.0
+    # Worker with 50 reputation -> 0.6 (60% sampling)
+    assert calculate_sampling_rate(50.0) == 0.6
+    # Worker with 100 reputation -> 0.2 (20% sampling)
+    assert calculate_sampling_rate(100.0) == 0.2
+    # High reputation worker capped at min_rate = 0.2
+    assert calculate_sampling_rate(150.0) == 0.2
+
+
+def test_select_probabilistic_milestones_is_deterministic_per_seed() -> None:
+    from workloads.raytracer.raytracer_workload import build_verification_milestones, select_probabilistic_milestones
+
+    width = 2
+    height = 20
+    rows = [bytes([val]) * width * 3 for val in range(height)]
+    manifest = build_verification_milestones(_ppm(width, height, b"".join(rows)), 0, batch_rows=2)
+
+    # 10 milestones total, 30% sample rate -> 3 milestones selected
+    sample1 = select_probabilistic_milestones(manifest, seed="nonce-12345", sample_rate=0.3)
+    sample2 = select_probabilistic_milestones(manifest, seed="nonce-12345", sample_rate=0.3)
+    sample_diff_seed = select_probabilistic_milestones(manifest, seed="nonce-99999", sample_rate=0.3)
+
+    assert len(sample1) == 3
+    assert [ms["index"] for ms in sample1] == [ms["index"] for ms in sample2]
+    assert [ms["index"] for ms in sample1] != [ms["index"] for ms in sample_diff_seed]
+
+
+def test_detection_probability_calculation() -> None:
+    from workloads.raytracer.raytracer_workload import detection_probability
+
+    # If 0 tampered -> 0% detection
+    assert detection_probability(10, 0, 3) == 0.0
+    # If 1 tampered out of 10, sampling 3 -> 30% detection
+    assert detection_probability(10, 1, 3) == 0.3
+    # If 5 tampered out of 10, sampling 3 -> ~91.7% detection
+    assert detection_probability(10, 5, 3) == 0.9167
+    # Full sampling -> 100% detection
+    assert detection_probability(10, 1, 10) == 1.0
+
+
+def test_verify_probabilistic_milestones_passes_and_escalates_on_tampering() -> None:
+    from workloads.raytracer.raytracer_workload import build_verification_milestones, verify_probabilistic_milestones
+
+    width = 2
+    height = 10
+    pixels = bytearray(range(width * height * 3))
+    clean_ppm = _ppm(width, height, bytes(pixels))
+    manifest = build_verification_milestones(clean_ppm, 0, batch_rows=2)
+
+    # 1. Clean verification with reputation = 100 (20% sampling)
+    res_clean = verify_probabilistic_milestones(clean_ppm, manifest, seed="seed-abc", reputation_score=100.0)
+    assert res_clean["verified"] is True
+    assert res_clean["escalated_to_full"] is False
+
+    # 2. Tampered verification
+    tampered_pixels = bytearray(pixels)
+    tampered_pixels[0] ^= 0xFF
+    tampered_ppm = _ppm(width, height, bytes(tampered_pixels))
+    res_tampered = verify_probabilistic_milestones(tampered_ppm, manifest, seed="seed-abc", reputation_score=0.0)
+
+    assert res_tampered["verified"] is False
+    assert res_tampered["escalated_to_full"] is True
+    assert len(res_tampered["failed_milestones"]) > 0
+

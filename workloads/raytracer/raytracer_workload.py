@@ -332,6 +332,107 @@ def build_verification_milestones(
     }
 
 
+def calculate_sampling_rate(reputation_score: float, min_rate: float = 0.2, max_rate: float = 1.0) -> float:
+    """Calculate sampling rate based on worker reputation.
+    
+    Low reputation workers require a higher verification sampling rate (up to 1.0 = 100%).
+    High reputation workers require a lower sampling rate (down to min_rate = 0.2).
+    """
+    rep = max(0.0, float(reputation_score))
+    if rep >= 100.0:
+        return min_rate
+    rate = max_rate - (rep / 100.0) * (max_rate - min_rate)
+    return round(max(min_rate, min(max_rate, rate)), 4)
+
+
+def select_probabilistic_milestones(
+    manifest: dict[str, Any],
+    seed: str,
+    sample_rate: float = 0.25,
+) -> list[dict[str, Any]]:
+    """Select an unpredictable subset of milestones using a post-commitment seed."""
+    milestones = manifest.get("milestones", [])
+    if not milestones:
+        return []
+
+    sample_rate = max(0.0, min(1.0, float(sample_rate)))
+    target_count = max(1, math.ceil(len(milestones) * sample_rate))
+
+    scored_milestones = []
+    for ms in milestones:
+        index_bytes = str(ms["index"]).encode("utf-8")
+        score = hashlib.sha256(f"{seed}:{index_bytes.decode()}".encode("utf-8")).hexdigest()
+        scored_milestones.append((score, ms))
+
+    scored_milestones.sort(key=lambda x: x[0])
+    return [ms for _, ms in scored_milestones[:target_count]]
+
+
+def detection_probability(total_milestones: int, tampered_milestones: int, sampled_count: int) -> float:
+    """Calculate theoretical detection probability for probabilistic milestone sampling."""
+    if total_milestones <= 0 or sampled_count <= 0 or tampered_milestones <= 0:
+        return 0.0
+    if tampered_milestones >= total_milestones or sampled_count >= total_milestones:
+        return 1.0
+
+    prob_miss = 1.0
+    n = total_milestones
+    m = tampered_milestones
+    for i in range(sampled_count):
+        prob_miss *= (n - m - i) / (n - i)
+    return round(1.0 - prob_miss, 4)
+
+
+def verify_probabilistic_milestones(
+    ppm_bytes: bytes,
+    manifest: dict[str, Any],
+    seed: str,
+    reputation_score: float = 50.0,
+) -> dict[str, Any]:
+    """Verify fragment milestones probabilistically with automatic escalation to full check upon failure."""
+    width, height, pixels = parse_ppm_bytes(ppm_bytes)
+    row_stride = width * 3
+    fragment_y_start = manifest.get("fragment_y_start", 0)
+
+    sample_rate = calculate_sampling_rate(reputation_score)
+    sampled = select_probabilistic_milestones(manifest, seed, sample_rate)
+
+    failed_milestones = []
+    for ms in sampled:
+        local_y_start = ms["y_start"] - fragment_y_start
+        local_y_end = ms["y_end"] - fragment_y_start
+        pixel_slice = pixels[local_y_start * row_stride : local_y_end * row_stride]
+        actual_sha256 = sha256_bytes(pixel_slice)
+        if actual_sha256 != ms["pixel_sha256"]:
+            failed_milestones.append({
+                "index": ms["index"],
+                "expected": ms["pixel_sha256"],
+                "actual": actual_sha256,
+            })
+
+    if failed_milestones:
+        return {
+            "verified": False,
+            "escalated_to_full": True,
+            "sample_rate": sample_rate,
+            "sampled_count": len(sampled),
+            "total_milestones": manifest.get("milestone_count", 0),
+            "failed_milestones": failed_milestones,
+            "reason": f"probabilistic_milestone_verification_failed:{len(failed_milestones)}_mismatches",
+        }
+
+    return {
+        "verified": True,
+        "escalated_to_full": False,
+        "sample_rate": sample_rate,
+        "sampled_count": len(sampled),
+        "total_milestones": manifest.get("milestone_count", 0),
+        "failed_milestones": [],
+        "reason": "",
+    }
+
+
+
 def write_ppm(path: Path, width: int, height: int, pixels: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(f"P6\n{width} {height}\n255\n".encode("ascii") + pixels)
