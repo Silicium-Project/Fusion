@@ -97,3 +97,17 @@ def test_scheduler_uses_resource_lower_confidence_bound() -> None:
     )
 
     assert reliable_score > uncertain_score
+
+
+def test_uptime_dimension_and_corroboration_scaling() -> None:
+    model = DualMemoryBayes()
+    # 24 hours uptime, 3 corroborated peers
+    w1 = model.observe_uptime(86400, corroborated_peer_count=3, now=100.0)
+    # Self-reported only
+    w2 = model.observe_uptime(86400, self_reported_only=True, now=100.0)
+
+    assert w1 > w2
+    snapshot = model.snapshot(now=100.0)["dimensions"]["uptime"]
+    assert snapshot["combined"]["evidence"] > 0.0
+    assert snapshot["combined"]["mean"] > 0.5
+

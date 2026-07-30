@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-RESOURCE_DIMENSIONS = ("connection", "storage", "compute", "verify", "delegation")
+RESOURCE_DIMENSIONS = ("connection", "uptime", "storage", "compute", "verify", "delegation")
 PROFILE_SCHEMA = "silicium.resource-profile.v1"
 REPUTATION_SCHEMA = "silicium.resource-reputation.v1"
 PRIOR_ALPHA = 2.0
@@ -251,6 +251,7 @@ def resource_baselines(profile: Mapping[str, Any] | None) -> dict[str, float]:
     storage_capacity = saturating(storage.get("free_bytes", 0), 100.0 * 1024.0 * 1024.0 * 1024.0)
     return {
         "connection": 0.5,
+        "uptime": 0.5,
         "storage": (saturating(storage_speed, 200.0 * 1024.0 * 1024.0) + storage_capacity) / 2.0,
         "compute": saturating(compute.get("throughput_bytes_s", 0), 100.0 * 1024.0 * 1024.0),
         "verify": saturating(verify.get("throughput_bytes_s", 0), 100.0 * 1024.0 * 1024.0),
@@ -259,7 +260,7 @@ def resource_baselines(profile: Mapping[str, Any] | None) -> dict[str, float]:
 
 
 class DualMemoryBayes:
-    """Five independent Beta reputations with fast and durable memories."""
+    """Six independent Beta reputations with fast and durable memories."""
 
     def __init__(self, state: Mapping[str, Any] | None = None, *, baselines: Mapping[str, float] | None = None) -> None:
         source = state if isinstance(state, Mapping) else {}
@@ -325,6 +326,25 @@ class DualMemoryBayes:
             memory = memories[name]
             key = "alpha" if success else "beta"
             memory[key] += base_weight * factor
+
+    def observe_uptime(
+        self,
+        uptime_seconds: float,
+        corroborated_peer_count: int = 1,
+        *,
+        self_reported_only: bool = False,
+        now: float | None = None,
+    ) -> float:
+        """Observe corroborated peer uptime with bounded logarithmic weight and anti-farming protection."""
+        hours = max(0.0, float(uptime_seconds)) / 3600.0
+        log_scale = math.log2(1.0 + hours)
+        corroboration = min(1.0, math.sqrt(max(1, int(corroborated_peer_count)) / 3.0))
+        if self_reported_only:
+            corroboration *= 0.1
+        weight = round(min(5.0, log_scale * corroboration), 4)
+        self.observe("uptime", True, weight=weight, event_class="verified", now=now)
+        return weight
+
 
     @staticmethod
     def _summary(memory: Mapping[str, float]) -> dict[str, float]:
