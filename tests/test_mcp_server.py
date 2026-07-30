@@ -811,3 +811,51 @@ def test_mcp_server_resource_access_lists(tmp_path: Path) -> None:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+def test_mcp_server_openapi_spec_and_token_rotation(tmp_path: Path) -> None:
+    export_dir = tmp_path / "mcp"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    port = _find_free_port()
+    env = os.environ.copy()
+    env["SILICIUM_MCP_EXPORT_DIR"] = str(export_dir)
+    env["SILICIUM_MCP_TOKEN"] = "secret-token-1"
+    proc = subprocess.Popen(
+        [sys.executable, "tools/mcp_server.py", "--port", str(port), "--enable-tools"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        base = f"http://127.0.0.1:{port}"
+        auth_header = {"Authorization": "Bearer secret-token-1"}
+        _wait_ready(base, headers=auth_header)
+
+        # 1. OpenAPI spec
+        code, body = _http_get(base + "/openapi.json", headers=auth_header)
+        assert code == 200
+        spec = json.loads(body)
+        assert spec["openapi"] == "3.0.3"
+        assert "/auth/rotate_token" in spec["paths"]
+
+        # 2. Rotate token
+        code, body = _http_post(base + "/auth/rotate_token", {"new_token": "secret-token-2"}, headers=auth_header)
+        assert code == 200
+        assert json.loads(body)["new_token"] == "secret-token-2"
+
+        # 3. Old token should now be forbidden
+        code, _ = _http_get(base + "/healthz", headers=auth_header)
+        assert code == 403
+
+        # 4. New token should be accepted
+        new_auth_header = {"Authorization": "Bearer secret-token-2"}
+        code, body = _http_get(base + "/healthz", headers=new_auth_header)
+        assert code == 200
+        assert json.loads(body)["ok"] is True
+    finally:
+        proc.terminate()
+        out, err = proc.communicate(timeout=3)
+        print("SERVER STDOUT:\n", out)
+        print("SERVER STDERR:\n", err)
+
