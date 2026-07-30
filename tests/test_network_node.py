@@ -2795,3 +2795,26 @@ def test_compute_receipt_uses_deterministic_pixels_and_has_valid_signature(tmp_p
         receipt["worker_signature"],
         receipt["worker_public_key"],
     )
+
+
+def test_node_seeds_local_update_manifest_on_startup(tmp_path: Path, monkeypatch) -> None:
+    export_dir = tmp_path / "export"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "channel": "dev",
+        "version": "0.3.0",
+        "sha256": "a" * 64,
+        "content_id": "a" * 64,
+        "url": "http://lan-peer/release.tar.gz",
+        "size_bytes": 1024,
+        "signature": "mock_sig_123",
+    }
+    (export_dir / "update.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    node = network_node.NetworkNode(_config(export_dir, "lan-node-a"))
+    node.peer_network._seed_local_update_manifests()
+
+    announcements = node.peer_network.update_announcements()
+    assert len(announcements) == 1
+    assert announcements[0]["version"] == "0.3.0"
+    assert announcements[0]["content_id"] == "a" * 64

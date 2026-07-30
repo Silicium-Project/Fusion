@@ -1228,11 +1228,34 @@ class PeerNetwork:
             return IceDirectTransport(self, safe_id=safe_id, utc_now=utc_now, atomic_write_json=atomic_write_json)
         raise ValueError(f"unsupported_direct_transport_backend:{backend_name}")
 
+    def _seed_local_update_manifests(self) -> None:
+        paths: list[Path] = []
+        env_manifest = os.environ.get("SILICIUM_UPDATE_MANIFEST_PATH", "").strip()
+        if env_manifest:
+            paths.append(Path(env_manifest))
+        for filename in ("update.manifest.json", "manifest.json"):
+            candidate = self.export_dir / filename
+            if candidate not in paths:
+                paths.append(candidate)
+
+        for path in paths:
+            if not path.is_file():
+                continue
+            payload = read_json(path, None)
+            if not payload:
+                continue
+            if isinstance(payload, dict):
+                releases = payload.get("releases", [payload]) if "releases" in payload else [payload]
+                for release in releases:
+                    if isinstance(release, dict):
+                        self._record_update_announcement(release, source_peer_id="local_disk")
+
     def start(self) -> None:
         # Upgrade old general gossip logs before any listener can append a new
         # control and accidentally make the dedicated index look complete.
         self.recent_task_control_events(2048)
         self._start_http_server()
+        self._seed_local_update_manifests()
         if self.config.gossip_enable:
             self._start_udp_listener()
         self._load_persisted_peers()
