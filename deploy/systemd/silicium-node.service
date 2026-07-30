@@ -1,0 +1,17 @@
+[Unit]
+Description=Silicium Edge Node User Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/silicium/bin/start-node.sh default-node compute,verify 46001 http://127.0.0.1:46000
+Restart=on-failure
+RestartSec=5s
+Environment=SILICIUM_RELEASE_CHANNEL=dev
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share/silicium
+
+[Install]
+WantedBy=default.target
