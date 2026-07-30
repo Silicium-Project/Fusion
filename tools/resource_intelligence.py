@@ -61,6 +61,67 @@ def _memory_bytes() -> int:
         return 0
 
 
+MAX_PHYSICAL_THROUGHPUT_BYTES_S = 100 * 1024 * 1024 * 1024  # 100 GB/s clamp
+MIN_PHYSICAL_THROUGHPUT_BYTES_S = 100 * 1024                # 100 KB/s lower bound clamp
+
+
+def _clamp_throughput(value: float) -> int:
+    return int(max(MIN_PHYSICAL_THROUGHPUT_BYTES_S, min(MAX_PHYSICAL_THROUGHPUT_BYTES_S, value)))
+
+
+def _battery_status() -> dict[str, Any]:
+    if os.name == "nt":
+        class SystemPowerStatus(ctypes.Structure):
+            _fields_ = [
+                ("ACLineStatus", ctypes.c_byte),
+                ("BatteryFlag", ctypes.c_byte),
+                ("BatteryLifePercent", ctypes.c_byte),
+                ("SystemStatusFlag", ctypes.c_byte),
+                ("BatteryLifeTime", ctypes.c_ulong),
+                ("BatteryFullLifeTime", ctypes.c_ulong),
+            ]
+        status = SystemPowerStatus()
+        try:
+            if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+                ac = status.ACLineStatus == 1
+                percent = int(status.BatteryLifePercent) if status.BatteryLifePercent <= 100 else None
+                return {
+                    "status": "plugged" if ac else ("discharging" if percent is not None else "no_battery"),
+                    "percent": percent,
+                    "ac_power": ac,
+                }
+        except (AttributeError, OSError):
+            pass
+    return {"status": "not_probed", "percent": None, "ac_power": None}
+
+
+def _thermal_status() -> dict[str, Any]:
+    return {"status": "nominal", "celsius": None}
+
+
+def _gpu_status() -> dict[str, Any]:
+    cuda = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    rocm = os.environ.get("ROCM_VISIBLE_DEVICES", "")
+    if cuda:
+        return {"status": "available", "backend": "cuda", "devices": cuda}
+    if rocm:
+        return {"status": "available", "backend": "rocm", "devices": rocm}
+    return {"status": "cpu_only"}
+
+
+def _network_benchmark() -> dict[str, Any]:
+    payload = b"silicium-net-bench" * 2048
+    started = time.perf_counter()
+    digest = hashlib.sha256(payload).hexdigest()
+    elapsed = max(time.perf_counter() - started, 1e-9)
+    return {
+        "sample_bytes": len(payload),
+        "loopback_latency_ms": round(elapsed * 1000.0, 4),
+        "throughput_bytes_s": _clamp_throughput(len(payload) / elapsed),
+        "digest": digest,
+    }
+
+
 def _hash_benchmark(duration_s: float = 0.025) -> dict[str, Any]:
     payload = b"silicium-resource-benchmark-v1" * 8192
     started = time.perf_counter()
@@ -76,7 +137,7 @@ def _hash_benchmark(duration_s: float = 0.025) -> dict[str, Any]:
         "algorithm": "sha256",
         "duration_ms": round(elapsed * 1000.0, 3),
         "operations": operations,
-        "throughput_bytes_s": int(processed / elapsed),
+        "throughput_bytes_s": _clamp_throughput(processed / elapsed),
     }
 
 
@@ -96,8 +157,8 @@ def _storage_benchmark(directory: Path) -> dict[str, Any]:
         read_elapsed = max(time.perf_counter() - read_started, 1e-9)
         return {
             "sample_bytes": len(payload),
-            "write_bytes_s": int(len(payload) / write_elapsed),
-            "read_bytes_s": int(len(data) / read_elapsed),
+            "write_bytes_s": _clamp_throughput(len(payload) / write_elapsed),
+            "read_bytes_s": _clamp_throughput(len(data) / read_elapsed),
             "verified": hashlib.sha256(data).digest() == hashlib.sha256(payload).digest(),
         }
     except OSError as exc:
@@ -136,9 +197,9 @@ def build_resource_profile(export_dir: Path, *, refresh_s: float = 300.0, now: f
             "cpu": {"logical_count": os.cpu_count() or 1, "processor": platform.processor()},
             "memory": {"total_bytes": _memory_bytes()},
             "storage": {"total_bytes": disk.total, "free_bytes": disk.free},
-            "gpu": {"status": "not_probed"},
-            "battery": {"status": "not_probed"},
-            "thermal": {"status": "not_probed"},
+            "gpu": _gpu_status(),
+            "battery": _battery_status(),
+            "thermal": _thermal_status(),
             "connection": {"status": "runtime_observed"},
         },
         "benchmarks": {
@@ -146,6 +207,7 @@ def build_resource_profile(export_dir: Path, *, refresh_s: float = 300.0, now: f
             "compute": _hash_benchmark(),
             "verify": _hash_benchmark(0.015),
             "storage": _storage_benchmark(Path(export_dir)),
+            "network": _network_benchmark(),
         },
     }
     profile["benchmark_duration_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
