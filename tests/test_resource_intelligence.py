@@ -4,7 +4,13 @@ import time
 from types import SimpleNamespace
 
 from tools import network_node
-from tools.resource_intelligence import DualMemoryBayes, RESOURCE_DIMENSIONS, build_resource_profile, resource_baselines
+from tools.resource_intelligence import (
+    RESOURCE_DIMENSIONS,
+    DualMemoryBayes,
+    build_resource_profile,
+    mobile_policy_recommendation,
+    resource_baselines,
+)
 
 
 def test_resource_profile_is_bounded_versioned_and_cached(tmp_path) -> None:
@@ -123,4 +129,19 @@ def test_uptime_dimension_and_corroboration_scaling() -> None:
     snapshot = model.snapshot(now=100.0)["dimensions"]["uptime"]
     assert snapshot["combined"]["evidence"] > 0.0
     assert snapshot["combined"]["mean"] > 0.5
+
+
+def test_mobile_policy_recommendation_filters_heavy_compute(monkeypatch) -> None:
+    monkeypatch.setenv("SILICIUM_MOBILE_PLATFORM", "1")
+    profile = {
+        "platform": {"system": "Android"},
+        "resources": {"battery": {"percent": 15, "ac_power": False}},
+    }
+    policy = mobile_policy_recommendation(profile)
+
+    assert policy["is_mobile"] is True
+    assert policy["allow_compute"] is False
+    assert policy["allow_verify"] is True
+    assert "verify" in policy["recommended_roles"]
+    assert "compute" not in policy["recommended_roles"]
 

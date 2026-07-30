@@ -210,10 +210,33 @@ def build_resource_profile(export_dir: Path, *, refresh_s: float = 300.0, now: f
             "network": _network_benchmark(),
         },
     }
+    profile["mobile_policy"] = mobile_policy_recommendation(profile)
     profile["benchmark_duration_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
     with _PROFILE_LOCK:
         _PROFILE_CACHE[key] = (timestamp, profile)
     return _deep_copy(profile)
+
+
+def mobile_policy_recommendation(profile: Mapping[str, Any]) -> dict[str, Any]:
+    """Recommend lightweight roles for mobile clients based on battery and platform constraints."""
+    pl = profile.get("platform") if isinstance(profile, Mapping) else {}
+    system = str(pl.get("system", "") if isinstance(pl, dict) else "").lower()
+    is_mobile = system in ("android", "ios", "darwin-mobile", "linux-android") or os.environ.get("SILICIUM_MOBILE_PLATFORM") == "1"
+
+    resources = profile.get("resources") if isinstance(profile, Mapping) and isinstance(profile.get("resources"), dict) else {}
+    battery = resources.get("battery") if isinstance(resources, dict) and isinstance(resources.get("battery"), dict) else {}
+    battery_pct = battery.get("percent")
+    ac_power = battery.get("ac_power")
+
+    allow_compute = not is_mobile or (ac_power is True or (battery_pct is not None and battery_pct >= 20))
+
+    return {
+        "is_mobile": is_mobile,
+        "allow_compute": allow_compute,
+        "allow_verify": True,
+        "allow_storage": not is_mobile or (ac_power is True),
+        "recommended_roles": ["verify", "challenge"] if (is_mobile and not allow_compute) else ["compute", "verify", "storage"],
+    }
 
 
 def _deep_copy(value: Any) -> Any:
