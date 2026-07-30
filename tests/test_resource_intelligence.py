@@ -73,6 +73,19 @@ def test_reputation_store_persists_dual_memory(tmp_path) -> None:
     assert abs(reloaded_evidence - evidence) < 0.001
 
 
+def test_reputation_store_persists_uptime_and_dual_memory(tmp_path) -> None:
+    path = tmp_path / "reputation.json"
+    store = network_node.ReputationStore(path)
+    store.observe_uptime(86400, corroborated_peer_count=3)
+    uptime_snap = store.resource_snapshot()["dimensions"]["uptime"]
+    assert uptime_snap["combined"]["evidence"] > 0.0
+
+    reloaded = network_node.ReputationStore(path)
+    reloaded_snap = reloaded.resource_snapshot()["dimensions"]["uptime"]
+    assert abs(reloaded_snap["combined"]["evidence"] - uptime_snap["combined"]["evidence"]) < 0.001
+
+
+
 def test_scheduler_uses_resource_lower_confidence_bound() -> None:
     config = SimpleNamespace(
         scheduler_onchain_weight=0.0,

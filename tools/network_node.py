@@ -570,6 +570,21 @@ class ReputationStore:
         self.save()
         return snapshot
 
+    def observe_uptime(
+        self,
+        uptime_seconds: float,
+        corroborated_peer_count: int = 1,
+        *,
+        self_reported_only: bool = False,
+    ) -> dict[str, Any]:
+        with self._lock:
+            model = DualMemoryBayes(self._payload.get("resource_memory"))
+            model.observe_uptime(uptime_seconds, corroborated_peer_count, self_reported_only=self_reported_only)
+            self._payload["resource_memory"] = model.export_state()
+            snapshot = model.snapshot()
+        self.save()
+        return snapshot
+
     def resource_snapshot(self) -> dict[str, Any]:
         with self._lock:
             model = DualMemoryBayes(self._payload.get("resource_memory"))
