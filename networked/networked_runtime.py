@@ -97,8 +97,46 @@ def write_json(path: Path, payload: Any) -> None:
     tmp.replace(path)
 
 
+def find_openssl() -> "Path | None":
+    """Locate openssl binary, needed by some native tools on Windows."""
+    import shutil
+
+    found = shutil.which("openssl")
+    if found:
+        return Path(found)
+    if os.name != "nt":
+        return None
+    program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
+    for candidate in [
+        Path(program_files) / "OpenSSL-Win64" / "bin" / "openssl.exe",
+        Path(program_files) / "OpenSSL-Win32" / "bin" / "openssl.exe",
+        Path(program_files_x86) / "OpenSSL-Win32" / "bin" / "openssl.exe",
+        Path(program_files) / "Git" / "usr" / "bin" / "openssl.exe",
+        Path(program_files_x86) / "Git" / "usr" / "bin" / "openssl.exe",
+    ]:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def node_environment() -> dict[str, str]:
-    return os.environ.copy()
+    """Return a copy of the environment with OpenSSL prepended to PATH when found.
+
+    The node process uses the ``cryptography`` library for Ed25519 (no openssl
+    subprocess required), but other native tooling bundled with a worker binary
+    may still rely on an openssl binary being on PATH.  Injecting it here keeps
+    that transparent to callers.
+    """
+    env = os.environ.copy()
+    openssl = find_openssl()
+    if openssl is not None:
+        openssl_dir = str(openssl.parent)
+        parts = [part for part in env.get("PATH", "").split(os.pathsep) if part]
+        if openssl_dir not in parts:
+            env["PATH"] = openssl_dir + os.pathsep + env.get("PATH", "")
+    return env
+
 
 
 def store_network_content(export_dir: Path, data: bytes, owner_node_id: str) -> dict[str, Any]:
@@ -446,6 +484,30 @@ class LocalNetworkEmitter:
                 f"network_emitter_start_timeout:waited_s={startup_timeout_s}:"
                 f"{detail or heartbeat_path}"
             )
+
+    def wait_for_heartbeat(self, timeout_s: float = 30.0) -> bool:
+        """Wait until the node's HTTP /healthz endpoint responds OK.
+
+        Complements the file-based startup poll in ``start()`` by confirming
+        that the peer HTTP server is actually accepting connections before
+        callers dispatch tasks.  Returns True when healthy, False on timeout.
+        """
+        base_url = self.public_url
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        mesh_key = self.mesh_key
+        while time.monotonic() < deadline:
+            if self.process is not None and self.process.poll() is not None:
+                return False
+            try:
+                headers = {"Authorization": f"Bearer {mesh_key}"} if mesh_key else {}
+                req = urllib.request.Request(base_url + "/healthz", headers=headers)
+                with urllib.request.urlopen(req, timeout=2) as resp:
+                    if int(resp.status) in {200, 204}:
+                        return True
+            except Exception:
+                pass
+            time.sleep(0.1)
+        return False
 
     def stop(self) -> dict[str, Any]:
         if self.process is None:
