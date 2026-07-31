@@ -592,11 +592,22 @@ def render_page(title: str, code: int, output: str) -> str:
     .peer-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 10px; }}
     .peer {{ display: grid; gap: 4px; border: 1px solid #e3eaed; border-radius: 6px; padding: 10px; }}
     .badge, .pill {{ display: inline-flex; width: fit-content; border-radius: 999px; background: #dff2ea; color: #14643a; padding: 2px 8px; font-size: 12px; font-weight: 800; }}
+    .pill.green {{ background: #dff2ea; color: #14643a; }}
+    .pill.yellow {{ background: #fef3c7; color: #92400e; }}
+    .pill.red {{ background: #fee2e2; color: #991b1b; }}
+    .pill.gray {{ background: #f0f3f4; color: #52646c; }}
+    .badge.warning {{ background: #fef3c7; color: #92400e; }}
+    .badge.red {{ background: #fee2e2; color: #991b1b; }}
+    .badge.green {{ background: #dff2ea; color: #14643a; }}
+    .badge.blue {{ background: #dbeafe; color: #1e3a8a; }}
+    .badge.muted {{ background: #f0f3f4; color: #52646c; }}
     table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
     td {{ border-top: 1px solid #eef2f3; padding: 9px 8px; overflow-wrap: anywhere; }}
     .tile-grid {{ display: grid; gap: 8px; margin-top: 12px; }}
     .tile {{ aspect-ratio: 1; min-height: 58px; border-radius: 6px; border: 1px solid #d7e0e3; display: grid; place-items: center; text-align: center; padding: 6px; }}
     .tile.done {{ background: #dff2ea; border-color: #95d4b8; color: #123d2a; }}
+    .tile.verified {{ background: #d1fae5; border-color: #6ee7b7; color: #064e3b; }}
+    .tile.rejected {{ background: #fee2e2; border-color: #fca5a5; color: #7f1d1d; }}
     .tile.pending {{ background: #f0f3f4; color: #6d7b80; }}
     .tile small {{ font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }}
     .ppm-preview {{ width: 100%; max-width: 92px; display: grid; gap: 0; border: 1px solid rgba(0,0,0,.12); image-rendering: pixelated; }}
