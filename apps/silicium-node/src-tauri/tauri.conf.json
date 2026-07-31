@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "nsis",
+    "targets": ["nsis", "deb", "appimage", "rpm"],
     "icon": [
       "icons/icon.ico",
       "icons/icon.png"
@@ -33,6 +33,14 @@
     "resources": [
       "resources/runtime"
     ],
+    "linux": {
+      "deb": {
+        "depends": ["python3", "libssl-dev", "ca-certificates"]
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    },
     "windows": {
       "nsis": {
         "installerHooks": "windows/nsis-hooks.nsh",

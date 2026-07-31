@@ -37,7 +37,10 @@ struct ProcessState {
 
 const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
 const SUPERVISOR_RUN_KEY_NAME: &str = "SiliciumNodeService";
-const CLAIM_POLL_STALE_AFTER: Duration = Duration::from_secs(20);
+// NAT/ICE discovery and the first scheduler poll can legitimately take longer
+// than a short watchdog interval.  Restarting during that bootstrap period
+// prevents a node from ever becoming available to claim work.
+const CLAIM_POLL_STALE_AFTER: Duration = Duration::from_secs(90);
 const UPDATE_SIGNING_PUBLIC_KEY_B64: &str = "px9didtoGftLilUX8iA1Yoj4PjNiCvZD47GK6/fdzX8=";
 const UPDATE_SIGNING_KEY_ID: &str =
     "f8d1c0149d9fcc171a39f96e5b9965a235500b7fe20cd2348912d38ca91e6d4c";

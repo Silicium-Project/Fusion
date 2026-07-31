@@ -62,6 +62,8 @@ services:
       SILICIUM_SEED_PEERS: http://213.32.68.67:46100
       SILICIUM_CONTROL_URL: http://orchestrator:46100/gossip/publish
       SILICIUM_ORCHESTRATOR_IDENTITY_KEY: /var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem
+      # Control-plane only: results/artifacts remain on authenticated P2P/HTTP.
+      SILICIUM_RPC_EVENTS_CONNECT: tcp://experiment-api:9771
     depends_on:
       postgres:
         condition: service_healthy
@@ -173,6 +175,10 @@ services:
     - --snapshot-dir
     - /var/lib/silicium/network/experiment-api/snapshots
     - --enable-tools
+    - --rpc-bind
+    - tcp://0.0.0.0:9770
+    - --rpc-events-bind
+    - tcp://0.0.0.0:9771
     - --log-format
     - json
     - --rpc-bind
