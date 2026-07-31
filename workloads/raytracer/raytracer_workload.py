@@ -512,6 +512,47 @@ def run_raytracer(
     }
 
 
+
+def validate_fragment_ppm(
+    fragment_bytes: bytes,
+    *,
+    task_id: str = "<unknown>",
+    expected_width: int | None = None,
+    expected_height: int | None = None,
+    expected_hash: str | None = None,
+) -> dict[str, Any]:
+    """Validate a P6 PPM binary fragment for correctness and optional hash match.
+
+    Raises RuntimeError on any validation failure so callers can propagate
+    the error without catching generic exceptions.
+    """
+    try:
+        actual_width, actual_height, _ = parse_ppm_bytes(fragment_bytes, task_id)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"raytracer_fragment_invalid_ppm:task={task_id}:{exc}") from exc
+    if expected_width is not None and actual_width != expected_width:
+        raise RuntimeError(
+            f"raytracer_fragment_width_mismatch:task={task_id}:expected={expected_width}:actual={actual_width}"
+        )
+    if expected_height is not None and actual_height != expected_height:
+        raise RuntimeError(
+            f"raytracer_fragment_height_mismatch:task={task_id}:expected={expected_height}:actual={actual_height}"
+        )
+    actual_hash = sha256_bytes(fragment_bytes)
+    if expected_hash is not None:
+        normalized = str(expected_hash).removeprefix("sha256:").lower()
+        if actual_hash != normalized:
+            raise RuntimeError(
+                f"raytracer_fragment_hash_mismatch:task={task_id}:expected={normalized}:actual={actual_hash}"
+            )
+    return {
+        "width": actual_width,
+        "height": actual_height,
+        "sha256": actual_hash,
+        "valid_p6": True,
+    }
+
+
 def command_compute(args: argparse.Namespace) -> int:
     scene = Path(args.scene).resolve()
     output = Path(args.output).resolve()
@@ -530,15 +571,22 @@ def command_compute(args: argparse.Namespace) -> int:
         x_end,
         progress_file,
     )
+    # --- Issue #85: validate the binary P6 output before signing ---
+    _ppm_bytes = output.read_bytes()
+    try:
+        validate_fragment_ppm(_ppm_bytes, task_id=str(output))
+    except RuntimeError as exc:
+        raise RuntimeError(f"raytracer_compute_invalid_output:{exc}") from exc
+    result["p6_validated"] = True
     result["verification_milestones"] = build_verification_milestones(
-        output.read_bytes(),
+        _ppm_bytes,
         y_start or 0,
         int(args.verification_batch_rows),
         x_start or 0,
     )
     png_path = Path(args.png).resolve() if args.png else None
     if png_path:
-        png = write_optional_png(output.read_bytes(), png_path)
+        png = write_optional_png(_ppm_bytes, png_path)
         result["result_png_ready"] = png["ready"]
         result["result_png_path"] = png["path"]
         result["result_png_sha256"] = png["sha256"]
@@ -715,6 +763,32 @@ def command_reassemble(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_validate(args: argparse.Namespace) -> int:
+    """Standalone CLI subcommand: validate a P6 PPM binary fragment."""
+    fragment_path = Path(args.fragment).resolve()
+    if not fragment_path.exists():
+        print(json.dumps({"error": f"file_not_found:{fragment_path}", "valid": False}))
+        return 1
+    fragment_bytes = fragment_path.read_bytes()
+    expected_width = int(args.width) if args.width else None
+    expected_height = int(args.height) if args.height else None
+    expected_hash = args.expected_hash or None
+    try:
+        result = validate_fragment_ppm(
+            fragment_bytes,
+            task_id=str(fragment_path.name),
+            expected_width=expected_width,
+            expected_height=expected_height,
+            expected_hash=expected_hash,
+        )
+        result["fragment"] = str(fragment_path)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    except RuntimeError as exc:
+        print(json.dumps({"valid": False, "error": str(exc), "fragment": str(fragment_path)}))
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Silicium raytracer workload entrypoints.")
     sub = parser.add_subparsers(dest="command")
@@ -761,6 +835,14 @@ def build_parser() -> argparse.ArgumentParser:
     reassemble.add_argument("--png", default="")
     reassemble.add_argument("--result-json", default="")
     reassemble.set_defaults(func=command_reassemble)
+
+    validate = sub.add_parser("validate", help="Validate a P6 PPM binary fragment (issue #85)")
+    validate.add_argument("fragment", help="Path to the PPM file to validate")
+    validate.add_argument("--width", default="", help="Expected pixel width")
+    validate.add_argument("--height", default="", help="Expected pixel height")
+    validate.add_argument("--expected-hash", default="", help="Expected SHA-256 (with or without sha256: prefix)")
+    validate.set_defaults(func=command_validate)
+
     return parser
 
 
