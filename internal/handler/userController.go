@@ -105,7 +105,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	expirationTime := time.Now().Add(24 * time.Hour)
+	expirationTime := time.Now().Add(15 * time.Minute)
 	claims := &JWTClaims{
 		Role: user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -121,8 +121,73 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	refreshExpirationTime := time.Now().Add(7 * 24 * time.Hour)
+	refreshClaims := &jwt.RegisteredClaims{
+		Subject:   strconv.FormatUint(uint64(user.ID), 10),
+		ExpiresAt: jwt.NewNumericDate(refreshExpirationTime),
+	}
+	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
+	refreshTokenString, err := refreshToken.SignedString(jwtKey)
+	if err != nil {
+		http.Error(w, "Could not generate refresh token", http.StatusInternalServerError)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+	json.NewEncoder(w).Encode(map[string]string{
+		"token": tokenString,
+		"refresh_token": refreshTokenString,
+	})
+}
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
+	var req RefreshRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	claims := &jwt.RegisteredClaims{}
+	token, err := jwt.ParseWithClaims(req.RefreshToken, claims, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+
+	if err != nil || !token.Valid {
+		http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
+		return
+	}
+
+	userID := claims.Subject
+	var user models.User
+	if result := h.DB.First(&user, userID); result.Error != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	expirationTime := time.Now().Add(15 * time.Minute)
+	newClaims := &JWTClaims{
+		Role: user.Role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   userID,
+			ExpiresAt: jwt.NewNumericDate(expirationTime),
+		},
+	}
+
+	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
+	newTokenString, err := newToken.SignedString(jwtKey)
+	if err != nil {
+		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"token": newTokenString,
+	})
 }
 
 func (h *Handler) GetUser(w http.ResponseWriter, r *http.Request) {
