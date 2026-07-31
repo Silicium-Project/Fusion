@@ -22,7 +22,7 @@ def test_gui_renders_primary_actions() -> None:
     html = module.render_page("Ready", 0, "")
 
     assert "Silicium World" in html
-    assert "Computed tiles" in html
+    assert "Computed & Live Tiles" in html
     assert "Tasks & results" in html
     assert 'value="up"' in html
     assert 'value="bootstrap"' in html
@@ -169,3 +169,31 @@ def test_gui_chain_task_dispatch_passes_task_id(monkeypatch) -> None:
     assert output == "ok"
     assert "--task-id" in captured["cmd"]
     assert "tile-seven" in captured["cmd"]
+
+
+def test_gui_renders_peer_strip_outdated_and_transports() -> None:
+    module = _load_module()
+    peers = [
+        {"node_id": "croatia-1", "roles": ["compute"], "outdated": True, "version": "0.1.0", "transport": "relayed"},
+        {"node_id": "france-1", "roles": ["verify"], "transport": "direct", "self": True},
+    ]
+    html = module.render_peer_strip(peers)
+
+    assert "Outdated v0.1.0" in html
+    assert "relayed" in html
+    assert "direct" in html
+    assert "self" in html
+
+
+def test_gui_renders_tile_status_badges() -> None:
+    module = _load_module()
+    tiles = [
+        {"index": 0, "id": "tile-0", "node": "node-a", "status": "ok", "verified": True},
+        {"index": 1, "id": "tile-1", "node": "node-b", "status": "rejected"},
+        {"index": 2, "id": "tile-2", "node": "node-c", "status": "ok"},
+    ]
+    html = module.render_tiles(tiles)
+
+    assert "✓ Verified" in html
+    assert "❌ Rejected" in html
+    assert "⚡ Computed" in html

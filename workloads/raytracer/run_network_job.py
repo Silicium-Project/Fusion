@@ -10,7 +10,7 @@ import sys
 import time
 from collections import deque
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(NETWORK_ROOT))
@@ -22,6 +22,7 @@ from networked.networked_runtime import (  # noqa: E402
     best_shared_ref,
     dispatch_task_to_scheduler,
     fetch_network_content,
+    RpcTaskEventListener,
     store_network_content,
     store_network_file,
     wait_for_result as wait_for_network_result,
@@ -181,7 +182,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def wait_for_task_result(args: argparse.Namespace, role: str, task_id: str, node_runs: list[dict[str, Any]]) -> dict[str, Any]:
-    if args.node_mode == "network":
+    if args.node_mode == "network" and (
+        int(args.max_compute_in_flight) <= 0 or int(args.max_verify_in_flight) <= 0
+    ):
         export_dir = Path(args.export_dir).resolve()
         result = wait_for_network_result(export_dir, task_id, args.result_timeout_s)
         node_runs.append(
@@ -279,10 +282,16 @@ def submit_network_task(
     # trip when a scheduler gateway is colocated with the node, while retaining
     # the signed HTTP path as a transparent fallback for older releases.
     rpc_endpoint = str(os.environ.get("SILICIUM_RPC_ENDPOINT", "")).strip()
+    rpc_fallback_error = ""
     if rpc_endpoint:
         try:
-            from rpc_client import RpcClient
-            rpc_result = RpcClient(rpc_endpoint, os.environ.get("SILICIUM_RPC_TOKEN", ""), timeout_ms=3000).call("task.dispatch", payload)
+            from tools.rpc_client import RpcClient
+            # The experiment API already uses the MCP bearer for the same
+            # authenticated control plane.  Reuse it when a dedicated RPC
+            # token is not configured; otherwise an in-container renderer
+            # silently falls back to the legacy HTTP dispatcher.
+            rpc_token = os.environ.get("SILICIUM_RPC_TOKEN", "") or os.environ.get("SILICIUM_MCP_TOKEN", "")
+            rpc_result = RpcClient(rpc_endpoint, rpc_token, timeout_ms=3000).call("task.dispatch", payload)
             return {
                 "task_id": task_id,
                 "required_roles": required_roles,
@@ -291,9 +300,9 @@ def submit_network_task(
                 "queue": "rpc://task.dispatch",
                 "scheduler_dispatch": {"status": "dispatched", "target": rpc_endpoint, "transport": "protobuf+zeromq"},
             }
-        except Exception:
+        except Exception as error:
             # A rolling upgrade must not strand work when the sidecar is absent.
-            pass
+            rpc_fallback_error = f"{type(error).__name__}:{error}"
 
     scheduler_dispatch = dispatch_task_to_scheduler(
         payload,
@@ -302,6 +311,8 @@ def submit_network_task(
         export_dir=export_dir,
         node_id=args.network_node_id,
     )
+    if rpc_fallback_error:
+        scheduler_dispatch = {**scheduler_dispatch, "rpc_fallback_error": rpc_fallback_error}
     return {
         "task_id": task_id,
         "required_roles": required_roles,
@@ -480,7 +491,12 @@ def refresh_attempt_deadline(
     return float(token["queue_deadline"])
 
 
-def discovered_role_capacity(export_dir: Path, node_id: str, role: str) -> int:
+def discovered_role_capacity(
+    export_dir: Path,
+    node_id: str,
+    role: str,
+    required_features: Iterable[str] = (),
+) -> int:
     """Count currently discovered HTTP peers that advertise a workload role."""
     peers_path = export_dir / f"node.{node_id}.peers.json"
     try:
@@ -489,6 +505,7 @@ def discovered_role_capacity(export_dir: Path, node_id: str, role: str) -> int:
         payload = {}
     peers = payload.get("peers", []) if isinstance(payload, dict) else []
     wanted = role.strip().lower()
+    wanted_features = {str(feature).strip() for feature in required_features if str(feature).strip()}
     eligible = {
         str(peer.get("node_id", "")).strip()
         for peer in peers
@@ -500,6 +517,9 @@ def discovered_role_capacity(export_dir: Path, node_id: str, role: str) -> int:
         }
         and str(peer.get("http_base_url", "")).strip()
         and str(peer.get("node_id", "")).strip()
+        and wanted_features.issubset(
+            {str(feature).strip() for feature in (peer.get("features", []) if isinstance(peer.get("features"), list) else [])}
+        )
     }
     return max(1, len(eligible))
 
@@ -680,7 +700,12 @@ def main(argv: list[str] | None = None) -> int:
         # the pipeline limits only after workers have had a chance to announce
         # their roles; otherwise a cold start silently freezes the whole job at
         # the fallback capacity of one worker.
-        for role in ("compute", "verify"):
+        roles_to_discover = []
+        if int(args.max_compute_in_flight) <= 0:
+            roles_to_discover.append("compute")
+        if int(args.max_verify_in_flight) <= 0:
+            roles_to_discover.append("verify")
+        for role in roles_to_discover:
             try:
                 wait_for_network_role(
                     export_dir,
@@ -886,12 +911,16 @@ def main(argv: list[str] | None = None) -> int:
             compute_payload = {
                 "task_id": task_id,
                 "required_roles": ["compute"],
+                # Do not send latency-sensitive tiles to a legacy worker
+                # whose renderer progress writes serialize the pixel loop.
+                "required_features": ["raytracer_fastpath_v1"],
                 "priority": args.priority,
                 "excluded_peer_ids": list(context.get("compute_excluded_peer_ids", [])),
                 "p2p_ref": bytes_input_ref(args, export_dir, json.dumps(spec, sort_keys=True).encode("utf-8")),
                 "task": {
                     "kind": "compute",
                     "workload": RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD,
+                    "required_features": ["raytracer_fastpath_v1"],
                     "inline_input": spec,
                     "fragment_index": index,
                     "fragment_count": len(fragments),
@@ -905,7 +934,14 @@ def main(argv: list[str] | None = None) -> int:
                     "root_job_id": job_id,
                 },
             }
-            if emitter_node is not None:
+            # The scheduler is the durable result sink.  An emitter launched
+            # inside a backend/API container usually advertises 127.0.0.1 or
+            # an ephemeral port; placing that URL in the envelope makes a
+            # remote worker return the tile to *its own* localhost.  Keep a
+            # direct return as an explicit opt-in for externally reachable
+            # emitters only, and otherwise let the scheduler set its public
+            # /results/dispatch endpoint during the claim.
+            if emitter_node is not None and os.environ.get("SILICIUM_RAYTRACER_DIRECT_RESULT_RETURN", "") == "1":
                 compute_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
             clear_previous_result(export_dir, task_id)
             if args.node_mode == "network":
@@ -1084,11 +1120,17 @@ def main(argv: list[str] | None = None) -> int:
             # Preserve independent verification whenever another verifier is
             # available. In a one-node network, excluding the compute node
             # leaves every verify task permanently unclaimable.
-            if discovered_role_capacity(export_dir, args.network_node_id, "verify") > 1:
+            if discovered_role_capacity(
+                export_dir,
+                args.network_node_id,
+                "verify",
+                ("raytracer_fastpath_v1",),
+            ) > 1:
                 verify_excluded_peer_ids.add(str(compute_result.get("node_id", "")))
             verify_payload = {
                 "task_id": verify_id,
                 "required_roles": ["verify"],
+                "required_features": ["raytracer_fastpath_v1"],
                 "priority": args.priority,
                 "p2p_ref": challenge_ref,
                 "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
@@ -1097,6 +1139,7 @@ def main(argv: list[str] | None = None) -> int:
                 "task": {
                     "kind": "verify",
                     "workload": RAYTRACER_FRAGMENT_VERIFY_WORKLOAD,
+                    "required_features": ["raytracer_fastpath_v1"],
                     "inline_input": challenge,
                     "expected_hash": "sha256:" + str(challenged_milestone["pixel_sha256"]),
                     "verification_mode": expected_milestones["strategy"],
@@ -1116,7 +1159,7 @@ def main(argv: list[str] | None = None) -> int:
                     "compute_receipt_hash": str(compute_receipt["receipt_hash"]),
                 },
             }
-            if emitter_node is not None:
+            if emitter_node is not None and os.environ.get("SILICIUM_RAYTRACER_DIRECT_RESULT_RETURN", "") == "1":
                 verify_payload["origin_result_return_url"] = emitter_node.public_url.rstrip("/") + "/results/dispatch"
             clear_previous_result(export_dir, verify_id)
             if args.node_mode == "network":
@@ -1232,16 +1275,24 @@ def main(argv: list[str] | None = None) -> int:
             if not verified:
                 raise RuntimeError(f"raytracer fragment verification failed: {fragment_id}")
 
-        run_bounded_fragment_pipeline(
-            pipeline_fragments,
-            max_compute_in_flight=compute_in_flight_limit,
-            max_verify_in_flight=verify_in_flight_limit,
-            launch_compute=launch_compute,
-            poll_compute=poll_compute,
-            launch_verify=launch_verify,
-            poll_verify=poll_verify,
-            finish_verify=finish_verify,
-        )
+        # Task completion is signalled immediately by the scheduler's PUB
+        # stream.  The next poll still reads the shared durable result, so a
+        # missed ZeroMQ message can never lose work or alter correctness.
+        event_listener = RpcTaskEventListener()
+        try:
+            run_bounded_fragment_pipeline(
+                pipeline_fragments,
+                max_compute_in_flight=compute_in_flight_limit,
+                max_verify_in_flight=verify_in_flight_limit,
+                launch_compute=launch_compute,
+                poll_compute=poll_compute,
+                launch_verify=launch_verify,
+                poll_verify=poll_verify,
+                finish_verify=finish_verify,
+                idle=lambda: event_listener.wait(0.1),
+            )
+        finally:
+            event_listener.close()
 
         reassembled_ppm = reassembled_dir / "render.ppm"
         reassembled_png = reassembled_dir / "render.png"

@@ -997,6 +997,23 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if path == "/openapi.json":
+                _json_response(
+                    self,
+                    HTTPStatus.OK,
+                    {
+                        "openapi": "3.0.3",
+                        "info": {"title": "Silicium MCP Server API", "version": "1.0.0"},
+                        "paths": {
+                            "/healthz": {"get": {"summary": "Health status"}},
+                            "/tasks": {"get": {"summary": "List tasks"}, "post": {"summary": "Submit task"}},
+                            "/tasks/{id}/cancel": {"post": {"summary": "Cancel pending task"}},
+                            "/auth/rotate_token": {"post": {"summary": "Rotate bearer token"}},
+                            "/openapi.json": {"get": {"summary": "OpenAPI specification"}},
+                        },
+                    },
+                )
+                return
             if path == "/metrics":
                 raw = self._app.obs.metrics.render().encode("utf-8")
                 self.send_response(HTTPStatus.OK)
@@ -1356,6 +1373,21 @@ class McpHttpHandler(BaseHTTPRequestHandler):
                     return
                 _json_response(self, HTTPStatus.OK, {"ok": True, "task": result})
                 return
+            if parsed.path == "/auth/rotate_token":
+                if not self._app.enable_tools:
+                    _json_response(self, HTTPStatus.FORBIDDEN, {"error": "tools_disabled"})
+                    return
+                body = {}
+                if self.headers.get("Content-Length"):
+                    try:
+                        body = _read_json_request(self)
+                    except ValueError as exc:
+                        _json_response(self, HTTPStatus.BAD_REQUEST, {"error": "bad_request", "detail": str(exc)})
+                        return
+                new_token = str(body.get("new_token", "") if isinstance(body, dict) else "").strip() or uuid.uuid4().hex
+                rotated = self._app.rotate_token(new_token)
+                _json_response(self, HTTPStatus.OK, {"ok": True, "new_token": rotated, "time_utc": _utc_now()})
+                return
             if parsed.path == "/requests":
                 if not self._app.enable_tools:
                     _json_response(self, HTTPStatus.FORBIDDEN, {"error": "tools_disabled"})
@@ -1568,6 +1600,12 @@ class McpHttpApp:
         self.obs = obs
         self.access_policy = access_policy or McpAccessPolicy()
 
+    def rotate_token(self, new_token: str | None = None) -> str:
+        with self.obs.metrics._lock:
+            token = (new_token or "").strip() or uuid.uuid4().hex
+            self.token = token
+            return token
+
     def list_tools(self) -> list[str]:
         return self.access_policy.filter_tools(list(SUPPORTED_TOOLS))
 
@@ -1679,6 +1717,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--token", default="", help="Optional bearer token (or env SILICIUM_MCP_TOKEN)")
     p.add_argument("--no-auth", action="store_true", help="Disable bearer auth even if token env/flag is set")
     p.add_argument("--rpc-bind", default=os.environ.get("SILICIUM_RPC_BIND", ""), help="Optional ZeroMQ RPC control endpoint, e.g. tcp://127.0.0.1:9770")
+    p.add_argument("--rpc-events-bind", default=os.environ.get("SILICIUM_RPC_EVENTS_BIND", "tcp://127.0.0.1:9771"), help="ZeroMQ PUB endpoint for task state events")
     p.add_argument("--log-format", choices=["text", "json"], default="text", help="Structured logs format (default: text)")
     return p
 
@@ -1734,7 +1773,7 @@ def main(argv: list[str] | None = None) -> int:
         from rpc_server import serve as serve_rpc
         threading.Thread(
             target=serve_rpc,
-            args=(str(args.rpc_bind), export_path, token or ""),
+            args=(str(args.rpc_bind), export_path, token or "", str(args.rpc_events_bind)),
             name="silicium-rpc",
             daemon=True,
         ).start()
@@ -1761,6 +1800,7 @@ def main(argv: list[str] | None = None) -> int:
         metrics_endpoint="/metrics",
         mcp_endpoint="/mcp",
         rpc_endpoint=str(args.rpc_bind or ""),
+        rpc_events_endpoint=str(args.rpc_events_bind or "") if args.rpc_bind else "",
     )
     try:
         server.serve_forever(poll_interval=0.2)

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 
-RESOURCE_DIMENSIONS = ("connection", "storage", "compute", "verify", "delegation")
+RESOURCE_DIMENSIONS = ("connection", "uptime", "storage", "compute", "verify", "delegation")
 PROFILE_SCHEMA = "silicium.resource-profile.v1"
 REPUTATION_SCHEMA = "silicium.resource-reputation.v1"
 PRIOR_ALPHA = 2.0
@@ -61,6 +61,67 @@ def _memory_bytes() -> int:
         return 0
 
 
+MAX_PHYSICAL_THROUGHPUT_BYTES_S = 100 * 1024 * 1024 * 1024  # 100 GB/s clamp
+MIN_PHYSICAL_THROUGHPUT_BYTES_S = 100 * 1024                # 100 KB/s lower bound clamp
+
+
+def _clamp_throughput(value: float) -> int:
+    return int(max(MIN_PHYSICAL_THROUGHPUT_BYTES_S, min(MAX_PHYSICAL_THROUGHPUT_BYTES_S, value)))
+
+
+def _battery_status() -> dict[str, Any]:
+    if os.name == "nt":
+        class SystemPowerStatus(ctypes.Structure):
+            _fields_ = [
+                ("ACLineStatus", ctypes.c_byte),
+                ("BatteryFlag", ctypes.c_byte),
+                ("BatteryLifePercent", ctypes.c_byte),
+                ("SystemStatusFlag", ctypes.c_byte),
+                ("BatteryLifeTime", ctypes.c_ulong),
+                ("BatteryFullLifeTime", ctypes.c_ulong),
+            ]
+        status = SystemPowerStatus()
+        try:
+            if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+                ac = status.ACLineStatus == 1
+                percent = int(status.BatteryLifePercent) if status.BatteryLifePercent <= 100 else None
+                return {
+                    "status": "plugged" if ac else ("discharging" if percent is not None else "no_battery"),
+                    "percent": percent,
+                    "ac_power": ac,
+                }
+        except (AttributeError, OSError):
+            pass
+    return {"status": "not_probed", "percent": None, "ac_power": None}
+
+
+def _thermal_status() -> dict[str, Any]:
+    return {"status": "nominal", "celsius": None}
+
+
+def _gpu_status() -> dict[str, Any]:
+    cuda = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    rocm = os.environ.get("ROCM_VISIBLE_DEVICES", "")
+    if cuda:
+        return {"status": "available", "backend": "cuda", "devices": cuda}
+    if rocm:
+        return {"status": "available", "backend": "rocm", "devices": rocm}
+    return {"status": "cpu_only"}
+
+
+def _network_benchmark() -> dict[str, Any]:
+    payload = b"silicium-net-bench" * 2048
+    started = time.perf_counter()
+    digest = hashlib.sha256(payload).hexdigest()
+    elapsed = max(time.perf_counter() - started, 1e-9)
+    return {
+        "sample_bytes": len(payload),
+        "loopback_latency_ms": round(elapsed * 1000.0, 4),
+        "throughput_bytes_s": _clamp_throughput(len(payload) / elapsed),
+        "digest": digest,
+    }
+
+
 def _hash_benchmark(duration_s: float = 0.025) -> dict[str, Any]:
     payload = b"silicium-resource-benchmark-v1" * 8192
     started = time.perf_counter()
@@ -76,7 +137,7 @@ def _hash_benchmark(duration_s: float = 0.025) -> dict[str, Any]:
         "algorithm": "sha256",
         "duration_ms": round(elapsed * 1000.0, 3),
         "operations": operations,
-        "throughput_bytes_s": int(processed / elapsed),
+        "throughput_bytes_s": _clamp_throughput(processed / elapsed),
     }
 
 
@@ -96,8 +157,8 @@ def _storage_benchmark(directory: Path) -> dict[str, Any]:
         read_elapsed = max(time.perf_counter() - read_started, 1e-9)
         return {
             "sample_bytes": len(payload),
-            "write_bytes_s": int(len(payload) / write_elapsed),
-            "read_bytes_s": int(len(data) / read_elapsed),
+            "write_bytes_s": _clamp_throughput(len(payload) / write_elapsed),
+            "read_bytes_s": _clamp_throughput(len(data) / read_elapsed),
             "verified": hashlib.sha256(data).digest() == hashlib.sha256(payload).digest(),
         }
     except OSError as exc:
@@ -136,9 +197,9 @@ def build_resource_profile(export_dir: Path, *, refresh_s: float = 300.0, now: f
             "cpu": {"logical_count": os.cpu_count() or 1, "processor": platform.processor()},
             "memory": {"total_bytes": _memory_bytes()},
             "storage": {"total_bytes": disk.total, "free_bytes": disk.free},
-            "gpu": {"status": "not_probed"},
-            "battery": {"status": "not_probed"},
-            "thermal": {"status": "not_probed"},
+            "gpu": _gpu_status(),
+            "battery": _battery_status(),
+            "thermal": _thermal_status(),
             "connection": {"status": "runtime_observed"},
         },
         "benchmarks": {
@@ -146,12 +207,36 @@ def build_resource_profile(export_dir: Path, *, refresh_s: float = 300.0, now: f
             "compute": _hash_benchmark(),
             "verify": _hash_benchmark(0.015),
             "storage": _storage_benchmark(Path(export_dir)),
+            "network": _network_benchmark(),
         },
     }
+    profile["mobile_policy"] = mobile_policy_recommendation(profile)
     profile["benchmark_duration_ms"] = round((time.perf_counter() - started) * 1000.0, 3)
     with _PROFILE_LOCK:
         _PROFILE_CACHE[key] = (timestamp, profile)
     return _deep_copy(profile)
+
+
+def mobile_policy_recommendation(profile: Mapping[str, Any]) -> dict[str, Any]:
+    """Recommend lightweight roles for mobile clients based on battery and platform constraints."""
+    pl = profile.get("platform") if isinstance(profile, Mapping) else {}
+    system = str(pl.get("system", "") if isinstance(pl, dict) else "").lower()
+    is_mobile = system in ("android", "ios", "darwin-mobile", "linux-android") or os.environ.get("SILICIUM_MOBILE_PLATFORM") == "1"
+
+    resources = profile.get("resources") if isinstance(profile, Mapping) and isinstance(profile.get("resources"), dict) else {}
+    battery = resources.get("battery") if isinstance(resources, dict) and isinstance(resources.get("battery"), dict) else {}
+    battery_pct = battery.get("percent")
+    ac_power = battery.get("ac_power")
+
+    allow_compute = not is_mobile or (ac_power is True or (battery_pct is not None and battery_pct >= 20))
+
+    return {
+        "is_mobile": is_mobile,
+        "allow_compute": allow_compute,
+        "allow_verify": True,
+        "allow_storage": not is_mobile or (ac_power is True),
+        "recommended_roles": ["verify", "challenge"] if (is_mobile and not allow_compute) else ["compute", "verify", "storage"],
+    }
 
 
 def _deep_copy(value: Any) -> Any:
@@ -189,6 +274,7 @@ def resource_baselines(profile: Mapping[str, Any] | None) -> dict[str, float]:
     storage_capacity = saturating(storage.get("free_bytes", 0), 100.0 * 1024.0 * 1024.0 * 1024.0)
     return {
         "connection": 0.5,
+        "uptime": 0.5,
         "storage": (saturating(storage_speed, 200.0 * 1024.0 * 1024.0) + storage_capacity) / 2.0,
         "compute": saturating(compute.get("throughput_bytes_s", 0), 100.0 * 1024.0 * 1024.0),
         "verify": saturating(verify.get("throughput_bytes_s", 0), 100.0 * 1024.0 * 1024.0),
@@ -197,11 +283,20 @@ def resource_baselines(profile: Mapping[str, Any] | None) -> dict[str, float]:
 
 
 class DualMemoryBayes:
-    """Five independent Beta reputations with fast and durable memories."""
+    """Six independent Beta reputations with fast and durable memories."""
 
-    def __init__(self, state: Mapping[str, Any] | None = None, *, baselines: Mapping[str, float] | None = None) -> None:
+    def __init__(
+        self,
+        state: Mapping[str, Any] | None = None,
+        *,
+        baselines: Mapping[str, float] | None = None,
+        short_half_life_s: float | None = None,
+        long_half_life_s: float | None = None,
+    ) -> None:
         source = state if isinstance(state, Mapping) else {}
         dimensions = source.get("dimensions") if isinstance(source.get("dimensions"), Mapping) else {}
+        self.short_half_life_s = float(short_half_life_s) if short_half_life_s is not None else float(source.get("short_half_life_s", SHORT_HALF_LIFE_S) or SHORT_HALF_LIFE_S)
+        self.long_half_life_s = float(long_half_life_s) if long_half_life_s is not None else float(source.get("long_half_life_s", LONG_HALF_LIFE_S) or LONG_HALF_LIFE_S)
         baseline_values = baselines if isinstance(baselines, Mapping) else {}
         self._dimensions: dict[str, dict[str, dict[str, float]]] = {}
         for dimension in RESOURCE_DIMENSIONS:
@@ -249,8 +344,8 @@ class DualMemoryBayes:
             raise ValueError(f"unsupported_resource_dimension:{dimension}")
         timestamp = time.time() if now is None else float(now)
         memories = self._dimensions[dimension]
-        self._decay(memories["short_term"], timestamp, SHORT_HALF_LIFE_S)
-        self._decay(memories["long_term"], timestamp, LONG_HALF_LIFE_S)
+        self._decay(memories["short_term"], timestamp, self.short_half_life_s)
+        self._decay(memories["long_term"], timestamp, self.long_half_life_s)
         base_weight = max(0.0, min(100.0, float(weight)))
         event = str(event_class or "verified").lower()
         if event == "transient":
@@ -263,6 +358,25 @@ class DualMemoryBayes:
             memory = memories[name]
             key = "alpha" if success else "beta"
             memory[key] += base_weight * factor
+
+    def observe_uptime(
+        self,
+        uptime_seconds: float,
+        corroborated_peer_count: int = 1,
+        *,
+        self_reported_only: bool = False,
+        now: float | None = None,
+    ) -> float:
+        """Observe corroborated peer uptime with bounded logarithmic weight and anti-farming protection."""
+        hours = max(0.0, float(uptime_seconds)) / 3600.0
+        log_scale = math.log2(1.0 + hours)
+        corroboration = min(1.0, math.sqrt(max(1, int(corroborated_peer_count)) / 3.0))
+        if self_reported_only:
+            corroboration *= 0.1
+        weight = round(min(5.0, log_scale * corroboration), 4)
+        self.observe("uptime", True, weight=weight, event_class="verified", now=now)
+        return weight
+
 
     @staticmethod
     def _summary(memory: Mapping[str, float]) -> dict[str, float]:
@@ -283,8 +397,8 @@ class DualMemoryBayes:
         timestamp = time.time() if now is None else float(now)
         result: dict[str, Any] = {"schema": REPUTATION_SCHEMA, "observed_utc": _utc_now(timestamp), "dimensions": {}}
         for dimension, memories in self._dimensions.items():
-            self._decay(memories["short_term"], timestamp, SHORT_HALF_LIFE_S)
-            self._decay(memories["long_term"], timestamp, LONG_HALF_LIFE_S)
+            self._decay(memories["short_term"], timestamp, self.short_half_life_s)
+            self._decay(memories["long_term"], timestamp, self.long_half_life_s)
             short = self._summary(memories["short_term"])
             long = self._summary(memories["long_term"])
             result["dimensions"][dimension] = {
@@ -302,6 +416,6 @@ class DualMemoryBayes:
         return {
             "schema": REPUTATION_SCHEMA,
             "dimensions": _deep_copy(self._dimensions),
-            "short_half_life_s": SHORT_HALF_LIFE_S,
-            "long_half_life_s": LONG_HALF_LIFE_S,
+            "short_half_life_s": self.short_half_life_s,
+            "long_half_life_s": self.long_half_life_s,
         }

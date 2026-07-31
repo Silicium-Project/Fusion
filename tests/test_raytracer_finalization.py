@@ -381,3 +381,46 @@ def test_reassembly_places_rectangular_tiles_without_ordering_them(tmp_path) -> 
     width, height, pixels = raytracer_workload.read_ppm(output)
     assert (width, height) == (2, 2)
     assert pixels == bytes([1, 2, 3, 20, 21, 22, 4, 5, 6, 23, 24, 25])
+
+
+def test_ppm_parser_rejects_ascii_p3_and_corrupted_headers() -> None:
+    # 1. ASCII P3 magic header rejection
+    p3_ppm = b"P3\n1 1\n255\n255 0 0\n"
+    with pytest.raises(ValueError, match="unsupported_ppm_magic"):
+        raytracer_workload.parse_ppm_bytes(p3_ppm, "test-p3")
+
+    # 2. Unsupported max_value (e.g. 65535 16-bit PPM)
+    p6_16bit = b"P6\n1 1\n65535\n\x00\xff\x00\xff\x00\xff"
+    with pytest.raises(ValueError, match="unsupported_ppm_max_value:65535"):
+        raytracer_workload.parse_ppm_bytes(p6_16bit, "test-16bit")
+
+    # 3. Truncated / invalid raster payload size
+    truncated_ppm = b"P6\n2 2\n255\n" + bytes([1, 2, 3])
+    with pytest.raises(ValueError, match="invalid_ppm_payload_size"):
+        raytracer_workload.parse_ppm_bytes(truncated_ppm, "test-truncated")
+
+
+def test_fragment_validation_rejects_dimension_and_hash_mismatches() -> None:
+    ppm = _ppm(2, 2, bytes(range(12)))
+    actual_hash = sha256_bytes(ppm)
+
+    # 1. Dimension mismatch
+    with pytest.raises(RuntimeError, match="raytracer_fragment_dimensions_mismatch"):
+        validate_fragment_ppm(
+            ppm,
+            task_id="frag-dim-test",
+            expected_width=2,
+            expected_height=1,
+            expected_hash=actual_hash,
+        )
+
+    # 2. Hash mismatch
+    with pytest.raises(RuntimeError, match="raytracer_fragment_hash_mismatch"):
+        validate_fragment_ppm(
+            ppm,
+            task_id="frag-hash-test",
+            expected_width=2,
+            expected_height=2,
+            expected_hash="0" * 64,
+        )
+

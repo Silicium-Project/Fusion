@@ -1659,16 +1659,23 @@ def test_signed_update_announcement_and_artifact_cross_an_isolated_peer(tmp_path
             source_path = export_a / "p2p" / digest
             source_path.parent.mkdir(parents=True, exist_ok=True)
             source_path.write_bytes(artifact)
-            release = {
+            unsigned = {
+                "schema_version": 1,
                 "channel": "dev",
                 "version": "0.2.9-dev.99",
                 "url": "https://vps-910c1dbc.vps.ovh.net/downloads/silicium-node-windows-dev.exe",
                 "sha256": digest,
                 "content_id": digest,
                 "size_bytes": len(artifact),
-                "auto_install": True,
                 "check_interval_seconds": 30,
-                "signature": "signed-by-release-authority",
+                "publisher_id": peer_a.identity.identity_id,
+                "publisher_public_key": peer_a.identity.public_key_b64,
+            }
+            message_bytes = network_node.stable_json(unsigned).encode("utf-8")
+            release = {
+                **unsigned,
+                "auto_install": True,
+                "signature": peer_a.identity.sign_bytes(message_bytes),
                 "signing_key_id": "test-key",
             }
             assert peer_a._record_update_announcement(release, "update-source")
@@ -2645,17 +2652,16 @@ def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monk
         def fetch(self, _ref):
             return b"scene", {"source": "test-scene"}
 
-    def fake_run(command, **_kwargs):
-        output_path = Path(command[command.index("--output") + 1])
+    def fake_raytracer(scene_path, output_path, _timeout, y_start, y_end, x_start, x_end, *_args):
         output_path.write_bytes(sample_ppm)
-        assert command[command.index("--y-start") + 1] == "108"
-        assert command[command.index("--y-end") + 1] == "110"
-        assert command[command.index("--x-start") + 1] == "320"
-        assert command[command.index("--x-end") + 1] == "322"
-        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        assert y_start == 108
+        assert y_end == 110
+        assert x_start == 320
+        assert x_end == 322
+        return {"stdout": "", "stderr": "", "renderer_telemetry": {"renderer": "test"}}
 
     runtime = network_node.RoleRuntime(_config(tmp_path / "verify", "verifier", roles="verify"), FakeP2P())
-    monkeypatch.setattr(runtime, "run_process", fake_run)
+    monkeypatch.setattr(network_node, "run_raytracer", fake_raytracer)
     result = runtime.run_raytracer_milestone_verification(
         {"scene_p2p_ref": {"protocol": "test"}, "max_sample_rows": 20},
         json.dumps(challenge).encode("utf-8"),
@@ -2796,3 +2802,26 @@ def test_compute_receipt_uses_deterministic_pixels_and_has_valid_signature(tmp_p
         receipt["worker_signature"],
         receipt["worker_public_key"],
     )
+
+
+def test_node_seeds_local_update_manifest_on_startup(tmp_path: Path, monkeypatch) -> None:
+    export_dir = tmp_path / "export"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "channel": "dev",
+        "version": "0.3.0",
+        "sha256": "a" * 64,
+        "content_id": "a" * 64,
+        "url": "http://lan-peer/release.tar.gz",
+        "size_bytes": 1024,
+        "signature": "mock_sig_123",
+    }
+    (export_dir / "update.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    node = network_node.NetworkNode(_config(export_dir, "lan-node-a"))
+    node.peer_network._seed_local_update_manifests()
+
+    announcements = node.peer_network.update_announcements()
+    assert len(announcements) == 1
+    assert announcements[0]["version"] == "0.3.0"
+    assert announcements[0]["content_id"] == "a" * 64

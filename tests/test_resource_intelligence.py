@@ -4,7 +4,13 @@ import time
 from types import SimpleNamespace
 
 from tools import network_node
-from tools.resource_intelligence import DualMemoryBayes, RESOURCE_DIMENSIONS, build_resource_profile, resource_baselines
+from tools.resource_intelligence import (
+    RESOURCE_DIMENSIONS,
+    DualMemoryBayes,
+    build_resource_profile,
+    mobile_policy_recommendation,
+    resource_baselines,
+)
 
 
 def test_resource_profile_is_bounded_versioned_and_cached(tmp_path) -> None:
@@ -73,6 +79,19 @@ def test_reputation_store_persists_dual_memory(tmp_path) -> None:
     assert abs(reloaded_evidence - evidence) < 0.001
 
 
+def test_reputation_store_persists_uptime_and_dual_memory(tmp_path) -> None:
+    path = tmp_path / "reputation.json"
+    store = network_node.ReputationStore(path)
+    store.observe_uptime(86400, corroborated_peer_count=3)
+    uptime_snap = store.resource_snapshot()["dimensions"]["uptime"]
+    assert uptime_snap["combined"]["evidence"] > 0.0
+
+    reloaded = network_node.ReputationStore(path)
+    reloaded_snap = reloaded.resource_snapshot()["dimensions"]["uptime"]
+    assert abs(reloaded_snap["combined"]["evidence"] - uptime_snap["combined"]["evidence"]) < 0.001
+
+
+
 def test_scheduler_uses_resource_lower_confidence_bound() -> None:
     config = SimpleNamespace(
         scheduler_onchain_weight=0.0,
@@ -97,3 +116,32 @@ def test_scheduler_uses_resource_lower_confidence_bound() -> None:
     )
 
     assert reliable_score > uncertain_score
+
+
+def test_uptime_dimension_and_corroboration_scaling() -> None:
+    model = DualMemoryBayes()
+    # 24 hours uptime, 3 corroborated peers
+    w1 = model.observe_uptime(86400, corroborated_peer_count=3, now=100.0)
+    # Self-reported only
+    w2 = model.observe_uptime(86400, self_reported_only=True, now=100.0)
+
+    assert w1 > w2
+    snapshot = model.snapshot(now=100.0)["dimensions"]["uptime"]
+    assert snapshot["combined"]["evidence"] > 0.0
+    assert snapshot["combined"]["mean"] > 0.5
+
+
+def test_mobile_policy_recommendation_filters_heavy_compute(monkeypatch) -> None:
+    monkeypatch.setenv("SILICIUM_MOBILE_PLATFORM", "1")
+    profile = {
+        "platform": {"system": "Android"},
+        "resources": {"battery": {"percent": 15, "ac_power": False}},
+    }
+    policy = mobile_policy_recommendation(profile)
+
+    assert policy["is_mobile"] is True
+    assert policy["allow_compute"] is False
+    assert policy["allow_verify"] is True
+    assert "verify" in policy["recommended_roles"]
+    assert "compute" not in policy["recommended_roles"]
+

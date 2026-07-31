@@ -332,6 +332,107 @@ def build_verification_milestones(
     }
 
 
+def calculate_sampling_rate(reputation_score: float, min_rate: float = 0.2, max_rate: float = 1.0) -> float:
+    """Calculate sampling rate based on worker reputation.
+    
+    Low reputation workers require a higher verification sampling rate (up to 1.0 = 100%).
+    High reputation workers require a lower sampling rate (down to min_rate = 0.2).
+    """
+    rep = max(0.0, float(reputation_score))
+    if rep >= 100.0:
+        return min_rate
+    rate = max_rate - (rep / 100.0) * (max_rate - min_rate)
+    return round(max(min_rate, min(max_rate, rate)), 4)
+
+
+def select_probabilistic_milestones(
+    manifest: dict[str, Any],
+    seed: str,
+    sample_rate: float = 0.25,
+) -> list[dict[str, Any]]:
+    """Select an unpredictable subset of milestones using a post-commitment seed."""
+    milestones = manifest.get("milestones", [])
+    if not milestones:
+        return []
+
+    sample_rate = max(0.0, min(1.0, float(sample_rate)))
+    target_count = max(1, math.ceil(len(milestones) * sample_rate))
+
+    scored_milestones = []
+    for ms in milestones:
+        index_bytes = str(ms["index"]).encode("utf-8")
+        score = hashlib.sha256(f"{seed}:{index_bytes.decode()}".encode("utf-8")).hexdigest()
+        scored_milestones.append((score, ms))
+
+    scored_milestones.sort(key=lambda x: x[0])
+    return [ms for _, ms in scored_milestones[:target_count]]
+
+
+def detection_probability(total_milestones: int, tampered_milestones: int, sampled_count: int) -> float:
+    """Calculate theoretical detection probability for probabilistic milestone sampling."""
+    if total_milestones <= 0 or sampled_count <= 0 or tampered_milestones <= 0:
+        return 0.0
+    if tampered_milestones >= total_milestones or sampled_count >= total_milestones:
+        return 1.0
+
+    prob_miss = 1.0
+    n = total_milestones
+    m = tampered_milestones
+    for i in range(sampled_count):
+        prob_miss *= (n - m - i) / (n - i)
+    return round(1.0 - prob_miss, 4)
+
+
+def verify_probabilistic_milestones(
+    ppm_bytes: bytes,
+    manifest: dict[str, Any],
+    seed: str,
+    reputation_score: float = 50.0,
+) -> dict[str, Any]:
+    """Verify fragment milestones probabilistically with automatic escalation to full check upon failure."""
+    width, height, pixels = parse_ppm_bytes(ppm_bytes)
+    row_stride = width * 3
+    fragment_y_start = manifest.get("fragment_y_start", 0)
+
+    sample_rate = calculate_sampling_rate(reputation_score)
+    sampled = select_probabilistic_milestones(manifest, seed, sample_rate)
+
+    failed_milestones = []
+    for ms in sampled:
+        local_y_start = ms["y_start"] - fragment_y_start
+        local_y_end = ms["y_end"] - fragment_y_start
+        pixel_slice = pixels[local_y_start * row_stride : local_y_end * row_stride]
+        actual_sha256 = sha256_bytes(pixel_slice)
+        if actual_sha256 != ms["pixel_sha256"]:
+            failed_milestones.append({
+                "index": ms["index"],
+                "expected": ms["pixel_sha256"],
+                "actual": actual_sha256,
+            })
+
+    if failed_milestones:
+        return {
+            "verified": False,
+            "escalated_to_full": True,
+            "sample_rate": sample_rate,
+            "sampled_count": len(sampled),
+            "total_milestones": manifest.get("milestone_count", 0),
+            "failed_milestones": failed_milestones,
+            "reason": f"probabilistic_milestone_verification_failed:{len(failed_milestones)}_mismatches",
+        }
+
+    return {
+        "verified": True,
+        "escalated_to_full": False,
+        "sample_rate": sample_rate,
+        "sampled_count": len(sampled),
+        "total_milestones": manifest.get("milestone_count", 0),
+        "failed_milestones": [],
+        "reason": "",
+    }
+
+
+
 def write_ppm(path: Path, width: int, height: int, pixels: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(f"P6\n{width} {height}\n255\n".encode("ascii") + pixels)
@@ -411,6 +512,47 @@ def run_raytracer(
     }
 
 
+
+def validate_fragment_ppm(
+    fragment_bytes: bytes,
+    *,
+    task_id: str = "<unknown>",
+    expected_width: int | None = None,
+    expected_height: int | None = None,
+    expected_hash: str | None = None,
+) -> dict[str, Any]:
+    """Validate a P6 PPM binary fragment for correctness and optional hash match.
+
+    Raises RuntimeError on any validation failure so callers can propagate
+    the error without catching generic exceptions.
+    """
+    try:
+        actual_width, actual_height, _ = parse_ppm_bytes(fragment_bytes, task_id)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"raytracer_fragment_invalid_ppm:task={task_id}:{exc}") from exc
+    if expected_width is not None and actual_width != expected_width:
+        raise RuntimeError(
+            f"raytracer_fragment_width_mismatch:task={task_id}:expected={expected_width}:actual={actual_width}"
+        )
+    if expected_height is not None and actual_height != expected_height:
+        raise RuntimeError(
+            f"raytracer_fragment_height_mismatch:task={task_id}:expected={expected_height}:actual={actual_height}"
+        )
+    actual_hash = sha256_bytes(fragment_bytes)
+    if expected_hash is not None:
+        normalized = str(expected_hash).removeprefix("sha256:").lower()
+        if actual_hash != normalized:
+            raise RuntimeError(
+                f"raytracer_fragment_hash_mismatch:task={task_id}:expected={normalized}:actual={actual_hash}"
+            )
+    return {
+        "width": actual_width,
+        "height": actual_height,
+        "sha256": actual_hash,
+        "valid_p6": True,
+    }
+
+
 def command_compute(args: argparse.Namespace) -> int:
     scene = Path(args.scene).resolve()
     output = Path(args.output).resolve()
@@ -429,15 +571,22 @@ def command_compute(args: argparse.Namespace) -> int:
         x_end,
         progress_file,
     )
+    # --- Issue #85: validate the binary P6 output before signing ---
+    _ppm_bytes = output.read_bytes()
+    try:
+        validate_fragment_ppm(_ppm_bytes, task_id=str(output))
+    except RuntimeError as exc:
+        raise RuntimeError(f"raytracer_compute_invalid_output:{exc}") from exc
+    result["p6_validated"] = True
     result["verification_milestones"] = build_verification_milestones(
-        output.read_bytes(),
+        _ppm_bytes,
         y_start or 0,
         int(args.verification_batch_rows),
         x_start or 0,
     )
     png_path = Path(args.png).resolve() if args.png else None
     if png_path:
-        png = write_optional_png(output.read_bytes(), png_path)
+        png = write_optional_png(_ppm_bytes, png_path)
         result["result_png_ready"] = png["ready"]
         result["result_png_path"] = png["path"]
         result["result_png_sha256"] = png["sha256"]
@@ -490,16 +639,41 @@ def command_verify(args: argparse.Namespace) -> int:
     actual_hash = sha256_file(result_path)
     recompute_error = ""
     recomputed_hash = ""
-    with tempfile.TemporaryDirectory(prefix="silicium-raytracer-verify-") as tmpdir:
-        recomputed_path = Path(tmpdir) / "recomputed.ppm"
-        try:
-            recomputed = run_raytracer(scene, recomputed_path, int(args.timeout_s), y_start, y_end, x_start, x_end)
-            recomputed_hash = str(recomputed.get("result_sha256") or "")
-        except Exception as exc:
-            recompute_error = str(exc)
+    verification_mode = "declared-hash"
+    verified = False
+    recompute_match = False
+
     hash_integrity_ok = (not declared) or declared == actual_hash
-    recompute_match = bool(recomputed_hash) and actual_hash == recomputed_hash
-    verified = hash_integrity_ok
+    probabilistic_result = None
+
+    if args.manifest and hash_integrity_ok:
+        manifest = json.loads(Path(args.manifest).read_text("utf-8"))
+        ppm_bytes = result_path.read_bytes()
+        probabilistic_result = verify_probabilistic_milestones(
+            ppm_bytes,
+            manifest,
+            args.seed,
+            float(args.reputation_score)
+        )
+        if probabilistic_result["verified"]:
+            verified = True
+            verification_mode = "probabilistic-milestones"
+        elif probabilistic_result.get("escalated_to_full"):
+            verification_mode = "probabilistic-escalated"
+
+    if not verified and hash_integrity_ok:
+        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-verify-") as tmpdir:
+            recomputed_path = Path(tmpdir) / "recomputed.ppm"
+            try:
+                recomputed = run_raytracer(scene, recomputed_path, int(args.timeout_s), y_start, y_end, x_start, x_end)
+                recomputed_hash = str(recomputed.get("result_sha256") or "")
+            except Exception as exc:
+                recompute_error = str(exc)
+        recompute_match = bool(recomputed_hash) and actual_hash == recomputed_hash
+        verified = recompute_match
+        if verification_mode == "declared-hash":
+            verification_mode = "full-recompute"
+
     payload = {
         "schema_version": 1,
         "workload": "raytracer",
@@ -509,11 +683,13 @@ def command_verify(args: argparse.Namespace) -> int:
         "recompute_error": recompute_error,
         "recompute_match": recompute_match,
         "expected_hash": declared,
-        "verification_mode": "declared-hash",
+        "verification_mode": verification_mode,
         "verified": verified,
         "choice": verified,
         "fragment": {"x_start": x_start, "x_end": x_end, "y_start": y_start, "y_end": y_end},
     }
+    if probabilistic_result:
+        payload["probabilistic_metrics"] = probabilistic_result
     if args.result_json:
         write_json(Path(args.result_json).resolve(), payload)
     print(json.dumps(payload, indent=2, sort_keys=True))
@@ -614,6 +790,32 @@ def command_reassemble(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_validate(args: argparse.Namespace) -> int:
+    """Standalone CLI subcommand: validate a P6 PPM binary fragment."""
+    fragment_path = Path(args.fragment).resolve()
+    if not fragment_path.exists():
+        print(json.dumps({"error": f"file_not_found:{fragment_path}", "valid": False}))
+        return 1
+    fragment_bytes = fragment_path.read_bytes()
+    expected_width = int(args.width) if args.width else None
+    expected_height = int(args.height) if args.height else None
+    expected_hash = args.expected_hash or None
+    try:
+        result = validate_fragment_ppm(
+            fragment_bytes,
+            task_id=str(fragment_path.name),
+            expected_width=expected_width,
+            expected_height=expected_height,
+            expected_hash=expected_hash,
+        )
+        result["fragment"] = str(fragment_path)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    except RuntimeError as exc:
+        print(json.dumps({"valid": False, "error": str(exc), "fragment": str(fragment_path)}))
+        return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Silicium raytracer workload entrypoints.")
     sub = parser.add_subparsers(dest="command")
@@ -650,6 +852,9 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--y-end", default="")
     verify.add_argument("--x-start", default="")
     verify.add_argument("--x-end", default="")
+    verify.add_argument("--manifest", default="")
+    verify.add_argument("--seed", default="")
+    verify.add_argument("--reputation-score", type=float, default=50.0)
     verify.set_defaults(func=command_verify)
 
     reassemble = sub.add_parser("reassemble")
@@ -660,6 +865,14 @@ def build_parser() -> argparse.ArgumentParser:
     reassemble.add_argument("--png", default="")
     reassemble.add_argument("--result-json", default="")
     reassemble.set_defaults(func=command_reassemble)
+
+    validate = sub.add_parser("validate", help="Validate a P6 PPM binary fragment (issue #85)")
+    validate.add_argument("fragment", help="Path to the PPM file to validate")
+    validate.add_argument("--width", default="", help="Expected pixel width")
+    validate.add_argument("--height", default="", help="Expected pixel height")
+    validate.add_argument("--expected-hash", default="", help="Expected SHA-256 (with or without sha256: prefix)")
+    validate.set_defaults(func=command_validate)
+
     return parser
 
 

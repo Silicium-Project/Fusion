@@ -1,7 +1,10 @@
 from __future__ import annotations
 import time, uuid
 import zmq
-from rpc_protocol import decode_response, encode_request
+try:  # Works both as ``tools.rpc_client`` and as the legacy script module.
+    from .rpc_protocol import decode_response, encode_request
+except ImportError:  # pragma: no cover - exercised by standalone tooling
+    from rpc_protocol import decode_response, encode_request
 
 
 class RpcClient:

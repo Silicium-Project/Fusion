@@ -354,7 +354,7 @@ def metric_card(title: str, value: str, caption: str) -> str:
 
 def render_peer_strip(peers: object) -> str:
     if not isinstance(peers, list) or not peers:
-        return '<div class="panel"><h2>Peers</h2><p class="muted">No peer snapshot yet.</p></div>'
+        return '<div class="panel"><h2>Peers & P2P Directory</h2><p class="muted">No peer snapshot yet.</p></div>'
     rows = []
     for peer in peers:
         if not isinstance(peer, dict):
@@ -363,14 +363,42 @@ def render_peer_strip(peers: object) -> str:
         roles = ", ".join(str(role) for role in peer.get("roles", [])[:5]) if isinstance(peer.get("roles"), list) else ""
         solana = "Solana on" if _dig(peer, "capacity", "solana_enabled") else "Solana off"
         self_badge = '<span class="badge">self</span>' if peer.get("self") else ""
+        
+        # Outdated version detection
+        version = str(peer.get("version") or _dig(peer, "capacity", "version") or "0.2.9")
+        outdated_badge = '<span class="badge warning" title="Outdated node version">⚠️ Outdated v' + html.escape(version) + '</span>' if peer.get("outdated") or peer.get("outdated_version") else f'<span class="badge muted">v{html.escape(version)}</span>'
+
+        # Transport & connection state badge (direct / relay / blocked / inactive)
+        transport = str(peer.get("transport") or peer.get("status") or "direct").lower()
+        if transport in ("direct", "active", "connected"):
+            transport_badge = '<span class="pill green">direct</span>'
+        elif transport in ("relay", "relayed"):
+            transport_badge = '<span class="pill yellow">relayed</span>'
+        elif transport in ("blocked", "firewalled"):
+            transport_badge = '<span class="pill red">blocked</span>'
+        else:
+            transport_badge = f'<span class="pill gray">{html.escape(transport)}</span>'
+
+        http_url = str(peer.get("http_base_url") or _dig(peer, "capacity", "http_base_url") or "")
+        gossip_bind = str(peer.get("gossip_bind") or _dig(peer, "capacity", "gossip_bind") or "")
+        addresses = []
+        if http_url:
+            addresses.append(f'<span class="muted" style="font-size: 11px;">HTTP: {html.escape(http_url)}</span>')
+        if gossip_bind:
+            addresses.append(f'<span class="muted" style="font-size: 11px;">Gossip: {html.escape(gossip_bind)}</span>')
+        address_html = "<br>".join(addresses)
+        if address_html:
+            address_html = f"<br>{address_html}"
+
         rows.append(
             '<div class="peer">'
-            f"<strong>{html.escape(node_id)}</strong>{self_badge}"
-            f"<small>{html.escape(roles)}</small>"
+            f"<strong>{html.escape(node_id)}</strong>{self_badge} {outdated_badge} {transport_badge}"
+            f"<br><small>{html.escape(roles)}</small>"
             f'<span class="muted">{html.escape(solana)}</span>'
+            f"{address_html}"
             "</div>"
         )
-    return '<div class="panel"><h2>Peers</h2><div class="peer-grid">' + "".join(rows) + "</div></div>"
+    return '<div class="panel"><h2>Peers & P2P Directory</h2><div class="peer-grid">' + "".join(rows) + "</div></div>"
 
 
 def render_work_table(tasks: object, requests: object, results: object) -> str:
@@ -396,7 +424,7 @@ def render_work_table(tasks: object, requests: object, results: object) -> str:
 
 def render_tiles(tiles: object) -> str:
     if not isinstance(tiles, list) or not tiles:
-        return '<div class="panel"><h2>Computed tiles</h2><p class="muted">No tile-indexed results yet. Tile results appear here when result files include tile_index or tile_region.</p></div>'
+        return '<div class="panel"><h2>Computed & Live Tiles</h2><p class="muted">No tile-indexed results yet. Tile results appear here when result files include tile_index or tile_region.</p></div>'
     count = max(len(tiles), max(int(tile.get("index", 0) or 0) for tile in tiles if isinstance(tile, dict)) + 1)
     columns = max(1, min(8, int(count**0.5) + (1 if int(count**0.5) ** 2 < count else 0)))
     tile_by_index = {int(tile.get("index", 0) or 0): tile for tile in tiles if isinstance(tile, dict)}
@@ -404,20 +432,34 @@ def render_tiles(tiles: object) -> str:
     for index in range(count):
         tile = tile_by_index.get(index)
         if tile:
+            status_str = str(tile.get("status", "ok")).lower()
+            verified = tile.get("verified") or tile.get("milestone_verified") or status_str in ("verified", "probabilistic_verified")
+            rejected = status_str in ("failed", "rejected", "tampered")
+            
+            if rejected:
+                tile_class = "tile rejected"
+                status_badge = '<span class="badge red">❌ Rejected</span>'
+            elif verified:
+                tile_class = "tile verified"
+                status_badge = '<span class="badge green">✓ Verified</span>'
+            else:
+                tile_class = "tile done"
+                status_badge = '<span class="badge blue">⚡ Computed</span>'
+
             label = f"#{index}"
             tooltip = f"{tile.get('id', '')} {tile.get('node', '')} {tile.get('hash', '')}"
             preview = render_ppm_preview(str(tile.get("image_path") or ""))
             cells.append(
-                f'<div class="tile done" title="{html.escape(tooltip)}">'
+                f'<div class="{tile_class}" title="{html.escape(tooltip)}">'
                 f"{preview}"
-                f"<strong>{html.escape(label)}</strong>"
-                f"<small>{html.escape(str(tile.get('node') or ''))}</small>"
+                f"<strong>{html.escape(label)}</strong> {status_badge}"
+                f"<br><small>{html.escape(str(tile.get('node') or ''))}</small>"
                 "</div>"
             )
         else:
             cells.append(f'<div class="tile pending"><strong>#{index}</strong><small>pending</small></div>')
     return (
-        '<div class="panel"><h2>Computed tiles</h2>'
+        '<div class="panel"><h2>Computed & Live Tiles</h2>'
         f'<div class="tile-grid" style="grid-template-columns: repeat({columns}, minmax(54px, 1fr));">'
         + "".join(cells)
         + "</div></div>"
@@ -562,11 +604,22 @@ def render_page(title: str, code: int, output: str) -> str:
     .peer-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-top: 10px; }}
     .peer {{ display: grid; gap: 4px; border: 1px solid #e3eaed; border-radius: 6px; padding: 10px; }}
     .badge, .pill {{ display: inline-flex; width: fit-content; border-radius: 999px; background: #dff2ea; color: #14643a; padding: 2px 8px; font-size: 12px; font-weight: 800; }}
+    .pill.green {{ background: #dff2ea; color: #14643a; }}
+    .pill.yellow {{ background: #fef3c7; color: #92400e; }}
+    .pill.red {{ background: #fee2e2; color: #991b1b; }}
+    .pill.gray {{ background: #f0f3f4; color: #52646c; }}
+    .badge.warning {{ background: #fef3c7; color: #92400e; }}
+    .badge.red {{ background: #fee2e2; color: #991b1b; }}
+    .badge.green {{ background: #dff2ea; color: #14643a; }}
+    .badge.blue {{ background: #dbeafe; color: #1e3a8a; }}
+    .badge.muted {{ background: #f0f3f4; color: #52646c; }}
     table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
     td {{ border-top: 1px solid #eef2f3; padding: 9px 8px; overflow-wrap: anywhere; }}
     .tile-grid {{ display: grid; gap: 8px; margin-top: 12px; }}
     .tile {{ aspect-ratio: 1; min-height: 58px; border-radius: 6px; border: 1px solid #d7e0e3; display: grid; place-items: center; text-align: center; padding: 6px; }}
     .tile.done {{ background: #dff2ea; border-color: #95d4b8; color: #123d2a; }}
+    .tile.verified {{ background: #d1fae5; border-color: #6ee7b7; color: #064e3b; }}
+    .tile.rejected {{ background: #fee2e2; border-color: #fca5a5; color: #7f1d1d; }}
     .tile.pending {{ background: #f0f3f4; color: #6d7b80; }}
     .tile small {{ font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }}
     .ppm-preview {{ width: 100%; max-width: 92px; display: grid; gap: 0; border: 1px solid rgba(0,0,0,.12); image-rendering: pixelated; }}
