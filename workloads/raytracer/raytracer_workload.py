@@ -639,16 +639,41 @@ def command_verify(args: argparse.Namespace) -> int:
     actual_hash = sha256_file(result_path)
     recompute_error = ""
     recomputed_hash = ""
-    with tempfile.TemporaryDirectory(prefix="silicium-raytracer-verify-") as tmpdir:
-        recomputed_path = Path(tmpdir) / "recomputed.ppm"
-        try:
-            recomputed = run_raytracer(scene, recomputed_path, int(args.timeout_s), y_start, y_end, x_start, x_end)
-            recomputed_hash = str(recomputed.get("result_sha256") or "")
-        except Exception as exc:
-            recompute_error = str(exc)
+    verification_mode = "declared-hash"
+    verified = False
+    recompute_match = False
+
     hash_integrity_ok = (not declared) or declared == actual_hash
-    recompute_match = bool(recomputed_hash) and actual_hash == recomputed_hash
-    verified = hash_integrity_ok
+    probabilistic_result = None
+
+    if args.manifest and hash_integrity_ok:
+        manifest = json.loads(Path(args.manifest).read_text("utf-8"))
+        ppm_bytes = result_path.read_bytes()
+        probabilistic_result = verify_probabilistic_milestones(
+            ppm_bytes,
+            manifest,
+            args.seed,
+            float(args.reputation_score)
+        )
+        if probabilistic_result["verified"]:
+            verified = True
+            verification_mode = "probabilistic-milestones"
+        elif probabilistic_result.get("escalated_to_full"):
+            verification_mode = "probabilistic-escalated"
+
+    if not verified and hash_integrity_ok:
+        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-verify-") as tmpdir:
+            recomputed_path = Path(tmpdir) / "recomputed.ppm"
+            try:
+                recomputed = run_raytracer(scene, recomputed_path, int(args.timeout_s), y_start, y_end, x_start, x_end)
+                recomputed_hash = str(recomputed.get("result_sha256") or "")
+            except Exception as exc:
+                recompute_error = str(exc)
+        recompute_match = bool(recomputed_hash) and actual_hash == recomputed_hash
+        verified = recompute_match
+        if verification_mode == "declared-hash":
+            verification_mode = "full-recompute"
+
     payload = {
         "schema_version": 1,
         "workload": "raytracer",
@@ -658,11 +683,13 @@ def command_verify(args: argparse.Namespace) -> int:
         "recompute_error": recompute_error,
         "recompute_match": recompute_match,
         "expected_hash": declared,
-        "verification_mode": "declared-hash",
+        "verification_mode": verification_mode,
         "verified": verified,
         "choice": verified,
         "fragment": {"x_start": x_start, "x_end": x_end, "y_start": y_start, "y_end": y_end},
     }
+    if probabilistic_result:
+        payload["probabilistic_metrics"] = probabilistic_result
     if args.result_json:
         write_json(Path(args.result_json).resolve(), payload)
     print(json.dumps(payload, indent=2, sort_keys=True))
@@ -825,6 +852,9 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--y-end", default="")
     verify.add_argument("--x-start", default="")
     verify.add_argument("--x-end", default="")
+    verify.add_argument("--manifest", default="")
+    verify.add_argument("--seed", default="")
+    verify.add_argument("--reputation-score", type=float, default=50.0)
     verify.set_defaults(func=command_verify)
 
     reassemble = sub.add_parser("reassemble")
