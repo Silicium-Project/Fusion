@@ -99,92 +99,15 @@ services:
     - 127.0.0.1:5174:5174
     networks:
     - frontend
-  orchestrator:
+  reputation_bridge:
     build:
-      context: ../..
-      dockerfile: deploy/compose/orchestrator.Dockerfile
+      context: ../../Network
+      dockerfile: networked/reputation_bridge/Dockerfile
     restart: unless-stopped
-    env_file:
-    - /etc/silicium/orchestrator.env
     environment:
-      SILICIUM_MESH_KEY: ${SILICIUM_MESH_KEY:-demo-mesh}
-      SILICIUM_IDENTITY_DEV_MESH_AUTH: '0'
-      SILICIUM_APP_VERSION: ${SILICIUM_APP_VERSION:?SILICIUM_APP_VERSION is required}
-      SILICIUM_RELEASE_CHANNEL: ${SILICIUM_RELEASE_CHANNEL:-dev}
-      SILICIUM_RELEASE_BUILD: ${SILICIUM_RELEASE_BUILD:?SILICIUM_RELEASE_BUILD is required}
-      SILICIUM_PEER_ADVERTISE_URL: https://vps-910c1dbc.vps.ovh.net/orchestrator
-      SILICIUM_PEER_HTTP_BIND: 0.0.0.0
-      SILICIUM_PEER_HTTP_PORT: 46100
-      SILICIUM_P2P_STUN_SERVER: ${SILICIUM_P2P_STUN_SERVER:-stun.l.google.com:19302}
-      SILICIUM_P2P_TURN_SERVER: ${SILICIUM_P2P_TURN_SERVER:-turn:vps-910c1dbc.vps.ovh.net:3478}
-      SILICIUM_P2P_TURN_USERNAME: ${SILICIUM_TURN_USER:-silicium}
-      SILICIUM_P2P_TURN_PASSWORD: ${SILICIUM_TURN_PASSWORD:-demo-mesh}
-      SILICIUM_P2P_TURN_TRANSPORT: ${SILICIUM_P2P_TURN_TRANSPORT:-udp}
-      SILICIUM_PULL_TASKS_INTERVAL_S: ${SILICIUM_PULL_TASKS_INTERVAL_S:-0.5}
-    command:
-    - python
-    - /opt/silicium/Network/silicium
-    - node
-    - start
-    - --world
-    - --node-id
-    - orchestrator-1
-    - --roles
-    - resource,storage
-    - --export-dir
-    - /var/lib/silicium/network/orchestrator/export
-    - --state-dir
-    - /var/lib/silicium/network/orchestrator/state
-    - --peer-http-bind
-    - 0.0.0.0
-    - --peer-http-port
-    - '46100'
-    - --peer-advertise-host
-    - 213.32.68.67
-    - --peer-advertise-port
-    - '46100'
-    - --gossip-advertise-host
-    - 213.32.68.67
-    - --gossip-advertise-port
-    - '46100'
-    - --reputation-score
-    - '100.0'
+      - LISTEN_ADDR=0.0.0.0:9091
     ports:
-    - 46100:46100/tcp
-    - 46100:46100/udp
-    volumes:
-    - /var/lib/silicium/network:/var/lib/silicium/network
-    networks:
-    - backend
-  experiment-api:
-    build:
-      context: ../..
-      dockerfile: deploy/compose/orchestrator.Dockerfile
-    restart: unless-stopped
-    env_file:
-    - /etc/silicium/experiment-api.env
-    command:
-    - python
-    - /opt/silicium/Network/tools/mcp_server.py
-    - --bind
-    - 0.0.0.0
-    - --port
-    - '46110'
-    - --export-dir
-    - /var/lib/silicium/network/orchestrator/export
-    - --snapshot-dir
-    - /var/lib/silicium/network/experiment-api/snapshots
-    - --enable-tools
-    - --rpc-bind
-    - tcp://0.0.0.0:9770
-    - --rpc-events-bind
-    - tcp://0.0.0.0:9771
-    - --log-format
-    - json
-    - --rpc-bind
-    - tcp://0.0.0.0:9770
-    volumes:
-    - /var/lib/silicium/network:/var/lib/silicium/network
+    - 127.0.0.1:9091:9091
     networks:
     - backend
   proxy:
@@ -192,7 +115,7 @@ services:
     restart: unless-stopped
     depends_on:
     - backend
-    - experiment-api
+    - reputation_bridge
     - frontend
     - dashboard
     ports:
