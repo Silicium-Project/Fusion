@@ -2386,8 +2386,9 @@ class PeerNetwork:
             "check_interval_seconds": release["check_interval_seconds"],
             "publisher_id": release["publisher_id"],
             "publisher_public_key": release["publisher_public_key"],
+        }
         message_bytes = stable_json(unsigned_payload).encode("utf-8")
-        if not self.identity.verify_bytes(message_bytes, release["signature"], release["publisher_public_key"]):
+        if not self.identity.verify_bytes(message_bytes, release.get("signature", ""), release["publisher_public_key"]):
             return False
 
         release["source_peer_id"] = safe_id(source_peer_id) if source_peer_id else ""
