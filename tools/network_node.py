@@ -4749,6 +4749,7 @@ def enqueue_request_envelope(export_dir: Path, envelope: dict[str, Any]) -> None
 class NetworkNode:
     def __init__(self, config: NodeConfig) -> None:
         self.config = config
+        self._started_unix = time.time()
         self.state = QueueState(config.state_dir)
         node_path_id = safe_path_id(safe_id(config.node_id))
         self.reputation = ReputationStore(
@@ -4971,6 +4972,11 @@ class NetworkNode:
     def write_heartbeat(self) -> None:
         self.refresh_local_onchain_profile()
         self.refresh_known_peer_onchain_reputations()
+        
+        uptime_seconds = time.time() - self._started_unix
+        peer_count = len(self.peer_network.sessions_snapshot())
+        self.reputation.observe_uptime(uptime_seconds, peer_count, self_reported_only=True)
+        
         capacity = self.runtime.capacity()
         current_reputation = self.reputation.local_score()
         resource_reputation = self.reputation.resource_snapshot()
