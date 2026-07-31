@@ -63,3 +63,4 @@ Network/demo/raytracer/**/*.ppm
 Thumbs.db
 .idea/
 .vscode/
+.aider*
