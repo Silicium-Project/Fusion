@@ -11,6 +11,7 @@ func RegisterUserRoutes(router *mux.Router, h handler.Handler) {
 	// Public routes for registration and login
 	router.HandleFunc("/register", h.Register).Methods("POST")
 	router.HandleFunc("/login", h.Login).Methods("POST")
+	router.HandleFunc("/refresh", h.RefreshToken).Methods("POST")
 
 	// Create a subrouter for routes that require authentication
 	authRouter := router.PathPrefix("/user").Subrouter()

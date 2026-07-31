@@ -1,28 +1,22 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache gcc musl-dev python3 py3-pip
-RUN python3 -m venv /opt/venv \
-    && /opt/venv/bin/pip install --no-cache-dir aioice==0.10.2
-ENV PATH="/opt/venv/bin:$PATH"
-
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . ./
 
-RUN go build -o main ./cmd/main.go
+# Build binary statically
+RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/main.go
 
 FROM alpine:latest
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl python3 libstdc++
-COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /app/main .
+RUN apk add --no-cache ca-certificates
 
-ENV PATH="/opt/venv/bin:$PATH"
+COPY --from=builder /app/main .
 
 EXPOSE 8080
 

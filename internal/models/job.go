@@ -25,6 +25,8 @@ type Job struct {
 	CancelReason       string     `gorm:"type:text" json:"cancelReason,omitempty"`
 	BillableWorkUnits  uint64     `gorm:"not null;default:0" json:"billableWorkUnits"`
 	ComputeReceiptHash string     `gorm:"size:64" json:"computeReceiptHash,omitempty"`
+	// NetworkMetadata keeps the scheduler/RPC view attached to this same Job.
+	NetworkMetadata    map[string]any `gorm:"serializer:json;type:jsonb" json:"network,omitempty"`
 	StartedAt          *time.Time `json:"startedAt,omitempty"`
 	CompletedAt        *time.Time `json:"completedAt,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
