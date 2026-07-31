@@ -285,9 +285,18 @@ def resource_baselines(profile: Mapping[str, Any] | None) -> dict[str, float]:
 class DualMemoryBayes:
     """Six independent Beta reputations with fast and durable memories."""
 
-    def __init__(self, state: Mapping[str, Any] | None = None, *, baselines: Mapping[str, float] | None = None) -> None:
+    def __init__(
+        self,
+        state: Mapping[str, Any] | None = None,
+        *,
+        baselines: Mapping[str, float] | None = None,
+        short_half_life_s: float | None = None,
+        long_half_life_s: float | None = None,
+    ) -> None:
         source = state if isinstance(state, Mapping) else {}
         dimensions = source.get("dimensions") if isinstance(source.get("dimensions"), Mapping) else {}
+        self.short_half_life_s = float(short_half_life_s) if short_half_life_s is not None else float(source.get("short_half_life_s", SHORT_HALF_LIFE_S) or SHORT_HALF_LIFE_S)
+        self.long_half_life_s = float(long_half_life_s) if long_half_life_s is not None else float(source.get("long_half_life_s", LONG_HALF_LIFE_S) or LONG_HALF_LIFE_S)
         baseline_values = baselines if isinstance(baselines, Mapping) else {}
         self._dimensions: dict[str, dict[str, dict[str, float]]] = {}
         for dimension in RESOURCE_DIMENSIONS:
@@ -335,8 +344,8 @@ class DualMemoryBayes:
             raise ValueError(f"unsupported_resource_dimension:{dimension}")
         timestamp = time.time() if now is None else float(now)
         memories = self._dimensions[dimension]
-        self._decay(memories["short_term"], timestamp, SHORT_HALF_LIFE_S)
-        self._decay(memories["long_term"], timestamp, LONG_HALF_LIFE_S)
+        self._decay(memories["short_term"], timestamp, self.short_half_life_s)
+        self._decay(memories["long_term"], timestamp, self.long_half_life_s)
         base_weight = max(0.0, min(100.0, float(weight)))
         event = str(event_class or "verified").lower()
         if event == "transient":
@@ -388,8 +397,8 @@ class DualMemoryBayes:
         timestamp = time.time() if now is None else float(now)
         result: dict[str, Any] = {"schema": REPUTATION_SCHEMA, "observed_utc": _utc_now(timestamp), "dimensions": {}}
         for dimension, memories in self._dimensions.items():
-            self._decay(memories["short_term"], timestamp, SHORT_HALF_LIFE_S)
-            self._decay(memories["long_term"], timestamp, LONG_HALF_LIFE_S)
+            self._decay(memories["short_term"], timestamp, self.short_half_life_s)
+            self._decay(memories["long_term"], timestamp, self.long_half_life_s)
             short = self._summary(memories["short_term"])
             long = self._summary(memories["long_term"])
             result["dimensions"][dimension] = {
@@ -407,6 +416,6 @@ class DualMemoryBayes:
         return {
             "schema": REPUTATION_SCHEMA,
             "dimensions": _deep_copy(self._dimensions),
-            "short_half_life_s": SHORT_HALF_LIFE_S,
-            "long_half_life_s": LONG_HALF_LIFE_S,
+            "short_half_life_s": self.short_half_life_s,
+            "long_half_life_s": self.long_half_life_s,
         }

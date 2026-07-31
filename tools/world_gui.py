@@ -379,11 +379,23 @@ def render_peer_strip(peers: object) -> str:
         else:
             transport_badge = f'<span class="pill gray">{html.escape(transport)}</span>'
 
+        http_url = str(peer.get("http_base_url") or _dig(peer, "capacity", "http_base_url") or "")
+        gossip_bind = str(peer.get("gossip_bind") or _dig(peer, "capacity", "gossip_bind") or "")
+        addresses = []
+        if http_url:
+            addresses.append(f'<span class="muted" style="font-size: 11px;">HTTP: {html.escape(http_url)}</span>')
+        if gossip_bind:
+            addresses.append(f'<span class="muted" style="font-size: 11px;">Gossip: {html.escape(gossip_bind)}</span>')
+        address_html = "<br>".join(addresses)
+        if address_html:
+            address_html = f"<br>{address_html}"
+
         rows.append(
             '<div class="peer">'
             f"<strong>{html.escape(node_id)}</strong>{self_badge} {outdated_badge} {transport_badge}"
             f"<br><small>{html.escape(roles)}</small>"
             f'<span class="muted">{html.escape(solana)}</span>'
+            f"{address_html}"
             "</div>"
         )
     return '<div class="panel"><h2>Peers & P2P Directory</h2><div class="peer-grid">' + "".join(rows) + "</div></div>"

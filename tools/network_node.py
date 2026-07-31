@@ -318,6 +318,8 @@ class NodeConfig:
     discovery_seeds: list[str]
     discovery_sync_interval_s: int
     remote_dispatch_enable: bool
+    short_half_life_s: float
+    long_half_life_s: float
     remote_dispatch_limit: int
     nat_punch_enable: bool
     p2p_candidate_ttl_s: int
@@ -506,9 +508,18 @@ class QueueState:
 
 
 class ReputationStore:
-    def __init__(self, path: Path, initial_score: float = 0.0, resource_profile: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        path: Path,
+        initial_score: float = 0.0,
+        resource_profile: Mapping[str, Any] | None = None,
+        short_half_life_s: float | None = None,
+        long_half_life_s: float | None = None,
+    ) -> None:
         self._path = path
         self._lock = threading.Lock()
+        self.short_half_life_s = short_half_life_s
+        self.long_half_life_s = long_half_life_s
         loaded = read_json(path, {})
         self._payload = loaded if isinstance(loaded, dict) else {}
         self._payload["schema_version"] = max(2, int(self._payload.get("schema_version", 1) or 1))
@@ -517,7 +528,11 @@ class ReputationStore:
         self._payload.setdefault("history", [])
         self._payload.setdefault(
             "resource_memory",
-            DualMemoryBayes(baselines=resource_baselines(resource_profile)).export_state(),
+            DualMemoryBayes(
+                baselines=resource_baselines(resource_profile),
+                short_half_life_s=self.short_half_life_s,
+                long_half_life_s=self.long_half_life_s,
+            ).export_state(),
         )
         self.save()
 
@@ -564,7 +579,11 @@ class ReputationStore:
         event_class: str = "verified",
     ) -> dict[str, Any]:
         with self._lock:
-            model = DualMemoryBayes(self._payload.get("resource_memory"))
+            model = DualMemoryBayes(
+                self._payload.get("resource_memory"),
+                short_half_life_s=self.short_half_life_s,
+                long_half_life_s=self.long_half_life_s,
+            )
             model.observe(dimension, success, weight=weight, event_class=event_class)
             self._payload["resource_memory"] = model.export_state()
             snapshot = model.snapshot()
@@ -579,7 +598,11 @@ class ReputationStore:
         self_reported_only: bool = False,
     ) -> dict[str, Any]:
         with self._lock:
-            model = DualMemoryBayes(self._payload.get("resource_memory"))
+            model = DualMemoryBayes(
+                self._payload.get("resource_memory"),
+                short_half_life_s=self.short_half_life_s,
+                long_half_life_s=self.long_half_life_s,
+            )
             model.observe_uptime(uptime_seconds, corroborated_peer_count, self_reported_only=self_reported_only)
             self._payload["resource_memory"] = model.export_state()
             snapshot = model.snapshot()
@@ -588,7 +611,11 @@ class ReputationStore:
 
     def resource_snapshot(self) -> dict[str, Any]:
         with self._lock:
-            model = DualMemoryBayes(self._payload.get("resource_memory"))
+            model = DualMemoryBayes(
+                self._payload.get("resource_memory"),
+                short_half_life_s=self.short_half_life_s,
+                long_half_life_s=self.long_half_life_s,
+            )
         return model.snapshot()
 
     def snapshot(self) -> dict[str, Any]:
@@ -4759,6 +4786,8 @@ class NetworkNode:
             config.export_dir / f"node.{node_path_id}.reputation.json",
             initial_score=config.reputation_score,
             resource_profile=build_resource_profile(config.export_dir),
+            short_half_life_s=config.short_half_life_s,
+            long_half_life_s=config.long_half_life_s,
         )
         self.config.reputation_score = self.reputation.local_score()
         self.peer_network = PeerNetwork(config, config.export_dir)
@@ -6768,6 +6797,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Allow bearer-only mesh-key HTTP auth for local development. Production peers must use signed identity headers.",
     )
     parser.add_argument("--reputation-score", type=float, default=float(os.environ.get("SILICIUM_REPUTATION_SCORE", "0")))
+    parser.add_argument("--short-half-life-s", type=float, default=float(os.environ.get("SILICIUM_SHORT_HALF_LIFE_S", "3600")))
+    parser.add_argument("--long-half-life-s", type=float, default=float(os.environ.get("SILICIUM_LONG_HALF_LIFE_S", "86400")))
     parser.add_argument("--replication-factor", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_FACTOR", "0")))
     parser.add_argument("--replication-quorum", type=int, default=int(os.environ.get("SILICIUM_REPLICATION_QUORUM", "0")))
     parser.add_argument("--discovery-seeds", default=os.environ.get("SILICIUM_DISCOVERY_SEEDS", ""))
@@ -6876,6 +6907,8 @@ def main(argv: list[str] | None = None) -> int:
         discovery_seeds=[item.strip() for item in str(args.discovery_seeds).split(",") if item.strip()],
         discovery_sync_interval_s=max(0, int(args.discovery_sync_interval_s)),
         remote_dispatch_enable=bool(args.remote_dispatch_enable),
+        short_half_life_s=float(args.short_half_life_s),
+        long_half_life_s=float(args.long_half_life_s),
         remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
         pull_tasks_enable=bool(args.pull_tasks_enable),
         pull_tasks_interval_s=max(0.25, float(args.pull_tasks_interval_s)),
