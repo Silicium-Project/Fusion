@@ -47,6 +47,7 @@ from workloads.raytracer.raytracer_workload import (
     ppm_pixel_sha256,
     run_raytracer,
     scene_resolution,
+    validate_fragment_ppm,
 )
 
 
@@ -874,8 +875,10 @@ class RoleRuntime:
             )
             timings_ms["renderer"] = int((time.perf_counter() - phase_started) * 1000)
             output = output_path.read_bytes()
-        if not output.startswith(b"P6\n"):
-            raise RuntimeError("raytracer_fragment_invalid_ppm")
+        try:
+            validate_fragment_ppm(output, task_id=task.get("task_id", ""))
+        except RuntimeError as exc:
+            raise RuntimeError(f"raytracer_fragment_invalid_ppm:{exc}") from exc
         phase_started = time.perf_counter()
         output_ref = self.p2p.put_local(output)
         timings_ms["output_store"] = int((time.perf_counter() - phase_started) * 1000)
