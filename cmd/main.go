@@ -31,6 +31,10 @@ func main() {
 
 	// Router creation
 	router := mux.NewRouter()
+	
+	// Serve OpenAPI docs
+	router.PathPrefix("/docs/").Handler(http.StripPrefix("/docs/", http.FileServer(http.Dir("./docs/"))))
+	
 	routes.RegisterUserRoutes(router, h) // Register user routes
 	routes.RegisterJobRoutes(router, h)
 	han := c.Handler(router)

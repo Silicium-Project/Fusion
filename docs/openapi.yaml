@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: Silicium API
+  version: 1.0.0
+  description: Silicium Fusion Network Backend API
+servers:
+  - url: http://localhost:8080
+paths:
+  /login:
+    post:
+      summary: Login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: OK
+  /refresh:
+    post:
+      summary: Refresh Token
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: OK
+  /register:
+    post:
+      summary: Register
+      responses:
+        '201':
+          description: Created
