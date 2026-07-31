@@ -5,10 +5,56 @@ info:
   description: Silicium Fusion Network Backend API
 servers:
   - url: http://localhost:8080
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        wallet_address:
+          type: string
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+security:
+  - bearerAuth: []
 paths:
+  /register:
+    post:
+      summary: Register a new user
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '201':
+          description: Created
   /login:
     post:
-      summary: Login
+      summary: Login to get a token
+      security: []
       requestBody:
         content:
           application/json:
@@ -22,9 +68,19 @@ paths:
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  refresh_token:
+                    type: string
   /refresh:
     post:
-      summary: Refresh Token
+      summary: Refresh JWT Token
+      security: []
       requestBody:
         content:
           application/json:
@@ -36,9 +92,163 @@ paths:
       responses:
         '200':
           description: OK
-  /register:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  refresh_token:
+                    type: string
+  /user:
+    get:
+      summary: Get current user profile
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    put:
+      summary: Update user profile
+      responses:
+        '200':
+          description: OK
+    patch:
+      summary: Partially update user profile
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: Delete user account
+      responses:
+        '204':
+          description: No Content
+  /user/password:
+    put:
+      summary: Change user password
+      responses:
+        '200':
+          description: OK
+  /user/wallet:
     post:
-      summary: Register
+      summary: Connect Solana wallet
+      responses:
+        '200':
+          description: OK
+  /jobs:
+    get:
+      summary: List user jobs
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Job'
+    post:
+      summary: Create a new job
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+  /jobs/network/peers:
+    get:
+      summary: Get P2P network peers
+      responses:
+        '200':
+          description: OK
+  /jobs/network/tasks:
+    get:
+      summary: Get active network tasks
+      responses:
+        '200':
+          description: OK
+  /jobs/network/tasks/{id}/cancel:
+    post:
+      summary: Cancel a network task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /jobs/{id}:
+    get:
+      summary: Get job details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+  /jobs/{id}/cancel:
+    post:
+      summary: Cancel a job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /jobs/{id}/dashboard:
+    get:
+      summary: Get job dashboard stats
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /jobs/{id}/result:
+    get:
+      summary: Get job final result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /jobs/{id}/fragments/{index}/preview:
+    get:
+      summary: Preview a job fragment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
