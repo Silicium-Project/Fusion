@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./BackEnd
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ENV=production
+      # DB configuration etc.
+    restart: unless-stopped
+    depends_on:
+      - db
+
+  reputation_bridge:
+    build:
+      context: ./Network
+      dockerfile: networked/reputation_bridge/Dockerfile
+    ports:
+      - "9091:9091"
+    environment:
+      - RUST_LOG=info
+      # RPC URL for Solana
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: silicium
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: silicium_dashboard
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  db_data:
