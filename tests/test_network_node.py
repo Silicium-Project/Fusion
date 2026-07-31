@@ -1659,16 +1659,23 @@ def test_signed_update_announcement_and_artifact_cross_an_isolated_peer(tmp_path
             source_path = export_a / "p2p" / digest
             source_path.parent.mkdir(parents=True, exist_ok=True)
             source_path.write_bytes(artifact)
-            release = {
+            unsigned = {
+                "schema_version": 1,
                 "channel": "dev",
                 "version": "0.2.9-dev.99",
                 "url": "https://vps-910c1dbc.vps.ovh.net/downloads/silicium-node-windows-dev.exe",
                 "sha256": digest,
                 "content_id": digest,
                 "size_bytes": len(artifact),
-                "auto_install": True,
                 "check_interval_seconds": 30,
-                "signature": "signed-by-release-authority",
+                "publisher_id": peer_a.identity.identity_id,
+                "publisher_public_key": peer_a.identity.public_key_b64,
+            }
+            message_bytes = network_node.stable_json(unsigned).encode("utf-8")
+            release = {
+                **unsigned,
+                "auto_install": True,
+                "signature": peer_a.identity.sign_bytes(message_bytes),
                 "signing_key_id": "test-key",
             }
             assert peer_a._record_update_announcement(release, "update-source")

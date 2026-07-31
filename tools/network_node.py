@@ -2321,12 +2321,31 @@ class PeerNetwork:
             "check_interval_seconds": check_interval,
             "signature": signature,
             "signing_key_id": str(payload.get("signing_key_id", "")).strip(),
+            "publisher_id": str(payload.get("publisher_id", "")).strip(),
+            "publisher_public_key": str(payload.get("publisher_public_key", "")).strip(),
         }
 
     def _record_update_announcement(self, payload: Any, source_peer_id: str) -> bool:
         release = self._normalize_update_announcement(payload)
         if release is None:
             return False
+        
+        # Verify Ed25519 signature of the manifest (Issue #76)
+        unsigned_payload = {
+            "schema_version": 1,
+            "channel": release["channel"],
+            "version": release["version"],
+            "content_id": release["content_id"],
+            "sha256": release["sha256"],
+            "url": release["url"],
+            "size_bytes": release["size_bytes"],
+            "check_interval_seconds": release["check_interval_seconds"],
+            "publisher_id": release["publisher_id"],
+            "publisher_public_key": release["publisher_public_key"],
+        message_bytes = stable_json(unsigned_payload).encode("utf-8")
+        if not self.identity.verify_bytes(message_bytes, release["signature"], release["publisher_public_key"]):
+            return False
+
         release["source_peer_id"] = safe_id(source_peer_id) if source_peer_id else ""
         release["observed_utc"] = utc_now()
         target = (
