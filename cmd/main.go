@@ -12,7 +12,7 @@ import (
 	"github.com/rs/cors"
 	"github.com/silicium/internal/db"
 	"github.com/silicium/internal/handler"
-	"github.com/silicium/internal/routes" // Import the routes package
+	"github.com/silicium/internal/routes"
 	"github.com/silicium/internal/utils"
 )
 
@@ -31,21 +31,19 @@ func main() {
 
 	// Router creation
 	router := mux.NewRouter()
-	
+
 	// Serve OpenAPI docs
 	router.PathPrefix("/docs/").Handler(http.StripPrefix("/docs/", http.FileServer(http.Dir("./docs/"))))
-	
-	routes.RegisterUserRoutes(router, h) // Register user routes
+
+	routes.RegisterUserRoutes(router, h)
 	routes.RegisterJobRoutes(router, h)
 	han := c.Handler(router)
 
-	// Listen & Serve
-	log.Println("Listening on port 8080")
 	host := envDefault("HOST", "0.0.0.0")
 	port := envDefault("PORT", "8080")
+	log.Printf("Silicium Dashboard API listening on %s:%s", host, port)
 	err := http.ListenAndServe(host+":"+port, han)
 	utils.LogFatal(err, "Error starting server")
-
 }
 
 func envDefault(key string, fallback string) string {
