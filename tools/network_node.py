@@ -48,6 +48,7 @@ from workloads.raytracer.raytracer_workload import (
     run_raytracer,
     scene_resolution,
     validate_fragment_ppm,
+    verify_probabilistic_milestones,
 )
 
 
@@ -977,6 +978,7 @@ class RoleRuntime:
         timings_ms["scene_fetch"] = int((time.perf_counter() - phase_started) * 1000)
         source_output_ref = task.get("source_output_ref")
         handoff_meta: dict[str, Any] = {}
+        probabilistic_result: dict[str, Any] | None = None
         if isinstance(source_output_ref, dict):
             source_output, handoff_meta = self.p2p.fetch(source_output_ref)
             source_manifest = build_verification_milestones(
@@ -987,6 +989,14 @@ class RoleRuntime:
             )
             if str(source_manifest.get("commitment_hash", "")) != str(challenge.get("commitment_hash", "")):
                 raise RuntimeError("raytracer_source_handoff_commitment_invalid")
+
+            probabilistic_result = verify_probabilistic_milestones(
+                source_output,
+                source_manifest,
+                seed=str(challenge.get("challenge_nonce", "verifier")),
+                reputation_score=float(task.get("worker_reputation", 50.0)),
+            )
+
         with tempfile.TemporaryDirectory(prefix="silicium-raytracer-milestone-verify-") as temp_dir:
             temp_path = Path(temp_dir)
             scene_path = temp_path / "scene.cfg"
@@ -1012,6 +1022,9 @@ class RoleRuntime:
             timings_ms["ppm_hash"] = int((time.perf_counter() - phase_started) * 1000)
 
         passed = recomputed_hash == expected
+        if probabilistic_result and not probabilistic_result.get("verified"):
+            passed = False
+
         fragment_rows = max(sample_rows, int(challenge.get("fragment_rows", sample_rows) or sample_rows))
         verification = {
             "mode": str(challenge.get("strategy")),
@@ -1028,6 +1041,7 @@ class RoleRuntime:
             "sample_ratio": sample_rows / fragment_rows,
             "expected_pixel_hash": expected,
             "recomputed_pixel_hash": recomputed_hash,
+            "probabilistic_result": probabilistic_result,
         }
         return {
             "role_result": "verify",
