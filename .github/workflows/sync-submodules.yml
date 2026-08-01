@@ -33,7 +33,13 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-          submodules: recursive
+
+      - name: Sync declared submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule sync -- BackEnd FrontEnd Network
+          git submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
       - name: Resolve configured submodule branches
         id: resolve

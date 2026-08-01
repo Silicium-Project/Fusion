@@ -29,7 +29,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ steps.app-token.outputs.token }}
-          submodules: recursive
+          fetch-depth: 0
+
+      - name: Sync declared submodules
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule sync -- BackEnd FrontEnd Network
+          git submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
       - name: Install Linux desktop prerequisites
         run: |
