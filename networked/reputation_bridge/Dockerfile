@@ -14,7 +14,7 @@ RUN cargo build --release --locked
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 65532 --create-home --shell /usr/sbin/nologin silicium
 
