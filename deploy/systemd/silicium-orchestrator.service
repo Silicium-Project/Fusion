@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=__SILICIUM_ROOT__/Network
 EnvironmentFile=/etc/silicium/orchestrator.env
-ExecStart=/usr/bin/python3 silicium node start --node-id ${SILICIUM_NODE_ID} --roles ${SILICIUM_NODE_ROLES} --export-dir ${SILICIUM_EXPORT_DIR} --state-dir ${SILICIUM_STATE_DIR} --peer-http-bind 0.0.0.0 --peer-http-port ${SILICIUM_NODE_PORT} --peer-advertise-host ${SILICIUM_NODE_ADVERTISE_HOST} --peer-advertise-port ${SILICIUM_NODE_PORT} --mesh-key ${SILICIUM_MESH_KEY} --reputation-score ${SILICIUM_REPUTATION_SCORE}
+ExecStart=/usr/bin/python3 __SILICIUM_ROOT__/Network/tools/bootstrap_orchestrator.py --bind 0.0.0.0 --port ${SILICIUM_NODE_PORT} --node-id ${SILICIUM_NODE_ID} --export-dir ${SILICIUM_EXPORT_DIR}
 Restart=always
 RestartSec=5
 
