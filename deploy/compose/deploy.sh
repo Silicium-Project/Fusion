@@ -30,13 +30,13 @@ export SILICIUM_RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-$(git -C "$ROOT" rev-parse --short=12 HEAD)}"
 
 # Older installations ran these processes as host systemd services. Compose is
-# now the single owner of their ports; stop and disable stale units before
-# recreating containers so 46100 and the web ports cannot remain occupied.
+# now the single owner of the web and API ports; stop and disable the stale
+# host services before recreating containers so 3000, 5174 and 8080 cannot
+# remain occupied. The orchestrator stays on the host because it owns 46100.
 for legacy_unit in \
   silicium-backend.service \
   silicium-frontend.service \
   silicium-dashboard.service \
-  silicium-orchestrator.service \
   silicium-experiment-api.service; do
   systemctl disable --now "$legacy_unit" 2>/dev/null || true
 done
