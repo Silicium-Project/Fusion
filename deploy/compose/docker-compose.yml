@@ -103,8 +103,8 @@ services:
     - frontend
   reputation_bridge:
     build:
-      context: ../../Network
-      dockerfile: networked/reputation_bridge/Dockerfile
+      context: ../../Network/networked/reputation_bridge
+      dockerfile: Dockerfile
     restart: unless-stopped
     environment:
       - LISTEN_ADDR=0.0.0.0:9091
