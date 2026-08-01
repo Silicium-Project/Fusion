@@ -51,8 +51,11 @@ jobs:
 
       - name: Sync declared submodules
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           git submodule sync -- BackEnd FrontEnd Network
           git submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
@@ -110,8 +113,11 @@ jobs:
 
       - name: Sync declared submodules
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           git submodule sync -- BackEnd FrontEnd Network
           git submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
@@ -200,8 +206,11 @@ jobs:
 
       - name: Sync declared submodules
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           git submodule sync -- BackEnd FrontEnd Network
           git submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
