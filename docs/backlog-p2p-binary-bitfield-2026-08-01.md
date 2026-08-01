@@ -23,7 +23,7 @@ Child issues:
 - [ ] #6 Integrate WASM runtime path
 - [ ] #7 Integrate OCI runtime path for GPU workers
 - [ ] #8 Implement DAG parser and dependency scheduler
-- [ ] #9 Create multi-stage Dockerfile for silicium-node
+- [x] #9 Create multi-stage Dockerfile for silicium-node
 - [ ] #10 Add CI/CD pipeline for lint, tests, build, publish
 - [ ] #11 Deploy bootstrap super-node on VPS
 
