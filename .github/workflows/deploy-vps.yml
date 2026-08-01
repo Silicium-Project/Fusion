@@ -304,17 +304,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push release tag
-        if: steps.meta.outputs.release_exists != 'true' && github.ref_type != 'tag'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "${{ steps.meta.outputs.release_tag }}" -m "Release ${{ steps.meta.outputs.release_tag }}"
-          git push origin "${{ steps.meta.outputs.release_tag }}"
-
   deploy:
     needs: [validate-monorepo, build-desktop, build-linux, release-node]
     runs-on: ubuntu-latest
