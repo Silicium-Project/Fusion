@@ -4,6 +4,8 @@ export default defineNuxtConfig({
       adminToken: process.env.NUXT_PUBLIC_ADMIN_TOKEN || '',
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
       devnetDashboardUrl: process.env.NUXT_PUBLIC_DEVNET_DASHBOARD_URL || '/network/',
+      updateManifestUrl: process.env.NUXT_PUBLIC_UPDATE_MANIFEST_URL || '/downloads/update-manifest.json',
+      statusRefreshSeconds: process.env.NUXT_PUBLIC_STATUS_REFRESH_SECONDS || '30',
       nodeAppWindowsUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_URL || '/downloads/silicium-node-windows.exe',
       nodeAppWindowsDevUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_DEV_URL || '/downloads/silicium-node-windows-dev.exe',
       nodeAppLinuxDevUrl: process.env.NUXT_PUBLIC_NODE_APP_LINUX_DEV_URL || '/downloads/silicium-node-linux-dev.AppImage',
@@ -27,6 +29,7 @@ export default defineNuxtConfig({
       '/': { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
       '/auth': { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
       '/dashboard': { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
+      '/downloads/update-manifest.json': { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } },
       '/widget': {
         cors: true,
         headers: {
