@@ -415,14 +415,14 @@ jobs:
             echo "Deploy ref not found: $DEPLOY_REF" >&2
             exit 1
           fi
-          sudo git -C "$VPS_ROOT" submodule sync --recursive
+          sudo git -C "$VPS_ROOT" submodule sync -- BackEnd FrontEnd Network
           for submodule in BackEnd FrontEnd Network; do
             submodule_path="$VPS_ROOT/$submodule"
             if [ -d "$submodule_path" ] && [ ! -e "$submodule_path/.git" ]; then
               sudo rm -rf -- "$submodule_path"
             fi
           done
-          git_auth -C "$VPS_ROOT" submodule update --init --force --recursive
+          git_auth -C "$VPS_ROOT" submodule update --init --force --recursive -- BackEnd FrontEnd Network
           unset GIT_AUTH VPS_GITHUB_TOKEN
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium/downloads/silicium-node-windows-dev.exe
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows.exe" /var/lib/silicium/downloads/silicium-node-windows.exe
