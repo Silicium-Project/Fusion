@@ -10,6 +10,7 @@ services:
       API_PORT: "9092"
       COMPUTE_DAEMON_URL: "http://127.0.0.1:9090"
       REPUTATION_BRIDGE_URL: "http://127.0.0.1:9091"
+      SILICIUM_DATA_DIR: "/data"
       SILICIUM_ENABLE_QUIC_LISTENER: "1"
       SILICIUM_BOOTSTRAP_PEERS: "${SILICIUM_BOOTSTRAP_PEERS:-}"
       SILICIUM_HW_BUCKET: "${SILICIUM_HW_BUCKET:-0}"
@@ -29,4 +30,3 @@ services:
 
 volumes:
   silicium-bootstrap-data:
-

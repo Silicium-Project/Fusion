@@ -24,7 +24,6 @@ docker compose -f infra/bootstrap/docker-compose.yml up -d --build
 
 ## Notes
 
-- Mount a persistent volume for `/data` if you later add identity or cache files.
+- The node persists its libp2p identity at `/data/identity.key` so the bootstrap peer ID stays stable after restarts.
 - Override `SILICIUM_BOOTSTRAP_PEERS` with the external peer list when the DHT ring expands.
 - Keep TLS termination at the VPS reverse proxy layer if the node is exposed publicly.
-

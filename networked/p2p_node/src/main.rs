@@ -23,8 +23,10 @@ use silicium_node_core::{
 use std::{
     collections::BTreeMap,
     collections::hash_map::DefaultHasher,
-    env,
+    env, fs,
     hash::{Hash, Hasher},
+    io,
+    path::Path,
     path::PathBuf,
     time::Duration,
 };
@@ -171,6 +173,31 @@ fn read_bootstrap_peers() -> Vec<Multiaddr> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn read_data_dir() -> PathBuf {
+    env::var("SILICIUM_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/data"))
+}
+
+fn load_or_generate_identity(data_dir: &Path) -> Result<libp2p::identity::Keypair, io::Error> {
+    fs::create_dir_all(data_dir)?;
+    let key_path = data_dir.join("identity.key");
+
+    if key_path.exists() {
+        let bytes = fs::read(&key_path)?;
+        let keypair = libp2p::identity::Keypair::from_protobuf_encoding(&bytes)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
+        return Ok(keypair);
+    }
+
+    let keypair = libp2p::identity::Keypair::generate_ed25519();
+    let bytes = keypair
+        .to_protobuf_encoding()
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
+    fs::write(&key_path, bytes)?;
+    Ok(keypair)
 }
 
 fn record_from_envelope(envelope: &DhtRecordEnvelope) -> Option<kad::Record> {
@@ -482,9 +509,11 @@ fn publish_hardware_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, context: &No
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let local_key = libp2p::identity::Keypair::generate_ed25519();
+    let data_dir = read_data_dir();
+    let local_key = load_or_generate_identity(&data_dir)?;
     let local_peer_id = PeerId::from(local_key.public());
     println!(" Local peer id: {local_peer_id}");
+    println!(" Data dir: {}", data_dir.display());
 
     let context = NodeContext {
         local_peer_id,
