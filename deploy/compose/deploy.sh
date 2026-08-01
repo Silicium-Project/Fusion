@@ -46,3 +46,4 @@ docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" up -d --build --remo
 # containers so its upstream IPs cannot remain stale after a deployment.
 docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" up -d --force-recreate proxy
 docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" ps
+"$ROOT/deploy/linux/publish-update-manifest.sh"
