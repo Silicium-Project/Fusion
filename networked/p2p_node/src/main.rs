@@ -19,12 +19,13 @@ use silicium_node_core::{
         GpuAcceleration, HardwareBucket, HardwareProfile, OperatingSystem, SimdWidth, VramClass,
     },
     p2p::{DhtRecordEnvelope, TaskEnvelope},
-    runtime::{RuntimeEnvelope, RuntimeKind},
 };
 use std::{
+    collections::BTreeMap,
     collections::hash_map::DefaultHasher,
     env,
     hash::{Hash, Hasher},
+    path::PathBuf,
     time::Duration,
 };
 use tokio::{net::TcpListener, select, sync::mpsc};
@@ -49,6 +50,16 @@ struct NetworkTask {
     hardware_hint: Option<HardwareBucket>,
     #[serde(default)]
     runtime_hint: Option<String>,
+    #[serde(default)]
+    runtime_args: Vec<String>,
+    #[serde(default)]
+    runtime_env: BTreeMap<String, String>,
+    #[serde(default)]
+    runtime_workdir: Option<PathBuf>,
+    #[serde(default)]
+    runtime_module_path: Option<PathBuf>,
+    #[serde(default)]
+    runtime_image: Option<String>,
 }
 
 impl From<TaskEnvelope> for NetworkTask {
@@ -60,6 +71,11 @@ impl From<TaskEnvelope> for NetworkTask {
             seed: value.seed,
             hardware_hint: value.hardware_hint,
             runtime_hint: value.runtime_hint,
+            runtime_args: value.runtime_args,
+            runtime_env: value.runtime_env,
+            runtime_workdir: value.runtime_workdir,
+            runtime_module_path: value.runtime_module_path,
+            runtime_image: value.runtime_image,
         }
     }
 }
@@ -73,7 +89,22 @@ impl From<NetworkTask> for TaskEnvelope {
             seed: value.seed,
             hardware_hint: value.hardware_hint,
             runtime_hint: value.runtime_hint,
+            runtime_args: value.runtime_args,
+            runtime_env: value.runtime_env,
+            runtime_workdir: value.runtime_workdir,
+            runtime_module_path: value.runtime_module_path,
+            runtime_image: value.runtime_image,
         }
+    }
+}
+
+impl NetworkTask {
+    fn runtime_envelope(
+        &self,
+        peer_id: &str,
+    ) -> Option<silicium_node_core::runtime::RuntimeEnvelope> {
+        let task: TaskEnvelope = self.clone().into();
+        task.runtime_envelope(peer_id)
     }
 }
 
@@ -163,24 +194,59 @@ fn compute_score_context(context: &NodeContext, task: &NetworkTask) -> BetaPoste
 }
 
 async fn process_task(context: NodeContext, task: NetworkTask) {
-    let runtime_kind = match task.runtime_hint.as_deref() {
-        Some("oci") => RuntimeKind::Oci,
-        _ => RuntimeKind::Wasm,
-    };
-    let runtime_envelope = match runtime_kind {
-        RuntimeKind::Wasm => RuntimeEnvelope::wasm(vec!["compute".to_string()]),
-        RuntimeKind::Oci => RuntimeEnvelope::oci(vec!["docker".to_string(), "run".to_string()]),
-    };
-
     let client = reqwest::Client::new();
     let compute_url =
         env::var("COMPUTE_DAEMON_URL").unwrap_or_else(|_| "http://127.0.0.1:9090".to_string());
     let reputation_url =
         env::var("REPUTATION_BRIDGE_URL").unwrap_or_else(|_| "http://127.0.0.1:9091".to_string());
     println!(
-        "⚙️  Processing task {} from {} using {:?}",
-        task.task_id, context.local_peer_id, runtime_envelope.kind
+        "  Processing task {} from {}",
+        task.task_id, context.local_peer_id
     );
+
+    if let Some(runtime) = task.runtime_envelope(&context.local_peer_id.to_string()) {
+        let runtime_kind = runtime.kind;
+        let runtime_task_id = task.task_id.clone();
+        let timeout_ms = runtime.limits.cpu_timeout_ms;
+        match tokio::time::timeout(
+            Duration::from_millis(timeout_ms),
+            tokio::task::spawn_blocking(move || runtime.execute()),
+        )
+        .await
+        {
+            Ok(join_result) => match join_result {
+                Ok(Ok(outcome)) => {
+                    println!(
+                        " Runtime {:?} completed for {} with exit code {}",
+                        runtime_kind, runtime_task_id, outcome.exit_code
+                    );
+                }
+                Ok(Err(err)) => {
+                    println!(
+                        " Runtime {:?} failed for {}: {err}",
+                        runtime_kind, runtime_task_id
+                    );
+                    return;
+                }
+                Err(err) => {
+                    println!(" Runtime task join failed for {}: {err}", runtime_task_id);
+                    return;
+                }
+            },
+            Err(_) => {
+                println!(
+                    " Runtime {:?} timed out for {}",
+                    runtime_kind, runtime_task_id
+                );
+                return;
+            }
+        }
+    } else {
+        println!(
+            "  Task {} has no executable runtime payload; using compute fallback",
+            task.task_id
+        );
+    }
 
     let compute_payload = serde_json::json!({
         "scene_path": task.scene_path,
@@ -199,7 +265,7 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
     {
         Ok(res) => res,
         Err(e) => {
-            println!("❌ Compute call failed: {e}");
+            println!(" Compute call failed: {e}");
             return;
         }
     };
@@ -207,7 +273,7 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
     let compute_data: serde_json::Value = match compute_res.json().await {
         Ok(d) => d,
         Err(e) => {
-            println!("❌ Compute response parse failed: {e}");
+            println!(" Compute response parse failed: {e}");
             return;
         }
     };
@@ -215,12 +281,12 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
     let hash = match compute_data.get("hash").and_then(|v| v.as_str()) {
         Some(h) => h,
         None => {
-            println!("❌ Compute failed: {:?}", compute_data);
+            println!(" Compute failed: {:?}", compute_data);
             return;
         }
     };
 
-    println!("✅ Compute successful. Hash: {}", hash);
+    println!(" Compute successful. Hash: {}", hash);
 
     let verify_payload = serde_json::json!({
         "ppm_path": task.output_path,
@@ -247,7 +313,7 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
     {
         Ok(res) => res,
         Err(e) => {
-            println!("❌ Verify call failed: {e}");
+            println!(" Verify call failed: {e}");
             return;
         }
     };
@@ -255,7 +321,7 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
     let verify_data: serde_json::Value = match verify_res.json().await {
         Ok(d) => d,
         Err(e) => {
-            println!("❌ Verify response parse failed: {e}");
+            println!(" Verify response parse failed: {e}");
             return;
         }
     };
@@ -264,7 +330,7 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
         .get("verified")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    println!("✅ Verify result: {}", success);
+    println!(" Verify result: {}", success);
 
     let observe_payload = serde_json::json!({
         "peer_id": context.local_peer_id.to_string(),
@@ -280,7 +346,7 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
     {
         Ok(res) => res,
         Err(e) => {
-            println!("❌ Reputation call failed: {e}");
+            println!(" Reputation call failed: {e}");
             return;
         }
     };
@@ -288,11 +354,11 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
     let rep_data: serde_json::Value = match rep_res.json().await {
         Ok(d) => d,
         Err(e) => {
-            println!("❌ Reputation response parse failed: {e}");
+            println!(" Reputation response parse failed: {e}");
             return;
         }
     };
-    println!("🏅 Reputation updated: {:?}", rep_data);
+    println!(" Reputation updated: {:?}", rep_data);
 
     let posterior = compute_score_context(&context, &task);
     let affinity_key =
@@ -301,11 +367,10 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
         silicium_node_core::affinity::AffinityRecord::new(affinity_key, posterior);
     let affinity_envelope = DhtRecordEnvelope::affinity(&affinity_record);
     println!(
-        "📦 Post-exec affinity record prepared for DHT key {}",
+        " Post-exec affinity record prepared for DHT key {}",
         affinity_envelope.key
     );
 }
-
 fn build_swarm(
     local_key: libp2p::identity::Keypair,
     local_peer_id: PeerId,
@@ -397,7 +462,7 @@ fn publish_task_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, task: &NetworkTa
             .kademlia
             .put_record(record, kad::Quorum::One)
     {
-        println!("❌ Failed to publish task record to DHT: {err:?}");
+        println!(" Failed to publish task record to DHT: {err:?}");
     }
 }
 
@@ -411,7 +476,7 @@ fn publish_hardware_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, context: &No
             .kademlia
             .put_record(record, kad::Quorum::One)
     {
-        println!("❌ Failed to publish hardware record to DHT: {err:?}");
+        println!(" Failed to publish hardware record to DHT: {err:?}");
     }
 }
 
@@ -419,7 +484,7 @@ fn publish_hardware_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, context: &No
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local_key = libp2p::identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
-    println!("🔑 Local peer id: {local_peer_id}");
+    println!(" Local peer id: {local_peer_id}");
 
     let context = NodeContext {
         local_peer_id,
@@ -438,7 +503,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?);
     }
 
-    println!("🚀 Silicium P2P Node running");
+    println!(" Silicium P2P Node running");
 
     for bootstrap_addr in read_bootstrap_peers() {
         let _ = swarm.dial(bootstrap_addr);
@@ -457,7 +522,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         let addr = format!("127.0.0.1:{}", api_port);
         let listener = TcpListener::bind(&addr).await.unwrap();
-        println!("📡 API for P2P injection listening on {}", api_port);
+        println!(" API for P2P injection listening on {}", api_port);
         axum::serve(listener, app).await.unwrap();
     });
 
@@ -471,9 +536,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 publish_task_record(&mut swarm, &task);
                 let data = serde_json::to_vec(&task_envelope).unwrap();
                 if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), data) {
-                    println!("❌ Failed to publish to gossipsub: {e:?}");
+                    println!(" Failed to publish to gossipsub: {e:?}");
                 } else {
-                    println!("📢 Published task {} to gossipsub", task.task_id);
+                    println!(" Published task {} to gossipsub", task.task_id);
                 }
                 pending.push(task);
                 if let Some(candidate) = pending.last() {
@@ -488,11 +553,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             event = swarm.select_next_some() => match event {
                 SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("📡 Listening on {address}");
+                    println!(" Listening on {address}");
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                     for (peer_id, multiaddr) in list {
-                        println!("✅ mDNS discovered peer: {peer_id}");
+                        println!(" mDNS discovered peer: {peer_id}");
                         let _ = swarm.dial(multiaddr.clone());
                         swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     }
@@ -507,7 +572,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     message,
                     ..
                 })) => {
-                    println!("📩 Received message from {peer_id}");
+                    println!(" Received message from {peer_id}");
                     if let Ok(task_envelope) = serde_json::from_slice::<TaskEnvelope>(&message.data) {
                         let task: NetworkTask = task_envelope.into();
                         let context_clone = context.clone();
@@ -515,7 +580,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             process_task(context_clone, task).await;
                         });
                     } else {
-                        println!("⚠️ Could not parse message as NetworkTask");
+                        println!(" Could not parse message as NetworkTask");
                     }
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received {
@@ -529,7 +594,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = swarm.behaviour_mut().kademlia.bootstrap();
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(event)) => {
-                    println!("🧭 Kademlia event: {event:?}");
+                    println!(" Kademlia event: {event:?}");
                 }
                 _ => {}
             }

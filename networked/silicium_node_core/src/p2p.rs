@@ -1,5 +1,11 @@
-use crate::{affinity::AffinityRecord, beta::BetaPosterior, hardware::HardwareBucket};
+use crate::{
+    affinity::AffinityRecord,
+    beta::BetaPosterior,
+    hardware::HardwareBucket,
+    runtime::{RuntimeEnvelope, RuntimeKind},
+};
 use serde::{Deserialize, Serialize};
+use std::{collections::BTreeMap, path::PathBuf};
 
 pub const DHT_NAMESPACE: &str = "silicium";
 
@@ -65,9 +71,62 @@ pub struct TaskEnvelope {
     pub hardware_hint: Option<HardwareBucket>,
     #[serde(default)]
     pub runtime_hint: Option<String>,
+    #[serde(default)]
+    pub runtime_args: Vec<String>,
+    #[serde(default)]
+    pub runtime_env: BTreeMap<String, String>,
+    #[serde(default)]
+    pub runtime_workdir: Option<PathBuf>,
+    #[serde(default)]
+    pub runtime_module_path: Option<PathBuf>,
+    #[serde(default)]
+    pub runtime_image: Option<String>,
 }
 
 impl TaskEnvelope {
+    pub fn runtime_envelope(&self, peer_id: &str) -> Option<RuntimeEnvelope> {
+        let kind = match self.runtime_hint.as_deref() {
+            Some(hint) if hint.eq_ignore_ascii_case("oci") => RuntimeKind::Oci,
+            Some(hint) if hint.eq_ignore_ascii_case("wasm") => RuntimeKind::Wasm,
+            _ if self.runtime_image.is_some() => RuntimeKind::Oci,
+            _ => RuntimeKind::Wasm,
+        };
+
+        if matches!(kind, RuntimeKind::Wasm) && self.runtime_module_path.is_none() {
+            return None;
+        }
+
+        if matches!(kind, RuntimeKind::Oci) && self.runtime_image.is_none() {
+            return None;
+        }
+
+        let mut runtime = match kind {
+            RuntimeKind::Wasm => RuntimeEnvelope::wasm(self.runtime_args.clone())
+                .with_module_path(self.runtime_module_path.clone().expect("module path")),
+            RuntimeKind::Oci => RuntimeEnvelope::oci(self.runtime_args.clone())
+                .with_image(self.runtime_image.clone().expect("image")),
+        };
+
+        runtime
+            .env
+            .insert("SILICIUM_TASK_ID".to_string(), self.task_id.clone());
+        runtime
+            .env
+            .insert("SILICIUM_SCENE_PATH".to_string(), self.scene_path.clone());
+        runtime
+            .env
+            .insert("SILICIUM_OUTPUT_PATH".to_string(), self.output_path.clone());
+        runtime
+            .env
+            .insert("SILICIUM_SEED".to_string(), self.seed.clone());
+        runtime
+            .env
+            .insert("SILICIUM_PEER_ID".to_string(), peer_id.to_string());
+        runtime.env.extend(self.runtime_env.clone());
+        runtime.working_dir = self.runtime_workdir.clone();
+        Some(runtime)
+    }
+
     pub fn to_dht_record(&self) -> DhtRecordEnvelope {
         DhtRecordEnvelope::task_envelope(
             &self.task_id,
