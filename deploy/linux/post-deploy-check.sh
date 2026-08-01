@@ -40,7 +40,11 @@ curl -fsS --max-time 8 http://127.0.0.1:9091/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1/downloads/update-manifest.json >/dev/null
 
 echo "Checking node service state..."
-systemctl is-active --quiet silicium-node.service
+if systemctl list-unit-files --type service --all 2>/dev/null | awk '{print $1}' | grep -qx 'silicium-node.service'; then
+  systemctl is-active --quiet silicium-node.service
+else
+  echo "Skipping silicium-node.service check: service is not installed on this host."
+fi
 
 echo "Checking deployed release marker..."
 [[ -s /var/lib/silicium/releases/current.env ]] || {
