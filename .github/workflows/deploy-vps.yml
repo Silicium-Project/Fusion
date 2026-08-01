@@ -2,8 +2,26 @@ name: Deploy VPS
 
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (branch, tag, or SHA). Defaults to event ref."
+        required: false
+        default: ""
+      vps_user:
+        description: "SSH user on VPS"
+        required: false
+        default: "luis"
+      vps_port:
+        description: "SSH port on VPS"
+        required: false
+        default: "22"
+      vps_root:
+        description: "Root path of Fusion checkout on VPS"
+        required: false
+        default: "/opt/silicium"
   push:
     branches: ["main"]
+    tags: ["v*"]
     paths:
       - "FrontEnd"
       - "FrontEnd/**"
@@ -173,6 +191,11 @@ jobs:
   deploy:
     needs: [build-desktop, build-linux]
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_REF: ${{ inputs.ref != '' && inputs.ref || github.ref_name }}
+      RELEASE_VERSION: ${{ startsWith(github.ref_name, 'v') && github.ref_name || format('dev-{0}', github.sha) }}
+      RELEASE_CHANNEL: ${{ startsWith(github.ref_name, 'v') && 'prod' || 'dev' }}
+      RELEASE_BUILD: ${{ github.sha }}
     steps:
       - name: Download desktop installers
         uses: actions/download-artifact@v4
@@ -218,12 +241,19 @@ jobs:
       - name: Pull and deploy on VPS
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
-          VPS_ROOT: ${{ secrets.VPS_ROOT || '/opt/silicium' }}
+          VPS_USER: ${{ github.event.inputs.vps_user }}
+          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_ROOT: ${{ github.event.inputs.vps_root }}
           VPS_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          DEPLOY_REF: ${{ env.DEPLOY_REF }}
+          RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
+          RELEASE_CHANNEL: ${{ env.RELEASE_CHANNEL }}
+          RELEASE_BUILD: ${{ env.RELEASE_BUILD }}
         run: |
           set -euo pipefail
+          VPS_USER="${VPS_USER:-luis}"
+          VPS_PORT="${VPS_PORT:-22}"
+          VPS_ROOT="${VPS_ROOT:-/opt/silicium}"
           if [ -z "$VPS_GITHUB_TOKEN" ]; then
             echo "::error title=Missing secret::Configure VPS_GITHUB_TOKEN with read access to Fusion, BackEnd, FrontEnd, and Network."
             exit 1
@@ -232,8 +262,8 @@ jobs:
             echo "::error title=Missing secret::Configure VPS_HOST in repository Actions secrets."
             exit 1
           fi
-          if [ -z "$VPS_USER" ]; then
-            echo "::error title=Missing secret::Configure VPS_USER in repository Actions secrets."
+          if [ -z "$DEPLOY_REF" ]; then
+            echo "::error title=Invalid deploy ref::DEPLOY_REF resolved to an empty value."
             exit 1
           fi
           RELEASE_STAGING="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -245,7 +275,7 @@ jobs:
             release-artifacts/silicium-node-linux-dev.deb \
             "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
-            "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' RELEASE_STAGING='$RELEASE_STAGING' bash -s" <<'REMOTE'
+            "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' RELEASE_STAGING='$RELEASE_STAGING' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_CHANNEL='$RELEASE_CHANNEL' RELEASE_BUILD='$RELEASE_BUILD' bash -s" <<'REMOTE'
           set -euo pipefail
           GIT_AUTH="$(printf 'x-access-token:%s' "$VPS_GITHUB_TOKEN" | base64 -w 0)"
           git_auth() {
@@ -257,9 +287,18 @@ jobs:
           }
           sudo git config --system --add safe.directory "$VPS_ROOT"
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
-          git_auth -C "$VPS_ROOT" fetch origin main
-          sudo git -C "$VPS_ROOT" checkout main
-          sudo git -C "$VPS_ROOT" reset --hard origin/main
+          git_auth -C "$VPS_ROOT" fetch --tags --prune origin
+          if git -C "$VPS_ROOT" rev-parse --verify --quiet "refs/remotes/origin/$DEPLOY_REF" >/dev/null; then
+            sudo git -C "$VPS_ROOT" checkout "$DEPLOY_REF"
+            sudo git -C "$VPS_ROOT" reset --hard "origin/$DEPLOY_REF"
+          elif git -C "$VPS_ROOT" rev-parse --verify --quiet "refs/tags/$DEPLOY_REF" >/dev/null; then
+            sudo git -C "$VPS_ROOT" checkout "$DEPLOY_REF"
+          elif git -C "$VPS_ROOT" rev-parse --verify --quiet "$DEPLOY_REF" >/dev/null; then
+            sudo git -C "$VPS_ROOT" checkout "$DEPLOY_REF"
+          else
+            echo "Deploy ref not found: $DEPLOY_REF" >&2
+            exit 1
+          fi
           sudo git -C "$VPS_ROOT" submodule sync --recursive
           for submodule in BackEnd FrontEnd Network; do
             submodule_path="$VPS_ROOT/$submodule"
@@ -273,8 +312,32 @@ jobs:
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows.exe" /var/lib/silicium/downloads/silicium-node-windows.exe
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.AppImage" /var/lib/silicium/downloads/silicium-node-linux-dev.AppImage
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.deb" /var/lib/silicium/downloads/silicium-node-linux-dev.deb
+          sudo install -d -m 0755 /var/lib/silicium/releases
+          cat <<EOF | sudo tee /var/lib/silicium/releases/current.env >/dev/null
+          SILICIUM_RELEASE_VERSION=$RELEASE_VERSION
+          SILICIUM_RELEASE_CHANNEL=$RELEASE_CHANNEL
+          SILICIUM_RELEASE_BUILD=$RELEASE_BUILD
+          SILICIUM_DEPLOY_REF=$DEPLOY_REF
+          SILICIUM_DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
           rm -rf -- "$RELEASE_STAGING"
-          sudo bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
-          sudo bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
+          sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL" SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
+          sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL" SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
           sudo systemctl start silicium-update-manifest.service
+          sudo systemctl restart silicium-node.service || true
+          sudo bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
+          echo "Release deployed successfully"
+          cat /var/lib/silicium/releases/current.env
           REMOTE
+
+      - name: Publish deployment summary
+        run: |
+          {
+            echo "## VPS deployment"
+            echo ""
+            echo "- deploy ref: $DEPLOY_REF"
+            echo "- release version: $RELEASE_VERSION"
+            echo "- release channel: $RELEASE_CHANNEL"
+            echo "- release build: $RELEASE_BUILD"
+            echo "- ssh user: ${VPS_USER:-luis}"
+          } >> "$GITHUB_STEP_SUMMARY"

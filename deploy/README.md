@@ -145,16 +145,20 @@ Do not run the migration script again for normal deployments.
 ## Automatic VPS deployment
 
 `/.github/workflows/deploy-vps.yml` deploys every push to `main` that changes
-the site, backend, network, or deployment files. It can also be started from
-the GitHub Actions interface with `Run workflow`. Configure these repository
-secrets before the first run:
+the site, backend, network, or deployment files, and also deploys every pushed
+release tag matching `v*` (version rollout). It can also be started from
+the GitHub Actions interface with `Run workflow`, optionally with a custom
+deploy ref. Configure these repository secrets before the first run:
 
 - `VPS_HOST`: public VPS hostname or IP;
-- `VPS_USER`: SSH deployment user;
 - `VPS_SSH_KEY`: private Ed25519 key authorized on the VPS;
 - `VPS_KNOWN_HOSTS`: pinned `known_hosts` entry for the VPS;
-- `VPS_PORT`: optional SSH port, default `22`;
-- `VPS_ROOT`: optional checkout path, default `/opt/silicium`.
+
+The workflow dispatch form provides optional runtime overrides:
+
+- `vps_user`: SSH deployment user (default `luis`);
+- `vps_port`: SSH port (default `22`);
+- `vps_root`: checkout path on VPS (default `/opt/silicium`).
 
 The workflow uses a private GitHub App instead of a personal access token. Store
 its client ID as the repository secret `SILICIUM_DEPLOY_APP_CLIENT_ID` and
@@ -167,9 +171,32 @@ are revoked when their job completes.
 
 The deployment user must be able to run the Compose deployment script through
 `sudo` without an interactive password prompt. The workflow performs a
-fast-forward pull, updates all submodules, rebuilds the containers, and starts
-the stack. The Windows installer is served directly from the GitHub Release and
-is not copied to the VPS.
+ref checkout, updates all submodules, rebuilds the containers, and starts
+the stack. For every deployment, the workflow writes a release marker at
+`/var/lib/silicium/releases/current.env` with deployed version, channel, build,
+and deploy ref. The Windows installer is served directly from the GitHub
+Release and is not copied to the VPS.
+
+After each deployment, CI/CD runs `deploy/linux/post-deploy-check.sh` on the
+VPS. This validates Compose service state, local health endpoints, node service
+state, and release marker presence before marking the workflow as successful.
+
+For version rollouts (`v*` tags), CI/CD pushes the exact tagged revision to the
+VPS and restarts `silicium-node.service` after Compose deployment to ensure the
+node stack and VPS move together at each version.
+
+## Manual rollback workflow
+
+Use `/.github/workflows/rollback-vps.yml` from GitHub Actions with:
+
+- `deploy_ref`: required tag, branch, or SHA to restore;
+- optional labels `release_version` and `release_channel` for release marker
+   tracking;
+- optional runtime overrides `vps_user`, `vps_port`, and `vps_root`.
+
+The rollback workflow performs the same submodule synchronization and
+post-deploy checks as standard deployment, then rewrites
+`/var/lib/silicium/releases/current.env` to the selected rollback reference.
 
 ## Remote workers
 

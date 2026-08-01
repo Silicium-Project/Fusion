@@ -16,8 +16,11 @@ fi
 [[ -f "$APP_PACKAGE_JSON" ]] || { echo "Missing app package: $APP_PACKAGE_JSON" >&2; exit 1; }
 
 # The orchestrator participates in peer telemetry even though it is not a
-# desktop binary. Derive its version from the same canonical package used to
-# build installers so the web directory never reports a stale hard-coded value.
+# desktop binary. Prefer the CI/CD release version when provided, otherwise
+# derive from the canonical desktop package.
+if [[ -z "${SILICIUM_APP_VERSION:-}" ]] && [[ -n "${SILICIUM_RELEASE_VERSION:-}" ]]; then
+  SILICIUM_APP_VERSION="$SILICIUM_RELEASE_VERSION"
+fi
 if [[ -z "${SILICIUM_APP_VERSION:-}" ]]; then
   SILICIUM_APP_VERSION="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$APP_PACKAGE_JSON" | head -n 1)"
 fi
