@@ -1,28 +1,31 @@
 FROM rust:1.77-slim AS builder
 
-WORKDIR /usr/src/app
+WORKDIR /work
 
-# Install OpenSSL development headers (reqwest/rustls might need some basic certs or gcc for build)
-RUN apt-get update && apt-get install -y pkg-config libssl-dev gcc && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy the whole Network repository so that Cargo can resolve paths if there's a workspace
-# But we will focus on reputation_bridge. We assume the context is Network.
-COPY . .
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
 
-# Build the reputation bridge in release mode
-WORKDIR /usr/src/app/networked/reputation_bridge
-RUN cargo build --release
+RUN cargo build --release --locked
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 
-# Install CA certificates to allow HTTPS requests (reqwest)
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 65532 --create-home --shell /usr/sbin/nologin silicium
 
 WORKDIR /app
 
-COPY --from=builder /usr/src/app/networked/reputation_bridge/target/release/reputation_bridge /app/reputation_bridge
+COPY --from=builder /work/target/release/reputation_bridge /usr/local/bin/reputation_bridge
 
-# Reputation Bridge listens on 9091 by default
-EXPOSE 9091
+EXPOSE 9091/tcp
 
-CMD ["./reputation_bridge"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:9091/health || exit 1
+
+USER silicium
+ENTRYPOINT ["/usr/local/bin/reputation_bridge"]
