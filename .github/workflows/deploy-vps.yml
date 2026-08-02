@@ -115,16 +115,21 @@ jobs:
           fetch-depth: 0
 
       - name: Sync declared submodules
-        shell: bash
+        shell: pwsh
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          set -euo pipefail
-          git config --global --get-regexp '^url\..*x-access-token.*github\.com.*\.insteadof$' |
-            while read -r key _; do git config --global --unset-all "$key" || true; done || true
-          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
-          git submodule sync -- BackEnd FrontEnd Network
-          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force -- BackEnd FrontEnd Network
+          $ErrorActionPreference = "Stop"
+          $staleRules = & git config --global --get-regexp '^url\..*x-access-token.*github\.com.*\.insteadof$' 2>$null
+          foreach ($rule in $staleRules) {
+            $key = ($rule -split '\s+', 2)[0]
+            if ($key) { & git config --global --unset-all $key 2>$null }
+          }
+          $gitAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$($env:GH_TOKEN)"))
+          & git submodule sync -- BackEnd FrontEnd Network
+          if ($LASTEXITCODE -ne 0) { throw "Failed to sync declared submodules" }
+          & git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic $gitAuth" submodule update --init --force -- BackEnd FrontEnd Network
+          if ($LASTEXITCODE -ne 0) { throw "Failed to update declared submodules" }
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
