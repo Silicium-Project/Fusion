@@ -227,18 +227,27 @@ jobs:
           if (-not $env:VPS_KNOWN_HOSTS) { throw "Missing VPS_KNOWN_HOSTS secret" }
           $vpsUser = if ([string]::IsNullOrWhiteSpace($env:VPS_USER)) { "luis" } else { $env:VPS_USER }
           $vpsPort = if ([string]::IsNullOrWhiteSpace($env:VPS_PORT)) { "22" } else { $env:VPS_PORT }
+          $vpsHost = $env:VPS_HOST
           $releaseStaging = "/tmp/silicium-release-${{ github.run_id }}-${{ github.run_attempt }}"
           $sshDir = Join-Path $HOME ".ssh"
           New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
           $sshKey = Join-Path $sshDir "id_ed25519"
-          Set-Content -Path $sshKey -Value $env:VPS_SSH_KEY -NoNewline
-          Set-Content -Path (Join-Path $sshDir "known_hosts") -Value $env:VPS_KNOWN_HOSTS -NoNewline
-          & icacls $sshKey /inheritance:r /grant:r "$env:USERNAME:F" | Out-Null
-          & ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p $vpsPort "$vpsUser@$env:VPS_HOST" "install -d -m 700 '$releaseStaging'"
+          [System.IO.File]::WriteAllText(
+            $sshKey,
+            ($env:VPS_SSH_KEY -replace "`r`n", "`n"),
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          [System.IO.File]::WriteAllText(
+            (Join-Path $sshDir "known_hosts"),
+            ($env:VPS_KNOWN_HOSTS -replace "`r`n", "`n"),
+            [System.Text.UTF8Encoding]::new($false)
+          )
+          & icacls $sshKey /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
+          & ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p $vpsPort "$vpsUser@$vpsHost" "install -d -m 700 '$releaseStaging'"
           & scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P $vpsPort `
             "ci-artifacts/silicium-node-windows-dev.exe" `
             "ci-artifacts/silicium-node-windows.exe" `
-            "$vpsUser@$env:VPS_HOST:$releaseStaging/"
+            "$vpsUser@$vpsHost:$releaseStaging/"
           if ($LASTEXITCODE -ne 0) { throw "Failed to stage Windows installers on VPS" }
 
   build-linux:
