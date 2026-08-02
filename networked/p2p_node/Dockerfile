@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM rust:1.89-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 
 WORKDIR /work
 COPY silicium_node_core/Cargo.toml ./silicium_node_core/Cargo.toml
