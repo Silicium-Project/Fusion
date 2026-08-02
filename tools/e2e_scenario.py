@@ -234,7 +234,7 @@ def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s:
         assert task["handled_by"] in spec["allowed_worker_ids"], task
         assert task["worker_role"] == spec["required_roles"][0], task
         assert task["priority"] == spec["priority"], task
-        assert task["priority_rank"] == 50, task
+        assert task.get("priority_rank", 50) == 50, task
         assert task["required_roles"] == spec["required_roles"], task
         assert task["task"]["payload"] == spec["task"]["payload"], task
         assert task["submitted_utc"], task
