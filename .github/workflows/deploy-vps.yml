@@ -138,10 +138,20 @@ jobs:
           cache: npm
           cache-dependency-path: apps/silicium-node/package-lock.json
 
-      - name: Set up Python runtime
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Verify Python runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $python311 = Join-Path $env:LOCALAPPDATA "Programs\Python\Python311"
+          if (Test-Path (Join-Path $python311 "python.exe")) {
+            $pythonScripts = Join-Path $python311 "Scripts"
+            $python311 | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $pythonScripts | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            & (Join-Path $python311 "python.exe") --version
+          } else {
+            & py -3.11 --version
+            if ($LASTEXITCODE -ne 0) { throw "Python 3.11 is required on the Windows deploy runner" }
+          }
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
