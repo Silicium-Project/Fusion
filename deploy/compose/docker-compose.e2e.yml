@@ -1,0 +1,71 @@
+name: silicium-e2e-vps
+
+x-worker-base: &worker-base
+  image: python:3.12-slim-bookworm
+  working_dir: /workspace
+  entrypoint:
+    - python3
+  volumes:
+    - /opt/silicium:/workspace:ro
+    - /var/lib/silicium:/var/lib/silicium
+
+services:
+  e2e-worker-compute-a:
+    <<: *worker-base
+    command:
+      - /workspace/Network/tools/e2e_worker.py
+      - --export-dir
+      - /var/lib/silicium/network/orchestrator/export
+      - --worker-id
+      - worker-compute-a
+      - --roles
+      - compute
+      - --expected-tasks
+      - "1"
+      - --transport
+      - vps-compose
+
+  e2e-worker-compute-b:
+    <<: *worker-base
+    command:
+      - /workspace/Network/tools/e2e_worker.py
+      - --export-dir
+      - /var/lib/silicium/network/orchestrator/export
+      - --worker-id
+      - worker-compute-b
+      - --roles
+      - compute
+      - --expected-tasks
+      - "1"
+      - --transport
+      - vps-compose
+
+  e2e-worker-verify-a:
+    <<: *worker-base
+    command:
+      - /workspace/Network/tools/e2e_worker.py
+      - --export-dir
+      - /var/lib/silicium/network/orchestrator/export
+      - --worker-id
+      - worker-verify-a
+      - --roles
+      - verify
+      - --expected-tasks
+      - "1"
+      - --transport
+      - vps-compose
+
+  e2e-worker-verify-b:
+    <<: *worker-base
+    command:
+      - /workspace/Network/tools/e2e_worker.py
+      - --export-dir
+      - /var/lib/silicium/network/orchestrator/export
+      - --worker-id
+      - worker-verify-b
+      - --roles
+      - verify
+      - --expected-tasks
+      - "1"
+      - --transport
+      - vps-compose

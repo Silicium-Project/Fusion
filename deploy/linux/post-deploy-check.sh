@@ -37,6 +37,7 @@ echo "Checking local HTTP health endpoints..."
 curl -fsS --max-time 8 http://127.0.0.1:8080/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1:3000 >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1:46100/health >/dev/null
+curl -fsS --max-time 8 http://127.0.0.1:46110/healthz >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1:9091/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1/downloads/update-manifest.json >/dev/null
 
