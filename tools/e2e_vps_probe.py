@@ -8,6 +8,7 @@ import socket
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse
 from pathlib import Path
 
 
@@ -22,6 +23,14 @@ def _normalized_base_url(control_url: str) -> str:
     if value.endswith("/gossip/publish"):
         return value[: -len("/gossip/publish")]
     return value
+
+
+def _control_host(control_url: str) -> str:
+    parsed = urlparse(_normalized_base_url(control_url))
+    host = str(parsed.hostname or "").strip()
+    if host:
+        return host
+    raise ValueError("missing_control_host")
 
 
 def _http_json(url: str, *, method: str = "GET", payload: dict[str, object] | None = None, timeout_s: float = 5.0) -> dict[str, object]:
@@ -68,6 +77,7 @@ def main() -> int:
     args = _parse_args()
     control_url = args.control_url or os.environ.get("SILICIUM_CONTROL_URL", "")
     base_url = _normalized_base_url(control_url)
+    control_host = _control_host(control_url)
     health_url = base_url + "/health"
     publish_url = base_url + "/gossip/publish"
 
@@ -77,7 +87,7 @@ def main() -> int:
     host_addrs: list[str] = []
     for attempt in range(1, max(1, int(args.retries)) + 1):
         try:
-            host_addrs = _resolve_host("orchestrator")
+            host_addrs = _resolve_host(control_host)
             health = _http_json(health_url, timeout_s=float(args.timeout_s))
             publish = _http_json(
                 publish_url,
