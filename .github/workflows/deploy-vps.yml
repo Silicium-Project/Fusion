@@ -25,6 +25,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: silicium-vps-deploy
@@ -92,8 +93,41 @@ jobs:
         run: |
           go test ./...
 
-  build-desktop:
+  cleanup-artifacts:
     needs: [validate-monorepo]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete stale Silicium node artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifact_ids="$(
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts" --paginate --jq '
+              .artifacts[]
+              | select(.name == "silicium-node-windows" or .name == "silicium-node-linux")
+              | .id
+            '
+          )"
+          if [ -z "${artifact_ids:-}" ]; then
+            echo "No stale Silicium node artifacts found."
+            exit 0
+          fi
+          deleted=0
+          while IFS= read -r artifact_id; do
+            if [ -z "$artifact_id" ]; then
+              continue
+            fi
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}"
+            deleted=$((deleted + 1))
+          done <<< "$artifact_ids"
+          echo "Deleted $deleted stale Silicium node artifacts."
+
+  build-desktop:
+    needs: [validate-monorepo, cleanup-artifacts]
     runs-on: windows-latest
     steps:
       - name: Create GitHub App token
@@ -186,7 +220,7 @@ jobs:
           retention-days: 7
 
   build-linux:
-    needs: [validate-monorepo]
+    needs: [validate-monorepo, cleanup-artifacts]
     runs-on: ubuntu-22.04
     steps:
       - name: Create GitHub App token
