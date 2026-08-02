@@ -115,7 +115,7 @@ jobs:
           fetch-depth: 0
 
       - name: Sync declared submodules
-        shell: pwsh
+        shell: powershell
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
@@ -156,7 +156,7 @@ jobs:
         run: npm ci
 
       - name: Build development and production installers
-        shell: pwsh
+        shell: powershell
         working-directory: apps/silicium-node
         run: |
           $ErrorActionPreference = "Stop"
@@ -189,7 +189,7 @@ jobs:
 
       - name: Stage desktop installers on VPS
         working-directory: apps/silicium-node
-        shell: pwsh
+        shell: powershell
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ github.event.inputs.vps_user }}
