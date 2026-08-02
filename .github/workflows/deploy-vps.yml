@@ -234,12 +234,12 @@ jobs:
           $sshKey = Join-Path $sshDir "id_ed25519"
           [System.IO.File]::WriteAllText(
             $sshKey,
-            ($env:VPS_SSH_KEY -replace "`r`n", "`n"),
+            (($env:VPS_SSH_KEY -replace "`r", "") + "`n"),
             [System.Text.UTF8Encoding]::new($false)
           )
           [System.IO.File]::WriteAllText(
             (Join-Path $sshDir "known_hosts"),
-            ($env:VPS_KNOWN_HOSTS -replace "`r`n", "`n"),
+            (($env:VPS_KNOWN_HOSTS -replace "`r", "") + "`n"),
             [System.Text.UTF8Encoding]::new($false)
           )
           & icacls $sshKey /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
