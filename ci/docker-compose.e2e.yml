@@ -101,6 +101,8 @@ services:
       - "1"
       - --transport
       - docker-e2e
+      - --task-prefix
+      - ${E2E_TASK_PREFIX:-}
 
   worker-compute-b:
     <<: *worker-base
@@ -119,6 +121,8 @@ services:
       - "1"
       - --transport
       - docker-e2e
+      - --task-prefix
+      - ${E2E_TASK_PREFIX:-}
 
   worker-verify-a:
     <<: *worker-base
@@ -137,6 +141,8 @@ services:
       - "1"
       - --transport
       - docker-e2e
+      - --task-prefix
+      - ${E2E_TASK_PREFIX:-}
 
   worker-verify-b:
     <<: *worker-base
@@ -155,6 +161,8 @@ services:
       - "1"
       - --transport
       - docker-e2e
+      - --task-prefix
+      - ${E2E_TASK_PREFIX:-}
 
 networks:
   e2e:

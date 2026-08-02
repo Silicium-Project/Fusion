@@ -206,9 +206,9 @@ def _load_queue_entries(data_dir: Path, role: str) -> list[dict[str, Any]]:
     for line in queue_path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-            payload = json.loads(line)
-            if isinstance(payload, dict):
-                entries.append(payload)
+        payload = json.loads(line)
+        if isinstance(payload, dict):
+            entries.append(payload)
     return entries
 
 

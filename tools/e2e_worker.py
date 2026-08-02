@@ -142,6 +142,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-s", type=float, default=180.0)
     parser.add_argument("--poll-s", type=float, default=0.25)
     parser.add_argument("--transport", default="docker-e2e")
+    parser.add_argument("--task-prefix", default="", help="Only claim tasks whose task_id starts with this prefix.")
     return parser.parse_args()
 
 
@@ -157,6 +158,7 @@ def main() -> int:
     deadline = time.monotonic() + max(1.0, float(args.timeout_s))
     processed: list[dict[str, object]] = []
     seen: set[str] = set()
+    task_prefix = str(args.task_prefix).strip()
 
     while len(processed) < max(1, int(args.expected_tasks)):
         if time.monotonic() > deadline:
@@ -176,6 +178,8 @@ def main() -> int:
             for task in _load_queue(queue_path):
                 task_id = str(task.get("task_id", "")).strip()
                 if not task_id or task_id in seen:
+                    continue
+                if task_prefix and not task_id.startswith(task_prefix):
                     continue
                 required_roles = _required_roles(task)
                 if required_roles and role not in required_roles:

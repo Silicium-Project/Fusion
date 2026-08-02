@@ -37,6 +37,8 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 mkdir -p "$E2E_EXPORT_DIR"
+TASK_PREFIX="docker-$(date -u +%Y%m%d%H%M%S)-$$"
+export E2E_TASK_PREFIX="$TASK_PREFIX"
 
 log "Starting E2E compose stack"
 docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
@@ -69,6 +71,7 @@ python3 "$ROOT/tools/e2e_scenario.py" \
   --web-url "http://127.0.0.1:9765/tools" \
   --rpc-url "tcp://127.0.0.1:9770" \
   --data-dir "$E2E_EXPORT_DIR/mcp" \
+  --task-prefix "$TASK_PREFIX" \
   --expected-transport "docker-e2e" \
   --report "$E2E_EXPORT_DIR/validation.json"
 
@@ -82,11 +85,12 @@ import time
 from pathlib import Path
 
 export_dir = Path(os.environ["E2E_EXPORT_DIR"])
+task_prefix = os.environ["E2E_TASK_PREFIX"]
 expectations = {
-    "web-compute-a": "worker-compute-a",
-    "web-compute-b": "worker-compute-b",
-    "rpc-verify-a": "worker-verify-a",
-    "rpc-verify-b": "worker-verify-b",
+    f"{task_prefix}-web-compute-a": "worker-compute-a",
+    f"{task_prefix}-web-compute-b": "worker-compute-b",
+    f"{task_prefix}-rpc-verify-a": "worker-verify-a",
+    f"{task_prefix}-rpc-verify-b": "worker-verify-b",
 }
 
 deadline = time.monotonic() + 180.0
