@@ -211,13 +211,32 @@ jobs:
 
           Get-FileHash (Join-Path $artifacts "*.exe") -Algorithm SHA256
 
-      - name: Upload desktop installers
-        uses: actions/upload-artifact@v4
-        with:
-          name: silicium-node-windows
-          path: apps/silicium-node/ci-artifacts/*.exe
-          if-no-files-found: error
-          retention-days: 7
+      - name: Stage desktop installers on VPS
+        shell: pwsh
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ github.event.inputs.vps_user }}
+          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if (-not $env:VPS_HOST) { throw "Missing VPS_HOST secret" }
+          if (-not $env:VPS_SSH_KEY) { throw "Missing VPS_SSH_KEY secret" }
+          if (-not $env:VPS_KNOWN_HOSTS) { throw "Missing VPS_KNOWN_HOSTS secret" }
+          $vpsUser = if ([string]::IsNullOrWhiteSpace($env:VPS_USER)) { "luis" } else { $env:VPS_USER }
+          $vpsPort = if ([string]::IsNullOrWhiteSpace($env:VPS_PORT)) { "22" } else { $env:VPS_PORT }
+          $releaseStaging = "/tmp/silicium-release-${{ github.run_id }}-${{ github.run_attempt }}"
+          $sshDir = Join-Path $HOME ".ssh"
+          New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+          Set-Content -Path (Join-Path $sshDir "id_ed25519") -Value $env:VPS_SSH_KEY -NoNewline
+          Set-Content -Path (Join-Path $sshDir "known_hosts") -Value $env:VPS_KNOWN_HOSTS -NoNewline
+          & ssh -p $vpsPort "$vpsUser@$env:VPS_HOST" "install -d -m 700 '$releaseStaging'"
+          & scp -P $vpsPort `
+            "ci-artifacts/silicium-node-windows-dev.exe" `
+            "ci-artifacts/silicium-node-windows.exe" `
+            "$vpsUser@$env:VPS_HOST:$releaseStaging/"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to stage Windows installers on VPS" }
 
   build-linux:
     needs: [validate-monorepo, cleanup-artifacts]
@@ -286,13 +305,27 @@ jobs:
           cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux-dev.deb
           sha256sum ci-artifacts/*
 
-      - name: Upload Linux bundles
-        uses: actions/upload-artifact@v4
-        with:
-          name: silicium-node-linux
-          path: apps/silicium-node/ci-artifacts/*
-          if-no-files-found: error
-          retention-days: 7
+      - name: Stage Linux bundle on VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ github.event.inputs.vps_user }}
+          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          VPS_USER="${VPS_USER:-luis}"
+          VPS_PORT="${VPS_PORT:-22}"
+          RELEASE_STAGING="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
+          scp -P "$VPS_PORT" \
+            ci-artifacts/silicium-node-linux-dev.deb \
+            "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
 
   release-node:
     needs: [validate-monorepo, build-desktop, build-linux]
@@ -346,18 +379,6 @@ jobs:
       RELEASE_CHANNEL: ${{ startsWith(github.ref_name, 'v') && 'prod' || 'dev' }}
       RELEASE_BUILD: ${{ github.sha }}
     steps:
-      - name: Download desktop installers
-        uses: actions/download-artifact@v4
-        with:
-          name: silicium-node-windows
-          path: release-artifacts
-
-      - name: Download Linux bundles
-        uses: actions/download-artifact@v4
-        with:
-          name: silicium-node-linux
-          path: release-artifacts
-
       - name: Configure SSH
         shell: bash
         env:
@@ -417,11 +438,6 @@ jobs:
           fi
           RELEASE_STAGING="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
-          scp -P "$VPS_PORT" \
-            release-artifacts/silicium-node-windows-dev.exe \
-            release-artifacts/silicium-node-windows.exe \
-            release-artifacts/silicium-node-linux-dev.deb \
-            "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
           ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
             "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' RELEASE_STAGING='$RELEASE_STAGING' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_CHANNEL='$RELEASE_CHANNEL' RELEASE_BUILD='$RELEASE_BUILD' bash -s" <<'REMOTE'
           set -euo pipefail
