@@ -33,11 +33,12 @@ export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-$(git -C "$ROOT" rev-pa
 # now the single owner of the web and API ports; stop and disable the stale
 # host services before recreating containers so 3000, 5174 and 8080 cannot
 # remain occupied. The orchestrator stays on the host because it owns 46100.
+# The authenticated experiment/MCP API is also a host-side systemd service and
+# must stay enabled for deploy-time checks and e2e validation on 46110/9770.
 for legacy_unit in \
   silicium-backend.service \
   silicium-frontend.service \
-  silicium-dashboard.service \
-  silicium-experiment-api.service; do
+  silicium-dashboard.service; do
   systemctl disable --now "$legacy_unit" 2>/dev/null || true
 done
 
