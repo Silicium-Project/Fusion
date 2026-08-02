@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="${1:-/opt/silicium}"
 COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
 COMPOSE_ENV="/etc/silicium/compose.env"
+EXPERIMENT_API_ENV="/etc/silicium/experiment-api.env"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/linux/post-deploy-check.sh $ROOT" >&2
@@ -12,6 +13,17 @@ fi
 
 [[ -f "$COMPOSE_FILE" ]] || { echo "Missing compose file: $COMPOSE_FILE" >&2; exit 1; }
 [[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
+[[ -f "$EXPERIMENT_API_ENV" ]] || { echo "Missing experiment API env: $EXPERIMENT_API_ENV" >&2; exit 1; }
+
+set -a
+. "$EXPERIMENT_API_ENV"
+set +a
+if [[ -z "${SILICIUM_MCP_TOKEN:-}" ]]; then
+  echo "Missing SILICIUM_MCP_TOKEN in $EXPERIMENT_API_ENV" >&2
+  exit 1
+fi
+
+healthz_headers=(-H "Authorization: Bearer ${SILICIUM_MCP_TOKEN}")
 
 echo "Checking Docker Compose services..."
 docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" ps
@@ -50,12 +62,12 @@ fi
 
 echo "Waiting for experiment API on 46110..."
 for _ in $(seq 1 30); do
-  if curl -fsS --max-time 3 http://127.0.0.1:46110/healthz >/dev/null; then
+  if curl -fsS --max-time 3 "${healthz_headers[@]}" http://127.0.0.1:46110/healthz >/dev/null; then
     break
   fi
   sleep 2
 done
-if ! curl -fsS --max-time 8 http://127.0.0.1:46110/healthz >/dev/null; then
+if ! curl -fsS --max-time 8 "${healthz_headers[@]}" http://127.0.0.1:46110/healthz >/dev/null; then
   echo "Experiment API is not reachable on 127.0.0.1:46110 after waiting." >&2
   systemctl status --no-pager -l silicium-experiment-api.service >&2 || true
   journalctl -u silicium-experiment-api.service --no-pager -n 100 >&2 || true

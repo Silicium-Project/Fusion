@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="${1:-/opt/silicium}"
 E2E_COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.e2e.yml"
 DATA_DIR="/var/lib/silicium/network/orchestrator/export"
+EXPERIMENT_API_ENV="/etc/silicium/experiment-api.env"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/compose/e2e.sh $ROOT" >&2
@@ -12,6 +13,17 @@ fi
 
 [[ -f "$E2E_COMPOSE_FILE" ]] || { echo "Missing e2e compose file: $E2E_COMPOSE_FILE" >&2; exit 1; }
 [[ -d "$ROOT/Network" ]] || { echo "Missing Network checkout: $ROOT/Network" >&2; exit 1; }
+[[ -f "$EXPERIMENT_API_ENV" ]] || { echo "Missing experiment API env: $EXPERIMENT_API_ENV" >&2; exit 1; }
+
+set -a
+. "$EXPERIMENT_API_ENV"
+set +a
+if [[ -z "${SILICIUM_MCP_TOKEN:-}" ]]; then
+  echo "Missing SILICIUM_MCP_TOKEN in $EXPERIMENT_API_ENV" >&2
+  exit 1
+fi
+
+healthz_headers=(-H "Authorization: Bearer ${SILICIUM_MCP_TOKEN}")
 
 log() {
   printf '==> %s\n' "$*"
@@ -49,7 +61,7 @@ docker compose -f "$E2E_COMPOSE_FILE" up -d --remove-orphans \
 log "Waiting for local services"
 for _ in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1:46100/health" >/dev/null && \
-     curl -fsS "http://127.0.0.1:46110/healthz" >/dev/null && \
+     curl -fsS "${healthz_headers[@]}" "http://127.0.0.1:46110/healthz" >/dev/null && \
      curl -fsS "http://127.0.0.1:8080/health" >/dev/null && \
      curl -fsS "http://127.0.0.1:3000" >/dev/null; then
     break
@@ -57,7 +69,7 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 curl -fsS "http://127.0.0.1:46100/health" >/dev/null
-curl -fsS "http://127.0.0.1:46110/healthz" >/dev/null
+curl -fsS "${healthz_headers[@]}" "http://127.0.0.1:46110/healthz" >/dev/null
 curl -fsS "http://127.0.0.1:8080/health" >/dev/null
 curl -fsS "http://127.0.0.1:3000" >/dev/null
 
@@ -72,6 +84,7 @@ TASK_PREFIX="vps-$(date -u +%Y%m%d%H%M%S)-$$"
 python3 "$ROOT/Network/tools/e2e_scenario.py" \
   --web-url "http://127.0.0.1:46110/tools" \
   --rpc-url "tcp://127.0.0.1:9770" \
+  --auth-token "$SILICIUM_MCP_TOKEN" \
   --data-dir "$DATA_DIR" \
   --task-prefix "$TASK_PREFIX" \
   --expected-transport "vps-compose" \
