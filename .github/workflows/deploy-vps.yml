@@ -157,20 +157,28 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          $candidateCargoBins = @()
-          if ($env:CARGO_HOME) { $candidateCargoBins += (Join-Path $env:CARGO_HOME "bin") }
-          if ($env:USERPROFILE) { $candidateCargoBins += (Join-Path $env:USERPROFILE ".cargo\bin") }
-          $candidateCargoBins += "C:\Users\luisf\.cargo\bin"
-          $candidateCargoBins += "C:\Users\luis\.cargo\bin"
-          foreach ($cargoBin in ($candidateCargoBins | Select-Object -Unique)) {
-            if (Test-Path $cargoBin) {
-              $cargoBin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-              $env:PATH = "$cargoBin;$env:PATH"
-            }
-          }
+          $toolCache = if ($env:RUNNER_TOOL_CACHE) { $env:RUNNER_TOOL_CACHE } else { Join-Path $env:RUNNER_TEMP "tool-cache" }
+          $rustRoot = Join-Path $toolCache "rust"
+          $cargoHome = Join-Path $rustRoot "cargo"
+          $rustupHome = Join-Path $rustRoot "rustup"
+          $cargoBin = Join-Path $cargoHome "bin"
+
+          New-Item -ItemType Directory -Force -Path $cargoHome, $rustupHome, $cargoBin | Out-Null
+          "CARGO_HOME=$cargoHome" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "RUSTUP_HOME=$rustupHome" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $cargoBin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+          $env:CARGO_HOME = $cargoHome
+          $env:RUSTUP_HOME = $rustupHome
+          $env:PATH = "$cargoBin;$env:PATH"
+
           if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
-            throw "rustup is required on the Windows deploy runner"
+            $rustupInit = Join-Path $env:RUNNER_TEMP "rustup-init.exe"
+            Invoke-WebRequest -Uri "https://win.rustup.rs/x86_64" -OutFile $rustupInit
+            & $rustupInit -y --profile minimal --default-toolchain stable --no-modify-path
+            if ($LASTEXITCODE -ne 0) { throw "Failed to install rustup on Windows deploy runner" }
           }
+
           & rustup toolchain install stable --profile minimal
           if ($LASTEXITCODE -ne 0) { throw "Failed to install/update Rust stable toolchain" }
           & rustup default stable
