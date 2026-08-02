@@ -212,6 +212,7 @@ jobs:
           Get-FileHash (Join-Path $artifacts "*.exe") -Algorithm SHA256
 
       - name: Stage desktop installers on VPS
+        working-directory: apps/silicium-node
         shell: pwsh
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -306,6 +307,7 @@ jobs:
           sha256sum ci-artifacts/*
 
       - name: Stage Linux bundle on VPS
+        working-directory: apps/silicium-node
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
