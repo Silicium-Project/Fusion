@@ -27,11 +27,19 @@ pub struct DhtRecordEnvelope {
 impl DhtRecordEnvelope {
     pub const VERSION: u8 = 1;
 
+    pub fn hardware_record_key(peer_id: &str) -> String {
+        format!("{DHT_NAMESPACE}/hardware/v1/{peer_id}")
+    }
+
+    pub fn task_record_key(task_id: &str) -> String {
+        format!("{DHT_NAMESPACE}/task/v1/{task_id}")
+    }
+
     pub fn hardware_score(peer_id: &str, score: &BetaPosterior) -> Self {
         Self {
             version: Self::VERSION,
             kind: DhtRecordKind::HardwareScore,
-            key: format!("{DHT_NAMESPACE}/hardware/v1/{peer_id}"),
+            key: Self::hardware_record_key(peer_id),
             payload: score.to_bytes().expect("valid beta posterior"),
         }
     }
@@ -40,7 +48,7 @@ impl DhtRecordEnvelope {
         Self {
             version: Self::VERSION,
             kind: DhtRecordKind::TaskEnvelope,
-            key: format!("{DHT_NAMESPACE}/task/v1/{task_id}"),
+            key: Self::task_record_key(task_id),
             payload: bytes,
         }
     }
@@ -132,5 +140,26 @@ impl TaskEnvelope {
             &self.task_id,
             serde_json::to_vec(self).expect("task envelope serializes"),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hardware_record_key_is_versioned() {
+        assert_eq!(
+            DhtRecordEnvelope::hardware_record_key("peer-123"),
+            "silicium/hardware/v1/peer-123"
+        );
+    }
+
+    #[test]
+    fn task_record_key_is_versioned() {
+        assert_eq!(
+            DhtRecordEnvelope::task_record_key("task-456"),
+            "silicium/task/v1/task-456"
+        );
     }
 }

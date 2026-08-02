@@ -122,6 +122,181 @@ struct NodeContext {
     dispatcher_seed: u64,
 }
 
+#[derive(Debug, Clone)]
+struct NodeConfig {
+    bootstrap_peers: Vec<Multiaddr>,
+    data_dir: PathBuf,
+    api_port: u16,
+    enable_quic_listener: bool,
+    dispatcher_seed: u64,
+}
+
+#[derive(Debug, Default)]
+struct NodeCliOverrides {
+    bootstrap_peers: Vec<Multiaddr>,
+    data_dir: Option<PathBuf>,
+    api_port: Option<u16>,
+    enable_quic_listener: Option<bool>,
+    dispatcher_seed: Option<u64>,
+}
+
+fn parse_bootstrap_peer(value: &str) -> Vec<Multiaddr> {
+    value
+        .split(',')
+        .filter_map(|item| item.trim().parse::<Multiaddr>().ok())
+        .collect()
+}
+
+fn parse_node_cli_args<I>(args: I) -> NodeCliOverrides
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut overrides = NodeCliOverrides::default();
+    let mut args = args.into_iter().peekable();
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--bootstrap-peer" => {
+                if let Some(value) = args.next() {
+                    overrides
+                        .bootstrap_peers
+                        .extend(parse_bootstrap_peer(&value));
+                }
+            }
+            "--bootstrap-peers" => {
+                if let Some(value) = args.next() {
+                    overrides
+                        .bootstrap_peers
+                        .extend(parse_bootstrap_peer(&value));
+                }
+            }
+            "--api-port" => {
+                if let Some(value) = args.next() {
+                    overrides.api_port = value.parse::<u16>().ok();
+                }
+            }
+            "--data-dir" => {
+                if let Some(value) = args.next() {
+                    overrides.data_dir = Some(PathBuf::from(value));
+                }
+            }
+            "--dispatcher-seed" => {
+                if let Some(value) = args.next() {
+                    overrides.dispatcher_seed = value.parse::<u64>().ok();
+                }
+            }
+            "--disable-quic" => {
+                overrides.enable_quic_listener = Some(false);
+            }
+            "--enable-quic" => {
+                overrides.enable_quic_listener = Some(true);
+            }
+            "--help" | "-h" => {
+                println!(
+                    "Usage: p2p_node [--bootstrap-peer <multiaddr>] [--api-port <port>] [--data-dir <path>] [--dispatcher-seed <seed>] [--enable-quic|--disable-quic]"
+                );
+                std::process::exit(0);
+            }
+            _ if arg.starts_with("--bootstrap-peer=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides
+                        .bootstrap_peers
+                        .extend(parse_bootstrap_peer(value));
+                }
+            }
+            _ if arg.starts_with("--bootstrap-peers=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides
+                        .bootstrap_peers
+                        .extend(parse_bootstrap_peer(value));
+                }
+            }
+            _ if arg.starts_with("--api-port=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides.api_port = value.parse::<u16>().ok();
+                }
+            }
+            _ if arg.starts_with("--data-dir=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides.data_dir = Some(PathBuf::from(value));
+                }
+            }
+            _ if arg.starts_with("--dispatcher-seed=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides.dispatcher_seed = value.parse::<u64>().ok();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    overrides
+}
+
+fn read_bootstrap_peers_from_env() -> Vec<Multiaddr> {
+    env::var("SILICIUM_BOOTSTRAP_PEERS")
+        .ok()
+        .map(|value| parse_bootstrap_peer(&value))
+        .unwrap_or_default()
+}
+
+fn read_data_dir_from_env() -> PathBuf {
+    env::var("SILICIUM_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/data"))
+}
+
+fn read_api_port_from_env() -> u16 {
+    env::var("API_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(9092)
+}
+
+fn read_dispatcher_seed_from_env() -> u64 {
+    env::var("SILICIUM_DISPATCH_SEED")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(7)
+}
+
+fn read_enable_quic_listener_from_env() -> bool {
+    env::var("SILICIUM_ENABLE_QUIC_LISTENER")
+        .ok()
+        .as_deref()
+        .map(|value| value != "0")
+        .unwrap_or(true)
+}
+
+impl NodeConfig {
+    fn from_env_and_args() -> Self {
+        let overrides = parse_node_cli_args(env::args().skip(1));
+        let mut bootstrap_peers = read_bootstrap_peers_from_env();
+        bootstrap_peers.extend(overrides.bootstrap_peers);
+        bootstrap_peers.sort_by_key(|addr| addr.to_string());
+        bootstrap_peers.dedup_by(|left, right| left.to_string() == right.to_string());
+
+        Self {
+            bootstrap_peers,
+            data_dir: overrides.data_dir.unwrap_or_else(read_data_dir_from_env),
+            api_port: overrides.api_port.unwrap_or_else(read_api_port_from_env),
+            enable_quic_listener: overrides
+                .enable_quic_listener
+                .unwrap_or_else(read_enable_quic_listener_from_env),
+            dispatcher_seed: overrides
+                .dispatcher_seed
+                .unwrap_or_else(read_dispatcher_seed_from_env),
+        }
+    }
+}
+
+fn request_record_lookup(swarm: &mut libp2p::Swarm<P2pBehaviour>, key: &str) {
+    let key_owned = key.to_owned();
+    let record_key = kad::RecordKey::new(&key_owned);
+    let query_id = swarm.behaviour_mut().kademlia.get_record(record_key);
+    println!(" Requested DHT lookup for {key} ({query_id:?})");
+}
+
 async fn publish_task(
     State(state): State<ApiState>,
     Json(task): Json<NetworkTask>,
@@ -161,24 +336,6 @@ fn read_hardware_bucket() -> HardwareBucket {
         .and_then(|raw| raw.parse::<u32>().ok())
         .map(HardwareBucket::new)
         .unwrap_or_else(default_hardware_profile)
-}
-
-fn read_bootstrap_peers() -> Vec<Multiaddr> {
-    env::var("SILICIUM_BOOTSTRAP_PEERS")
-        .ok()
-        .map(|value| {
-            value
-                .split(',')
-                .filter_map(|item| item.trim().parse::<Multiaddr>().ok())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn read_data_dir() -> PathBuf {
-    env::var("SILICIUM_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/data"))
 }
 
 fn load_or_generate_identity(data_dir: &Path) -> Result<libp2p::identity::Keypair, io::Error> {
@@ -491,6 +648,7 @@ fn publish_task_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, task: &NetworkTa
     {
         println!(" Failed to publish task record to DHT: {err:?}");
     }
+    request_record_lookup(swarm, &envelope.key);
 }
 
 fn publish_hardware_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, context: &NodeContext) {
@@ -505,11 +663,17 @@ fn publish_hardware_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, context: &No
     {
         println!(" Failed to publish hardware record to DHT: {err:?}");
     }
+    request_record_lookup(swarm, &envelope.key);
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let data_dir = read_data_dir();
+    let config = NodeConfig::from_env_and_args();
+    let bootstrap_peers = config.bootstrap_peers.clone();
+    let api_port = config.api_port;
+    let enable_quic_listener = config.enable_quic_listener;
+    let dispatcher_seed = config.dispatcher_seed;
+    let data_dir = config.data_dir.clone();
     let local_key = load_or_generate_identity(&data_dir)?;
     let local_peer_id = PeerId::from(local_key.public());
     println!(" Local peer id: {local_peer_id}");
@@ -518,23 +682,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let context = NodeContext {
         local_peer_id,
         hardware: read_hardware_bucket(),
-        dispatcher_seed: env::var("SILICIUM_DISPATCH_SEED")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(7),
+        dispatcher_seed,
     };
 
     let mut swarm = build_swarm(local_key.clone(), local_peer_id)?;
     let topic = gossipsub::IdentTopic::new("silicium-network");
 
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
-    if env::var("SILICIUM_ENABLE_QUIC_LISTENER").ok().as_deref() != Some("0") {
+    if enable_quic_listener {
         let _ = swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?);
     }
 
     println!(" Silicium P2P Node running");
 
-    for bootstrap_addr in read_bootstrap_peers() {
+    for bootstrap_addr in bootstrap_peers {
         let _ = swarm.dial(bootstrap_addr);
     }
 
@@ -547,7 +708,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health))
         .with_state(api_state);
 
-    let api_port = env::var("API_PORT").unwrap_or_else(|_| "9092".to_string());
     tokio::spawn(async move {
         let addr = format!("127.0.0.1:{}", api_port);
         let listener = TcpListener::bind(&addr).await.unwrap();
