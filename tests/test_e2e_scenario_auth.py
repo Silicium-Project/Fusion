@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -72,3 +73,111 @@ def test_submit_rpc_passes_bearer_token(monkeypatch):
     )
     assert captured["token"] == "secret-token"
     assert captured["method"] == "task.dispatch"
+
+
+def test_wait_for_results_matches_runtime_generated_ids(tmp_path: Path) -> None:
+    data_dir = tmp_path / "export"
+    tasks_dir = data_dir / "tasks"
+    tasks_dir.mkdir(parents=True)
+
+    specs = [
+        {
+            "task_id": "submit-web-a",
+            "submit": "web",
+            "allowed_worker_ids": ["worker-compute-a", "worker-compute-b"],
+            "required_roles": ["compute"],
+            "priority": "normal",
+            "expected_transport": "vps-compose",
+            "task": {"kind": "compute", "payload": "web-a", "transport": "web"},
+        },
+        {
+            "task_id": "submit-web-b",
+            "submit": "web",
+            "allowed_worker_ids": ["worker-compute-a", "worker-compute-b"],
+            "required_roles": ["compute"],
+            "priority": "normal",
+            "expected_transport": "vps-compose",
+            "task": {"kind": "compute", "payload": "web-b", "transport": "web"},
+        },
+        {
+            "task_id": "submit-rpc-a",
+            "submit": "rpc",
+            "allowed_worker_ids": ["worker-verify-a", "worker-verify-b"],
+            "required_roles": ["verify"],
+            "priority": "normal",
+            "expected_transport": "vps-compose",
+            "task": {"kind": "verify", "payload": "rpc-a", "transport": "rpc"},
+        },
+        {
+            "task_id": "submit-rpc-b",
+            "submit": "rpc",
+            "allowed_worker_ids": ["worker-verify-a", "worker-verify-b"],
+            "required_roles": ["verify"],
+            "priority": "normal",
+            "expected_transport": "vps-compose",
+            "task": {"kind": "verify", "payload": "rpc-b", "transport": "rpc"},
+        },
+    ]
+
+    runtime_rows = [
+        ("compute", "worker-compute-a", "runtime-compute-001", "web-a"),
+        ("compute", "worker-compute-b", "runtime-compute-002", "web-b"),
+        ("verify", "worker-verify-a", "runtime-verify-001", "rpc-a"),
+        ("verify", "worker-verify-b", "runtime-verify-002", "rpc-b"),
+    ]
+
+    for role, worker_id, runtime_task_id, payload in runtime_rows:
+        submit_transport = "web" if payload.startswith("web-") else "rpc"
+        queue_path = data_dir / f"tasks.{role}.queue.ndjson"
+        with queue_path.open("a", encoding="utf-8") as stream:
+            stream.write(
+                json.dumps(
+                    {
+                        "task_id": runtime_task_id,
+                        "status": "queued",
+                        "envelope_kind": "task",
+                        "priority": "normal",
+                        "task": {"payload": payload, "transport": submit_transport},
+                    }
+                )
+                + "\n"
+            )
+        task_payload = {
+            "task_id": runtime_task_id,
+            "envelope_kind": "task",
+            "status": "completed",
+            "handled_by": worker_id,
+            "worker_role": role,
+            "priority": "normal",
+            "required_roles": [role],
+            "submitted_utc": "2026-08-02T18:16:08Z",
+            "completed_utc": "2026-08-02T18:16:08Z",
+            "transport": "vps-compose",
+            "task": {"payload": payload, "transport": submit_transport},
+        }
+        (tasks_dir / f"{runtime_task_id}.json").write_text(json.dumps(task_payload), encoding="utf-8")
+        result_payload = {
+            "success": True,
+            "task_id": runtime_task_id,
+            "handled_by": worker_id,
+            "worker_role": role,
+            "transport": "vps-compose",
+            "task": {"payload": payload, "transport": submit_transport},
+        }
+        (data_dir / f"result.{runtime_task_id}.json").write_text(json.dumps(result_payload), encoding="utf-8")
+
+    events = [
+        {"event": "task.queued", "item_id": "submit-web-a"},
+        {"event": "task.queued", "item_id": "submit-web-b"},
+        {"event": "task.queued", "item_id": "submit-rpc-a"},
+        {"event": "task.queued", "item_id": "submit-rpc-b"},
+    ]
+    (data_dir / "rpc.events.ndjson").write_text("\n".join(json.dumps(item) for item in events) + "\n", encoding="utf-8")
+
+    reports = e2e_scenario._wait_for_results(data_dir, specs, timeout_s=1.0)
+
+    assert set(reports) == {spec["task_id"] for spec in specs}
+    assert reports["submit-web-a"]["result"]["handled_by"] == "worker-compute-a"
+    assert reports["submit-web-b"]["result"]["handled_by"] == "worker-compute-b"
+    assert reports["submit-rpc-a"]["result"]["handled_by"] == "worker-verify-a"
+    assert reports["submit-rpc-b"]["result"]["handled_by"] == "worker-verify-b"
