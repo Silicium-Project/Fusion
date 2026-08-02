@@ -105,9 +105,7 @@ jobs:
         run: ./silicium test
 
   docker-e2e:
-    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
     runs-on: ubuntu-latest
-    needs: pytest
     timeout-minutes: 45
 
     steps:
