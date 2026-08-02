@@ -58,7 +58,7 @@ jobs:
           set -euo pipefail
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           git submodule sync -- BackEnd FrontEnd Network
-          git submodule update --init --force --recursive -- BackEnd FrontEnd Network
+          git submodule update --init --force -- BackEnd FrontEnd Network
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -120,7 +120,7 @@ jobs:
           set -euo pipefail
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           git submodule sync -- BackEnd FrontEnd Network
-          git submodule update --init --force --recursive -- BackEnd FrontEnd Network
+          git submodule update --init --force -- BackEnd FrontEnd Network
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -244,7 +244,7 @@ jobs:
           set -euo pipefail
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
           git submodule sync -- BackEnd FrontEnd Network
-          git submodule update --init --force --recursive -- BackEnd FrontEnd Network
+          git submodule update --init --force -- BackEnd FrontEnd Network
 
       - name: Install Linux desktop prerequisites
         run: |
@@ -450,7 +450,7 @@ jobs:
               sudo rm -rf -- "$submodule_path"
             fi
           done
-          git_auth -C "$VPS_ROOT" submodule update --init --force --recursive -- BackEnd FrontEnd Network
+          git_auth -C "$VPS_ROOT" submodule update --init --force -- BackEnd FrontEnd Network
           unset GIT_AUTH VPS_GITHUB_TOKEN
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium/downloads/silicium-node-windows-dev.exe
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows.exe" /var/lib/silicium/downloads/silicium-node-windows.exe
