@@ -52,6 +52,7 @@ infra/secure-stack/wireguard/config/
 .target/
 Cargo.lock
 !networked/reputation_bridge/Cargo.lock
+!networked/p2p_node/Cargo.lock
 .anchor/
 node_modules/
 .yarn/
