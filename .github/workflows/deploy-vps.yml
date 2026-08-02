@@ -230,10 +230,12 @@ jobs:
           $releaseStaging = "/tmp/silicium-release-${{ github.run_id }}-${{ github.run_attempt }}"
           $sshDir = Join-Path $HOME ".ssh"
           New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
-          Set-Content -Path (Join-Path $sshDir "id_ed25519") -Value $env:VPS_SSH_KEY -NoNewline
+          $sshKey = Join-Path $sshDir "id_ed25519"
+          Set-Content -Path $sshKey -Value $env:VPS_SSH_KEY -NoNewline
           Set-Content -Path (Join-Path $sshDir "known_hosts") -Value $env:VPS_KNOWN_HOSTS -NoNewline
-          & ssh -p $vpsPort "$vpsUser@$env:VPS_HOST" "install -d -m 700 '$releaseStaging'"
-          & scp -P $vpsPort `
+          & icacls $sshKey /inheritance:r /grant:r "$env:USERNAME:F" | Out-Null
+          & ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p $vpsPort "$vpsUser@$env:VPS_HOST" "install -d -m 700 '$releaseStaging'"
+          & scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P $vpsPort `
             "ci-artifacts/silicium-node-windows-dev.exe" `
             "ci-artifacts/silicium-node-windows.exe" `
             "$vpsUser@$env:VPS_HOST:$releaseStaging/"
@@ -324,8 +326,8 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
-          scp -P "$VPS_PORT" \
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$VPS_PORT" \
             ci-artifacts/silicium-node-linux-dev.deb \
             "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
 
@@ -439,8 +441,8 @@ jobs:
             exit 1
           fi
           RELEASE_STAGING="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
             "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' RELEASE_STAGING='$RELEASE_STAGING' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_CHANNEL='$RELEASE_CHANNEL' RELEASE_BUILD='$RELEASE_BUILD' bash -s" <<'REMOTE'
           set -euo pipefail
           GIT_AUTH="$(printf 'x-access-token:%s' "$VPS_GITHUB_TOKEN" | base64 -w 0)"
