@@ -82,9 +82,18 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
-def _http_json(url: str, payload: dict[str, Any], *, timeout_s: float = 10.0) -> dict[str, Any]:
+def _http_json(
+    url: str,
+    payload: dict[str, Any],
+    *,
+    timeout_s: float = 10.0,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     data = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-    request = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
+    request = urllib.request.Request(url, data=data, method="POST", headers=request_headers)
     with urllib.request.urlopen(request, timeout=timeout_s) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -133,7 +142,8 @@ def _normalize_task_spec(item: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
-def _submit_web(web_url: str, spec: dict[str, Any]) -> dict[str, Any]:
+def _submit_web(web_url: str, spec: dict[str, Any], *, auth_token: str = "") -> dict[str, Any]:
+    headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else None
     response = _http_json(
         web_url,
         {
@@ -145,6 +155,7 @@ def _submit_web(web_url: str, spec: dict[str, Any]) -> dict[str, Any]:
                 "priority": spec["priority"],
             },
         },
+        headers=headers,
     )
     if response.get("ok") is not True:
         raise AssertionError(response)
@@ -168,8 +179,8 @@ def _submit_web(web_url: str, spec: dict[str, Any]) -> dict[str, Any]:
     return response
 
 
-def _submit_rpc(rpc_url: str, spec: dict[str, Any]) -> dict[str, Any]:
-    response = RpcClient(rpc_url, "", timeout_ms=5000).call(
+def _submit_rpc(rpc_url: str, spec: dict[str, Any], *, auth_token: str = "") -> dict[str, Any]:
+    response = RpcClient(rpc_url, auth_token, timeout_ms=5000).call(
         "task.dispatch",
         {
             "task_id": spec["task_id"],
@@ -278,6 +289,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the mixed RPC/web Silicium e2e scenario.")
     parser.add_argument("--web-url", required=True)
     parser.add_argument("--rpc-url", required=True)
+    parser.add_argument("--auth-token", default="", help="Bearer token for the web and RPC endpoints.")
     parser.add_argument("--data-dir", required=True, help="Directory holding queues, tasks, results, and events.")
     parser.add_argument("--manifest", default="", help="Optional JSON manifest describing the tasks to submit.")
     parser.add_argument("--timeout-s", type=float, default=180.0)
@@ -306,9 +318,9 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=len(specs)) as pool:
         for spec in specs:
             if spec["submit"] == "web":
-                submitters.append(pool.submit(_submit_web, args.web_url, spec))
+                submitters.append(pool.submit(_submit_web, args.web_url, spec, auth_token=args.auth_token))
             else:
-                submitters.append(pool.submit(_submit_rpc, args.rpc_url, spec))
+                submitters.append(pool.submit(_submit_rpc, args.rpc_url, spec, auth_token=args.auth_token))
         for future in as_completed(submitters):
             future.result(timeout=max(1.0, float(args.submit_timeout_s)))
 
