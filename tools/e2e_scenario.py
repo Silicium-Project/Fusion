@@ -23,7 +23,7 @@ DEFAULT_TASKS: list[dict[str, Any]] = [
     {
         "task_id": "web-compute-a",
         "submit": "web",
-        "expected_worker_id": "worker-compute-a",
+        "allowed_worker_ids": ["worker-compute-a", "worker-compute-b"],
         "required_roles": ["compute"],
         "priority": "normal",
         "task": {
@@ -35,7 +35,7 @@ DEFAULT_TASKS: list[dict[str, Any]] = [
     {
         "task_id": "web-compute-b",
         "submit": "web",
-        "expected_worker_id": "worker-compute-b",
+        "allowed_worker_ids": ["worker-compute-a", "worker-compute-b"],
         "required_roles": ["compute"],
         "priority": "normal",
         "task": {
@@ -47,7 +47,7 @@ DEFAULT_TASKS: list[dict[str, Any]] = [
     {
         "task_id": "rpc-verify-a",
         "submit": "rpc",
-        "expected_worker_id": "worker-verify-a",
+        "allowed_worker_ids": ["worker-verify-a", "worker-verify-b"],
         "required_roles": ["verify"],
         "priority": "normal",
         "task": {
@@ -59,7 +59,7 @@ DEFAULT_TASKS: list[dict[str, Any]] = [
     {
         "task_id": "rpc-verify-b",
         "submit": "rpc",
-        "expected_worker_id": "worker-verify-b",
+        "allowed_worker_ids": ["worker-verify-a", "worker-verify-b"],
         "required_roles": ["verify"],
         "priority": "normal",
         "task": {
@@ -104,7 +104,7 @@ def _load_manifest(path: Path | None) -> list[dict[str, Any]]:
 
 
 def _normalize_task_spec(item: dict[str, Any]) -> dict[str, Any]:
-    required = ("task_id", "submit", "expected_worker_id", "required_roles", "task")
+    required = ("task_id", "submit", "allowed_worker_ids", "required_roles", "task")
     for key in required:
         if key not in item:
             raise ValueError(f"missing_{key}")
@@ -114,9 +114,9 @@ def _normalize_task_spec(item: dict[str, Any]) -> dict[str, Any]:
     submit = str(item["submit"]).strip().lower()
     if submit not in {"web", "rpc"}:
         raise ValueError("unsupported_submit_transport")
-    expected_worker_id = str(item["expected_worker_id"]).strip()
-    if not expected_worker_id:
-        raise ValueError("missing_expected_worker_id")
+    allowed_worker_ids = [str(item_id).strip() for item_id in item["allowed_worker_ids"] if str(item_id).strip()]
+    if not allowed_worker_ids:
+        raise ValueError("empty_allowed_worker_ids")
     required_roles = [str(role).strip().lower() for role in item["required_roles"] if str(role).strip()]
     if not required_roles:
         raise ValueError("empty_required_roles")
@@ -126,7 +126,7 @@ def _normalize_task_spec(item: dict[str, Any]) -> dict[str, Any]:
     payload = dict(item)
     payload["task_id"] = task_id
     payload["submit"] = submit
-    payload["expected_worker_id"] = expected_worker_id
+    payload["allowed_worker_ids"] = allowed_worker_ids
     payload["required_roles"] = required_roles
     payload["priority"] = str(payload.get("priority", "normal")).strip().lower()
     payload["task"] = task
@@ -213,6 +213,7 @@ def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s:
         time.sleep(0.25)
 
     reports: dict[str, dict[str, Any]] = {}
+    used_workers_by_role: dict[str, set[str]] = {}
     for spec in specs:
         task_id = spec["task_id"]
         result = _read_json(result_paths[task_id])
@@ -225,12 +226,12 @@ def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s:
         assert queue_entry.get("status") == "queued", queue_entry
         assert queue_entry.get("envelope_kind") == "task", queue_entry
         assert queue_entry.get("task", {}).get("transport") == spec["task"]["transport"], queue_entry
-        assert queue_entry.get("priority_rank") == 50, queue_entry
+        assert queue_entry.get("priority") == spec["priority"], queue_entry
 
         assert task["task_id"] == task_id, task
         assert task["envelope_kind"] == "task", task
         assert task["status"] == "completed", task
-        assert task["handled_by"] == spec["expected_worker_id"], task
+        assert task["handled_by"] in spec["allowed_worker_ids"], task
         assert task["worker_role"] == spec["required_roles"][0], task
         assert task["priority"] == spec["priority"], task
         assert task["priority_rank"] == 50, task
@@ -241,13 +242,15 @@ def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s:
 
         assert result["success"] is True, result
         assert result["task_id"] == task_id, result
-        assert result["handled_by"] == spec["expected_worker_id"], result
+        assert result["handled_by"] in spec["allowed_worker_ids"], result
         assert result["worker_role"] == spec["required_roles"][0], result
         expected_transport = str(spec.get("expected_transport", "")).strip()
         if expected_transport:
             assert result["transport"] == expected_transport, result
         assert result["task"]["payload"] == spec["task"]["payload"], result
 
+        role = spec["required_roles"][0]
+        used_workers_by_role.setdefault(role, set()).add(str(result["handled_by"]))
         reports[task_id] = {"task": task, "result": result, "queue": queue_entry}
 
     events_path = data_dir / "rpc.events.ndjson"
@@ -258,6 +261,15 @@ def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s:
     for spec in specs:
         if spec["submit"] == "rpc" and spec["task_id"] not in event_task_ids:
             raise AssertionError(f"missing rpc queued event for {spec['task_id']}")
+
+    expected_role_workers = {
+        "compute": {"worker-compute-a", "worker-compute-b"},
+        "verify": {"worker-verify-a", "worker-verify-b"},
+    }
+    for role, expected_workers in expected_role_workers.items():
+        observed = used_workers_by_role.get(role, set())
+        if observed != expected_workers:
+            raise AssertionError(f"unexpected workers for {role}: {sorted(observed)}")
 
     return reports
 

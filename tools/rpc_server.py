@@ -14,6 +14,10 @@ import zmq
 from rpc_protocol import decode_request, encode_response
 
 
+def _priority_rank(priority: str) -> int:
+    return {"low": 10, "normal": 50, "high": 80, "urgent": 100}.get(priority, 50)
+
+
 def append_rpc_event(export_dir: Path, event: str, task_id: str, **details: object) -> None:
     export_dir.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -147,7 +151,13 @@ class RpcGateway:
                 except Exception: continue
                 if len(cid) == 64 and hashlib.sha256(data).hexdigest() == cid:
                     target = self.export_dir / "p2p" / cid; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(data)
-            payload = dict(payload); payload["envelope_kind"] = "task"; payload["status"] = "queued"; payload["submitted_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            priority = str(payload.get("priority", "normal")).strip().lower() or "normal"
+            payload = dict(payload)
+            payload["envelope_kind"] = "task"
+            payload["status"] = "queued"
+            payload["submitted_utc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            payload["priority"] = priority
+            payload["priority_rank"] = _priority_rank(priority)
             encoded = json.dumps(payload, separators=(",", ":"), ensure_ascii=True)
             tasks_dir = self.export_dir / "tasks"; tasks_dir.mkdir(parents=True, exist_ok=True)
             (tasks_dir / f"{task_id}.json").write_text(encoded, encoding="utf-8")
