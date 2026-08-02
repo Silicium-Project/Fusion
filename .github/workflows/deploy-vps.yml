@@ -157,10 +157,16 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
-          if (Test-Path $cargoBin) {
-            $cargoBin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-            $env:PATH = "$cargoBin;$env:PATH"
+          $candidateCargoBins = @()
+          if ($env:CARGO_HOME) { $candidateCargoBins += (Join-Path $env:CARGO_HOME "bin") }
+          if ($env:USERPROFILE) { $candidateCargoBins += (Join-Path $env:USERPROFILE ".cargo\bin") }
+          $candidateCargoBins += "C:\Users\luisf\.cargo\bin"
+          $candidateCargoBins += "C:\Users\luis\.cargo\bin"
+          foreach ($cargoBin in ($candidateCargoBins | Select-Object -Unique)) {
+            if (Test-Path $cargoBin) {
+              $cargoBin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+              $env:PATH = "$cargoBin;$env:PATH"
+            }
           }
           if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
             throw "rustup is required on the Windows deploy runner"
