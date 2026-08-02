@@ -60,77 +60,17 @@ done
 curl -fsS "http://127.0.0.1:9765/healthz" >/dev/null
 
 log "Checking python3 in runtime containers"
-for service in orchestrator backend mcp worker-compute worker-verify; do
+for service in orchestrator backend mcp worker-compute-a worker-compute-b worker-verify-a worker-verify-b; do
   docker compose -f "$COMPOSE_FILE" exec -T "$service" python3 --version >/dev/null
 done
 
 log "Submitting tasks through web and RPC"
-python3 - <<'PY'
-from __future__ import annotations
-
-import json
-import os
-import urllib.request
-from pathlib import Path
-
-from tools.rpc_client import RpcClient
-
-web_url = "http://127.0.0.1:9765/tools"
-rpc_url = "tcp://127.0.0.1:9770"
-export_dir = Path(os.environ["E2E_EXPORT_DIR"])
-
-
-def post_json(url: str, payload: dict[str, object]) -> dict[str, object]:
-    data = json.dumps(payload, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-    request = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=10) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-
-web_task_id = "web-e2e-task"
-web_response = post_json(
-    web_url,
-    {
-        "name": "tools.silicium.submit_task",
-        "args": {
-            "task_id": web_task_id,
-            "task": {
-                "kind": "compute",
-                "payload": "from-web",
-                "transport": "web",
-            },
-            "required_roles": ["compute"],
-            "priority": "normal",
-        },
-    },
-)
-assert web_response["ok"] is True, web_response
-assert web_response["result"]["status"] == "queued", web_response
-
-rpc_task_id = "rpc-e2e-task"
-rpc_response = RpcClient(rpc_url, "", timeout_ms=3000).call(
-    "task.dispatch",
-    {
-        "task_id": rpc_task_id,
-        "required_roles": ["verify"],
-        "priority": "normal",
-        "task": {
-            "kind": "verify",
-            "payload": "from-rpc",
-            "transport": "rpc",
-        },
-    },
-)
-assert rpc_response["status"] == "dispatched", rpc_response
-
-summary = {
-    "web_task_id": web_task_id,
-    "rpc_task_id": rpc_task_id,
-    "export_dir": str(export_dir),
-}
-Path(export_dir / "submission-summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-print(json.dumps({"web": web_response, "rpc": rpc_response}, indent=2, sort_keys=True))
-PY
+python3 "$ROOT/tools/e2e_scenario.py" \
+  --web-url "http://127.0.0.1:9765/tools" \
+  --rpc-url "tcp://127.0.0.1:9770" \
+  --data-dir "$E2E_EXPORT_DIR/mcp" \
+  --expected-transport "docker-e2e" \
+  --report "$E2E_EXPORT_DIR/validation.json"
 
 log "Waiting for task results"
 python3 - <<'PY'
@@ -143,11 +83,13 @@ from pathlib import Path
 
 export_dir = Path(os.environ["E2E_EXPORT_DIR"])
 expectations = {
-    "web-e2e-task": "worker-compute",
-    "rpc-e2e-task": "worker-verify",
+    "web-compute-a": "worker-compute-a",
+    "web-compute-b": "worker-compute-b",
+    "rpc-verify-a": "worker-verify-a",
+    "rpc-verify-b": "worker-verify-b",
 }
 
-deadline = time.monotonic() + 120.0
+deadline = time.monotonic() + 180.0
 for task_id in expectations:
     result_path = export_dir / "mcp" / f"result.{task_id}.json"
     while not result_path.exists():
@@ -175,8 +117,13 @@ backend_probe = json.loads((export_dir / "backend-probe.json").read_text(encodin
 assert backend_probe["ok"] is True, backend_probe
 assert backend_probe["resolved_addresses"], backend_probe
 
+validation = json.loads((export_dir / "validation.json").read_text(encoding="utf-8"))
+assert validation["ok"] is True, validation
+assert sorted(validation["tasks"].keys()) == sorted(expectations.keys()), validation
+
 print(json.dumps(reports, indent=2, sort_keys=True))
 print(json.dumps({"backend_probe": backend_probe}, indent=2, sort_keys=True))
+print(json.dumps({"validation": validation}, indent=2, sort_keys=True))
 PY
 
 log "E2E compose stack"

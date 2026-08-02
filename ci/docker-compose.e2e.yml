@@ -1,5 +1,17 @@
 name: silicium-e2e
 
+x-worker-base: &worker-base
+  working_dir: /workspace
+  entrypoint:
+    - python3
+  volumes:
+    - ../:/workspace:ro
+    - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
+  depends_on:
+    - mcp
+  networks:
+    - e2e
+
 services:
   orchestrator:
     image: python:3.12-slim-bookworm
@@ -72,59 +84,77 @@ services:
     networks:
       - e2e
 
-  worker-compute:
+  worker-compute-a:
+    <<: *worker-base
     build:
       context: ..
       dockerfile: infra/docker/world-node.Dockerfile
-    working_dir: /workspace
-    entrypoint:
-      - python3
     command:
       - /workspace/tools/e2e_worker.py
       - --export-dir
       - /state/mcp
       - --worker-id
-      - worker-compute
+      - worker-compute-a
       - --roles
       - compute
       - --expected-tasks
       - "1"
       - --transport
-      - web
-    volumes:
-      - ../:/workspace:ro
-      - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
-    depends_on:
-      - mcp
-    networks:
-      - e2e
+      - docker-e2e
 
-  worker-verify:
+  worker-compute-b:
+    <<: *worker-base
     build:
       context: ..
       dockerfile: infra/docker/world-node.Dockerfile
-    working_dir: /workspace
-    entrypoint:
-      - python3
     command:
       - /workspace/tools/e2e_worker.py
       - --export-dir
       - /state/mcp
       - --worker-id
-      - worker-verify
+      - worker-compute-b
+      - --roles
+      - compute
+      - --expected-tasks
+      - "1"
+      - --transport
+      - docker-e2e
+
+  worker-verify-a:
+    <<: *worker-base
+    build:
+      context: ..
+      dockerfile: infra/docker/world-node.Dockerfile
+    command:
+      - /workspace/tools/e2e_worker.py
+      - --export-dir
+      - /state/mcp
+      - --worker-id
+      - worker-verify-a
       - --roles
       - verify
       - --expected-tasks
       - "1"
       - --transport
-      - rpc
-    volumes:
-      - ../:/workspace:ro
-      - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
-    depends_on:
-      - mcp
-    networks:
-      - e2e
+      - docker-e2e
+
+  worker-verify-b:
+    <<: *worker-base
+    build:
+      context: ..
+      dockerfile: infra/docker/world-node.Dockerfile
+    command:
+      - /workspace/tools/e2e_worker.py
+      - --export-dir
+      - /state/mcp
+      - --worker-id
+      - worker-verify-b
+      - --roles
+      - verify
+      - --expected-tasks
+      - "1"
+      - --transport
+      - docker-e2e
 
 networks:
   e2e:
