@@ -22,6 +22,8 @@ apt-get install -y \
   python3 \
   python3-venv \
   python3-pip \
+  python3-protobuf \
+  python3-zmq \
   golang-go
 
 if apt-cache show docker-compose-plugin >/dev/null 2>&1; then

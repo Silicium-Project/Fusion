@@ -37,7 +37,7 @@ echo "Checking local HTTP health endpoints..."
 curl -fsS --max-time 8 http://127.0.0.1:8080/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1:3000 >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1:46100/health >/dev/null
-if systemctl list-unit-files --type service --all 2>/dev/null | awk '{print $1}' | grep -qx 'silicium-experiment-api.service'; then
+if systemctl cat silicium-experiment-api.service >/dev/null 2>&1; then
   if ! systemctl is-active --quiet silicium-experiment-api.service; then
     echo "silicium-experiment-api.service is installed but not active." >&2
     systemctl status --no-pager -l silicium-experiment-api.service >&2 || true
@@ -45,7 +45,7 @@ if systemctl list-unit-files --type service --all 2>/dev/null | awk '{print $1}'
     exit 1
   fi
 else
-  echo "Skipping silicium-experiment-api.service check: service is not installed on this host."
+  echo "Skipping silicium-experiment-api.service check: unit file is not installed on this host."
 fi
 
 echo "Waiting for experiment API on 46110..."
@@ -55,7 +55,12 @@ for _ in $(seq 1 30); do
   fi
   sleep 2
 done
-curl -fsS --max-time 8 http://127.0.0.1:46110/healthz >/dev/null
+if ! curl -fsS --max-time 8 http://127.0.0.1:46110/healthz >/dev/null; then
+  echo "Experiment API is not reachable on 127.0.0.1:46110 after waiting." >&2
+  systemctl status --no-pager -l silicium-experiment-api.service >&2 || true
+  journalctl -u silicium-experiment-api.service --no-pager -n 100 >&2 || true
+  exit 1
+fi
 curl -fsS --max-time 8 http://127.0.0.1:9091/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1/downloads/update-manifest.json >/dev/null
 

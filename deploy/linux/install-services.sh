@@ -11,6 +11,21 @@ fi
 [[ -d "$ROOT/deploy/systemd" ]] || { echo "Missing deployment files under: $ROOT" >&2; exit 1; }
 cd "$ROOT"
 
+if ! python3 - <<'PY'
+import importlib.util
+import sys
+
+missing = [
+    name for name in ("zmq", "google.protobuf")
+    if importlib.util.find_spec(name) is None
+]
+sys.exit(0 if not missing else 1)
+PY
+then
+  apt-get update
+  apt-get install -y --no-install-recommends python3-protobuf python3-zmq
+fi
+
 mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana /var/lib/silicium/downloads
 
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-backend.service > /etc/systemd/system/silicium-backend.service
