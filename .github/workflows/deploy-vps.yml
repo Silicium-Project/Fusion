@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   validate-monorepo:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -95,7 +95,7 @@ jobs:
 
   build-desktop:
     needs: [validate-monorepo]
-    runs-on: windows-latest
+    runs-on: [self-hosted, fusion-windows]
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -219,7 +219,7 @@ jobs:
 
   build-linux:
     needs: [validate-monorepo]
-    runs-on: ubuntu-22.04
+    runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -309,7 +309,7 @@ jobs:
 
   release-node:
     needs: [validate-monorepo, build-desktop, build-linux]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     outputs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
       release_version: ${{ steps.meta.outputs.release_version }}
@@ -352,7 +352,7 @@ jobs:
 
   deploy:
     needs: [validate-monorepo, build-desktop, build-linux, release-node]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     env:
       DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
       RELEASE_VERSION: ${{ needs.release-node.outputs.release_version }}
