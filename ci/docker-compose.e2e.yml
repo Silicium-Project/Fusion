@@ -1,0 +1,131 @@
+name: silicium-e2e
+
+services:
+  orchestrator:
+    image: python:3.12-slim-bookworm
+    working_dir: /workspace
+    command:
+      - python3
+      - /workspace/tools/bootstrap_orchestrator.py
+      - --bind
+      - 0.0.0.0
+      - --port
+      - "46100"
+      - --node-id
+      - orchestrator-e2e
+      - --export-dir
+      - /state/orchestrator
+    volumes:
+      - ../:/workspace:ro
+      - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
+    ports:
+      - "127.0.0.1:46100:46100"
+    networks:
+      e2e:
+        aliases:
+          - orchestrator
+
+  backend:
+    image: python:3.12-slim-bookworm
+    working_dir: /workspace
+    command:
+      - sh
+      - -lc
+      - >-
+        python3 /workspace/tools/e2e_vps_probe.py
+        --control-url http://orchestrator:46100/gossip/publish
+        --output /state/backend-probe.json
+        --probe-id backend-e2e
+        && exec tail -f /dev/null
+    depends_on:
+      - orchestrator
+    volumes:
+      - ../:/workspace:ro
+      - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
+    networks:
+      - e2e
+
+  mcp:
+    image: python:3.12-slim-bookworm
+    working_dir: /workspace
+    command:
+      - sh
+      - -lc
+      - >-
+        python3 -m pip install --no-cache-dir pyzmq protobuf &&
+        exec python3 /workspace/tools/mcp_server.py
+        --bind 0.0.0.0
+        --port 9765
+        --export-dir /state/mcp
+        --enable-tools
+        --no-auth
+        --rpc-bind tcp://0.0.0.0:9770
+        --rpc-events-bind tcp://0.0.0.0:9771
+        --log-format json
+    volumes:
+      - ../:/workspace:ro
+      - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
+    ports:
+      - "127.0.0.1:9765:9765"
+      - "127.0.0.1:9770:9770"
+      - "127.0.0.1:9771:9771"
+    networks:
+      - e2e
+
+  worker-compute:
+    build:
+      context: ..
+      dockerfile: infra/docker/world-node.Dockerfile
+    working_dir: /workspace
+    entrypoint:
+      - python3
+    command:
+      - /workspace/tools/e2e_worker.py
+      - --export-dir
+      - /state/mcp
+      - --worker-id
+      - worker-compute
+      - --roles
+      - compute
+      - --expected-tasks
+      - "1"
+      - --transport
+      - web
+    volumes:
+      - ../:/workspace:ro
+      - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
+    depends_on:
+      - mcp
+    networks:
+      - e2e
+
+  worker-verify:
+    build:
+      context: ..
+      dockerfile: infra/docker/world-node.Dockerfile
+    working_dir: /workspace
+    entrypoint:
+      - python3
+    command:
+      - /workspace/tools/e2e_worker.py
+      - --export-dir
+      - /state/mcp
+      - --worker-id
+      - worker-verify
+      - --roles
+      - verify
+      - --expected-tasks
+      - "1"
+      - --transport
+      - rpc
+    volumes:
+      - ../:/workspace:ro
+      - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
+    depends_on:
+      - mcp
+    networks:
+      - e2e
+
+networks:
+  e2e:
+    name: silicium-e2e

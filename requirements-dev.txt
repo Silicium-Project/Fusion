@@ -2,3 +2,5 @@ pytest>=8.0
 pyyaml>=6.0
 jsonschema>=4.0
 cryptography>=42.0
+pyzmq>=25.0
+protobuf>=4.25.0
