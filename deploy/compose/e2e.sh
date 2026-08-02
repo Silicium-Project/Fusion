@@ -75,7 +75,7 @@ curl -fsS "http://127.0.0.1:3000" >/dev/null
 
 log "Probing orchestrator gossip"
 python3 "$ROOT/Network/tools/e2e_vps_probe.py" \
-  --control-url "http://orchestrator:46100/gossip/publish" \
+  --control-url "http://127.0.0.1:46100/gossip/publish" \
   --output /tmp/silicium-vps-backend-probe.json \
   --probe-id "vps-e2e-backend"
 
