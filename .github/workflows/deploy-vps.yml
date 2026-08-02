@@ -247,7 +247,7 @@ jobs:
           & scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P $vpsPort `
             "ci-artifacts/silicium-node-windows-dev.exe" `
             "ci-artifacts/silicium-node-windows.exe" `
-            "$vpsUser@$vpsHost:$releaseStaging/"
+            "$vpsUser@${vpsHost}:$releaseStaging/"
           if ($LASTEXITCODE -ne 0) { throw "Failed to stage Windows installers on VPS" }
 
   build-linux:
