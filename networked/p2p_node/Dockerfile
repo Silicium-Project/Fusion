@@ -4,12 +4,11 @@ FROM rust:1.89-bookworm AS builder
 
 WORKDIR /work
 COPY silicium_node_core/Cargo.toml ./silicium_node_core/Cargo.toml
+COPY silicium_node_core/src ./silicium_node_core/src
 COPY p2p_node/Cargo.toml p2p_node/Cargo.lock ./p2p_node/
+COPY p2p_node/src ./p2p_node/src
 
 RUN cargo fetch --locked --manifest-path /work/p2p_node/Cargo.toml
-
-COPY silicium_node_core ./silicium_node_core
-COPY p2p_node ./p2p_node
 
 WORKDIR /work/p2p_node
 RUN cargo build --release --locked
