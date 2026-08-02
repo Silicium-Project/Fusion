@@ -24,6 +24,8 @@ services:
       - "1"
       - --transport
       - vps-compose
+      - --task-prefix
+      - ${E2E_TASK_PREFIX:-}
 
   e2e-worker-compute-b:
     <<: *worker-base
@@ -39,6 +41,8 @@ services:
       - "1"
       - --transport
       - vps-compose
+      - --task-prefix
+      - ${E2E_TASK_PREFIX:-}
 
   e2e-worker-verify-a:
     <<: *worker-base
@@ -54,6 +58,8 @@ services:
       - "1"
       - --transport
       - vps-compose
+      - --task-prefix
+      - ${E2E_TASK_PREFIX:-}
 
   e2e-worker-verify-b:
     <<: *worker-base
@@ -69,3 +75,5 @@ services:
       - "1"
       - --transport
       - vps-compose
+      - --task-prefix
+      - ${E2E_TASK_PREFIX:-}

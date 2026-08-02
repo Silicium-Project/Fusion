@@ -50,6 +50,8 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 mkdir -p "$DATA_DIR"
+TASK_PREFIX="vps-$(date -u +%Y%m%d%H%M%S)-$$"
+export E2E_TASK_PREFIX="$TASK_PREFIX"
 
 log "Starting VPS e2e worker overlay"
 docker compose -f "$E2E_COMPOSE_FILE" up -d --remove-orphans \
@@ -80,7 +82,6 @@ python3 "$ROOT/Network/tools/e2e_vps_probe.py" \
   --probe-id "vps-e2e-backend"
 
 log "Submitting tasks through web and RPC"
-TASK_PREFIX="vps-$(date -u +%Y%m%d%H%M%S)-$$"
 python3 "$ROOT/Network/tools/e2e_scenario.py" \
   --web-url "http://127.0.0.1:46110/tools" \
   --rpc-url "tcp://127.0.0.1:9770" \
