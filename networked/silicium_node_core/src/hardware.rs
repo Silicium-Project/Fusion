@@ -9,7 +9,8 @@ pub const VRAM_MASK: u32 = 0xF << VRAM_SHIFT;
 pub const GPU_MASK: u32 = 0x1F << GPU_SHIFT;
 pub const SIMD_MASK: u32 = 0xF << SIMD_SHIFT;
 pub const OS_MASK: u32 = 0xF << OS_SHIFT;
-pub const RESERVED_MASK: u32 = !((VRAM_MASK) | (GPU_MASK) | (SIMD_MASK) | (OS_MASK));
+pub const VALID_MASK: u32 = (VRAM_MASK) | (GPU_MASK) | (SIMD_MASK) | (OS_MASK);
+pub const RESERVED_MASK: u32 = !VALID_MASK;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[repr(u8)]
@@ -147,6 +148,15 @@ impl HardwareBucket {
         self.bits
     }
 
+    pub const fn is_valid(self) -> bool {
+        self.bits & RESERVED_MASK == 0
+    }
+
+    pub fn try_new(bits: u32) -> Option<Self> {
+        let bucket = Self::new(bits);
+        bucket.is_valid().then_some(bucket)
+    }
+
     pub fn from_profile(profile: HardwareProfile) -> Self {
         let mut bits = 0u32;
         bits |= profile.vram.code() << VRAM_SHIFT;
@@ -157,7 +167,7 @@ impl HardwareBucket {
     }
 
     pub fn to_profile(self) -> Option<HardwareProfile> {
-        if self.bits & RESERVED_MASK != 0 {
+        if !self.is_valid() {
             return None;
         }
 
@@ -241,6 +251,25 @@ impl TryFrom<u32> for OperatingSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn masks_do_not_overlap() {
+        assert_eq!(VALID_MASK & RESERVED_MASK, 0);
+        assert_eq!(VRAM_MASK & GPU_MASK, 0);
+        assert_eq!(VRAM_MASK & SIMD_MASK, 0);
+        assert_eq!(VRAM_MASK & OS_MASK, 0);
+        assert_eq!(GPU_MASK & SIMD_MASK, 0);
+        assert_eq!(GPU_MASK & OS_MASK, 0);
+        assert_eq!(SIMD_MASK & OS_MASK, 0);
+    }
+
+    #[test]
+    fn unknown_bits_are_rejected() {
+        let invalid = HardwareBucket::new(1 << 31);
+        assert!(!invalid.is_valid());
+        assert_eq!(invalid.to_profile(), None);
+        assert_eq!(HardwareBucket::try_new(1 << 31), None);
+    }
 
     #[test]
     fn hamming_distance_uses_popcount() {
