@@ -154,7 +154,23 @@ jobs:
           }
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+          if (Test-Path $cargoBin) {
+            $cargoBin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+            $env:PATH = "$cargoBin;$env:PATH"
+          }
+          if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+            throw "rustup is required on the Windows deploy runner"
+          }
+          & rustup toolchain install stable --profile minimal
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install/update Rust stable toolchain" }
+          & rustup default stable
+          if ($LASTEXITCODE -ne 0) { throw "Failed to select Rust stable toolchain" }
+          & rustc --version
+          & cargo --version
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
