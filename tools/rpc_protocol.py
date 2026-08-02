@@ -8,7 +8,16 @@ from __future__ import annotations
 
 import json
 from google.protobuf import descriptor_pb2, descriptor_pool, message
-from google.protobuf.message_factory import GetMessageClass
+
+try:
+    from google.protobuf.message_factory import GetMessageClass as _get_message_class
+except ImportError:
+    from google.protobuf.message_factory import MessageFactory
+
+    _MESSAGE_FACTORY = MessageFactory()
+
+    def _get_message_class(descriptor):
+        return _MESSAGE_FACTORY.GetPrototype(descriptor)
 
 
 def _classes():
@@ -26,7 +35,7 @@ def _classes():
         pool.Add(file)
     except Exception:
         pass
-    return GetMessageClass(pool.FindMessageTypeByName("silicium.rpc.RpcRequest")), GetMessageClass(pool.FindMessageTypeByName("silicium.rpc.RpcResponse"))
+    return _get_message_class(pool.FindMessageTypeByName("silicium.rpc.RpcRequest")), _get_message_class(pool.FindMessageTypeByName("silicium.rpc.RpcResponse"))
 
 
 RpcRequest, RpcResponse = _classes()
