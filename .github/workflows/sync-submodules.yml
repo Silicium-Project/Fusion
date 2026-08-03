@@ -129,11 +129,21 @@ jobs:
             git push "git@github.com:${GITHUB_REPOSITORY}.git" HEAD:main
           fi
 
+          dispatch_workflow() {
+            local workflow="$1"
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+              -d '{"ref":"main"}'
+          }
+
           # Events emitted with GITHUB_TOKEN do not recursively start workflows.
           # Dispatch the consumers explicitly after the exact gitlinks reach main.
-          gh workflow run deploy-vps.yml --repo "$GITHUB_REPOSITORY" --ref main
+          dispatch_workflow deploy-vps.yml
           if [[ '${{ steps.resolve.outputs.network_changed }}' == 'true' ]]; then
-            gh workflow run linux-client.yml --repo "$GITHUB_REPOSITORY" --ref main
+            dispatch_workflow linux-client.yml
           fi
 
       - name: Report current composition
