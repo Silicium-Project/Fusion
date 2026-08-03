@@ -26,7 +26,7 @@ jobs:
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
-          permission-contents: write
+          permission-contents: read
 
       - name: Check out the pinned composition
         uses: actions/checkout@v4
