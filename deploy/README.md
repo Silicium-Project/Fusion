@@ -165,9 +165,13 @@ its client ID as the repository secret `SILICIUM_DEPLOY_APP_CLIENT_ID` and
 its private key as the repository secret `SILICIUM_DEPLOY_APP_PRIVATE_KEY`.
 Install the App on `Fusion`, `BackEnd`, `FrontEnd`, and `Network` with only
 `Contents: Read-only` permission. The submodule sync workflow uses that token to
-read the private repositories and the native, short-lived `GITHUB_TOKEN` to
-publish Fusion's exact gitlinks and dispatch their consumer workflows. Tokens
-are revoked when their job completes.
+read the private repositories. To publish Fusion's exact gitlinks, configure
+either `SILICIUM_SYNC_PUSH_TOKEN` with a token that has write access on
+`Fusion`, or `SILICIUM_SYNC_DEPLOY_KEY` with an SSH deploy key allowed to push
+to `main`. Optionally provide `SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS` to pin the SSH
+host key instead of relying on `ssh-keyscan`. If no dedicated publication secret
+is configured, the workflow stops with an explicit error. Tokens are revoked
+when their job completes.
 
 The deployment user must be able to run the Compose deployment script through
 `sudo` without an interactive password prompt. The workflow performs a

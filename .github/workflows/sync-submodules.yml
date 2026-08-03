@@ -93,8 +93,10 @@ jobs:
         if: steps.resolve.outputs.changed != '0'
         shell: bash
         env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_TOKEN: ${{ github.token }}
+          SILICIUM_SYNC_DEPLOY_KEY: ${{ secrets.SILICIUM_SYNC_DEPLOY_KEY }}
+          SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS: ${{ secrets.SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS }}
+          SILICIUM_SYNC_PUSH_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -102,8 +104,27 @@ jobs:
           git config user.email "luis1454@users.noreply.github.com"
           git commit -m "chore: synchronize submodule gitlinks" \
             -m "$(cat '${{ steps.resolve.outputs.summary_file }}')"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            HEAD:main
+
+          if [[ -z "${SILICIUM_SYNC_DEPLOY_KEY:-}" && -z "${SILICIUM_SYNC_PUSH_TOKEN:-}" ]]; then
+            echo "::error title=Missing secret::Configure SILICIUM_SYNC_PUSH_TOKEN or SILICIUM_SYNC_DEPLOY_KEY to publish the gitlink update."
+            exit 1
+          fi
+
+          if [[ -n "${SILICIUM_SYNC_DEPLOY_KEY:-}" ]]; then
+            install -d -m 700 "$HOME/.ssh"
+            printf '%s\n' "$SILICIUM_SYNC_DEPLOY_KEY" > "$HOME/.ssh/id_ed25519"
+            if [[ -n "${SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS:-}" ]]; then
+              printf '%s\n' "$SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+            else
+              ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+            fi
+            chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+            export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+            git push "git@github.com:${GITHUB_REPOSITORY}.git" HEAD:main
+          else
+            git push "https://x-access-token:${SILICIUM_SYNC_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              HEAD:main
+          fi
 
           # Events emitted with GITHUB_TOKEN do not recursively start workflows.
           # Dispatch the consumers explicitly after the exact gitlinks reach main.

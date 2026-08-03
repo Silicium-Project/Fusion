@@ -36,7 +36,7 @@ concurrency:
 
 jobs:
   rollback:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     env:
       DEPLOY_REF: ${{ github.event.inputs.deploy_ref }}
       RELEASE_VERSION: ${{ github.event.inputs.release_version }}

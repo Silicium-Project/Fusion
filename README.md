@@ -9,13 +9,15 @@ reproductible. Le workflow `Sync submodule gitlinks` compare toutes les cinq
 minutes les branches declarees dans `.gitmodules`, publie une composition exacte
 sur `main`, puis declenche explicitement les pipelines CI/CD consommateurs. Il
 ne faut pas remplacer ce mecanisme par un `git submodule update --remote`
-pendant le deploiement: le
-contenu deploye ne correspondrait alors plus au commit Fusion audite.
+pendant le deploiement: le contenu deploye ne correspondrait alors plus au
+commit Fusion audite.
 
 Le workflow utilise la GitHub App Silicium en lecture seule pour cloner les
-depots prives. Le `GITHUB_TOKEN` natif et ephemere publie uniquement le gitlink
-dans Fusion et declenche les workflows dependants; aucun personal access token
-n'est requis.
+depots prives. La publication du gitlink sur `main` peut utiliser soit un token
+ecriture configure dans `SILICIUM_SYNC_PUSH_TOKEN`, soit une deploy key SSH
+configuree dans `SILICIUM_SYNC_DEPLOY_KEY`; `SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS`
+peut etre fourni pour pinning explicite. Si aucun secret de publication n'est
+defini, le workflow s'arrête avec une erreur explicite.
 
 ## Installation locale Windows
 
