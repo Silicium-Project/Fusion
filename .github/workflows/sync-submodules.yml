@@ -33,6 +33,7 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Sync declared submodules
         shell: bash
@@ -99,6 +100,8 @@ jobs:
           SILICIUM_SYNC_PUSH_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN }}
         run: |
           set -euo pipefail
+
+          git config --local --unset-all http.https://github.com/.extraheader || true
 
           git config user.name "Luis1454"
           git config user.email "luis1454@users.noreply.github.com"
