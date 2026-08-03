@@ -64,3 +64,4 @@ Thumbs.db
 .idea/
 .vscode/
 .aider*
+.agents/
