@@ -96,7 +96,7 @@ jobs:
           git config user.email "luis1454@users.noreply.github.com"
           git commit -m "chore: synchronize submodule gitlinks" \
             -m "$(cat '${{ steps.resolve.outputs.summary_file }}')"
-          git push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
             HEAD:main
 
           # Events emitted with GITHUB_TOKEN do not recursively start workflows.
