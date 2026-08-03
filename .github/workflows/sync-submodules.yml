@@ -40,9 +40,12 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global --get-regexp '^url\..*x-access-token.*github\.com.*\.insteadof$' | while read -r key _; do
+            git config --global --unset-all "$key" || true
+          done || true
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git submodule sync -- BackEnd FrontEnd Network
-          git submodule update --init --force --recursive -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force -- BackEnd FrontEnd Network
 
       - name: Resolve configured submodule branches
         id: resolve
