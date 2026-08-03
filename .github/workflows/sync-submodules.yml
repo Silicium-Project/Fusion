@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create short-lived GitHub App token
         id: app-token
