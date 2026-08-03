@@ -105,12 +105,15 @@ jobs:
           git commit -m "chore: synchronize submodule gitlinks" \
             -m "$(cat '${{ steps.resolve.outputs.summary_file }}')"
 
-          if [[ -z "${SILICIUM_SYNC_DEPLOY_KEY:-}" && -z "${SILICIUM_SYNC_PUSH_TOKEN:-}" ]]; then
+          if [[ -z "${SILICIUM_SYNC_PUSH_TOKEN:-}" && -z "${SILICIUM_SYNC_DEPLOY_KEY:-}" ]]; then
             echo "::error title=Missing secret::Configure SILICIUM_SYNC_PUSH_TOKEN or SILICIUM_SYNC_DEPLOY_KEY to publish the gitlink update."
             exit 1
           fi
 
-          if [[ -n "${SILICIUM_SYNC_DEPLOY_KEY:-}" ]]; then
+          if [[ -n "${SILICIUM_SYNC_PUSH_TOKEN:-}" ]]; then
+            git push "https://x-access-token:${SILICIUM_SYNC_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+              HEAD:main
+          else
             install -d -m 700 "$HOME/.ssh"
             printf '%s\n' "$SILICIUM_SYNC_DEPLOY_KEY" > "$HOME/.ssh/id_ed25519"
             if [[ -n "${SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS:-}" ]]; then
@@ -121,9 +124,6 @@ jobs:
             chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
             export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
             git push "git@github.com:${GITHUB_REPOSITORY}.git" HEAD:main
-          else
-            git push "https://x-access-token:${SILICIUM_SYNC_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-              HEAD:main
           fi
 
           # Events emitted with GITHUB_TOKEN do not recursively start workflows.
