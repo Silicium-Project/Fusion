@@ -266,7 +266,12 @@ def _match_task_file(task_files: list[Path], spec: dict[str, Any]) -> tuple[Path
     return None, None
 
 
-def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s: float) -> dict[str, dict[str, Any]]:
+def _wait_for_results(
+    data_dir: Path,
+    specs: list[dict[str, Any]],
+    *,
+    timeout_s: float,
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, int]]]:
     deadline = time.monotonic() + max(1.0, float(timeout_s))
     while True:
         result_files = _iter_json_files(data_dir, "result.*.json")
@@ -370,7 +375,7 @@ def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s:
         if observed != expected_workers:
             raise AssertionError(f"unexpected workers for {role}: {sorted(observed)}")
 
-    return reports
+    return reports, worker_counts_by_role
 
 
 def _parse_args() -> argparse.Namespace:
@@ -412,7 +417,7 @@ def main() -> int:
         for future in as_completed(submitters):
             future.result(timeout=max(1.0, float(args.submit_timeout_s)))
 
-    reports = _wait_for_results(data_dir, specs, timeout_s=float(args.timeout_s))
+    reports, worker_counts_by_role = _wait_for_results(data_dir, specs, timeout_s=float(args.timeout_s))
     payload = {
         "ok": True,
         "data_dir": str(data_dir),

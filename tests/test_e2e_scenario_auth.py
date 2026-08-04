@@ -186,7 +186,7 @@ def test_wait_for_results_matches_runtime_generated_ids(tmp_path: Path) -> None:
     ]
     (data_dir / "rpc.events.ndjson").write_text("\n".join(json.dumps(item) for item in events) + "\n", encoding="utf-8")
 
-    reports = e2e_scenario._wait_for_results(data_dir, specs, timeout_s=1.0)
+    reports, worker_counts = e2e_scenario._wait_for_results(data_dir, specs, timeout_s=1.0)
 
     assert set(reports) == {spec["task_id"] for spec in specs}
     assert reports["submit-web-a"]["result"]["handled_by"] == "worker-compute-a"
@@ -195,3 +195,7 @@ def test_wait_for_results_matches_runtime_generated_ids(tmp_path: Path) -> None:
     assert reports["submit-rpc-b"]["result"]["handled_by"] == "worker-verify-b"
     assert reports["submit-web-a"]["result"]["transport"] == "vps-compose"
     assert reports["submit-rpc-b"]["result"]["transport"] == "vps-compose"
+    assert worker_counts["compute"]["worker-compute-a"] == 1
+    assert worker_counts["compute"]["worker-compute-b"] == 1
+    assert worker_counts["verify"]["worker-verify-a"] == 1
+    assert worker_counts["verify"]["worker-verify-b"] == 1
