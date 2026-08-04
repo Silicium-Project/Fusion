@@ -178,7 +178,6 @@ def _config(
         gossip_port=0,
         peer_http_bind="127.0.0.1",
         peer_http_port=0,
-        peer_advertise_url="",
         peer_advertise_host="",
         peer_advertise_port=0,
         gossip_advertise_host="",
@@ -191,7 +190,6 @@ def _config(
         relay_enable=relay_enable,
         relay_hops=2,
         identity_key_path="",
-        identity_dev_mesh_auth=identity_dev_mesh_auth,
         reputation_score=reputation_score,
         replication_factor=replication_factor,
         replication_quorum=replication_quorum,
@@ -199,27 +197,14 @@ def _config(
         discovery_sync_interval_s=1,
         remote_dispatch_enable=remote_dispatch_enable,
         remote_dispatch_limit=remote_dispatch_limit,
+        pull_tasks_enable=False,
+        pull_tasks_interval_s=2,
         nat_punch_enable=nat_punch_enable,
-        p2p_candidate_ttl_s=p2p_candidate_ttl_s,
-        p2p_candidate_refresh_s=p2p_candidate_refresh_s,
-        p2p_session_ttl_s=p2p_session_ttl_s,
-        p2p_punch_retry_count=p2p_punch_retry_count,
-        p2p_punch_interval_ms=p2p_punch_interval_ms,
-        p2p_session_timeout_ms=p2p_session_timeout_ms,
-        p2p_direct_transport_backend=p2p_direct_transport_backend,
-        p2p_stun_server=p2p_stun_server,
-        p2p_turn_server=p2p_turn_server,
-        p2p_turn_username=p2p_turn_username,
-        p2p_turn_password=p2p_turn_password,
-        p2p_turn_transport=p2p_turn_transport,
         solana_reputation_enable=solana_reputation_enable,
         solana_reputation_refresh_s=1,
         scheduler_onchain_weight=10.0,
         scheduler_offchain_weight=1.0,
         scheduler_capacity_weight=0.01,
-        app_version=app_version,
-        release_channel=release_channel,
-        release_build=release_build,
     )
 
 
@@ -379,6 +364,7 @@ def test_peer_identity_signs_in_process_without_openssl_subprocess(
     def fail_subprocess(*_args, **_kwargs):
         raise AssertionError("identity signing must not launch openssl.exe")
 
+    monkeypatch.setattr(network_node, "force_hmac_identity", lambda: True)
     monkeypatch.setattr(network_node.subprocess, "run", fail_subprocess)
     identity = network_node.NodeIdentity(_config(tmp_path / "identity-native", "node-native"))
     payload = b"signed without an external process"

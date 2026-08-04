@@ -287,6 +287,7 @@ def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s:
 
     reports: dict[str, dict[str, Any]] = {}
     used_workers_by_role: dict[str, set[str]] = {}
+    worker_counts_by_role: dict[str, dict[str, int]] = {}
     task_files = _iter_json_files(data_dir / "tasks", "*.json")
     for spec in specs:
         task_id = spec["task_id"]
@@ -346,6 +347,9 @@ def _wait_for_results(data_dir: Path, specs: list[dict[str, Any]], *, timeout_s:
 
         role = spec["required_roles"][0]
         used_workers_by_role.setdefault(role, set()).add(str(result["handled_by"]))
+        worker_counts = worker_counts_by_role.setdefault(role, {})
+        worker_id = str(result["handled_by"])
+        worker_counts[worker_id] = int(worker_counts.get(worker_id, 0)) + 1
         reports[task_id] = {"task": task, "result": result, "queue": queue_entry}
 
     events_path = data_dir / "rpc.events.ndjson"
@@ -413,6 +417,7 @@ def main() -> int:
         "ok": True,
         "data_dir": str(data_dir),
         "tasks": reports,
+        "worker_counts": worker_counts_by_role,
         "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     if args.report:

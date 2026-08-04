@@ -213,10 +213,10 @@ Request envelopes are readable through:
 
 ### Node daemon
 
-`silicium node start` runs the role-aware local daemon that consumes ingress envelopes as a service instead of requiring one-off scripts.
+`silicium node start` runs the role-aware local daemon that consumes ingress envelopes as a service instead of requiring one-off scripts. The launcher now starts the Rust `p2p_node` binary directly, and `SILICIUM_P2P_NODE_BIN` can override the executable.
 
 ```bash
-python silicium node start --roles compute,verify,storage,audit,resource
+silicium node start --roles compute,verify,storage,audit,resource
 ```
 
 Scheduling order is intentionally biased toward fast reaction:
@@ -232,7 +232,7 @@ The daemon keeps cursor/idempotency state under `node-state/<node-id>/`, fetches
 When Solana execution is enabled, the same daemon also publishes the relevant state transitions to the on-chain program. This is still one service entrypoint:
 
 ```bash
-python silicium node start \
+silicium node start \
   --roles compute,verify,storage,audit,resource \
   --solana-enable \
   --solana-program-id HyXT83SzHsEPxNZ5zQPvkLwQ7JwFHh2veAE5PuGUgoiQ \

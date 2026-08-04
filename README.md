@@ -409,6 +409,9 @@ python silicium node start --world \
   --p2p-turn-password "$SILICIUM_P2P_TURN_PASSWORD"
 ```
 
+`silicium node start` now launches the Rust `p2p_node` binary directly. Set
+`SILICIUM_P2P_NODE_BIN` to override the executable used by the launcher.
+
 La signalisation reste nécessaire pour échanger les identités, les credentials
 ICE et les candidats. Elle ne transporte pas les payloads après l’établissement
 du chemin direct. Si ICE est indisponible ou échoue, le nœud expose une raison

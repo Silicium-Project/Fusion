@@ -48,6 +48,8 @@ services:
         --control-url http://orchestrator:46100/gossip/publish
         --output /state/backend-probe.json
         --probe-id backend-e2e
+        --retries 120
+        --delay-s 2
         && exec tail -f /dev/null
     depends_on:
       - orchestrator
@@ -98,7 +100,7 @@ services:
       - --roles
       - compute
       - --expected-tasks
-      - "1"
+      - "2"
       - --transport
       - docker-e2e
       - --task-prefix
@@ -118,7 +120,7 @@ services:
       - --roles
       - compute
       - --expected-tasks
-      - "1"
+      - "2"
       - --transport
       - docker-e2e
       - --task-prefix
@@ -138,7 +140,7 @@ services:
       - --roles
       - verify
       - --expected-tasks
-      - "1"
+      - "2"
       - --transport
       - docker-e2e
       - --task-prefix
@@ -158,7 +160,7 @@ services:
       - --roles
       - verify
       - --expected-tasks
-      - "1"
+      - "2"
       - --transport
       - docker-e2e
       - --task-prefix

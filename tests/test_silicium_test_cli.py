@@ -364,6 +364,10 @@ def test_node_start_forwards_release_telemetry(monkeypatch) -> None:
             "test-build",
             "--node-id",
             "telemetry-node",
+            "--seed-peers",
+            "http://seed-a.example,http://seed-b.example",
+            "--peer-http-port",
+            "46001",
         ]
     )
     monkeypatch.setattr(
@@ -372,18 +376,40 @@ def test_node_start_forwards_release_telemetry(monkeypatch) -> None:
         lambda _args: {"export_dir": ".silicium/test-export"},
     )
 
-    from tools import network_node
+    monkeypatch.setattr(cli, "_p2p_node_command", lambda: ["p2p_node"])
 
-    captured: list[str] = []
-    monkeypatch.setattr(network_node, "main", lambda argv: captured.extend(argv) or 0)
+    captured: dict[str, object] = {}
+
+    def fake_run_p2p_node(command, env):
+        captured["command"] = list(command)
+        captured["env"] = dict(env)
+        return 0
+
+    monkeypatch.setattr(cli, "_run_p2p_node", fake_run_p2p_node)
 
     with pytest.raises(SystemExit) as exited:
         cli.cmd_node_start(args, _make_ctx(cli))
 
     assert exited.value.code == 0
-    assert captured[captured.index("--app-version") + 1] == "0.2.9-dev.4"
-    assert captured[captured.index("--release-channel") + 1] == "dev"
-    assert captured[captured.index("--release-build") + 1] == "test-build"
+    command = captured["command"]
+    assert command[:3] == ["p2p_node", "--data-dir", ".silicium/test-export"]
+    assert command[3] == "--dispatcher-seed"
+    assert command[4].isdigit()
+    env = captured["env"]
+    assert env["SILICIUM_APP_VERSION"] == "0.2.9-dev.4"
+    assert env["SILICIUM_RELEASE_CHANNEL"] == "dev"
+    assert env["SILICIUM_RELEASE_BUILD"] == "test-build"
+    assert env["SILICIUM_NODE_ID"] == "telemetry-node"
+    assert env["SILICIUM_DATA_DIR"] == ".silicium/test-export"
+    assert env["SILICIUM_BOOTSTRAP_PEERS"] == "http://seed-a.example,http://seed-b.example"
+    assert env["API_PORT"] == "46001"
+    assert env["SILICIUM_DISPATCH_SEED"].isdigit()
+
+
+def test_node_start_uses_explicit_p2p_node_binary(monkeypatch) -> None:
+    cli = _load_silicium_module()
+    monkeypatch.setenv("SILICIUM_P2P_NODE_BIN", r"C:\\tmp\\p2p_node.exe")
+    assert cli._p2p_node_command() == [r"C:\\tmp\\p2p_node.exe"]
 
 
 def test_world_mode_merges_discovery_seeds(monkeypatch) -> None:

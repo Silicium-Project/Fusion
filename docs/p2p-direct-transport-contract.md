@@ -14,8 +14,9 @@ when possible and a relay only when direct connectivity fails.
   server-mediated.
 - Move large off-chain payloads to direct peer-to-peer sessions by default.
 - Make direct, relay, legacy, and failed transfer paths explicit and observable.
-- Preserve compatibility with current `silicium node start` deployments that
-  only support peer HTTP, seed peers, mesh sync, and relay fetch.
+- Preserve compatibility with current `silicium node start` deployments while
+  the launcher moves to the Rust `p2p_node` binary and still supports peer
+  HTTP, seed peers, mesh sync, and relay fetch.
 - Provide stable message schemas for the follow-up implementation issues in the
   P2P milestone.
 

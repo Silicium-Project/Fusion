@@ -3,7 +3,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT/ci/docker-compose.e2e.yml"
+MANIFEST_FILE="$ROOT/ci/e2e-manifest.json"
 E2E_EXPORT_DIR="$(mktemp -d -t silicium-e2e-XXXXXX)"
+E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-900}"
+E2E_WAIT_S="${E2E_WAIT_S:-600}"
 
 cd "$ROOT"
 
@@ -71,8 +74,10 @@ python3 "$ROOT/tools/e2e_scenario.py" \
   --web-url "http://127.0.0.1:9765/tools" \
   --rpc-url "tcp://127.0.0.1:9770" \
   --data-dir "$E2E_EXPORT_DIR/mcp" \
+  --manifest "$MANIFEST_FILE" \
   --task-prefix "$TASK_PREFIX" \
   --expected-transport "docker-e2e" \
+  --timeout-s "$E2E_TIMEOUT_S" \
   --report "$E2E_EXPORT_DIR/validation.json"
 
 log "Waiting for task results"
@@ -86,15 +91,19 @@ from pathlib import Path
 
 export_dir = Path(os.environ["E2E_EXPORT_DIR"])
 task_prefix = os.environ["E2E_TASK_PREFIX"]
-expectations = {
-    f"{task_prefix}-web-compute-a": "worker-compute-a",
-    f"{task_prefix}-web-compute-b": "worker-compute-b",
-    f"{task_prefix}-rpc-verify-a": "worker-verify-a",
-    f"{task_prefix}-rpc-verify-b": "worker-verify-b",
-}
+task_ids = [
+    f"{task_prefix}-web-compute-a",
+    f"{task_prefix}-web-compute-b",
+    f"{task_prefix}-web-compute-c",
+    f"{task_prefix}-web-compute-d",
+    f"{task_prefix}-rpc-verify-a",
+    f"{task_prefix}-rpc-verify-b",
+    f"{task_prefix}-rpc-verify-c",
+    f"{task_prefix}-rpc-verify-d",
+]
 
-deadline = time.monotonic() + 180.0
-for task_id in expectations:
+deadline = time.monotonic() + float(os.environ.get("E2E_WAIT_S", "600"))
+for task_id in task_ids:
     result_path = export_dir / "mcp" / f"result.{task_id}.json"
     while not result_path.exists():
         if time.monotonic() > deadline:
@@ -102,16 +111,16 @@ for task_id in expectations:
         time.sleep(0.25)
 
 reports: dict[str, dict[str, object]] = {}
-for task_id, worker_id in expectations.items():
+for task_id in task_ids:
     result_path = export_dir / "mcp" / f"result.{task_id}.json"
     task_path = export_dir / "mcp" / "tasks" / f"{task_id}.json"
     report = json.loads(result_path.read_text(encoding="utf-8"))
     task = json.loads(task_path.read_text(encoding="utf-8"))
     assert report["success"] is True, report
-    assert report["handled_by"] == worker_id, report
+    assert str(report["handled_by"]).strip(), report
     assert report["worker_role"] in {"compute", "verify"}, report
     assert task["status"] == "completed", task
-    assert task["handled_by"] == worker_id, task
+    assert task["handled_by"] == report["handled_by"], task
     reports[task_id] = {
         "result": report,
         "task": task,
@@ -123,7 +132,12 @@ assert backend_probe["resolved_addresses"], backend_probe
 
 validation = json.loads((export_dir / "validation.json").read_text(encoding="utf-8"))
 assert validation["ok"] is True, validation
-assert sorted(validation["tasks"].keys()) == sorted(expectations.keys()), validation
+assert sorted(validation["tasks"].keys()) == sorted(task_ids), validation
+worker_counts = validation.get("worker_counts", {})
+assert worker_counts.get("compute", {}).get("worker-compute-a") == 2, worker_counts
+assert worker_counts.get("compute", {}).get("worker-compute-b") == 2, worker_counts
+assert worker_counts.get("verify", {}).get("worker-verify-a") == 2, worker_counts
+assert worker_counts.get("verify", {}).get("worker-verify-b") == 2, worker_counts
 
 print(json.dumps(reports, indent=2, sort_keys=True))
 print(json.dumps({"backend_probe": backend_probe}, indent=2, sort_keys=True))

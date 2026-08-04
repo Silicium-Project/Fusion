@@ -75,6 +75,18 @@ def test_submit_rpc_passes_bearer_token(monkeypatch):
     assert captured["method"] == "task.dispatch"
 
 
+def test_ci_e2e_manifest_exercises_both_workers_and_submit_paths() -> None:
+    manifest_path = REPO_ROOT / "ci" / "e2e-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert isinstance(manifest, list)
+    assert len(manifest) == 8
+    submit_modes = {str(item["submit"]) for item in manifest}
+    assert submit_modes == {"web", "rpc"}
+    roles = {tuple(item["required_roles"]) for item in manifest}
+    assert roles == {("compute",), ("verify",)}
+
+
 def test_wait_for_results_matches_runtime_generated_ids(tmp_path: Path) -> None:
     data_dir = tmp_path / "export"
     tasks_dir = data_dir / "tasks"
@@ -181,3 +193,5 @@ def test_wait_for_results_matches_runtime_generated_ids(tmp_path: Path) -> None:
     assert reports["submit-web-b"]["result"]["handled_by"] == "worker-compute-b"
     assert reports["submit-rpc-a"]["result"]["handled_by"] == "worker-verify-a"
     assert reports["submit-rpc-b"]["result"]["handled_by"] == "worker-verify-b"
+    assert reports["submit-web-a"]["result"]["transport"] == "vps-compose"
+    assert reports["submit-rpc-b"]["result"]["transport"] == "vps-compose"
