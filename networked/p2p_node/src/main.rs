@@ -82,6 +82,154 @@ impl From<TaskEnvelope> for NetworkTask {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::StreamExt;
+    use libp2p::swarm::SwarmEvent;
+    use std::{
+        sync::{Mutex, OnceLock},
+        time::Duration,
+    };
+    use tokio::time::timeout;
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().expect("env test lock")
+    }
+
+    #[test]
+    fn parse_bootstrap_peer_filters_invalid_entries() {
+        let peers = parse_bootstrap_peer(
+            "/ip4/127.0.0.1/tcp/4001,not-a-multiaddr,/ip4/127.0.0.1/udp/4002/quic-v1",
+        );
+        assert_eq!(peers.len(), 2);
+        assert!(peers.iter().any(|addr| addr.to_string() == "/ip4/127.0.0.1/tcp/4001"));
+        assert!(peers.iter().any(|addr| addr.to_string() == "/ip4/127.0.0.1/udp/4002/quic-v1"));
+    }
+
+    #[test]
+    fn merge_bootstrap_peers_sorts_and_deduplicates() {
+        let first = vec![
+            "/ip4/127.0.0.1/tcp/4002".parse().expect("addr"),
+            "/ip4/127.0.0.1/tcp/4001".parse().expect("addr"),
+        ];
+        let second = vec![
+            "/ip4/127.0.0.1/tcp/4001".parse().expect("addr"),
+            "/ip4/127.0.0.1/tcp/4003".parse().expect("addr"),
+        ];
+
+        let merged = merge_bootstrap_peers(first, second)
+            .into_iter()
+            .map(|addr| addr.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            merged,
+            vec![
+                "/ip4/127.0.0.1/tcp/4001".to_string(),
+                "/ip4/127.0.0.1/tcp/4002".to_string(),
+                "/ip4/127.0.0.1/tcp/4003".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn read_enable_quic_listener_from_env_accepts_zero_as_false() {
+        let _guard = env_lock();
+        let original = std::env::var("SILICIUM_ENABLE_QUIC_LISTENER").ok();
+
+        // Rust 2024 marks environment mutation as unsafe because it is
+        // process-global; the test lock keeps this deterministic.
+        unsafe { std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", "0") };
+        assert!(!read_enable_quic_listener_from_env());
+
+        unsafe { std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", "1") };
+        assert!(read_enable_quic_listener_from_env());
+
+        match original {
+            Some(value) => unsafe {
+                std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", value)
+            },
+            None => unsafe { std::env::remove_var("SILICIUM_ENABLE_QUIC_LISTENER") },
+        }
+    }
+
+    #[test]
+    fn parse_node_cli_args_supports_aliases_and_flags() {
+        let overrides = parse_node_cli_args(vec![
+            "--bootstrap-peer".to_string(),
+            "/ip4/127.0.0.1/tcp/4001".to_string(),
+            "--bootstrap-peers=/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4003".to_string(),
+            "--api-port=1337".to_string(),
+            "--data-dir".to_string(),
+            "C:/tmp/silicium".to_string(),
+            "--dispatcher-seed".to_string(),
+            "42".to_string(),
+            "--disable-quic".to_string(),
+        ]);
+
+        assert_eq!(overrides.bootstrap_peers.len(), 3);
+        assert_eq!(overrides.api_port, Some(1337));
+        assert_eq!(overrides.data_dir, Some(PathBuf::from("C:/tmp/silicium")));
+        assert_eq!(overrides.dispatcher_seed, Some(42));
+        assert_eq!(overrides.enable_quic_listener, Some(false));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn two_local_nodes_can_establish_a_connection() {
+        let key_a = libp2p::identity::Keypair::generate_ed25519();
+        let key_b = libp2p::identity::Keypair::generate_ed25519();
+        let peer_a = PeerId::from(key_a.public());
+        let peer_b = PeerId::from(key_b.public());
+
+        let mut swarm_a = build_swarm(key_a, peer_a).expect("swarm a");
+        let mut swarm_b = build_swarm(key_b, peer_b).expect("swarm b");
+
+        swarm_b
+            .listen_on("/ip4/127.0.0.1/tcp/0".parse().expect("listen addr"))
+            .expect("listen on ephemeral port");
+
+        let listen_addr = timeout(Duration::from_secs(10), async {
+            loop {
+                match swarm_b.next().await {
+                    Some(SwarmEvent::NewListenAddr { address, .. }) => return address,
+                    Some(_) => {}
+                    None => panic!("swarm b terminated before advertising a listen address"),
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for listen address");
+
+        swarm_a.dial(listen_addr.clone()).expect("dial swarm b");
+
+        let connection_established = timeout(Duration::from_secs(15), async {
+            loop {
+                tokio::select! {
+                    event = swarm_a.next() => {
+                        match event {
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received { peer_id, .. }))) if peer_id == peer_b => return true,
+                            Some(_) => {}
+                            None => panic!("swarm a terminated before connecting"),
+                        }
+                    }
+                    event = swarm_b.next() => {
+                        match event {
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received { peer_id, .. }))) if peer_id == peer_a => return true,
+                            Some(_) => {}
+                            None => panic!("swarm b terminated before connecting"),
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for peer connection");
+
+        assert!(connection_established);
+    }
+}
+
 impl From<NetworkTask> for TaskEnvelope {
     fn from(value: NetworkTask) -> Self {
         Self {
@@ -268,13 +416,23 @@ fn read_enable_quic_listener_from_env() -> bool {
         .unwrap_or(true)
 }
 
+fn merge_bootstrap_peers(
+    mut bootstrap_peers: Vec<Multiaddr>,
+    additional_peers: Vec<Multiaddr>,
+) -> Vec<Multiaddr> {
+    bootstrap_peers.extend(additional_peers);
+    bootstrap_peers.sort_by_key(|addr| addr.to_string());
+    bootstrap_peers.dedup_by(|left, right| left.to_string() == right.to_string());
+    bootstrap_peers
+}
+
 impl NodeConfig {
     fn from_env_and_args() -> Self {
         let overrides = parse_node_cli_args(env::args().skip(1));
-        let mut bootstrap_peers = read_bootstrap_peers_from_env();
-        bootstrap_peers.extend(overrides.bootstrap_peers);
-        bootstrap_peers.sort_by_key(|addr| addr.to_string());
-        bootstrap_peers.dedup_by(|left, right| left.to_string() == right.to_string());
+        let bootstrap_peers = merge_bootstrap_peers(
+            read_bootstrap_peers_from_env(),
+            overrides.bootstrap_peers,
+        );
 
         Self {
             bootstrap_peers,
