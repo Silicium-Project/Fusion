@@ -21,7 +21,7 @@ services:
       - --roles
       - compute
       - --expected-tasks
-      - "1"
+      - "2"
       - --transport
       - vps-compose
       - --task-prefix
@@ -38,7 +38,7 @@ services:
       - --roles
       - compute
       - --expected-tasks
-      - "1"
+      - "2"
       - --transport
       - vps-compose
       - --task-prefix
@@ -55,7 +55,7 @@ services:
       - --roles
       - verify
       - --expected-tasks
-      - "1"
+      - "2"
       - --transport
       - vps-compose
       - --task-prefix
@@ -72,7 +72,7 @@ services:
       - --roles
       - verify
       - --expected-tasks
-      - "1"
+      - "2"
       - --transport
       - vps-compose
       - --task-prefix

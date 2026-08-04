@@ -3,8 +3,10 @@ set -euo pipefail
 
 ROOT="${1:-/opt/silicium}"
 E2E_COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.e2e.yml"
+MANIFEST_FILE="$ROOT/Network/ci/e2e-manifest.json"
 DATA_DIR="/var/lib/silicium/network/orchestrator/export"
 EXPERIMENT_API_ENV="/etc/silicium/experiment-api.env"
+E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-900}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/compose/e2e.sh $ROOT" >&2
@@ -79,7 +81,9 @@ log "Probing orchestrator gossip"
 python3 "$ROOT/Network/tools/e2e_vps_probe.py" \
   --control-url "http://127.0.0.1:46100/gossip/publish" \
   --output /tmp/silicium-vps-backend-probe.json \
-  --probe-id "vps-e2e-backend"
+  --probe-id "vps-e2e-backend" \
+  --retries 120 \
+  --delay-s 2
 
 log "Submitting tasks through web and RPC"
 python3 "$ROOT/Network/tools/e2e_scenario.py" \
@@ -87,9 +91,27 @@ python3 "$ROOT/Network/tools/e2e_scenario.py" \
   --rpc-url "tcp://127.0.0.1:9770" \
   --auth-token "$SILICIUM_MCP_TOKEN" \
   --data-dir "$DATA_DIR" \
+  --manifest "$MANIFEST_FILE" \
   --task-prefix "$TASK_PREFIX" \
   --expected-transport "vps-compose" \
+  --timeout-s "$E2E_TIMEOUT_S" \
   --report /tmp/silicium-vps-validation.json
+
+python3 - <<'PY'
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+validation = json.loads(Path("/tmp/silicium-vps-validation.json").read_text(encoding="utf-8"))
+assert validation["ok"] is True, validation
+assert len(validation["tasks"]) == 8, validation
+worker_counts = validation.get("worker_counts", {})
+assert worker_counts.get("compute", {}).get("worker-compute-a") == 2, worker_counts
+assert worker_counts.get("compute", {}).get("worker-compute-b") == 2, worker_counts
+assert worker_counts.get("verify", {}).get("worker-verify-a") == 2, worker_counts
+assert worker_counts.get("verify", {}).get("worker-verify-b") == 2, worker_counts
+PY
 
 log "VPS e2e stack"
 docker compose -f "$E2E_COMPOSE_FILE" ps
