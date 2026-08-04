@@ -24,6 +24,8 @@ import (
 	"github.com/silicium/internal/models"
 )
 
+var lookPath = exec.LookPath
+
 type RunnerConfig struct {
 	NetworkRoot           string
 	MeshKey               string
@@ -258,14 +260,25 @@ func NewJobID(userID uint) string {
 	return fmt.Sprintf("site-render-%d-%d", userID, time.Now().UnixNano())
 }
 
-func pythonCommand(ctx context.Context, networkRoot string, args ...string) *exec.Cmd {
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "py", args...)
-	} else {
-		fullArgs := append([]string{}, args...)
-		cmd = exec.CommandContext(ctx, "python3", fullArgs...)
+func pythonBinary() string {
+	override := strings.TrimSpace(os.Getenv("SILICIUM_PYTHON_BIN"))
+	if override != "" {
+		return override
 	}
+	candidates := []string{"python3", "python"}
+	if runtime.GOOS == "windows" {
+		candidates = []string{"py", "python3", "python"}
+	}
+	for _, candidate := range candidates {
+		if path, err := lookPath(candidate); err == nil {
+			return path
+		}
+	}
+	return candidates[0]
+}
+
+func pythonCommand(ctx context.Context, networkRoot string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, pythonBinary(), args...)
 	cmd.Dir = networkRoot
 	return cmd
 }

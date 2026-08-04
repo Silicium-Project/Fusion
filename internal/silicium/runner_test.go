@@ -22,6 +22,30 @@ import (
 	"github.com/silicium/internal/models"
 )
 
+func TestPythonCommandFallsBackToPythonWhenPython3IsUnavailable(t *testing.T) {
+	origLookPath := lookPath
+	t.Cleanup(func() { lookPath = origLookPath })
+
+	lookPath = func(file string) (string, error) {
+		switch file {
+		case "python3":
+			return "", os.ErrNotExist
+		case "python":
+			return filepath.Clean(`C:\tooling\python.exe`), nil
+		default:
+			return "", os.ErrNotExist
+		}
+	}
+
+	cmd := pythonCommand(context.Background(), "/tmp/network", "workloads/raytracer/run_network_job.py")
+	if got := filepath.Clean(cmd.Path); got != filepath.Clean(`C:\tooling\python.exe`) {
+		t.Fatalf("expected python fallback, got %q", got)
+	}
+	if cmd.Dir != "/tmp/network" {
+		t.Fatalf("unexpected working dir %q", cmd.Dir)
+	}
+}
+
 func TestParseRaytracerSummaryFallsBackToPPMWhenPNGIsUnavailable(t *testing.T) {
 	dir := t.TempDir()
 	summaryPath := filepath.Join(dir, "raytracer-summary.json")
