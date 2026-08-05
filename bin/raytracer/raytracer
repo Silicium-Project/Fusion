@@ -1,3 +1,20 @@
 #!/bin/bash
+set -euo pipefail
+
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "$DIR/raytracer.py" "$@"
+NATIVE="$DIR/silicium-raytracer"
+
+if [[ -x "$NATIVE" ]]; then
+  exec "$NATIVE" "$@"
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 "$DIR/raytracer.py" "$@"
+fi
+
+if command -v python >/dev/null 2>&1; then
+  exec python "$DIR/raytracer.py" "$@"
+fi
+
+echo "raytracer runtime unavailable: missing $NATIVE and no python interpreter found" >&2
+exit 127

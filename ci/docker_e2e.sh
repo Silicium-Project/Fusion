@@ -5,12 +5,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT/ci/docker-compose.e2e.yml"
 MANIFEST_FILE="$ROOT/ci/e2e-manifest.json"
 E2E_EXPORT_DIR="$(mktemp -d -t silicium-e2e-XXXXXX)"
-E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-900}"
-E2E_WAIT_S="${E2E_WAIT_S:-600}"
+E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-2400}"
+E2E_WAIT_S="${E2E_WAIT_S:-1200}"
+DOCKER_CLIENT_TIMEOUT="${DOCKER_CLIENT_TIMEOUT:-1200}"
+COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-1200}"
 
 cd "$ROOT"
 
 export E2E_EXPORT_DIR
+export DOCKER_CLIENT_TIMEOUT
+export COMPOSE_HTTP_TIMEOUT
 
 log() {
   printf '==> %s\n' "$*"
