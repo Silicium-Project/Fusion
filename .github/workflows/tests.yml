@@ -32,11 +32,7 @@ on:
 
 jobs:
   raytracer-rust:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,7 +45,7 @@ jobs:
 
   pytest:
     if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
 
     steps:
       - name: Checkout
@@ -109,7 +105,7 @@ jobs:
         run: ./silicium test
 
   docker-e2e:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 90
     env:
       E2E_TIMEOUT_S: 2400
@@ -133,7 +129,7 @@ jobs:
         run: bash ./ci/docker_e2e.sh
 
   p2p-kademlia-smoke:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 45
 
     steps:
@@ -148,7 +144,7 @@ jobs:
 
   pytest-windows:
     if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
-    runs-on: windows-latest
+    runs-on: [self-hosted, fusion-linux]
 
     steps:
       - name: Checkout
@@ -159,22 +155,19 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run test suite via silicium CLI (Windows)
-        shell: pwsh
+      - name: Run test suite via silicium CLI (self-hosted)
+        shell: bash
         run: |
-          $hasDocker = Get-Command docker -ErrorAction SilentlyContinue
-          if ($hasDocker) {
-            docker info *> $null
-            if ($LASTEXITCODE -eq 0) {
-              python .\silicium test --entrypoint-docker
-              exit $LASTEXITCODE
-            }
-          }
-          Write-Host "Docker unavailable on this runner; falling back to host-only Python tests."
-          python .\silicium test
+          set -euo pipefail
+          if docker info >/dev/null 2>&1; then
+            python ./silicium test --entrypoint-docker
+          else
+            echo "Docker unavailable on this runner; falling back to host-only Python tests."
+            python ./silicium test
+          fi
 
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     needs: pytest
 
     steps:
@@ -190,7 +183,7 @@ jobs:
         run: ./silicium smoke
 
   coverage-assets-smoke:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     needs: pytest
 
     steps:
@@ -219,7 +212,7 @@ jobs:
           test -s "$OUT/snapshot.svg"
 
   perf-budget:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     needs: pytest
     env:
       SILICIUM_MAX_JOBS: "2"
@@ -278,7 +271,7 @@ jobs:
           path: /tmp/perf-budget-report.json
 
   worker-cpp:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     needs: pytest
 
     steps:
@@ -329,7 +322,7 @@ jobs:
             worker/coverage-summary.json
 
   coverage-pages:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     needs: worker-cpp
     if: github.ref == 'refs/heads/main' && inputs.publish_pages != false
     permissions:
@@ -371,7 +364,7 @@ jobs:
           force_orphan: true
 
   commit-coverage:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     needs: worker-cpp
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && inputs.commit_coverage != false
     permissions:

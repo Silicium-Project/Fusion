@@ -20,7 +20,7 @@ on:
 jobs:
   anchor-build-and-test:
     name: Build and test Anchor program
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
 
     defaults:
       run:

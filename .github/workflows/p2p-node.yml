@@ -25,7 +25,7 @@ permissions:
 
 jobs:
   lint-test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     strategy:
       fail-fast: false
       matrix:
@@ -58,7 +58,7 @@ jobs:
         run: bash ./ci/p2p_kademlia_smoke.sh
 
   cross-build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -94,7 +94,7 @@ jobs:
         run: cargo build --release --manifest-path networked/p2p_node/Cargo.toml --target ${{ matrix.target }}
 
   docker-image:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, fusion-linux]
     needs: [lint-test, cross-build]
     timeout-minutes: 60
     steps:
