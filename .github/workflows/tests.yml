@@ -34,11 +34,15 @@ jobs:
   raytracer-rust:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Test native raytracer
         run: cargo test --manifest-path workloads/raytracer/native/Cargo.toml
