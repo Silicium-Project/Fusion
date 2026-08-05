@@ -1,28 +1,31 @@
-# Silicium - A Decentralized and Ecological Network for Distributed Computing
+# Silicium Backend
 
-Silicium is a distributed computing network based on Solana, aiming to optimize the management of unused resources of electronic devices in homes. It allows users to share the unused computing power of their computers and other devices in exchange for rewards in the form of native tokens. This decentralized model leverages the scalability and low transaction costs of Solana to offer a high-performance alternative to centralized cloud computing solutions.
+Go HTTP API used by Fusion for user, job, and network operations.
 
-## About the Project
+## About
 
-This repository contains the backend server for the Silicium network.
+This repository contains the backend server for the Silicium network. It is
+deployed with the Fusion stack and exposes the current dashboard, job
+orchestration, and network-related endpoints.
 
 ## Getting Started
 
-To get started with the Silicium backend, please refer to the documentation in the `/doc` directory:
+To get started with the backend, refer to the documentation in the `/doc`
+directory:
 
--   [**Installation and Setup**](./doc/install.md): Learn how to install Docker and launch the backend server and database locally.
--   [**Environment Variables**](./doc/env-variables.md): Find out what `.env` variables are needed to run the server.
--   [**Accessing the Services**](./doc/access.md): See on what port the Docker containers are launched and how to access them.
+- [Installation and Setup](./doc/install.md): how to install Docker and launch the backend server and database locally.
+- [Environment Variables](./doc/env-variables.md): required `.env` variables.
+- [Accessing the Services](./doc/access.md): exposed ports and access paths.
 
-## Action Plan
+## Current Surface
 
-The Silicium project is divided into several phases:
+- HTTP API on `127.0.0.1:8080`
+- Health endpoints: `GET /health` and `GET /healthz`
+- Auth endpoints: `/register`, `/login`, `/refresh`, `/user`
+- Job endpoints: `/jobs` and `/jobs/network/*`
+- OpenAPI docs: `/docs/`
 
-1.  **Phase 1: Design and Tests**
-2.  **Phase 2: Alpha Launch**
-3.  **Phase 3: Beta Launch**
-4.  **Phase 4: Adoption and Expansion**
+## Deployment
 
-## Conclusion
-
-Silicium is an ambitious project that aims to reduce the ecological impact of distributed computing while offering a decentralized and scalable platform for the validation of transactions and complex calculations. By uniting decentralization, sustainability, and security, Silicium offers a new path for the future of blockchain networks and distributed computing technologies.
+The backend is started by the Fusion deployment workflow and by the local
+Docker Compose stack in `deploy/`.
