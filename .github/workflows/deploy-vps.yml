@@ -502,6 +502,7 @@ jobs:
             fi
           done
           git_auth -C "$VPS_ROOT" submodule update --init --force -- BackEnd FrontEnd Network
+          sudo usermod -aG docker github-runner || true
           unset GIT_AUTH VPS_GITHUB_TOKEN
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium/downloads/silicium-node-windows-dev.exe
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows.exe" /var/lib/silicium/downloads/silicium-node-windows.exe
