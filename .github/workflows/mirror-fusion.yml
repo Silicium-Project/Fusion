@@ -23,15 +23,15 @@ jobs:
           EPITECH_REPO="https://x-access-token:${PUSH_TOKEN}@github.com/EpitechPromo2027/G-EIP-600-lil-6-1-eip-luis.fernandes.git"
           SRC_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
-          git config user.name "Mirror Bot"
-          git config user.email "luis.fernandes@epitech.eu"
-
           rm -rf work
           mkdir work
           cd work
 
           git clone "$EPITECH_REPO" epitech
           cd epitech
+
+          git config user.name "Mirror Bot"
+          git config user.email "luis.fernandes@epitech.eu"
 
           git checkout -B main
           git pull --ff-only origin main || true
