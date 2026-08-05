@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT/ci/docker-compose.e2e.yml"
 MANIFEST_FILE="$ROOT/ci/e2e-manifest.json"
-E2E_EXPORT_DIR="$(mktemp -d -t silicium-e2e-XXXXXX)"
+E2E_EXPORT_DIR=""
 E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-2400}"
 E2E_WAIT_S="${E2E_WAIT_S:-1200}"
 DOCKER_CLIENT_TIMEOUT="${DOCKER_CLIENT_TIMEOUT:-1200}"
@@ -32,7 +32,9 @@ cleanup() {
     fi
     docker compose -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
   fi
-  rm -rf "$E2E_EXPORT_DIR" >/dev/null 2>&1 || true
+  if [ -n "${E2E_EXPORT_DIR:-}" ]; then
+    rm -rf "$E2E_EXPORT_DIR" >/dev/null 2>&1 || true
+  fi
   exit "$status"
 }
 
@@ -50,6 +52,7 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+E2E_EXPORT_DIR="$(mktemp -d -t silicium-e2e-XXXXXX)"
 mkdir -p "$E2E_EXPORT_DIR"
 TASK_PREFIX="docker-$(date -u +%Y%m%d%H%M%S)-$$"
 export E2E_TASK_PREFIX="$TASK_PREFIX"
