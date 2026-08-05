@@ -5,11 +5,66 @@ on:
   workflow_dispatch: {}
 
 jobs:
-  call:
-    uses: Silicium-Project/epitech-mirror/.github/workflows/subtree-reusable.yml@main
-    with:
-      epitech_repo: git@github.com:EpitechPromo2027/G-EIP-600-lil-6-1-eip-luis.fernandes.git
-      branch: main
-      prefix: fusion
-    secrets:
-      MIRROR_SSH_KEY: ${{ secrets.SILICIUM_SYNC_DEPLOY_KEY }}
+  mirror:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Setup SSH
+        shell: bash
+        env:
+          MIRROR_SSH_KEY: ${{ secrets.SILICIUM_SYNC_DEPLOY_KEY }}
+          MIRROR_KNOWN_HOSTS: ${{ secrets.SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$MIRROR_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          if [[ -n "${MIRROR_KNOWN_HOSTS:-}" ]]; then
+            printf '%s\n' "$MIRROR_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          else
+            ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          fi
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Mirror subtree into Epitech
+        shell: bash
+        env:
+          EPITECH_REPO: git@github.com:EpitechPromo2027/G-EIP-600-lil-6-1-eip-luis.fernandes.git
+          SRC_URL: git@github.com:${{ github.repository }}.git
+          BRANCH: main
+          PREFIX: fusion
+        run: |
+          set -euo pipefail
+
+          git config user.name "Mirror Bot"
+          git config user.email "luis.fernandes@epitech.eu"
+
+          rm -rf work
+          mkdir work
+          cd work
+
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes' \
+            git clone "$EPITECH_REPO" epitech
+          cd epitech
+
+          git checkout -B main
+          git pull --ff-only origin main || true
+
+          NAME=source-remote
+          if ! git remote | grep -qx "$NAME"; then
+            git remote add "$NAME" "$SRC_URL"
+          fi
+
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes' \
+            git fetch "$NAME" --prune
+
+          if [ ! -d "$PREFIX" ]; then
+            git subtree add --prefix="$PREFIX" "$NAME" "$BRANCH" --squash
+          else
+            git subtree pull --prefix="$PREFIX" "$NAME" "$BRANCH" --squash
+          fi
+
+          if ! git diff --quiet origin/main...HEAD; then
+            GIT_SSH_COMMAND='ssh -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes' \
+              git push origin main
+          fi
