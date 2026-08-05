@@ -44,6 +44,8 @@ Default runner settings:
 
 Use a fresh GitHub runner registration token. The script downloads the current
 runner release, configures the service, and starts it on the VPS.
+It also adds the runner user to the `docker` group so compose-based CI jobs can
+reach the daemon socket.
 
 Copy and edit env files:
 

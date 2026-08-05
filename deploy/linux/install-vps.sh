@@ -83,6 +83,7 @@ PY
   if ! id -u "$runner_user" >/dev/null 2>&1; then
     useradd --system --create-home --home-dir "$runner_dir" --shell /bin/bash "$runner_user"
   fi
+  usermod -aG docker "$runner_user"
 
   install -d -o "$runner_user" -g "$runner_user" "$runner_dir"
   chown -R "$runner_user":"$runner_user" "$runner_dir"
