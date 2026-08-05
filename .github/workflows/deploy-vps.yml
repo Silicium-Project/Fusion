@@ -520,7 +520,12 @@ jobs:
           sudo systemctl start silicium-update-manifest.service
           sudo systemctl restart silicium-node.service || true
           sudo bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
-          sudo bash "$VPS_ROOT/deploy/compose/e2e.sh" "$VPS_ROOT"
+          sudo env \
+            E2E_TIMEOUT_S=2400 \
+            E2E_WAIT_S=1200 \
+            DOCKER_CLIENT_TIMEOUT=1200 \
+            COMPOSE_HTTP_TIMEOUT=1200 \
+            bash "$VPS_ROOT/deploy/compose/e2e.sh" "$VPS_ROOT"
           echo "Release deployed successfully"
           cat /var/lib/silicium/releases/current.env
           REMOTE
