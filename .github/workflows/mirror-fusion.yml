@@ -11,4 +11,5 @@ jobs:
       epitech_repo: git@github.com:EpitechPromo2027/G-EIP-600-lil-6-1-eip-luis.fernandes.git
       branch: main
       prefix: fusion
-    secrets: inherit
+    secrets:
+      MIRROR_SSH_KEY: ${{ secrets.SILICIUM_SYNC_DEPLOY_KEY }}
