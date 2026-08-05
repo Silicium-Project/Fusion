@@ -25,6 +25,26 @@ Clone the repository on the VPS, then run:
 sudo bash deploy/linux/install-vps.sh /opt/silicium
 ```
 
+If you want this VPS to also execute GitHub Actions jobs for the `fusion-linux`
+label, enable the optional self-hosted runner bootstrap during the VPS install:
+
+```bash
+sudo SILICIUM_INSTALL_GITHUB_ACTIONS_RUNNER=1 \
+  SILICIUM_GHA_RUNNER_URL=https://github.com/Silicium-Project \
+  SILICIUM_GHA_RUNNER_TOKEN=ghs_... \
+  bash deploy/linux/install-vps.sh /opt/silicium
+```
+
+Default runner settings:
+
+- name: `fusion-vps`
+- user: `github-runner`
+- labels: `self-hosted,fusion-linux`
+- directory: `/opt/github-runner`
+
+Use a fresh GitHub runner registration token. The script downloads the current
+runner release, configures the service, and starts it on the VPS.
+
 Copy and edit env files:
 
 ```bash
