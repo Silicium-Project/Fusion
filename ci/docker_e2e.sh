@@ -39,6 +39,13 @@ cleanup() {
 trap cleanup EXIT
 
 if ! docker info >/dev/null 2>&1; then
+  if [ "${SILICIUM_E2E_DOCKER_GROUP_REEXEC:-0}" != "1" ] && command -v sg >/dev/null 2>&1; then
+    current_user="$(id -un)"
+    docker_members="$(getent group docker 2>/dev/null | awk -F: '{print $4}' | tr ',' '\n' || true)"
+    if printf '%s\n' "$docker_members" | grep -Fxq "$current_user"; then
+      exec sg docker -c "SILICIUM_E2E_DOCKER_GROUP_REEXEC=1 bash '$ROOT/ci/docker_e2e.sh'"
+    fi
+  fi
   echo "Docker is not available on this runner." >&2
   exit 1
 fi
