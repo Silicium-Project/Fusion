@@ -113,6 +113,14 @@ process.stdin.on("end", () => {
     return path
 
 
+def test_network_node_worker_binary_default_uses_current_tree() -> None:
+    parser = network_node.build_arg_parser()
+
+    args = parser.parse_args([])
+
+    assert args.worker_binary == str(Path("worker/worker"))
+
+
 def _config(
     export_dir: Path,
     node_id: str,
