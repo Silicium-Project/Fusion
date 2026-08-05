@@ -6,7 +6,7 @@ on:
 
 jobs:
   mirror:
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, fusion-linux]
     permissions:
       contents: read
     steps:
