@@ -123,6 +123,20 @@ jobs:
       - name: Run Docker e2e stack
         run: bash ./ci/docker_e2e.sh
 
+  p2p-kademlia-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Kademlia smoke test
+        run: bash ./ci/p2p_kademlia_smoke.sh
+
   pytest-windows:
     if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
     runs-on: windows-latest

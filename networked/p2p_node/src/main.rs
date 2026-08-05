@@ -176,7 +176,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn two_local_nodes_can_establish_a_connection() {
+    async fn two_local_nodes_can_exchange_kademlia_records() {
         let key_a = libp2p::identity::Keypair::generate_ed25519();
         let key_b = libp2p::identity::Keypair::generate_ed25519();
         let peer_a = PeerId::from(key_a.public());
@@ -201,23 +201,59 @@ mod tests {
         .await
         .expect("timed out waiting for listen address");
 
-        swarm_a.dial(listen_addr.clone()).expect("dial swarm b");
+        swarm_a
+            .dial(listen_addr.clone())
+            .expect("dial swarm b");
 
-        let connection_established = timeout(Duration::from_secs(15), async {
-            loop {
+        let task = NetworkTask {
+            task_id: "kademlia-smoke-task".to_string(),
+            scene_path: "scene/smoke.blend".to_string(),
+            output_path: "out/smoke.ppm".to_string(),
+            seed: "1337".to_string(),
+            hardware_hint: Some(read_hardware_bucket()),
+            runtime_hint: None,
+            runtime_args: Vec::new(),
+            runtime_env: BTreeMap::new(),
+            runtime_workdir: None,
+            runtime_module_path: None,
+            runtime_image: None,
+        };
+        let task_envelope: TaskEnvelope = task.clone().into();
+        let task_record = task_envelope.to_dht_record();
+
+        let mut saw_connection_a = false;
+        let mut saw_connection_b = false;
+        timeout(Duration::from_secs(20), async {
+            while !(saw_connection_a && saw_connection_b) {
                 tokio::select! {
                     event = swarm_a.next() => {
                         match event {
-                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received { peer_id, .. }))) if peer_id == peer_b => return true,
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received { peer_id, info, .. }))) => {
+                                for addr in info.listen_addrs {
+                                    swarm_a.behaviour_mut().kademlia.add_address(&peer_id, addr);
+                                }
+                                let _ = swarm_a.behaviour_mut().kademlia.bootstrap();
+                                if peer_id == peer_b {
+                                    saw_connection_a = true;
+                                }
+                            }
                             Some(_) => {}
-                            None => panic!("swarm a terminated before connecting"),
+                            None => panic!("swarm a terminated before exchanging identify info"),
                         }
                     }
                     event = swarm_b.next() => {
                         match event {
-                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received { peer_id, .. }))) if peer_id == peer_a => return true,
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received { peer_id, info, .. }))) => {
+                                for addr in info.listen_addrs {
+                                    swarm_b.behaviour_mut().kademlia.add_address(&peer_id, addr);
+                                }
+                                let _ = swarm_b.behaviour_mut().kademlia.bootstrap();
+                                if peer_id == peer_a {
+                                    saw_connection_b = true;
+                                }
+                            }
                             Some(_) => {}
-                            None => panic!("swarm b terminated before connecting"),
+                            None => panic!("swarm b terminated before exchanging identify info"),
                         }
                     }
                 }
@@ -226,7 +262,44 @@ mod tests {
         .await
         .expect("timed out waiting for peer connection");
 
-        assert!(connection_established);
+        publish_task_record(&mut swarm_a, &task);
+        request_record_lookup(&mut swarm_b, &task_record.key);
+
+        let mut saw_get_record = false;
+        timeout(Duration::from_secs(20), async {
+            while !saw_get_record {
+                tokio::select! {
+                    event = swarm_a.next() => {
+                        match event {
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(event))) => {
+                                let debug = format!("{event:?}");
+                                if debug.contains("PutRecord") || debug.contains("GetRecord") {
+                                    println!(" swarm a kademlia: {debug}");
+                                }
+                            }
+                            Some(_) => {}
+                            None => panic!("swarm a terminated before kademlia query completed"),
+                        }
+                    }
+                    event = swarm_b.next() => {
+                        match event {
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(event))) => {
+                                let debug = format!("{event:?}");
+                                if debug.contains("GetRecord") && debug.contains("Ok") && debug.contains(&task_record.key) {
+                                    saw_get_record = true;
+                                }
+                            }
+                            Some(_) => {}
+                            None => panic!("swarm b terminated before kademlia query completed"),
+                        }
+                    }
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for kademlia record retrieval");
+
+        assert!(saw_get_record, "expected kademlia get_record to succeed");
     }
 }
 

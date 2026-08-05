@@ -53,6 +53,10 @@ jobs:
         working-directory: ${{ matrix.crate }}
         run: cargo test
 
+      - name: P2P Kademlia smoke
+        if: matrix.crate == 'networked/p2p_node'
+        run: bash ./ci/p2p_kademlia_smoke.sh
+
   cross-build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
