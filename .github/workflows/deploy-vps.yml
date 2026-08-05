@@ -518,7 +518,11 @@ jobs:
           sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL" SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
           sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL" SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
           sudo systemctl start silicium-update-manifest.service
-          sudo systemctl restart silicium-node.service || true
+          if systemctl cat silicium-node.service >/dev/null 2>&1; then
+            sudo systemctl restart silicium-node.service
+          else
+            echo "Skipping silicium-node.service restart: unit is not installed on this host."
+          fi
           sudo bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
           sudo env \
             E2E_TIMEOUT_S=2400 \
