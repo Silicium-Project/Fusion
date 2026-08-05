@@ -188,8 +188,11 @@ mod tests {
         swarm_b
             .listen_on("/ip4/127.0.0.1/tcp/0".parse().expect("listen addr"))
             .expect("listen on ephemeral port");
+        swarm_a
+            .listen_on("/ip4/127.0.0.1/tcp/0".parse().expect("listen addr"))
+            .expect("listen on ephemeral port");
 
-        let listen_addr = timeout(Duration::from_secs(10), async {
+        let listen_addr_b = timeout(Duration::from_secs(10), async {
             loop {
                 match swarm_b.next().await {
                     Some(SwarmEvent::NewListenAddr { address, .. }) => return address,
@@ -201,9 +204,28 @@ mod tests {
         .await
         .expect("timed out waiting for listen address");
 
+        let listen_addr_a = timeout(Duration::from_secs(10), async {
+            loop {
+                match swarm_a.next().await {
+                    Some(SwarmEvent::NewListenAddr { address, .. }) => return address,
+                    Some(_) => {}
+                    None => panic!("swarm a terminated before advertising a listen address"),
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for listen address");
+
         swarm_a
-            .dial(listen_addr.clone())
-            .expect("dial swarm b");
+            .behaviour_mut()
+            .kademlia
+            .add_address(&peer_b, listen_addr_b.clone());
+        swarm_b
+            .behaviour_mut()
+            .kademlia
+            .add_address(&peer_a, listen_addr_a.clone());
+
+        swarm_a.dial(listen_addr_b.clone()).expect("dial swarm b");
 
         let task = NetworkTask {
             task_id: "kademlia-smoke-task".to_string(),
@@ -223,19 +245,22 @@ mod tests {
 
         let mut saw_connection_a = false;
         let mut saw_connection_b = false;
+        let mut bootstrap_a_done = false;
+        let mut bootstrap_b_done = false;
         timeout(Duration::from_secs(20), async {
-            while !(saw_connection_a && saw_connection_b) {
+            while !(saw_connection_a && saw_connection_b && bootstrap_a_done && bootstrap_b_done) {
                 tokio::select! {
                     event = swarm_a.next() => {
                         match event {
-                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received { peer_id, info, .. }))) => {
-                                for addr in info.listen_addrs {
-                                    swarm_a.behaviour_mut().kademlia.add_address(&peer_id, addr);
-                                }
+                            Some(SwarmEvent::ConnectionEstablished { peer_id, .. }) if peer_id == peer_b => {
                                 let _ = swarm_a.behaviour_mut().kademlia.bootstrap();
-                                if peer_id == peer_b {
-                                    saw_connection_a = true;
-                                }
+                                saw_connection_a = true;
+                            }
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
+                                result: kad::QueryResult::Bootstrap(Ok(_)),
+                                ..
+                            }))) => {
+                                bootstrap_a_done = true;
                             }
                             Some(_) => {}
                             None => panic!("swarm a terminated before exchanging identify info"),
@@ -243,14 +268,15 @@ mod tests {
                     }
                     event = swarm_b.next() => {
                         match event {
-                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received { peer_id, info, .. }))) => {
-                                for addr in info.listen_addrs {
-                                    swarm_b.behaviour_mut().kademlia.add_address(&peer_id, addr);
-                                }
+                            Some(SwarmEvent::ConnectionEstablished { peer_id, .. }) if peer_id == peer_a => {
                                 let _ = swarm_b.behaviour_mut().kademlia.bootstrap();
-                                if peer_id == peer_a {
-                                    saw_connection_b = true;
-                                }
+                                saw_connection_b = true;
+                            }
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed {
+                                result: kad::QueryResult::Bootstrap(Ok(_)),
+                                ..
+                            }))) => {
+                                bootstrap_b_done = true;
                             }
                             Some(_) => {}
                             None => panic!("swarm b terminated before exchanging identify info"),
@@ -271,10 +297,9 @@ mod tests {
                 tokio::select! {
                     event = swarm_a.next() => {
                         match event {
-                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(event))) => {
-                                let debug = format!("{event:?}");
-                                if debug.contains("PutRecord") || debug.contains("GetRecord") {
-                                    println!(" swarm a kademlia: {debug}");
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed { result, .. }))) => {
+                                if let kad::QueryResult::PutRecord(Ok(ok)) = result {
+                                    println!(" swarm a put_record ok for {:?}", ok.key);
                                 }
                             }
                             Some(_) => {}
@@ -283,10 +308,15 @@ mod tests {
                     }
                     event = swarm_b.next() => {
                         match event {
-                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(event))) => {
-                                let debug = format!("{event:?}");
-                                if debug.contains("GetRecord") && debug.contains("Ok") && debug.contains(&task_record.key) {
-                                    saw_get_record = true;
+                            Some(SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(kad::Event::OutboundQueryProgressed { result, .. }))) => {
+                                match result {
+                                    kad::QueryResult::GetRecord(Ok(kad::GetRecordOk::FoundRecord(record))) => {
+                                        if record.record.key.as_ref() == task_record.key.as_bytes() {
+                                            saw_get_record = true;
+                                        }
+                                    }
+                                    kad::QueryResult::GetRecord(Ok(kad::GetRecordOk::FinishedWithNoAdditionalRecord { .. })) => {}
+                                    _ => {}
                                 }
                             }
                             Some(_) => {}

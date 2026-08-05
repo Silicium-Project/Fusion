@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf, process::Command};
 use thiserror::Error;
+
+#[cfg(feature = "runtime-wasm")]
 use wasmtime::{Engine, Linker, Module, Store};
+#[cfg(feature = "runtime-wasm")]
 use wasmtime_wasi::{
     DirPerms, FilePerms, WasiCtxBuilder,
     p1::{self, WasiP1Ctx},
@@ -67,8 +70,11 @@ pub enum RuntimeError {
     MissingWasmModulePath,
     #[error("missing OCI image for runtime execution")]
     MissingOciImage,
+    #[error("wasm runtime support is disabled for this build")]
+    WasmUnavailable,
     #[error("invalid runtime working directory: {0}")]
     InvalidWorkingDirectory(String),
+    #[cfg(feature = "runtime-wasm")]
     #[error("wasmtime error: {0}")]
     Wasmtime(#[from] wasmtime::Error),
     #[error("I/O error: {0}")]
@@ -129,6 +135,7 @@ impl RuntimeEnvelope {
         }
     }
 
+    #[cfg(feature = "runtime-wasm")]
     fn execute_wasm(&self) -> Result<RuntimeOutcome, RuntimeError> {
         let module_path = self
             .module_path
@@ -170,6 +177,11 @@ impl RuntimeEnvelope {
             stdout: String::new(),
             stderr: String::new(),
         })
+    }
+
+    #[cfg(not(feature = "runtime-wasm"))]
+    fn execute_wasm(&self) -> Result<RuntimeOutcome, RuntimeError> {
+        Err(RuntimeError::WasmUnavailable)
     }
 
     fn execute_oci(&self) -> Result<RuntimeOutcome, RuntimeError> {
@@ -253,6 +265,7 @@ mod tests {
         path
     }
 
+    #[cfg(feature = "runtime-wasm")]
     #[test]
     fn wasm_runtime_executes_minimal_module() {
         let workdir = temp_workdir("wasm");
@@ -274,6 +287,22 @@ mod tests {
 
         assert_eq!(outcome.kind, RuntimeKind::Wasm);
         assert_eq!(outcome.exit_code, 0);
+    }
+
+    #[cfg(not(feature = "runtime-wasm"))]
+    #[test]
+    fn wasm_runtime_is_explicitly_unavailable_without_feature() {
+        let workdir = temp_workdir("wasm");
+        let wasm_path = workdir.join("module.wasm");
+        fs::write(&wasm_path, b"").expect("write placeholder wasm");
+
+        let err = RuntimeEnvelope::wasm(Vec::<String>::new())
+            .with_module_path(&wasm_path)
+            .with_working_dir(&workdir)
+            .execute()
+            .expect_err("wasm runtime should be disabled");
+
+        assert!(matches!(err, RuntimeError::WasmUnavailable));
     }
 
     #[test]
