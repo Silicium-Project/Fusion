@@ -393,7 +393,7 @@ docker compose build --no-cache # rebuild complet (après changement d'entrypoin
 
 > Activez un profil en ajoutant `--profile devnet` ou `--profile mainnet` à toutes les commandes Compose (ou définissez `COMPOSE_PROFILES=devnet` dans votre shell).
 >
-> Pour le mesh inter-machines en mode `--world`, utilisez le compose dédié documenté dans [docs/world-mesh-docker.md](/home/luisfernandes/Bureau/Silicium/Network/docs/world-mesh-docker.md).
+> Pour le mesh inter-machines en mode `--world`, utilisez le compose dédié documenté dans [docs/world-mesh-docker.md](docs/world-mesh-docker.md).
 
 ### Transport direct P2P
 

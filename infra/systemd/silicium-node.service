@@ -5,13 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/luisfernandes/Bureau/Silicium/Network
+WorkingDirectory=/opt/silicium/Network
 Environment=SILICIUM_NODE_ROLES=compute,verify,storage,audit,resource
 Environment=SILICIUM_SOLANA_ENABLE=1
 Environment=SILICIUM_SOLANA_PROGRAM_ID=HyXT83SzHsEPxNZ5zQPvkLwQ7JwFHh2veAE5PuGUgoiQ
-Environment=SILICIUM_SOLANA_WALLET=/home/luisfernandes/.config/solana/id.json
+Environment=SILICIUM_SOLANA_WALLET=/var/lib/silicium/solana/id.json
 Environment=SILICIUM_P2P_GATEWAY=http://127.0.0.1:5001
-ExecStart=/usr/bin/python3 /home/luisfernandes/Bureau/Silicium/Network/silicium node start --bootstrap-worker
+ExecStart=/usr/bin/python3 /opt/silicium/Network/silicium node start --bootstrap-worker
 Restart=always
 RestartSec=5
 
