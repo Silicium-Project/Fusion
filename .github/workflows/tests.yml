@@ -105,7 +105,7 @@ jobs:
         run: ./silicium test
 
   docker-e2e:
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       E2E_TIMEOUT_S: 2400
