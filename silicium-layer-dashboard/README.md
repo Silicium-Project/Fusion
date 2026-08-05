@@ -13,12 +13,12 @@ Interface graphique read-only pour visualiser le layer Solana/Anchor Silicium.
 
 ## Installation
 
+Le dossier du dashboard est deja present dans le repo; aucun unzip manuel n'est necessaire.
+
 Depuis la racine du repo :
 
 ```bash
-mkdir -p viewer
-unzip silicium-layer-dashboard.zip -d viewer/
-cd viewer/silicium-layer-dashboard
+cd Network/silicium-layer-dashboard
 yarn install
 yarn dev
 ```

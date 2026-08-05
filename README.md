@@ -229,8 +229,10 @@ Cette base de code fournit une image Docker unique permettant de lancer un nœud
 | `infra/bin/run-with-proxy.sh` | Lance un service Silicium + le proxy TLS, génère un certificat auto-signé et attend `/healthz`. |
 | `infra/secure-stack/` | Docker Compose + scripts pour un RPC Solana confiné derrière un VPN WireGuard. |
 | `catalog/workloads/` | Catalogue des manifests calcul/vérification. |
-| `experimental/splitter/` | Partitionneur de fragments historique, maintenant relégué en expérimental. |
-| `experimental/executor/` | Exécuteur de fragments historique, maintenant relégué en expérimental. |
+| `splitter/` | Partitionneur de fragments principal: pipeline d'analyse, découpage et generation des artefacts. |
+| `executor/` | Exécuteur de fragments principal: backends natif/emule et API C. |
+| `networked/p2p_node/` | Noeud P2P actuel du reseau, overlay libp2p/Kademlia et RPC reseau. |
+| `tools/network_node.py` | Pont Python de transition encore utilise par certains scripts d'orchestration. |
 | `viewer/` | Visualiseur Qt des fragments/partitions. |
 | `worker/` | Prototype de worker local qui consomme des partitions générées par `splitter`. |
 | `demo/` | Programmes de démonstration consommés par `splitter`/`worker`. |
