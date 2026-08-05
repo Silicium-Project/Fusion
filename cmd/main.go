@@ -35,6 +35,7 @@ func main() {
 	// Serve OpenAPI docs
 	router.PathPrefix("/docs/").Handler(http.StripPrefix("/docs/", http.FileServer(http.Dir("./docs/"))))
 
+	routes.RegisterHealthRoutes(router)
 	routes.RegisterUserRoutes(router, h)
 	routes.RegisterJobRoutes(router, h)
 	han := c.Handler(router)
