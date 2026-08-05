@@ -6,7 +6,10 @@ E2E_COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.e2e.yml"
 MANIFEST_FILE="$ROOT/Network/ci/e2e-manifest.json"
 DATA_DIR="/var/lib/silicium/network/orchestrator/export"
 EXPERIMENT_API_ENV="/etc/silicium/experiment-api.env"
-E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-900}"
+E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-2400}"
+E2E_WAIT_S="${E2E_WAIT_S:-1200}"
+DOCKER_CLIENT_TIMEOUT="${DOCKER_CLIENT_TIMEOUT:-1200}"
+COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-1200}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/compose/e2e.sh $ROOT" >&2
@@ -26,6 +29,8 @@ if [[ -z "${SILICIUM_MCP_TOKEN:-}" ]]; then
 fi
 
 healthz_headers=(-H "Authorization: Bearer ${SILICIUM_MCP_TOKEN}")
+export DOCKER_CLIENT_TIMEOUT
+export COMPOSE_HTTP_TIMEOUT
 
 log() {
   printf '==> %s\n' "$*"
@@ -101,16 +106,45 @@ python3 - <<'PY'
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 validation = json.loads(Path("/tmp/silicium-vps-validation.json").read_text(encoding="utf-8"))
+probe = json.loads(Path("/tmp/silicium-vps-backend-probe.json").read_text(encoding="utf-8"))
+task_prefix = os.environ["E2E_TASK_PREFIX"]
+
+assert probe["ok"] is True, probe
+assert probe["resolved_addresses"], probe
+
+task_ids = [
+    "web-compute-a",
+    "web-compute-b",
+    "web-compute-c",
+    "web-compute-d",
+    "rpc-verify-a",
+    "rpc-verify-b",
+    "rpc-verify-c",
+    "rpc-verify-d",
+]
+prefixed_task_ids = [f"{task_prefix}-{task_id}" for task_id in task_ids]
+
 assert validation["ok"] is True, validation
-assert len(validation["tasks"]) == 8, validation
+assert sorted(validation["tasks"].keys()) == sorted(prefixed_task_ids), validation
 worker_counts = validation.get("worker_counts", {})
 assert worker_counts.get("compute", {}).get("worker-compute-a") == 2, worker_counts
 assert worker_counts.get("compute", {}).get("worker-compute-b") == 2, worker_counts
 assert worker_counts.get("verify", {}).get("worker-verify-a") == 2, worker_counts
 assert worker_counts.get("verify", {}).get("worker-verify-b") == 2, worker_counts
+
+for task_id, report in validation["tasks"].items():
+    task = report["task"]
+    result = report["result"]
+    assert report["queue"]["status"] == "queued", report
+    assert task["status"] == "completed", report
+    assert task["handled_by"] == result["handled_by"], report
+    assert result["success"] is True, report
+    assert result["transport"] == "vps-compose", report
+    assert str(task["handled_by"]).startswith("worker-"), report
 PY
 
 log "VPS e2e stack"
