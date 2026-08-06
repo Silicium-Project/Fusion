@@ -93,8 +93,8 @@ same operational plane.
 - `FrontEnd/.github/workflows/ci.yml`: frontend build/test lane on the VPS
   runner.
 - `Network/.github/workflows/ci.yml`: canonical orchestrator for `Network`.
-- `Network/.github/workflows/{tests,p2p-node,solana-layer-ci-only,codeql}.yml`:
-  reusable or manual lanes underneath the canonical orchestrator.
+- `Network/.github/workflows/release.yml`: tag-only publication path that
+  reuses `ci.yml` before publishing artifacts.
 
 ### Immediate cleanup target
 
@@ -102,6 +102,6 @@ The next simplification should focus on the remaining duplication between:
 
 - `deploy-vps.yml` validation jobs and the reusable `build.yml`/`test.yml`
   gates;
-- `Network/.github/workflows/ci.yml` and its reusable lane files;
+- `Network/.github/workflows/ci.yml` and `release.yml`;
 - the backend/frontend CI lanes and the Fusion-level gate if their checks can
   be collapsed further without losing signal.
