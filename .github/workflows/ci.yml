@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         if: matrix.language == 'javascript-typescript'
@@ -77,6 +79,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -120,6 +124,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.89.0"
 
       - name: Expose rustup cargo
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
@@ -215,6 +221,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Rust
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke'
@@ -225,6 +233,26 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Prepare Docker access
+        if: matrix.job == 'docker-e2e' || matrix.job == 'smoke' || matrix.job == 'perf-budget' || matrix.job == 'worker-cpp'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker_path="$(command -v docker)"
+          if docker info >/dev/null 2>&1; then
+            exit 0
+          fi
+          if ! sudo -n "$docker_path" info >/dev/null 2>&1; then
+            echo "Docker is unavailable and passwordless sudo cannot access it." >&2
+            echo "Add the runner user to the docker group and restart the runner service." >&2
+            exit 1
+          fi
+          wrapper_dir="$RUNNER_TEMP/docker-bin"
+          mkdir -p "$wrapper_dir"
+          printf '%s\n' '#!/usr/bin/env bash' "exec sudo -n \"$docker_path\" \"\$@\"" > "$wrapper_dir/docker"
+          chmod +x "$wrapper_dir/docker"
+          echo "$wrapper_dir" >> "$GITHUB_PATH"
 
       - name: Test native raytracer
         if: matrix.job == 'raytracer-rust'
