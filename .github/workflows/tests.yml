@@ -2,27 +2,7 @@ name: EntryPoint Tests
 
 on:
   workflow_dispatch:
-    inputs:
-      publish_pages:
-        description: "Deploy coverage Pages"
-        required: false
-        default: true
-        type: boolean
-      commit_coverage:
-        description: "Commit coverage artifacts to the repo"
-        required: false
-        default: true
-        type: boolean
   workflow_call:
-    inputs:
-      publish_pages:
-        required: false
-        type: boolean
-        default: true
-      commit_coverage:
-        required: false
-        type: boolean
-        default: true
 
 jobs:
   raytracer-rust:
@@ -314,90 +294,3 @@ jobs:
             worker/coverage.html
             worker/coverage.xml
             worker/coverage-summary.json
-
-  coverage-pages:
-    runs-on: [self-hosted, fusion-linux]
-    needs: worker-cpp
-    if: github.ref == 'refs/heads/main' && inputs.publish_pages
-    permissions:
-      contents: write
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download worker coverage artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: worker-coverage
-          path: /tmp/worker-coverage
-
-      - name: Prepare Pages content
-        run: |
-          mkdir -p public/worker
-          cp /tmp/worker-coverage/coverage.html public/worker/coverage-full.html
-          cp /tmp/worker-coverage/coverage-summary.json public/worker/
-          python tools/worker_coverage_assets.py \
-            --summary public/worker/coverage-summary.json \
-            --output public/worker \
-            --summary-html public/worker/index.html \
-            --full-report coverage-full.html \
-            --snapshot public/worker/snapshot.svg
-
-      - name: Publish to gh-pages
-        if: github.ref == 'refs/heads/main'
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_branch: gh-pages
-          publish_dir: ./public
-          force_orphan: true
-
-  commit-coverage:
-    runs-on: [self-hosted, fusion-linux]
-    needs: worker-cpp
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && inputs.commit_coverage
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download worker coverage artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: worker-coverage
-          path: /tmp/worker-coverage
-
-      - name: Update coverage assets in repo
-        run: |
-          mkdir -p docs/coverage/worker
-          cp /tmp/worker-coverage/coverage.html docs/coverage/worker/coverage-full.html
-          cp /tmp/worker-coverage/coverage-summary.json docs/coverage/worker/coverage-summary.json
-          python tools/worker_coverage_assets.py \
-            --summary docs/coverage/worker/coverage-summary.json \
-            --output docs/coverage/worker \
-            --readme README.md \
-            --readme-snapshot docs/coverage/worker/snapshot.svg \
-            --readme-report docs/coverage/worker/index.html \
-            --summary-html docs/coverage/worker/index.html \
-            --full-report coverage-full.html \
-            --snapshot docs/coverage/worker/snapshot.svg
-
-      - name: Commit coverage badge and report
-        run: |
-          if git diff --quiet -- docs/coverage/worker; then
-            echo "No coverage changes to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/coverage/worker/index.html docs/coverage/worker/coverage-full.html docs/coverage/worker/coverage-summary.json docs/coverage/worker/badge.json docs/coverage/worker/badge.svg docs/coverage/worker/snapshot.svg README.md
-          git commit -m "chore: update worker coverage [skip ci]" || true
-          git push origin HEAD:main || echo "Push skipped (branch protection or perms)"
