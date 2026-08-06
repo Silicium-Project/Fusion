@@ -82,6 +82,7 @@ Composants actifs:
 - `.github/workflows/deploy-vps.yml`
 - `.github/workflows/sync-submodules.yml`
 - `.github/workflows/submodule-ci-gate.yml`
+- `docs/ci-cd-topology.md`
 
 Composants en transition:
 
@@ -146,6 +147,8 @@ Pour les prochaines itérations:
 - ne pas faire evoluer les scripts de deploy sans verifier le trajet local + VPS;
 - ne pas laisser Fusion avancer si un submodule `main` est rouge, meme si les
   autres sont verts;
+- ne pas redeployer une architecture CI/CD tant que le chemin VPS-first n'est
+  pas documente dans `docs/ci-cd-topology.md`;
 - ne pas fusionner une migration tant que le chemin de claim/dispatch/reconciliation n'est pas teste sur le vrai flux.
 
 ## 5. Ordre de travail recommande

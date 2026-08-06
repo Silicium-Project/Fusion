@@ -3,6 +3,10 @@
 This folder contains a first production-oriented VPS deployment for the public
 site.
 
+The intended operating model is VPS-first: GitHub acts as source control and
+trigger surface, while the actual deploy/test path runs on the VPS or on a
+self-hosted runner attached to the VPS.
+
 Recommended first public setup:
 
 1. One Linux VPS hosts:
@@ -26,7 +30,8 @@ sudo bash deploy/linux/install-vps.sh /opt/silicium
 ```
 
 If you want this VPS to also execute GitHub Actions jobs for the `fusion-linux`
-label, enable the optional self-hosted runner bootstrap during the VPS install:
+label, enable the optional self-hosted runner bootstrap during the VPS install.
+This is the preferred mode for the deployment and validation workflows:
 
 ```bash
 sudo SILICIUM_INSTALL_GITHUB_ACTIONS_RUNNER=1 \
@@ -202,6 +207,10 @@ the stack. For every deployment, the workflow writes a release marker at
 `/var/lib/silicium/releases/current.env` with deployed version, channel, build,
 and deploy ref. The Windows installer is served directly from the GitHub
 Release and is not copied to the VPS.
+
+GitHub should be treated as the orchestrator and audit trail, not as the place
+where the production path executes. Any workflow that must touch production
+state should run on the VPS self-hosted runner or over SSH into the VPS.
 
 After each deployment, CI/CD runs `deploy/linux/post-deploy-check.sh` on the
 VPS. This validates Compose service state, local health endpoints, node service

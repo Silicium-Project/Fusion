@@ -4,7 +4,11 @@ Silicium regroupe le reseau de calcul distribue, le layer Solana Devnet, le dash
 
 Les composants Network, BackEnd et FrontEnd sont suivis comme submodules Git pour garder leur cycle de vie independant tout en restant composes par Fusion.
 
-Le plan d'attaque fige et le tri actif/transition/vestige sont documentes dans [docs/repo-attack-plan-and-triage.md](docs/repo-attack-plan-and-triage.md).
+Le plan d'attaque fige, le tri actif/transition/vestige et le topologie CI/CD
+canonique sont documentes dans:
+
+- [docs/repo-attack-plan-and-triage.md](docs/repo-attack-plan-and-triage.md)
+- [docs/ci-cd-topology.md](docs/ci-cd-topology.md)
 
 Fusion conserve des SHA exacts afin que chaque build, rollback et deploiement soit
 reproductible. Le workflow `Sync submodule gitlinks` compare toutes les cinq
