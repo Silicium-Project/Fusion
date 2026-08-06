@@ -15,6 +15,7 @@ import base64
 import hashlib
 import hmac
 import http.server
+import ipaddress
 import json
 import os
 import platform
@@ -47,6 +48,7 @@ WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 MAX_PEER_REQUEST_BYTES = 128 * 1024 * 1024
 ACTIVE_CLAIM_POLLER_WINDOW_S = 10.0
+DEFAULT_PUBLIC_STUN_SERVER = "stun.l.google.com:19302"
 
 
 def configure_windows_error_mode() -> None:
@@ -85,6 +87,14 @@ def file_id(value: str) -> str:
 
 def safe_path_id(value: str) -> str:
     return file_id(value)
+
+
+def apply_nat_traversal_defaults(args: argparse.Namespace) -> argparse.Namespace:
+    backend = str(getattr(args, "p2p_direct_transport_backend", "auto") or "auto").strip().lower()
+    if bool(getattr(args, "nat_punch_enable", False)) and backend not in {"native", "native-light", "native_light"}:
+        if not str(getattr(args, "p2p_stun_server", "") or "").strip():
+            args.p2p_stun_server = DEFAULT_PUBLIC_STUN_SERVER
+    return args
 
 
 def validate_content_id(value: str) -> str:
@@ -299,6 +309,34 @@ def append_jsonl(path: Path, payload: Any) -> None:
         handle.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=True) + "\n")
 
 
+def ingest_content_blobs(export_dir: Path, payload: dict[str, Any]) -> list[str]:
+    stored: list[str] = []
+    total_bytes = 0
+    blobs = payload.get("content_blobs", [])
+    if not isinstance(blobs, list):
+        return stored
+    for blob in blobs:
+        if not isinstance(blob, dict):
+            continue
+        content_id = str(blob.get("content_id", "")).strip().lower()
+        encoded = str(blob.get("data_b64", ""))
+        if len(content_id) != 64 or any(char not in "0123456789abcdef" for char in content_id):
+            continue
+        try:
+            content = base64.b64decode(encoded.encode("ascii"), validate=True)
+        except (ValueError, UnicodeEncodeError):
+            continue
+        if total_bytes + len(content) > 16 * 1024 * 1024 or hashlib.sha256(content).hexdigest() != content_id:
+            continue
+        target = export_dir / "p2p" / content_id
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_bytes(content)
+        stored.append(content_id)
+        total_bytes += len(content)
+    return stored
+
+
 @dataclass
 class NodeConfig:
     export_dir: Path
@@ -351,6 +389,10 @@ class NodeConfig:
     scheduler_onchain_weight: float
     scheduler_offchain_weight: float
     scheduler_capacity_weight: float
+    app_version: str = "unknown"
+    release_channel: str = "dev"
+    release_build: str = ""
+    identity_dev_mesh_auth: bool = False
 
 
 def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
@@ -1260,6 +1302,12 @@ class PeerNetwork:
         self.local_onchain_status = ""
         self.local_solana_owner = ""
         self.local_solana_worker = ""
+        self.candidates_path = export_dir / "p2p.candidates.json"
+        self._local_candidates: list[dict[str, Any]] = []
+        self._last_candidate_refresh_unix = 0.0
+        self._observed_public_address = ""
+        self._nat_behavior = "unknown"
+        self._seen_handshake_nonces: dict[str, float] = {}
         self.local_activity: dict[str, Any] = {
             "status": "idle",
             "active_tasks": [],
@@ -1605,6 +1653,8 @@ class PeerNetwork:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             sock.sendto(payload, (host, port))
+        except OSError:
+            return
         finally:
             sock.close()
 
@@ -2088,8 +2138,211 @@ class PeerNetwork:
             return ""
         parsed = urlparse(value)
         if parsed.scheme in {"http", "https"} and parsed.netloc:
-            return f"{parsed.scheme}://{parsed.netloc}"
+            return f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
         return ""
+
+    def local_candidates_snapshot(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [dict(candidate) for candidate in self._local_candidates]
+
+    def candidate_diagnostics(self) -> dict[str, Any]:
+        candidates = self.local_candidates_snapshot()
+        selected = max(
+            candidates,
+            key=lambda item: (bool(item.get("internet_routable")), str(item.get("candidate_type")) == "srflx", int(item.get("priority", 0))),
+            default=None,
+        )
+        return {
+            "candidate_count": len(candidates),
+            "candidate_types": sorted({str(item.get("candidate_type", "")) for item in candidates}),
+            "selected_candidate": dict(selected) if selected else None,
+            "observed_public_address": self._observed_public_address,
+            "nat_behavior": self._nat_behavior,
+        }
+
+    def refresh_candidates(self, *, force: bool = False) -> list[dict[str, Any]]:
+        now = int(time.time())
+        refresh_s = max(1, int(getattr(self.config, "p2p_candidate_refresh_s", 20)))
+        if not force and self._local_candidates and now - self._last_candidate_refresh_unix < refresh_s:
+            return self.local_candidates_snapshot()
+        port = self._advertised_gossip_port()
+        candidates: list[dict[str, Any]] = []
+        for host in (self._advertised_gossip_host(), str(self.config.gossip_bind)):
+            if not host or host in {"0.0.0.0", "::"}:
+                continue
+            try:
+                addresses = [ipaddress.ip_address(host).compressed]
+            except ValueError:
+                try:
+                    addresses = sorted({str(item[4][0]) for item in socket.getaddrinfo(host, None)})
+                except OSError:
+                    addresses = []
+            for address in addresses:
+                candidates.append(self._make_candidate("host", address, port, "local", 100, now))
+        with self._lock:
+            self._local_candidates = self._merge_candidate_list(candidates, self.node_id, now)
+            self._last_candidate_refresh_unix = float(now)
+        self._write_candidate_snapshot(self._local_candidates)
+        return self.local_candidates_snapshot()
+
+    def record_observed_candidate(self, observed_ip: str, *, source: str = "server-observed", observed_port: int = 0) -> dict[str, Any] | None:
+        now = int(time.time())
+        candidate = self._normalize_candidate(
+            {
+                "candidate_type": "srflx",
+                "transport": "udp",
+                "ip": observed_ip,
+                "port": int(observed_port or self._advertised_gossip_port()),
+                "priority": 900,
+                "source": source,
+                "observed_unix": now,
+                "expires_unix": now + max(1, int(getattr(self.config, "p2p_candidate_ttl_s", 60))),
+            },
+            self.node_id,
+            now,
+        )
+        if candidate is None:
+            return None
+        with self._lock:
+            self._local_candidates = self._merge_candidate_list([*self._local_candidates, candidate], self.node_id, now)
+            self._observed_public_address = candidate["ip"]
+        self._write_candidate_snapshot(self._local_candidates)
+        return dict(candidate)
+
+    def _write_candidate_snapshot(self, candidates: list[dict[str, Any]]) -> None:
+        atomic_write_json(
+            self.candidates_path,
+            {
+                "schema_version": 1,
+                "node_id": self.node_id,
+                "updated_utc": utc_now(),
+                "observed_public_address": self._observed_public_address,
+                "nat_behavior": self._nat_behavior,
+                "candidates": candidates,
+                "selected_candidate": self.candidate_diagnostics()["selected_candidate"],
+            },
+        )
+
+    def _normalize_candidate_list(self, candidates: Any, peer_id: str, now: int | None = None) -> list[dict[str, Any]]:
+        if not isinstance(candidates, list):
+            return []
+        current = int(now if now is not None else time.time())
+        return self._merge_candidate_list(candidates, peer_id, current)
+
+    def _merge_candidate_list(self, candidates: list[dict[str, Any]], peer_id: str, now: int) -> list[dict[str, Any]]:
+        merged: dict[tuple[str, str, str, int], dict[str, Any]] = {}
+        for candidate in candidates:
+            normalized = self._normalize_candidate(candidate, peer_id, now)
+            if normalized is None:
+                continue
+            key = (normalized["candidate_type"], normalized["transport"], normalized["ip"], normalized["port"])
+            if key not in merged or normalized["priority"] >= merged[key]["priority"]:
+                merged[key] = normalized
+        return sorted(merged.values(), key=lambda item: item["candidate_id"])
+
+    def _normalize_candidate(self, candidate: Any, peer_id: str, now: int) -> dict[str, Any] | None:
+        if not isinstance(candidate, Mapping):
+            return None
+        candidate_type = str(candidate.get("candidate_type", "")).lower()
+        transport = str(candidate.get("transport", "udp")).lower()
+        try:
+            address = ipaddress.ip_address(str(candidate.get("ip", "")).strip("[]"))
+            port = int(candidate.get("port", 0))
+            observed = int(candidate.get("observed_unix", now))
+            expires = int(candidate.get("expires_unix", 0))
+            priority = int(candidate.get("priority", 0))
+        except (ValueError, TypeError):
+            return None
+        if candidate_type not in {"host", "srflx", "relay"} or transport != "udp" or not 0 < port <= 65535 or observed <= 0 or expires <= now:
+            return None
+        public = not (address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_multicast or address.is_unspecified)
+        candidate_id = str(candidate.get("candidate_id", "")) or f"cand-{safe_id(peer_id)}-{candidate_type}-{sha256_bytes(f'{address.compressed}:{port}'.encode())[:16]}"
+        return {
+            "candidate_id": candidate_id,
+            "peer_id": safe_id(peer_id),
+            "address_family": "ipv6" if address.version == 6 else "ipv4",
+            "transport": transport,
+            "ip": address.compressed,
+            "port": port,
+            "candidate_type": candidate_type,
+            "priority": priority,
+            "observed_unix": observed,
+            "expires_unix": expires,
+            "source": str(candidate.get("source", "")),
+            "private": not public,
+            "local": bool(address.is_private or address.is_loopback),
+            "internet_routable": public,
+        }
+
+    def _make_candidate(self, candidate_type: str, ip: str, port: int, source: str, priority: int, now: int) -> dict[str, Any]:
+        return {
+            "candidate_type": candidate_type,
+            "transport": "udp",
+            "ip": ip,
+            "port": port,
+            "source": source,
+            "priority": priority,
+            "observed_unix": now,
+            "expires_unix": now + max(1, int(getattr(self.config, "p2p_candidate_ttl_s", 60))),
+        }
+
+    def create_session_handshake(self, *, target_peer_id: str, session_id: str = "", purpose: str = "direct_session", task_id: str = "", candidate_fingerprints: list[dict[str, Any]] | None = None, ttl_s: int = 300) -> dict[str, Any]:
+        now = int(time.time())
+        handshake = {
+            "schema_version": 1,
+            "message_type": "session_handshake",
+            "session_id": session_id or "sess-" + uuid.uuid4().hex,
+            "peer_id": self.node_id,
+            "target_peer_id": safe_id(target_peer_id),
+            "purpose": safe_id(purpose),
+            "task_id": str(task_id or ""),
+            "roles": sorted(self.config.roles),
+            "reputation_score": self.local_reputation_score,
+            "candidate_fingerprints": candidate_fingerprints or [],
+            "timestamp_unix": now,
+            "expires_unix": now + max(1, int(ttl_s)),
+            "nonce": uuid.uuid4().hex,
+            "identity_id": self.identity.identity_id,
+            "public_key": self.identity.public_key_b64,
+        }
+        handshake["signature"] = self.identity.sign_bytes(stable_json(handshake).encode("utf-8"))
+        return handshake
+
+    def verify_session_handshake(self, handshake: Mapping[str, Any] | None, *, expected_peer_id: str = "", expected_target_peer_id: str = "", authorized_task_ids: set[str] | None = None, max_age_s: int = 300) -> tuple[bool, str]:
+        if not isinstance(handshake, Mapping) or handshake.get("message_type") != "session_handshake":
+            return False, "handshake_type_invalid"
+        public_key = str(handshake.get("public_key", "")).strip()
+        identity_id = str(handshake.get("identity_id", "")).strip()
+        signature = str(handshake.get("signature", "")).strip()
+        if not public_key or not identity_id or not signature or NodeIdentity.identity_id_for_key(public_key) != identity_id:
+            return False, "handshake_identity_missing"
+        unsigned = dict(handshake)
+        unsigned.pop("signature", None)
+        if not NodeIdentity.verify_bytes(stable_json(unsigned).encode("utf-8"), signature, public_key):
+            return False, "handshake_signature_invalid"
+        peer_id = safe_id(str(handshake.get("peer_id", "")))
+        target_id = safe_id(str(handshake.get("target_peer_id", "")))
+        if expected_peer_id and peer_id != safe_id(expected_peer_id):
+            return False, "handshake_peer_mismatch"
+        if expected_target_peer_id and target_id != safe_id(expected_target_peer_id):
+            return False, "handshake_target_mismatch"
+        now = int(time.time())
+        try:
+            timestamp = int(handshake.get("timestamp_unix", 0))
+            expires = int(handshake.get("expires_unix", 0))
+        except (TypeError, ValueError):
+            return False, "handshake_timestamp_invalid"
+        if timestamp <= 0 or abs(now - timestamp) > max_age_s or expires <= now:
+            return False, "handshake_expired"
+        task_id = str(handshake.get("task_id", ""))
+        if authorized_task_ids is not None and task_id not in authorized_task_ids:
+            return False, "handshake_task_unauthorized"
+        replay_key = f"{identity_id}:{handshake.get('session_id')}:{handshake.get('nonce')}"
+        with self._lock:
+            if replay_key in self._seen_handshake_nonces:
+                return False, "handshake_replay"
+            self._seen_handshake_nonces[replay_key] = float(expires)
+        return True, "ok"
 
     def _parse_udp_target(self, target: str) -> tuple[str, int]:
         value = str(target or "").strip()
@@ -2168,7 +2421,7 @@ class PeerNetwork:
         return True
 
     def _authorize_peer_request(self, handler: http.server.BaseHTTPRequestHandler, body: bytes = b"") -> bool:
-        if self.config.mesh_key:
+        if self.config.mesh_key and bool(getattr(self.config, "identity_dev_mesh_auth", False)):
             auth = str(handler.headers.get("Authorization", "")).strip()
             if auth == f"Bearer {self.config.mesh_key}":
                 return True
@@ -2190,8 +2443,18 @@ class PeerNetwork:
             return False
         if body_hash != sha256_bytes(body):
             return False
-        signing_payload = "\n".join([handler.command.upper(), handler.path, timestamp, body_hash, node_id, identity_id]).encode("utf-8")
-        return NodeIdentity.verify_bytes(signing_payload, signature, public_key)
+        signed_paths = [str(handler.path)]
+        original_uri = str(handler.headers.get("X-Silicium-Original-URI", "")).strip()
+        if original_uri.startswith("/") and original_uri not in signed_paths:
+            signed_paths.append(original_uri)
+        return any(
+            NodeIdentity.verify_bytes(
+                "\n".join([handler.command.upper(), path, timestamp, body_hash, node_id, identity_id]).encode("utf-8"),
+                signature,
+                public_key,
+            )
+            for path in signed_paths
+        )
 
     def _start_http_server(self) -> None:
         peer_network = self
@@ -2718,6 +2981,9 @@ class NetworkNode:
         self._solana_onchain_status = ""
         self.peer_network.set_local_profile(capacity=self.runtime.capacity(), reputation_score=self.reputation.local_score())
 
+    def ingest_content_blobs(self, payload: dict[str, Any]) -> list[str]:
+        return ingest_content_blobs(self.config.export_dir, payload)
+
     def local_active_task_count(self) -> int:
         with self._active_task_lock:
             return len(self._active_task_ids)
@@ -2962,6 +3228,9 @@ class NetworkNode:
             {
                 "schema_version": 1,
                 "node_id": self.config.node_id,
+                "app_version": self.config.app_version,
+                "release_channel": self.config.release_channel,
+                "release_build": self.config.release_build,
                 "timestamp_utc": utc_now(),
                 "roles": sorted(self.config.roles),
                 "capacity": capacity,
@@ -4261,6 +4530,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--world-seeds", default=os.environ.get("SILICIUM_WORLD_SEEDS", ""))
     parser.add_argument("--roles", default=os.environ.get("SILICIUM_NODE_ROLES", "compute,verify,storage,audit,resource"))
     parser.add_argument("--node-id", default=os.environ.get("SILICIUM_NODE_ID", "node-" + uuid.uuid4().hex[:8]))
+    parser.add_argument("--app-version", default=os.environ.get("SILICIUM_APP_VERSION", "unknown"))
+    parser.add_argument("--release-channel", default=os.environ.get("SILICIUM_RELEASE_CHANNEL", "dev"), choices=["dev", "prod"])
+    parser.add_argument("--release-build", default=os.environ.get("SILICIUM_RELEASE_BUILD", ""))
+    parser.add_argument("--identity-dev-mesh-auth", action="store_true", default=os.environ.get("SILICIUM_IDENTITY_DEV_MESH_AUTH", "0") == "1")
     parser.add_argument("--idle-ms", type=int, default=int(os.environ.get("SILICIUM_NODE_IDLE_MS", "250")))
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--max-items", type=int, default=int(os.environ.get("SILICIUM_NODE_MAX_ITEMS", "0")))
@@ -4399,6 +4672,10 @@ def main(argv: list[str] | None = None) -> int:
         scheduler_onchain_weight=float(args.scheduler_onchain_weight),
         scheduler_offchain_weight=float(args.scheduler_offchain_weight),
         scheduler_capacity_weight=float(args.scheduler_capacity_weight),
+        app_version=str(args.app_version),
+        release_channel=str(args.release_channel),
+        release_build=str(args.release_build),
+        identity_dev_mesh_auth=bool(args.identity_dev_mesh_auth),
     )
     export_dir.mkdir(parents=True, exist_ok=True)
     state_dir.mkdir(parents=True, exist_ok=True)
