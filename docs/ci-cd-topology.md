@@ -87,14 +87,15 @@ same operational plane.
 
 - `FrontEnd/.github/workflows/quality.yml`: frontend-only quality lane, now on
   the VPS runner.
-- `Network/.github/workflows/*`: P2P, Solana, code quality, release, and test
-  lanes; these are still split and should be consolidated next.
+- `Network/.github/workflows/ci.yml`: canonical orchestrator for `Network`.
+- `Network/.github/workflows/{tests,p2p-node,solana-layer-ci-only,codeql}.yml`:
+  reusable or manual lanes underneath the canonical orchestrator.
 
 ### Immediate cleanup target
 
-The next simplification should remove the remaining duplication between:
+The next simplification should focus on the remaining duplication between:
 
 - `deploy-vps.yml` validation jobs;
 - `linux-client.yml`;
 - `node-gui-quality.yml`;
-- the split `Network` workflow set.
+- `Network/.github/workflows/ci.yml` and its reusable lane files.
