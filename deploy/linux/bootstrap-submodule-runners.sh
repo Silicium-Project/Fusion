@@ -90,9 +90,10 @@ for repo in "${REPOS[@]}"; do
   fi
 
   if [[ -x "$runner_dir/svc.sh" ]]; then
+    cd "$runner_dir"
     if ! systemctl is-active --quiet "actions.runner.Silicium-Project-${repo}.${runner_name}.service"; then
-      "$runner_dir/svc.sh" install "$RUNNER_USER" >/dev/null 2>&1 || true
-      "$runner_dir/svc.sh" start
+      ./svc.sh install "$RUNNER_USER" >/dev/null 2>&1 || true
+      ./svc.sh start
     fi
   else
     echo "Runner service helper not found: $runner_dir/svc.sh" >&2
