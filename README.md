@@ -11,7 +11,6 @@ flowchart LR
     Viewer["Viewer (Qt)"]
     Web["Web UI (future)"]
     Tests["CI ci.yml"]
-    AutoWF["CI project-automation.yml"]
     CoreCheck["ci/core_check.sh"]
     Tests --> CoreCheck
   end
@@ -303,13 +302,11 @@ Badge (local) : ![Badge](docs/coverage/executor/badge.svg)
 
 ---
 
-## CI / Project Automation
+## CI
 
-Le workflow `Network CI` (fichier `.github/workflows/ci.yml`) orchestre les lanes de validation principales. Les fichiers `tests.yml`, `p2p-node.yml`, `solana-layer-ci-only.yml` et `codeql.yml` restent disponibles comme lanes reutilisables ou manuelles, mais ne sont plus les points d'entree automatiques.
+Le workflow `Network CI` (fichier `.github/workflows/ci.yml`) orchestre les lanes de validation principales.
 
-Le workflow `Project automation` (fichier `.github/workflows/project-automation.yml`) met ? jour un Project v2 ? chaque issue/PR. Le token GitHub par d?faut n'a pas les droits suffisants?: **ajoutez un secret `PROJECTS_TOKEN`** avec le scope `project`.
-
-Si le secret n'est pas d?fini, le workflow saute l'?tape avec un avertissement.
+Les fichiers `tests.yml`, `p2p-node.yml`, `solana-layer-ci-only.yml`, `codeql.yml` et `release.yml` restent disponibles comme lanes reutilisables ou de publication, mais ne constituent pas le point d'entree principal de validation.
 
 ---
 

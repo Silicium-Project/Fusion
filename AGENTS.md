@@ -53,7 +53,7 @@ Ce depot fournit une stack complete pour le projet Silicium :
 **Tests et CI**
 - Tests Python: `tests/test_entrypoint.py`, `tests/test_manifests.py`.
 - Tests C++ via image `silicium/cpp-tests` (splitter/executor/worker).
-- CI GitHub Actions: `.github/workflows/tests.yml`, `release.yml`, `mirror.yml`.
+- CI GitHub Actions: `.github/workflows/ci.yml`, `tests.yml`, `release.yml`.
 - Scripts locaux: `ci/e2e.sh`, `ci/test_images.sh`.
 
 **Etat d'avancement**
