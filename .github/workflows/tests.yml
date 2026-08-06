@@ -318,7 +318,7 @@ jobs:
   coverage-pages:
     runs-on: [self-hosted, fusion-linux]
     needs: worker-cpp
-    if: github.ref == 'refs/heads/main' && inputs.publish_pages != false
+    if: github.ref == 'refs/heads/main' && inputs.publish_pages
     permissions:
       contents: write
       pages: write
@@ -360,7 +360,7 @@ jobs:
   commit-coverage:
     runs-on: [self-hosted, fusion-linux]
     needs: worker-cpp
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && inputs.commit_coverage != false
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && inputs.commit_coverage
     permissions:
       contents: write
     steps:
