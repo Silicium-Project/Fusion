@@ -1,0 +1,190 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  submodule-ci-gate:
+    uses: ./.github/workflows/submodule-ci-gate.yml
+    secrets: inherit
+
+  web-stack:
+    needs: [submodule-ci-gate]
+    runs-on: [self-hosted, fusion-linux]
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Check out sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Sync declared submodules
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config --global --get-regexp '^url\..*x-access-token.*github\.com.*\.insteadof$' |
+            while read -r key _; do git config --global --unset-all "$key" || true; done || true
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git submodule sync -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/silicium-node/package-lock.json
+            FrontEnd/package-lock.json
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.4'
+
+      - name: Validate web stack
+        shell: bash
+        run: bash deploy/ci/validate-web-stack.sh "$GITHUB_WORKSPACE"
+
+  network-core:
+    needs: [submodule-ci-gate]
+    runs-on: [self-hosted, fusion-linux]
+    timeout-minutes: 90
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Check out sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Sync declared submodules
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config --global --get-regexp '^url\..*x-access-token.*github\.com.*\.insteadof$' |
+            while read -r key _; do git config --global --unset-all "$key" || true; done || true
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git submodule sync -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run core checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          CORE_CHECK_MODE=full CORE_CHECK_SCOPE=all Network/ci/core_check.sh
+
+  network-e2e:
+    needs: [submodule-ci-gate]
+    runs-on: [self-hosted, fusion-linux]
+    timeout-minutes: 120
+    env:
+      E2E_TIMEOUT_S: 2400
+      E2E_WAIT_S: 1200
+      DOCKER_CLIENT_TIMEOUT: 1200
+      COMPOSE_HTTP_TIMEOUT: 1200
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Check out sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Sync declared submodules
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config --global --get-regexp '^url\..*x-access-token.*github\.com.*\.insteadof$' |
+            while read -r key _; do git config --global --unset-all "$key" || true; done || true
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git submodule sync -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+
+      - name: Run Docker e2e stack
+        shell: bash
+        run: bash Network/ci/docker_e2e.sh
+
+  network-smoke:
+    needs: [submodule-ci-gate]
+    runs-on: [self-hosted, fusion-linux]
+    timeout-minutes: 45
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Check out sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Sync declared submodules
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config --global --get-regexp '^url\..*x-access-token.*github\.com.*\.insteadof$' |
+            while read -r key _; do git config --global --unset-all "$key" || true; done || true
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git submodule sync -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run P2P smoke
+        shell: bash
+        run: bash Network/ci/p2p_kademlia_smoke.sh

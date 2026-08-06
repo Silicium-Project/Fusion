@@ -10,6 +10,9 @@ canonique sont documentes dans:
 - [docs/repo-attack-plan-and-triage.md](docs/repo-attack-plan-and-triage.md)
 - [docs/ci-cd-topology.md](docs/ci-cd-topology.md)
 
+Le chemin operatoire visible dans GitHub est maintenant simple: `Build`,
+`Test`, puis `Deploy`, tous relies a l'execution VPS/self-hosted.
+
 Fusion conserve des SHA exacts afin que chaque build, rollback et deploiement soit
 reproductible. Le workflow `Sync submodule gitlinks` compare toutes les cinq
 minutes les branches declarees dans `.gitmodules`, publie une composition exacte

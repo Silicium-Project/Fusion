@@ -10,6 +10,7 @@ Keep the workflow traceable:
 - The VPS executes the production path.
 - Self-hosted runners on the VPS are preferred for any automation that must run
   close to production state.
+- The visible lifecycle is `Build` -> `Test` -> `Deploy`.
 
 ## Current contract
 
@@ -51,10 +52,13 @@ same operational plane.
    and `Network`.
 2. `submodule-ci-gate.yml` fails immediately if any of those `main` heads is
    red, incomplete, or missing.
-3. `deploy-vps.yml` pulls the exact Fusion ref on the VPS, updates submodules,
+3. `build.yml` produces the Linux release bundles on the VPS runner.
+4. `test.yml` validates the web stack, Network core, Docker E2E, and the P2P
+   smoke path on the VPS runner.
+5. `deploy-vps.yml` pulls the exact Fusion ref on the VPS, updates submodules,
    rebuilds services, deploys, and runs post-deploy checks.
-4. `deploy/compose/e2e.sh` validates the real container path on the VPS.
-5. `mirror-fusion.yml` mirrors the exact Fusion tree after the submodule
+6. `deploy/compose/e2e.sh` validates the real container path on the VPS.
+7. `mirror-fusion.yml` mirrors the exact Fusion tree after the submodule
    composition is published.
 
 ## Rules
@@ -74,12 +78,12 @@ same operational plane.
 - `sync-submodules.yml`: canonical scheduler for publishing exact gitlinks.
 - `submodule-ci-gate.yml`: reusable hard gate for `BackEnd`, `FrontEnd`, and
   `Network` `main` health.
+- `build.yml`: canonical Linux bundle build workflow.
+- `test.yml`: canonical web, Network core, Docker E2E, and P2P smoke workflow.
 - `deploy-vps.yml`: canonical production deploy and VPS validation path.
 - `rollback-vps.yml`: manual recovery path only.
-- `linux-client.yml`: thin Linux client validation/build lane; keep it aligned
-  with `deploy/ci/build-linux-client.sh`.
-- `node-gui-quality.yml`: thin web/backend quality lane; keep it aligned with
-  `deploy/ci/validate-web-stack.sh`.
+- `linux-client.yml`: legacy manual compatibility wrapper around `build.yml`.
+- `node-gui-quality.yml`: legacy manual compatibility wrapper around `test.yml`.
 - `mirror-fusion.yml`: external mirror lane; keep only if the Epitech mirror is
   still required operationally.
 
@@ -96,6 +100,6 @@ same operational plane.
 The next simplification should focus on the remaining duplication between:
 
 - `deploy-vps.yml` validation jobs;
-- `linux-client.yml`;
-- `node-gui-quality.yml`;
-- `Network/.github/workflows/ci.yml` and its reusable lane files.
+- `Network/.github/workflows/ci.yml` and its reusable lane files;
+- the mirror workflow, if the Epitech destination is no longer part of the
+  supported topology.

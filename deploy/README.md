@@ -7,6 +7,13 @@ The intended operating model is VPS-first: GitHub acts as source control and
 trigger surface, while the actual deploy/test path runs on the VPS or on a
 self-hosted runner attached to the VPS.
 
+The canonical GitHub-visible pipeline is split into three stages:
+
+1. `build.yml` produces the Linux bundles on the VPS runner.
+2. `test.yml` runs the web stack, Network core, Docker E2E, and P2P smoke
+   checks on the VPS runner.
+3. `deploy-vps.yml` is the production `Deploy` stage.
+
 Recommended first public setup:
 
 1. One Linux VPS hosts:
@@ -171,11 +178,12 @@ Do not run the migration script again for normal deployments.
 
 ## Automatic VPS deployment
 
-`/.github/workflows/deploy-vps.yml` deploys every push to `main` that changes
-the site, backend, network, or deployment files, and also deploys every pushed
-release tag matching `v*` (version rollout). It can also be started from
-the GitHub Actions interface with `Run workflow`, optionally with a custom
-deploy ref. Configure these repository secrets before the first run:
+`/.github/workflows/deploy-vps.yml` is the canonical production `Deploy`
+workflow. It deploys every push to `main` that changes the site, backend,
+network, or deployment files, and also deploys every pushed release tag
+matching `v*` (version rollout). It can also be started from the GitHub
+Actions interface with `Run workflow`, optionally with a custom deploy ref.
+Configure these repository secrets before the first run:
 
 - `VPS_HOST`: public VPS hostname or IP;
 - `VPS_SSH_KEY`: private Ed25519 key authorized on the VPS;

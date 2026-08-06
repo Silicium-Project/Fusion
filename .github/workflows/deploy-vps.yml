@@ -1,4 +1,4 @@
-name: Deploy VPS
+name: Deploy
 
 on:
   workflow_dispatch:
