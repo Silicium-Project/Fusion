@@ -12,6 +12,8 @@ canonique sont documentes dans:
 
 Le chemin operatoire visible dans GitHub est maintenant simple: `Build`,
 `Test`, puis `Deploy`, tous relies a l'execution VPS/self-hosted.
+Le miroir externe vers le repo Epitech reste volontaire et explicite via
+`mirror-epitech.yml`, sans faire partie du chemin critique de livraison.
 
 Fusion conserve des SHA exacts afin que chaque build, rollback et deploiement soit
 reproductible. Le workflow `Sync submodule gitlinks` compare toutes les cinq

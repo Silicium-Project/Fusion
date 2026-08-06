@@ -82,6 +82,7 @@ Composants actifs:
 - `.github/workflows/deploy-vps.yml`
 - `.github/workflows/sync-submodules.yml`
 - `.github/workflows/submodule-ci-gate.yml`
+- `.github/workflows/mirror-epitech.yml`
 - `docs/ci-cd-topology.md`
 
 Composants en transition:
