@@ -65,7 +65,7 @@ jobs:
             while read -r key _; do git config --global --unset-all "$key" || true; done || true
           git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git submodule sync -- BackEnd FrontEnd Network
-          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -123,7 +123,7 @@ jobs:
           $gitAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$($env:GH_TOKEN)"))
           & git submodule sync -- BackEnd FrontEnd Network
           if ($LASTEXITCODE -ne 0) { throw "Failed to sync declared submodules" }
-          & git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic $gitAuth" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+          & git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic $gitAuth" submodule update --init --force --recursive -- BackEnd FrontEnd Network
           if ($LASTEXITCODE -ne 0) { throw "Failed to update declared submodules" }
 
       - name: Set up Node.js
@@ -290,7 +290,7 @@ jobs:
             while read -r key _; do git config --global --unset-all "$key" || true; done || true
           git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git submodule sync -- BackEnd FrontEnd Network
-          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
       - name: Install Linux desktop prerequisites
         run: |
@@ -493,7 +493,7 @@ jobs:
               sudo rm -rf -- "$submodule_path"
             fi
           done
-          git_auth -C "$VPS_ROOT" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+          git_auth -C "$VPS_ROOT" submodule update --init --force --recursive -- BackEnd FrontEnd Network
           sudo usermod -aG docker github-runner || true
           unset GIT_AUTH VPS_GITHUB_TOKEN
           sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium/downloads/silicium-node-windows-dev.exe
