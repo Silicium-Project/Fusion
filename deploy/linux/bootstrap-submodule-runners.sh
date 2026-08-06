@@ -21,7 +21,7 @@ if ! id -u "$RUNNER_USER" >/dev/null 2>&1; then
 fi
 
 configure_runner_runtime() {
-  local docker_path docker_compose_path sudoers_file deps_marker
+  local docker_path docker_compose_path sudoers_file deps_marker audio_package
 
   docker_path="$(command -v docker || true)"
   docker_compose_path="$(command -v docker-compose || true)"
@@ -40,9 +40,13 @@ configure_runner_runtime() {
   deps_marker="/var/lib/silicium/playwright-chromium-deps"
   if [[ ! -f "$deps_marker" ]] && command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
+    audio_package="libasound2"
+    if apt-cache show libasound2t64 >/dev/null 2>&1; then
+      audio_package="libasound2t64"
+    fi
     apt-get update
     apt-get install -y --no-install-recommends \
-      ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 \
+      ca-certificates fonts-liberation "$audio_package" libatk-bridge2.0-0 \
       libatk1.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 libgbm1 \
       libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libx11-6 \
       libx11-xcb1 libxcb1 libxcomposite1 libxdamage1 libxext6 \
@@ -55,6 +59,12 @@ configure_runner_runtime() {
 }
 
 configure_runner_runtime
+
+# A previous Docker build may have created root-owned files in the shared
+# runner worktree. GitHub's checkout action must be able to clean that tree.
+if [[ -d "$RUNNER_ROOT/_work" ]]; then
+  chown -R "$RUNNER_USER":"$RUNNER_USER" "$RUNNER_ROOT/_work"
+fi
 
 install -d -m 0755 /var/lock
 exec 9>/var/lock/silicium-submodule-runners.lock
