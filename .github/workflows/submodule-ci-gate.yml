@@ -18,6 +18,8 @@ jobs:
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
+          permission-actions: read
+          permission-contents: read
 
       - name: Check out Fusion metadata
         uses: actions/checkout@v4

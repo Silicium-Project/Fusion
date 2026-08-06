@@ -7,16 +7,6 @@ if (!token) {
   process.exit(1);
 }
 
-const badConclusions = new Set([
-  "failure",
-  "cancelled",
-  "timed_out",
-  "action_required",
-  "startup_failure",
-  "stale",
-  "neutralized",
-]);
-
 function usage() {
   console.error([
     "Usage:",
@@ -126,22 +116,21 @@ async function checkRepo(repo, refOrSha, label) {
   const sha = await resolveCommitSha(repo, refOrSha);
   const display = label || repo;
 
-  const combined = await api(`/repos/${repo}/commits/${sha}/status`);
-  if (combined.state !== "success") {
-    throw new Error(`${display}@${sha.slice(0, 12)} has combined status '${combined.state}', expected 'success'.`);
+  const runs = await api(`/repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`);
+  const workflowRuns = runs.workflow_runs || [];
+  if (workflowRuns.length === 0) {
+    throw new Error(`${display}@${sha.slice(0, 12)} has no visible Actions workflow runs.`);
   }
 
-  const runs = await api(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`);
-  const broken = (runs.check_runs || []).filter((run) => {
-    const conclusion = (run.conclusion || "").toLowerCase();
-    return run.status !== "completed" || badConclusions.has(conclusion);
+  const broken = workflowRuns.filter((run) => {
+    return run.status !== "completed" || run.conclusion !== "success";
   });
 
   if (broken.length > 0) {
     const details = broken
-      .map((run) => `${run.name || run.app?.slug || "check"}:${run.status}/${run.conclusion || "unknown"}`)
+      .map((run) => `${run.name || run.workflow_id || "workflow"}:${run.status}/${run.conclusion || "unknown"}`)
       .join(", ");
-    throw new Error(`${display}@${sha.slice(0, 12)} has failing check runs: ${details}`);
+    throw new Error(`${display}@${sha.slice(0, 12)} has non-green workflow runs: ${details}`);
   }
 
   console.log(`${display}@${sha.slice(0, 12)} is green.`);
