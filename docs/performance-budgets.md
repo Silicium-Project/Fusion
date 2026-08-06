@@ -57,5 +57,5 @@ Run a platform-specific profile:
 
 ## CI Usage
 
-Workflow `tests.yml` runs budget checks with `--all --strict`, uploads JSON metrics,
-and prints a summary to the job report.
+Workflow `ci.yml` runs budget checks through the canonical Network CI entry
+point, using the reusable lane workflows underneath.

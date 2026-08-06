@@ -1,12 +1,6 @@
 name: EntryPoint Tests
 
 on:
-  push:
-    branches:
-      - main
-      - "issue/**"
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       publish_pages:

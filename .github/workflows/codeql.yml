@@ -1,13 +1,8 @@
 name: CodeQL - Code Quality
 
 on:
-  push:
-    branches:
-      - main
-      - "issue/**"
-  pull_request:
-    branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

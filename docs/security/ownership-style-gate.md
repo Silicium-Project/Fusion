@@ -10,7 +10,7 @@ The rule blocks:
 
 ## CI Gate
 
-In CI (`.github/workflows/tests.yml`), the gate runs on changed files only:
+In CI (`.github/workflows/ci.yml`), the gate runs on changed files only:
 
 ```bash
 python tools/style_check.py \

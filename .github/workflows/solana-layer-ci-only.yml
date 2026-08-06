@@ -1,21 +1,8 @@
 name: Solana Layer CI
 
 on:
-  push:
-    branches:
-      - main
-      - dev
-    paths:
-      - "solana-layer/**"
-      - ".github/workflows/solana-layer-ci-only.yml"
-  pull_request:
-    branches:
-      - main
-      - dev
-    paths:
-      - "solana-layer/**"
-      - ".github/workflows/solana-layer-ci-only.yml"
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   anchor-build-and-test:

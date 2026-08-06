@@ -1,0 +1,28 @@
+name: Network CI
+
+on:
+  push:
+    branches:
+      - main
+      - "issue/**"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  codeql:
+    uses: ./.github/workflows/codeql.yml
+    secrets: inherit
+
+  p2p-node:
+    uses: ./.github/workflows/p2p-node.yml
+    secrets: inherit
+
+  solana-layer:
+    uses: ./.github/workflows/solana-layer-ci-only.yml
+    secrets: inherit
+
+  tests:
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit

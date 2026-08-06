@@ -1,23 +1,8 @@
 name: P2P Node CI
 
 on:
-  push:
-    branches:
-      - main
-      - "issue/**"
-    paths:
-      - "networked/p2p_node/**"
-      - "networked/silicium_node_core/**"
-      - ".github/workflows/p2p-node.yml"
-      - "infra/bootstrap/**"
-  pull_request:
-    branches: [main]
-    paths:
-      - "networked/p2p_node/**"
-      - "networked/silicium_node_core/**"
-      - ".github/workflows/p2p-node.yml"
-      - "infra/bootstrap/**"
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
