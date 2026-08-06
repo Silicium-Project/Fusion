@@ -70,30 +70,13 @@ jobs:
         with:
           workspaces: apps/silicium-node/src-tauri
 
-      - name: Install app dependencies
-        working-directory: apps/silicium-node
-        run: npm ci
-
       - name: Test and build Linux bundles
-        working-directory: apps/silicium-node
+        shell: bash
         env:
           SILICIUM_RELEASE_CHANNEL: dev
           SILICIUM_RELEASE_BUILD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          export SILICIUM_RELEASE_VERSION="$(node -p "require('./package.json').version")"
-          npm run build
-          # npm run prepare:runtime:linux # OBSOLETE: Replaced by native Rust build below
-          
-          echo "Building p2p_node and compute_daemon..."
-          cargo build --release --manifest-path ../../Network/networked/p2p_node/Cargo.toml
-          cargo build --release --manifest-path ../../Network/networked/compute_daemon/Cargo.toml
-          
-          mkdir -p src-tauri/resources/runtime/bin
-          cp ../../Network/networked/p2p_node/target/release/p2p_node src-tauri/resources/runtime/bin/
-          cp ../../Network/networked/compute_daemon/target/release/compute_daemon src-tauri/resources/runtime/bin/
-          
-          cargo test --manifest-path src-tauri/Cargo.toml
-          npx tauri build --bundles deb,appimage
+          bash "$GITHUB_WORKSPACE/deploy/ci/build-linux-client.sh" "$GITHUB_WORKSPACE"
 
       - name: Upload Linux bundles
         uses: actions/upload-artifact@v4

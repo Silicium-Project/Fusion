@@ -13,16 +13,43 @@ jobs:
   test-and-build:
     needs: [submodule-ci-gate]
     runs-on: [self-hosted, fusion-linux]
-    defaults:
-      run:
-        working-directory: apps/silicium-node
     steps:
-      - uses: actions/checkout@v4
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Check out release sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Sync declared submodules
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config --global --get-regexp '^url\..*x-access-token.*github\.com.*\.insteadof$' |
+            while read -r key _; do git config --global --unset-all "$key" || true; done || true
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git submodule sync -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/silicium-node/package-lock.json
-      - run: npm ci
-      - run: npm test
-      - run: npm run build
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.4'
+      - name: Run canonical web stack validation
+        shell: bash
+        run: bash deploy/ci/validate-web-stack.sh "$GITHUB_WORKSPACE"

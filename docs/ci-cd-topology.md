@@ -66,3 +66,35 @@ same operational plane.
   the target SHA is also gated by CI.
 - Keep the workflow surface small: one canonical deploy path, one canonical
   rollback path, one canonical mirror path.
+
+## Workflow inventory
+
+### Fusion root
+
+- `sync-submodules.yml`: canonical scheduler for publishing exact gitlinks.
+- `submodule-ci-gate.yml`: reusable hard gate for `BackEnd`, `FrontEnd`, and
+  `Network` `main` health.
+- `deploy-vps.yml`: canonical production deploy and VPS validation path.
+- `rollback-vps.yml`: manual recovery path only.
+- `linux-client.yml`: thin Linux client validation/build lane; keep it aligned
+  with `deploy/ci/build-linux-client.sh`.
+- `node-gui-quality.yml`: thin web/backend quality lane; keep it aligned with
+  `deploy/ci/validate-web-stack.sh`.
+- `mirror-fusion.yml`: external mirror lane; keep only if the Epitech mirror is
+  still required operationally.
+
+### Submodules
+
+- `FrontEnd/.github/workflows/quality.yml`: frontend-only quality lane, now on
+  the VPS runner.
+- `Network/.github/workflows/*`: P2P, Solana, code quality, release, and test
+  lanes; these are still split and should be consolidated next.
+
+### Immediate cleanup target
+
+The next simplification should remove the remaining duplication between:
+
+- `deploy-vps.yml` validation jobs;
+- `linux-client.yml`;
+- `node-gui-quality.yml`;
+- the split `Network` workflow set.

@@ -81,24 +81,9 @@ jobs:
         with:
           go-version: '1.22.4'
 
-      - name: Validate FrontEnd
-        working-directory: FrontEnd
-        run: |
-          npm ci
-          npm run test
-          npm run build
-
-      - name: Validate siliciuim-node
-        working-directory: apps/silicium-node
-        run: |
-          npm ci
-          npm run test
-          npm run build
-
-      - name: Validate BackEnd
-        working-directory: BackEnd
-        run: |
-          go test ./...
+      - name: Validate web stack
+        shell: bash
+        run: bash deploy/ci/validate-web-stack.sh "$GITHUB_WORKSPACE"
 
   build-desktop:
     needs: [validate-monorepo]
@@ -325,17 +310,14 @@ jobs:
           workspaces: apps/silicium-node/src-tauri
 
       - name: Build Linux development bundles
+        shell: bash
         working-directory: apps/silicium-node
         env:
           SILICIUM_RELEASE_CHANNEL: dev
           SILICIUM_RELEASE_BUILD: ${{ github.sha }}
         run: |
-          export SILICIUM_RELEASE_VERSION="$(node -p "require('./package.json').version")"
-          npm ci
-          npm run build
-          npm run prepare:runtime:linux
-          cargo test --manifest-path src-tauri/Cargo.toml
-          npx tauri build --bundles deb
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/deploy/ci/build-linux-client.sh" "$GITHUB_WORKSPACE"
           install -d ci-artifacts
           cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux-dev.deb
           sha256sum ci-artifacts/*
