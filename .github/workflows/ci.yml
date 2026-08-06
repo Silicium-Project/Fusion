@@ -16,6 +16,9 @@ jobs:
     secrets: inherit
 
   p2p-node:
+    permissions:
+      contents: read
+      packages: write
     uses: ./.github/workflows/p2p-node.yml
     secrets: inherit
 
