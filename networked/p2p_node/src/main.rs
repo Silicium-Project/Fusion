@@ -95,7 +95,9 @@ mod tests {
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().expect("env test lock")
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env test lock")
     }
 
     #[test]
@@ -104,8 +106,16 @@ mod tests {
             "/ip4/127.0.0.1/tcp/4001,not-a-multiaddr,/ip4/127.0.0.1/udp/4002/quic-v1",
         );
         assert_eq!(peers.len(), 2);
-        assert!(peers.iter().any(|addr| addr.to_string() == "/ip4/127.0.0.1/tcp/4001"));
-        assert!(peers.iter().any(|addr| addr.to_string() == "/ip4/127.0.0.1/udp/4002/quic-v1"));
+        assert!(
+            peers
+                .iter()
+                .any(|addr| addr.to_string() == "/ip4/127.0.0.1/tcp/4001")
+        );
+        assert!(
+            peers
+                .iter()
+                .any(|addr| addr.to_string() == "/ip4/127.0.0.1/udp/4002/quic-v1")
+        );
     }
 
     #[test]
@@ -147,9 +157,7 @@ mod tests {
         assert!(read_enable_quic_listener_from_env());
 
         match original {
-            Some(value) => unsafe {
-                std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", value)
-            },
+            Some(value) => unsafe { std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", value) },
             None => unsafe { std::env::remove_var("SILICIUM_ENABLE_QUIC_LISTENER") },
         }
     }
@@ -532,10 +540,8 @@ fn merge_bootstrap_peers(
 impl NodeConfig {
     fn from_env_and_args() -> Self {
         let overrides = parse_node_cli_args(env::args().skip(1));
-        let bootstrap_peers = merge_bootstrap_peers(
-            read_bootstrap_peers_from_env(),
-            overrides.bootstrap_peers,
-        );
+        let bootstrap_peers =
+            merge_bootstrap_peers(read_bootstrap_peers_from_env(), overrides.bootstrap_peers);
 
         Self {
             bootstrap_peers,

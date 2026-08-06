@@ -21,7 +21,7 @@ log() {
 }
 
 pick_free_ports() {
-  python3 - <<'PY'
+  python - <<'PY'
 from __future__ import annotations
 
 import socket
@@ -112,7 +112,7 @@ for service in orchestrator backend mcp worker-compute-a worker-compute-b worker
 done
 
 log "Submitting tasks through web and RPC"
-python3 "$ROOT/tools/e2e_scenario.py" \
+python "$ROOT/tools/e2e_scenario.py" \
   --web-url "http://127.0.0.1:${E2E_MCP_HOST_PORT}/tools" \
   --rpc-url "tcp://127.0.0.1:${E2E_RPC_HOST_PORT}" \
   --data-dir "$E2E_EXPORT_DIR/mcp" \
@@ -123,7 +123,7 @@ python3 "$ROOT/tools/e2e_scenario.py" \
   --report "$E2E_EXPORT_DIR/validation.json"
 
 log "Waiting for task results"
-python3 - <<'PY'
+python - <<'PY'
 from __future__ import annotations
 
 import json
