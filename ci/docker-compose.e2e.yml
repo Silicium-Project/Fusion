@@ -31,7 +31,7 @@ services:
       - ../:/workspace:ro
       - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
     ports:
-      - "127.0.0.1:46100:46100"
+      - "127.0.0.1:${E2E_ORCHESTRATOR_HOST_PORT:-46100}:46100"
     networks:
       e2e:
         aliases:
@@ -80,9 +80,9 @@ services:
       - ../:/workspace:ro
       - ${E2E_EXPORT_DIR:-/tmp/silicium-e2e}:/state
     ports:
-      - "127.0.0.1:9765:9765"
-      - "127.0.0.1:9770:9770"
-      - "127.0.0.1:9771:9771"
+      - "127.0.0.1:${E2E_MCP_HOST_PORT:-9765}:9765"
+      - "127.0.0.1:${E2E_RPC_HOST_PORT:-9770}:9770"
+      - "127.0.0.1:${E2E_RPC_EVENTS_HOST_PORT:-9771}:9771"
     networks:
       - e2e
 
@@ -168,4 +168,4 @@ services:
 
 networks:
   e2e:
-    name: silicium-e2e
+    name: ${E2E_COMPOSE_NETWORK:-silicium-e2e}

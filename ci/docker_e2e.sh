@@ -20,6 +20,22 @@ log() {
   printf '==> %s\n' "$*"
 }
 
+pick_free_ports() {
+  python3 - <<'PY'
+from __future__ import annotations
+
+import socket
+
+ports: list[str] = []
+for _ in range(4):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    ports.append(str(sock.getsockname()[1]))
+    sock.close()
+print(" ".join(ports))
+PY
+}
+
 cleanup() {
   local status=$?
   set +e
@@ -56,27 +72,39 @@ E2E_EXPORT_DIR="$(mktemp -d -t silicium-e2e-XXXXXX)"
 mkdir -p "$E2E_EXPORT_DIR"
 TASK_PREFIX="docker-$(date -u +%Y%m%d%H%M%S)-$$"
 export E2E_TASK_PREFIX="$TASK_PREFIX"
+export COMPOSE_PROJECT_NAME="silicium-e2e-${TASK_PREFIX}"
+export E2E_COMPOSE_NETWORK="silicium-e2e-${TASK_PREFIX}"
+
+read -r E2E_ORCHESTRATOR_HOST_PORT E2E_MCP_HOST_PORT E2E_RPC_HOST_PORT E2E_RPC_EVENTS_HOST_PORT < <(pick_free_ports)
+export E2E_ORCHESTRATOR_HOST_PORT
+export E2E_MCP_HOST_PORT
+export E2E_RPC_HOST_PORT
+export E2E_RPC_EVENTS_HOST_PORT
+
+log "Using compose project ${COMPOSE_PROJECT_NAME}"
+log "Using compose network ${E2E_COMPOSE_NETWORK}"
+log "Host ports: orchestrator=${E2E_ORCHESTRATOR_HOST_PORT}, mcp=${E2E_MCP_HOST_PORT}, rpc=${E2E_RPC_HOST_PORT}, rpc-events=${E2E_RPC_EVENTS_HOST_PORT}"
 
 log "Starting E2E compose stack"
 docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
 
 log "Waiting for orchestrator health"
 for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:46100/health" >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${E2E_ORCHESTRATOR_HOST_PORT}/health" >/dev/null; then
     break
   fi
   sleep 1
 done
-curl -fsS "http://127.0.0.1:46100/health" >/dev/null
+curl -fsS "http://127.0.0.1:${E2E_ORCHESTRATOR_HOST_PORT}/health" >/dev/null
 
 log "Waiting for MCP health"
 for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:9765/healthz" >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${E2E_MCP_HOST_PORT}/healthz" >/dev/null; then
     break
   fi
   sleep 1
 done
-curl -fsS "http://127.0.0.1:9765/healthz" >/dev/null
+curl -fsS "http://127.0.0.1:${E2E_MCP_HOST_PORT}/healthz" >/dev/null
 
 log "Checking python3 in runtime containers"
 for service in orchestrator backend mcp worker-compute-a worker-compute-b worker-verify-a worker-verify-b; do
@@ -85,8 +113,8 @@ done
 
 log "Submitting tasks through web and RPC"
 python3 "$ROOT/tools/e2e_scenario.py" \
-  --web-url "http://127.0.0.1:9765/tools" \
-  --rpc-url "tcp://127.0.0.1:9770" \
+  --web-url "http://127.0.0.1:${E2E_MCP_HOST_PORT}/tools" \
+  --rpc-url "tcp://127.0.0.1:${E2E_RPC_HOST_PORT}" \
   --data-dir "$E2E_EXPORT_DIR/mcp" \
   --manifest "$MANIFEST_FILE" \
   --task-prefix "$TASK_PREFIX" \
