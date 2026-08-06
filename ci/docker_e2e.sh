@@ -14,7 +14,21 @@ if [ -n "$PYTHON_BIN" ] && [ -x "$PYTHON_BIN/bin/python" ]; then
   PYTHON_BIN="$PYTHON_BIN/bin/python"
   export LD_LIBRARY_PATH="${pythonLocation}/lib:${LD_LIBRARY_PATH:-}"
 else
-  PYTHON_BIN="${PYTHON_BIN:-python}"
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+  else
+    PYTHON_BIN="python"
+  fi
+fi
+
+if command -v docker >/dev/null 2>&1; then
+  DOCKER_BIN="$(command -v docker)"
+elif command -v docker.exe >/dev/null 2>&1; then
+  DOCKER_BIN="$(command -v docker.exe)"
+else
+  DOCKER_BIN="docker"
 fi
 
 cd "$ROOT"
@@ -28,19 +42,17 @@ log() {
 }
 
 pick_free_ports() {
-  "$PYTHON_BIN" - <<'PY'
-from __future__ import annotations
-
-import socket
-
-ports: list[str] = []
+  if command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command '$ports = for ($i = 0; $i -lt 4; $i++) { $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0); $listener.Start(); $port = $listener.LocalEndpoint.Port; $listener.Stop(); $port }; $ports -join " "' | tr -d '\r'
+  else
+    "$PYTHON_BIN" -c 'import socket,sys; ports=[]; 
 for _ in range(4):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(("127.0.0.1", 0))
     ports.append(str(sock.getsockname()[1]))
     sock.close()
-print(" ".join(ports))
-PY
+sys.stdout.write(" ".join(ports))'
+  fi
 }
 
 cleanup() {
@@ -49,11 +61,11 @@ cleanup() {
   if [ -f "$COMPOSE_FILE" ]; then
     if [ "$status" -ne 0 ]; then
       echo "---- docker compose ps"
-      docker compose -f "$COMPOSE_FILE" ps || true
+      "$DOCKER_BIN" compose -f "$COMPOSE_FILE" ps || true
       echo "---- docker compose logs (tail 200)"
-      docker compose -f "$COMPOSE_FILE" logs --no-color --timestamps --tail 200 || true
+      "$DOCKER_BIN" compose -f "$COMPOSE_FILE" logs --no-color --timestamps --tail 200 || true
     fi
-    docker compose -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
+    "$DOCKER_BIN" compose -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
   fi
   if [ -n "${E2E_EXPORT_DIR:-}" ]; then
     rm -rf "$E2E_EXPORT_DIR" >/dev/null 2>&1 || true
@@ -63,7 +75,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-if ! docker info >/dev/null 2>&1; then
+if ! "$DOCKER_BIN" info >/dev/null 2>&1; then
   if [ "${SILICIUM_E2E_DOCKER_GROUP_REEXEC:-0}" != "1" ] && command -v sg >/dev/null 2>&1; then
     current_user="$(id -un)"
     docker_members="$(getent group docker 2>/dev/null | awk -F: '{print $4}' | tr ',' '\n' || true)"
@@ -93,29 +105,29 @@ log "Using compose network ${E2E_COMPOSE_NETWORK}"
 log "Host ports: orchestrator=${E2E_ORCHESTRATOR_HOST_PORT}, mcp=${E2E_MCP_HOST_PORT}, rpc=${E2E_RPC_HOST_PORT}, rpc-events=${E2E_RPC_EVENTS_HOST_PORT}"
 
 log "Starting E2E compose stack"
-docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+"$DOCKER_BIN" compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
 
 log "Waiting for orchestrator health"
 for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:${E2E_ORCHESTRATOR_HOST_PORT}/health" >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${E2E_ORCHESTRATOR_HOST_PORT}/health" >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
-curl -fsS "http://127.0.0.1:${E2E_ORCHESTRATOR_HOST_PORT}/health" >/dev/null
+curl -fsS "http://127.0.0.1:${E2E_ORCHESTRATOR_HOST_PORT}/health" >/dev/null 2>&1
 
 log "Waiting for MCP health"
 for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:${E2E_MCP_HOST_PORT}/healthz" >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${E2E_MCP_HOST_PORT}/healthz" >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
-curl -fsS "http://127.0.0.1:${E2E_MCP_HOST_PORT}/healthz" >/dev/null
+curl -fsS "http://127.0.0.1:${E2E_MCP_HOST_PORT}/healthz" >/dev/null 2>&1
 
 log "Checking python3 in runtime containers"
 for service in orchestrator backend mcp worker-compute-a worker-compute-b worker-verify-a worker-verify-b; do
-  docker compose -f "$COMPOSE_FILE" exec -T "$service" python3 --version >/dev/null
+  "$DOCKER_BIN" compose -f "$COMPOSE_FILE" exec -T "$service" python3 --version >/dev/null
 done
 
 log "Submitting tasks through web and RPC"
@@ -194,6 +206,6 @@ print(json.dumps({"validation": validation}, indent=2, sort_keys=True))
 PY
 
 log "E2E compose stack"
-docker compose -f "$COMPOSE_FILE" ps
+"$DOCKER_BIN" compose -f "$COMPOSE_FILE" ps
 
 log "E2E completed successfully"
