@@ -128,7 +128,12 @@ jobs:
           toolchain: "1.89.0"
 
       - name: Expose rustup cargo
-        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        run: |
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup override set 1.89.0
+          cargo --version
+          rustc --version
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -172,9 +177,13 @@ jobs:
           grep -n "solana_layer" Anchor.toml
 
       - name: Build Anchor program
+        env:
+          RUSTUP_TOOLCHAIN: "1.89.0"
         run: anchor build --provider.cluster localnet
 
       - name: Run Anchor tests on localnet
+        env:
+          RUSTUP_TOOLCHAIN: "1.89.0"
         run: anchor test --provider.cluster localnet
 
       - name: Upload IDL artifact
