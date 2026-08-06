@@ -156,6 +156,9 @@ Pour les prochaines itérations:
 
 1. Finir le remplacement de la glue Python par le coeur Rust quand le bloc `p2p_node` est a niveau.
 2. Stabiliser les tests E2E multi-workers, web et RPC avec budget de build explicite.
-3. Nettoyer la documentation qui pointe vers des chemins historiques.
-4. Purger ou ignorer strictement les caches et artefacts locaux.
-5. Ne garder dans le repo que les composants qui servent un flux deployable ou une transition encore assumee.
+3. Verrouiller le pipeline VPS unique: `sync-submodules` publie la composition,
+   `deploy-vps` porte build, test et deploy, et les workflows `build` / `test`
+   restent des gates reutilisables pour les PR.
+4. Nettoyer la documentation qui pointe vers des chemins historiques.
+5. Purger ou ignorer strictement les caches et artefacts locaux.
+6. Ne garder dans le repo que les composants qui servent un flux deployable ou une transition encore assumee.

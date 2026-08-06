@@ -11,15 +11,19 @@ canonique sont documentes dans:
 - [docs/ci-cd-topology.md](docs/ci-cd-topology.md)
 
 Le chemin operatoire visible dans GitHub est maintenant simple: `Build`,
-`Test`, puis `Deploy`, tous relies a l'execution VPS/self-hosted.
+`Test`, puis `Deploy`, tous relies a l'execution VPS/self-hosted. `Build` et
+`Test` restent des gates reutilisables pour les PR et les lancements manuels;
+`Deploy` porte la chaine complete sur `main` et enchaine les memes validations
+avant la publication sur le VPS.
 Le miroir externe vers le repo Epitech reste volontaire et explicite via
-`mirror-epitech.yml`, sans faire partie du chemin critique de livraison.
+`mirror-epitech.yml`, declenche apres un `Deploy` reussi, sans faire partie du
+chemin critique de livraison.
 
 Fusion conserve des SHA exacts afin que chaque build, rollback et deploiement soit
 reproductible. Le workflow `Sync submodule gitlinks` compare toutes les cinq
 minutes les branches declarees dans `.gitmodules`, publie une composition exacte
-sur `main`, puis declenche explicitement les pipelines CI/CD consommateurs. Le
-workflow `submodule-ci-gate` bloque aussi Fusion si le head `main` de l'un des
+sur `main`; le push `main` declenche alors le pipeline VPS canonique. Le workflow
+`submodule-ci-gate` bloque aussi Fusion si le head `main` de l'un des
 submodules `BackEnd`, `FrontEnd` ou `Network` est rouge, en attente ou incomplet;
 la composition ne peut donc pas avancer sur une branche sous-module deja cassee.
 Il ne faut pas remplacer ce mecanisme par un `git submodule update --remote`

@@ -49,17 +49,16 @@ same operational plane.
 ## Canonical flow
 
 1. `sync-submodules.yml` detects new `main` heads for `BackEnd`, `FrontEnd`,
-   and `Network`.
+   and `Network`, then publishes the pinned composition on `main`.
 2. `submodule-ci-gate.yml` fails immediately if any of those `main` heads is
    red, incomplete, or missing.
-3. `build.yml` produces the Linux release bundles on the VPS runner.
-4. `test.yml` validates the web stack, Network core, Docker E2E, and the P2P
-   smoke path on the VPS runner.
-5. `deploy-vps.yml` pulls the exact Fusion ref on the VPS, updates submodules,
-   rebuilds services, deploys, and runs post-deploy checks.
-6. `deploy/compose/e2e.sh` validates the real container path on the VPS.
-7. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
-   after the composition is published.
+3. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
+4. `deploy-vps.yml` is the canonical mainline path: it pulls the exact Fusion
+   ref on the VPS, updates submodules, builds the release payloads, runs the
+   full test suite, deploys, and runs post-deploy checks.
+5. `deploy/compose/e2e.sh` validates the real container path on the VPS.
+6. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
+   after a successful `Deploy` on `main`.
 
 ## Rules
 
@@ -75,12 +74,15 @@ same operational plane.
 
 ### Fusion root
 
-- `sync-submodules.yml`: canonical scheduler for publishing exact gitlinks.
+- `sync-submodules.yml`: canonical scheduler for publishing exact gitlinks and
+  dispatching the deploy pipeline once the composition is updated.
 - `submodule-ci-gate.yml`: reusable hard gate for `BackEnd`, `FrontEnd`, and
   `Network` `main` health.
-- `build.yml`: canonical Linux bundle build workflow.
-- `test.yml`: canonical web, Network core, Docker E2E, and P2P smoke workflow.
-- `deploy-vps.yml`: canonical production deploy and VPS validation path.
+- `build.yml`: reusable Linux bundle build gate for PRs and manual runs.
+- `test.yml`: reusable web, Network core, Docker E2E, and P2P smoke gate for
+  PRs and manual runs.
+- `deploy-vps.yml`: canonical production deploy and VPS validation path. It
+  also invokes the reusable build and test gates before publishing.
 - `rollback-vps.yml`: manual recovery path only.
 - `mirror-epitech.yml`: explicit external mirror path to the Epitech repo.
 
@@ -98,7 +100,8 @@ same operational plane.
 
 The next simplification should focus on the remaining duplication between:
 
-- `deploy-vps.yml` validation jobs;
+- `deploy-vps.yml` validation jobs and the reusable `build.yml`/`test.yml`
+  gates;
 - `Network/.github/workflows/ci.yml` and its reusable lane files;
 - the backend/frontend CI lanes and the Fusion-level gate if their checks can
   be collapsed further without losing signal.

@@ -44,7 +44,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
@@ -85,6 +85,11 @@ jobs:
         shell: bash
         run: bash deploy/ci/validate-web-stack.sh "$GITHUB_WORKSPACE"
 
+  tests:
+    needs: [submodule-ci-gate]
+    uses: ./.github/workflows/test.yml
+    secrets: inherit
+
   build-desktop:
     needs: [validate-monorepo]
     runs-on: [self-hosted, fusion-windows]
@@ -93,7 +98,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
@@ -264,7 +269,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
@@ -346,7 +351,7 @@ jobs:
             "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
 
   release-node:
-    needs: [validate-monorepo, build-desktop, build-linux]
+    needs: [validate-monorepo, build-desktop, build-linux, tests]
     runs-on: [self-hosted, fusion-linux]
     outputs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
@@ -389,7 +394,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy:
-    needs: [validate-monorepo, build-desktop, build-linux, release-node]
+    needs: [validate-monorepo, build-desktop, build-linux, tests, release-node]
     runs-on: [self-hosted, fusion-linux]
     env:
       DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
@@ -421,7 +426,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
