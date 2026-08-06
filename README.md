@@ -304,9 +304,9 @@ Badge (local) : ![Badge](docs/coverage/executor/badge.svg)
 
 ## CI
 
-Le workflow `Network CI` (fichier `.github/workflows/ci.yml`) orchestre les lanes de validation principales.
+Le workflow `Network CI` (fichier `.github/workflows/ci.yml`) orchestre directement les jobs de validation principaux.
 
-Les fichiers `tests.yml`, `p2p-node.yml`, `solana-layer-ci-only.yml`, `codeql.yml` et `release.yml` restent disponibles comme lanes reutilisables ou de publication, mais ne constituent pas le point d'entree principal de validation.
+Le seul workflow sépare restant est `release.yml`, reserve aux tags de publication. Il consomme `ci.yml` pour verifier l'etat avant creation de release.
 
 ---
 

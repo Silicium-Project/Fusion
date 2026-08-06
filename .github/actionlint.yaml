@@ -1,0 +1,6 @@
+self-hosted-runner:
+  labels:
+    - fusion-linux
+    - fusion-windows
+
+config-variables: null
