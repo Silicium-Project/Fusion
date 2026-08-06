@@ -5,7 +5,12 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  submodule-ci-gate:
+    uses: ./.github/workflows/submodule-ci-gate.yml
+    secrets: inherit
+
   mirror:
+    needs: [submodule-ci-gate]
     runs-on: [self-hosted, fusion-linux]
     permissions:
       contents: read

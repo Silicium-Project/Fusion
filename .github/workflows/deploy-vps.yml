@@ -32,7 +32,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  submodule-ci-gate:
+    uses: ./.github/workflows/submodule-ci-gate.yml
+    secrets: inherit
+
   validate-monorepo:
+    needs: [submodule-ci-gate]
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create GitHub App token

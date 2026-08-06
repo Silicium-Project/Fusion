@@ -1,0 +1,38 @@
+name: Submodule CI gate
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Check out Fusion metadata
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Require healthy submodule mains
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node .github/scripts/check-submodule-ci.mjs --all

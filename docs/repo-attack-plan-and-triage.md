@@ -81,6 +81,7 @@ Composants actifs:
 - `deploy`
 - `.github/workflows/deploy-vps.yml`
 - `.github/workflows/sync-submodules.yml`
+- `.github/workflows/submodule-ci-gate.yml`
 
 Composants en transition:
 
@@ -90,6 +91,8 @@ Composants en transition:
 Critere de fin:
 
 - le deploiement VPS produit une stack stable;
+- Fusion echoue explicitement si un seul submodule `main` a une CI rouge, en
+  attente ou incomplete;
 - les tests de bout en bout couvrent plusieurs workers et plusieurs tasks en parallele;
 - les builds longs sont budgetes explicitement dans CI.
 
@@ -141,6 +144,8 @@ Pour les prochaines itérations:
 - ne pas ajouter de nouveau fallback Python si un chemin Rust ou binaire existe deja;
 - ne pas considerer un benchmark valide si un seul worker a traite toute la charge;
 - ne pas faire evoluer les scripts de deploy sans verifier le trajet local + VPS;
+- ne pas laisser Fusion avancer si un submodule `main` est rouge, meme si les
+  autres sont verts;
 - ne pas fusionner une migration tant que le chemin de claim/dispatch/reconciliation n'est pas teste sur le vrai flux.
 
 ## 5. Ordre de travail recommande

@@ -6,7 +6,12 @@ on:
     branches: [main]
 
 jobs:
+  submodule-ci-gate:
+    uses: ./.github/workflows/submodule-ci-gate.yml
+    secrets: inherit
+
   test-and-build:
+    needs: [submodule-ci-gate]
     runs-on: [self-hosted, fusion-linux]
     defaults:
       run:

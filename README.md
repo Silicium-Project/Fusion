@@ -9,8 +9,11 @@ Le plan d'attaque fige et le tri actif/transition/vestige sont documentes dans [
 Fusion conserve des SHA exacts afin que chaque build, rollback et deploiement soit
 reproductible. Le workflow `Sync submodule gitlinks` compare toutes les cinq
 minutes les branches declarees dans `.gitmodules`, publie une composition exacte
-sur `main`, puis declenche explicitement les pipelines CI/CD consommateurs. Il
-ne faut pas remplacer ce mecanisme par un `git submodule update --remote`
+sur `main`, puis declenche explicitement les pipelines CI/CD consommateurs. Le
+workflow `submodule-ci-gate` bloque aussi Fusion si le head `main` de l'un des
+submodules `BackEnd`, `FrontEnd` ou `Network` est rouge, en attente ou incomplet;
+la composition ne peut donc pas avancer sur une branche sous-module deja cassee.
+Il ne faut pas remplacer ce mecanisme par un `git submodule update --remote`
 pendant le deploiement: le contenu deploye ne correspondrait alors plus au
 commit Fusion audite.
 

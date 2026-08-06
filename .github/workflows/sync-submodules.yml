@@ -15,7 +15,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  submodule-ci-gate:
+    uses: ./.github/workflows/submodule-ci-gate.yml
+    secrets: inherit
+
   sync:
+    needs: [submodule-ci-gate]
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create short-lived GitHub App token
@@ -26,7 +31,6 @@ jobs:
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
-          permission-contents: read
 
       - name: Check out the pinned composition
         uses: actions/checkout@v4
@@ -34,6 +38,11 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Sync declared submodules
         shell: bash
@@ -73,10 +82,15 @@ jobs:
               exit 1
             fi
             branch="main"
+            url="$(git config --file .gitmodules --get "submodule.${name}.url")"
+            repo="${url#https://github.com/}"
+            repo="${repo#git@github.com:}"
+            repo="${repo%.git}"
             old_sha="$(git rev-parse "origin/main:${path}")"
 
             git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" -C "$path" fetch --quiet origin "$branch"
             new_sha="$(git -C "$path" rev-parse FETCH_HEAD)"
+            node .github/scripts/check-submodule-ci.mjs --repo "$repo" --sha "$new_sha" --label "$path"
 
             if [[ "$old_sha" == "$new_sha" ]]; then
               continue
