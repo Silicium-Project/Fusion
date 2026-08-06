@@ -161,11 +161,10 @@ jobs:
           }
 
           # Events emitted with GITHUB_TOKEN do not recursively start workflows.
-          # Dispatch the consumers explicitly after the exact gitlinks reach main.
+          # Dispatch the canonical consumers explicitly after the exact gitlinks reach main.
+          dispatch_workflow build.yml
+          dispatch_workflow test.yml
           dispatch_workflow deploy-vps.yml
-          if [[ '${{ steps.resolve.outputs.network_changed }}' == 'true' ]]; then
-            dispatch_workflow linux-client.yml
-          fi
 
       - name: Report current composition
         if: steps.resolve.outputs.changed == '0'
