@@ -27,6 +27,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Expose rustup cargo
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Cache Cargo registry
         uses: actions/cache@v4
         with:

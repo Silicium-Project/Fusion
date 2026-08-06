@@ -60,23 +60,20 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install aarch64 cross toolchain
+      - name: Install cross
         if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            crossbuild-essential-arm64 \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            libc6-dev-arm64-cross
-          command -v aarch64-linux-gnu-gcc
-          aarch64-linux-gnu-gcc --version | head -n 1
+        run: rustup run stable cargo install cross --locked --force
 
       - name: Build target
         env:
-          CC_aarch64_unknown_linux_gnu: /usr/bin/aarch64-linux-gnu-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: /usr/bin/aarch64-linux-gnu-gcc
-        run: cargo build --release --manifest-path networked/p2p_node/Cargo.toml --target ${{ matrix.target }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          if [ "$TARGET" = "aarch64-unknown-linux-gnu" ]; then
+            cross build --release --manifest-path networked/p2p_node/Cargo.toml --target "$TARGET"
+          else
+            cargo build --release --manifest-path networked/p2p_node/Cargo.toml --target "$TARGET"
+          fi
 
   docker-image:
     runs-on: [self-hosted, fusion-linux]

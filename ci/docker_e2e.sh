@@ -9,6 +9,13 @@ E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-2400}"
 E2E_WAIT_S="${E2E_WAIT_S:-1200}"
 DOCKER_CLIENT_TIMEOUT="${DOCKER_CLIENT_TIMEOUT:-1200}"
 COMPOSE_HTTP_TIMEOUT="${COMPOSE_HTTP_TIMEOUT:-1200}"
+PYTHON_BIN="${pythonLocation:-}"
+if [ -n "$PYTHON_BIN" ] && [ -x "$PYTHON_BIN/bin/python" ]; then
+  PYTHON_BIN="$PYTHON_BIN/bin/python"
+  export LD_LIBRARY_PATH="${pythonLocation}/lib:${LD_LIBRARY_PATH:-}"
+else
+  PYTHON_BIN="${PYTHON_BIN:-python}"
+fi
 
 cd "$ROOT"
 
@@ -21,7 +28,7 @@ log() {
 }
 
 pick_free_ports() {
-  python - <<'PY'
+  "$PYTHON_BIN" - <<'PY'
 from __future__ import annotations
 
 import socket
@@ -112,7 +119,7 @@ for service in orchestrator backend mcp worker-compute-a worker-compute-b worker
 done
 
 log "Submitting tasks through web and RPC"
-python "$ROOT/tools/e2e_scenario.py" \
+"$PYTHON_BIN" "$ROOT/tools/e2e_scenario.py" \
   --web-url "http://127.0.0.1:${E2E_MCP_HOST_PORT}/tools" \
   --rpc-url "tcp://127.0.0.1:${E2E_RPC_HOST_PORT}" \
   --data-dir "$E2E_EXPORT_DIR/mcp" \
@@ -123,7 +130,7 @@ python "$ROOT/tools/e2e_scenario.py" \
   --report "$E2E_EXPORT_DIR/validation.json"
 
 log "Waiting for task results"
-python - <<'PY'
+"$PYTHON_BIN" - <<'PY'
 from __future__ import annotations
 
 import json
