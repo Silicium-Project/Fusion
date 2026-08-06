@@ -59,6 +59,11 @@ runner release, configures the service, and starts it on the VPS.
 It also adds the runner user to the `docker` group so compose-based CI jobs can
 reach the daemon socket.
 
+The first Fusion gate also provisions repo-scoped VPS runners for `BackEnd` and
+`FrontEnd` under `/opt/github-runner-backend` and `/opt/github-runner-frontend`.
+The publication token must therefore be able to create repository runner
+registration tokens for those two repositories.
+
 Copy and edit env files:
 
 ```bash

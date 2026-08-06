@@ -32,8 +32,40 @@ jobs:
         with:
           node-version: 22
 
+      - name: Ensure submodule runners are provisioned on the VPS
+        shell: bash
+        env:
+          GITHUB_RUNNER_BOOTSTRAP_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GITHUB_RUNNER_BOOTSTRAP_TOKEN:-}" ]]; then
+            echo "::error title=Missing secret::Configure SILICIUM_SYNC_PUSH_TOKEN to provision BackEnd and FrontEnd VPS runners."
+            exit 1
+          fi
+          sudo -E bash deploy/linux/bootstrap-submodule-runners.sh
+
       - name: Require healthy submodule mains
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
-        run: node .github/scripts/check-submodule-ci.mjs --all
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 2700 ))
+          report="$RUNNER_TEMP/submodule-ci-gate.log"
+          while true; do
+            if node .github/scripts/check-submodule-ci.mjs --all >"$report" 2>&1; then
+              cat "$report"
+              exit 0
+            fi
+            cat "$report"
+            if grep -Eqi 'failure|cancelled|timed_out|action_required|stale' "$report"; then
+              echo "A submodule main has a completed non-successful workflow." >&2
+              exit 1
+            fi
+            if [[ "$(date +%s)" -ge "$deadline" ]]; then
+              echo "Timed out waiting for submodule CI to complete." >&2
+              exit 1
+            fi
+            echo "Submodule CI is still queued or running; retrying in 30 seconds."
+            sleep 30
+          done

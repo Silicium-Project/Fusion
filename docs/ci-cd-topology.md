@@ -51,7 +51,9 @@ same operational plane.
 1. `sync-submodules.yml` detects new `main` heads for `BackEnd`, `FrontEnd`,
    and `Network`, then publishes the pinned composition on `main`.
 2. `submodule-ci-gate.yml` fails immediately if any of those `main` heads is
-   red, incomplete, or missing.
+   red, incomplete, or missing. On the VPS it also provisions the dedicated
+   `BackEnd` and `FrontEnd` self-hosted runners and waits for their long CI
+   jobs to finish before evaluating the gate.
 3. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
 4. `deploy-vps.yml` is the canonical mainline path: it pulls the exact Fusion
    ref on the VPS, updates submodules, builds the release payloads, runs the
@@ -77,7 +79,7 @@ same operational plane.
 - `sync-submodules.yml`: canonical scheduler for publishing exact gitlinks and
   dispatching the deploy pipeline once the composition is updated.
 - `submodule-ci-gate.yml`: reusable hard gate for `BackEnd`, `FrontEnd`, and
-  `Network` `main` health.
+  `Network` `main` health, including VPS runner bootstrap.
 - `build.yml`: reusable Linux bundle build gate for PRs and manual runs.
 - `test.yml`: reusable web, Network core, Docker E2E, and P2P smoke gate for
   PRs and manual runs.
