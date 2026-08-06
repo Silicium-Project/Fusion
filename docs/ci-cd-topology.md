@@ -58,6 +58,8 @@ same operational plane.
 5. `deploy-vps.yml` pulls the exact Fusion ref on the VPS, updates submodules,
    rebuilds services, deploys, and runs post-deploy checks.
 6. `deploy/compose/e2e.sh` validates the real container path on the VPS.
+7. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
+   after the composition is published.
 
 ## Rules
 
@@ -67,7 +69,7 @@ same operational plane.
 - Do not use `git submodule update --remote` in production deploy steps unless
   the target SHA is also gated by CI.
 - Keep the workflow surface small: one canonical deploy path, one canonical
-  rollback path.
+  rollback path, plus one explicit external mirror path if it is still needed.
 
 ## Workflow inventory
 
@@ -80,6 +82,7 @@ same operational plane.
 - `test.yml`: canonical web, Network core, Docker E2E, and P2P smoke workflow.
 - `deploy-vps.yml`: canonical production deploy and VPS validation path.
 - `rollback-vps.yml`: manual recovery path only.
+- `mirror-epitech.yml`: explicit external mirror path to the Epitech repo.
 
 ### Submodules
 
