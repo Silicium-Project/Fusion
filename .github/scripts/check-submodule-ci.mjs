@@ -122,7 +122,19 @@ async function checkRepo(repo, refOrSha, label) {
     throw new Error(`${display}@${sha.slice(0, 12)} has no visible Actions workflow runs.`);
   }
 
-  const broken = workflowRuns.filter((run) => {
+  // Multiple dispatches for one SHA are common while recovering a runner.
+  // Evaluate only the newest attempt of each workflow; an older cancelled
+  // attempt must not mask a newer successful attempt.
+  const latestByWorkflow = new Map();
+  for (const run of workflowRuns) {
+    const key = String(run.workflow_id || run.name || run.path || "workflow");
+    const previous = latestByWorkflow.get(key);
+    if (!previous || Number(run.run_number || 0) > Number(previous.run_number || 0)) {
+      latestByWorkflow.set(key, run);
+    }
+  }
+
+  const broken = [...latestByWorkflow.values()].filter((run) => {
     return run.status !== "completed" || run.conclusion !== "success";
   });
 
