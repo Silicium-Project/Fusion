@@ -46,7 +46,7 @@ jobs:
           done || true
           git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git submodule sync -- BackEnd FrontEnd Network
-          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
 
       - name: Resolve configured submodule branches
         id: resolve
@@ -68,6 +68,11 @@ jobs:
             name="${name%.path}"
             branch="$(git config --file .gitmodules --get "submodule.${name}.branch" || true)"
             branch="${branch:-main}"
+            if [[ "$branch" != "main" ]]; then
+              echo "::error title=Unsupported submodule branch::${name} is configured on '${branch}', expected 'main'."
+              exit 1
+            fi
+            branch="main"
             old_sha="$(git rev-parse "origin/main:${path}")"
 
             git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" -C "$path" fetch --quiet origin "$branch"

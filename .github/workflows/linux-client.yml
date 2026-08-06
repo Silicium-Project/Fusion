@@ -41,7 +41,7 @@ jobs:
             while read -r key _; do git config --global --unset-all "$key" || true; done || true
           git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git submodule sync -- BackEnd FrontEnd Network
-          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
 
       - name: Install Linux desktop prerequisites
         run: |
