@@ -18,7 +18,6 @@ jobs:
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
-          permission-actions: read
           permission-contents: read
 
       - name: Check out Fusion metadata
@@ -36,5 +35,5 @@ jobs:
       - name: Require healthy submodule mains
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
         run: node .github/scripts/check-submodule-ci.mjs --all
