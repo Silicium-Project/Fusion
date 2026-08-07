@@ -358,6 +358,8 @@ jobs:
 
       - name: Run Docker e2e stack
         if: matrix.job == 'docker-e2e'
+        env:
+          SILICIUM_E2E_DOCKER_GROUP_REEXEC: "1"
         run: bash ./ci/docker_e2e.sh
 
       - name: Run Kademlia smoke test
