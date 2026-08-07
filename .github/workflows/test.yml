@@ -103,7 +103,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          CORE_CHECK_MODE=full CORE_CHECK_SCOPE=all Network/ci/core_check.sh
+          CORE_CHECK_MODE=full CORE_CHECK_SCOPE=all bash Network/ci/core_check.sh
 
   network-e2e:
     needs: [submodule-ci-gate]
