@@ -234,10 +234,10 @@ impl TaskBook {
         event: TaskEvent,
     ) -> Result<String, TaskBookError> {
         let event_hash = event.event_hash();
-        if let Some(existing) = self.events.get(&event_hash) {
-            if existing == &event {
-                return Ok(event_hash);
-            }
+        if let Some(existing) = self.events.get(&event_hash)
+            && existing == &event
+        {
+            return Ok(event_hash);
         }
         let mut next = self.clone();
         let event_hash = next.append(event.clone())?;
