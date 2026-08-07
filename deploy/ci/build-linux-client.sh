@@ -28,5 +28,5 @@ cp ../../Network/networked/p2p_node/target/release/p2p_node src-tauri/resources/
 cp ../../Network/networked/compute_daemon/target/release/compute_daemon src-tauri/resources/runtime/bin/
 
 cargo test --manifest-path src-tauri/Cargo.toml
-npx tauri build --bundles deb,appimage
+npx tauri build --bundles deb
 popd >/dev/null
