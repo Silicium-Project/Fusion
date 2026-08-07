@@ -38,6 +38,10 @@ CERT_PATH_HOST="${PROXY_TLS_CERT_PATH_HOST:-$CERT_ROOT/tls.crt}"
 KEY_PATH_HOST="${PROXY_TLS_KEY_PATH_HOST:-$CERT_ROOT/tls.key}"
 CERT_PATH_CONTAINER="${PROXY_TLS_CERT_PATH:-/etc/caddy/certs/tls.crt}"
 KEY_PATH_CONTAINER="${PROXY_TLS_KEY_PATH:-/etc/caddy/certs/tls.key}"
+if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* ]]; then
+  [[ "$CERT_PATH_CONTAINER" == /* ]] && CERT_PATH_CONTAINER="/$CERT_PATH_CONTAINER"
+  [[ "$KEY_PATH_CONTAINER" == /* ]] && KEY_PATH_CONTAINER="/$KEY_PATH_CONTAINER"
+fi
 SITE_ADDRESS="${PROXY_SITE_ADDRESS:-:443}"
 HOST_HTTPS_PORT="${PROXY_HTTPS_PORT:-9443}"
 HOST_HTTP_PORT="${PROXY_HTTP_PORT:-9080}"
@@ -76,11 +80,15 @@ ensure_self_signed() {
   mkdir -p "$(dirname "$CERT_PATH_HOST")"
   old_umask="$(umask)"
   umask 077
-  openssl req -x509 -nodes -newkey rsa:2048 \
-    -days "$SELF_SIGN_DAYS" \
-    -keyout "$KEY_PATH_HOST" \
-    -out "$CERT_PATH_HOST" \
-    -subj "/CN=$SELF_SIGN_CN"
+  # Prevent MSYS/Git Bash from rewriting the OpenSSL subject as a Windows path.
+  (
+    cd "$(dirname "$CERT_PATH_HOST")"
+    MSYS_NO_PATHCONV=1 openssl req -x509 -nodes -newkey rsa:2048 \
+      -days "$SELF_SIGN_DAYS" \
+      -keyout "$(basename "$KEY_PATH_HOST")" \
+      -out "$(basename "$CERT_PATH_HOST")" \
+      -subj "/CN=$SELF_SIGN_CN"
+  )
   umask "$old_umask"
   chmod 600 "$KEY_PATH_HOST" 2>/dev/null || true
 }
