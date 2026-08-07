@@ -1,5 +1,6 @@
 #!/bin/sh
-set -euo pipefail
+# Caddy's Alpine image uses BusyBox ash, which has no pipefail option.
+set -eu
 
 PROXY_SITE_ADDRESS="${PROXY_SITE_ADDRESS:-:443}"
 PROXY_UPSTREAM_HOST="${PROXY_UPSTREAM_HOST:-silicium-localnet}"
