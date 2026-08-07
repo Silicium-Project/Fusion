@@ -89,14 +89,18 @@ elif ! "$DOCKER_BIN" info >/dev/null 2>&1; then
   exit 1
 fi
 
-E2E_EXPORT_DIR="$(mktemp -d -t silicium-e2e-XXXXXX)"
+log "Preparing E2E export directory"
+E2E_EXPORT_DIR="$(mktemp -d "${RUNNER_TEMP:-/tmp}/silicium-e2e-XXXXXX")"
 mkdir -p "$E2E_EXPORT_DIR"
+log "E2E export directory: $E2E_EXPORT_DIR"
 TASK_PREFIX="docker-$(date -u +%Y%m%d%H%M%S)-$$"
 export E2E_TASK_PREFIX="$TASK_PREFIX"
 export COMPOSE_PROJECT_NAME="silicium-e2e-${TASK_PREFIX}"
 export E2E_COMPOSE_NETWORK="silicium-e2e-${TASK_PREFIX}"
 
-read -r E2E_ORCHESTRATOR_HOST_PORT E2E_MCP_HOST_PORT E2E_RPC_HOST_PORT E2E_RPC_EVENTS_HOST_PORT < <(pick_free_ports)
+log "Picking E2E host ports"
+E2E_HOST_PORTS="$(pick_free_ports)"
+read -r E2E_ORCHESTRATOR_HOST_PORT E2E_MCP_HOST_PORT E2E_RPC_HOST_PORT E2E_RPC_EVENTS_HOST_PORT <<<"$E2E_HOST_PORTS"
 export E2E_ORCHESTRATOR_HOST_PORT
 export E2E_MCP_HOST_PORT
 export E2E_RPC_HOST_PORT

@@ -81,12 +81,15 @@ ensure_self_signed() {
   old_umask="$(umask)"
   umask 077
   # Prevent MSYS/Git Bash from rewriting the OpenSSL subject as a Windows path.
+  cert_dir="$(dirname "$CERT_PATH_HOST")" # i18n:ignore
+  key_name="$(basename "$KEY_PATH_HOST")" # i18n:ignore
+  cert_name="$(basename "$CERT_PATH_HOST")" # i18n:ignore
   (
-    cd "$(dirname "$CERT_PATH_HOST")"
+    cd "$cert_dir"
     MSYS_NO_PATHCONV=1 openssl req -x509 -nodes -newkey rsa:2048 \
       -days "$SELF_SIGN_DAYS" \
-      -keyout "$(basename "$KEY_PATH_HOST")" \
-      -out "$(basename "$CERT_PATH_HOST")" \
+      -keyout "$key_name" \
+      -out "$cert_name" \
       -subj "/CN=$SELF_SIGN_CN"
   )
   umask "$old_umask"
