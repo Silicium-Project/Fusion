@@ -19,7 +19,12 @@ if [[ "$SMOKE_MODE" == "container" ]]; then
 fi
 
 cleanup() {
+  local status=$?
+  if [[ "$status" -ne 0 ]]; then
+    docker compose "${COMPOSE_ARGS[@]}" "${PROFILE_ARGS[@]}" logs --no-color --timestamps silicium-proxy proxy-smoke-target || true
+  fi
   docker compose "${COMPOSE_ARGS[@]}" "${PROFILE_ARGS[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
+  exit "$status"
 }
 trap cleanup EXIT
 

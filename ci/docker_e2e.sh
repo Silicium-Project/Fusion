@@ -105,7 +105,11 @@ log "Using compose network ${E2E_COMPOSE_NETWORK}"
 log "Host ports: orchestrator=${E2E_ORCHESTRATOR_HOST_PORT}, mcp=${E2E_MCP_HOST_PORT}, rpc=${E2E_RPC_HOST_PORT}, rpc-events=${E2E_RPC_EVENTS_HOST_PORT}"
 
 log "Starting E2E compose stack"
-"$DOCKER_BIN" compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
+if ! "$DOCKER_BIN" compose -f "$COMPOSE_FILE" up -d --build --remove-orphans; then
+  log "E2E compose config"
+  "$DOCKER_BIN" compose -f "$COMPOSE_FILE" config || true
+  exit 1
+fi
 
 log "Waiting for orchestrator health"
 for _ in $(seq 1 60); do
