@@ -152,6 +152,11 @@ test: build-cpp-test-image
 		set -euo pipefail; \
 		$(CPP_TEST_CCACHE_WARMUP) \
 		cd /workspace && make -C executor JOBS=$(CPP_TEST_JOBS); \
+		# The worker tests invoke /workspace/splitter/splitter. Rebuild it in this \
+		# image so its libc/libstdc++ requirements match the test runner. \
+		cd /workspace/splitter; \
+		make clean; \
+		make all JOBS=$(CPP_TEST_JOBS); \
 		cd worker; \
 		if [ "$(CPP_TEST_FORCE_REBUILD)" = "1" ]; then \
 			make test-clean; \
@@ -160,7 +165,9 @@ test: build-cpp-test-image
 		fi; \
 		env TEST_CXX="$(CPP_TEST_COMPILER)" make $(TEST_BIN) JOBS=$(CPP_TEST_JOBS); \
 		LD_LIBRARY_PATH=/workspace/executor $(TEST_BIN); \
-		cd /workspace && chown -R $$HOST_UID:$$HOST_GID worker/build'
+		cd /workspace && \
+		chown -R $$HOST_UID:$$HOST_GID splitter/build worker/build && \
+		chown $$HOST_UID:$$HOST_GID splitter/splitter'
 endif
 
 build-cpp-test-image:
