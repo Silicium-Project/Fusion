@@ -157,7 +157,7 @@ test: build-cpp-test-image
 		cd /workspace/splitter; \
 		make clean; \
 		make all JOBS=$(CPP_TEST_JOBS); \
-		cd worker; \
+		cd /workspace/worker; \
 		if [ "$(CPP_TEST_FORCE_REBUILD)" = "1" ]; then \
 			make test-clean; \
 		else \
