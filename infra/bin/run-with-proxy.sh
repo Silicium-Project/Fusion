@@ -99,15 +99,20 @@ ensure_self_signed() {
 ensure_self_signed
 
 sil_i18n_echo "infra.proxy.start_service" "$SERVICE" "${PROFILE_ARGS[*]}"
-PROXY_UPSTREAM_HOST="$UPSTREAM_HOST" \
-PROXY_UPSTREAM_PORT="$UPSTREAM_PORT" \
-PROXY_TLS_MODE="$TLS_MODE" \
-PROXY_TLS_EMAIL="$TLS_EMAIL" \
-PROXY_TLS_CERT_PATH="$CERT_PATH_CONTAINER" \
-PROXY_TLS_KEY_PATH="$KEY_PATH_CONTAINER" \
-PROXY_SITE_ADDRESS="$SITE_ADDRESS" \
-PROXY_HTTPS_PORT="$HOST_HTTPS_PORT" \
-PROXY_HTTP_PORT="$HOST_HTTP_PORT" \
+PROXY_ENV_FILE="$(mktemp)" # i18n:ignore
+trap 'rm -f "$PROXY_ENV_FILE"' EXIT # i18n:ignore
+{
+  printf 'PROXY_UPSTREAM_HOST=%s\n' "$UPSTREAM_HOST"
+  printf 'PROXY_UPSTREAM_PORT=%s\n' "$UPSTREAM_PORT"
+  printf 'PROXY_TLS_MODE=%s\n' "$TLS_MODE"
+  printf 'PROXY_TLS_EMAIL=%s\n' "$TLS_EMAIL"
+  printf 'PROXY_TLS_CERT_PATH=%s\n' "$CERT_PATH_CONTAINER"
+  printf 'PROXY_TLS_KEY_PATH=%s\n' "$KEY_PATH_CONTAINER"
+  printf 'PROXY_SITE_ADDRESS=%s\n' "$SITE_ADDRESS"
+  printf 'PROXY_HTTPS_PORT=%s\n' "$HOST_HTTPS_PORT"
+  printf 'PROXY_HTTP_PORT=%s\n' "$HOST_HTTP_PORT"
+} >"$PROXY_ENV_FILE"
+COMPOSE_GLOBAL_ARGS+=(--env-file "$PROXY_ENV_FILE")
 docker compose "${COMPOSE_GLOBAL_ARGS[@]}" "${PROFILE_ARGS[@]}" up -d "$SERVICE" silicium-proxy
 
 sil_i18n_echo "infra.proxy.wait_health" "$TEST_URL"
