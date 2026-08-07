@@ -2965,10 +2965,12 @@ name = "silicium_node_core"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "ed25519-dalek",
  "rand 0.8.7",
  "rand_distr",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.19",
 ]
 

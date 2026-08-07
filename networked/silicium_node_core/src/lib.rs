@@ -5,3 +5,4 @@ pub mod dispatch;
 pub mod hardware;
 pub mod p2p;
 pub mod runtime;
+pub mod taskbook;
