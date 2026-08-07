@@ -81,7 +81,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -245,6 +244,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          clean: false
+
+      - name: Normalize shared workspace ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n chown -R "$(id -u):$(id -g)" "$GITHUB_WORKSPACE"
+          git clean -ffdx
 
       - name: Set up Rust
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke'
