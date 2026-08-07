@@ -198,6 +198,7 @@ jobs:
           rustup run 1.89.0 anchor test --provider.cluster localnet
 
       - name: Upload IDL artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -208,6 +209,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload program binary artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         if: always()
         with:
