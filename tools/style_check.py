@@ -26,12 +26,12 @@ DEFAULT_INCLUDE = [
 ]
 DEFAULT_EXCLUDE = [
     ".git/**",
-    "build/**",
-    "dist/**",
-    "out/**",
-    ".venv/**",
-    "node_modules/**",
-    "docs/coverage/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/out/**",
+    "**/.venv/**",
+    "**/node_modules/**",
+    "**/docs/coverage/**",
 ]
 
 def _match_any(rel_path: PurePosixPath, patterns: Iterable[str]) -> bool:
