@@ -153,7 +153,7 @@ jobs:
       - name: Install Anchor CLI
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
-          rustup run 1.89.0 cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          rustup run stable cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
           avm install 0.32.1
           avm use 0.32.1
           echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
@@ -182,18 +182,18 @@ jobs:
           RUSTUP_TOOLCHAIN: "1.89.0"
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
-          cargo --version
-          rustc --version
-          anchor build --provider.cluster localnet
+          rustup run 1.89.0 cargo --version
+          rustup run 1.89.0 rustc --version
+          rustup run 1.89.0 anchor build --provider.cluster localnet
 
       - name: Run Anchor tests on localnet
         env:
           RUSTUP_TOOLCHAIN: "1.89.0"
         run: |
           export PATH="$HOME/.cargo/bin:$PATH"
-          cargo --version
-          rustc --version
-          anchor test --provider.cluster localnet
+          rustup run 1.89.0 cargo --version
+          rustup run 1.89.0 rustc --version
+          rustup run 1.89.0 anchor test --provider.cluster localnet
 
       - name: Upload IDL artifact
         uses: actions/upload-artifact@v4
