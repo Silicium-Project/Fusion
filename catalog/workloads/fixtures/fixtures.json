@@ -5,13 +5,13 @@
       "id": "verification/hash-audit/sha256",
       "version": "0.1.0",
       "path": "verification/hash-audit/v1/sample.txt",
-      "sha256": "6624000c8d0a3db28e317170060acb411dde91dc2d6c38799ccefbe794cc4c37"
+      "sha256": "3f025c3a1fbaa1c1dd2ac359a0321c9400b584b958fbade1afcfa499488f8618"
     },
     {
       "id": "calcul/libm/sin",
       "version": "0.1.0",
       "path": "calcul/libm/v1/sin-input.json",
-      "sha256": "a0f1295f76a3b3c5345b1ea58ac66baae13089a5f8fc35338337e70a70ba900e"
+      "sha256": "f9fd2b0ec9075b579a3e52cae70007304e610a1dbcdd941ce06b8e4313e7699b"
     }
   ]
 }

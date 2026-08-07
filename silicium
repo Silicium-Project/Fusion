@@ -1965,8 +1965,11 @@ def _fixture_index() -> dict[str, Any]:
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
+    normalize_text = path.suffix.lower() in {".json", ".txt", ".yaml", ".yml"}
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            if normalize_text:
+                chunk = chunk.replace(b"\r\n", b"\n")
             digest.update(chunk)
     return digest.hexdigest()
 

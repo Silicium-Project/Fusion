@@ -336,6 +336,28 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
             skip_reason=None,
         )
 
+    # GNU time reports a missing child as exit 127 instead of raising in Python.
+    if (
+        time_bin
+        and return_code == 127
+        and "cannot run" in (result.stderr or "")
+    ):
+        return ProfileResult(
+            key=profile.key,
+            command=effective_command,
+            description=profile.description,
+            return_code=127,
+            wall_sec=None,
+            cpu_sec=None,
+            max_rss_kib=None,
+            budgets=profile.budgets,
+            violations=[f"command_not_found: {effective_command[0]}"],
+            metrics_unavailable=["wall_sec", "cpu_sec", "max_rss_kib"],
+            timed_out=False,
+            skipped=False,
+            skip_reason=None,
+        )
+
     metrics = {
         "wall_sec": wall_sec,
         "cpu_sec": cpu_sec,
