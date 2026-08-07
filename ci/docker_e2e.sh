@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$ROOT/ci/docker-compose.e2e.yml"
+COMPOSE_ARGS=(-f "$COMPOSE_FILE")
 MANIFEST_FILE="$ROOT/ci/e2e-manifest.json"
 E2E_EXPORT_DIR=""
 E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-2400}"
@@ -61,11 +62,11 @@ cleanup() {
   if [ -f "$COMPOSE_FILE" ]; then
     if [ "$status" -ne 0 ]; then
       echo "---- docker compose ps"
-      "$DOCKER_BIN" compose -f "$COMPOSE_FILE" ps || true
+      "$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}" ps || true
       echo "---- docker compose logs (tail 200)"
-      "$DOCKER_BIN" compose -f "$COMPOSE_FILE" logs --no-color --timestamps --tail 200 || true
+      "$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}" logs --no-color --timestamps --tail 200 || true
     fi
-    "$DOCKER_BIN" compose -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
+    "$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}" down --remove-orphans >/dev/null 2>&1 || true
   fi
   if [ -n "${E2E_EXPORT_DIR:-}" ]; then
     rm -rf "$E2E_EXPORT_DIR" >/dev/null 2>&1 || true
@@ -106,14 +107,27 @@ export E2E_MCP_HOST_PORT
 export E2E_RPC_HOST_PORT
 export E2E_RPC_EVENTS_HOST_PORT
 
+E2E_ENV_FILE="$E2E_EXPORT_DIR/compose.env"
+{
+  printf 'COMPOSE_PROJECT_NAME=%s\n' "$COMPOSE_PROJECT_NAME"
+  printf 'E2E_COMPOSE_NETWORK=%s\n' "$E2E_COMPOSE_NETWORK"
+  printf 'E2E_EXPORT_DIR=%s\n' "$E2E_EXPORT_DIR"
+  printf 'E2E_TASK_PREFIX=%s\n' "$E2E_TASK_PREFIX"
+  printf 'E2E_ORCHESTRATOR_HOST_PORT=%s\n' "$E2E_ORCHESTRATOR_HOST_PORT"
+  printf 'E2E_MCP_HOST_PORT=%s\n' "$E2E_MCP_HOST_PORT"
+  printf 'E2E_RPC_HOST_PORT=%s\n' "$E2E_RPC_HOST_PORT"
+  printf 'E2E_RPC_EVENTS_HOST_PORT=%s\n' "$E2E_RPC_EVENTS_HOST_PORT"
+} >"$E2E_ENV_FILE"
+COMPOSE_ARGS=(--env-file "$E2E_ENV_FILE" -f "$COMPOSE_FILE")
+
 log "Using compose project ${COMPOSE_PROJECT_NAME}"
 log "Using compose network ${E2E_COMPOSE_NETWORK}"
 log "Host ports: orchestrator=${E2E_ORCHESTRATOR_HOST_PORT}, mcp=${E2E_MCP_HOST_PORT}, rpc=${E2E_RPC_HOST_PORT}, rpc-events=${E2E_RPC_EVENTS_HOST_PORT}"
 
 log "Starting E2E compose stack"
-if ! "$DOCKER_BIN" compose -f "$COMPOSE_FILE" up -d --build --remove-orphans; then
+if ! "$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}" up -d --build --remove-orphans; then
   log "E2E compose config"
-  "$DOCKER_BIN" compose -f "$COMPOSE_FILE" config || true
+  "$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}" config || true
   exit 1
 fi
 
@@ -137,7 +151,7 @@ curl -fsS "http://127.0.0.1:${E2E_MCP_HOST_PORT}/healthz" >/dev/null 2>&1
 
 log "Checking python3 in runtime containers"
 for service in orchestrator backend mcp worker-compute-a worker-compute-b worker-verify-a worker-verify-b; do
-  "$DOCKER_BIN" compose -f "$COMPOSE_FILE" exec -T "$service" python3 --version >/dev/null
+  "$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}" exec -T "$service" python3 --version >/dev/null
 done
 
 log "Submitting tasks through web and RPC"
@@ -216,6 +230,6 @@ print(json.dumps({"validation": validation}, indent=2, sort_keys=True))
 PY
 
 log "E2E compose stack"
-"$DOCKER_BIN" compose -f "$COMPOSE_FILE" ps
+"$DOCKER_BIN" compose "${COMPOSE_ARGS[@]}" ps
 
 log "E2E completed successfully"
