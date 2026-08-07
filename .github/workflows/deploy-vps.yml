@@ -88,6 +88,9 @@ jobs:
   tests:
     needs: [submodule-ci-gate]
     uses: ./.github/workflows/test.yml
+    with:
+      skip_submodule_ci_gate: true
+      web_stack_already_validated: true
     secrets: inherit
 
   build-desktop:

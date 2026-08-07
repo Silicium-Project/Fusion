@@ -8,9 +8,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: fusion-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   submodule-ci-gate:
     uses: ./.github/workflows/submodule-ci-gate.yml
+    secrets: inherit
+
+  tests:
+    needs: [submodule-ci-gate]
+    uses: ./.github/workflows/test.yml
+    with:
+      skip_submodule_ci_gate: true
     secrets: inherit
 
   build-linux:

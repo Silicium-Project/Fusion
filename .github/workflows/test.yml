@@ -1,20 +1,47 @@
 name: Test
 
 on:
-  pull_request:
   workflow_call:
+    inputs:
+      skip_submodule_ci_gate:
+        description: "The caller already ran the shared submodule CI gate."
+        required: false
+        type: boolean
+        default: false
+      web_stack_already_validated:
+        description: "The caller already ran the web stack validation."
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      skip_submodule_ci_gate:
+        description: "The caller already ran the shared submodule CI gate."
+        required: false
+        type: boolean
+        default: false
+      web_stack_already_validated:
+        description: "The caller already ran the web stack validation."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: fusion-test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   submodule-ci-gate:
+    if: ${{ !inputs.skip_submodule_ci_gate }}
     uses: ./.github/workflows/submodule-ci-gate.yml
     secrets: inherit
 
   web-stack:
     needs: [submodule-ci-gate]
+    if: ${{ always() && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') && !inputs.web_stack_already_validated }}
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create GitHub App token
@@ -65,6 +92,7 @@ jobs:
 
   network-core:
     needs: [submodule-ci-gate]
+    if: ${{ always() && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 90
     steps:
@@ -153,6 +181,7 @@ jobs:
 
   network-e2e:
     needs: [submodule-ci-gate]
+    if: ${{ always() && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 120
     env:
@@ -223,6 +252,7 @@ jobs:
 
   network-smoke:
     needs: [submodule-ci-gate]
+    if: ${{ always() && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 45
     steps:

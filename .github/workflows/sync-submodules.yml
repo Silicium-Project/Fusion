@@ -15,12 +15,59 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  detect:
+    runs-on: [self-hosted, fusion-linux]
+    outputs:
+      changed: ${{ steps.detect.outputs.changed }}
+    steps:
+      - name: Create short-lived GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+          permission-contents: read
+
+      - name: Check out the pinned composition
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Detect remote submodule advances
+        id: detect
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          changed=false
+          while read -r name path; do
+            url="$(git config --file .gitmodules --get "submodule.${name}.url")"
+            repo="${url#https://github.com/}"
+            repo="${repo#git@github.com:}"
+            repo="${repo%.git}"
+            pinned="$(git rev-parse "HEAD:${path}")"
+            remote="$(gh api "repos/${repo}/git/ref/heads/main" --jq '.object.sha')"
+            printf '%s: pinned=%s remote=%s\n' "$path" "${pinned:0:12}" "${remote:0:12}"
+            if [[ "$pinned" != "$remote" ]]; then
+              changed=true
+            fi
+          done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | sed -E 's/^submodule\.([^ ]+)\.path[[:space:]]+([^ ]+)$/\1 \2/')
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
   submodule-ci-gate:
+    needs: [detect]
+    if: ${{ needs.detect.outputs.changed == 'true' }}
     uses: ./.github/workflows/submodule-ci-gate.yml
     secrets: inherit
 
   sync:
-    needs: [submodule-ci-gate]
+    needs: [detect, submodule-ci-gate]
+    if: ${{ always() && needs.detect.outputs.changed == 'true' && needs.submodule-ci-gate.result == 'success' }}
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create short-lived GitHub App token
@@ -152,3 +199,11 @@ jobs:
       - name: Report current composition
         if: steps.resolve.outputs.changed == '0'
         run: echo "Fusion already pins every configured submodule branch head."
+
+  report-no-changes:
+    needs: [detect]
+    if: ${{ needs.detect.outputs.changed != 'true' }}
+    runs-on: [self-hosted, fusion-linux]
+    steps:
+      - name: Report unchanged composition
+        run: echo "Remote submodule main branches have not advanced; skipped the expensive CI gate and gitlink sync."
