@@ -90,6 +90,10 @@ pub struct TaskBook {
 }
 
 impl TaskEvent {
+    pub fn author_id(signing_key: &SigningKey) -> String {
+        hex_encode(signing_key.verifying_key().as_bytes())
+    }
+
     pub fn signed(
         signing_key: &SigningKey,
         sequence: u64,
@@ -101,7 +105,7 @@ impl TaskEvent {
     ) -> Self {
         let mut event = Self {
             version: TASK_BOOK_VERSION,
-            author: hex_encode(signing_key.verifying_key().as_bytes()),
+            author: Self::author_id(signing_key),
             sequence,
             previous_event_hash: previous_event_hash.into(),
             kind,
@@ -229,6 +233,12 @@ impl TaskBook {
         path: impl AsRef<Path>,
         event: TaskEvent,
     ) -> Result<String, TaskBookError> {
+        let event_hash = event.event_hash();
+        if let Some(existing) = self.events.get(&event_hash) {
+            if existing == &event {
+                return Ok(event_hash);
+            }
+        }
         let mut next = self.clone();
         let event_hash = next.append(event.clone())?;
         let path = path.as_ref();
@@ -282,6 +292,14 @@ impl TaskBook {
 
     pub fn head(&self, author: &str) -> Option<&str> {
         self.heads.get(author).map(String::as_str)
+    }
+
+    pub fn next_sequence(&self, author: &str) -> u64 {
+        self.heads
+            .get(author)
+            .and_then(|hash| self.events.get(hash))
+            .map(|event| event.sequence + 1)
+            .unwrap_or(1)
     }
 
     pub fn heads(&self) -> BTreeMap<String, String> {
@@ -489,6 +507,9 @@ mod tests {
         let mut book = TaskBook::default();
         let event = proposal(&signing_key, 1, "", "task-a");
         book.append_persisted(&path, event).unwrap();
+        let duplicate = book.events().next().cloned().unwrap();
+        book.append_persisted(&path, duplicate).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap().lines().count(), 1);
 
         let restored = TaskBook::load(&path).unwrap();
         assert_eq!(restored.heads(), book.heads());

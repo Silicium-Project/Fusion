@@ -3,6 +3,7 @@ use crate::{
     beta::BetaPosterior,
     hardware::HardwareBucket,
     runtime::{RuntimeEnvelope, RuntimeKind},
+    taskbook::TaskEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf};
@@ -13,6 +14,7 @@ pub const DHT_NAMESPACE: &str = "silicium";
 pub enum DhtRecordKind {
     HardwareScore,
     TaskEnvelope,
+    TaskEvent,
     AffinityPosterior,
 }
 
@@ -35,6 +37,10 @@ impl DhtRecordEnvelope {
         format!("{DHT_NAMESPACE}/task/v1/{task_id}")
     }
 
+    pub fn task_event_key(event_hash: &str) -> String {
+        format!("{DHT_NAMESPACE}/taskbook/v1/{event_hash}")
+    }
+
     pub fn hardware_score(peer_id: &str, score: &BetaPosterior) -> Self {
         Self {
             version: Self::VERSION,
@@ -50,6 +56,15 @@ impl DhtRecordEnvelope {
             kind: DhtRecordKind::TaskEnvelope,
             key: Self::task_record_key(task_id),
             payload: bytes,
+        }
+    }
+
+    pub fn task_event(event: &TaskEvent) -> Self {
+        Self {
+            version: Self::VERSION,
+            kind: DhtRecordKind::TaskEvent,
+            key: Self::task_event_key(&event.event_hash()),
+            payload: serde_json::to_vec(event).expect("task event serializes"),
         }
     }
 
@@ -161,5 +176,11 @@ mod tests {
             DhtRecordEnvelope::task_record_key("task-456"),
             "silicium/task/v1/task-456"
         );
+    }
+
+    #[test]
+    fn task_event_record_key_is_content_addressed() {
+        let key = DhtRecordEnvelope::task_event_key(&"a".repeat(64));
+        assert_eq!(key, format!("silicium/taskbook/v1/{}", "a".repeat(64)));
     }
 }

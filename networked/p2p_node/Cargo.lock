@@ -2199,11 +2199,13 @@ name = "p2p_node"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "ed25519-dalek",
  "futures",
  "libp2p",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "silicium_node_core",
  "tokio",
 ]

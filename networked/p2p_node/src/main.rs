@@ -1,10 +1,11 @@
 use axum::{
     Router,
-    extract::{Json, State},
+    extract::{Json, Path as AxumPath, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
 };
+use ed25519_dalek::SigningKey;
 use futures::prelude::*;
 use libp2p::{
     Multiaddr, PeerId, autonat, gossipsub, identify, kad, mdns, noise, relay,
@@ -12,6 +13,7 @@ use libp2p::{
     tcp, yamux,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use silicium_node_core::{
     beta::BetaPosterior,
     dispatch::{DispatchCandidate, Dispatcher},
@@ -19,6 +21,7 @@ use silicium_node_core::{
         GpuAcceleration, HardwareBucket, HardwareProfile, OperatingSystem, SimdWidth, VramClass,
     },
     p2p::{DhtRecordEnvelope, TaskEnvelope},
+    taskbook::{DerivedTaskState, TaskBook, TaskBookError, TaskEvent, TaskEventKind},
 };
 use std::{
     collections::BTreeMap,
@@ -28,6 +31,7 @@ use std::{
     io,
     path::Path,
     path::PathBuf,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 use tokio::{net::TcpListener, select, sync::mpsc};
@@ -80,6 +84,13 @@ impl From<TaskEnvelope> for NetworkTask {
             runtime_image: value.runtime_image,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "payload")]
+enum GossipMessage {
+    Task(TaskEnvelope),
+    TaskEvent(TaskEvent),
 }
 
 #[cfg(test)]
@@ -372,6 +383,7 @@ impl NetworkTask {
 #[derive(Clone)]
 struct ApiState {
     tx_publish: mpsc::Sender<NetworkTask>,
+    taskbook: TaskBookState,
 }
 
 #[derive(Clone)]
@@ -379,6 +391,64 @@ struct NodeContext {
     local_peer_id: PeerId,
     hardware: HardwareBucket,
     dispatcher_seed: u64,
+    taskbook: TaskBookState,
+    tx_events: mpsc::Sender<TaskEvent>,
+}
+
+#[derive(Clone)]
+struct TaskBookState {
+    book: Arc<Mutex<TaskBook>>,
+    signing_key: Arc<SigningKey>,
+    path: PathBuf,
+}
+
+impl TaskBookState {
+    fn author(&self) -> String {
+        TaskEvent::author_id(&self.signing_key)
+    }
+
+    fn append_signed(
+        &self,
+        kind: TaskEventKind,
+        task_id: impl Into<String>,
+        payload_ref: impl Into<String>,
+        payload_hash: impl Into<String>,
+    ) -> Result<TaskEvent, TaskBookError> {
+        let mut book = self
+            .book
+            .lock()
+            .map_err(|_| TaskBookError::Io("task book lock poisoned".to_string()))?;
+        let author = self.author();
+        let sequence = book.next_sequence(&author);
+        let previous = book.head(&author).unwrap_or_default().to_string();
+        let event = TaskEvent::signed(
+            &self.signing_key,
+            sequence,
+            previous,
+            kind,
+            task_id,
+            payload_ref,
+            payload_hash,
+        );
+        book.append_persisted(&self.path, event.clone())?;
+        Ok(event)
+    }
+
+    fn append_remote(&self, event: TaskEvent) -> Result<String, TaskBookError> {
+        let mut book = self
+            .book
+            .lock()
+            .map_err(|_| TaskBookError::Io("task book lock poisoned".to_string()))?;
+        book.append_persisted(&self.path, event)
+    }
+
+    fn state(&self, task_id: &str) -> Result<Option<DerivedTaskState>, TaskBookError> {
+        let book = self
+            .book
+            .lock()
+            .map_err(|_| TaskBookError::Io("task book lock poisoned".to_string()))?;
+        Ok(book.task_state(task_id))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -574,6 +644,21 @@ async fn publish_task(
     }
 }
 
+async fn task_status(
+    AxumPath(task_id): AxumPath<String>,
+    State(state): State<ApiState>,
+) -> impl IntoResponse {
+    match state.taskbook.state(&task_id) {
+        Ok(Some(task)) => (StatusCode::OK, Json(task)).into_response(),
+        Ok(None) => (StatusCode::NOT_FOUND, "Task not found").into_response(),
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task book unavailable: {err}"),
+        )
+            .into_response(),
+    }
+}
+
 async fn health() -> impl IntoResponse {
     (
         StatusCode::OK,
@@ -624,6 +709,26 @@ fn load_or_generate_identity(data_dir: &Path) -> Result<libp2p::identity::Keypai
     Ok(keypair)
 }
 
+fn load_taskbook_state(
+    data_dir: &Path,
+    local_key: &libp2p::identity::Keypair,
+) -> Result<TaskBookState, io::Error> {
+    let identity_bytes = local_key
+        .to_protobuf_encoding()
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
+    let seed = Sha256::digest(identity_bytes);
+    let signing_key = SigningKey::from_bytes(&seed.into());
+    let path = data_dir.join("taskbook.events.jsonl");
+    let book = TaskBook::load(&path)
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
+
+    Ok(TaskBookState {
+        book: Arc::new(Mutex::new(book)),
+        signing_key: Arc::new(signing_key),
+        path,
+    })
+}
+
 fn record_from_envelope(envelope: &DhtRecordEnvelope) -> Option<kad::Record> {
     let key = kad::RecordKey::new(&envelope.key);
     Some(kad::Record {
@@ -644,7 +749,39 @@ fn compute_score_context(context: &NodeContext, task: &NetworkTask) -> BetaPoste
     BetaPosterior::with_scale_hint(task_scale)
 }
 
+async fn record_task_event(
+    context: &NodeContext,
+    kind: TaskEventKind,
+    task_id: &str,
+    payload_ref: impl Into<String>,
+    payload_hash: impl Into<String>,
+) {
+    match context
+        .taskbook
+        .append_signed(kind, task_id, payload_ref, payload_hash)
+    {
+        Ok(event) => {
+            if context.tx_events.send(event).await.is_err() {
+                println!(" Task book event channel closed for {task_id}");
+            }
+        }
+        Err(err) => println!(" Failed to persist task book event for {task_id}: {err}"),
+    }
+}
+
 async fn process_task(context: NodeContext, task: NetworkTask) {
+    let task_bytes =
+        serde_json::to_vec(&TaskEnvelope::from(task.clone())).expect("task envelope serializes");
+    let task_payload_hash = TaskEvent::payload_hash(&task_bytes);
+    record_task_event(
+        &context,
+        TaskEventKind::ClaimProposed,
+        &task.task_id,
+        DhtRecordEnvelope::task_record_key(&task.task_id),
+        task_payload_hash,
+    )
+    .await;
+
     let client = reqwest::Client::new();
     let compute_url =
         env::var("COMPUTE_DAEMON_URL").unwrap_or_else(|_| "http://127.0.0.1:9090".to_string());
@@ -738,6 +875,14 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
     };
 
     println!(" Compute successful. Hash: {}", hash);
+    record_task_event(
+        &context,
+        TaskEventKind::ResultPublished,
+        &task.task_id,
+        format!("result://{}", task.task_id),
+        TaskEvent::payload_hash(hash.as_bytes()),
+    )
+    .await;
 
     let verify_payload = serde_json::json!({
         "ppm_path": task.output_path,
@@ -782,6 +927,14 @@ async fn process_task(context: NodeContext, task: NetworkTask) {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     println!(" Verify result: {}", success);
+    record_task_event(
+        &context,
+        TaskEventKind::VerificationPublished,
+        &task.task_id,
+        format!("verification://{}", task.task_id),
+        TaskEvent::payload_hash(success.to_string().as_bytes()),
+    )
+    .await;
 
     let observe_payload = serde_json::json!({
         "peer_id": context.local_peer_id.to_string(),
@@ -918,6 +1071,33 @@ fn publish_task_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, task: &NetworkTa
     request_record_lookup(swarm, &envelope.key);
 }
 
+fn publish_taskbook_event(
+    swarm: &mut libp2p::Swarm<P2pBehaviour>,
+    topic: &gossipsub::IdentTopic,
+    event: &TaskEvent,
+) {
+    let envelope = DhtRecordEnvelope::task_event(event);
+    if let Some(record) = record_from_envelope(&envelope)
+        && let Err(err) = swarm
+            .behaviour_mut()
+            .kademlia
+            .put_record(record, kad::Quorum::One)
+    {
+        println!(" Failed to publish task book event to DHT: {err:?}");
+    }
+    request_record_lookup(swarm, &envelope.key);
+
+    let message = serde_json::to_vec(&GossipMessage::TaskEvent(event.clone()))
+        .expect("task book event serializes");
+    if let Err(err) = swarm
+        .behaviour_mut()
+        .gossipsub
+        .publish(topic.clone(), message)
+    {
+        println!(" Failed to publish task book event to gossipsub: {err:?}");
+    }
+}
+
 fn publish_hardware_record(swarm: &mut libp2p::Swarm<P2pBehaviour>, context: &NodeContext) {
     let posterior = BetaPosterior::default();
     let envelope =
@@ -943,13 +1123,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = config.data_dir.clone();
     let local_key = load_or_generate_identity(&data_dir)?;
     let local_peer_id = PeerId::from(local_key.public());
+    let taskbook = load_taskbook_state(&data_dir, &local_key)?;
     println!(" Local peer id: {local_peer_id}");
     println!(" Data dir: {}", data_dir.display());
+    println!(" Task book: {}", taskbook.path.display());
+
+    let (tx_events, mut rx_events) = mpsc::channel(64);
 
     let context = NodeContext {
         local_peer_id,
         hardware: read_hardware_bucket(),
         dispatcher_seed,
+        taskbook: taskbook.clone(),
+        tx_events,
     };
 
     let mut swarm = build_swarm(local_key.clone(), local_peer_id)?;
@@ -969,9 +1155,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     publish_hardware_record(&mut swarm, &context);
 
     let (tx_publish, mut rx_publish) = mpsc::channel(32);
-    let api_state = ApiState { tx_publish };
+    let api_state = ApiState {
+        tx_publish,
+        taskbook: taskbook.clone(),
+    };
     let app = Router::new()
         .route("/publish", post(publish_task))
+        .route("/tasks/{task_id}", get(task_status))
         .route("/health", get(health))
         .with_state(api_state);
 
@@ -987,10 +1177,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         select! {
+            Some(event) = rx_events.recv() => {
+                publish_taskbook_event(&mut swarm, &topic, &event);
+            }
             Some(task) = rx_publish.recv() => {
                 let task_envelope: TaskEnvelope = task.clone().into();
+                let task_bytes = serde_json::to_vec(&task_envelope).expect("task envelope serializes");
+                if let Ok(event) = taskbook.append_signed(
+                    TaskEventKind::TaskProposed,
+                    &task.task_id,
+                    DhtRecordEnvelope::task_record_key(&task.task_id),
+                    TaskEvent::payload_hash(&task_bytes),
+                ) {
+                    publish_taskbook_event(&mut swarm, &topic, &event);
+                }
                 publish_task_record(&mut swarm, &task);
-                let data = serde_json::to_vec(&task_envelope).unwrap();
+                let data = serde_json::to_vec(&GossipMessage::Task(task_envelope)).unwrap();
                 if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), data) {
                     println!(" Failed to publish to gossipsub: {e:?}");
                 } else {
@@ -1029,14 +1231,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ..
                 })) => {
                     println!(" Received message from {peer_id}");
-                    if let Ok(task_envelope) = serde_json::from_slice::<TaskEnvelope>(&message.data) {
+                    if let Ok(gossip) = serde_json::from_slice::<GossipMessage>(&message.data) {
+                        match gossip {
+                            GossipMessage::TaskEvent(event) => {
+                                match taskbook.append_remote(event) {
+                                    Ok(hash) => println!(" Accepted task book event {hash} from {peer_id}"),
+                                    Err(err) => println!(" Rejected task book event from {peer_id}: {err}"),
+                                }
+                            }
+                            GossipMessage::Task(task_envelope) => {
+                                let task: NetworkTask = task_envelope.into();
+                                let context_clone = context.clone();
+                                tokio::spawn(async move {
+                                    process_task(context_clone, task).await;
+                                });
+                            }
+                        }
+                    } else if let Ok(task_envelope) = serde_json::from_slice::<TaskEnvelope>(&message.data) {
                         let task: NetworkTask = task_envelope.into();
                         let context_clone = context.clone();
                         tokio::spawn(async move {
                             process_task(context_clone, task).await;
                         });
                     } else {
-                        println!(" Could not parse message as NetworkTask");
+                        println!(" Could not parse task book or NetworkTask message");
                     }
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received {
