@@ -7,13 +7,14 @@ COMPOSE_FILE="${INFRA_DIR}/docker-compose.yml"
 ENV_FILE="${INFRA_DIR}/.env"
 SMOKE_HTTP_PORT="${SMOKE_HTTP_PORT:-19080}"
 SMOKE_HTTPS_PORT="${SMOKE_HTTPS_PORT:-19443}"
-SMOKE_HOST="${SMOKE_HOST:-127.0.0.1}"
+SMOKE_HOST="${SMOKE_HOST:-rpc.local.silicium}"
 SMOKE_MODE="${SMOKE_MODE:-host}"  # host|container
 PROFILE_ARGS=(--profile proxy --profile smoke)
 COMPOSE_ARGS=()
 [[ -f "$ENV_FILE" ]] && COMPOSE_ARGS+=(--env-file "$ENV_FILE")
 COMPOSE_ARGS+=(-f "$COMPOSE_FILE")
 PROXY_TEST_URL_DEFAULT="https://${SMOKE_HOST}:${SMOKE_HTTPS_PORT}/healthz"
+PROXY_TEST_RESOLVE="${PROXY_TEST_RESOLVE:-${SMOKE_HOST}:${SMOKE_HTTPS_PORT}:127.0.0.1}"
 if [[ "$SMOKE_MODE" == "container" ]]; then
   PROXY_TEST_URL_DEFAULT=""
 fi
@@ -35,8 +36,10 @@ PROXY_HTTP_PORT="$SMOKE_HTTP_PORT" \
 PROXY_TEST_MODE="${PROXY_TEST_MODE:-$SMOKE_MODE}" \
 PROXY_TEST_NETWORK="${PROXY_TEST_NETWORK:-}" \
 PROXY_TEST_URL="${PROXY_TEST_URL:-$PROXY_TEST_URL_DEFAULT}" \
+PROXY_TEST_RESOLVE="$PROXY_TEST_RESOLVE" \
 "${INFRA_DIR}/bin/run-with-proxy.sh" proxy-smoke-target
 
 if [[ "$SMOKE_MODE" == "host" ]]; then
-  curl -sk --max-time 5 "https://${SMOKE_HOST}:${SMOKE_HTTPS_PORT}/healthz" | grep -q 'ok'
+  curl -sk --max-time 5 --resolve "$PROXY_TEST_RESOLVE" \
+    "https://${SMOKE_HOST}:${SMOKE_HTTPS_PORT}/healthz" | grep -q 'ok'
 fi

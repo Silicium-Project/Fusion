@@ -42,6 +42,7 @@ SITE_ADDRESS="${PROXY_SITE_ADDRESS:-:443}"
 HOST_HTTPS_PORT="${PROXY_HTTPS_PORT:-9443}"
 HOST_HTTP_PORT="${PROXY_HTTP_PORT:-9080}"
 TEST_URL="${PROXY_TEST_URL:-https://localhost:${HOST_HTTPS_PORT}/healthz}"
+TEST_RESOLVE="${PROXY_TEST_RESOLVE:-}"
 TEST_MODE="${PROXY_TEST_MODE:-host}"
 TEST_IMAGE="${PROXY_TEST_IMAGE:-curlimages/curl:8.6.0}"
 TEST_NETWORK="${PROXY_TEST_NETWORK:-}"
@@ -104,7 +105,11 @@ probe() {
     docker run --rm --network "$TEST_NETWORK" "$TEST_IMAGE" \
       -sk --max-time 2 "$TEST_URL" >/dev/null
   else
-    curl -sk --max-time 2 "$TEST_URL" >/dev/null
+    if [[ -n "$TEST_RESOLVE" ]]; then
+      curl -sk --max-time 2 --resolve "$TEST_RESOLVE" "$TEST_URL" >/dev/null
+    else
+      curl -sk --max-time 2 "$TEST_URL" >/dev/null
+    fi
   fi
 }
 for _ in $(seq 1 30); do
