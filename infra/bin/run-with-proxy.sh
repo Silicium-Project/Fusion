@@ -121,4 +121,12 @@ for _ in $(seq 1 30); do
 done
 
 sil_i18n_echo "infra.proxy.not_ready" >&2
+if [[ "$TEST_MODE" != "container" ]]; then
+  docker compose "${COMPOSE_GLOBAL_ARGS[@]}" "${PROFILE_ARGS[@]}" ps >&2 || true
+  if [[ -n "$TEST_RESOLVE" ]]; then
+    curl -vk --max-time 5 --resolve "$TEST_RESOLVE" "$TEST_URL" >&2 || true
+  else
+    curl -vk --max-time 5 "$TEST_URL" >&2 || true
+  fi
+fi
 exit 1
