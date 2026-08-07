@@ -410,6 +410,7 @@ jobs:
           PY
 
       - name: Upload budget artifact
+        continue-on-error: true
         if: matrix.job == 'perf-budget'
         uses: actions/upload-artifact@v4
         with:
