@@ -57,11 +57,8 @@ impl DagGraph {
             }
         }
 
-        let mut indegree: BTreeMap<String, usize> = self
-            .nodes
-            .keys()
-            .map(|id| (id.clone(), 0))
-            .collect();
+        let mut indegree: BTreeMap<String, usize> =
+            self.nodes.keys().map(|id| (id.clone(), 0)).collect();
         for node in self.nodes.values() {
             for parent in &node.parents {
                 *indegree
