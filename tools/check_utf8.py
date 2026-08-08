@@ -24,6 +24,7 @@ DEFAULT_EXCLUDE_DIRS = {
     "run_build",
     ".worker_tmp",
     ".silicium",
+    ".anchor",
 }
 
 DEFAULT_EXCLUDE_EXTS = {
@@ -75,6 +76,9 @@ def iter_files(root: Path,
         dirs[:] = [d for d in dirs if d not in exclude_dirs_set]
         for name in files:
             path = Path(base) / name
+            # Ignore sockets, FIFOs, and broken generated links left by localnet tools.
+            if not path.is_file():
+                continue
             if path.suffix.lower() in exclude_exts_set:
                 continue
             yield path
