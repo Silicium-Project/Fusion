@@ -44,7 +44,9 @@ appear in GitHub while actually executing on VPS hardware.
 
 The desktop Windows packaging lane may still need a dedicated Windows runner
 until the build is fully cross-built or moved to a Windows-capable host on the
-same operational plane.
+same operational plane. `deploy-vps.yml` runs `runner-preflight` before that
+lane and fails fast when the `fusion-windows` runner is offline; it must not
+leave the release pending indefinitely.
 
 ## Canonical flow
 
@@ -57,7 +59,8 @@ same operational plane.
 3. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
 4. `deploy-vps.yml` is the canonical mainline path: it pulls the exact Fusion
    ref on the VPS, updates submodules, builds the release payloads, runs the
-   full test suite, deploys, and runs post-deploy checks.
+   full test suite, deploys, and runs post-deploy checks. Its Windows runner
+   preflight makes the desktop dependency explicit before release/deploy.
 5. `deploy/compose/e2e.sh` validates the real container path on the VPS.
 6. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
@@ -84,7 +87,8 @@ same operational plane.
 - `test.yml`: reusable web, Network core, Docker E2E, and P2P smoke gate for
   PRs and manual runs.
 - `deploy-vps.yml`: canonical production deploy and VPS validation path. It
-  also invokes the reusable build and test gates before publishing.
+  also invokes the reusable build and test gates before publishing and checks
+  that the required Windows packaging runner is online.
 - `rollback-vps.yml`: manual recovery path only.
 - `mirror-epitech.yml`: explicit external mirror path to the Epitech repo.
 
