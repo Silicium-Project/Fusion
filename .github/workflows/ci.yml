@@ -20,7 +20,7 @@ concurrency:
 jobs:
   codeql:
     name: Analyze (${{ matrix.language }})
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -73,7 +73,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -110,7 +110,7 @@ jobs:
 
   solana-layer:
     name: Build and test Anchor program
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
 
     defaults:
       run:
@@ -226,7 +226,7 @@ jobs:
 
   tests:
     name: EntryPoint Tests / ${{ matrix.job }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -448,7 +448,7 @@ jobs:
 
   pytest-hosted:
     if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
