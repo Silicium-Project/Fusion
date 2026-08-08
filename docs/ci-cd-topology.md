@@ -44,6 +44,11 @@ The VPS is the execution plane for:
 The VPS may also host a self-hosted GitHub Actions runner so the workflows still
 appear in GitHub while executing on VPS hardware.
 
+The bootstrap keeps the required runners and adds one optional runner for
+`Fusion` and one for `Network` with the same `fusion-linux` label. This lets
+independent jobs run concurrently on the VPS without changing the check set.
+Set `SILICIUM_EXTRA_RUNNER_COUNT=0` when the VPS is resource-constrained.
+
 ### Packaging lane
 
 The desktop Windows packaging lane runs on the self-hosted Windows runner.

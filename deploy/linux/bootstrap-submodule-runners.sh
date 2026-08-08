@@ -6,6 +6,7 @@ RUNNER_ROOT="${SILICIUM_GHA_RUNNER_DIR:-/opt/github-runner}"
 RUNNER_LABELS="${SILICIUM_GHA_RUNNER_LABELS:-self-hosted,fusion-linux}"
 BOOTSTRAP_TOKEN="${GITHUB_RUNNER_BOOTSTRAP_TOKEN:-}"
 REPOS=(BackEnd FrontEnd)
+EXTRA_RUNNER_COUNT="${SILICIUM_EXTRA_RUNNER_COUNT:-1}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo -E bash deploy/linux/bootstrap-submodule-runners.sh" >&2
@@ -101,10 +102,10 @@ registration_token() {
     python3 -c 'import json, sys; print(json.load(sys.stdin)["token"])'
 }
 
-for repo in "${REPOS[@]}"; do
-  slug="$(printf '%s' "$repo" | tr '[:upper:]' '[:lower:]')"
-  runner_dir="${RUNNER_ROOT}-${slug}"
-  runner_name="fusion-vps-${slug}"
+ensure_runner() {
+  local repo="$1"
+  local runner_dir="$2"
+  local runner_name="$3"
   runner_url="https://github.com/Silicium-Project/${repo}"
 
   if [[ ! -x "$runner_dir/config.sh" ]]; then
@@ -143,9 +144,34 @@ for repo in "${REPOS[@]}"; do
     fi
   else
     echo "Runner service helper not found: $runner_dir/svc.sh" >&2
-    exit 1
+    return 1
   fi
+}
+
+for repo in "${REPOS[@]}"; do
+  slug="$(printf '%s' "$repo" | tr '[:upper:]' '[:lower:]')"
+  ensure_runner \
+    "$repo" \
+    "${RUNNER_ROOT}-${slug}" \
+    "fusion-vps-${slug}"
 done
 
+if [[ "$EXTRA_RUNNER_COUNT" =~ ^[0-9]+$ ]]; then
+  if (( EXTRA_RUNNER_COUNT > 0 )); then
+    for repo in Fusion Network; do
+      slug="$(printf '%s' "$repo" | tr '[:upper:]' '[:lower:]')"
+      for index in $(seq 1 "$EXTRA_RUNNER_COUNT"); do
+        runner_dir="${RUNNER_ROOT}-${slug}-extra-${index}"
+        runner_name="fusion-vps-${slug}-extra-${index}"
+        if ! ensure_runner "$repo" "$runner_dir" "$runner_name"; then
+          echo "Warning: optional extra runner $runner_name could not be configured." >&2
+        fi
+      done
+    done
+  fi
+else
+  echo "Ignoring invalid SILICIUM_EXTRA_RUNNER_COUNT=$EXTRA_RUNNER_COUNT; expected a non-negative integer." >&2
+fi
+
 unset BOOTSTRAP_TOKEN
-echo "BackEnd and FrontEnd self-hosted runners are configured on this VPS."
+echo "Required submodule and optional extra self-hosted runners are configured on this VPS."
