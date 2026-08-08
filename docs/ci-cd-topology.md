@@ -8,10 +8,10 @@ Keep the workflow traceable:
 
 - GitHub stores the source, issues, pull requests, and audit trail.
 - The VPS executes the production path.
-- GitHub-hosted runners are preferred for parallel CI, compilation, and test
-  matrices when the organization has covered Actions usage.
-- Self-hosted runners on the VPS are reserved for automation that must run
-  close to production state.
+- Self-hosted runners on the VPS execute the active CI, compilation, test, and
+  deployment path.
+- GitHub-hosted runners are an optional acceleration lane only when Actions
+  billing is enabled and covered; they are not assumed to be available.
 - The visible lifecycle is `Build` -> `Test` -> `Deploy`.
 
 ## Current contract
@@ -25,9 +25,10 @@ GitHub should be used as:
 - review and history;
 - status display.
 
-GitHub should not be the primary compute plane for production deploy or
-post-deploy validation. CI E2E and compilation may use GitHub-hosted capacity
-when covered Actions usage is available.
+GitHub is not the primary compute plane for production deploy, post-deploy
+validation, or the active CI lanes. CI E2E and compilation may use
+GitHub-hosted capacity only when covered Actions usage is explicitly
+available.
 
 ### VPS
 
@@ -41,11 +42,11 @@ The VPS is the execution plane for:
 - mirrors that need to follow the production state.
 
 The VPS may also host a self-hosted GitHub Actions runner so the workflows still
-appear in GitHub while actually executing on VPS hardware.
+appear in GitHub while executing on VPS hardware.
 
 ### Packaging lane
 
-The desktop Windows packaging lane runs on a GitHub-hosted Windows runner.
+The desktop Windows packaging lane runs on the self-hosted Windows runner.
 The generated installers are staged on the VPS before release and deploy.
 
 ## Canonical flow
@@ -56,11 +57,12 @@ The generated installers are staged on the VPS before release and deploy.
    red, incomplete, or missing. On the VPS it also provisions the dedicated
    `BackEnd` and `FrontEnd` self-hosted runners and waits for their long CI
    jobs to finish before evaluating the gate. The submodule CI jobs themselves
-   run on GitHub-hosted runners in parallel.
+   run on the VPS runners in parallel when runner capacity is available.
 3. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
 4. `deploy-vps.yml` is the canonical mainline path: it validates and builds
-   on GitHub-hosted runners, then pulls the exact Fusion ref on the VPS,
-   publishes release metadata, deploys, and runs post-deploy checks.
+   on the VPS runners, publishes release metadata, deploys, and runs
+   post-deploy checks. Its Windows preflight fails fast when the desktop
+   runner is offline instead of leaving a job pending.
 5. `deploy/compose/e2e.sh` validates the real container path on the VPS.
 6. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
@@ -72,6 +74,8 @@ The generated installers are staged on the VPS before release and deploy.
 - Do not let a green Fusion workflow mask a red submodule `main`.
 - Do not use `git submodule update --remote` in production deploy steps unless
   the target SHA is also gated by CI.
+- Do not switch jobs to GitHub-hosted runners until the organization has a
+  non-zero Actions budget or sufficient included minutes.
 - Keep the workflow surface small: one canonical deploy path, one canonical
   rollback path, plus one explicit external mirror path if it is still needed.
 
@@ -101,6 +105,14 @@ The generated installers are staged on the VPS before release and deploy.
 - `Network/.github/workflows/ci.yml`: canonical orchestrator for `Network`.
 - `Network/.github/workflows/release.yml`: tag-only publication path that
   reuses `ci.yml` before publishing artifacts.
+
+## Billing constraint
+
+The organization is currently on the Free plan. The Actions budget is set to
+`$0` with `prevent_further_usage` enabled, so GitHub-hosted jobs are rejected
+before a runner is assigned once included capacity is exhausted. This is why
+the active workflows target the VPS runners. The hosted-runner changes remain
+an explicit future optimization, not an active dependency.
 
 ### Immediate cleanup target
 
