@@ -42,7 +42,7 @@ jobs:
   web-stack:
     needs: [submodule-ci-gate]
     if: ${{ always() && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') && !inputs.web_stack_already_validated }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -93,7 +93,7 @@ jobs:
   network-core:
     needs: [submodule-ci-gate]
     if: ${{ always() && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - name: Create GitHub App token
@@ -182,7 +182,7 @@ jobs:
   network-e2e:
     needs: [submodule-ci-gate]
     if: ${{ always() && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       E2E_TIMEOUT_S: 2400
@@ -253,7 +253,7 @@ jobs:
   network-smoke:
     needs: [submodule-ci-gate]
     if: ${{ always() && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Create GitHub App token

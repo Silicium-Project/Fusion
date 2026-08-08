@@ -36,35 +36,9 @@ jobs:
     uses: ./.github/workflows/submodule-ci-gate.yml
     secrets: inherit
 
-  runner-preflight:
-    needs: [submodule-ci-gate]
-    runs-on: [self-hosted, fusion-linux]
-    timeout-minutes: 5
-    steps:
-      - name: Require the Windows desktop runner
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            const { data } = await github.rest.actions.listSelfHostedRunnersForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100,
-            });
-            const runner = data.runners.find((candidate) =>
-              candidate.labels.some((label) => label.name === "fusion-windows")
-            );
-            if (!runner) {
-              core.setFailed("No self-hosted runner with label fusion-windows is registered.");
-            } else if (runner.status !== "online") {
-              core.setFailed(`Windows desktop runner '${runner.name}' is ${runner.status}; start it before deploying.`);
-            } else {
-              core.info(`Windows desktop runner '${runner.name}' is online${runner.busy ? " and busy" : " and idle"}.`);
-            }
-
   validate-monorepo:
     needs: [submodule-ci-gate]
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -120,8 +94,8 @@ jobs:
     secrets: inherit
 
   build-desktop:
-    needs: [validate-monorepo, runner-preflight]
-    runs-on: [self-hosted, fusion-windows]
+    needs: [validate-monorepo]
+    runs-on: windows-latest
     timeout-minutes: 45
     steps:
       - name: Create GitHub App token
@@ -163,6 +137,11 @@ jobs:
           cache: npm
           cache-dependency-path: apps/silicium-node/package-lock.json
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Verify Python runtime
         shell: powershell
         run: |
@@ -176,6 +155,7 @@ jobs:
           } else {
             & py -3.11 --version
             if ($LASTEXITCODE -ne 0) { throw "Python 3.11 is required on the Windows deploy runner" }
+
           }
 
       - name: Set up Rust
@@ -293,7 +273,7 @@ jobs:
 
   build-linux:
     needs: [validate-monorepo]
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     steps:
       - name: Create GitHub App token
         id: app-token

@@ -8,7 +8,9 @@ Keep the workflow traceable:
 
 - GitHub stores the source, issues, pull requests, and audit trail.
 - The VPS executes the production path.
-- Self-hosted runners on the VPS are preferred for any automation that must run
+- GitHub-hosted runners are preferred for parallel CI, compilation, and test
+  matrices when the organization has covered Actions usage.
+- Self-hosted runners on the VPS are reserved for automation that must run
   close to production state.
 - The visible lifecycle is `Build` -> `Test` -> `Deploy`.
 
@@ -23,8 +25,9 @@ GitHub should be used as:
 - review and history;
 - status display.
 
-GitHub should not be the primary compute plane for deploy, E2E, or release
-validation.
+GitHub should not be the primary compute plane for production deploy or
+post-deploy validation. CI E2E and compilation may use GitHub-hosted capacity
+when covered Actions usage is available.
 
 ### VPS
 
@@ -40,13 +43,10 @@ The VPS is the execution plane for:
 The VPS may also host a self-hosted GitHub Actions runner so the workflows still
 appear in GitHub while actually executing on VPS hardware.
 
-### Transitional exception
+### Packaging lane
 
-The desktop Windows packaging lane may still need a dedicated Windows runner
-until the build is fully cross-built or moved to a Windows-capable host on the
-same operational plane. `deploy-vps.yml` runs `runner-preflight` before that
-lane and fails fast when the `fusion-windows` runner is offline; it must not
-leave the release pending indefinitely.
+The desktop Windows packaging lane runs on a GitHub-hosted Windows runner.
+The generated installers are staged on the VPS before release and deploy.
 
 ## Canonical flow
 
@@ -55,12 +55,12 @@ leave the release pending indefinitely.
 2. `submodule-ci-gate.yml` fails immediately if any of those `main` heads is
    red, incomplete, or missing. On the VPS it also provisions the dedicated
    `BackEnd` and `FrontEnd` self-hosted runners and waits for their long CI
-   jobs to finish before evaluating the gate.
+   jobs to finish before evaluating the gate. The submodule CI jobs themselves
+   run on GitHub-hosted runners in parallel.
 3. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
-4. `deploy-vps.yml` is the canonical mainline path: it pulls the exact Fusion
-   ref on the VPS, updates submodules, builds the release payloads, runs the
-   full test suite, deploys, and runs post-deploy checks. Its Windows runner
-   preflight makes the desktop dependency explicit before release/deploy.
+4. `deploy-vps.yml` is the canonical mainline path: it validates and builds
+   on GitHub-hosted runners, then pulls the exact Fusion ref on the VPS,
+   publishes release metadata, deploys, and runs post-deploy checks.
 5. `deploy/compose/e2e.sh` validates the real container path on the VPS.
 6. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
