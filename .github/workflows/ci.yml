@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out sources
         uses: actions/checkout@v4
