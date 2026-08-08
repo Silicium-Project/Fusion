@@ -36,6 +36,32 @@ jobs:
     uses: ./.github/workflows/submodule-ci-gate.yml
     secrets: inherit
 
+  runner-preflight:
+    needs: [submodule-ci-gate]
+    runs-on: [self-hosted, fusion-linux]
+    timeout-minutes: 5
+    steps:
+      - name: Require the Windows desktop runner
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { data } = await github.rest.actions.listSelfHostedRunnersForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const runner = data.runners.find((candidate) =>
+              candidate.labels.some((label) => label.name === "fusion-windows")
+            );
+            if (!runner) {
+              core.setFailed("No self-hosted runner with label fusion-windows is registered.");
+            } else if (runner.status !== "online") {
+              core.setFailed(`Windows desktop runner '${runner.name}' is ${runner.status}; start it before deploying.`);
+            } else {
+              core.info(`Windows desktop runner '${runner.name}' is online${runner.busy ? " and busy" : " and idle"}.`);
+            }
+
   validate-monorepo:
     needs: [submodule-ci-gate]
     runs-on: [self-hosted, fusion-linux]
@@ -94,8 +120,9 @@ jobs:
     secrets: inherit
 
   build-desktop:
-    needs: [validate-monorepo]
+    needs: [validate-monorepo, runner-preflight]
     runs-on: [self-hosted, fusion-windows]
+    timeout-minutes: 45
     steps:
       - name: Create GitHub App token
         id: app-token
