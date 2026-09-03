@@ -1,9 +1,10 @@
 package models
 
 import (
-	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
+	"errors"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // User corresponds to the 'users' table in the database
@@ -20,20 +21,17 @@ type User struct {
 	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
-// BeforeSave is a GORM hook that runs before a user record is created or updated.
-// It hashes the password if it has been changed.
-func (u *User) BeforeSave(tx *gorm.DB) (err error) {
-	// Check if the password is a new hashable password (and not an already existing hash)
-	// A simple way is to check its length. Bcrypt hashes are always 60 characters long.
-	// A more robust way would be to have a separate Password field in a request struct.
-	if len(u.PasswordHash) > 0 && len(u.PasswordHash) != 60 {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.PasswordHash), bcrypt.DefaultCost)
-		if err != nil {
-			return err
-		}
-		u.PasswordHash = string(hashedPassword)
+// SetPassword hashes plaintext explicitly, even when its length is 60 bytes.
+// Call only when setting a password, never when saving an unchanged profile.
+func (u *User) SetPassword(password string) error {
+	if len(password) == 0 || len(password) > 72 {
+		return errors.New("Le mot de passe doit contenir entre 1 et 72 octets.")
 	}
-	return
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err == nil {
+		u.PasswordHash = string(hash)
+	}
+	return err
 }
 
 // CheckPassword compares a plain-text password with the stored hash.
