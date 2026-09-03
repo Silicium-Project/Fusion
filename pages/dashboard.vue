@@ -1,19 +1,9 @@
 <template>
-  <div class="min-h-screen bg-[#131419] text-white flex">
+  <div class="min-h-screen bg-[#131419] text-white flex pt-40 md:pt-28">
+    <Header class="!bg-[#131419]/95 backdrop-blur" />
     <nav class="w-64 bg-[#1f2029] p-4 flex flex-col justify-between border-r border-black/20">
       <div>
-        <div class="p-4 mb-4">
-          <h1 class="text-3xl font-extrabold">
-            <span class="text-transparent bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text">Silicium</span>
-          </h1>
-        </div>
         <ul class="space-y-2">
-          <li>
-            <NuxtLink to="/" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors">
-              <img src="~assets/icons/Products.svg" alt="" class="w-6 h-6 mr-4" />
-              Accueil
-            </NuxtLink>
-          </li>
           <li>
             <a href="#" class="flex items-center text-lg font-semibold p-3 rounded-xl bg-gradient-to-r from-purple-500/20 to-blue-500/20">
               <img src="~assets/icons/Users.svg" alt="" class="w-6 h-6 mr-4" />
@@ -48,20 +38,13 @@
     </nav>
 
     <main class="flex-1 p-10 relative">
-      <div class="absolute top-10 right-10 bg-black/20 rounded-lg p-2 flex items-center space-x-4">
-        <div v-if="solBalance !== null" class="font-semibold pl-2">
+      <div class="flex flex-wrap items-center justify-between gap-4 mb-2">
+        <h1 class="text-4xl font-bold">Tableau de bord</h1>
+        <div v-if="solBalance !== null" class="bg-black/20 rounded-lg p-3 font-semibold">
           {{ solBalance.toFixed(4) }} SOL
         </div>
-        <span v-if="solBalance !== null" class="text-white/30">|</span>
-        <NuxtLink to="/profile" class="flex items-center space-x-3">
-          <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-400 to-blue-400 flex items-center justify-center font-bold text-xl">
-            {{ user ? (user.username || user.email)?.[0].toUpperCase() : '' }}
-          </div>
-          <span class="font-semibold pr-2">{{ user?.username || user?.email }}</span>
-        </NuxtLink>
       </div>
 
-      <h2 class="text-4xl font-bold mb-2">Tableau de bord</h2>
       <p class="text-lg text-white/50 mb-10">Soumission, suivi et resultats des calculs Silicium.</p>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -257,6 +240,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue';
 import Cookies from 'js-cookie';
+import Header from '../components/Header.vue';
 import { clampJobPage, compactJobError, isJobCancellable } from '~/utils/jobs';
 
 type Job = {
@@ -282,7 +266,6 @@ const currentPage = ref(1);
 const pageSize = 20;
 const statusFilter = ref('all');
 const cancellingJobId = ref<number | null>(null);
-const user = ref<any>(null);
 const solBalance = ref<number | null>(null);
 const config = useRuntimeConfig();
 const apiBase = config.public.apiBase;
@@ -479,7 +462,6 @@ onMounted(async () => {
     const fetchedUser: any = await $fetch(`${apiBase}/user`, {
       headers: authHeaders(),
     });
-    user.value = fetchedUser;
 
     if (fetchedUser.walletAddress) {
       const web3 = await import('@solana/web3.js');
