@@ -204,8 +204,8 @@ const handleChangePassword = async () => {
 };
 
 const logout = () => {
-  Cookies.remove('auth_token');
-  router.push('/auth');
+  Cookies.remove('auth_token', { path: '/' });
+  router.push('/');
 };
 
 onMounted(async () => {

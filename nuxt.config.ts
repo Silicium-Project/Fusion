@@ -1,6 +1,7 @@
 export default defineNuxtConfig({
   runtimeConfig: {
     public: {
+      contactEmail: process.env.NUXT_PUBLIC_CONTACT_EMAIL || '',
       adminToken: process.env.NUXT_PUBLIC_ADMIN_TOKEN || '',
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
       devnetDashboardUrl: process.env.NUXT_PUBLIC_DEVNET_DASHBOARD_URL || '/network/',
