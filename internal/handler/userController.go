@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -41,8 +40,9 @@ type RegisterRequest struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Identifier string `json:"identifier"`
+	Email      string `json:"email"` // Kept for existing API clients.
+	Password   string `json:"password"`
 }
 
 type ConnectWalletRequest struct {
@@ -57,87 +57,44 @@ type UpdateUserRequest struct {
 
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		writeAuthJSON(w, 400, map[string]string{"message": "Le formulaire est invalide."})
 		return
 	}
-
-	// Basic validation
-	if req.Email == "" || req.Password == "" {
-		http.Error(w, "Email and password are required", http.StatusBadRequest)
+	user, err := registrationUser(req)
+	if err != nil {
+		writeAuthJSON(w, 400, map[string]string{"message": err.Error()})
 		return
 	}
-
-	user := models.User{
-		Email:        req.Email,
-		PasswordHash: req.Password, // The hook in user.go will hash this
-		Username:     req.Username,
-		FirstName:    req.FirstName,
-		LastName:     req.LastName,
-		Role:         "user", // Default role
-	}
-
-	// The BeforeSave hook will hash the password
-	if result := h.DB.Create(&user); result.Error != nil {
-		http.Error(w, "Could not create user: "+result.Error.Error(), http.StatusInternalServerError)
+	if !h.emailAvailable(w, r, user.Email) {
 		return
 	}
-
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"message": "User created successfully"})
+	if !authDatabaseOK(w, h.DB.WithContext(r.Context()).Create(user).Error) {
+		return
+	}
+	writeAuthJSON(w, http.StatusCreated, map[string]string{"message": "Compte créé. Vous pouvez vous connecter."})
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		writeAuthJSON(w, 400, map[string]string{"message": "Le formulaire est invalide."})
 		return
 	}
-
-	var user models.User
-	if result := h.DB.Where("email = ?", req.Email).First(&user); result.Error != nil {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+	users, err := loginUsers(h.DB.WithContext(r.Context()), loginIdentifier(req))
+	if !authDatabaseOK(w, err) {
 		return
 	}
-
-	if !user.CheckPassword(req.Password) {
-		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+	if len(users) != 1 || !users[0].CheckPassword(req.Password) {
+		writeAuthJSON(w, 401, map[string]string{"message": "Identifiant ou mot de passe incorrect."})
 		return
 	}
-
-	expirationTime := time.Now().Add(15 * time.Minute)
-	claims := &JWTClaims{
-		Role: user.Role,
-		RegisteredClaims: jwt.RegisteredClaims{
-			Subject:   strconv.FormatUint(uint64(user.ID), 10),
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-		},
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtKey)
+	tokens, err := loginTokens(users[0])
 	if err != nil {
-		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		writeAuthJSON(w, 500, map[string]string{"message": "La connexion est momentanément indisponible."})
 		return
 	}
-
-	refreshExpirationTime := time.Now().Add(7 * 24 * time.Hour)
-	refreshClaims := &jwt.RegisteredClaims{
-		Subject:   strconv.FormatUint(uint64(user.ID), 10),
-		ExpiresAt: jwt.NewNumericDate(refreshExpirationTime),
-	}
-	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
-	refreshTokenString, err := refreshToken.SignedString(jwtKey)
-	if err != nil {
-		http.Error(w, "Could not generate refresh token", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"token": tokenString,
-		"refresh_token": refreshTokenString,
-	})
+	writeAuthJSON(w, http.StatusOK, tokens)
 }
 
 type RefreshRequest struct {
@@ -281,8 +238,10 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The BeforeSave hook will hash the new password
-	user.PasswordHash = req.NewPassword
+	if err := user.SetPassword(req.NewPassword); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if result := h.DB.Save(&user); result.Error != nil {
 		http.Error(w, "Could not update password", http.StatusInternalServerError)
 		return

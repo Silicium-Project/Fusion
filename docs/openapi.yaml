@@ -51,18 +51,29 @@ paths:
       responses:
         '201':
           description: Created
+        '400':
+          description: Invalid email, name or password (nonempty, maximum 72 bytes)
+        '409':
+          description: Email or username already in use
+        '503':
+          description: Database unavailable; JSON message without internal details
   /login:
     post:
-      summary: Login to get a token
+      summary: Login with an email or username to get a token
       security: []
       requestBody:
         content:
           application/json:
             schema:
               type: object
+              required: [password]
               properties:
+                identifier:
+                  type: string
+                  description: Email or case-sensitive username. Takes precedence over the legacy email field.
                 email:
                   type: string
+                  description: Legacy alias used when identifier is absent.
                 password:
                   type: string
       responses:
@@ -77,6 +88,12 @@ paths:
                     type: string
                   refresh_token:
                     type: string
+        '400':
+          description: Invalid request body
+        '401':
+          description: Invalid identifier or password
+        '503':
+          description: Database unavailable; JSON message without internal details
   /refresh:
     post:
       summary: Refresh JWT Token
