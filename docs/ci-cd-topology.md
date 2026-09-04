@@ -8,10 +8,9 @@ Keep the workflow traceable:
 
 - GitHub stores the source, issues, pull requests, and audit trail.
 - The VPS executes the production path.
-- Self-hosted runners on the VPS execute the active CI, compilation, test, and
+- Self-hosted runners on the VPS execute Linux CI, compilation, tests, and the
   deployment path.
-- GitHub-hosted runners are an optional acceleration lane only when Actions
-  billing is enabled and covered; they are not assumed to be available.
+- GitHub-hosted Windows capacity executes the desktop packaging lane.
 - The visible lifecycle is `Build` -> `Test` -> `Deploy`.
 
 ## Current contract
@@ -26,9 +25,8 @@ GitHub should be used as:
 - status display.
 
 GitHub is not the primary compute plane for production deploy, post-deploy
-validation, or the active CI lanes. CI E2E and compilation may use
-GitHub-hosted capacity only when covered Actions usage is explicitly
-available.
+validation, or the Linux CI lanes. The Windows installer is built on a
+GitHub-hosted Windows runner, then staged on the VPS before publication.
 
 ### VPS
 
@@ -51,7 +49,7 @@ Set `SILICIUM_EXTRA_RUNNER_COUNT=0` when the VPS is resource-constrained.
 
 ### Packaging lane
 
-The desktop Windows packaging lane runs on the self-hosted Windows runner.
+The desktop Windows packaging lane runs on `windows-latest`.
 The generated installers are staged on the VPS before release and deploy.
 
 ## Canonical flow
@@ -65,9 +63,8 @@ The generated installers are staged on the VPS before release and deploy.
    run on the VPS runners in parallel when runner capacity is available.
 3. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
 4. `deploy-vps.yml` is the canonical mainline path: it validates and builds
-   on the VPS runners, publishes release metadata, deploys, and runs
-   post-deploy checks. Its Windows preflight fails fast when the desktop
-   runner is offline instead of leaving a job pending.
+   on the VPS runners, builds Windows installers on `windows-latest`, publishes
+   release metadata, deploys, and runs post-deploy checks.
 5. `deploy/compose/e2e.sh` validates the real container path on the VPS.
 6. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
@@ -79,8 +76,8 @@ The generated installers are staged on the VPS before release and deploy.
 - Do not let a green Fusion workflow mask a red submodule `main`.
 - Do not use `git submodule update --remote` in production deploy steps unless
   the target SHA is also gated by CI.
-- Do not switch jobs to GitHub-hosted runners until the organization has a
-  non-zero Actions budget or sufficient included minutes.
+- Keep the GitHub-hosted Windows job limited to desktop packaging; all
+  production state changes remain on the VPS.
 - Keep the workflow surface small: one canonical deploy path, one canonical
   rollback path, plus one explicit external mirror path if it is still needed.
 
@@ -96,8 +93,8 @@ The generated installers are staged on the VPS before release and deploy.
 - `test.yml`: reusable web, Network core, Docker E2E, and P2P smoke gate for
   PRs and manual runs.
 - `deploy-vps.yml`: canonical production deploy and VPS validation path. It
-  also invokes the reusable build and test gates before publishing and checks
-  that the required Windows packaging runner is online.
+  also invokes the reusable build and test gates, packages Windows installers
+  on `windows-latest`, and publishes them with the VPS deployment.
 - `rollback-vps.yml`: manual recovery path only.
 - `mirror-epitech.yml`: explicit external mirror path to the Epitech repo.
 
@@ -111,13 +108,12 @@ The generated installers are staged on the VPS before release and deploy.
 - `Network/.github/workflows/release.yml`: tag-only publication path that
   reuses `ci.yml` before publishing artifacts.
 
-## Billing constraint
+## Actions capacity
 
-The organization is currently on the Free plan. The Actions budget is set to
-`$0` with `prevent_further_usage` enabled, so GitHub-hosted jobs are rejected
-before a runner is assigned once included capacity is exhausted. This is why
-the active workflows target the VPS runners. The hosted-runner changes remain
-an explicit future optimization, not an active dependency.
+The Windows packaging job uses GitHub-hosted Actions capacity. The repository
+or organization must have sufficient included minutes or an enabled Actions
+budget; if hosted usage is disabled, the deploy stops before packaging. Linux
+validation, tests, deployment, and post-deploy checks continue to use the VPS.
 
 ### Immediate cleanup target
 

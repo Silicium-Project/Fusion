@@ -3,7 +3,6 @@ self-hosted-runner:
   labels:
     - fusion-linux
     - fusion-bootstrap
-    - fusion-windows
 
 # Configuration variables in array of strings defined in your repository or
 # organization. `null` means disabling configuration variables check.

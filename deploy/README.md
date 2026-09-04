@@ -213,19 +213,18 @@ host key instead of relying on `ssh-keyscan`. If no dedicated publication secret
 is configured, the workflow stops with an explicit error. Tokens are revoked
 when their job completes.
 
-The Windows-runner preflight uses `SILICIUM_RUNNER_READ_TOKEN` when configured.
-That token must be allowed to list repository self-hosted runners
-(`Administration: Read` on `Fusion` for a fine-grained token). If it is not
-configured, the workflow falls back to `SILICIUM_SYNC_PUSH_TOKEN`, which must
-then provide that same runner permission.
+The Windows packaging job runs on GitHub-hosted `windows-latest` capacity. It
+does not require a repository self-hosted Windows runner or a runner-listing
+token. The repository or organization must have sufficient Actions minutes or
+an enabled Actions budget for private-repository hosted execution.
 
 The deployment user must be able to run the Compose deployment script through
 `sudo` without an interactive password prompt. The workflow performs a
 ref checkout, updates all submodules, rebuilds the containers, and starts
 the stack. For every deployment, the workflow writes a release marker at
 `/var/lib/silicium/releases/current.env` with deployed version, channel, build,
-and deploy ref. The Windows installer is served directly from the GitHub
-Release and is not copied to the VPS.
+and deploy ref. The Windows installers are built on `windows-latest`, staged on
+the VPS, and installed under `/var/lib/silicium/downloads`.
 
 GitHub should be treated as the orchestrator and audit trail, not as the place
 where the production path executes. Any workflow that must touch production

@@ -10,11 +10,11 @@ canonique sont documentes dans:
 - [docs/repo-attack-plan-and-triage.md](docs/repo-attack-plan-and-triage.md)
 - [docs/ci-cd-topology.md](docs/ci-cd-topology.md)
 
-Le chemin operatoire visible dans GitHub est maintenant simple: `Build`,
-`Test`, puis `Deploy`, tous relies a l'execution VPS/self-hosted. `Build` et
-`Test` restent des gates reutilisables pour les PR et les lancements manuels;
-`Deploy` porte la chaine complete sur `main` et enchaine les memes validations
-avant la publication sur le VPS.
+The visible GitHub path is now simple: `Build`, `Test`, then `Deploy`. Linux
+validation and deployment remain on the VPS runners, while the Windows desktop
+installer is built on GitHub-hosted Windows capacity. `Build` and `Test` remain
+reusable gates for pull requests and manual runs; `Deploy` carries the complete
+mainline chain before publication on the VPS.
 Le miroir externe vers le repo Epitech reste volontaire et explicite via
 `mirror-epitech.yml`, declenche apres un `Deploy` reussi, sans faire partie du
 chemin critique de livraison.

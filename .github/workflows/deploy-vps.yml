@@ -25,7 +25,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 concurrency:
   group: silicium-vps-deploy
@@ -80,32 +79,6 @@ jobs:
     uses: ./.github/workflows/submodule-ci-gate.yml
     secrets: inherit
 
-  runner-preflight:
-    needs: [submodule-ci-gate]
-    runs-on: [self-hosted, fusion-linux]
-    timeout-minutes: 5
-    steps:
-      - name: Require the Windows desktop runner
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.SILICIUM_RUNNER_READ_TOKEN || secrets.SILICIUM_SYNC_PUSH_TOKEN }}
-          script: |
-            const { data } = await github.rest.actions.listSelfHostedRunnersForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100,
-            });
-            const runner = data.runners.find((candidate) =>
-              candidate.labels.some((label) => label.name === "fusion-windows")
-            );
-            if (!runner) {
-              core.setFailed("No self-hosted runner with label fusion-windows is registered.");
-            } else if (runner.status !== "online") {
-              core.setFailed(`Windows desktop runner '${runner.name}' is ${runner.status}; start it before deploying.`);
-            } else {
-              core.info(`Windows desktop runner '${runner.name}' is online${runner.busy ? " and busy" : " and idle"}.`);
-            }
-
   validate-monorepo:
     needs: [submodule-ci-gate]
     runs-on: [self-hosted, fusion-linux]
@@ -114,7 +87,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
@@ -164,15 +137,15 @@ jobs:
     secrets: inherit
 
   build-desktop:
-    needs: [validate-monorepo, runner-preflight]
-    runs-on: [self-hosted, fusion-windows]
+    needs: [validate-monorepo]
+    runs-on: windows-latest
     timeout-minutes: 45
     steps:
       - name: Create GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
@@ -328,8 +301,9 @@ jobs:
             [System.Text.UTF8Encoding]::new($false)
           )
           & icacls $sshKey /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
-          & ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p $vpsPort "$vpsUser@$vpsHost" "install -d -m 700 '$releaseStaging'"
-          & scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P $vpsPort `
+          $knownHosts = Join-Path $sshDir "known_hosts"
+          & ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$knownHosts" -o IdentitiesOnly=yes -i $sshKey -p $vpsPort "$vpsUser@$vpsHost" "install -d -m 700 '$releaseStaging'"
+          & scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$knownHosts" -o IdentitiesOnly=yes -i $sshKey -P $vpsPort `
             "ci-artifacts/silicium-node-windows-dev.exe" `
             "ci-artifacts/silicium-node-windows.exe" `
             "$vpsUser@${vpsHost}:$releaseStaging/"
@@ -343,7 +317,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
@@ -526,7 +500,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network

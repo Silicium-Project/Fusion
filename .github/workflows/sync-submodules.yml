@@ -24,7 +24,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
@@ -84,7 +84,7 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
