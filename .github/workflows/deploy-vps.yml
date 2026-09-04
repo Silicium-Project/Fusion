@@ -10,7 +10,7 @@ on:
       vps_user:
         description: "SSH user on VPS"
         required: false
-        default: "luis"
+        default: "ubuntu"
       vps_port:
         description: "SSH port on VPS"
         required: false
@@ -50,12 +50,12 @@ jobs:
             echo "VPS_HOST, VPS_SSH_KEY and VPS_KNOWN_HOSTS are required." >&2
             exit 1
           fi
-          vps_user="${VPS_USER:-luis}"
+          vps_user="${VPS_USER:-ubuntu}"
           vps_port="${VPS_PORT:-22}"
           ssh_dir="$RUNNER_TEMP/silicium-vps-ssh"
           install -d -m 700 "$ssh_dir"
-          printf '%s\n' "$VPS_SSH_KEY" > "$ssh_dir/id_ed25519"
-          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
           chmod 600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -i "$ssh_dir/id_ed25519" -p "$vps_port" \
@@ -309,7 +309,7 @@ jobs:
           if (-not $env:VPS_HOST) { throw "Missing VPS_HOST secret" }
           if (-not $env:VPS_SSH_KEY) { throw "Missing VPS_SSH_KEY secret" }
           if (-not $env:VPS_KNOWN_HOSTS) { throw "Missing VPS_KNOWN_HOSTS secret" }
-          $vpsUser = if ([string]::IsNullOrWhiteSpace($env:VPS_USER)) { "luis" } else { $env:VPS_USER }
+          $vpsUser = if ([string]::IsNullOrWhiteSpace($env:VPS_USER)) { "ubuntu" } else { $env:VPS_USER }
           $vpsPort = if ([string]::IsNullOrWhiteSpace($env:VPS_PORT)) { "22" } else { $env:VPS_PORT }
           $vpsHost = $env:VPS_HOST
           $releaseStaging = "/tmp/silicium-release-${{ github.run_id }}-${{ github.run_attempt }}"
@@ -437,12 +437,12 @@ jobs:
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          VPS_USER="${VPS_USER:-luis}"
+          VPS_USER="${VPS_USER:-ubuntu}"
           VPS_PORT="${VPS_PORT:-22}"
           RELEASE_STAGING="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/id_ed25519"
-          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$VPS_PORT" \
@@ -543,7 +543,7 @@ jobs:
           RELEASE_BUILD: ${{ env.RELEASE_BUILD }}
         run: |
           set -euo pipefail
-          VPS_USER="${VPS_USER:-luis}"
+          VPS_USER="${VPS_USER:-ubuntu}"
           VPS_PORT="${VPS_PORT:-22}"
           VPS_ROOT="${VPS_ROOT:-/opt/silicium}"
           if [ -z "$VPS_GITHUB_TOKEN" ]; then
@@ -635,5 +635,5 @@ jobs:
             echo "- release version: $RELEASE_VERSION"
             echo "- release channel: $RELEASE_CHANNEL"
             echo "- release build: $RELEASE_BUILD"
-            echo "- ssh user: ${VPS_USER:-luis}"
+            echo "- ssh user: ${VPS_USER:-ubuntu}"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -196,7 +196,7 @@ Configure these repository secrets before the first run:
 
 The workflow dispatch form provides optional runtime overrides:
 
-- `vps_user`: SSH deployment user (default `luis`);
+- `vps_user`: SSH deployment user (default `ubuntu`);
 - `vps_port`: SSH port (default `22`);
 - `vps_root`: checkout path on VPS (default `/opt/silicium`).
 
