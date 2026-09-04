@@ -32,7 +32,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare-vps-runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Reclaim stale VPS runner workspaces
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ github.event.inputs.vps_user }}
+          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$VPS_HOST" || -z "$VPS_SSH_KEY" || -z "$VPS_KNOWN_HOSTS" ]]; then
+            echo "VPS_HOST, VPS_SSH_KEY and VPS_KNOWN_HOSTS are required." >&2
+            exit 1
+          fi
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+          ssh_dir="$RUNNER_TEMP/silicium-vps-ssh"
+          install -d -m 700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -i "$ssh_dir/id_ed25519" -p "$vps_port" \
+            "$vps_user@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
+          set -euo pipefail
+          for workspace in /opt/github-runner*/_work/Fusion; do
+            if [[ -d "$workspace" ]]; then
+              rm -rf -- "$workspace"
+            fi
+          done
+          for release_staging in /tmp/silicium-release-*; do
+            if [[ -d "$release_staging" ]]; then
+              rm -rf -- "$release_staging"
+            fi
+          done
+          df -h / /opt
+          REMOTE
+
   submodule-ci-gate:
+    needs: [prepare-vps-runner]
     uses: ./.github/workflows/submodule-ci-gate.yml
     secrets: inherit
 
