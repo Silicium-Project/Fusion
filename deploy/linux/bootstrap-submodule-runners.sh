@@ -23,7 +23,7 @@ fi
 
 configure_runner_runtime() {
   local docker_path docker_compose_path sudoers_file deps_marker audio_package
-  local linux_build_deps_marker
+  local linux_build_deps_marker fuse_package
 
   docker_path="$(command -v docker || true)"
   docker_compose_path="$(command -v docker-compose || true)"
@@ -59,12 +59,16 @@ configure_runner_runtime() {
     rm -rf /var/lib/apt/lists/*
   fi
 
-  linux_build_deps_marker="/var/lib/silicium/linux-desktop-build-deps"
+  linux_build_deps_marker="/var/lib/silicium/linux-desktop-build-deps-v2"
   if [[ ! -f "$linux_build_deps_marker" ]] && command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
+    fuse_package="libfuse2"
+    if apt-cache show libfuse2t64 >/dev/null 2>&1; then
+      fuse_package="libfuse2t64"
+    fi
     apt-get install -y --no-install-recommends \
-      build-essential curl file libayatana-appindicator3-dev libfuse2 \
+      build-essential curl file libayatana-appindicator3-dev "$fuse_package" \
       librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip
     install -d -m 0755 "$(dirname "$linux_build_deps_marker")"
     touch "$linux_build_deps_marker"

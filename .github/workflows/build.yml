@@ -63,7 +63,13 @@ jobs:
           for package in \
             build-essential curl file libayatana-appindicator3-dev libfuse2 \
             librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip; do
-            if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+            installed=false
+            if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+              installed=true
+            elif [[ "$package" == "libfuse2" ]] && dpkg-query -W -f='${Status}' libfuse2t64 2>/dev/null | grep -q 'install ok installed'; then
+              installed=true
+            fi
+            if [[ "$installed" != true ]]; then
               missing+=("$package")
             fi
           done
