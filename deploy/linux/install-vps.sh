@@ -54,7 +54,7 @@ install_github_actions_runner() {
   local runner_url="${SILICIUM_GHA_RUNNER_URL:-}"
   local runner_token="${SILICIUM_GHA_RUNNER_TOKEN:-}"
   local runner_name="${SILICIUM_GHA_RUNNER_NAME:-fusion-vps}"
-  local runner_labels="${SILICIUM_GHA_RUNNER_LABELS:-self-hosted,fusion-linux}"
+  local runner_labels="${SILICIUM_GHA_RUNNER_LABELS:-self-hosted,fusion-linux,fusion-bootstrap}"
   local runner_user="${SILICIUM_GHA_RUNNER_USER:-github-runner}"
   local runner_dir="${SILICIUM_GHA_RUNNER_DIR:-/opt/github-runner}"
   local runner_version="${SILICIUM_GHA_RUNNER_VERSION:-}"

@@ -51,7 +51,7 @@ Default runner settings:
 
 - name: `fusion-vps`
 - user: `github-runner`
-- labels: `self-hosted,fusion-linux`
+- labels: `self-hosted,fusion-linux,fusion-bootstrap`
 - directory: `/opt/github-runner`
 
 Use a fresh GitHub runner registration token. The script downloads the current
