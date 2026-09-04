@@ -213,6 +213,12 @@ host key instead of relying on `ssh-keyscan`. If no dedicated publication secret
 is configured, the workflow stops with an explicit error. Tokens are revoked
 when their job completes.
 
+The Windows-runner preflight uses `SILICIUM_RUNNER_READ_TOKEN` when configured.
+That token must be allowed to list repository self-hosted runners
+(`Administration: Read` on `Fusion` for a fine-grained token). If it is not
+configured, the workflow falls back to `SILICIUM_SYNC_PUSH_TOKEN`, which must
+then provide that same runner permission.
+
 The deployment user must be able to run the Compose deployment script through
 `sudo` without an interactive password prompt. The workflow performs a
 ref checkout, updates all submodules, rebuilds the containers, and starts

@@ -44,7 +44,7 @@ jobs:
       - name: Require the Windows desktop runner
         uses: actions/github-script@v7
         with:
-          github-token: ${{ github.token }}
+          github-token: ${{ secrets.SILICIUM_RUNNER_READ_TOKEN || secrets.SILICIUM_SYNC_PUSH_TOKEN }}
           script: |
             const { data } = await github.rest.actions.listSelfHostedRunnersForRepo({
               owner: context.repo.owner,
@@ -322,12 +322,22 @@ jobs:
           git submodule sync -- BackEnd FrontEnd Network
           git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
-      - name: Install Linux desktop prerequisites
+      - name: Verify Linux desktop prerequisites
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          set -euo pipefail
+          missing=()
+          for package in \
             build-essential curl file libayatana-appindicator3-dev libfuse2 \
-            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip
+            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip; do
+            if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+              missing+=("$package")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            printf 'Missing Linux desktop prerequisites: %s\n' "${missing[*]}" >&2
+            printf 'Run deploy/linux/bootstrap-submodule-runners.sh as root on the VPS.\n' >&2
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
