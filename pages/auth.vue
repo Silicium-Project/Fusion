@@ -134,7 +134,7 @@ async function register() {
   });
   form.identifier = form.email.trim();
   await setMode(true);
-  successMessage.value = 'Votre compte est créé. Vous pouvez maintenant vous connecter.';
+  successMessage.value = 'Compte créé ! Vous pouvez maintenant vous connecter.';
 }
 
 useSeoMeta({ title: () => `${isLogin.value ? 'Connexion' : 'Inscription'} — Silicium` });
