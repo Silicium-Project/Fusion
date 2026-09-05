@@ -14,14 +14,17 @@ export default defineNuxtConfig({
   },
   app: {
     head: {
-      title: 'Silicium',
+      title: 'Silicium — Calcul distribué',
       meta: [
-        { name: 'description', content: 'Welcome to Silicium!' },
+        { name: 'description', content: 'Silicium coordonne vos machines, distribue vos calculs et centralise le suivi des résultats.' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { name: 'theme-color', content: '#080a0f' },
       ],
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap' }
+        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap' }
       ],
     },
   },
