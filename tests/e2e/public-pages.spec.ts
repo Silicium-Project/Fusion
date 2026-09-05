@@ -4,7 +4,7 @@ test('public navigation reaches each page and returns home', async ({ page }) =>
   await page.route('**/api/health', route => route.fulfill({ json: { status: 'ok' } }));
   await page.route('**/downloads/update-manifest.json', route => route.fulfill({ json: { generated_utc: '2026-09-03T10:00:00Z', channels: {} } }));
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Un même calcul.');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Votre réseau.');
   for (const [name, path, heading] of [
     ['À propos', '/about', 'Relier les machines.'],
     ['Service', '/service', 'Le site, les services VPS'],
@@ -41,10 +41,12 @@ test('status checks live on Service, with manual refresh and an offline state', 
 test('public navigation remains available on mobile', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  const navigation = page.getByRole('navigation', { name: 'Navigation principale' });
+  await page.getByRole('button', { name: 'Ouvrir le menu' }).click();
+  const navigation = page.getByRole('navigation', { name: 'Navigation mobile' });
   await expect(navigation.getByRole('link', { name: 'À propos' })).toBeVisible();
   await navigation.getByRole('link', { name: 'Contact', exact: true }).click();
   await expect(page).toHaveURL(url => url.pathname === '/contact');
-  await page.getByRole('button', { name: 'Se connecter', exact: true }).click();
+  await page.getByRole('button', { name: 'Ouvrir le menu' }).click();
+  await page.getByRole('navigation', { name: 'Navigation mobile' }).getByRole('button', { name: 'Se connecter', exact: true }).click();
   await expect(page).toHaveURL(/\/auth\?mode=login/);
 });

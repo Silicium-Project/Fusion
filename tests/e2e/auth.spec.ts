@@ -26,9 +26,9 @@ test('signup opens registration and confirms account creation', async ({ page })
   await page.route('**/api/register', route => route.fulfill({ status: 201, json: { message: 'Compte créé.' } }));
   await page.goto('/');
   await page.getByRole('button', { name: "S'inscrire", exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Créer un compte' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Créez votre espace' })).toBeVisible();
   await fillRegistration(page);
-  await page.getByRole('button', { name: "S'inscrire", exact: true }).click();
+  await page.getByRole('button', { name: 'Créer mon compte', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Compte créé');
   await expect(page.getByRole('button', { name: 'Connexion', exact: true })).toBeVisible();
 });
@@ -37,13 +37,13 @@ test('invalid login and duplicate registration show errors', async ({ page }) =>
   await page.route('**/api/login', route => route.fulfill({ status: 401, json: { message: 'Mot de passe incorrect.' } }));
   await page.route('**/api/register', route => route.fulfill({ status: 409, json: { message: 'Adresse déjà utilisée.' } }));
   await page.goto('/auth');
-  await page.getByPlaceholder('E-mail').fill('user@example.test');
+  await page.getByLabel('E-mail ou nom d’utilisateur').fill('user@example.test');
   await page.getByPlaceholder('Mot de passe', { exact: true }).fill('wrong-password');
-  await page.getByRole('button', { name: 'Connexion', exact: true }).click();
+  await page.getByRole('button', { name: 'Se connecter', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'incorrect' })).toBeVisible();
-  await page.getByRole('button', { name: /Besoin d'un compte/ }).click();
+  await page.getByRole('button', { name: 'Inscription', exact: true }).click();
   await fillRegistration(page);
-  await page.getByRole('button', { name: "S'inscrire", exact: true }).click();
+  await page.getByRole('button', { name: 'Créer mon compte', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'déjà utilisée' })).toBeVisible();
   expect((await page.context().cookies()).some(cookie => cookie.name === 'auth_token')).toBe(false);
 });
@@ -59,7 +59,7 @@ for (const account of [{ identifier: 'admin@example.test', role: 'admin' }, { id
     await page.goto('/auth');
     await page.getByLabel('E-mail ou nom d’utilisateur').fill(account.identifier);
     await page.getByPlaceholder('Mot de passe', { exact: true }).fill('correct-password');
-    await page.getByRole('button', { name: 'Connexion', exact: true }).click();
+    await page.getByRole('button', { name: 'Se connecter', exact: true }).click();
     await expect(page).toHaveURL(url => url.pathname === '/');
     const header = page.getByRole('banner');
     await expect(header.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
