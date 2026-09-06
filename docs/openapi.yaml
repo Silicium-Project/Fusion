@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: Silicium API
-  version: 1.0.0
-  description: Silicium Fusion Network Backend API
+  version: 1.1.0
+  description: API du site, des tâches et de la télémétrie Silicium.
 servers:
   - url: http://localhost:8080
 components:
@@ -12,260 +12,208 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Message:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
     User:
       type: object
+      required: [id, email]
       properties:
-        id:
-          type: string
-        email:
-          type: string
-        wallet_address:
-          type: string
+        id: { type: integer }
+        email: { type: string, format: email }
+        username: { type: string }
+        firstName: { type: string }
+        lastName: { type: string }
+        walletAddress: { type: string }
+        role: { type: string }
+    Tokens:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+        refresh_token: { type: string }
     Job:
       type: object
+      required: [id, title, workload, status, siliciumJobId]
       properties:
-        id:
-          type: string
-        status:
-          type: string
-        created_at:
-          type: string
-          format: date-time
+        id: { type: integer }
+        title: { type: string }
+        description: { type: string }
+        workload: { type: string }
+        priority: { type: string }
+        fragmentCount: { type: integer }
+        status: { type: string }
+        siliciumJobId: { type: string }
+        billableWorkUnits: { type: integer, format: int64 }
+        computeReceiptHash: { type: string }
+        network: { type: object, additionalProperties: true }
+    Status:
+      type: object
+      required: [status, checkedAt, backend, network, blockchain]
+      properties:
+        status: { type: string, enum: [operational, degraded, unavailable] }
+        checkedAt: { type: string, format: date-time }
+        backend: { type: object, additionalProperties: true }
+        network: { type: object, additionalProperties: true }
+        blockchain: { type: object, additionalProperties: true }
 security:
   - bearerAuth: []
 paths:
+  /health:
+    get:
+      security: []
+      summary: Sonde de disponibilité minimale
+      responses:
+        '200': { description: OK }
+  /healthz:
+    get:
+      security: []
+      summary: Alias de la sonde de disponibilité
+      responses:
+        '200': { description: OK }
+  /status:
+    get:
+      security: []
+      summary: État consolidé de l’API, du réseau et de Solana
+      responses:
+        '200':
+          description: Snapshot mis en cache cinq secondes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Status' }
   /register:
     post:
-      summary: Register a new user
       security: []
+      summary: Créer un compte
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [email, password]
               properties:
-                email:
-                  type: string
-                password:
-                  type: string
+                email: { type: string, format: email }
+                password: { type: string, maxLength: 72 }
+                username: { type: string }
+                first_name: { type: string }
+                last_name: { type: string }
       responses:
-        '201':
-          description: Created
-        '400':
-          description: Invalid email, name or password (nonempty, maximum 72 bytes)
-        '409':
-          description: Email or username already in use
-        '503':
-          description: Database unavailable; JSON message without internal details
+        '201': { description: Compte créé }
+        '409': { description: E-mail ou nom déjà utilisé }
   /login:
     post:
-      summary: Login with an email or username to get a token
       security: []
+      summary: Ouvrir une session avec un e-mail ou un nom d’utilisateur
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
-              required: [password]
+              required: [identifier, password]
               properties:
-                identifier:
-                  type: string
-                  description: Email or case-sensitive username. Takes precedence over the legacy email field.
-                email:
-                  type: string
-                  description: Legacy alias used when identifier is absent.
-                password:
-                  type: string
+                identifier: { type: string }
+                password: { type: string }
       responses:
         '200':
-          description: OK
+          description: Access token de 15 minutes et refresh token de 7 jours
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                  refresh_token:
-                    type: string
-        '400':
-          description: Invalid request body
-        '401':
-          description: Invalid identifier or password
-        '503':
-          description: Database unavailable; JSON message without internal details
+              schema: { $ref: '#/components/schemas/Tokens' }
+        '401': { description: Identifiants invalides }
   /refresh:
     post:
-      summary: Refresh JWT Token
       security: []
+      summary: Renouveler l’access token
       requestBody:
         content:
           application/json:
             schema:
               type: object
+              required: [refresh_token]
               properties:
-                refresh_token:
-                  type: string
+                refresh_token: { type: string }
       responses:
         '200':
-          description: OK
+          description: Token renouvelé
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  token:
-                    type: string
-                  refresh_token:
-                    type: string
+              schema: { $ref: '#/components/schemas/Tokens' }
+        '401': { description: Session expirée }
   /user:
     get:
-      summary: Get current user profile
+      summary: Lire le profil courant
       responses:
         '200':
-          description: OK
+          description: Profil
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-    put:
-      summary: Update user profile
-      responses:
-        '200':
-          description: OK
+              schema: { $ref: '#/components/schemas/User' }
     patch:
-      summary: Partially update user profile
+      summary: Modifier le profil courant
       responses:
-        '200':
-          description: OK
-    delete:
-      summary: Delete user account
-      responses:
-        '204':
-          description: No Content
+        '200': { description: Profil modifié }
   /user/password:
     put:
-      summary: Change user password
+      summary: Modifier le mot de passe
       responses:
-        '200':
-          description: OK
+        '200': { description: Mot de passe modifié }
+  /user/wallet/challenge:
+    post:
+      summary: Créer un challenge de preuve de propriété Solana
+      responses:
+        '200': { description: Message à signer, nonce et expiration }
   /user/wallet:
     post:
-      summary: Connect Solana wallet
+      summary: Vérifier la signature et rattacher le portefeuille
       responses:
-        '200':
-          description: OK
+        '200': { description: Portefeuille vérifié }
+        '401': { description: Challenge expiré, réutilisé ou signature invalide }
   /jobs:
     get:
-      summary: List user jobs
+      summary: Lister les tâches du compte
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, minimum: 1, maximum: 100 } }
+        - { name: status, in: query, schema: { type: string } }
       responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Job'
+        '200': { description: Liste paginée }
     post:
-      summary: Create a new job
+      summary: Soumettre une tâche multipart
       responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Job'
+        '202': { description: Tâche acceptée }
   /jobs/network/peers:
     get:
-      summary: Get P2P network peers
+      summary: Lire le registre des nœuds annoté avec les versions
       responses:
-        '200':
-          description: OK
+        '200': { description: Nœuds }
   /jobs/network/tasks:
     get:
-      summary: Get active network tasks
+      summary: Lire les travaux RPC agrégés
       responses:
-        '200':
-          description: OK
-  /jobs/network/tasks/{id}/cancel:
-    post:
-      summary: Cancel a network task
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-  /jobs/{id}:
-    get:
-      summary: Get job details
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Job'
-  /jobs/{id}/cancel:
-    post:
-      summary: Cancel a job
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
+        '200': { description: Travaux }
   /jobs/{id}/dashboard:
     get:
-      summary: Get job dashboard stats
+      summary: Lire le détail métier et technique d’une exécution
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        '200':
-          description: OK
+        '200': { description: Détail de l’exécution }
+        '404': { description: Tâche introuvable }
+  /jobs/{id}/cancel:
+    post:
+      summary: Propager l’arrêt d’une tâche
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '202': { description: Arrêt accepté }
   /jobs/{id}/result:
     get:
-      summary: Get job final result
+      summary: Télécharger le résultat final
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        '200':
-          description: OK
-  /jobs/{id}/fragments/{index}/preview:
-    get:
-      summary: Preview a job fragment
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: index
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: OK
+        '200': { description: Artefact final }

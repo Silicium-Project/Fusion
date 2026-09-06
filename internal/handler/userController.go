@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -46,6 +47,12 @@ type LoginRequest struct {
 }
 
 type ConnectWalletRequest struct {
+	WalletAddress string `json:"walletAddress"`
+	Challenge     string `json:"challenge"`
+	Signature     string `json:"signature"`
+}
+
+type WalletChallengeRequest struct {
 	WalletAddress string `json:"walletAddress"`
 }
 
@@ -103,25 +110,25 @@ type RefreshRequest struct {
 
 func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	var req RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "La demande de renouvellement est invalide."})
 		return
 	}
 
 	claims := &jwt.RegisteredClaims{}
 	token, err := jwt.ParseWithClaims(req.RefreshToken, claims, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
 
 	if err != nil || !token.Valid {
-		http.Error(w, "Invalid refresh token", http.StatusUnauthorized)
+		writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "La session a expiré. Reconnectez-vous."})
 		return
 	}
 
 	userID := claims.Subject
 	var user models.User
-	if result := h.DB.First(&user, userID); result.Error != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
+	if result := h.DB.WithContext(r.Context()).First(&user, userID); result.Error != nil {
+		writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "La session n’est plus valide."})
 		return
 	}
 
@@ -137,12 +144,11 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	newToken := jwt.NewWithClaims(jwt.SigningMethodHS256, newClaims)
 	newTokenString, err := newToken.SignedString(jwtKey)
 	if err != nil {
-		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		writeAuthJSON(w, http.StatusInternalServerError, map[string]string{"message": "La session ne peut pas être renouvelée."})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	writeAuthJSON(w, http.StatusOK, map[string]string{
 		"token": newTokenString,
 	})
 }
@@ -267,37 +273,81 @@ func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "User deleted successfully"})
 }
 
+func (h *Handler) IssueWalletChallenge(w http.ResponseWriter, r *http.Request) {
+	userIDStr, ok := r.Context().Value(contextkeys.UserIDKey).(string)
+	if !ok {
+		writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "La session n’est pas valide."})
+		return
+	}
+	userID, err := strconv.ParseUint(userIDStr, 10, 64)
+	if err != nil || userID == 0 || h.walletChallenges == nil {
+		writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "La session n’est pas valide."})
+		return
+	}
+	var req WalletChallengeRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil {
+		writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "La demande de portefeuille est invalide."})
+		return
+	}
+	if _, err := validateWalletAddress(req.WalletAddress); err != nil {
+		writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "L’adresse Solana n’est pas valide."})
+		return
+	}
+	challenge, err := h.walletChallenges.issue(uint(userID), req.WalletAddress, time.Now())
+	if err != nil {
+		writeAuthJSON(w, http.StatusInternalServerError, map[string]string{"message": "Le challenge ne peut pas être créé."})
+		return
+	}
+	writeAuthJSON(w, http.StatusOK, map[string]string{
+		"challenge": challenge.Nonce,
+		"message":   challenge.Message,
+		"expiresAt": challenge.ExpiresAt.Format(time.RFC3339),
+	})
+}
+
 func (h *Handler) ConnectWallet(w http.ResponseWriter, r *http.Request) {
 	userIDStr, ok := r.Context().Value(contextkeys.UserIDKey).(string)
 	if !ok {
-		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
+		writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "La session n’est pas valide."})
+		return
+	}
+	userID, err := strconv.ParseUint(userIDStr, 10, 64)
+	if err != nil || userID == 0 || h.walletChallenges == nil {
+		writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "La session n’est pas valide."})
 		return
 	}
 
 	var req ConnectWalletRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 24<<10)).Decode(&req); err != nil {
+		writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "La preuve du portefeuille est invalide."})
 		return
 	}
 
-	if req.WalletAddress == "" {
-		http.Error(w, "Wallet address is required", http.StatusBadRequest)
+	if _, err := validateWalletAddress(req.WalletAddress); err != nil {
+		writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "L’adresse Solana n’est pas valide."})
+		return
+	}
+	challenge, err := h.walletChallenges.consume(uint(userID), req.WalletAddress, req.Challenge, time.Now())
+	if err != nil {
+		writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "Le challenge a expiré ou a déjà été utilisé."})
+		return
+	}
+	if err := verifyWalletSignature(req.WalletAddress, challenge.Message, req.Signature); err != nil {
+		writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "La signature Phantom n’est pas valide."})
 		return
 	}
 
 	var user models.User
-	if result := h.DB.First(&user, userIDStr); result.Error != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
+	if result := h.DB.WithContext(r.Context()).First(&user, userIDStr); result.Error != nil {
+		writeAuthJSON(w, http.StatusNotFound, map[string]string{"message": "Le compte n’existe plus."})
 		return
 	}
 
 	user.WalletAddress = &req.WalletAddress
 
-	if result := h.DB.Save(&user); result.Error != nil {
-		http.Error(w, "Could not connect wallet", http.StatusInternalServerError)
+	if result := h.DB.WithContext(r.Context()).Save(&user); !authDatabaseOK(w, result.Error) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Wallet connected successfully"})
+	writeAuthJSON(w, http.StatusOK, map[string]string{"message": "Portefeuille vérifié et connecté."})
 }

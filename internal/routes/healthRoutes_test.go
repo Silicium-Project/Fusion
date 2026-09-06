@@ -6,11 +6,12 @@ import (
 	"testing"
 
 	"github.com/gorilla/mux"
+	"github.com/silicium/internal/handler"
 )
 
 func TestRegisterHealthRoutes(t *testing.T) {
 	router := mux.NewRouter()
-	RegisterHealthRoutes(router)
+	RegisterHealthRoutes(router, handler.New(nil))
 
 	for _, path := range []string{"/health", "/healthz"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
