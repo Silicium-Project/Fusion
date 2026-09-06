@@ -1,284 +1,45 @@
 <template>
-  <div class="relative min-h-screen overflow-hidden bg-[#070912] text-white">
-    <div class="absolute inset-0">
-      <div class="absolute left-[-10%] top-[-10%] h-[34rem] w-[34rem] rounded-full bg-cyan-500/12 blur-3xl"></div>
-      <div class="absolute right-[-12%] top-[10%] h-[30rem] w-[30rem] rounded-full bg-fuchsia-500/12 blur-3xl"></div>
-      <div class="absolute bottom-[-12%] left-[20%] h-[28rem] w-[28rem] rounded-full bg-emerald-500/10 blur-3xl"></div>
-    </div>
-
-    <Header />
-
-    <main class="relative z-10 mx-auto max-w-7xl px-6 pb-20 pt-40 md:px-8 lg:pb-24">
-      <section class="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
-        <div>
-          <span class="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200">
-            Service · Vérification toutes les {{ refreshSeconds }} s
-          </span>
-          <h1 class="mt-6 max-w-3xl text-5xl font-black leading-none md:text-7xl">
-            Le site, les services VPS et le canal de mise a jour dans une seule vue.
-          </h1>
-          <p class="mt-6 max-w-2xl text-lg leading-8 text-white/72 md:text-xl">
-            Silicium expose ici l'etat public du backend, du manifeste de release et des liens de distribution.
-            Cette page rassemble les vérifications disponibles et se rafraîchit automatiquement.
-          </p>
-
-          <div class="mt-8 flex flex-wrap gap-3">
-            <NuxtLink
-              to="/dashboard"
-              class="inline-flex items-center rounded-full bg-white px-6 py-3 text-sm font-bold text-slate-950 transition hover:scale-[1.02]"
-            >
-              Ouvrir le dashboard
-            </NuxtLink>
-            <a
-              :href="nodeAppWindowsUrl"
-              class="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white/85 transition hover:border-white/30 hover:bg-white/10"
-              download
-            >
-              Telecharger le node Windows
-            </a>
-            <a
-              :href="updateManifestUrl"
-              class="inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-400/10 px-6 py-3 text-sm font-semibold text-cyan-100 transition hover:border-cyan-300/40 hover:bg-cyan-400/15"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Ouvrir le manifeste
-            </a>
-          </div>
-
-          <div class="mt-10 grid gap-4 sm:grid-cols-3">
-            <article class="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl shadow-black/20 backdrop-blur">
-              <p class="text-xs uppercase tracking-[0.24em] text-white/40">Backend</p>
-              <p class="mt-3 text-2xl font-extrabold" :class="backendHealthy ? 'text-emerald-300' : 'text-rose-300'">
-                {{ backendHealthy ? 'En ligne' : 'Hors ligne' }}
-              </p>
-              <p class="mt-2 text-sm text-white/55">{{ backendDetail }}</p>
-            </article>
-            <article class="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl shadow-black/20 backdrop-blur">
-              <p class="text-xs uppercase tracking-[0.24em] text-white/40">Frontend</p>
-              <p class="mt-3 text-2xl font-extrabold text-cyan-300">Actif</p>
-              <p class="mt-2 text-sm text-white/55">La page publique est servie par le proxy VPS.</p>
-            </article>
-            <article class="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-2xl shadow-black/20 backdrop-blur">
-              <p class="text-xs uppercase tracking-[0.24em] text-white/40">Release</p>
-              <p class="mt-3 text-2xl font-extrabold" :class="manifest ? 'text-fuchsia-300' : 'text-amber-300'">
-                {{ manifestLabel }}
-              </p>
-              <p class="mt-2 text-sm text-white/55">{{ manifestDetail }}</p>
-            </article>
-          </div>
-        </div>
-
-        <aside class="rounded-[2rem] border border-white/10 bg-slate-950/65 p-6 shadow-[0_30px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl">
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <p class="text-xs uppercase tracking-[0.28em] text-white/40">Live status</p>
-              <h2 class="mt-3 text-2xl font-black">Services exposes</h2>
-            </div>
-            <button
-              class="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white/75 transition hover:border-white/25 hover:bg-white/10"
-              @click="refreshStatus"
-            >
-              Rafraichir
-            </button>
-          </div>
-
-          <div class="mt-6 space-y-3">
-            <article
-              v-for="service in services"
-              :key="service.name"
-              class="rounded-2xl border border-white/8 bg-white/5 p-4 transition hover:border-white/15"
-            >
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <p class="font-semibold">{{ service.name }}</p>
-                  <p class="mt-1 text-sm text-white/50">{{ service.description }}</p>
-                </div>
-                <span
-                  class="rounded-full px-3 py-1 text-xs font-bold"
-                  :class="statusBadgeClass(service.status)"
-                >
-                  {{ service.statusLabel }}
-                </span>
-              </div>
-              <p class="mt-3 text-sm text-white/70">{{ service.detail }}</p>
-            </article>
-          </div>
-
-          <div class="mt-6 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
-            <p class="text-xs uppercase tracking-[0.24em] text-cyan-200/70">Derniere verification</p>
-            <p class="mt-2 text-sm text-cyan-50">{{ lastCheckedLabel }}</p>
-            <p class="mt-1 text-xs text-cyan-100/60">
-              Le statut est repasse automatiquement toutes les {{ refreshSeconds }} secondes.
-            </p>
-          </div>
-
-          <div v-if="manifestChannels.length" class="mt-6">
-            <p class="text-xs uppercase tracking-[0.24em] text-white/40">Canaux de mise a jour</p>
-            <div class="mt-3 grid gap-3">
-              <article
-                v-for="channel in manifestChannels"
-                :key="channel.name"
-                class="rounded-2xl border border-white/8 bg-black/20 p-4"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <div>
-                    <p class="font-semibold capitalize">{{ channel.name }}</p>
-                    <p class="mt-1 text-xs text-white/45">{{ channel.url }}</p>
-                  </div>
-                  <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/70">
-                    {{ channel.version }}
-                  </span>
-                </div>
-                <p class="mt-2 text-xs text-white/55">build {{ channel.build || 'unknown' }}</p>
-              </article>
-            </div>
-          </div>
-        </aside>
-      </section>
-    </main>
+  <div class="service-page">
+    <section class="service-hero content-width"><div><span class="eyebrow">Produit</span><h1>Du calcul soumis<br>au résultat vérifié.</h1><p>Une chaîne cohérente relie le site, l’API, l’orchestrateur, les nœuds et les preuves Devnet.</p><div class="cluster"><UiButton :to="isAuthenticated ? '/jobs/new' : '/auth?mode=register'" size="large" icon="arrow">Soumettre une tâche</UiButton><UiButton to="#status" variant="secondary" size="large">Voir l’état du service</UiButton></div></div><div class="service-hero__stack"><article v-for="layer in layers" :key="layer.title"><span><UiIcon :name="layer.icon"/></span><div><small>{{ layer.number }}</small><strong>{{ layer.title }}</strong><p>{{ layer.text }}</p></div></article></div></section>
+    <section class="service-flow content-width"><div class="section-heading"><span class="eyebrow">Chaîne d’exécution</span><h2>Chaque intégration a un rôle explicite.</h2><p>Le frontend donne accès au système. Il ne simule ni le réseau, ni les transactions, ni les résultats.</p></div><ProcessFlow /></section>
+    <section id="status" class="status-section content-width"><div class="status-section__head"><div><span class="eyebrow">État en direct</span><h2>Infrastructure</h2><p>Dernière vérification : {{ status ? formatDate(status.checkedAt) : 'en cours' }}</p></div><UiButton variant="secondary" size="small" icon="refresh" :loading="loading" @click="refresh(true)">Rafraîchir</UiButton></div><UiNotice v-if="error" tone="warning">{{ error }}</UiNotice><div class="status-grid"><article v-for="item in statusItems" :key="item.label"><div><span><UiIcon :name="item.icon"/></span><UiStatusBadge :status="item.status" /></div><h3>{{ item.label }}</h3><strong>{{ item.value }}</strong><p>{{ item.detail }}</p></article></div></section>
+    <section id="downloads" class="downloads content-width"><div><span class="eyebrow">Participer au réseau</span><h2>Installez un nœud.</h2><p>Choisissez le canal adapté. Les versions de développement servent à tester le réseau avant promotion.</p></div><div class="downloads__list"><a :href="String(config.public.nodeAppWindowsUrl)"><span><UiIcon name="download"/></span><div><strong>Node Windows</strong><small>Canal stable · {{ stableVersion }}</small></div><UiIcon name="arrow"/></a><a :href="String(config.public.nodeAppWindowsDevUrl)"><span><UiIcon name="code"/></span><div><strong>Node Windows · Dev</strong><small>Canal de test · {{ devVersion }}</small></div><UiIcon name="arrow"/></a><a :href="String(config.public.nodeAppLinuxDevUrl)"><span><UiIcon name="processor"/></span><div><strong>Node Linux · Dev</strong><small>AppImage · {{ devVersion }}</small></div><UiIcon name="arrow"/></a></div></section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
-import Header from '../components/Header.vue';
-import '~/assets/css/stars.css';
-
-type UpdateChannel = {
-  version?: string;
-  build?: string;
-  url?: string;
-};
-
-type UpdateManifest = {
-  generated_utc?: string;
-  channels?: Record<string, UpdateChannel>;
-};
-
-type ServiceStatus = 'up' | 'down' | 'loading';
-
-useSeoMeta({ title: 'Service — Silicium', description: 'État des services Silicium, téléchargement du nœud Windows et canaux de mise à jour.' });
-const { public: publicConfig } = useRuntimeConfig();
-const apiBase = publicConfig.apiBase;
-const updateManifestUrl = publicConfig.updateManifestUrl || '/downloads/update-manifest.json';
-const nodeAppWindowsUrl = publicConfig.nodeAppWindowsUrl;
-const refreshSeconds = Number(publicConfig.statusRefreshSeconds || 30);
-
-const backendHealthy = ref(false);
-const backendDetail = ref('En attente de la premiere verification.');
-const manifest = ref<UpdateManifest | null>(null);
-const manifestError = ref('');
-const lastChecked = ref<string>('');
-const refreshTimer = ref<number | null>(null);
-
-const manifestChannels = computed(() =>
-  Object.entries(manifest.value?.channels || {}).map(([name, channel]) => ({
-    name,
-    version: channel?.version || 'unknown',
-    build: channel?.build || '',
-    url: channel?.url || updateManifestUrl,
-  })),
-);
-
-const manifestLabel = computed(() => {
-  if (!manifest.value) return manifestError.value ? 'Indisponible' : 'Chargement';
-  return manifest.value.generated_utc ? 'Actif' : 'Aucun horodatage';
-});
-
-const manifestDetail = computed(() => {
-  if (manifestError.value) return manifestError.value;
-  if (manifest.value?.generated_utc) return `Genere le ${formatDateTime(manifest.value.generated_utc)}`;
-  return 'Le manifeste de release est en cours de chargement.';
-});
-
-const lastCheckedLabel = computed(() =>
-  lastChecked.value ? formatDateTime(lastChecked.value) : 'Aucune verification effectuee.',
-);
-
-const services = computed(() => [
-  {
-    name: 'Frontend web',
-    description: 'Landing page publique et navigation initiale',
-    status: 'up' as ServiceStatus,
-    statusLabel: 'Actif',
-    detail: 'Le site est servi par le proxy VPS.',
-  },
-  {
-    name: 'Backend API',
-    description: 'Healthcheck et logique applicative',
-    status: backendHealthy.value ? 'up' : 'down',
-    statusLabel: backendHealthy.value ? 'En ligne' : 'Hors ligne',
-    detail: backendDetail.value,
-  },
-  {
-    name: 'Update manifest',
-    description: 'Canal de mise a jour publie sur le VPS',
-    status: manifest.value ? 'up' : 'loading',
-    statusLabel: manifest.value ? 'Disponible' : 'En attente',
-    detail: manifestDetail.value,
-  },
+import { formatDate, statusLabel } from '~/utils/format';
+definePageMeta({ layout: 'public' });
+const config = useRuntimeConfig();
+const { isAuthenticated } = useSession();
+const { status, manifest, loading, error, refresh } = useSystemStatus();
+const layers = [
+  { number: '01', title: 'Interface & API', text: 'Compte, soumission et lecture des états canoniques.', icon: 'code' },
+  { number: '02', title: 'Orchestration', text: 'Découpage, sélection des rôles et contrôles d’arrêt.', icon: 'layers' },
+  { number: '03', title: 'Réseau de nœuds', text: 'Calcul, vérification et stockage selon les capacités.', icon: 'network' },
+  { number: '04', title: 'Traçabilité', text: 'Empreintes et transactions associées au résultat.', icon: 'shield' },
+];
+const statusItems = computed(() => [
+  { label: 'API Silicium', status: status.value?.backend.status || 'unknown', value: statusLabel(status.value?.backend.status), detail: 'Authentification, comptes et orchestration des tâches.', icon: 'code' },
+  { label: 'Réseau', status: status.value?.network.status || 'unknown', value: `${status.value?.network.activePeers || 0} nœuds actifs`, detail: `${status.value?.network.outdatedPeers || 0} installation(s) à mettre à jour.`, icon: 'network' },
+  { label: 'Solana', status: status.value?.blockchain.status || 'unknown', value: blockchainNetwork.value, detail: status.value?.blockchain.configured ? 'Programme configuré et rattaché au backend.' : 'Configuration non détectée.', icon: 'shield' },
 ]);
-
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat('fr-FR', {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-  }).format(date);
-}
-
-function statusBadgeClass(status: ServiceStatus) {
-  if (status === 'up') return 'bg-emerald-400/15 text-emerald-200';
-  if (status === 'down') return 'bg-rose-400/15 text-rose-200';
-  return 'bg-amber-400/15 text-amber-100';
-}
-
-async function refreshStatus() {
-  backendHealthy.value = false;
-  backendDetail.value = 'Verification en cours.';
-  manifestError.value = '';
-
-  const backendPromise = $fetch<{ status?: string; service?: string }>(`${apiBase}/health`, {
-    cache: 'no-store',
-  });
-  const manifestPromise = $fetch<UpdateManifest>(updateManifestUrl, {
-    cache: 'no-store',
-  });
-
-  const [backendResult, manifestResult] = await Promise.allSettled([backendPromise, manifestPromise]);
-
-  if (backendResult.status === 'fulfilled') {
-    backendHealthy.value = true;
-    const serviceName = backendResult.value.service || 'backend';
-    const status = backendResult.value.status || 'ok';
-    backendDetail.value = `${serviceName} repond (${status}).`;
-  } else {
-    backendHealthy.value = false;
-    backendDetail.value = 'Le backend ne repond pas pour le moment.';
-  }
-
-  if (manifestResult.status === 'fulfilled') {
-    manifest.value = manifestResult.value;
-  } else {
-    manifest.value = null;
-    manifestError.value = 'Le manifeste de release est indisponible.';
-  }
-
-  lastChecked.value = new Date().toISOString();
-}
-
-onMounted(() => {
-  void refreshStatus();
-  refreshTimer.value = window.setInterval(refreshStatus, refreshSeconds * 1000);
+const blockchainNetwork = computed(() => {
+  const value = status.value?.blockchain.network || 'devnet';
+  return value.charAt(0).toUpperCase() + value.slice(1);
 });
-
-onUnmounted(() => {
-  if (refreshTimer.value) {
-    window.clearInterval(refreshTimer.value);
-  }
-});
+const stableVersion = computed(() => manifest.value?.channels?.prod?.version || 'version publiée');
+const devVersion = computed(() => manifest.value?.channels?.dev?.version || 'version de développement');
+let timer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => { refresh(); timer = setInterval(() => refresh(), Math.max(10, Number(config.public.statusRefreshSeconds) || 30) * 1000); });
+onBeforeUnmount(() => { if (timer) clearInterval(timer); });
+useSeoMeta({ title: 'Produit et état du service — Silicium', description: 'Découvrez la chaîne d’exécution Silicium, son état en direct et les clients de nœud.' });
 </script>
+
+<style scoped>
+.service-hero{display:grid;grid-template-columns:.95fr 1.05fr;align-items:center;gap:clamp(3rem,8vw,8rem);padding-top:7rem;padding-bottom:7rem}.service-hero h1{margin:1rem 0 0;font-size:clamp(3.2rem,6vw,5.8rem);line-height:.94;letter-spacing:-.07em}.service-hero>div>p{max-width:520px;margin:1.5rem 0 2rem;color:var(--ink-600);font-size:.9rem;line-height:1.8}.service-hero__stack{display:grid;gap:.7rem}.service-hero__stack article{display:grid;grid-template-columns:auto 1fr;gap:1rem;padding:1rem;border:1px solid var(--border);border-radius:var(--radius-md);background:rgba(255,255,255,.82);box-shadow:var(--shadow-sm)}.service-hero__stack article>span{display:grid;width:2.7rem;height:2.7rem;place-items:center;border-radius:.75rem;background:var(--mint-100);color:var(--mint-700)}.service-hero__stack article:nth-child(4)>span{background:var(--violet-100);color:var(--violet-600)}.service-hero__stack svg{width:1.1rem}.service-hero__stack small,.service-hero__stack strong{display:block}.service-hero__stack small{color:var(--ink-400);font-size:.55rem;font-weight:800}.service-hero__stack strong{margin-top:.12rem;font-size:.78rem}.service-hero__stack p{margin:.25rem 0 0;color:var(--ink-600);font-size:.63rem}
+.service-flow{padding-top:3rem}.section-heading{max-width:760px;margin-bottom:2rem}.section-heading h2,.status-section h2,.downloads h2{margin:.65rem 0 0;font-size:clamp(2rem,4vw,3.4rem);line-height:1.04;letter-spacing:-.055em}.section-heading p{max-width:520px;margin:1rem 0 0;color:var(--ink-600);font-size:.8rem;line-height:1.7}
+.status-section{display:grid;gap:1rem;padding-top:7rem}.status-section__head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem}.status-section__head p{margin:.7rem 0 0;color:var(--ink-500);font-size:.66rem}.status-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}.status-grid article{padding:1.25rem;border:1px solid var(--border);border-radius:var(--radius-lg);background:white;box-shadow:var(--shadow-sm)}.status-grid article>div{display:flex;align-items:center;justify-content:space-between}.status-grid article>div>span{display:grid;width:2.4rem;height:2.4rem;place-items:center;border-radius:.7rem;background:var(--mint-100);color:var(--mint-700)}.status-grid article:nth-child(3)>div>span{background:var(--violet-100);color:var(--violet-600)}.status-grid svg{width:1rem}.status-grid h3{margin:1.7rem 0 .35rem;color:var(--ink-600);font-size:.68rem}.status-grid strong{font-size:1.15rem;letter-spacing:-.035em}.status-grid p{margin:.45rem 0 0;color:var(--ink-500);font-size:.62rem;line-height:1.5}
+.downloads{display:grid;grid-template-columns:.8fr 1.2fr;gap:clamp(3rem,8vw,8rem);padding-top:8rem;padding-bottom:2rem}.downloads>div>p{max-width:450px;margin:1rem 0 0;color:var(--ink-600);font-size:.78rem;line-height:1.75}.downloads__list{display:grid;gap:.65rem}.downloads__list a{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:1rem;padding:1rem;border:1px solid var(--border);border-radius:var(--radius-md);background:white;box-shadow:var(--shadow-sm);transition:transform .15s,border-color .15s}.downloads__list a:hover{transform:translateY(-2px);border-color:var(--mint-500)}.downloads__list a>span{display:grid;width:2.7rem;height:2.7rem;place-items:center;border-radius:.7rem;background:var(--ink-100);color:var(--ink-800)}.downloads__list svg{width:1rem}.downloads__list>a>svg{color:var(--ink-500)}.downloads__list strong,.downloads__list small{display:block}.downloads__list strong{font-size:.76rem}.downloads__list small{margin-top:.25rem;color:var(--ink-500);font-size:.6rem}
+@media(max-width:850px){.service-hero,.downloads{grid-template-columns:1fr;gap:3rem}.status-grid{grid-template-columns:1fr 1fr}.status-grid article:last-child{grid-column:1/-1}}@media(max-width:600px){.service-hero{padding-top:4rem;padding-bottom:4rem}.service-hero h1{font-size:clamp(3rem,14vw,4.4rem)}.status-grid{grid-template-columns:1fr}.status-grid article:last-child{grid-column:auto}.status-section__head{align-items:stretch;flex-direction:column}.downloads{padding-top:5rem}}
+</style>
