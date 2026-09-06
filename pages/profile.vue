@@ -1,230 +1,39 @@
 <template>
-  <div class="bg-[#131419] text-white min-h-screen p-8">
-    <div class="max-w-7xl mx-auto">
-      <NuxtLink to="/dashboard" class="flex items-center text-white/50 hover:text-white mb-8">
-        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-        Retour au tableau de bord
-      </NuxtLink>
-
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <!-- Left Column: User Card -->
-        <div class="lg:col-span-1 bg-[#1f2029] rounded-2xl p-8 flex flex-col items-center">
-          <div class="w-32 h-32 rounded-full bg-gradient-to-r from-purple-400 to-blue-400 flex items-center justify-center font-bold text-5xl mb-6">
-            {{ user ? (user.username || user.email)?.[0].toUpperCase() : '' }}
-          </div>
-          <h2 class="text-3xl font-bold">{{ user?.firstName && user?.lastName ? `${user.firstName} ${user.lastName}` : (user?.username || user?.email) }}</h2>
-          <p class="text-white/50 mt-2">{{ user?.email }}</p>
-          <div class="mt-4 w-full text-center p-4 bg-black/20 rounded-lg">
-            <p class="text-white/50 text-sm">Adresse du portefeuille</p>
-            <p class="font-mono text-sm break-all">{{ user?.walletAddress || 'Non connectée' }}</p>
-          </div>
-          <div class="w-full mt-4">
-            <button @click="connectWallet" :disabled="!!user?.walletAddress" class="w-full h-12 rounded-lg bg-purple-500/20 text-purple-400 font-bold hover:bg-purple-500/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-              {{ user?.walletAddress ? 'Portefeuille connecté' : 'Connecter le portefeuille Phantom' }}
-            </button>
-          </div>
-          <div class="w-full mt-auto pt-8">
-            <button @click="logout" class="w-full h-12 rounded-lg bg-red-500/20 text-red-400 font-bold hover:bg-red-500/40 transition-colors">
-              Déconnexion
-            </button>
-          </div>
-        </div>
-
-        <!-- Right Column: Settings -->
-        <div class="lg:col-span-2 bg-[#1f2029] rounded-2xl p-8">
-          <div class="border-b border-white/10 mb-6">
-            <nav class="-mb-px flex space-x-8">
-              <button @click="activeTab = 'account'" :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'account' ? 'border-purple-400 text-purple-400' : 'border-transparent text-white/50 hover:text-white hover:border-white/30']">
-                Compte
-              </button>
-              <button @click="activeTab = 'security'" :class="['whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm', activeTab === 'security' ? 'border-purple-400 text-purple-400' : 'border-transparent text-white/50 hover:text-white hover:border-white/30']">
-                Sécurité
-              </button>
-            </nav>
-          </div>
-
-          <!-- Account Tab -->
-          <div v-if="activeTab === 'account'">
-            <form @submit.prevent="handleUpdateProfile" class="space-y-6">
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label for="firstName" class="block text-sm font-medium text-white/80 mb-2">Prénom</label>
-                  <input type="text" id="firstName" v-model="form.firstName" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
-                </div>
-                <div>
-                  <label for="lastName" class="block text-sm font-medium text-white/80 mb-2">Nom de famille</label>
-                  <input type="text" id="lastName" v-model="form.lastName" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
-                </div>
-              </div>
-              <div>
-                <label for="username" class="block text-sm font-medium text-white/80 mb-2">Nom d'utilisateur</label>
-                <input type="text" id="username" v-model="form.username" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
-              </div>
-              <div>
-                <label for="email" class="block text-sm font-medium text-white/80 mb-2">Adresse e-mail</label>
-                <input type="email" id="email" :value="user?.email" disabled class="w-full h-12 bg-black/40 rounded-lg px-4 text-white/50 cursor-not-allowed">
-              </div>
-              <div class="pt-4">
-                <button type="submit" class="w-full md:w-auto h-12 px-8 rounded-lg bg-gradient-to-r from-purple-400 to-blue-400 text-white font-bold text-lg hover:from-purple-500 hover:to-blue-500 transition-shadow shadow-lg">
-                  Enregistrer les modifications
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <!-- Security Tab -->
-          <div v-if="activeTab === 'security'">
-            <form @submit.prevent="handleChangePassword" class="space-y-6">
-              <div>
-                <label for="currentPassword" class="block text-sm font-medium text-white/80 mb-2">Mot de passe actuel</label>
-                <input type="password" id="currentPassword" v-model="passwordForm.currentPassword" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
-              </div>
-              <div>
-                <label for="newPassword" class="block text-sm font-medium text-white/80 mb-2">Nouveau mot de passe</label>
-                <input type="password" id="newPassword" v-model="passwordForm.newPassword" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
-              </div>
-              <div>
-                <label for="confirmPassword" class="block text-sm font-medium text-white/80 mb-2">Confirmer le nouveau mot de passe</label>
-                <input type="password" id="confirmPassword" v-model="passwordForm.confirmPassword" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400">
-              </div>
-              <div class="pt-4">
-                <button type="submit" class="w-full md:w-auto h-12 px-8 rounded-lg bg-gradient-to-r from-purple-400 to-blue-400 text-white font-bold text-lg hover:from-purple-500 hover:to-blue-500 transition-shadow shadow-lg">
-                  Changer le mot de passe
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+  <div class="app-page">
+    <header><span class="eyebrow">Compte</span><h1 class="page-title">Paramètres</h1><p class="page-intro">Identité, sécurité et portefeuille sont séparés pour que chaque action reste explicite.</p></header>
+    <UiNotice v-if="pageNotice.message" :tone="pageNotice.tone">{{ pageNotice.message }}</UiNotice>
+    <div class="profile-layout">
+      <section class="profile-summary surface"><div class="profile-summary__avatar">{{ initials }}</div><h2>{{ displayName }}</h2><p>{{ user?.email }}</p><UiStatusBadge :status="user?.walletAddress ? 'verified' : 'unknown'" :label="user?.walletAddress ? 'Wallet vérifié' : 'Wallet non connecté'"/><dl><div><dt>Membre depuis</dt><dd>{{ formatDate(user?.createdAt, false) }}</dd></div><div><dt>Rôle</dt><dd>{{ user?.role || 'Utilisateur' }}</dd></div></dl><UiButton variant="ghost" icon="logout" @click="logout">Déconnexion</UiButton></section>
+      <div class="stack">
+        <UiCard title="Informations personnelles" description="Utilisées pour identifier votre espace." padded><form class="profile-form" @submit.prevent="saveIdentity"><div class="profile-form__grid"><label class="field"><span>Prénom</span><input v-model.trim="identity.firstName" class="input" autocomplete="given-name"></label><label class="field"><span>Nom</span><input v-model.trim="identity.lastName" class="input" autocomplete="family-name"></label></div><label class="field"><span>Nom d’utilisateur</span><input v-model.trim="identity.username" class="input" autocomplete="username"></label><label class="field"><span>E-mail</span><input :value="user?.email" class="input" disabled></label><UiButton type="submit" :loading="savingIdentity">Enregistrer les modifications</UiButton></form></UiCard>
+        <UiCard title="Sécurité" description="Modifiez votre mot de passe sans interrompre la session." padded><form class="profile-form" @submit.prevent="savePassword"><label class="field"><span>Mot de passe actuel</span><input v-model="password.current" class="input" type="password" autocomplete="current-password" required></label><div class="profile-form__grid"><label class="field"><span>Nouveau mot de passe</span><input v-model="password.next" class="input" type="password" autocomplete="new-password" minlength="8" required></label><label class="field"><span>Confirmation</span><input v-model="password.confirm" class="input" type="password" autocomplete="new-password" minlength="8" required></label></div><UiButton type="submit" variant="secondary" :loading="savingPassword">Mettre à jour le mot de passe</UiButton></form></UiCard>
       </div>
+      <aside class="stack">
+        <UiCard title="Portefeuille Solana" description="La connexion exige une signature ; la clé privée ne quitte jamais Phantom." padded><div class="wallet-card"><span class="wallet-card__icon"><UiIcon name="wallet"/></span><template v-if="user?.walletAddress"><strong class="mono">{{ compactIdentifier(user.walletAddress, 10, 8) }}</strong><small>Adresse vérifiée par signature</small><div v-if="balance !== null" class="wallet-card__balance"><span>Solde Devnet</span><strong>{{ balance.toFixed(4) }} SOL</strong></div><UiButton variant="secondary" size="small" :loading="connecting" @click="connectWallet">Vérifier à nouveau</UiButton></template><template v-else><strong>Aucun portefeuille</strong><small>Connectez Phantom pour rattacher une adresse dont vous prouvez la propriété.</small><UiButton icon="wallet" :loading="connecting" @click="connectWallet">Connecter Phantom</UiButton></template></div><UiNotice v-if="walletError" tone="danger">{{ walletError }}</UiNotice></UiCard>
+        <UiCard title="Session" padded><dl class="session-details"><div><dt>Renouvellement</dt><dd>Automatique</dd></div><div><dt>Durée d’accès</dt><dd>15 minutes</dd></div><div><dt>Session longue</dt><dd>7 jours</dd></div></dl></UiCard>
+      </aside>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue';
-import Cookies from 'js-cookie';
-import { useRouter } from '#vue-router';
-import * as web3 from '@solana/web3.js';
-
-const user = ref(null);
-const config = useRuntimeConfig();
-const apiBase = config.public.apiBase;
-const activeTab = ref('account');
-const router = useRouter();
-
-const form = reactive({
-  firstName: '',
-  lastName: '',
-  username: '',
-});
-
-const passwordForm = reactive({
-  currentPassword: '',
-  newPassword: '',
-  confirmPassword: '',
-});
-
-const connectWallet = async () => {
-  if (window.solana) {
-    try {
-      const resp = await window.solana.connect();
-      const publicKey = resp.publicKey.toString();
-      
-      const token = Cookies.get('auth_token');
-      if (!token) return;
-
-      await $fetch(`${apiBase}/user/wallet`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: { walletAddress: publicKey }
-      });
-      
-      if (user.value) {
-        user.value.walletAddress = publicKey;
-      }
-      alert('Portefeuille connecté avec succès !');
-
-    } catch (err) {
-      console.error("Failed to connect wallet:", err);
-      alert('Échec de la connexion du portefeuille.');
-    }
-  } else {
-    alert('Portefeuille Phantom introuvable. Veuillez l\'installer.');
-  }
-};
-
-const handleUpdateProfile = async () => {
-  const token = Cookies.get('auth_token');
-  if (!token) return;
-
-  try {
-    const updatedUser = await $fetch(`${apiBase}/user`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        username: form.username,
-      }
-    });
-    user.value = updatedUser;
-    alert('Profil mis à jour avec succès !');
-  } catch (error) {
-    console.error("Failed to update profile:", error);
-    alert('Échec de la mise à jour du profil.');
-  }
-};
-
-const handleChangePassword = async () => {
-  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    alert("Les nouveaux mots de passe ne correspondent pas.");
-    return;
-  }
-  const token = Cookies.get('auth_token');
-  if (!token) return;
-
-  try {
-    await $fetch(`${apiBase}/user/password`, {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: {
-        currentPassword: passwordForm.currentPassword,
-        newPassword: passwordForm.newPassword,
-      }
-    });
-    alert('Mot de passe mis à jour avec succès !');
-    // Clear password fields
-    passwordForm.currentPassword = '';
-    passwordForm.newPassword = '';
-    passwordForm.confirmPassword = '';
-  } catch (error) {
-    console.error("Failed to change password:", error);
-    alert('Échec de la modification du mot de passe. Vérifiez votre mot de passe actuel.');
-  }
-};
-
-const logout = () => {
-  Cookies.remove('auth_token', { path: '/' });
-  router.push('/');
-};
-
-onMounted(async () => {
-  const token = Cookies.get('auth_token');
-  if (token) {
-    try {
-      const fetchedUser = await $fetch(`${apiBase}/user`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      user.value = fetchedUser;
-      // Populate form with fetched data
-      form.firstName = fetchedUser.firstName || '';
-      form.lastName = fetchedUser.lastName || '';
-      form.username = fetchedUser.username || '';
-    } catch (error) {
-      console.error("Failed to fetch user data:", error);
-    }
-  }
-});
+import { compactIdentifier, formatDate } from '~/utils/format';
+definePageMeta({ layout: 'app', middleware: 'auth' });
+const router = useRouter(); const session = useSession(); const wallet = useWallet();
+const { user, displayName, initials } = session; const { connecting, balance, error: walletError } = wallet;
+const savingIdentity = ref(false); const savingPassword = ref(false); const identity = reactive({ firstName: '', lastName: '', username: '' }); const password = reactive({ current: '', next: '', confirm: '' });
+const pageNotice = reactive<{ message: string; tone: 'success' | 'danger' }>({ message: '', tone: 'success' });
+function hydrateIdentity() { identity.firstName = user.value?.firstName || ''; identity.lastName = user.value?.lastName || ''; identity.username = user.value?.username || ''; }
+async function saveIdentity() { savingIdentity.value = true; pageNotice.message = ''; try { await session.saveProfile({ firstName: identity.firstName, lastName: identity.lastName, username: identity.username }); pageNotice.tone = 'success'; pageNotice.message = 'Vos informations ont été enregistrées.'; } catch { pageNotice.tone = 'danger'; pageNotice.message = 'Les informations ne peuvent pas être enregistrées.'; } finally { savingIdentity.value = false; } }
+async function savePassword() { pageNotice.message = ''; if (password.next !== password.confirm) { pageNotice.tone = 'danger'; pageNotice.message = 'Les deux nouveaux mots de passe ne correspondent pas.'; return; } if (new TextEncoder().encode(password.next).length > 72) { pageNotice.tone = 'danger'; pageNotice.message = 'Le mot de passe dépasse la limite de 72 octets.'; return; } savingPassword.value = true; try { await session.changePassword(password.current, password.next); password.current = ''; password.next = ''; password.confirm = ''; pageNotice.tone = 'success'; pageNotice.message = 'Votre mot de passe a été mis à jour.'; } catch { pageNotice.tone = 'danger'; pageNotice.message = 'Le mot de passe actuel est incorrect ou le service est indisponible.'; } finally { savingPassword.value = false; } }
+async function connectWallet() { pageNotice.message = ''; try { await wallet.connect(); pageNotice.tone = 'success'; pageNotice.message = 'Le portefeuille a été vérifié et connecté.'; } catch { /* Le composable expose un message contextualisé. */ } }
+async function logout() { session.clearSession(); await router.push('/'); }
+onMounted(async () => { await session.loadUser().catch(() => undefined); hydrateIdentity(); await wallet.loadBalance(user.value?.walletAddress); });
+watch(user, hydrateIdentity);
+useSeoMeta({ title: 'Paramètres du compte — Silicium' });
 </script>
+
+<style scoped>
+.profile-layout{display:grid;grid-template-columns:230px minmax(340px,1fr) minmax(260px,.72fr);align-items:start;gap:1rem}.profile-summary{position:sticky;top:6rem;display:grid;justify-items:center;padding:1.4rem;text-align:center}.profile-summary__avatar{display:grid;width:4.4rem;height:4.4rem;place-items:center;border-radius:1.25rem;background:var(--violet-100);color:var(--violet-600);font-size:1.2rem;font-weight:850}.profile-summary h2{margin:1rem 0 .2rem;font-size:1rem}.profile-summary>p{margin:0 0 .8rem;color:var(--ink-500);font-size:.62rem}.profile-summary dl{width:100%;margin:1.2rem 0}.profile-summary dl>div{display:flex;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--border);font-size:.61rem}.profile-summary dt{color:var(--ink-500)}.profile-summary dd{margin:0;font-weight:700}.profile-summary :deep(.ui-button){width:100%}.profile-form{display:grid;gap:1rem}.profile-form__grid{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}.profile-form :deep(.ui-button){justify-self:end}.wallet-card{display:grid;justify-items:center;text-align:center}.wallet-card__icon{display:grid;width:3rem;height:3rem;place-items:center;border-radius:.85rem;background:var(--mint-100);color:var(--mint-700)}.wallet-card__icon svg{width:1.2rem}.wallet-card>strong{max-width:100%;margin-top:.9rem;overflow:hidden;font-size:.72rem;text-overflow:ellipsis}.wallet-card>small{margin:.3rem 0 1rem;color:var(--ink-500);font-size:.58rem;line-height:1.5}.wallet-card__balance{width:100%;margin-bottom:1rem;padding:.75rem;border-radius:.65rem;background:var(--surface-soft)}.wallet-card__balance span,.wallet-card__balance strong{display:block}.wallet-card__balance span{color:var(--ink-500);font-size:.57rem}.wallet-card__balance strong{margin-top:.2rem;font-size:.9rem}.session-details{margin:0}.session-details>div{display:flex;justify-content:space-between;padding:.55rem 0;border-bottom:1px solid var(--border);font-size:.61rem}.session-details>div:last-child{border:0}.session-details dt{color:var(--ink-500)}.session-details dd{margin:0;font-weight:700}
+@media(max-width:1120px){.profile-layout{grid-template-columns:210px 1fr}.profile-layout>aside{grid-column:2}}@media(max-width:740px){.profile-layout{grid-template-columns:1fr}.profile-summary{position:static}.profile-layout>aside{grid-column:auto}.profile-form__grid{grid-template-columns:1fr}}
+</style>

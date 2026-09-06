@@ -1,479 +1,52 @@
 <template>
-  <div class="min-h-screen bg-[#131419] text-white flex pt-40 md:pt-28">
-    <Header class="!bg-[#131419]/95 backdrop-blur" />
-    <nav class="w-64 bg-[#1f2029] p-4 flex flex-col justify-between border-r border-black/20">
-      <div>
-        <ul class="space-y-2">
-          <li>
-            <a href="#" class="flex items-center text-lg font-semibold p-3 rounded-xl bg-gradient-to-r from-purple-500/20 to-blue-500/20">
-              <img src="~assets/icons/Users.svg" alt="" class="w-6 h-6 mr-4" />
-              Tableau de bord
-            </a>
-          </li>
-          <li>
-            <a href="#jobs" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors">
-              <img src="~assets/icons/Receipt.svg" alt="" class="w-6 h-6 mr-4" />
-              Mes taches
-            </a>
-          </li>
-          <li>
-            <NuxtLink :to="latestDashboardPath" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors">
-              <img src="~assets/icons/Transactions.svg" alt="" class="w-6 h-6 mr-4" />
-              Dashboard
-            </NuxtLink>
-          </li>
-          <li>
-            <a href="#" class="flex items-center text-lg text-white/60 hover:text-white hover:bg-black/20 p-3 rounded-xl transition-colors">
-              <img src="~assets/icons/Products.svg" alt="" class="w-6 h-6 mr-4" />
-              Mes appareils
-            </a>
-          </li>
-        </ul>
+  <div class="app-page">
+    <header class="app-page-head"><div><span class="eyebrow">Aujourd’hui</span><h1 class="page-title">Vue d’ensemble</h1><p class="page-intro">L’essentiel de vos calculs et de l’infrastructure, sans perdre le contexte.</p></div><UiButton to="/jobs/new" icon="plus">Nouvelle tâche</UiButton></header>
+    <UiNotice v-if="loadError" tone="warning">Certaines données ne sont pas disponibles. Vous pouvez continuer à utiliser les autres fonctions.</UiNotice>
+    <section class="metric-grid" aria-label="Indicateurs clés">
+      <MetricCard label="Tâches enregistrées" :value="total" detail="dans votre espace" icon="jobs" tone="ink" />
+      <MetricCard label="En cours" :value="runningCount" detail="exécutions actives" icon="activity" tone="mint" />
+      <MetricCard label="Terminées" :value="completedCount" detail="dans la vue récente" icon="check" tone="violet" />
+      <MetricCard label="Nœuds recensés" :value="peers.length" :detail="`${outdatedCount} à mettre à jour`" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
+    </section>
+    <div class="two-column">
+      <UiCard title="Tâches récentes" description="Vos dernières soumissions, classées par activité.">
+        <template #actions><UiButton to="/jobs" variant="ghost" size="small" icon="arrow">Toutes les tâches</UiButton></template>
+        <JobTable :jobs="jobs.slice(0, 6)" :loading="jobsLoading" @cancel="requestCancel" @download="download" />
+      </UiCard>
+      <div class="stack">
+        <UiCard title="Réseau" description="Une lecture agrégée plutôt qu’un graphe illisible." padded>
+          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ peers.length }} nœud{{ peers.length > 1 ? 's' : '' }}</strong><small>{{ currentCount }} à jour</small></div><UiStatusBadge :status="peers.length ? 'operational' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ group.role }}</dt><dd>{{ group.count }}</dd></div><div><dt>Travaux actifs</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">Explorer le réseau</UiButton></div>
+        </UiCard>
+        <UiCard title="Démarrage rapide" padded><div class="quick-actions"><NuxtLink to="/jobs/new"><span><UiIcon name="upload"/></span><div><strong>Soumettre un calcul</strong><small>Configurer une nouvelle exécution</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/nodes"><span><UiIcon name="nodes"/></span><div><strong>Inspecter les nœuds</strong><small>Versions, rôles et disponibilité</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/profile"><span><UiIcon name="wallet"/></span><div><strong>Connecter Phantom</strong><small>Signer la preuve de propriété</small></div><UiIcon name="chevron"/></NuxtLink></div></UiCard>
       </div>
-      <div class="p-4">
-        <button @click="isModalOpen = true" class="w-full h-12 rounded-xl bg-gradient-to-r from-purple-400 to-blue-400 font-bold text-lg hover:from-purple-500 hover:to-blue-500 transition-shadow shadow-lg">
-          Soumettre une tache
-        </button>
-      </div>
-    </nav>
-
-    <main class="flex-1 p-10 relative">
-      <div class="flex flex-wrap items-center justify-between gap-4 mb-2">
-        <h1 class="text-4xl font-bold">Tableau de bord</h1>
-        <div v-if="solBalance !== null" class="bg-black/20 rounded-lg p-3 font-semibold">
-          {{ solBalance.toFixed(4) }} SOL
-        </div>
-      </div>
-
-      <p class="text-lg text-white/50 mb-10">Soumission, suivi et resultats des calculs Silicium.</p>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="bg-[#1f2029] rounded-2xl p-6">
-          <p class="text-white/50">Jobs</p>
-          <p class="text-2xl font-bold">{{ totalJobs }}</p>
-        </div>
-        <div class="bg-[#1f2029] rounded-2xl p-6">
-          <p class="text-white/50">En cours</p>
-          <p class="text-2xl font-bold">{{ runningJobs }}</p>
-        </div>
-        <div class="bg-[#1f2029] rounded-2xl p-6">
-          <p class="text-white/50">Termines</p>
-          <p class="text-2xl font-bold">{{ completedJobs }}</p>
-        </div>
-        <div class="bg-[#1f2029] rounded-2xl p-6">
-          <p class="text-white/50">Devnet</p>
-          <a :href="devnetDashboardUrl" target="_blank" rel="noopener" class="text-blue-300 hover:text-blue-200 font-semibold">
-            Ouvrir
-          </a>
-        </div>
-      </div>
-
-      <section id="jobs" class="mt-8 bg-[#1f2029] rounded-2xl p-6">
-        <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
-          <div>
-            <h3 class="text-2xl font-bold">Mes taches</h3>
-            <p class="text-white/50">Le site soumet au backend, le backend orchestre Silicium, le dashboard observe le Devnet.</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <select v-model="statusFilter" class="h-10 rounded-lg bg-black/20 px-3 text-white/80" @change="changeFilter">
-              <option value="all" class="bg-[#1f2029]">Tous les statuts</option>
-              <option value="running" class="bg-[#1f2029]">En cours</option>
-              <option value="queued" class="bg-[#1f2029]">En attente</option>
-              <option value="completed" class="bg-[#1f2029]">Terminés</option>
-              <option value="failed" class="bg-[#1f2029]">Échoués</option>
-              <option value="cancelled" class="bg-[#1f2029]">Annulés</option>
-              <option value="expired" class="bg-[#1f2029]">Expirés</option>
-            </select>
-            <button @click="loadJobs" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">Rafraichir</button>
-          </div>
-        </div>
-
-        <div v-if="jobs.length === 0" class="text-white/50 py-6">
-          Aucun job soumis pour le moment.
-        </div>
-        <div v-else class="overflow-x-auto">
-          <table class="w-full text-left">
-            <thead class="text-white/50 text-sm">
-              <tr>
-                <th class="py-3">Nom</th>
-                <th class="py-3">Workload</th>
-                <th class="py-3">Statut</th>
-                <th class="py-3">Job reseau</th>
-                <th class="py-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="job in jobs" :key="job.id" class="border-t border-white/10">
-                <td class="py-4">
-                  <div class="font-semibold">{{ job.title }}</div>
-                  <div class="text-white/40 text-sm">{{ job.description }}</div>
-                  <div v-if="job.errorMessage" class="text-red-300 text-sm mt-1 max-w-xl truncate" :title="job.errorMessage">
-                    {{ compactError(job.errorMessage) }}
-                  </div>
-                </td>
-                <td class="py-4 text-white/70">{{ job.workload }}</td>
-                <td class="py-4">
-                  <span class="px-3 py-1 rounded-full text-sm" :class="statusClass(job.status)">
-                    {{ job.status }}
-                  </span>
-                </td>
-                <td class="py-4 text-white/70">{{ job.siliciumJobId }}</td>
-                <td class="py-4">
-                  <div class="flex justify-end gap-2">
-                    <button v-if="job.status === 'completed'" @click="downloadResult(job)" class="px-3 py-2 rounded-lg bg-green-500/20 text-green-200 hover:bg-green-500/30">
-                      Telecharger
-                    </button>
-                    <NuxtLink :to="`/jobs/${job.id}/dashboard`" class="px-3 py-2 rounded-lg bg-blue-500/20 text-blue-200 hover:bg-blue-500/30">
-                      Dashboard
-                    </NuxtLink>
-                    <button
-                      v-if="isCancellable(job)"
-                      :disabled="cancellingJobId === job.id"
-                      class="px-3 py-2 rounded-lg bg-red-500/20 text-red-200 hover:bg-red-500/30 disabled:opacity-50"
-                      @click="cancelJob(job)"
-                    >
-                      {{ cancellingJobId === job.id ? 'Arrêt…' : 'Annuler' }}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-if="totalPages > 1" class="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
-          <span class="text-sm text-white/50">Page {{ currentPage }} / {{ totalPages }} · {{ totalJobs }} tâches</span>
-          <div class="flex gap-2">
-            <button :disabled="currentPage <= 1" class="px-3 py-2 rounded-lg bg-black/20 disabled:opacity-30" @click="goToPage(currentPage - 1)">Précédente</button>
-            <button :disabled="currentPage >= totalPages" class="px-3 py-2 rounded-lg bg-black/20 disabled:opacity-30" @click="goToPage(currentPage + 1)">Suivante</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="mt-8 bg-[#1f2029] rounded-2xl p-6">
-        <div class="flex items-center justify-between mb-4">
-          <div><h3 class="text-2xl font-bold">Taches reseau RPC</h3><p class="text-white/50">Registre canonique du VPS, y compris les executions hors job du site.</p></div>
-          <button @click="loadNetworkTasks" class="h-10 px-4 rounded-lg bg-black/20 text-white/80 hover:text-white">Rafraichir</button>
-        </div>
-        <div v-if="networkTasks.length === 0" class="text-white/50">Aucune tache RPC.</div>
-        <div v-else class="overflow-x-auto"><table class="w-full text-left"><thead class="text-white/50 text-sm"><tr><th class="py-3">Travail</th><th class="py-3">Workload</th><th class="py-3">Statut</th><th class="py-3">Progression</th><th class="py-3">Sous-taches</th></tr></thead><tbody><tr v-for="task in networkTasks" :key="task.work_id" class="border-t border-white/10"><td class="py-3 font-mono text-sm">{{ task.work_id }}</td><td class="py-3 text-white/70">{{ task.workload || task.kind || 'compute' }}</td><td class="py-3"><span class="px-3 py-1 rounded-full text-sm" :class="statusClass(task.status)">{{ task.status }}</span></td><td class="py-3 text-white/70">{{ task.completed }}/{{ task.total }}</td><td class="py-3 text-white/70">{{ task.total }} ({{ task.active }} active)</td></tr></tbody></table></div>
-      </section>
-
-      <div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div class="lg:col-span-2">
-          <NetworkGraph :api-base="apiBase" />
-        </div>
-        <div class="bg-[#1f2029] rounded-2xl p-6">
-          <ClientOnly>
-            <highcharts :options="deviceTypesOptions" />
-            <template #fallback><div class="flex items-center justify-center h-full text-white/20 text-sm">Chargement...</div></template>
-          </ClientOnly>
-        </div>
-      </div>
-
-      <div v-if="isModalOpen" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div class="bg-[#1f2029] rounded-2xl p-8 w-full max-w-lg">
-          <div class="flex justify-between items-center mb-6">
-            <h3 class="text-2xl font-bold">Soumettre une tache</h3>
-            <button @click="isModalOpen = false" class="text-white/50 hover:text-white">
-              <span class="text-2xl leading-none">&times;</span>
-            </button>
-          </div>
-          <form @submit.prevent="submitJob">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <label class="block">
-                <span class="block text-white/50 mb-2">Type de tache</span>
-                <select v-model="jobForm.workload" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white focus:outline-none focus:ring-2 focus:ring-purple-400">
-                  <option v-for="option in workloadOptions" :key="option.value" :value="option.value" class="bg-[#1f2029] text-white">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="block">
-                <span class="block text-white/50 mb-2">Priorite</span>
-                <select v-model="jobForm.priority" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white focus:outline-none focus:ring-2 focus:ring-purple-400">
-                  <option v-for="option in priorityOptions" :key="option.value" :value="option.value" class="bg-[#1f2029] text-white">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-            </div>
-            <label v-if="jobForm.workload === 'raytracer'" class="block mb-6">
-              <span class="flex items-center justify-between text-white/50 mb-2">
-                <span>Nombre de parcelles</span>
-                <strong class="text-purple-200">{{ jobForm.fragmentCount }}</strong>
-              </span>
-              <input
-                v-model.number="jobForm.fragmentCount"
-                type="range"
-                min="1"
-                max="256"
-                step="1"
-                class="w-full accent-purple-400"
-              >
-              <span class="block text-xs text-white/35 mt-2">Les parcelles sont lancees depuis le centre, puis de proche en proche.</span>
-            </label>
-            <label class="block mb-6">
-              <span class="flex items-center justify-between text-white/50 mb-2">
-                <span>Durée maximale</span>
-                <strong class="text-purple-200">{{ Math.round(jobForm.maxRuntimeSeconds / 60) }} min</strong>
-              </span>
-              <input v-model.number="jobForm.maxRuntimeSeconds" type="range" min="60" max="14400" step="60" class="w-full accent-purple-400">
-              <span class="block text-xs text-white/35 mt-2">À l’échéance, l’arrêt signé est propagé à tout le réseau.</span>
-            </label>
-            <input v-model="jobForm.title" type="text" placeholder="Nom de la tache" class="w-full h-12 bg-black/20 rounded-lg px-4 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400 mb-6">
-            <textarea v-model="jobForm.description" placeholder="Description" class="w-full h-24 bg-black/20 rounded-lg px-4 py-2 text-white placeholder-white/20 focus:outline-none focus:ring-2 focus:ring-purple-400 mb-6"></textarea>
-            <div class="mb-6">
-              <label for="file-input" class="block text-white/50 mb-2">Fichier d'entree</label>
-              <input id="file-input" type="file" accept=".json,.cfg,application/json,text/plain" class="w-full text-white" @change="onJobFileChange">
-            </div>
-            <p v-if="jobSubmitError" class="text-red-300 mb-4">{{ jobSubmitError }}</p>
-            <button type="submit" :disabled="isSubmittingJob" class="w-full h-12 rounded-lg bg-gradient-to-r from-purple-400 to-blue-400 font-bold text-lg hover:from-purple-500 hover:to-blue-500 transition-shadow shadow-lg disabled:opacity-50">
-              {{ isSubmittingJob ? 'Envoi en cours' : 'Envoyer' }}
-            </button>
-          </form>
-        </div>
-      </div>
-    </main>
+    </div>
+    <UiModal :open="Boolean(cancelTarget)" title="Arrêter cette tâche ?" @close="cancelTarget = null"><p class="modal-copy">Les fragments actifs recevront une demande d’arrêt signée. Les unités déjà vérifiées restent comptabilisées.</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">Conserver</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">Arrêter la tâche</UiButton></div></UiModal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue';
-import Cookies from 'js-cookie';
-import Header from '../components/Header.vue';
-import { clampJobPage, compactJobError, isJobCancellable } from '~/utils/jobs';
-
-type Job = {
-  id: number;
-  title: string;
-  description: string;
-  workload: string;
-  priority: string;
-  status: string;
-  siliciumJobId: string;
-  dashboardUrl?: string;
-  errorMessage?: string;
-};
-
-const isModalOpen = ref(false);
-const isSubmittingJob = ref(false);
-const selectedJobFile = ref<File | null>(null);
-const jobSubmitError = ref('');
-const jobs = ref<Job[]>([]);
-const networkTasks = ref<any[]>([]);
-const totalJobs = ref(0);
-const currentPage = ref(1);
-const pageSize = 20;
-const statusFilter = ref('all');
-const cancellingJobId = ref<number | null>(null);
-const solBalance = ref<number | null>(null);
-const config = useRuntimeConfig();
-const apiBase = config.public.apiBase;
-const devnetDashboardUrl = config.public.devnetDashboardUrl;
-
-const workloadOptions = [
-  { value: 'raytracer', label: 'Raytracer' },
-];
-
-const priorityOptions = [
-  { value: 'high', label: 'Haute' },
-  { value: 'normal', label: 'Normale' },
-  { value: 'low', label: 'Basse' },
-  { value: 'urgent', label: 'Urgente' },
-];
-
-const jobForm = reactive({
-  workload: 'raytracer',
-  priority: 'high',
-  title: 'Raytracer',
-  description: '',
-  fragmentCount: 64,
-  maxRuntimeSeconds: 3600,
-});
-
-const runningJobs = computed(() => jobs.value.filter((job) => ['queued', 'running'].includes(job.status)).length);
-const completedJobs = computed(() => jobs.value.filter((job) => job.status === 'completed').length);
-const latestDashboardPath = computed(() => {
-  const latest = jobs.value.find((job) => job.status === 'completed') || jobs.value[0];
-  return latest ? `/jobs/${latest.id}/dashboard` : '/dashboard';
-});
-const totalPages = computed(() => Math.max(1, Math.ceil(totalJobs.value / pageSize)));
-
-const authHeaders = () => {
-  const token = Cookies.get('auth_token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
-const loadJobs = async () => {
-  try {
-    const response = await $fetch.raw<Job[]>(`${apiBase}/jobs`, {
-      headers: authHeaders(),
-      query: {
-        page: currentPage.value,
-        page_size: pageSize,
-        status: statusFilter.value,
-      },
-    });
-    jobs.value = response._data || [];
-    totalJobs.value = Number(response.headers.get('x-total-count') || jobs.value.length);
-  } catch (error) {
-    console.error('Failed to fetch jobs:', error);
-  }
-};
-
-const loadNetworkTasks = async () => {
-  try {
-    const payload = await $fetch<{ active: any[]; recent: any[] }>(`${apiBase}/jobs/network/tasks`, { headers: authHeaders() });
-    networkTasks.value = payload.workloads || [];
-  } catch (error) { console.error('Failed to fetch network tasks:', error); }
-};
-
-const goToPage = async (page: number) => {
-  currentPage.value = clampJobPage(page, totalJobs.value, pageSize);
-  await loadJobs();
-};
-
-const changeFilter = async () => {
-  currentPage.value = 1;
-  await loadJobs();
-};
-
-const compactError = compactJobError;
-
-const isCancellable = (job: Job) => isJobCancellable(job.status);
-
-const cancelJob = async (job: Job) => {
-  if (!window.confirm(`Annuler « ${job.title} » ? Le travail déjà vérifié restera facturable.`)) return;
-  cancellingJobId.value = job.id;
-  try {
-    await $fetch(`${apiBase}/jobs/${job.id}/cancel`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: { reason: 'cancelled from web dashboard' },
-    });
-    await loadJobs();
-  } catch (error) {
-    console.error('Failed to cancel job:', error);
-  } finally {
-    cancellingJobId.value = null;
-  }
-};
-
-const onJobFileChange = (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  selectedJobFile.value = input.files?.[0] || null;
-};
-
-const submitJob = async () => {
-  jobSubmitError.value = '';
-  if (!selectedJobFile.value) {
-    jobSubmitError.value = 'Ajoute un fichier de configuration.';
-    return;
-  }
-  isSubmittingJob.value = true;
-  try {
-    const formData = new FormData();
-    formData.append('file', selectedJobFile.value);
-    formData.append('workload', jobForm.workload);
-    formData.append('priority', jobForm.priority);
-    formData.append('title', jobForm.title);
-    formData.append('description', jobForm.description);
-    formData.append('fragment_count', String(jobForm.fragmentCount));
-    formData.append('max_runtime_seconds', String(jobForm.maxRuntimeSeconds));
-    await $fetch(`${apiBase}/jobs`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: formData,
-    });
-    isModalOpen.value = false;
-    selectedJobFile.value = null;
-    await loadJobs();
-  } catch (error: any) {
-    jobSubmitError.value = error?.data || error?.message || 'Impossible de soumettre la tache.';
-  } finally {
-    isSubmittingJob.value = false;
-  }
-};
-
-const downloadResult = async (job: Job) => {
-  try {
-    const response = await fetch(`${apiBase}/jobs/${job.id}/result`, {
-      headers: authHeaders(),
-    });
-    if (!response.ok) throw new Error('Result is not ready');
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${job.siliciumJobId || `job-${job.id}`}-result.png`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  } catch (error) {
-    console.error('Failed to download result:', error);
-  }
-};
-
-const statusClass = (status: string) => {
-  if (status === 'completed') return 'bg-green-500/20 text-green-200';
-  if (['failed', 'expired'].includes(status)) return 'bg-red-500/20 text-red-200';
-  if (['cancelled', 'cancelling'].includes(status)) return 'bg-orange-500/20 text-orange-200';
-  if (status === 'running') return 'bg-blue-500/20 text-blue-200';
-  return 'bg-yellow-500/20 text-yellow-200';
-};
-
-const userGrowthOptions = ref({
-  chart: { type: 'line', backgroundColor: 'transparent' },
-  title: { text: 'Evolution des utilisateurs', style: { color: '#ffffff' } },
-  xAxis: { categories: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'], labels: { style: { color: '#ffffff' } } },
-  yAxis: { title: { text: 'Nombre d utilisateurs', style: { color: '#ffffff' } }, labels: { style: { color: '#ffffff' } } },
-  series: [{ name: 'Utilisateurs', data: [120, 250, 400, 580, 800, 1050], color: '#8b5cf6' }],
-  legend: { itemStyle: { color: '#ffffff' } },
-});
-
-const deviceTypesOptions = ref({
-  chart: { type: 'pie', backgroundColor: 'transparent' },
-  title: { text: 'Types d appareils connectes', style: { color: '#ffffff' } },
-  tooltip: { pointFormat: '{series.name}: <b>{point.percentage:.1f}%</b>' },
-  plotOptions: {
-    pie: {
-      allowPointSelect: true,
-      cursor: 'pointer',
-      dataLabels: { enabled: true, format: '<b>{point.name}</b>: {point.percentage:.1f} %', style: { color: 'white' } },
-    },
-  },
-  series: [{
-    name: 'Types',
-    colorByPoint: true,
-    data: [
-      { name: 'CPU', y: 70, color: '#8b5cf6' },
-      { name: 'GPU', y: 20, color: '#3b82f6' },
-      { name: 'ASIC', y: 10, color: '#10b981' },
-    ],
-  }],
-  legend: { itemStyle: { color: '#ffffff' } },
-});
-
-onMounted(async () => {
-  const token = Cookies.get('auth_token');
-  if (!token) return;
-  try {
-    const fetchedUser: any = await $fetch(`${apiBase}/user`, {
-      headers: authHeaders(),
-    });
-
-    if (fetchedUser.walletAddress) {
-      const web3 = await import('@solana/web3.js');
-      const connection = new web3.Connection(web3.clusterApiUrl('devnet'));
-      const publicKey = new web3.PublicKey(fetchedUser.walletAddress);
-      const balance = await connection.getBalance(publicKey);
-      solBalance.value = balance / web3.LAMPORTS_PER_SOL;
-    }
-    await loadJobs();
-    await loadNetworkTasks();
-  } catch (error) {
-    console.error('Failed to fetch dashboard data:', error);
-  }
-});
+import type { Job } from '~/types/api';
+definePageMeta({ layout: 'app', middleware: 'auth' });
+const jobStore = useJobs();
+const network = useNetwork();
+const { jobs, total, loading: jobsLoading } = jobStore;
+const { peers, roleGroups, outdatedCount, currentCount, tasksPayload } = network;
+const loadError = ref(false);
+const cancelTarget = ref<Job | null>(null);
+const cancelling = ref(false);
+const runningCount = computed(() => jobs.value.filter(job => ['queued','running','cancelling'].includes(job.status)).length);
+const completedCount = computed(() => jobs.value.filter(job => job.status === 'completed').length);
+const activeWorkloads = computed(() => tasksPayload.value.workloads.filter(task => !['completed','failed','cancelled','expired'].includes(task.status)).length);
+async function load(force = false) { const results = await Promise.allSettled([jobStore.loadJobs(1, 20, 'all', force), network.loadNetwork(force)]); loadError.value = results.some(result => result.status === 'rejected'); }
+function requestCancel(job: Job) { cancelTarget.value = job; }
+async function confirmCancel() { if (!cancelTarget.value) return; cancelling.value = true; try { await jobStore.cancelJob(cancelTarget.value.id); cancelTarget.value = null; await load(true); } finally { cancelling.value = false; } }
+async function download(job: Job) { await jobStore.downloadResult(job).catch(() => { loadError.value = true; }); }
+let timer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => { load(); timer = setInterval(() => load(), 15_000); });
+onBeforeUnmount(() => { if (timer) clearInterval(timer); });
+useSeoMeta({ title: 'Vue d’ensemble — Silicium' });
 </script>
+
+<style scoped>
+.dashboard-network{display:grid;gap:1rem}.dashboard-network__head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.75rem}.dashboard-network__signal{display:grid;width:2.8rem;height:2.8rem;place-items:center;border-radius:50%;background:var(--mint-100)}.dashboard-network__signal i{width:.58rem;height:.58rem;border-radius:50%;background:var(--mint-500);box-shadow:0 0 0 7px rgba(24,181,165,.12)}.dashboard-network__head strong,.dashboard-network__head small{display:block}.dashboard-network__head strong{font-size:.86rem}.dashboard-network__head small{margin-top:.2rem;color:var(--ink-500);font-size:.6rem}.dashboard-network dl{margin:0}.dashboard-network dl>div{display:flex;align-items:center;justify-content:space-between;padding:.58rem 0;border-bottom:1px solid var(--border)}.dashboard-network dt{color:var(--ink-600);font-size:.65rem;text-transform:capitalize}.dashboard-network dd{margin:0;font-size:.7rem;font-weight:800}.dashboard-network :deep(.ui-button){width:100%}.quick-actions{display:grid;margin-top:-.25rem}.quick-actions>a{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.7rem;padding:.75rem 0;border-bottom:1px solid var(--border)}.quick-actions>a:last-child{border:0}.quick-actions>a>span{display:grid;width:2rem;height:2rem;place-items:center;border-radius:.55rem;background:var(--ink-100);color:var(--ink-700)}.quick-actions svg{width:.85rem}.quick-actions>a>svg{color:var(--ink-400)}.quick-actions strong,.quick-actions small{display:block}.quick-actions strong{font-size:.67rem}.quick-actions small{margin-top:.17rem;color:var(--ink-500);font-size:.56rem}.modal-copy{margin:0;color:var(--ink-600);font-size:.8rem;line-height:1.7}.modal-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.5rem}
+</style>

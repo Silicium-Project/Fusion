@@ -1,33 +1,27 @@
 <template>
-  <PublicPage>
-    <p class="public-eyebrow">À propos de Silicium</p>
-    <h1 class="public-title max-w-4xl">Relier les machines.<br><span class="text-purple-300">Faire avancer les calculs.</span></h1>
-    <p class="public-lead">Silicium est un projet de calcul distribué : un site pour soumettre des travaux, un backend pour les orchestrer et un réseau de nœuds pour les exécuter.</p>
-    <section class="public-section grid gap-10 md:grid-cols-2">
-      <div><p class="public-eyebrow">L’idée</p><h2 class="mt-4">Un point d’entrée.<br>Une exécution distribuée.</h2></div>
-      <div class="space-y-5 text-lg leading-8 text-slate-300">
-        <p>Le projet cherche à rendre un réseau de calcul accessible depuis une interface commune. Vous définissez votre travail ; Silicium permet de le soumettre, d’en suivre l’exécution et d’en récupérer le résultat.</p>
-        <p>Le raytracing constitue un premier cas d’usage : un rendu peut être divisé en parcelles, puis traité par les machines du réseau.</p>
-      </div>
-    </section>
-    <section class="public-section">
-      <h2>Les trois briques du projet</h2>
-      <div class="mt-8 grid gap-5 md:grid-cols-3">
-        <article class="public-card"><p class="public-eyebrow !mt-0">01 · Le site</p><h3 class="mt-4">Soumettre et suivre</h3><p>Le compte utilisateur et le dashboard rassemblent la soumission des tâches, leurs statuts et leurs résultats.</p></article>
-        <article class="public-card"><p class="public-eyebrow !mt-0">02 · Le backend</p><h3 class="mt-4">Orchestrer</h3><p>L’API fait le lien entre le site et le réseau pour prendre en charge les travaux et exposer leur progression.</p></article>
-        <article class="public-card"><p class="public-eyebrow !mt-0">03 · Le réseau</p><h3 class="mt-4">Exécuter et observer</h3><p>Les nœuds participent au calcul distribué. Un dashboard d’observation et une intégration Solana Devnet accompagnent le projet.</p></article>
-      </div>
-    </section>
-    <section class="public-section public-card">
-      <p class="public-eyebrow !mt-0">Un projet en développement</p>
-      <h2 class="mt-4">Construire, tester, améliorer.</h2>
-      <p>Silicium évolue encore. Le Devnet est un environnement de test ; les disponibilités des services et des versions se consultent sur la page Service.</p>
-      <div class="mt-6 flex flex-wrap gap-3"><NuxtLink to="/service" class="public-button">Voir les services</NuxtLink><NuxtLink to="/contact" class="public-button">Nous contacter</NuxtLink></div>
-    </section>
-  </PublicPage>
+  <div class="about-page">
+    <section class="about-hero content-width"><span class="eyebrow">À propos</span><h1>Relier les machines.<br><em>Clarifier le calcul.</em></h1><p>Silicium explore une infrastructure où les ressources distribuées restent simples à mobiliser, inspecter et vérifier.</p></section>
+    <section class="manifesto content-width"><p class="manifesto__lead">La puissance inutilisée existe déjà. Le vrai défi est de la coordonner avec assez de confiance et de lisibilité pour en faire un outil.</p><div class="manifesto__copy"><p>Nous construisons Silicium comme une chaîne complète : soumission, découpage, attribution, calcul, vérification et restitution. Chaque brique doit expliquer son rôle et exposer son état réel.</p><p>L’interface ne masque pas la complexité ; elle la hiérarchise. L’utilisateur voit d’abord ce qu’il doit comprendre ou décider, puis accède aux traces techniques quand elles deviennent utiles.</p></div></section>
+    <section id="network" class="architecture content-width"><div class="section-heading"><div><span class="eyebrow">Architecture</span><h2>Une identité commune, des responsabilités distinctes.</h2></div><p>Les rôles ne sont pas des icônes décoratives. Ils décrivent précisément la fonction de chaque participant.</p></div><div class="architecture__grid"><article v-for="role in roles" :key="role.title"><div><UiIcon :name="role.icon"/></div><span>{{ role.kicker }}</span><h3>{{ role.title }}</h3><p>{{ role.text }}</p><small>{{ role.output }}</small></article></div></section>
+    <section class="values content-width"><article><span class="eyebrow">Principe 01</span><h2>Vérité opérationnelle</h2><p>L’état affiché doit provenir du système réel, jamais d’une valeur cosmétique.</p></article><article><span class="eyebrow">Principe 02</span><h2>Progressive disclosure</h2><p>Les informations techniques apparaissent au niveau où elles servent une décision.</p></article><article><span class="eyebrow">Principe 03</span><h2>Preuve attachée</h2><p>Résultats, empreintes et transactions restent reliés à leur exécution.</p></article></section>
+  </div>
 </template>
 
 <script setup lang="ts">
-import PublicPage from '../components/PublicPage.vue';
-useSeoMeta({ title: 'À propos — Silicium', description: 'Découvrez le projet Silicium, son réseau de calcul distribué et son premier cas d’usage : le raytracing.' });
+definePageMeta({ layout: 'public' });
+const roles = [
+  { kicker: 'Coordonner', title: 'Orchestrateur', text: 'Découpe les charges, choisit les rôles et suit la résolution.', output: 'Produit · plan d’exécution', icon: 'layers' },
+  { kicker: 'Exécuter', title: 'Nœud de calcul', text: 'Traite les fragments compatibles avec ses capacités déclarées.', output: 'Produit · résultat partiel', icon: 'processor' },
+  { kicker: 'Contrôler', title: 'Vérificateur', text: 'Valide les reçus et empêche un résultat non attesté d’être accepté.', output: 'Produit · attestation', icon: 'shield' },
+  { kicker: 'Conserver', title: 'Stockage', text: 'Maintient les entrées et sorties nécessaires à la réutilisation.', output: 'Produit · artefact adressé', icon: 'database' },
+];
+useSeoMeta({ title: 'À propos — Silicium', description: 'La vision et l’architecture du réseau de calcul distribué Silicium.' });
 </script>
+
+<style scoped>
+.about-hero{padding-top:7rem;padding-bottom:6rem}.about-hero h1{max-width:980px;margin:1rem 0 0;font-size:clamp(3.6rem,8vw,7rem);line-height:.9;letter-spacing:-.075em}.about-hero h1 em{color:var(--ink-400);font-style:normal;font-weight:600}.about-hero p{max-width:620px;margin:2rem 0 0;color:var(--ink-600);font-size:1rem;line-height:1.8}
+.manifesto{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(3rem,8vw,8rem);padding-top:4rem;padding-bottom:5rem;border-top:1px solid var(--border)}.manifesto__lead{margin:0;font-size:clamp(1.7rem,3vw,2.7rem);font-weight:650;line-height:1.25;letter-spacing:-.045em}.manifesto__copy{color:var(--ink-600);font-size:.82rem;line-height:1.85}.manifesto__copy p{margin:0 0 1.2rem}
+.architecture{padding-top:5rem}.section-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:3rem;margin-bottom:2rem}.section-heading h2{max-width:670px;margin:.65rem 0 0;font-size:clamp(2rem,4vw,3.3rem);line-height:1.05;letter-spacing:-.055em}.section-heading>p{max-width:380px;margin:0;color:var(--ink-600);font-size:.78rem;line-height:1.7}.architecture__grid{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--border);border-radius:var(--radius-xl);background:white;box-shadow:var(--shadow-sm)}.architecture__grid article{padding:1.5rem;border-right:1px solid var(--border)}.architecture__grid article:last-child{border:0}.architecture__grid article>div{display:grid;width:2.6rem;height:2.6rem;place-items:center;border-radius:.75rem;background:var(--mint-100);color:var(--mint-700)}.architecture__grid article:nth-child(3)>div{background:var(--violet-100);color:var(--violet-600)}.architecture__grid svg{width:1.08rem}.architecture__grid article>span{display:block;margin-top:1.8rem;color:var(--ink-500);font-size:.58rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}.architecture__grid h3{margin:.5rem 0;font-size:.88rem}.architecture__grid p{min-height:75px;margin:0;color:var(--ink-600);font-size:.68rem;line-height:1.65}.architecture__grid small{display:block;margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--border);color:var(--mint-700);font-size:.57rem;font-weight:700}
+.values{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;padding-top:7rem;padding-bottom:3rem}.values article{padding:1.5rem;border-top:2px solid var(--ink-950)}.values article:nth-child(2){border-color:var(--mint-500)}.values article:nth-child(3){border-color:var(--violet-500)}.values h2{margin:.8rem 0 .5rem;font-size:1.05rem}.values p{margin:0;color:var(--ink-600);font-size:.72rem;line-height:1.7}
+@media(max-width:850px){.manifesto{grid-template-columns:1fr;gap:2rem}.architecture__grid{grid-template-columns:1fr 1fr}.architecture__grid article:nth-child(2){border-right:0}.architecture__grid article:nth-child(-n+2){border-bottom:1px solid var(--border)}}@media(max-width:620px){.about-hero{padding-top:4rem;padding-bottom:4rem}.about-hero h1{font-size:clamp(3rem,16vw,4.5rem)}.section-heading{align-items:stretch;flex-direction:column}.architecture__grid,.values{grid-template-columns:1fr}.architecture__grid article{border-right:0;border-bottom:1px solid var(--border)}.architecture__grid article:last-child{border:0}.architecture__grid p{min-height:0}.values{padding-top:5rem}}
+</style>
