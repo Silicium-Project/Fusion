@@ -26,9 +26,11 @@ services:
       dockerfile: Dockerfile
     container_name: silicium_backend
     environment:
-      DATABASE_URL: host=${HOST} user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable
+      DATABASE_URL: host=db user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} port=5432 sslmode=disable
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://api.devnet.solana.com}
+      SILICIUM_SOLANA_PROGRAM_ID: ${SILICIUM_SOLANA_PROGRAM_ID:-}
     ports:
       - "8080:8080"
     networks:
@@ -36,6 +38,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   silicium_db_data:

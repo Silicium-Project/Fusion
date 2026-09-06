@@ -2,22 +2,22 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/silicium/internal/contextkeys" // Import the shared context keys package
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/silicium/internal/contextkeys"
 )
 
 var jwtKey []byte
 
 func init() {
-	// Initialize jwtKey from environment variable
 	key := os.Getenv("JWT_SECRET_KEY")
 	if key == "" {
-		// Fallback to a default or log a fatal error in production
-		fmt.Println("WARNING: JWT_SECRET_KEY environment variable not set. Using a default key. DO NOT USE IN PRODUCTION.")
+		fmt.Println("WARNING: JWT_SECRET_KEY environment variable not set. Using a development-only key.")
 		key = "supersecretdevelopmentkeythatshouldneverbeusedinproduction"
 	}
 	jwtKey = []byte(key)
@@ -25,38 +25,29 @@ func init() {
 
 func JwtMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
-			return
-		}
-
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		if tokenString == authHeader { // No "Bearer " prefix
-			http.Error(w, "Invalid token format", http.StatusUnauthorized)
+		parts := strings.Fields(r.Header.Get("Authorization"))
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+			writeUnauthorized(w, "Une authentification Bearer est requise.")
 			return
 		}
 
 		claims := &jwt.RegisteredClaims{}
-
-		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		token, err := jwt.ParseWithClaims(parts[1], claims, func(token *jwt.Token) (interface{}, error) {
 			return jwtKey, nil
-		})
-
-		if err != nil || !token.Valid {
-			http.Error(w, "Invalid token", http.StatusUnauthorized)
+		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
+		if err != nil || !token.Valid || strings.TrimSpace(claims.Subject) == "" {
+			writeUnauthorized(w, "La session est invalide ou expirée.")
 			return
 		}
 
-		// The subject of the token is the user ID.
-		userID := claims.Subject
-		if userID == "" {
-			http.Error(w, "Invalid token: user ID not found", http.StatusUnauthorized)
-			return
-		}
-
-		// Store the user ID in the request context for later handlers to use.
-		ctx := context.WithValue(r.Context(), contextkeys.UserIDKey, userID)
+		ctx := context.WithValue(r.Context(), contextkeys.UserIDKey, claims.Subject)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func writeUnauthorized(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": message})
 }

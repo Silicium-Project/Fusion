@@ -8,8 +8,10 @@ import (
 )
 
 type Handler struct {
-	DB   *gorm.DB
-	runs *runRegistry
+	DB               *gorm.DB
+	runs             *runRegistry
+	walletChallenges *walletChallengeStore
+	status           *statusCache
 }
 
 type runRegistry struct {
@@ -18,7 +20,12 @@ type runRegistry struct {
 }
 
 func New(db *gorm.DB) Handler {
-	return Handler{DB: db, runs: &runRegistry{cancels: make(map[uint]context.CancelCauseFunc)}}
+	return Handler{
+		DB:               db,
+		runs:             &runRegistry{cancels: make(map[uint]context.CancelCauseFunc)},
+		walletChallenges: newWalletChallengeStore(),
+		status:           &statusCache{},
+	}
 }
 
 func (h *Handler) registerRun(jobID uint, cancel context.CancelCauseFunc) {
