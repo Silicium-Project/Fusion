@@ -1,26 +1,26 @@
 <template>
   <div class="app-page">
-    <header class="app-page-head"><div><span class="eyebrow">Aujourd’hui</span><h1 class="page-title">Vue d’ensemble</h1><p class="page-intro">L’essentiel de vos calculs et de l’infrastructure, sans perdre le contexte.</p></div><UiButton to="/jobs/new" icon="plus">Nouvelle tâche</UiButton></header>
+    <header class="app-page-head"><div><span class="eyebrow">Aujourd’hui</span><h1 class="page-title">Vue d’ensemble</h1><p class="page-intro">Les projets reçus, leur avancement et les machines disponibles au même endroit.</p></div><UiButton to="/network" icon="network">Suivre le flux</UiButton></header>
     <UiNotice v-if="loadError" tone="warning">Certaines données ne sont pas disponibles. Vous pouvez continuer à utiliser les autres fonctions.</UiNotice>
     <section class="metric-grid" aria-label="Indicateurs clés">
-      <MetricCard label="Tâches enregistrées" :value="total" detail="dans votre espace" icon="jobs" tone="ink" />
-      <MetricCard label="En cours" :value="runningCount" detail="exécutions actives" icon="activity" tone="mint" />
+      <MetricCard label="Projets reçus" :value="total" detail="dans votre espace" icon="jobs" tone="ink" />
+      <MetricCard label="En cours" :value="runningCount" detail="projets actifs" icon="activity" tone="mint" />
       <MetricCard label="Terminées" :value="completedCount" detail="dans la vue récente" icon="check" tone="violet" />
-      <MetricCard label="Nœuds recensés" :value="peers.length" :detail="`${outdatedCount} à mettre à jour`" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
+      <MetricCard label="Machines connectées" :value="peers.length" :detail="`${outdatedCount} à mettre à jour`" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
     </section>
     <div class="two-column">
-      <UiCard title="Tâches récentes" description="Vos dernières soumissions, classées par activité.">
+      <UiCard title="Projets récents" description="Les derniers projets pris en charge par le réseau.">
         <template #actions><UiButton to="/jobs" variant="ghost" size="small" icon="arrow">Toutes les tâches</UiButton></template>
         <JobTable :jobs="jobs.slice(0, 6)" :loading="jobsLoading" @cancel="requestCancel" @download="download" />
       </UiCard>
       <div class="stack">
-        <UiCard title="Réseau" description="Une lecture agrégée plutôt qu’un graphe illisible." padded>
-          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ peers.length }} nœud{{ peers.length > 1 ? 's' : '' }}</strong><small>{{ currentCount }} à jour</small></div><UiStatusBadge :status="peers.length ? 'operational' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ group.role }}</dt><dd>{{ group.count }}</dd></div><div><dt>Travaux actifs</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">Explorer le réseau</UiButton></div>
+        <UiCard title="Réseau" description="La file, les rôles et les travaux actifs en un coup d’œil." padded interactive>
+          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ peers.length }} machine{{ peers.length > 1 ? 's' : '' }}</strong><small>{{ currentCount }} à jour</small></div><UiStatusBadge :status="peers.length ? 'operational' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ group.role }}</dt><dd>{{ group.count }}</dd></div><div><dt>Projets en cours</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">Explorer le réseau</UiButton></div>
         </UiCard>
-        <UiCard title="Démarrage rapide" padded><div class="quick-actions"><NuxtLink to="/jobs/new"><span><UiIcon name="upload"/></span><div><strong>Soumettre un calcul</strong><small>Configurer une nouvelle exécution</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/nodes"><span><UiIcon name="nodes"/></span><div><strong>Inspecter les nœuds</strong><small>Versions, rôles et disponibilité</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/profile"><span><UiIcon name="wallet"/></span><div><strong>Connecter Phantom</strong><small>Signer la preuve de propriété</small></div><UiIcon name="chevron"/></NuxtLink></div></UiCard>
+        <UiCard title="Suivi rapide" padded><div class="quick-actions"><NuxtLink to="/network"><span><UiIcon name="activity"/></span><div><strong>Voir les projets en cours</strong><small>Répartition, avancement et résultat</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/nodes"><span><UiIcon name="nodes"/></span><div><strong>Voir les machines</strong><small>Versions, rôles et disponibilité</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/profile"><span><UiIcon name="wallet"/></span><div><strong>Connecter Phantom</strong><small>Signer la preuve de propriété</small></div><UiIcon name="chevron"/></NuxtLink></div></UiCard>
       </div>
     </div>
-    <UiModal :open="Boolean(cancelTarget)" title="Arrêter cette tâche ?" @close="cancelTarget = null"><p class="modal-copy">Les fragments actifs recevront une demande d’arrêt signée. Les unités déjà vérifiées restent comptabilisées.</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">Conserver</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">Arrêter la tâche</UiButton></div></UiModal>
+    <UiModal :open="Boolean(cancelTarget)" title="Arrêter ce projet ?" @close="cancelTarget = null"><p class="modal-copy">Les parties encore en cours recevront une demande d’arrêt. Les résultats déjà vérifiés restent comptabilisés.</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">Continuer</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">Arrêter le projet</UiButton></div></UiModal>
   </div>
 </template>
 

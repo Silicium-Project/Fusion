@@ -9,9 +9,9 @@ export default defineNuxtConfig({
       solanaRpc: process.env.NUXT_PUBLIC_SOLANA_RPC || 'https://api.devnet.solana.com',
       updateManifestUrl: process.env.NUXT_PUBLIC_UPDATE_MANIFEST_URL || '/downloads/update-manifest.json',
       statusRefreshSeconds: process.env.NUXT_PUBLIC_STATUS_REFRESH_SECONDS || '30',
-      nodeAppWindowsUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_URL || '/downloads/silicium-node-windows.exe',
-      nodeAppWindowsDevUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_DEV_URL || '/downloads/silicium-node-windows-dev.exe',
-      nodeAppLinuxDevUrl: process.env.NUXT_PUBLIC_NODE_APP_LINUX_DEV_URL || '/downloads/silicium-node-linux-dev.AppImage',
+      nodeAppWindowsUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_URL || '/service/downloads/windows',
+      nodeAppWindowsDevUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_DEV_URL || '/service/downloads/windows-dev',
+      nodeAppLinuxDevUrl: process.env.NUXT_PUBLIC_NODE_APP_LINUX_DEV_URL || '/service/downloads/linux-dev',
     },
   },
 
@@ -27,14 +27,18 @@ export default defineNuxtConfig({
       ],
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap' },
       ],
     },
   },
 
-  css: ['@/assets/css/main.css'],
+  css: [
+    '@fontsource/geist/400.css',
+    '@fontsource/geist/500.css',
+    '@fontsource/geist/600.css',
+    '@fontsource/geist/700.css',
+    '@fontsource/geist-mono/400.css',
+    '@/assets/css/main.css',
+  ],
   components: [{ path: '~/components', pathPrefix: false }],
 
   nitro: {

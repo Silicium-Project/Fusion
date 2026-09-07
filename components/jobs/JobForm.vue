@@ -2,12 +2,12 @@
   <form class="job-form" :aria-busy="submitting" @submit.prevent="submit">
     <div class="job-form__grid">
       <label class="field job-form__wide"><span>Nom de la tâche</span><input v-model.trim="form.title" class="input" maxlength="120" required placeholder="Ex. Rendu intérieur — version 4"></label>
-      <label class="field"><span>Charge de travail</span><select v-model="form.workload" class="select"><option value="raytracer">Raytracer</option></select></label>
+      <label class="field"><span>Type de projet</span><select v-model="form.workload" class="select"><option value="raytracer">Rendu d’image</option></select></label>
       <label class="field"><span>Priorité</span><select v-model="form.priority" class="select"><option value="low">Basse</option><option value="normal">Normale</option><option value="high">Haute</option><option value="urgent">Urgente</option></select></label>
       <label class="field job-form__wide"><span>Description <small>facultative</small></span><textarea v-model.trim="form.description" class="textarea" maxlength="1000" placeholder="Contexte, version ou objectif de cette exécution"></textarea></label>
     </div>
     <div class="job-form__configuration">
-      <div><span class="field-label">Nombre de fragments</span><strong>{{ form.fragmentCount }}</strong><input v-model.number="form.fragmentCount" type="range" min="1" max="256" step="1" aria-label="Nombre de fragments"><small>Le moteur les attribue ensuite aux nœuds éligibles.</small></div>
+      <div><span class="field-label">Nombre de parties</span><strong>{{ form.fragmentCount }}</strong><input v-model.number="form.fragmentCount" type="range" min="1" max="256" step="1" aria-label="Nombre de parties"><small>Le réseau les répartit ensuite entre les machines disponibles.</small></div>
       <div><span class="field-label">Durée maximale</span><strong>{{ runtimeLabel }}</strong><input v-model.number="form.maxRuntimeSeconds" type="range" min="60" max="14400" step="60" aria-label="Durée maximale"><small>Une propagation d’arrêt est émise à l’échéance.</small></div>
     </div>
     <label class="job-drop" :class="{ 'job-drop--ready': file }">
@@ -17,7 +17,7 @@
       <span class="job-drop__action">{{ file ? 'Remplacer' : 'Parcourir' }}</span>
     </label>
     <UiNotice v-if="error" tone="danger">{{ error }}</UiNotice>
-    <div class="job-form__footer"><p>La tâche sera visible immédiatement dans votre espace, puis exécutée par l’orchestrateur.</p><div class="cluster"><UiButton to="/jobs" variant="ghost">Annuler</UiButton><UiButton type="submit" icon="arrow" :loading="submitting">Lancer la tâche</UiButton></div></div>
+    <div class="job-form__footer"><p>Le projet sera envoyé puis réparti automatiquement par le réseau.</p><div class="cluster"><UiButton to="/jobs" variant="ghost">Annuler</UiButton><UiButton type="submit" icon="arrow" :loading="submitting">Envoyer le projet</UiButton></div></div>
   </form>
 </template>
 

@@ -21,7 +21,7 @@ actions principales utilisent le graphite de la marque.
 
 ## Parcours
 
-- `/`, `/service`, `/about`, `/contact` : présentation publique.
+- `/`, `/service`, `/blockchain`, `/about`, `/contact` : présentation publique.
 - `/auth` : connexion et création de compte.
 - `/dashboard` : synthèse du compte et des calculs.
 - `/jobs`, `/jobs/new`, `/jobs/:id` : création et suivi d'un calcul.
@@ -41,7 +41,7 @@ npm ci
 npm run dev
 ```
 
-Le frontend écoute sur `http://localhost:3000`. Par défaut, l'API est appelée via
+Le frontend écoute sur `http://localhost:3001` en développement. Par défaut, l'API est appelée via
 le proxy relatif `/api`. Les variables disponibles sont documentées dans
 `.env.example`.
 

@@ -13,7 +13,7 @@
         <MetricCard label="Reçus Devnet" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? 'traçabilité active' : 'traçabilité inactive'" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
-        <UiCard title="Résultat" description="Aperçu de l’artefact réassemblé." padded><RenderPreview :dashboard="dashboard" :image-url="resultPreview" /></UiCard>
+        <UiCard id="result" title="Résultat" description="Aperçu de l’artefact réassemblé." padded><RenderPreview :dashboard="dashboard" :image-url="resultPreview" /></UiCard>
         <UiCard title="Parcours de l’exécution" description="Étapes métier, de l’entrée à la vérification." padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
       </div>
       <div class="job-detail-grid job-detail-grid--bottom">

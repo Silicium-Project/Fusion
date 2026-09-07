@@ -7,6 +7,13 @@ const statusLabels: Record<string, string> = {
   'outdated-build': 'Build obsolète', unknown: 'À vérifier', server: 'Serveur', online: 'En ligne', offline: 'Hors ligne',
 };
 
+const networkRoleLabels: Record<string, string> = {
+  server: 'Orchestration', orchestrator: 'Orchestration', orchestrateur: 'Orchestration', orchestration: 'Orchestration',
+  resource: 'Calcul', worker: 'Calcul', compute: 'Calcul', calcul: 'Calcul',
+  verify: 'Vérification', validator: 'Vérification', validation: 'Vérification',
+  storage: 'Persistance', persistence: 'Persistance', stockage: 'Persistance',
+};
+
 export function statusLabel(status?: JobStatus): string {
   const normalized = String(status || 'unknown').toLowerCase();
   return statusLabels[normalized] || normalized.replaceAll('_', ' ');
@@ -19,6 +26,11 @@ export function statusTone(status?: JobStatus): 'success' | 'warning' | 'danger'
   if (['failed', 'cancelled', 'canceled', 'unavailable', 'offline'].includes(value)) return 'danger';
   if (['running', 'active', 'dispatched', 'claimed'].includes(value)) return 'info';
   return 'neutral';
+}
+
+export function networkRoleLabel(role?: string): string {
+  const normalized = String(role || '').toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
+  return networkRoleLabels[normalized] || normalized || 'Rôle non défini';
 }
 
 export function formatDate(value?: string, includeTime = true): string {

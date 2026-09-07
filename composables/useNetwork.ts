@@ -8,6 +8,7 @@ export function useNetwork() {
   const tasksPayload = useState<NetworkTasksResponse>('network:tasks', () => ({ active: [], recent: [], workloads: [] }));
   const loading = useState<boolean>('network:loading', () => false);
   const error = useState<string>('network:error', () => '');
+  const lastUpdatedAt = useState<string | null>('network:last-updated', () => null);
 
   const peers = computed(() => peersPayload.value.peers || []);
   const roleGroups = computed(() => {
@@ -29,6 +30,7 @@ export function useNetwork() {
       ]);
       peersPayload.value = nextPeers;
       tasksPayload.value = nextTasks;
+      lastUpdatedAt.value = new Date().toISOString();
     } catch (failure) {
       error.value = 'La télémétrie réseau est momentanément indisponible.';
       throw failure;
@@ -37,5 +39,5 @@ export function useNetwork() {
     }
   }
 
-  return { peersPayload, tasksPayload, peers, roleGroups, outdatedCount, currentCount, loading, error, loadNetwork };
+  return { peersPayload, tasksPayload, peers, roleGroups, outdatedCount, currentCount, loading, error, lastUpdatedAt, loadNetwork };
 }

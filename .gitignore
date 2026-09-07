@@ -6,6 +6,7 @@ node_modules/
 .output/
 dist/
 test-results/
+artifacts/
 playwright-report/
 
 # Nuxt Telemetry

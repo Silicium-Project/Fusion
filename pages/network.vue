@@ -1,20 +1,21 @@
 <template>
   <div class="app-page">
-    <header class="app-page-head"><div><span class="eyebrow">Infrastructure</span><h1 class="page-title">Réseau</h1><p class="page-intro">Une vue agrégée des rôles et des travaux qui reste exploitable avec des milliers de nœuds.</p></div><div class="cluster"><UiButton to="/nodes" variant="secondary" icon="nodes">Voir les nœuds</UiButton><UiButton variant="secondary" icon="refresh" :loading="loading" @click="loadNetwork(true)">Rafraîchir</UiButton></div></header>
+    <header class="app-page-head"><div><span class="eyebrow">Infrastructure · flux vivant</span><h1 class="page-title">Réseau</h1><p class="page-intro">Les projets en cours et les machines disponibles, actualisés automatiquement toutes les quelques secondes.</p></div><div class="cluster"><UiButton to="/nodes" variant="secondary" icon="nodes">Voir les machines</UiButton><UiButton variant="secondary" icon="refresh" :loading="loading" @click="loadNetwork(true)">Rafraîchir</UiButton></div></header>
     <UiNotice v-if="error" tone="warning">{{ error }}</UiNotice>
     <NetworkSummary :peers="peers" :role-groups="roleGroups" :outdated-count="outdatedCount" />
+    <LiveNetworkMap :total-nodes="peers.length" :active-nodes="currentCount" :active-workloads="activeCount" :role-groups="roleGroups" :last-updated-at="lastUpdatedAt" />
     <section class="network-flow surface">
-      <div class="network-flow__copy"><span class="eyebrow">Lecture du réseau</span><h2>De l’entrée au résultat, sans graphe de nœuds.</h2><p>Le volume se lit par groupes. Le détail d’un travail ou d’un nœud s’ouvre seulement lorsqu’il devient pertinent.</p></div>
+      <div class="network-flow__copy"><span class="eyebrow">Lecture du réseau</span><h2>Du projet au résultat, par étape.</h2><p>Les machines sont regroupées par rôle. Le détail d’un projet ou d’une machine s’ouvre uniquement lorsqu’il devient utile.</p></div>
       <div class="network-flow__diagram"><div v-for="(stage,index) in flow" :key="stage.title"><span><UiIcon :name="stage.icon"/></span><strong>{{ stage.title }}</strong><small>{{ stage.detail }}</small><UiIcon v-if="index < flow.length - 1" name="arrow" class="network-flow__arrow"/></div></div>
     </section>
-    <UiCard title="Travaux réseau" description="Un travail agrège ses sous-tâches ; il ne devient pas un nuage de points.">
-      <template #actions><UiStatusBadge :status="activeCount ? 'running' : 'completed'" :label="activeCount ? `${activeCount} actif${activeCount > 1 ? 's' : ''}` : 'Aucun travail actif'" /></template>
+    <UiCard title="Projets en cours" description="Chaque projet reste lisible, même lorsque plusieurs machines travaillent ensemble.">
+      <template #actions><UiStatusBadge :status="activeCount ? 'running' : 'completed'" :label="activeCount ? `${activeCount} actif${activeCount > 1 ? 's' : ''}` : 'Aucun projet actif'" /></template>
       <div v-if="loading && !workloads.length" class="workload-loading"><div v-for="n in 4" :key="n" class="skeleton"></div></div>
-      <UiEmptyState v-else-if="!workloads.length" title="Aucun travail réseau" description="Les exécutions apparaîtront ici dès qu’elles seront publiées dans le registre RPC." icon="network" />
+      <UiEmptyState v-else-if="!workloads.length" title="Aucun projet en cours" description="Les projets apparaîtront ici dès que le réseau en recevra un nouveau." icon="network" />
       <div v-else class="workload-list">
         <details v-for="workload in workloads" :key="workload.work_id">
           <summary><span class="workload-list__icon"><UiIcon name="layers"/></span><div class="workload-list__identity"><strong>{{ compactIdentifier(workload.work_id, 16, 7) }}</strong><small>{{ workload.workload || workload.kind || 'compute' }} · {{ formatDate(workload.updated_at) }}</small></div><UiStatusBadge :status="workload.status"/><div class="workload-list__counts"><span><strong>{{ workload.completed }}</strong><small>terminés</small></span><span><strong>{{ workload.active }}</strong><small>actifs</small></span><span><strong>{{ workload.failed }}</strong><small>échecs</small></span><span><strong>{{ workload.total }}</strong><small>total</small></span></div><UiIcon name="chevron" class="workload-list__chevron"/></summary>
-          <div class="workload-detail"><div v-if="!workload.subtasks?.length" class="workload-detail__empty">Aucun détail de sous-tâche publié.</div><div v-else class="table-wrap"><table class="data-table"><thead><tr><th>Sous-tâche</th><th>Étape</th><th>Nœud</th><th>Statut</th></tr></thead><tbody><tr v-for="(task,index) in workload.subtasks.slice(0,80)" :key="String(task.task_id || task.taskId || index)"><td class="mono">{{ compactIdentifier(String(task.task_id || task.taskId || `fragment-${index}`),12,6) }}</td><td>{{ task.stage || 'calcul' }}</td><td class="mono">{{ compactIdentifier(String(task.handled_by || task.handledBy || 'En attente'),10,5) }}</td><td><UiStatusBadge :status="String(task.status || 'unknown')"/></td></tr></tbody></table></div></div>
+          <div class="workload-detail"><div v-if="!workload.subtasks?.length" class="workload-detail__empty">Aucun détail de partie n’est encore disponible.</div><div v-else class="table-wrap"><table class="data-table"><thead><tr><th>Partie</th><th>Étape</th><th>Machine</th><th>Avancement</th></tr></thead><tbody><tr v-for="(task,index) in workload.subtasks.slice(0,80)" :key="String(task.task_id || task.taskId || index)"><td class="mono">{{ compactIdentifier(String(task.task_id || task.taskId || `fragment-${index}`),12,6) }}</td><td>{{ task.stage || 'calcul' }}</td><td class="mono">{{ compactIdentifier(String(task.handled_by || task.handledBy || 'En attente'),10,5) }}</td><td><UiStatusBadge :status="String(task.status || 'unknown')"/></td></tr></tbody></table></div></div>
         </details>
       </div>
     </UiCard>
@@ -25,11 +26,18 @@
 import { compactIdentifier, formatDate } from '~/utils/format';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const network = useNetwork();
-const { peers, roleGroups, outdatedCount, loading, error, tasksPayload, loadNetwork } = network;
+const { peers, roleGroups, outdatedCount, currentCount, loading, error, tasksPayload, lastUpdatedAt, loadNetwork } = network;
 const workloads = computed(() => tasksPayload.value.workloads || []);
 const activeCount = computed(() => workloads.value.filter(item => !['completed','failed','cancelled','expired'].includes(item.status)).length);
-const flow = [{ title: 'Entrée', detail: 'Charge validée', icon: 'upload' }, { title: 'Orchestration', detail: 'Plan & rôles', icon: 'layers' }, { title: 'Calcul', detail: 'Fragments', icon: 'processor' }, { title: 'Vérification', detail: 'Attestations', icon: 'shield' }, { title: 'Résultat', detail: 'Réassemblage', icon: 'result' }];
-onMounted(() => loadNetwork().catch(() => undefined));
+const flow = [{ title: 'Nouveau projet', detail: 'Projet reçu', icon: 'upload' }, { title: 'Répartition', detail: 'Machines choisies', icon: 'layers' }, { title: 'Calcul', detail: 'Parties traitées', icon: 'processor' }, { title: 'Contrôle', detail: 'Résultats comparés', icon: 'shield' }, { title: 'Résultat', detail: 'Réponse réunie', icon: 'result' }];
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+onMounted(() => {
+  loadNetwork().catch(() => undefined);
+  refreshTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') loadNetwork().catch(() => undefined);
+  }, 12_000);
+});
+onBeforeUnmount(() => { if (refreshTimer) clearInterval(refreshTimer); });
 useSeoMeta({ title: 'Réseau — Silicium' });
 </script>
 

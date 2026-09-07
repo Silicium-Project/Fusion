@@ -1,13 +1,13 @@
 <template>
   <div class="app-page">
-    <header class="app-page-head"><div><span class="eyebrow">Workspace</span><h1 class="page-title">Tâches</h1><p class="page-intro">Recherchez, filtrez et ouvrez toutes les exécutions rattachées à votre compte.</p></div><UiButton to="/jobs/new" icon="plus">Nouvelle tâche</UiButton></header>
+    <header class="app-page-head"><div><span class="eyebrow">Workspace</span><h1 class="page-title">Tâches</h1><p class="page-intro">Les projets reçus automatiquement, avec leur avancement et les informations utiles.</p></div><UiStatusBadge status="operational" label="Réception automatique" /> </header>
     <UiCard>
       <template #header><div class="jobs-toolbar"><div class="jobs-search"><UiIcon name="search"/><input v-model.trim="search" type="search" placeholder="Rechercher par nom ou identifiant" aria-label="Rechercher une tâche"></div><select v-model="status" class="select" aria-label="Filtrer par statut"><option value="all">Tous les statuts</option><option value="running">En cours</option><option value="queued">En attente</option><option value="completed">Terminées</option><option value="failed">Échouées</option><option value="cancelled">Annulées</option><option value="expired">Expirées</option></select><UiButton variant="secondary" size="small" icon="refresh" :loading="loading" @click="load(true)">Rafraîchir</UiButton></div></template>
       <UiNotice v-if="error" tone="warning">{{ error }}</UiNotice>
       <JobTable :jobs="filteredJobs" :loading="loading" @cancel="requestCancel" @download="download" />
       <footer v-if="totalPages > 1" class="pagination"><span>Page {{ page }} sur {{ totalPages }} · {{ total }} tâche{{ total > 1 ? 's' : '' }}</span><div><UiButton variant="secondary" size="small" :disabled="page <= 1" @click="page--">Précédente</UiButton><UiButton variant="secondary" size="small" :disabled="page >= totalPages" @click="page++">Suivante</UiButton></div></footer>
     </UiCard>
-    <UiModal :open="Boolean(cancelTarget)" title="Arrêter cette tâche ?" @close="cancelTarget = null"><p class="modal-copy">Cette action demande au réseau d’arrêter les fragments encore actifs. Elle ne supprime ni la tâche ni sa trace.</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">Retour</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">Confirmer l’arrêt</UiButton></div></UiModal>
+    <UiModal :open="Boolean(cancelTarget)" title="Arrêter ce projet ?" @close="cancelTarget = null"><p class="modal-copy">Cette action demande au réseau d’arrêter les parties encore en cours. Elle ne supprime ni le projet ni son historique.</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">Retour</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">Confirmer l’arrêt</UiButton></div></UiModal>
   </div>
 </template>
 

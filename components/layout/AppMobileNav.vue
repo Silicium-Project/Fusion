@@ -7,10 +7,19 @@
 <script setup lang="ts">
 const items = [
   { label: 'Accueil', to: '/dashboard', icon: 'overview' }, { label: 'Tâches', to: '/jobs', icon: 'jobs' },
-  { label: 'Créer', to: '/jobs/new', icon: 'plus' }, { label: 'Réseau', to: '/network', icon: 'network' }, { label: 'Compte', to: '/profile', icon: 'account' },
+  { label: 'Flux', to: '/network', icon: 'activity' }, { label: 'Machines', to: '/nodes', icon: 'nodes' }, { label: 'Compte', to: '/profile', icon: 'account' },
 ];
 </script>
 
 <style scoped>
-.mobile-nav{display:none}@media(max-width:840px){.mobile-nav{position:fixed;right:0;bottom:0;left:0;z-index:50;display:grid;height:calc(4.35rem + env(safe-area-inset-bottom));grid-template-columns:repeat(5,1fr);padding:0 .25rem env(safe-area-inset-bottom);border-top:1px solid var(--border);background:rgba(255,255,255,.96);box-shadow:0 -10px 30px rgba(17,27,42,.07);backdrop-filter:blur(16px)}.mobile-nav a{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.25rem;color:var(--ink-500);font-size:.55rem;font-weight:750}.mobile-nav svg{width:1.05rem;height:1.05rem}.mobile-nav a.router-link-active{color:var(--mint-700)}.mobile-nav a:nth-child(3) svg{width:1.6rem;height:1.6rem;padding:.38rem;border-radius:.55rem;background:var(--ink-950);color:white}}
+.mobile-nav{display:none}
+@media(max-width:840px){
+  .mobile-nav{display:grid;height:3.65rem;grid-template-columns:repeat(5,1fr);margin:0 .75rem;padding:0 .2rem;border:1px solid var(--glass-edge);border-radius:1rem;background:var(--glass-card);box-shadow:var(--glass-inset),0 12px 30px rgba(17,27,42,.1);-webkit-backdrop-filter:blur(24px) saturate(1.3);backdrop-filter:blur(24px) saturate(1.3)}
+  .mobile-nav a{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.2rem;color:var(--ink-500);font-size:.54rem;font-weight:760;transition:color .25s,transform .25s var(--ease-spring)}
+  .mobile-nav a:active{transform:scale(.92)}
+  .mobile-nav svg{width:1rem;height:1rem}
+  .mobile-nav a.router-link-active{color:var(--mint-700)}
+  .mobile-nav a:nth-child(3) svg{width:1.65rem;height:1.65rem;padding:.39rem;border-radius:.62rem;background:linear-gradient(145deg,var(--ink-800),var(--ink-950));color:white;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 8px 16px rgba(11,21,35,.18)}
+}
+@supports not (backdrop-filter: blur(1px)) { @media(max-width:840px){ .mobile-nav { background: var(--surface); } } }
 </style>

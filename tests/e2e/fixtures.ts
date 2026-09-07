@@ -19,7 +19,7 @@ export const dashboard = {
 
 export async function mockAPI(page: Page) {
   await page.route('**/downloads/update-manifest.json', route => route.fulfill({ json: { generated_utc: '2026-09-06T08:00:00Z', channels: { prod: { version: '1.0.0' }, dev: { version: '1.1.0-dev.2' } } } }));
-  await page.route('**/api/**', route => {
+  await page.route(/^https?:\/\/[^/]+\/api\/.*$/, route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path.endsWith('/status')) return route.fulfill({ json: { status: 'operational', checkedAt: '2026-09-06T08:00:00Z', backend: { status: 'operational', database: 'operational' }, network: { status: 'operational', peers: 3, activePeers: 3, outdatedPeers: 1 }, blockchain: { status: 'operational', network: 'devnet', configured: true, programId: 'program-functional' } } });

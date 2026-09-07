@@ -1,6 +1,6 @@
 <template>
   <div v-if="loading" class="job-table-loading"><div v-for="n in 5" :key="n" class="skeleton"></div></div>
-  <UiEmptyState v-else-if="!jobs.length" title="Aucune tâche dans cette vue" description="Créez une tâche ou modifiez les filtres pour retrouver une exécution." icon="jobs"><UiButton to="/jobs/new" size="small" icon="plus">Nouvelle tâche</UiButton></UiEmptyState>
+  <UiEmptyState v-else-if="!jobs.length" title="Aucun projet dans cette vue" description="Les projets apparaîtront ici dès qu’ils seront reçus automatiquement. Modifiez les filtres si nécessaire." icon="jobs" />
   <div v-else class="table-wrap">
     <table class="data-table">
       <thead><tr><th>Tâche</th><th>Statut</th><th>Distribution</th><th>Démarrage</th><th><span class="sr-only">Actions</span></th></tr></thead>
