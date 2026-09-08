@@ -315,6 +315,14 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Run P2P smoke
+      - name: Verify pinned Network CI coverage
         shell: bash
-        run: bash Network/ci/p2p_kademlia_smoke.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git -C Network rev-parse --verify HEAD
+          node .github/scripts/check-submodule-ci.mjs \
+            --repo Silicium-Project/Network \
+            --latest-green \
+            --label Network

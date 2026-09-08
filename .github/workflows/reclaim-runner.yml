@@ -1,0 +1,50 @@
+name: Reclaim self-hosted runner
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reclaim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Reclaim stale Fusion runner state
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$VPS_HOST" || -z "$VPS_SSH_KEY" || -z "$VPS_KNOWN_HOSTS" ]]; then
+            echo "VPS_HOST, VPS_SSH_KEY and VPS_KNOWN_HOSTS are required." >&2
+            exit 1
+          fi
+          ssh_dir="$RUNNER_TEMP/silicium-vps-ssh"
+          install -d -m 700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
+            -i "$ssh_dir/id_ed25519" "$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
+          set -euo pipefail
+          for workspace in /home/*/_work/Fusion /opt/github-runner*/_work/Fusion; do
+            if [[ -d "$workspace" ]]; then
+              rm -rf -- "$workspace"
+            fi
+          done
+          for cache in \
+            /home/*/.cargo/registry/cache \
+            /home/*/.cargo/registry/src \
+            /home/*/.cargo/git/checkouts \
+            /home/*/.npm/_cacache; do
+            if [[ -d "$cache" ]]; then
+              rm -rf -- "$cache"
+            fi
+          done
+          df -h / /home /opt
+          REMOTE

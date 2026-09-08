@@ -2,6 +2,8 @@ name: Sync submodule gitlinks
 
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [submodule-main-updated]
   schedule:
     # Development cadence. Raise this interval before the production channel is enabled.
     - cron: "*/5 * * * *"
@@ -37,6 +39,11 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Detect remote submodule advances
         id: detect
         shell: bash
@@ -51,13 +58,10 @@ jobs:
             repo="${repo#git@github.com:}"
             repo="${repo%.git}"
             pinned="$(git rev-parse "HEAD:${path}")"
-            remote="$(curl --fail --silent --show-error --location \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${repo}/git/ref/heads/main" \
-              | sed -nE 's/^[[:space:]]*"sha":[[:space:]]*"([^"]+)".*/\1/p' \
-              | head -n 1)"
+            remote="$(node .github/scripts/check-submodule-ci.mjs \
+              --repo "$repo" --latest-green --label "$path" \
+              | sed -nE 's/^LATEST_GREEN_SHA=([0-9a-f]{40})$/\1/p' \
+              | tail -n 1)"
             if [[ -z "$remote" ]]; then
               echo "::error title=GitHub API response missing SHA::Unable to resolve ${repo}:main."
               exit 1
@@ -113,7 +117,6 @@ jobs:
           done || true
           git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           git submodule sync -- BackEnd FrontEnd Network
-          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --remote --force --recursive -- BackEnd FrontEnd Network
 
       - name: Resolve configured submodule branches
         id: resolve
@@ -146,8 +149,17 @@ jobs:
             repo="${repo%.git}"
             old_sha="$(git rev-parse "origin/main:${path}")"
 
-            git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" -C "$path" fetch --quiet origin "$branch"
-            new_sha="$(git -C "$path" rev-parse FETCH_HEAD)"
+            new_sha="$(node .github/scripts/check-submodule-ci.mjs \
+              --repo "$repo" --ref "$branch" --latest-green --label "$path" \
+              | sed -nE 's/^LATEST_GREEN_SHA=([0-9a-f]{40})$/\1/p' \
+              | tail -n 1)"
+            git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" \
+              -C "$path" fetch --quiet origin "$new_sha"
+            fetched_sha="$(git -C "$path" rev-parse FETCH_HEAD)"
+            if [[ "$fetched_sha" != "$new_sha" ]]; then
+              echo "::error title=Submodule SHA mismatch::Fetched ${path}@${fetched_sha}, expected ${new_sha}."
+              exit 1
+            fi
             node .github/scripts/check-submodule-ci.mjs --repo "$repo" --sha "$new_sha" --label "$path"
 
             if [[ "$old_sha" == "$new_sha" ]]; then
@@ -208,7 +220,7 @@ jobs:
 
       - name: Report current composition
         if: steps.resolve.outputs.changed == '0'
-        run: echo "Fusion already pins every configured submodule branch head."
+        run: echo "Fusion already pins the latest green commit for every configured submodule."
 
   report-no-changes:
     needs: [detect]
@@ -216,4 +228,4 @@ jobs:
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Report unchanged composition
-        run: echo "Remote submodule main branches have not advanced; skipped the expensive CI gate and gitlink sync."
+        run: echo "No newer green submodule composition is available; skipped the expensive gate and gitlink sync."

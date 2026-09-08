@@ -54,13 +54,17 @@ The generated installers are staged on the VPS before release and deploy.
 
 ## Canonical flow
 
-1. `sync-submodules.yml` detects new `main` heads for `BackEnd`, `FrontEnd`,
-   and `Network`, then publishes the pinned composition on `main`.
-2. `submodule-ci-gate.yml` fails immediately if any of those `main` heads is
-   red, incomplete, or missing. On the VPS it also provisions the dedicated
-   `BackEnd` and `FrontEnd` self-hosted runners and waits for their long CI
-   jobs to finish before evaluating the gate. The submodule CI jobs themselves
-   run on the VPS runners in parallel when runner capacity is available.
+1. `sync-submodules.yml` examines the configured `main` branches for
+   `BackEnd`, `FrontEnd`, and `Network`, resolves the newest commit for which
+   every visible workflow is green, then publishes those exact gitlinks on
+   `main`.
+2. `submodule-ci-gate.yml` uses the same resolver. A red, incomplete, or
+   missing head is therefore skipped until a newer green candidate exists;
+   Fusion never pins an unqualified commit. On the VPS it also provisions the
+   dedicated `BackEnd` and `FrontEnd` self-hosted runners and waits for their
+   long CI jobs to finish before evaluating the gate. The submodule CI jobs
+   themselves run on the VPS runners in parallel when runner capacity is
+   available.
 3. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
 4. `deploy-vps.yml` is the canonical mainline path: it validates and builds
    on the VPS runners, builds Windows installers on `windows-latest`, publishes
@@ -73,9 +77,12 @@ The generated installers are staged on the VPS before release and deploy.
 
 - Do not add a second deployment path outside the VPS without documenting why
   it exists.
-- Do not let a green Fusion workflow mask a red submodule `main`.
-- Do not use `git submodule update --remote` in production deploy steps unless
-  the target SHA is also gated by CI.
+- Do not let a green Fusion workflow pin a submodule SHA that has not passed all
+  visible workflows; a red `main` remains pending until a newer green
+  candidate exists.
+- Do not use `git submodule update --remote` in production deploy steps. The
+  target SHA must come from the latest-green resolver and remain pinned in
+  Fusion.
 - Keep the GitHub-hosted Windows job limited to desktop packaging; all
   production state changes remain on the VPS.
 - Keep the workflow surface small: one canonical deploy path, one canonical
@@ -85,10 +92,11 @@ The generated installers are staged on the VPS before release and deploy.
 
 ### Fusion root
 
-- `sync-submodules.yml`: canonical scheduler for publishing exact gitlinks and
-  dispatching the deploy pipeline once the composition is updated.
-- `submodule-ci-gate.yml`: reusable hard gate for `BackEnd`, `FrontEnd`, and
-  `Network` `main` health, including VPS runner bootstrap.
+- `sync-submodules.yml`: canonical scheduler for resolving the latest green
+  submodule commits, publishing exact gitlinks, and dispatching the deploy
+  pipeline once the composition is updated.
+- `submodule-ci-gate.yml`: reusable latest-green gate for `BackEnd`, `FrontEnd`,
+  and `Network`, including VPS runner bootstrap.
 - `build.yml`: reusable Linux bundle build gate for PRs and manual runs.
 - `test.yml`: reusable web, Network core, Docker E2E, and P2P smoke gate for
   PRs and manual runs.

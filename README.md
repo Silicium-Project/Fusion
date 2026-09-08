@@ -20,12 +20,13 @@ Le miroir externe vers le repo Epitech reste volontaire et explicite via
 chemin critique de livraison.
 
 Fusion conserve des SHA exacts afin que chaque build, rollback et deploiement soit
-reproductible. Le workflow `Sync submodule gitlinks` compare toutes les cinq
-minutes les branches declarees dans `.gitmodules`, publie une composition exacte
-sur `main`; le push `main` declenche alors le pipeline VPS canonique. Le workflow
-`submodule-ci-gate` bloque aussi Fusion si le head `main` de l'un des
-submodules `BackEnd`, `FrontEnd` ou `Network` est rouge, en attente ou incomplet;
-la composition ne peut donc pas avancer sur une branche sous-module deja cassee.
+reproductible. Le workflow `Sync submodule gitlinks` examine toutes les cinq
+minutes les branches declarees dans `.gitmodules`, selectionne pour chacune le
+dernier commit dont les workflows sont tous verts, puis publie cette composition
+exacte sur `main`; le push `main` declenche alors le pipeline VPS canonique.
+`submodule-ci-gate` reutilise le meme resoluteur et refuse une composition sans
+candidat vert. Si le head courant est encore rouge ou en attente, Fusion reste
+sur le dernier commit vert au lieu d'introduire une revision non qualifiee.
 Il ne faut pas remplacer ce mecanisme par un `git submodule update --remote`
 pendant le deploiement: le contenu deploye ne correspondrait alors plus au
 commit Fusion audite.
@@ -66,7 +67,7 @@ Le lancement local suppose que les submodules sont initialises.
 
 Le script demarre:
 
-- les noeuds demo P2P `worker-1` et `verifier-1`;
+- un noeud de calcul et un noeud de verification via le launcher Network;
 - une base SQLite locale dans `.silicium\site\silicium.db` par defaut;
 - le dashboard Devnet local sur `http://localhost:5174/`;
 - le service BackEnd sur `http://localhost:8080`;
