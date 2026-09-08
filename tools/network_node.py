@@ -271,8 +271,6 @@ class NodeConfig:
     solana_bridge: Path
     solana_timeout_s: int
     max_retries: int
-    worker_binary: str
-    worker_mode: str
     bootstrap_worker: bool
     gossip_enable: bool
     gossip_bind: str
@@ -338,8 +336,6 @@ def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
         "disk_free_bytes": disk.free,
         "disk_total_bytes": disk.total,
         "solana_enabled": config.solana_enable,
-        "worker_binary": config.worker_binary,
-        "worker_mode": config.worker_mode,
         "resource_profile": build_resource_profile(config.export_dir),
     }
 
@@ -803,17 +799,21 @@ class RoleRuntime:
     def run_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
         if str(task.get("workload", "")).strip().lower() == "calcul/rendering/raytracer-fragment":
             return self.run_raytracer_fragment(task, p2p_data, p2p_meta)
-        worker_result = self.try_worker_binary(task)
+        compute_result = {
+            "mode": "network-workload",
+            "executed": False,
+            "reason": "unsupported_workload",
+        }
         material = {
             "task": task,
             "p2p_hash": sha256_bytes(p2p_data),
-            "worker_result": worker_result,
+            "compute_result": compute_result,
         }
         return {
             "role_result": "compute",
             "input": p2p_meta,
             "input_hash": sha256_bytes(p2p_data),
-            "compute": worker_result,
+            "compute": compute_result,
             "result_hash": sha256_json(material),
         }
 
@@ -980,35 +980,6 @@ class RoleRuntime:
             "verified": passed,
             "choice": passed,
             "result_hash": sha256_json({"verified": passed, **verification}),
-        }
-
-    def try_worker_binary(self, task: dict[str, Any]) -> dict[str, Any]:
-        summary = str(task.get("summary") or task.get("summary_path") or "").strip()
-        partition = str(task.get("partition_id") or task.get("task_id") or "").strip()
-        if not summary:
-            return {"mode": "deterministic-local", "executed": False, "reason": "missing_summary"}
-        binary = Path(str(task.get("worker_binary") or self.config.worker_binary)).expanduser()
-        if not binary.exists():
-            return {"mode": "deterministic-local", "executed": False, "reason": "worker_binary_missing", "path": str(binary)}
-        cmd = [str(binary), "--summary", summary, "--mode", str(task.get("mode") or self.config.worker_mode), "--output", "json"]
-        if partition:
-            cmd.extend(["--task", partition])
-        inputs = (task.get("inputs") or {}) if isinstance(task.get("inputs"), dict) else {}
-        for key, value in inputs.items():
-            cmd.extend(["--input", f"{key}={value}"])
-        completed = self.run_process(cmd, timeout=int(task.get("timeout_s", 120)))
-        parsed: Any
-        try:
-            parsed = json.loads(completed.stdout) if completed.stdout.strip() else {}
-        except json.JSONDecodeError:
-            parsed = {"stdout": completed.stdout}
-        return {
-            "mode": "worker-binary",
-            "executed": completed.returncode == 0,
-            "returncode": completed.returncode,
-            "command": cmd,
-            "stdout": parsed,
-            "stderr": completed.stderr[-4096:],
         }
 
     def run_storage_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
@@ -6604,8 +6575,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--solana-bridge", default=os.environ.get("SILICIUM_SOLANA_BRIDGE", str(Path(__file__).with_name("solana_layer_bridge.cjs"))))
     parser.add_argument("--solana-timeout-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_TIMEOUT_S", "45")))
     parser.add_argument("--max-retries", type=int, default=int(os.environ.get("SILICIUM_NODE_MAX_RETRIES", "2")))
-    parser.add_argument("--worker-binary", default=os.environ.get("SILICIUM_WORKER_BINARY", str(Path("worker/worker"))))
-    parser.add_argument("--worker-mode", default=os.environ.get("SILICIUM_WORKER_MODE", "emu"))
     parser.add_argument("--bootstrap-worker", action="store_true", default=os.environ.get("SILICIUM_BOOTSTRAP_WORKER", "0") == "1")
     parser.add_argument("--gossip-enable", action="store_true", default=os.environ.get("SILICIUM_GOSSIP_ENABLE", "0") == "1")
     parser.add_argument("--gossip-bind", default=os.environ.get("SILICIUM_GOSSIP_BIND", "127.0.0.1"))
@@ -6713,8 +6682,6 @@ def main(argv: list[str] | None = None) -> int:
         solana_bridge=Path(args.solana_bridge).expanduser().resolve(),
         solana_timeout_s=int(args.solana_timeout_s),
         max_retries=max(0, int(args.max_retries)),
-        worker_binary=str(args.worker_binary),
-        worker_mode=str(args.worker_mode),
         bootstrap_worker=bool(args.bootstrap_worker),
         gossip_enable=bool(args.gossip_enable),
         gossip_bind=str(args.gossip_bind),

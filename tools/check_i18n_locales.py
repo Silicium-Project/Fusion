@@ -12,10 +12,6 @@ REQUIRED_NAMESPACES = [
     "core.",
     "cli.",
     "tui.",
-    "worker.",
-    "executor.",
-    "splitter.",
-    "viewer.",
     "infra.",
     "workload.",
 ]

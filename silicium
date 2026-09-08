@@ -38,8 +38,6 @@ except ImportError:  # pragma: no cover
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-SPLITTER_DIR = REPO_ROOT / "splitter"
-EXECUTOR_DIR = REPO_ROOT / "executor"
 WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
 WORKLOAD_SCHEMA_FILE = WORKLOAD_ROOT / "schema" / "workload-manifest-v1.schema.json"
 WORKLOAD_FIXTURES_DIR = WORKLOAD_ROOT / "fixtures"
@@ -47,10 +45,6 @@ WORKLOAD_FIXTURES_INDEX = WORKLOAD_FIXTURES_DIR / "fixtures.json"
 WORKLOAD_ALIGNMENT_POLICY = WORKLOAD_FIXTURES_DIR / "alignment-policy.json"
 WORKLOAD_GOLDEN_CORPUS_FILE = WORKLOAD_ROOT / "golden" / "golden-corpus.json"
 PERF_BUDGET_FILE = REPO_ROOT / "docs" / "performance-budgets.json"
-CORE_CHECK_IMAGE_DEFAULT = "silicium/core-check:lite"
-CORE_CHECK_DOCKERFILE = REPO_ROOT / "docker" / "core-check" / "Dockerfile"
-CPP_TEST_IMAGE_DEFAULT = "silicium/cpp-tests:latest"
-CPP_TEST_DOCKERFILE = REPO_ROOT / "infra" / "docker" / "cpp-tests" / "Dockerfile"
 POSIX_PYTEST_IMAGE_DEFAULT = "python:3.12-bookworm"
 LEDGER_SUFFIX = {
     "localnet": "local-ledger",
@@ -93,12 +87,10 @@ SERVICE_CHOICES = sorted(
 TOP_LEVEL_COMMANDS = [
     "test",
     "check",
-    "cpp-test",
     "doctor",
     "budget",
     "smoke",
     "setup",
-    "tools",
     "clean",
     "ledger",
     "history",
@@ -118,7 +110,6 @@ TOP_LEVEL_COMMANDS = [
     "quit",
 ]
 SUBCOMMANDS = {
-    "tools": ["demo", "clean"],
     "setup": ["up", "down"],
     "ledger": ["list", "wipe", "export", "import"],
     "history": ["show", "clear"],
@@ -366,9 +357,6 @@ class EnvConfig:
     docker_bin: str
     docker_compose_bin: str | None
     ledger_prefix: str
-    core_check_image: str
-    core_check_setup: str | None
-    cpp_test_image: str
 
 
 @dataclass(frozen=True)
@@ -453,12 +441,8 @@ class CommandRegistry:
 
             previous_env = {
                 "SILICIUM_RUN_ID": os.environ.get("SILICIUM_RUN_ID"),
-                "EXECUTOR_RUN_ID": os.environ.get("EXECUTOR_RUN_ID"),
-                "WORKER_RUN_ID": os.environ.get("WORKER_RUN_ID"),
             }
             os.environ["SILICIUM_RUN_ID"] = run_id
-            os.environ["EXECUTOR_RUN_ID"] = run_id
-            os.environ["WORKER_RUN_ID"] = run_id
 
             started_at = time.monotonic()
             _emit_cli_event("info", "command_started", "CLI command started", payload_base)
@@ -615,9 +599,6 @@ def load_env_config(env: Mapping[str, str] | None = None) -> EnvConfig:
         docker_bin=source.get("DOCKER", "docker"),
         docker_compose_bin=source.get("DOCKER_COMPOSE_BIN"),
         ledger_prefix=source.get("SILICIUM_LEDGER_PREFIX", "silicium"),
-        core_check_image=source.get("SILICIUM_CORE_CHECK_IMAGE", CORE_CHECK_IMAGE_DEFAULT),
-        core_check_setup=source.get("SILICIUM_CORE_CHECK_SETUP"),
-        cpp_test_image=source.get("SILICIUM_CPP_TEST_IMAGE", CPP_TEST_IMAGE_DEFAULT),
     )
 
 
@@ -893,128 +874,6 @@ def compose_command(ctx: Context) -> list[str]:
     sys.exit(1)
 
 
-def ensure_core_check_image(image: str, ctx: Context) -> None:
-    if image != CORE_CHECK_IMAGE_DEFAULT or not CORE_CHECK_DOCKERFILE.exists():
-        return
-    try:
-        subprocess.run(
-            [ctx.config.docker_bin, "image", "inspect", image],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True,
-        )
-        return
-    except subprocess.SubprocessError:
-        pass
-    print(colorize(f">> Building {image} (core-check image)", COLOR_GREEN))
-    run(
-        [
-            ctx.config.docker_bin,
-            "build",
-            "-t",
-            image,
-            "-f",
-            str(CORE_CHECK_DOCKERFILE),
-            str(REPO_ROOT),
-        ]
-    )
-
-
-def ensure_cpp_test_image(image: str, ctx: Context) -> None:
-    try:
-        subprocess.run(
-            [ctx.config.docker_bin, "image", "inspect", image],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True,
-        )
-        return
-    except subprocess.SubprocessError:
-        pass
-
-    if image != CPP_TEST_IMAGE_DEFAULT or not CPP_TEST_DOCKERFILE.exists():
-        print(
-            f"Docker image '{image}' not found. Build it first or set "
-            "SILICIUM_CPP_TEST_IMAGE to an existing image."
-        )
-        sys.exit(1)
-
-    print(colorize(f">> Building {image} (cpp-tests image)", COLOR_GREEN))
-    run(
-        [
-            ctx.config.docker_bin,
-            "build",
-            "-t",
-            image,
-            "-f",
-            str(CPP_TEST_DOCKERFILE),
-            str(CPP_TEST_DOCKERFILE.parent),
-        ]
-    )
-
-
-def run_core_check_in_docker(env_vars: dict[str, str], ctx: Context) -> None:
-    ensure_docker_healthy(ctx, retries=2, timeout_s=8.0)
-    image = ctx.config.core_check_image
-    setup = ctx.config.core_check_setup
-    if not setup:
-        if image == CORE_CHECK_IMAGE_DEFAULT and CORE_CHECK_DOCKERFILE.exists():
-            ensure_core_check_image(image, ctx)
-            env_vars = dict(env_vars)
-            env_vars.setdefault("PYTHON_BIN", "/opt/venv/bin/python")
-            env_vars.setdefault("CPP_TEST_LOCAL", "1")
-            env_vars.setdefault("SMOKE_MODE", "container")
-            env_vars.setdefault("PROXY_TEST_MODE", "container")
-            env_vars.setdefault("WORKSPACE_ROOT", str(REPO_ROOT).replace("\\", "/"))
-            setup = "./ci/core_check.sh"
-        else:
-            setup = (
-                "apt-get update && "
-                "apt-get install -y --no-install-recommends "
-                "build-essential python3 python3-pip libjansson-dev "
-                "binutils pkg-config docker.io docker-compose-plugin ca-certificates && "
-                "python3 -m pip install -r requirements-dev.txt && "
-                "./ci/core_check.sh"
-            )
-    elif setup.strip() and setup.strip() != "./ci/core_check.sh":
-        setup = f"{setup} && ./ci/core_check.sh"
-    repo_mount = f"{REPO_ROOT}:/workspace"
-    docker_cpus = env_vars.pop("CORE_CHECK_DOCKER_CPUS", "")
-    docker_memory = env_vars.pop("CORE_CHECK_DOCKER_MEMORY", "")
-    docker_memory_swap = env_vars.pop("CORE_CHECK_DOCKER_MEMORY_SWAP", "")
-    cmd = [
-        ctx.config.docker_bin,
-        "run",
-        "--rm",
-    ]
-    if docker_cpus:
-        cmd += ["--cpus", docker_cpus]
-    if docker_memory:
-        cmd += ["--memory", docker_memory]
-    if docker_memory_swap:
-        cmd += ["--memory-swap", docker_memory_swap]
-    cmd += [
-        "-v",
-        repo_mount,
-        "-w",
-        "/workspace",
-        "-v",
-        "/var/run/docker.sock:/var/run/docker.sock",
-        "-e",
-        "DEBIAN_FRONTEND=noninteractive",
-    ]
-    for key, value in env_vars.items():
-        cmd += ["-e", f"{key}={value}"]
-    cmd += [image, "bash", "-lc", setup]
-    code = run(cmd, allow_failure=True)
-    if code != 0:
-        health = docker_health(ctx, retries=1, timeout_s=6.0)
-        if not health.ok:
-            print_docker_diagnostics(ctx, health)
-        print(f"Core check failed in Docker with exit code {code}.")
-        sys.exit(code)
-
-
 def remove_path(path: Path) -> None:
     if not path.exists():
         return
@@ -1155,147 +1014,6 @@ def cmd_test(args: argparse.Namespace, ctx: Context) -> None:
         _run_entrypoint_posix_tests_in_docker(args, ctx)
 
 
-def cmd_cpp_test(args: argparse.Namespace, ctx: Context) -> None:
-    min_mem_mb_env = os.environ.get("SILICIUM_CPP_TEST_MIN_DOCKER_MEMORY_MB", "2048").strip()
-    try:
-        min_mem_mb = int(min_mem_mb_env)
-    except ValueError:
-        print(f"Invalid SILICIUM_CPP_TEST_MIN_DOCKER_MEMORY_MB value: {min_mem_mb_env}")
-        sys.exit(1)
-    min_mem_bytes = max(0, min_mem_mb) * 1024 * 1024
-    ensure_docker_healthy(ctx, retries=2, timeout_s=8.0, min_memory_bytes=min_mem_bytes)
-    image = args.image or ctx.config.cpp_test_image
-    ensure_cpp_test_image(image, ctx)
-
-    jobs = args.jobs
-    if jobs is None:
-        env_jobs = os.environ.get("SILICIUM_MAX_JOBS")
-        if env_jobs:
-            try:
-                jobs = int(env_jobs)
-            except ValueError:
-                print(f"Invalid SILICIUM_MAX_JOBS value: {env_jobs}")
-                sys.exit(1)
-    jobs = jobs or 2
-
-    use_ccache = args.use_ccache
-    if use_ccache is None:
-        env_cache = os.environ.get("SILICIUM_CPP_TEST_USE_CCACHE", "").strip().lower()
-        if env_cache:
-            use_ccache = env_cache in {"1", "true", "yes", "on"}
-        else:
-            use_ccache = False
-    ccache_flag = "1" if use_ccache else "0"
-    ccache_setup = "ccache -M 2G >/dev/null || true; " if use_ccache else ""
-    env_force = os.environ.get("SILICIUM_CPP_TEST_FORCE_REBUILD", "").strip().lower()
-    force_rebuild = env_force in {"1", "true", "yes", "on"}
-    clean_target = "test-clean" if force_rebuild else "test-reset-counters"
-
-    if args.scope == "worker":
-        test_bin = "./build/tests/worker_tests"
-        script = (
-            "set -euo pipefail; "
-            f"{ccache_setup}"
-            f"cd /workspace && make -C executor JOBS={jobs}; "
-            f"cd /workspace/worker && make {clean_target} && "
-            f"make {test_bin} JOBS={jobs} CPP_TEST_JOBS={jobs} CPP_TEST_USE_CCACHE={ccache_flag}; "
-            "if [ -n \"${GTEST_FILTER:-}\" ]; then "
-            f"LD_LIBRARY_PATH=/workspace/executor {test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
-            "else "
-            f"LD_LIBRARY_PATH=/workspace/executor {test_bin}; "
-            "fi"
-        )
-    else:
-        test_bin = "./build/tests/fragment_tests"
-        script = (
-            "set -euo pipefail; "
-            f"{ccache_setup}"
-            f"cd /workspace/executor && make {clean_target} && "
-            f"make {test_bin} JOBS={jobs} CPP_TEST_JOBS={jobs} CPP_TEST_USE_CCACHE={ccache_flag}; "
-            "if [ -n \"${GTEST_FILTER:-}\" ]; then "
-            f"{test_bin} --gtest_filter=\"$GTEST_FILTER\"; "
-            "else "
-            f"{test_bin}; "
-            "fi"
-        )
-
-    cmd = [
-        ctx.config.docker_bin,
-        "run",
-        "--rm",
-    ]
-    if use_ccache:
-        ccache_dir = REPO_ROOT / ".cache" / "cpp-tests" / "ccache"
-        ccache_dir.mkdir(parents=True, exist_ok=True)
-        cmd.extend(["-e", "CCACHE_DIR=/ccache"])
-    if args.gtest_filter:
-        cmd.extend(["-e", f"GTEST_FILTER={args.gtest_filter}"])
-    cmd.extend(["-v", f"{REPO_ROOT}:/workspace"])
-    if use_ccache:
-        cmd.extend(["-v", f"{ccache_dir}:/ccache"])
-    cmd += ["-w", "/workspace", image, "bash", "-lc", script]
-
-    attempts = max(1, int(args.retry))
-    timeout = float(args.timeout)
-    for attempt in range(1, attempts + 1):
-        pretty = " ".join(cmd)
-        print(colorize(f">> {pretty}", COLOR_GREEN))
-        try:
-            result = subprocess.run(
-                cmd,
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            if attempt < attempts:
-                print(
-                    colorize(
-                        f"[WARN] cpp-test timeout (attempt {attempt}/{attempts}), retrying...",
-                        COLOR_YELLOW,
-                    )
-                )
-                ensure_docker_healthy(ctx, retries=1, timeout_s=8.0)
-                time.sleep(1.5 * attempt)
-                continue
-            print(
-                f"C++ test run timed out after {args.timeout}s. "
-                "Retry with a larger --timeout or narrower --gtest-filter."
-            )
-            sys.exit(124)
-        except OSError as exc:
-            print(f"Failed to launch Docker command: {exc}")
-            sys.exit(1)
-
-        if result.stdout:
-            print(result.stdout, end="")
-        if result.stderr:
-            print(result.stderr, end="", file=sys.stderr)
-        if result.returncode == 0:
-            return
-
-        combined = f"{result.stdout}\n{result.stderr}".lower()
-        transient = (
-            "unexpected eof" in combined
-            or "internal server error" in combined
-            or "_ping" in combined
-            or "docker api" in combined
-        )
-        if transient and attempt < attempts:
-            print(
-                colorize(
-                    f"[WARN] transient docker failure (attempt {attempt}/{attempts}), retrying...",
-                    COLOR_YELLOW,
-                )
-            )
-            ensure_docker_healthy(ctx, retries=1, timeout_s=8.0)
-            time.sleep(1.5 * attempt)
-            continue
-        sys.exit(result.returncode)
-
-
 def cmd_doctor(_: argparse.Namespace, ctx: Context) -> None:
     print(colorize("==> Silicium doctor", COLOR_YELLOW))
     print(f"os={os.name} python={sys.version.split()[0]}")
@@ -1358,13 +1076,6 @@ def cmd_doctor(_: argparse.Namespace, ctx: Context) -> None:
 
 
 def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
-    if getattr(args, "docker_strict", False):
-        args.full = True
-        args.runner = "docker"
-        args.docker = True
-        args.require_docker = True
-
-    scope = (args.scope or "all").lower()
     script = REPO_ROOT / "ci" / "core_check.sh"
     if not script.exists():
         print(f"Core check script not found: {script}")
@@ -1372,119 +1083,39 @@ def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
 
     env_vars = {
         "CORE_CHECK_MODE": "full" if args.full else "quick",
-        "CORE_CHECK_NATIVE": "1" if args.native else "0",
-        "CORE_CHECK_RUN_DYNAMO": "1" if args.dynamo else "0",
-        "CORE_CHECK_REQUIRE_DOCKER": "1" if args.require_docker else "0",
-        "CORE_CHECK_SCOPE": scope,
+        "CORE_CHECK_SCOPE": "platform" if args.scope == "all" else args.scope,  # i18n:ignore
     }
-    jobs = args.jobs
-    if jobs is None:
-        env_jobs = os.environ.get("SILICIUM_MAX_JOBS")
-        if env_jobs:
-            try:
-                jobs = int(env_jobs)
-            except ValueError:
-                print(f"Invalid SILICIUM_MAX_JOBS value: {env_jobs}")
-                sys.exit(1)
-    if jobs:
-        env_vars["CORE_CHECK_JOBS"] = str(jobs)
-    docker_cpus = args.docker_cpus or os.environ.get("SILICIUM_DOCKER_CPUS")
-    if docker_cpus:
-        env_vars["CORE_CHECK_DOCKER_CPUS"] = str(docker_cpus)
-    docker_memory = args.docker_memory or os.environ.get("SILICIUM_DOCKER_MEMORY")
-    if docker_memory:
-        env_vars["CORE_CHECK_DOCKER_MEMORY"] = str(docker_memory)
     if args.docker is not None:
         env_vars["CORE_CHECK_WITH_DOCKER"] = "1" if args.docker else "0"
-    if args.clean is not None:
-        env_vars["CORE_CHECK_CLEAN"] = "1" if args.clean else "0"
-
+    if args.require_docker:
+        env_vars["CORE_CHECK_REQUIRE_DOCKER"] = "1"  # i18n:ignore
     if args.python:
-        if host_os_name() != "nt" or args.python.startswith("/"):
-            env_vars["PYTHON_BIN"] = args.python
-
-    if host_os_name() == "nt":
-        runner = args.runner
-        if runner == "auto":
-            if docker_available(ctx):
-                runner = "docker"
-            elif wsl_available():
-                runner = "wsl"
-            else:
-                print("Neither Docker nor WSL is available. Install Docker Desktop or WSL, or run on Linux.")
-                sys.exit(1)
-
-        if runner == "docker":
-            env_vars.setdefault("CORE_CHECK_CLEAN", "0")
-            if "CORE_CHECK_JOBS" not in env_vars:
-                env_vars["CORE_CHECK_JOBS"] = "2"
-            ensure_docker_healthy(ctx, retries=2, timeout_s=8.0)
-            run_core_check_in_docker(env_vars, ctx)
-            return
-
-        if runner == "wsl" and not wsl_available():
-            print("WSL is not available. Install WSL or use --runner docker.")
-            sys.exit(1)
-
-        bash = shutil.which("bash")
-        if not bash:
-            print("bash not found. Use Docker or install WSL to run core checks.")
-            sys.exit(1)
-
-        env_exports = " ".join(f"{k}={shlex.quote(v)}" for k, v in env_vars.items())
-        try:
-            wsl_path = subprocess.check_output(
-                [bash, "-lc", f"wslpath -a {shlex.quote(str(script))}"],
-                text=True,
-            ).strip()
-        except subprocess.CalledProcessError:
-            print("WSL tooling (wslpath) not available. Install WSL or use --runner docker.")
-            sys.exit(1)
-        cmd = [bash, "-lc", f"{env_exports} {shlex.quote(wsl_path)}"]
-        run(cmd)
-        return
-
-    if args.runner == "docker":
-        ensure_docker_healthy(ctx, retries=2, timeout_s=8.0)
-        run_core_check_in_docker(env_vars, ctx)
-        return
+        env_vars["PYTHON_BIN"] = args.python  # i18n:ignore
 
     bash = shutil.which("bash")
     if not bash:
-        print("bash not found. Install bash or use --runner docker.")
+        print("bash not found. Install bash or use a Linux/WSL environment.")
         sys.exit(1)
-
     env = os.environ.copy()
     env.update(env_vars)
     run([bash, str(script)], env=env)
-
-
 def cmd_smoke(_: argparse.Namespace, ctx: Context) -> None:
     run(["tests/smoke/run_proxy_smoke.sh"])
-
-
-def cmd_tools_demo(_: argparse.Namespace, ctx: Context) -> None:
-    run(["make", "demo"], cwd=SPLITTER_DIR)
-
-
-def cmd_tools_clean(_: argparse.Namespace, ctx: Context) -> None:
-    run(["make", "clean"], cwd=SPLITTER_DIR)
-    run(["make", "clean"], cwd=EXECUTOR_DIR)
 
 
 def clean_artifacts() -> None:
     print(colorize("Cleaning caches and temporary artifacts...", COLOR_YELLOW))
     paths = [
         REPO_ROOT / ".pytest_cache",
-        REPO_ROOT / "tests" / "__pycache__",
-        SPLITTER_DIR / "run_build",
-        SPLITTER_DIR / "run_output",
-        SPLITTER_DIR / "fragment_executor.log",
-        SPLITTER_DIR / "disassembly_full.asm",
+        REPO_ROOT / ".cache",
+        REPO_ROOT / ".tmp",
+        REPO_ROOT / ".tmp2",
+        REPO_ROOT / "build",
+        REPO_ROOT / "perf-budget-report.json",
+        REPO_ROOT / "workloads" / "raytracer" / "native" / "target",
     ]
     for path in paths:
         remove_path(path)
-    run(["make", "demo-clean"], cwd=SPLITTER_DIR)
 
 
 def cmd_clean(args: argparse.Namespace, ctx: Context) -> None:
@@ -2775,9 +2406,6 @@ def cmd_alias(args: argparse.Namespace, ctx: Context) -> None:
         test|smoke|clean|shell)
             ./silicium "$cmd" "$@"
             ;;
-        tools)
-            ./silicium tools "$@"
-            ;;
         ledger)
             ./silicium ledger "$@"
             ;;
@@ -3115,8 +2743,6 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--solana-bridge", default=os.environ.get("SILICIUM_SOLANA_BRIDGE", str(REPO_ROOT / "tools" / "solana_layer_bridge.cjs")))
     parser.add_argument("--solana-timeout-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_TIMEOUT_S", "45")))
     parser.add_argument("--max-retries", type=int, default=int(os.environ.get("SILICIUM_NODE_MAX_RETRIES", "2")))
-    parser.add_argument("--worker-binary", default=os.environ.get("SILICIUM_WORKER_BINARY", str(REPO_ROOT / "experimental" / "worker" / "worker")))
-    parser.add_argument("--worker-mode", default=os.environ.get("SILICIUM_WORKER_MODE", "emu"))
     parser.add_argument("--bootstrap-worker", action="store_true", default=os.environ.get("SILICIUM_BOOTSTRAP_WORKER", "0") == "1")
     parser.add_argument("--gossip-enable", action="store_true", default=os.environ.get("SILICIUM_GOSSIP_ENABLE", "0") == "1")
     parser.add_argument("--gossip-bind", default=os.environ.get("SILICIUM_GOSSIP_BIND", "127.0.0.1"))
@@ -3556,132 +3182,33 @@ def configure_check(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--full",
         action="store_true",
-        help="Run full checks (includes C++ tests and Docker proxy smoke).",
+        help="Run the active checks and the optional Docker proxy smoke.",  # i18n:ignore
     )
     parser.add_argument(
         "--scope",
-        choices=["all", "splitter", "executor", "worker"],
-        default="all",
-        help="Limit checks to a single component (default: all).",
-    )
-    parser.add_argument(
-        "--docker-strict",
-        action="store_true",
-        help="Shortcut for --full --runner docker --docker --require-docker.",
-    )
-    parser.add_argument(
-        "--native",
-        action="store_true",
-        help="Run worker native mode (may be unstable on some fragments).",
-    )
-    parser.add_argument(
-        "--dynamo",
-        action="store_true",
-        help="Run worker DynamoRIO mode (requires Docker).",
+        choices=["all", "platform"],
+        default="platform",
+        help="Active Network check scope (default: platform).",  # i18n:ignore
     )
     parser.add_argument(
         "--docker",
         dest="docker",
         action="store_true",
-        help="Force Docker checks on (fails if Docker is missing).",
+        help="Require Docker-backed checks when they are selected.",  # i18n:ignore
     )
     parser.add_argument(
         "--no-docker",
         dest="docker",
         action="store_false",
-        help="Disable Docker checks.",
+        help="Skip Docker-backed checks.",  # i18n:ignore
     )
     parser.add_argument(
         "--require-docker",
         action="store_true",
-        help="Fail if Docker is missing.",
+        help="Fail if a selected Docker-backed check cannot run.",  # i18n:ignore
     )
-    parser.add_argument(
-        "--python",
-        help="Path to Python executable used for tests.",
-    )
-    parser.add_argument(
-        "--runner",
-        choices=["auto", "docker", "wsl"],
-        default="auto",
-        help="Runner for core checks (Windows default: Docker when available).",
-    )
-    parser.add_argument(
-        "--jobs",
-        type=int,
-        help="Limit build parallelism (exported as JOBS for make).",
-    )
-    parser.add_argument(
-        "--docker-cpus",
-        help="Limit CPUs for docker-run core checks (e.g. 2, 2.5).",
-    )
-    parser.add_argument(
-        "--docker-memory",
-        help="Limit memory for docker-run core checks (e.g. 4g, 4096m).",
-    )
-    parser.add_argument(
-        "--clean",
-        dest="clean",
-        action="store_true",
-        help="Force clean rebuild before checks (CORE_CHECK_CLEAN=1).",
-    )
-    parser.add_argument(
-        "--no-clean",
-        dest="clean",
-        action="store_false",
-        help="Disable clean rebuild before checks (CORE_CHECK_CLEAN=0).",
-    )
-    parser.set_defaults(docker=None, clean=None)
-
-
-def configure_cpp_test(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--scope",
-        choices=["worker", "executor"],
-        default="worker",
-        help="C++ test suite to run in Docker (default: worker).",
-    )
-    parser.add_argument(
-        "--gtest-filter",
-        help="Optional GoogleTest filter (e.g. TaskSerializer.*).",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=900,
-        help="Max runtime in seconds before hard timeout (default: 900).",
-    )
-    parser.add_argument(
-        "--jobs",
-        type=int,
-        help="Parallel build jobs inside container (default: SILICIUM_MAX_JOBS or 2).",
-    )
-    parser.add_argument(
-        "--image",
-        help="Override cpp-tests image (default from SILICIUM_CPP_TEST_IMAGE).",
-    )
-    parser.add_argument(
-        "--retry",
-        type=int,
-        default=2,
-        help="Retry count for transient Docker API failures (default: 2).",
-    )
-    ccache_group = parser.add_mutually_exclusive_group()
-    ccache_group.add_argument(
-        "--use-ccache",
-        dest="use_ccache",
-        action="store_true",
-        help="Enable ccache in cpp-test (disabled by default for reproducibility).",
-    )
-    ccache_group.add_argument(
-        "--no-ccache",
-        dest="use_ccache",
-        action="store_false",
-        help="Disable ccache in cpp-test.",
-    )
-    parser.set_defaults(use_ccache=None)
-
-
+    parser.add_argument("--python", help="Path to Python executable used for checks.")  # i18n:ignore
+    parser.set_defaults(docker=None)
 def configure_doctor(parser: argparse.ArgumentParser) -> None:
     pass
 
@@ -3721,14 +3248,6 @@ def configure_budget(parser: argparse.ArgumentParser) -> None:
 
 
 def configure_smoke(parser: argparse.ArgumentParser) -> None:
-    pass
-
-
-def configure_tools_demo(parser: argparse.ArgumentParser) -> None:
-    pass
-
-
-def configure_tools_clean(parser: argparse.ArgumentParser) -> None:
     pass
 
 
@@ -3907,7 +3426,7 @@ def configure_workload_queue(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--summary",
         required=True,
-        help="Path to summary.json produced by splitter.",
+        help="Path to a workload summary JSON file.",  # i18n:ignore
     )
     parser.add_argument(
         "--output",
@@ -4152,14 +3671,6 @@ def build_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.add(CommandSpec("test", "Install dev deps and run pytest", configure_test, cmd_test))
     registry.add(CommandSpec("check", "Run core stability checks", configure_check, cmd_check))
-    registry.add(
-        CommandSpec(
-            "cpp-test",
-            "Run worker/executor C++ tests in Docker (Windows-friendly)",
-            configure_cpp_test,
-            cmd_cpp_test,
-        )
-    )
     registry.add(CommandSpec("doctor", "Run environment diagnostics", configure_doctor, cmd_doctor))
     registry.add(CommandSpec("budget", "Measure command metrics against budgets", configure_budget, cmd_budget))
     registry.add(CommandSpec("smoke", "Run the proxy smoke test", configure_smoke, cmd_smoke))
@@ -4216,22 +3727,6 @@ def build_registry() -> CommandRegistry:
             commands=[
                 CommandSpec("up", "Bootstrap/start selected targets", configure_setup_up, cmd_setup_up),
                 CommandSpec("down", "Stop/cleanup selected targets", configure_setup_down, cmd_setup_down),
-            ],
-        )
-    )
-    registry.add_group(
-        CommandGroup(
-            name="tools",
-            help="Toolbox helpers",
-            dest="tools_cmd",
-            commands=[
-                CommandSpec("demo", "Run splitter demo", configure_tools_demo, cmd_tools_demo),
-                CommandSpec(
-                    "clean",
-                    "Clean splitter + fragment executor artifacts",
-                    configure_tools_clean,
-                    cmd_tools_clean,
-                ),
             ],
         )
     )
@@ -4424,31 +3919,13 @@ def _completion_options(tokens: list[str], text: str) -> list[str]:
     if first == "check":
         flags = [
             "--full",
-            "--native",
-            "--dynamo",
             "--docker",
             "--no-docker",
             "--require-docker",
-            "--jobs",
-            "--docker-cpus",
-            "--docker-memory",
             "--python",
         ]
         return [flag for flag in flags if flag.startswith(text)]
     if first == "doctor":
-        return []
-    if first == "cpp-test":
-        flags = [
-            "--scope",
-            "--gtest-filter",
-            "--timeout",
-            "--jobs",
-            "--image",
-        ]
-        if text.startswith("-"):
-            return [flag for flag in flags if flag.startswith(text)]
-        if tokens[-1] == "--scope":
-            return [opt for opt in ["worker", "executor"] if opt.startswith(text)]
         return []
     if first == "budget":
         flags = [

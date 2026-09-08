@@ -1,54 +1,40 @@
-# AGENT SUMMARY (Network)
+# Network repository guide
 
-**Resume**
-Ce depot fournit une stack complete pour le projet Silicium :
-- Un environnement Docker pour lancer un noeud Solana (localnet/devnet/testnet/mainnet).
-- Un proxy TLS (Caddy) et une option de stack securisee WireGuard.
-- Une chaine C++ de partitionnement/execution de binaires (splitter -> executor -> worker).
-- Un viewer Qt pour visualiser les fragments.
-- Un catalogue de workloads et une CLI Python pour orchestrer l'ensemble.
+Network is the distributed-runtime repository composed by Fusion. It contains
+the peer-to-peer node, the Solana integration, the workload catalog, the
+developer CLI, and the local/test infrastructure used by those components.
 
-**Chiffres cles**
-- Fichiers: 323
-- Lignes approx: 22620
-- Langages dominants: C++ (majoritaire), Bash, Python, YAML/JSON, C, ASM
-- Licence: MIT (`LICENSE`)
+## Canonical components
 
-**Architecture globale**
-- Flux compute local: binaire -> `splitter` -> `summary.json` + fragments -> `fragment_executor` -> `worker` -> resultats.
-- Flux reseau Solana: `docker compose` -> image `solanalabs/solana:stable` + entrypoint Silicium -> noeud local/dev/test/main + proxy TLS -> option WireGuard.
+- `networked/p2p_node/`: peer discovery, authenticated peer HTTP, content
+  transfer, task dispatch, and gossip.
+- `networked/silicium_node_core/`: Rust node runtime and transport primitives.
+- `networked/compute_daemon/`: compute-role daemon used by the node stack.
+- `networked/reputation_bridge/`: bridge consumed by Fusion's production
+  Compose stack.
+- `tools/network_node.py`, `tools/bootstrap_orchestrator.py`, and the RPC,
+  telemetry, receipt, and update-manifest tools: Python control-plane helpers.
+- `solana-layer/`: Anchor program, SDK, migrations, IDL generation, and tests.
+- `silicium-layer-dashboard/`: Vite dashboard for network/Solana inspection.
+- `workloads/raytracer/`: the current end-to-end workload, including its Rust
+  native implementation.
+- `catalog/`, `proto/`, `i18n/`, `tests/`, and `docs/`: contracts, fixtures,
+  localization, validation, and project documentation.
 
-**Composants principaux**
-- CLI et orchestration: `silicium` (alias `silicium-cli`). Gere tests, clean, ledgers, workloads, services Docker.
-- Splitter: partitionneur C++ qui desassemble et genere fragments + `summary.json`.
-- Executor: executeur de fragments (emu ou natif), libs partagees, JIT en memoire.
-- Worker: orchestrateur d'execution (queue ou topo-sort), modes emu/native/dynamo, gestion de patchs memoire.
-- Viewer: appli Qt de visualisation de graphe de fragments.
-- Catalogue workloads: manifests + README pour profils calcul et verification.
+The former C++ `splitter`/`executor`/`worker` chain, Qt viewer, assembler demos,
+PE corpus, and generated coverage reports are intentionally absent. They are
+historical material in Git history, not part of the active Network product.
 
-**Structure du depot**
-- `infra/`: Docker Compose, entrypoint Solana, proxy TLS, stack WireGuard.
-- `splitter/`: pipeline d'analyse et partitionnement C++.
-- `executor/`: execution de fragments (emu/natif) + libs.
-- `worker/`: orchestrateur d'execution + DynamoRIO.
-- `viewer/`: viewer Qt.
-- `catalog/`: workloads calcul/verification.
-- `docker/`: images de build/runtime (worker, GUI runner, headless).
-- `tests/`: tests Python (entrypoint + manifests).
-- `tools/`: generation assets de coverage.
-- `ci/`: scripts E2E + tests images Docker.
+## Infrastructure ownership
 
-**Infra Docker et reseau**
-- Compose multi-profils: `infra/docker-compose.yml` (localnet/devnet/testnet/mainnet + proxy).
-- Entrypoint Solana: `infra/docker/solana-entrypoint.sh` (cles, config CLI, solana-validator/test-validator).
-- Proxy TLS Caddy: `infra/docker/reverse-proxy/caddy-entrypoint.sh`.
-- Stack securisee WireGuard: `infra/secure-stack/`.
+`infra/docker-compose.yml` owns local Network/Solana nodes and the local proxy.
+`infra/docker-compose.world.yml` owns the optional world/Solana integration
+testbed. `infra/bootstrap/` contains bootstrap fixtures for that testbed.
+Production site deployment belongs to Fusion (`deploy/compose`), not this
+repository. Keep credentials in local env files; commit only
+`infra/.env.example`-style templates.
 
-**Build et dependances**
-- C++17, `g++`, `make`, binutils (`objdump`, `readelf`).
-- Python 3 + `pytest`, `pyyaml` (`requirements-dev.txt`).
-- Qt 5/6 + CMake pour `viewer`.
-- Docker fortement utilise (tests, builds, DynamoRIO).
+## Common checks
 
 **Tests et CI**
 - Tests Python: `tests/test_entrypoint.py`, `tests/test_manifests.py`.
@@ -56,48 +42,12 @@ Ce depot fournit une stack complete pour le projet Silicium :
 - CI GitHub Actions: `.github/workflows/ci.yml`, `release.yml`.
 - Scripts locaux: `ci/e2e.sh`, `ci/test_images.sh`.
 
-**Etat d'avancement**
-| Domaine | Statut | Notes |
-| --- | --- | --- |
-| Infra Solana (Docker Compose) | Fait | Localnet/devnet/testnet/mainnet + volumes ledger. |
-| Proxy TLS (Caddy) | Fait | Modes `local`, `acme`, `internal`, endpoint `/healthz`. |
-| Stack securisee WireGuard | Fait | RPC isole, acces via VPN. |
-| Splitter C++ | Fait | Partitionnement + generation `summary.json`. |
-| Executor (emu) | Fait | Emulation stable, usage principal. |
-| Executor (native) | En cours | Fonctionnel mais instable selon fragments. |
-| Worker (queue/emu/native) | Fait | Orchestration locale + patchs memoire. |
-| Worker (DynamoRIO) | Fait | Execution via conteneur `dynamorio-runner`. |
-| Worker (connector HTTP) | En cours | Mode present mais non branche. |
-| Viewer Qt | Fait | Visualisation graph des fragments. |
-| Catalogue workloads | Fait | Profils calcul + verification. |
-| Tests + CI | Fait | Pytest + C++ tests + coverage worker. |
-| On-chain programs + API/UI | A faire | Decrit comme architecture cible, pas code ici. |
+The canonical GitHub workflow is `.github/workflows/ci.yml`. It validates the
+Python/runtime path, Rust P2P crates, Solana layer, raytracer, Docker E2E, and
+proxy/P2P smoke checks. It must not reintroduce the removed C++ jobs.
 
-**Artefacts generes**
-- `splitter/run_output/**`: fragments + `summary.json`.
-- `fragment_executor.log`: sortie standard capturee.
-- `docs/coverage/worker/**`: rapports et badges coverage.
+## Generated state
 
-**Points d'attention**
-- Environnement Linux/Docker quasi indispensable (scripts Bash + binutils).
-- Mode `--native` du fragment executor peut crasher selon le binaire.
-- Analyse principalement ELF x86_64 meme si des modules multi-arch existent.
-- Sur Windows, preferer WSL2 ou un host Linux.
-
-**Roadmap courte (proposee)**
-1. Stabiliser `executor --native` (tests cibles, meilleure gestion PLT/GOT, garde-fous).
-2. Brancher le connecteur HTTP du worker (API minimale + contrat JSON stabilise).
-3. Ajouter un `silicium doctor` (diagnostic env: Docker, binutils, Qt, WSL).
-4. Ameliorer la portabilite Windows/WSL (doc + scripts compatibles).
-5. Ajouter un diagramme d'architecture dans `docs/` (mermaid).
-
-**References importantes**
-- `README.md`
-- `silicium`
-- `infra/docker-compose.yml`
-- `infra/docker/solana-entrypoint.sh`
-- `splitter/README.md`
-- `executor/README.md`
-- `worker/README.md`
-- `viewer/README.md`
-- `catalog/workloads/README.md`
+Builds, ledgers, caches, logs, validator output, and native Cargo targets are
+ignored by `.gitignore`. Do not add generated runtime state, secrets, or local
+wallets to the repository.

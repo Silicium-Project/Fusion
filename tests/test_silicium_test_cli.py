@@ -32,9 +32,6 @@ def _make_ctx(cli):
             docker_bin="docker",
             docker_compose_bin=None,
             ledger_prefix="silicium",
-            core_check_image="silicium/core-check:lite",
-            core_check_setup=None,
-            cpp_test_image="silicium/cpp-tests:latest",
         )
     )
 
@@ -111,67 +108,17 @@ def test_cmd_test_default_runs_host_pytest(monkeypatch) -> None:
     assert pytest_cmds[0] == [sys.executable, "-m", "pytest"]
 
 
-def test_cmd_check_windows_auto_uses_docker_without_wsl(monkeypatch) -> None:
-    cli = _load_silicium_module()
-    docker_calls: list[dict] = []
-    wsl_checked = {"value": 0}
-
-    def fake_docker_available(ctx):
-        return True
-
-    def fake_wsl_available():
-        wsl_checked["value"] += 1
-        return False
-
-    def fake_ensure_docker_healthy(ctx, retries, timeout_s, min_memory_bytes=None):
-        return None
-
-    def fake_run_core_check_in_docker(env_vars, ctx):
-        docker_calls.append(dict(env_vars))
-
-    monkeypatch.setattr(cli, "host_os_name", lambda: "nt")
-    monkeypatch.setattr(cli, "docker_available", fake_docker_available)
-    monkeypatch.setattr(cli, "wsl_available", fake_wsl_available)
-    monkeypatch.setattr(cli, "ensure_docker_healthy", fake_ensure_docker_healthy)
-    monkeypatch.setattr(cli, "run_core_check_in_docker", fake_run_core_check_in_docker)
-
-    args = argparse.Namespace(
-        docker_strict=False,
-        full=False,
-        native=False,
-        dynamo=False,
-        require_docker=False,
-        scope="all",
-        jobs=None,
-        docker_cpus="",
-        docker_memory="",
-        docker=None,
-        clean=None,
-        python="",
-        runner="auto",
-    )
-    cli.cmd_check(args, _make_ctx(cli))
-
-    assert len(docker_calls) == 1
-    assert docker_calls[0]["CORE_CHECK_MODE"] == "quick"
-    assert docker_calls[0]["CORE_CHECK_CLEAN"] == "0"
-    assert docker_calls[0]["CORE_CHECK_JOBS"] == "2"
-    assert wsl_checked["value"] == 0
-
-
-def test_configure_check_exposes_clean_flags() -> None:
+def test_configure_check_exposes_active_scope() -> None:
     cli = _load_silicium_module()
     parser = argparse.ArgumentParser()
     cli.configure_check(parser)
 
     args = parser.parse_args([])
-    assert args.clean is None
+    assert args.scope == "platform"
 
-    args = parser.parse_args(["--clean"])
-    assert args.clean is True
-
-    args = parser.parse_args(["--no-clean"])
-    assert args.clean is False
+    args = parser.parse_args(["--scope", "all", "--no-docker"])
+    assert args.scope == "all"
+    assert args.docker is False
 
 
 def test_ensure_docker_healthy_fails_on_low_memory(monkeypatch, capsys) -> None:
@@ -199,47 +146,6 @@ def test_ensure_docker_healthy_ignores_memory_when_probe_missing(monkeypatch) ->
     cli.ensure_docker_healthy(_make_ctx(cli), min_memory_bytes=2 * 1024 * 1024 * 1024)
 
 
-def test_cmd_cpp_test_passes_memory_guard_to_docker_health(monkeypatch) -> None:
-    cli = _load_silicium_module()
-    ctx = _make_ctx(cli)
-    ensure_calls: list[int | None] = []
-    docker_runs: list[list[str]] = []
-
-    def fake_ensure(ctx, retries, timeout_s, min_memory_bytes=None):
-        ensure_calls.append(min_memory_bytes)
-
-    def fake_ensure_image(image, ctx):
-        return None
-
-    class _Result:
-        returncode = 0
-        stdout = ""
-        stderr = ""
-
-    def fake_subprocess_run(cmd, **kwargs):
-        docker_runs.append(list(cmd))
-        return _Result()
-
-    monkeypatch.delenv("SILICIUM_CPP_TEST_MIN_DOCKER_MEMORY_MB", raising=False)
-    monkeypatch.setattr(cli, "ensure_docker_healthy", fake_ensure)
-    monkeypatch.setattr(cli, "ensure_cpp_test_image", fake_ensure_image)
-    monkeypatch.setattr(cli.subprocess, "run", fake_subprocess_run)
-
-    args = argparse.Namespace(
-        scope="executor",
-        gtest_filter="",
-        timeout=10,
-        jobs=1,
-        image="silicium/cpp-tests:latest",
-        retry=1,
-        use_ccache=False,
-    )
-    cli.cmd_cpp_test(args, ctx)
-
-    assert ensure_calls == [2 * 1024 * 1024 * 1024]
-    assert docker_runs
-
-
 def test_command_wrapper_emits_structured_start_and_finish(monkeypatch, tmp_path: Path) -> None:
     cli = _load_silicium_module()
     ctx = _make_ctx(cli)
@@ -247,8 +153,6 @@ def test_command_wrapper_emits_structured_start_and_finish(monkeypatch, tmp_path
 
     monkeypatch.setenv("SILICIUM_CLI_STRUCTURED_LOG", str(log_path))
     monkeypatch.delenv("SILICIUM_RUN_ID", raising=False)
-    monkeypatch.delenv("EXECUTOR_RUN_ID", raising=False)
-    monkeypatch.delenv("WORKER_RUN_ID", raising=False)
 
     observed = {"run_id": ""}
 
@@ -272,27 +176,21 @@ def test_command_wrapper_emits_structured_start_and_finish(monkeypatch, tmp_path
     assert end_evt["payload"]["exit_code"] == 0
 
 
-def test_command_wrapper_exports_run_id_to_executor_and_worker(monkeypatch, tmp_path: Path) -> None:
+def test_command_wrapper_exports_run_id_to_network(monkeypatch, tmp_path: Path) -> None:
     cli = _load_silicium_module()
     ctx = _make_ctx(cli)
     log_path = tmp_path / "cli-env.ndjson"
     monkeypatch.setenv("SILICIUM_CLI_STRUCTURED_LOG", str(log_path))
     monkeypatch.delenv("SILICIUM_RUN_ID", raising=False)
-    monkeypatch.delenv("EXECUTOR_RUN_ID", raising=False)
-    monkeypatch.delenv("WORKER_RUN_ID", raising=False)
-
-    captured = {"silicium": "", "executor": "", "worker": ""}
+    captured = {"silicium": ""}
 
     def fake_handler(_args, _ctx):
         captured["silicium"] = os.environ.get("SILICIUM_RUN_ID", "")
-        captured["executor"] = os.environ.get("EXECUTOR_RUN_ID", "")
-        captured["worker"] = os.environ.get("WORKER_RUN_ID", "")
 
     wrapped = cli.CommandRegistry._wrap(fake_handler, ctx)
     wrapped(argparse.Namespace(command="check"))
 
     assert captured["silicium"]
-    assert captured["silicium"] == captured["executor"] == captured["worker"]
 
 
 def test_cmd_start_emits_dispatch_target_event(monkeypatch, tmp_path: Path) -> None:

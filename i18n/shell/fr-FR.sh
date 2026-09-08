@@ -2,47 +2,7 @@
 
 sil_i18n_catalog_lookup() {
   case "$1" in
-    ci.e2e.build_demo) printf "%s" "Build et execution du demo splitter" ;;
-    ci.e2e.worker_emu) printf "%s" "Execution worker (emu)" ;;
-    ci.e2e.worker_native) printf "%s" "Execution worker (native)" ;;
-    ci.e2e.build_dynamo) printf "%s" "Build de l'image dynamorio-runner" ;;
-    ci.e2e.worker_dynamo) printf "%s" "Execution worker (dynamo)" ;;
-    ci.e2e.proxy_smoke) printf "%s" "Smoke test proxy" ;;
-    ci.e2e.warn_no_docker) printf "%s" "[WARN] Docker indisponible, etapes dynamo et proxy ignorees" ;;
-    ci.e2e.python_tests) printf "%s" "Tests Python" ;;
-    ci.e2e.ok) printf "%s" "Pipeline E2E OK" ;;
-    ci.test_images.build_worker_builder) printf "%s" "Build worker builder" ;;
-    ci.test_images.build_worker_runtime) printf "%s" "Build worker runtime" ;;
-    ci.test_images.smoke_worker_runtime) printf "%s" "Smoke worker runtime (--help)" ;;
-    ci.test_images.build_gui_runtime) printf "%s" "Build GUI runtime" ;;
-    ci.test_images.smoke_gui_runtime) printf "%s" "Smoke GUI runtime en mode headless (--help)" ;;
-    ci.test_images.build_gui_headless) printf "%s" "Build GUI headless runtime" ;;
-    ci.test_images.smoke_gui_headless) printf "%s" "Smoke GUI headless (--help)" ;;
-    ci.test_images.ok) printf "%s" "Tous les tests d'images Docker sont passes." ;;
-    infra.secure.check_wireguard) printf "%s" "[secure-stack] Verification du module kernel WireGuard..." ;;
-    infra.secure.warn_no_sudo) printf "%s" "Warning: sudo indisponible. Lancez ce script en root pour charger WireGuard." ;;
-    infra.secure.warn_no_modprobe) printf "%s" "Warning: modprobe indisponible. Assurez-vous que le module WireGuard est charge." ;;
-    infra.secure.pull_images) printf "%s" "[secure-stack] Pull des images..." ;;
-    infra.secure.start_stack) printf "%s" "[secure-stack] Demarrage Solana RPC + hub WireGuard..." ;;
-    infra.secure.active_services) printf "%s" "[secure-stack] Services actifs:" ;;
-    infra.secure.peer_files) printf "%s" "Fichiers de configuration peers (partage securise avec calculateurs/verifyers):" ;;
-    infra.secure.notes) cat <<'EOF'
-
-Chaque fichier peer contient les cles privee/publique et les routes WireGuard.
-Transmettez-le uniquement au noeud correspondant (calculator/verifier).
-
-Une fois connecte via WireGuard, le worker peut joindre le RPC securise sur
-l'adresse 10.42.0.2:8899. Exemple (depuis un worker):
-
-  export SOLANA_URL=http://10.42.0.2:8899
-  solana balance
-  curl -s http://10.42.0.2:8899 -H 'Content-Type: application/json' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"getHealth"}'
-
-Tous les paquets traversent le tunnel WireGuard (chiffrement ChaCha20-Poly1305).
-EOF
-      ;;
-    infra.proxy.compose_not_found) printf "%s" "Fichier compose introuvable a %s" ;;
+   infra.proxy.compose_not_found) printf "%s" "Fichier compose introuvable a %s" ;;
     infra.proxy.usage) cat <<'EOF'
 Usage: infra/bin/run-with-proxy.sh [service-name]
 

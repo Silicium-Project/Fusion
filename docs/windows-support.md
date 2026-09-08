@@ -11,7 +11,7 @@ Terminology
 ## Recommended Setup (Windows)
 
 1. Install Python (3.11+ recommended).
-2. Install Docker Desktop (recommended for core checks and infra).
+2. Install Docker Desktop (recommended for Network E2E and infra).
 3. Optional: install WSL2 + one distro (Ubuntu) if you want to run bash scripts directly.
 
 ## Modes
@@ -22,7 +22,7 @@ What you can do:
 - `python .\\silicium test`
 - `python .\\silicium test --entrypoint-docker` (exécute `tests/test_entrypoint.py` dans un conteneur Linux)
 - `python .\\silicium tui` (Textual when available, else headless shell fallback)
-- `python .\\silicium check --runner docker` (core checks in container)
+- `python .\\silicium check` (active Python/runtime checks)
 - `python .\\silicium smoke` (proxy smoke, requires Docker)
 
 What you typically cannot do without WSL:
@@ -35,13 +35,13 @@ What you can do:
 - `python .\\silicium test` (Python-only tests; some infra paths are skipped on Windows)
 
 Constraints:
-- No Docker-backed checks (`silicium check --full`, DynamoRIO, proxy smoke).
+- No Docker-backed checks (`silicium check --full`, proxy smoke).
 - No direct execution of bash scripts.
 
 ### Mode C: WSL (Ubuntu) + Docker Desktop integration
 
 What you can do:
-- Run bash scripts directly (e.g. `ci/e2e.sh`, `infra/bin/run-with-proxy.sh`).
+- Run bash scripts directly (e.g. `ci/docker_e2e.sh`, `infra/bin/run-with-proxy.sh`).
 - Run Linux toolchain-dependent builds (`make`, `g++`, binutils).
 
 Constraints:
@@ -57,8 +57,7 @@ Legend: "CI" = validated in GitHub Actions, "Local" = works but not CI-gated.
 | `python .\\silicium test` | CI | CI | Local |
 | `python .\\silicium test --entrypoint-docker` | - | Local | Local |
 | `python .\\silicium tui` | Local | Local | Local |
-| `python .\\silicium check --runner docker` | - | Local | Local |
-| `python .\\silicium check --runner wsl` | - | - | Local |
+| `python .\\silicium check` | Local | Local | Local |
 | `python .\\silicium smoke` | - | Local | Local |
 | Run `ci/*.sh` directly | - | - | Local |
 | Run `infra/**/*.sh` directly | - | - | Local |
@@ -71,7 +70,3 @@ Use:
 Expected signals:
 - Docker: OK/FAIL with a short reason.
 - On Windows, WSL distro listing and Docker socket integration hints.
-
-For C++ test runs (`python .\\silicium cpp-test`):
-- The CLI now checks Docker memory and fails fast if too low.
-- Default minimum is 2048 MB (override with `SILICIUM_CPP_TEST_MIN_DOCKER_MEMORY_MB`, set `0` to disable).

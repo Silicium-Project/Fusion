@@ -4,36 +4,30 @@
 .pytest-basetemp*/
 .pytest_tmp*/
 .pytest-*/
-tests/__pycache__/
-.cache/
-splitter/build/
-splitter/run_output/
-splitter/run_build/
-splitter/demo/output/
-splitter/partitions/
-splitter/fragment_executor.log
-splitter/splitter
-executor/build/
-executor/fragment_executor
-worker/build/
-worker/worker
-worker/dynamo_fragment_runner
-tmp/
-video.mp4
-
-# Local runtime artifacts
-.silicium/
 __pycache__/
+*.py[cod]
+.cache/
+.tmp/
+.tmp*/
+tmp/
+tmp_pytest_root/
+mcp-smoke-*/
 build/
 perf-budget-report.json
+
+# Local runtime and validator output
+.silicium/
+.silicium-world/
+*.log
+Network-*.ndjson
+solana-validator-*.log
 tools/__pycache__/
 tools/tui/__pycache__/
-executor/fragment_emulator
-executor/libfragment_emulator.so
-executor/libfragment_executor.so
-
-# Experimental leftovers
-# Legacy experiments cleaned up
+tests/__pycache__/
+workloads/raytracer/**/*.ppm
+workloads/raytracer/**/*.out
+workloads/raytracer/**/*.o
+workloads/raytracer/**/*.a
 
 # Secrets generated for the reverse proxy (certificates/private keys)
 infra/docker/reverse-proxy/certs/*.crt
@@ -43,11 +37,7 @@ infra/docker/reverse-proxy/certs/*.pfx
 infra/docker/reverse-proxy/certs/*.p12
 infra/docker/reverse-proxy/certs/*.csr
 
-# WireGuard peer configuration
-infra/secure-stack/wireguard/config/
-
-
-# Anchor / Solana / Rust
+# Anchor / Solana / Rust build state
 **/target/
 .target/
 Cargo.lock

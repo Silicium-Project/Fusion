@@ -1,6 +1,6 @@
-# Network
+# Silicium Network
 
-## Architecture Graph (Complete)
+Network is the distributed-runtime repository composed by [Fusion](https://github.com/Silicium-Project/Fusion). It provides the peer-to-peer node, the workload execution path, the Solana layer, and the operational tools consumed by the site and desktop node.
 
 ```mermaid
 flowchart LR
@@ -15,156 +15,31 @@ flowchart LR
     Tests --> CoreCheck
   end
 
-  subgraph Orch["Orchestration"]
-    direction TB
-    Scheduler["TUI scheduler/state"]
-    Router["Command Router"]
-    ConnFactory["BackendConnectorFactory"]
-  end
-
-  subgraph Compute["Compute Core"]
-    direction TB
-    Catalog["catalog/workloads"]
-
-    subgraph Splitter["splitter"]
-      direction TB
-      Pipe["PipelineRunner"]
-      Phases["Disassembly -> Analysis -> Partitioning -> Artifacts"]
-      SWriter["SummaryWriter"]
-      Pipe --> Phases --> SWriter
-    end
-
-    subgraph Worker["worker"]
-      direction TB
-      WJob["JobRunner"]
-      WCore["Worker"]
-      WRouter["TaskRouter"]
-      WPolicy["Fragment OS policy + WSL triggers"]
-      WObs["TaskObserver + Reporter"]
-      WJob --> WCore --> WRouter
-      WCore --> WPolicy
-      WCore --> WObs
-    end
-
-    subgraph Executor["executor"]
-      direction TB
-      EFactory["ExecutionBackendFactory"]
-      EBack["Emulated/Native backends"]
-      EExec["FragmentExecutor"]
-      EApi["FragmentApi (C ABI)"]
-      EFactory --> EBack --> EExec
-      EApi --> EExec
-    end
-  end
-
-  subgraph Conn["Connectors"]
-    direction TB
-    Direct["DirectConnector"]
-    Http["HttpConnector"]
-    Dynamo["DynamoBackend"]
-    HttpRunner["External HTTP runner"]
-    DynRun["DynamoRunner -> docker -> drrun"]
-    FragLib["Executor shared libs"]
-    Direct --> FragLib
-    Http --> HttpRunner
-    Dynamo --> DynRun
-  end
-
-  subgraph Out["Artifacts + Infra + Future"]
-    direction TB
-
-    subgraph Art["Artifacts/Contracts"]
-      direction TB
-      Summary["summary.json"]
-      Frags["fragments (.asm/.bin/wrapper)"]
-      Payload["TaskPayload JSON"]
-      Result["ExecutionResult"]
-      Report["TaskReport + telemetry"]
-      ExecLog["fragment_executor.log"]
-    end
-
-    subgraph Infra["Infra / Network"]
-      direction TB
-      Compose["docker compose"]
-      Profiles["profiles: localnet/devnet/testnet/mainnet/proxy"]
-      Entrypoint["solana-entrypoint.sh"]
-      NodeLocal["silicium-localnet"]
-      NodeDev["silicium-devnet"]
-      NodeTest["silicium-node (testnet)"]
-      NodeMain["silicium-mainnet"]
-      Caddy["Caddy TLS proxy"]
-      WG["WireGuard secure stack"]
-      RpcSecure["isolated solana-rpc"]
-      RpcDev["api.devnet.solana.com"]
-      RpcTest["api.testnet.solana.com"]
-      RpcMain["api.mainnet-beta.solana.com"]
-      Compose --> Profiles
-      Compose --> Entrypoint
-      Compose --> NodeLocal
-      Compose --> NodeDev
-      Compose --> NodeTest
-      Compose --> NodeMain
-      Compose --> Caddy
-      WG --> RpcSecure
-      NodeDev --> RpcDev
-      NodeTest --> RpcTest
-      NodeMain --> RpcMain
-    end
-
-    subgraph Future["Product (future)"]
-      direction TB
-      ApiSvc["API service"]
-      Programs["Solana programs"]
-      State["On-chain state"]
-      ApiSvc --> Programs --> State
-    end
-  end
-
-  TUI --> Scheduler --> Router
-  CLI --> Router
-  Tests --> CLI
-
-  Router --> Catalog
-  Router --> Pipe
-  Router --> WJob
-  Router --> Compose
-
-  WCore --> ConnFactory
-  ConnFactory --> Direct
-  ConnFactory --> Http
-  ConnFactory --> Dynamo
-
-  WCore --> EFactory
-  Direct --> EApi
-
-  SWriter --> Summary
-  SWriter --> Frags
-  WJob --> Summary
-  WJob --> Frags
-  Http --> Payload
-  EExec --> Result
-  EExec --> ExecLog
-  WCore --> Report
-  WCore --> Result
-
-  Viewer --> Summary
-  Viewer --> Report
-  ApiSvc --> WCore
+```text
+FrontEnd / BackEnd
+        │
+        ▼
+Fusion orchestrator ──► Network node
+                            ├── networked/p2p_node
+                            ├── networked/silicium_node_core
+                            ├── networked/compute_daemon
+                            ├── workloads/raytracer
+                            └── Solana layer / reputation bridge
 ```
 
-## Zoom: Worker <-> Executor <-> Connectors
+The active paths are:
 
-```mermaid
-flowchart LR
-  Task["Task (binary/health)"] --> Worker["Worker"]
-  Worker --> Router["TaskRouter"]
-  Worker --> Policy["OS policy + WSL triggers"]
-  Worker --> Obs["TaskObserver/Reporter"]
+- `networked/`: Rust node, P2P transport, compute daemon, and reputation bridge;
+- `tools/`: orchestration, RPC, telemetry, receipts, update manifests, and E2E helpers;
+- `workloads/raytracer/`: the current workload and its native Rust implementation;
+- `solana-layer/`: Anchor program, SDK, migrations, IDL, and tests;
+- `silicium-layer-dashboard/`: network/Solana dashboard;
+- `catalog/`, `proto/`, `i18n/`, `tests/`, and `docs/`: contracts and validation;
+- `infra/`: local Network/Solana nodes, proxy, and optional world testbed.
 
-  Worker --> CFactory["BackendConnectorFactory"]
-  CFactory --> Direct["DirectConnector"]
-  CFactory --> Http["HttpConnector"]
-  CFactory --> Dynamo["DynamoBackend"]
+The old C++ `splitter`/`executor`/`worker` chain, Qt viewer, assembler demos,
+PE fixture corpus, C++/DynamoRIO/GUI images, and generated coverage reports
+were removed from the active tree. Their history remains available in Git.
 
   Direct --> FFI["FragmentApi / shared libs"]
   Http --> HttpExec["POST /execute (JSON)"]
@@ -315,71 +190,37 @@ Le seul workflow sépare restant est `release.yml`, reserve aux tags de publicat
 Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches courantes (tests, démos outils, nettoyage, gestion des volumes ledger) et fournit un shell interactif (`./silicium shell`). Les principales commandes :
 
 ```bash
-./silicium test                  # installe les deps et lance pytest
-./silicium check --docker-strict # check complet (Docker requis)
-./silicium check --jobs 2 --runner docker --docker-cpus 2 --docker-memory 4g
-python silicium cpp-test --scope worker --gtest-filter TaskSerializer.* --timeout 600
-python silicium cpp-test --scope executor --timeout 900
-python silicium doctor           # diagnostic Docker / WSL (Windows)
-python silicium setup up         # bootstrap localnet + proxy
-python silicium setup down -v    # stop + cleanup volumes
-./silicium smoke                 # proxy + healthcheck
-./silicium tools demo            # démo splitter + fragment executor
-./silicium clean all -y          # nettoie caches + volumes (mode "fclean")
-./silicium ledger export devnet  # archive devnet (tar.gz)
-./silicium ledger import devnet --archive backups/devnet.tar.gz -y
-./silicium ledger wipe devnet    # supprime uniquement le ledger devnet
-./silicium workload list --tree  # liste les workloads (calcul/..., verification/...)
-./silicium workload lint         # valide tous les manifests workloads (schema v1)
-./silicium workload show calcul/math-simulation --readme
-./silicium start localnet        # démarre un service (compose up -d)
-./silicium logs proxy-smoke -f   # logs suivis (profil smoke auto)
-./silicium status                # docker compose ps
-./silicium logs silicium-localnet -f
-./silicium exec silicium-localnet -- /bin/bash
-./silicium history show --tail 20# affiche les dernières commandes
-./silicium shell                 # démarre un shell REPL Silicium (help/exit)
-./silicium tui                   # lance l'UI terminale (TUI)
-./silicium tui --tui-frontend headless
-./silicium tui --tui-frontend curses --smoke
-./silicium tui --tui-frontend headless --headless-script .silicium/tui-script.json --headless-json .silicium/tui-report.json
-
-TUI (UI terminale) :
-- Installation: `python -m pip install -r requirements-tui.txt`
-- Details + capture: `docs/tui.md`
-- Frontend: `--tui-frontend textual|curses|headless` ou `SILICIUM_TUI_FRONTEND=...`
-- Connector: `--tui-connector inprocess|stdio` ou `SILICIUM_TUI_CONNECTOR=inprocess|stdio`
-- Probe non-interactive: `--smoke` (`--strict-frontend` pour exiger le frontend demandé)
-- CI headless script: `--headless-script <json>` (optionnellement `--headless-json <rapport>`)
+python3 -m pip install -r requirements-dev.txt
 ```
 
-Sous PowerShell Windows, utilisez `python silicium ...` (ou `.\silicium ...`) pour exécuter
-les commandes locales; la commande `cpp-test` exécute les suites C++ dans Docker sans dépendre
-de `make`, `id`, `find` ou d'un shell GNU sur l'hôte.
-
-`SILICIUM_LEDGER_PREFIX` (dans `infra/.env`) contrôle le nommage des volumes (`<prefix>-local-ledger`, etc.). Utilisez `./silicium clean --ledgers -y` pour reproduire l'ancien “fclean” en une seule commande.
-
-Pour installer des alias (`silicium start-local`, `silicium ledger list`, `sl`, etc.), exécutez :
+The local CLI is `./silicium` (or `./silicium-cli`). Useful commands:
 
 ```bash
-./silicium alias --shell bash   # ou zsh/fish
-source ~/.bashrc
+./silicium workload list
+./silicium workload lint
+./silicium workload golden --strict
+./silicium node start --help
 ```
 
-Le shell interactif supporte l'historique (~/.silicium_history), Tab-completion (réseaux `ledger wipe`, `clean all`, etc.) et des commandes dédiées (`history show/clear`, `start/stop`, `clean all`).
+The Compose file in `infra/docker-compose.yml` starts localnet/devnet/testnet
+or mainnet profiles and the local proxy. Keep local credentials, ledgers, logs,
+and generated output outside Git; `.gitignore` covers the standard paths.
 
----
-
-## Construire l'image
+## Validation
 
 ```bash
-docker compose build            # build standard
-docker compose build --no-cache # rebuild complet (après changement d'entrypoint / Dockerfile)
+make check
+make test
+make raytracer-test
+make smoke
 ```
 
----
+The canonical CI workflow is `.github/workflows/ci.yml`. It covers Python
+validation, Rust P2P crates, the Solana layer, the raytracer, Docker E2E, and
+proxy/P2P smoke checks. See [docs/core-stability.md](docs/core-stability.md) and
+[docs/repository-layout.md](docs/repository-layout.md) for the frozen scope.
 
-## Services et modes disponibles
+## Ownership boundaries
 
 | Mode | Service | Commande de démarrage | Ports host | RPC cible (dans le conteneur) | Usage typique |
 | --- | --- | --- | --- | --- | --- |

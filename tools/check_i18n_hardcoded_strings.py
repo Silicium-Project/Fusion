@@ -13,14 +13,9 @@ from typing import Any
 DEFAULT_PATHS = [
     "silicium",
     "tools/tui",
-    "worker/src",
-    "worker/include",
-    "executor/src",
-    "executor/include",
-    "splitter/src",
-    "splitter/include",
-    "viewer/src",
     "infra",
+    "networked",
+    "workloads",
 ]
 
 DEFAULT_EXCLUDES = (

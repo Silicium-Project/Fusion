@@ -83,6 +83,10 @@ _REQUEST_KINDS = frozenset({"audit", "resource", "challenge", "replicate", "retr
 _PRIORITIES = frozenset({"low", "normal", "high", "urgent"})
 _P2P_PROTOCOLS = frozenset({"ipfs", "ipns", "libp2p", "http", "https", "file", "silicium"})
 
+
+def _priority_rank(priority: str) -> int:
+    return {"low": 10, "normal": 50, "high": 80, "urgent": 100}.get(priority, 50)
+
 METRICS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 OAUTH_DISCOVERY_PATHS = (
     "/.well-known/oauth-authorization-server",
@@ -260,193 +264,72 @@ class McpExportStore:
         return path.read_text(encoding="utf-8")
 
 
-class McpSnapshotStore:
-    def __init__(self, snapshot_dir: Path, max_files: int, max_total_bytes: int) -> None:
-        self._snapshot_dir = snapshot_dir
-        self._snapshot_dir.mkdir(parents=True, exist_ok=True)
-        self._index_path = self._snapshot_dir / "snapshot.index.json"
-        self._max_files = max(0, int(max_files))
-        self._max_total_bytes = max(0, int(max_total_bytes))
-        self._lock = threading.Lock()
-        self._entries: list[dict[str, Any]] = []
-        self._load_index()
+class McpTaskStore:
+    """Durable local task ingress shared by MCP, RPC, and raytracer jobs."""
 
-    @property
-    def snapshot_dir(self) -> Path:
-        return self._snapshot_dir
-
-    def capture(self, uri: str, text: str) -> None:
-        created_ms = int(time.time() * 1000)
-        entry_id = f"{created_ms}-{uuid.uuid4().hex[:8]}"
-        filename = f"{entry_id}.json"
-        payload = text.encode("utf-8")
-        final_path = self._snapshot_dir / filename
-        tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
-        tmp_path.write_bytes(payload)
-        tmp_path.replace(final_path)
-        entry = {
-            "id": entry_id,
-            "uri": uri,
-            "created_utc": _utc_now(),
-            "created_ms": created_ms,
-            "size": len(payload),
-            "file": filename,
-        }
-        with self._lock:
-            self._entries.append(entry)
-            self._apply_retention_locked()
-            self._save_index_locked()
-
-    def read_latest(self, uri: str) -> str:
-        with self._lock:
-            for entry in reversed(self._entries):
-                if str(entry.get("uri", "")) != uri:
-                    continue
-                p = self._snapshot_dir / str(entry.get("file", ""))
-                if p.exists():
-                    return p.read_text(encoding="utf-8")
-            raise FileNotFoundError("snapshot_not_found")
-
-    def list_entries(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [
-                {
-                    "id": str(entry.get("id", "")),
-                    "uri": str(entry.get("uri", "")),
-                    "created_utc": str(entry.get("created_utc", "")),
-                    "size": int(entry.get("size", 0)),
-                    "file": str(entry.get("file", "")),
-                }
-                for entry in self._entries
-            ]
-
-    def export_bundle(self) -> dict[str, Any]:
-        entries = self.list_entries()
-        exported: list[dict[str, Any]] = []
-        for entry in entries:
-            p = self._snapshot_dir / entry["file"]
-            if not p.exists():
-                continue
-            try:
-                text = p.read_text(encoding="utf-8")
-            except Exception:
-                continue
-            exported.append(
-                {
-                    "id": entry["id"],
-                    "uri": entry["uri"],
-                    "created_utc": entry["created_utc"],
-                    "size": entry["size"],
-                    "text": text,
-                }
-            )
-        return {"schema_version": 1, "exported_utc": _utc_now(), "entries": exported}
-
-    def import_bundle(self, payload: Any) -> int:
-        if not isinstance(payload, dict):
-            raise ValueError("bad_bundle")
-        entries = payload.get("entries", [])
-        if not isinstance(entries, list):
-            raise ValueError("bad_bundle")
-        imported = 0
-        for item in entries:
-            if not isinstance(item, dict):
-                continue
-            uri = item.get("uri")
-            text = item.get("text")
-            if not isinstance(uri, str) or not uri or not isinstance(text, str):
-                continue
-            self.capture(uri, text)
-            imported += 1
-        return imported
-
-    def _load_index(self) -> None:
-        with self._lock:
-            entries: list[dict[str, Any]] = []
-            if self._index_path.exists():
-                try:
-                    data = json.loads(self._index_path.read_text(encoding="utf-8"))
-                    raw_entries = data.get("entries", []) if isinstance(data, dict) else []
-                    if isinstance(raw_entries, list):
-                        for item in raw_entries:
-                            if not isinstance(item, dict):
-                                continue
-                            file_name = str(item.get("file", ""))
-                            uri = str(item.get("uri", ""))
-                            if not file_name or not uri:
-                                continue
-                            size = int(item.get("size", 0) or 0)
-                            created_ms = int(item.get("created_ms", 0) or 0)
-                            created_utc = str(item.get("created_utc", ""))
-                            entry_id = str(item.get("id", ""))
-                            entries.append(
-                                {
-                                    "id": entry_id or f"{created_ms}-{file_name}",
-                                    "uri": uri,
-                                    "created_utc": created_utc or _utc_now(),
-                                    "created_ms": created_ms,
-                                    "size": size,
-                                    "file": file_name,
-                                }
-                            )
-                except Exception:
-                    entries = []
-            self._entries = [e for e in entries if (self._snapshot_dir / str(e.get("file", ""))).exists()]
-            self._entries.sort(key=lambda e: int(e.get("created_ms", 0)))
-            self._apply_retention_locked()
-            self._save_index_locked()
-
-    def _apply_retention_locked(self) -> None:
-        self._entries.sort(key=lambda e: int(e.get("created_ms", 0)))
-        if self._max_files > 0:
-            while len(self._entries) > self._max_files:
-                removed = self._entries.pop(0)
-                self._remove_entry_file(removed)
-        if self._max_total_bytes > 0:
-            total = sum(int(e.get("size", 0)) for e in self._entries)
-            while self._entries and total > self._max_total_bytes:
-                removed = self._entries.pop(0)
-                total -= int(removed.get("size", 0))
-                self._remove_entry_file(removed)
-
-    def _remove_entry_file(self, entry: dict[str, Any]) -> None:
-        file_name = str(entry.get("file", ""))
-        if not file_name:
-            return
-        p = self._snapshot_dir / file_name
-        try:
-            p.unlink(missing_ok=True)
-        except Exception:
-            return
-
-    def _save_index_locked(self) -> None:
-        data = {"schema_version": 1, "entries": self._entries}
-        tmp = self._index_path.with_suffix(self._index_path.suffix + ".tmp")
-        tmp.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
-        tmp.replace(self._index_path)
-
-
-class McpControlPlane:
-    """
-    Writes control requests into the export directory so a worker can
-    consume them out-of-process.
-    """
+    _TERMINAL = {"completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved"}
 
     def __init__(self, export_dir: Path) -> None:
-        self._path = export_dir / "control.request.json"
-        self._lock = threading.Lock()
+        self._export_dir = export_dir
 
-    def request_interrupt(self) -> None:
-        self._write({"kind": "interrupt", "timestamp_utc": _utc_now()})
+    def submit(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("payload_not_object")
+        task_id = _sanitize_task_id(str(payload.get("task_id", "")))
+        if not task_id:
+            raise ValueError("missing_task_id")
 
-    def request_mode(self, mode: str) -> None:
-        self._write({"kind": "select_runner_mode", "mode": mode, "timestamp_utc": _utc_now()})
+        task = dict(payload)
+        priority = str(task.get("priority", "normal")).strip().lower() or "normal"
+        task.update(
+            {
+                "task_id": task_id,
+                "envelope_kind": "task",
+                "status": "queued",
+                "submitted_utc": _utc_now(),
+                "priority": priority,
+                "priority_rank": _priority_rank(priority),
+            }
+        )
+        encoded = json.dumps(task, separators=(",", ":"), ensure_ascii=True)
+        tasks_dir = self._export_dir / "tasks"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        path = tasks_dir / f"{task_id}.json"
+        temporary = path.with_suffix(path.suffix + ".tmp")
+        temporary.write_text(encoded, encoding="utf-8")
+        temporary.replace(path)
+        with (self._export_dir / "tasks.queue.ndjson").open("a", encoding="utf-8") as queue:
+            queue.write(encoded + "\n")
+        roles = task.get("required_roles", ["compute"])
+        if isinstance(roles, list) and roles:
+            role = str(roles[0]).strip().lower()
+            if role:
+                with (self._export_dir / f"tasks.{role}.queue.ndjson").open("a", encoding="utf-8") as queue:
+                    queue.write(encoded + "\n")
+        self._append_event("task.queued", task_id, required_roles=roles)
+        return {"status": "queued", "task_id": task_id}
 
-    def _write(self, payload: Mapping[str, Any]) -> None:
-        with self._lock:
-            tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-            tmp.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
-            tmp.replace(self._path)
+    def cancel(self, task_id: str) -> dict[str, Any]:
+        safe_task_id = _sanitize_task_id(task_id)
+        if not safe_task_id:
+            raise ValueError("missing_task_id")
+        path = self._export_dir / "tasks" / f"{safe_task_id}.json"
+        try:
+            task = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            raise FileNotFoundError("task_not_found") from None
+        if not isinstance(task, dict):
+            raise ValueError("task_invalid")
+        if str(task.get("status", "")).lower() not in self._TERMINAL:
+            task["status"] = "cancelled"
+            task["cancel_reason"] = "operator_requested"
+            task["cancelled_utc"] = _utc_now()
+            encoded = json.dumps(task, separators=(",", ":"), ensure_ascii=True)
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            temporary.write_text(encoded, encoding="utf-8")
+            temporary.replace(path)
+            self._append_event("task.cancelled", safe_task_id)
+        return task
 
 
 def _priority_rank(priority: str) -> int:
@@ -741,6 +624,204 @@ class McpRequestStore:
         if not safe_request_id:
             raise FileNotFoundError("missing_request_id")
         return (self._requests_dir / f"{safe_request_id}.json").read_text(encoding="utf-8")
+
+
+def _utc_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _prom_escape(value: str) -> str:
+    # Prometheus label escaping.
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+class McpSnapshotStore:
+    def __init__(self, snapshot_dir: Path, max_files: int, max_total_bytes: int) -> None:
+        self._snapshot_dir = snapshot_dir
+        self._snapshot_dir.mkdir(parents=True, exist_ok=True)
+        self._index_path = self._snapshot_dir / "snapshot.index.json"
+        self._max_files = max(0, int(max_files))
+        self._max_total_bytes = max(0, int(max_total_bytes))
+        self._lock = threading.Lock()
+        self._entries: list[dict[str, Any]] = []
+        self._load_index()
+
+    @property
+    def snapshot_dir(self) -> Path:
+        return self._snapshot_dir
+
+    def capture(self, uri: str, text: str) -> None:
+        created_ms = int(time.time() * 1000)
+        entry_id = f"{created_ms}-{uuid.uuid4().hex[:8]}"
+        filename = f"{entry_id}.json"
+        payload = text.encode("utf-8")
+        final_path = self._snapshot_dir / filename
+        tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+        tmp_path.write_bytes(payload)
+        tmp_path.replace(final_path)
+        entry = {
+            "id": entry_id,
+            "uri": uri,
+            "created_utc": _utc_now(),
+            "created_ms": created_ms,
+            "size": len(payload),
+            "file": filename,
+        }
+        with self._lock:
+            self._entries.append(entry)
+            self._apply_retention_locked()
+            self._save_index_locked()
+
+    def read_latest(self, uri: str) -> str:
+        with self._lock:
+            for entry in reversed(self._entries):
+                if str(entry.get("uri", "")) != uri:
+                    continue
+                p = self._snapshot_dir / str(entry.get("file", ""))
+                if p.exists():
+                    return p.read_text(encoding="utf-8")
+            raise FileNotFoundError("snapshot_not_found")
+
+    def list_entries(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [
+                {
+                    "id": str(entry.get("id", "")),
+                    "uri": str(entry.get("uri", "")),
+                    "created_utc": str(entry.get("created_utc", "")),
+                    "size": int(entry.get("size", 0)),
+                    "file": str(entry.get("file", "")),
+                }
+                for entry in self._entries
+            ]
+
+    def export_bundle(self) -> dict[str, Any]:
+        entries = self.list_entries()
+        exported: list[dict[str, Any]] = []
+        for entry in entries:
+            p = self._snapshot_dir / entry["file"]
+            if not p.exists():
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except Exception:
+                continue
+            exported.append(
+                {
+                    "id": entry["id"],
+                    "uri": entry["uri"],
+                    "created_utc": entry["created_utc"],
+                    "size": entry["size"],
+                    "text": text,
+                }
+            )
+        return {"schema_version": 1, "exported_utc": _utc_now(), "entries": exported}
+
+    def import_bundle(self, payload: Any) -> int:
+        if not isinstance(payload, dict):
+            raise ValueError("bad_bundle")
+        entries = payload.get("entries", [])
+        if not isinstance(entries, list):
+            raise ValueError("bad_bundle")
+        imported = 0
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            uri = item.get("uri")
+            text = item.get("text")
+            if not isinstance(uri, str) or not uri or not isinstance(text, str):
+                continue
+            self.capture(uri, text)
+            imported += 1
+        return imported
+
+    def _load_index(self) -> None:
+        with self._lock:
+            entries: list[dict[str, Any]] = []
+            if self._index_path.exists():
+                try:
+                    data = json.loads(self._index_path.read_text(encoding="utf-8"))
+                    raw_entries = data.get("entries", []) if isinstance(data, dict) else []
+                    if isinstance(raw_entries, list):
+                        for item in raw_entries:
+                            if not isinstance(item, dict):
+                                continue
+                            file_name = str(item.get("file", ""))
+                            uri = str(item.get("uri", ""))
+                            if not file_name or not uri:
+                                continue
+                            size = int(item.get("size", 0) or 0)
+                            created_ms = int(item.get("created_ms", 0) or 0)
+                            created_utc = str(item.get("created_utc", ""))
+                            entry_id = str(item.get("id", ""))
+                            entries.append(
+                                {
+                                    "id": entry_id or f"{created_ms}-{file_name}",
+                                    "uri": uri,
+                                    "created_utc": created_utc or _utc_now(),
+                                    "created_ms": created_ms,
+                                    "size": size,
+                                    "file": file_name,
+                                }
+                            )
+                except Exception:
+                    entries = []
+            self._entries = [e for e in entries if (self._snapshot_dir / str(e.get("file", ""))).exists()]
+            self._entries.sort(key=lambda e: int(e.get("created_ms", 0)))
+            self._apply_retention_locked()
+            self._save_index_locked()
+
+    def _apply_retention_locked(self) -> None:
+        self._entries.sort(key=lambda e: int(e.get("created_ms", 0)))
+        if self._max_files > 0:
+            while len(self._entries) > self._max_files:
+                removed = self._entries.pop(0)
+                self._remove_entry_file(removed)
+        if self._max_total_bytes > 0:
+            total = sum(int(e.get("size", 0)) for e in self._entries)
+            while self._entries and total > self._max_total_bytes:
+                removed = self._entries.pop(0)
+                total -= int(removed.get("size", 0))
+                self._remove_entry_file(removed)
+
+    def _remove_entry_file(self, entry: dict[str, Any]) -> None:
+        file_name = str(entry.get("file", ""))
+        if not file_name:
+            return
+        p = self._snapshot_dir / file_name
+        try:
+            p.unlink(missing_ok=True)
+        except Exception:
+            return
+
+    def _save_index_locked(self) -> None:
+        data = {"schema_version": 1, "entries": self._entries}
+        tmp = self._index_path.with_suffix(self._index_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
+        tmp.replace(self._index_path)
+
+
+class McpControlPlane:
+    """
+    Writes control requests into the export directory so a network node can
+    consume them out-of-process.
+    """
+
+    def __init__(self, export_dir: Path) -> None:
+        self._path = export_dir / "control.request.json"
+        self._lock = threading.Lock()
+
+    def request_interrupt(self) -> None:
+        self._write({"kind": "interrupt", "timestamp_utc": _utc_now()})
+
+    def request_mode(self, mode: str) -> None:
+        self._write({"kind": "select_runner_mode", "mode": mode, "timestamp_utc": _utc_now()})
+
+    def _write(self, payload: Mapping[str, Any]) -> None:
+        with self._lock:
+            tmp = self._path.with_suffix(self._path.suffix + ".tmp")
+            tmp.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
+            tmp.replace(self._path)
 
 
 def _utc_now() -> str:

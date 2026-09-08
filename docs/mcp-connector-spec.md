@@ -1,76 +1,19 @@
-# MCP Connector Specification
+# MCP control-plane contract
 
-This document defines a first-class MCP integration layer for Silicium so LLM clients can consume worker/executor state through a stable protocol instead of parsing ad-hoc logs.
+Network's MCP server is the authenticated control and observation surface used
+by Fusion's private experiment API. It reads node exports and publishes
+structured task, result, telemetry, and health resources. It is not a wrapper
+around the removed C++ fragment runtime.
 
-## Scope
+## Active implementation
 
-- Input: execution data emitted by `worker` (`TaskReport`, `TaskTelemetry`, `ExecutionResult`).
-- Output: MCP resources/tools consumable by LLM clients (Codex, Claude, custom agents).
-- Non-goal: replacing current CLI/TUI command execution path in phase 1.
+- Server: `tools/mcp_server.py`.
+- Default local export: `.silicium/mcp/export/`.
+- Auth: bearer token supplied by the caller or the local token file.
+- Host deployment: `Fusion/deploy/systemd/silicium-experiment-api.service`.
+- Read/write scope is controlled by tool/resource allow and deny lists.
 
-## Goals
-
-- Keep existing compute pipeline unchanged: `splitter -> executor -> worker`.
-- Add one connector boundary that can expose live status, results, and diagnostics.
-- Reuse existing contracts where possible (`TaskPayload`, `TaskReport`, `ExecutionResult`).
-- Provide strict schema versioning and deterministic error envelopes.
-
-## Architecture
-
-```mermaid
-flowchart LR
-  subgraph Core["Silicium Core"]
-    Worker["worker::Worker"]
-    Router["worker::TaskRouter"]
-    Reporter["worker::Reporter"]
-    ConnectorFactory["BackendConnectorFactory"]
-    Worker --> Router
-    Worker --> Reporter
-    Worker --> ConnectorFactory
-  end
-
-  subgraph MCPBridge["MCP Bridge Layer"]
-    Adapter["McpConnectorAdapter"]
-    EventBus["TelemetryEventBus"]
-    ResourceStore["Snapshot/History Store"]
-    Adapter --> EventBus
-    Adapter --> ResourceStore
-  end
-
-  subgraph MCPServer["MCP Server"]
-    Tools["tools.run_action / tools.stop_action / tools.get_status"]
-    Resources["resources://status / resources://reports / resources://logs"]
-    Prompts["prompts://triage_failure / prompts://perf_budget_summary"]
-  end
-
-  subgraph Clients["MCP Clients"]
-    Codex["Codex CLI"]
-    Claude["Claude Code"]
-    Other["Other MCP clients"]
-  end
-
-  ConnectorFactory --> Adapter
-  Reporter --> Adapter
-  Adapter --> Tools
-  Adapter --> Resources
-  Adapter --> Prompts
-  Tools --> Codex
-  Tools --> Claude
-  Tools --> Other
-  Resources --> Codex
-  Resources --> Claude
-  Resources --> Other
-```
-
-## Connection Contracts
-
-### Data sources from core
-
-- `TaskReport` stream (per-task lifecycle and metrics).
-- `ExecutionResult` snapshots (result code, memory/register deltas, backend mode).
-- Runtime diagnostics (timeouts, launch errors, policy decisions, docker/wsl mode).
-
-### MCP resources (read path)
+## Resources
 
 - `resources://silicium/status/current`
 - `resources://silicium/reports/recent`
@@ -81,7 +24,7 @@ flowchart LR
 - `resources://silicium/nodes/heartbeat/{node_id}`
 - `resources://silicium/nodes/metrics/{node_id}`
 
-### MCP tools (write/control path)
+## Tools
 
 - `tools.silicium.run_action`
 - `tools.silicium.interrupt_action`
@@ -92,19 +35,18 @@ flowchart LR
 - `tools.silicium.submit_request`
 - `tools.silicium.get_request`
 
-## Canonical Event Envelope
-
-All bridge-emitted events must follow one schema:
+## Event envelope
 
 ```json
 {
-  "schema_version": "1.0",
-  "event_id": "uuid",
-  "timestamp_utc": "2026-02-07T12:00:00Z",
-  "source": "worker",
-  "kind": "task_report",
-  "task_id": "optional-task-id",
-  "payload": {}
+  "schema_version": 1,
+  "timestamp": "2026-09-08T12:00:00.000Z",
+  "component": "network-node",
+  "level": "info",
+  "run_id": "run-9e95",
+  "event": "task_completed",
+  "message": "Task completed",
+  "payload": {"task_id": "task-1", "status": "succeeded"}
 }
 ```
 

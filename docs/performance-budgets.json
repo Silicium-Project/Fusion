@@ -1,22 +1,11 @@
 {
   "schema_version": 1,
-  "notes": "cpu_sec is used as a proxy for energy usage. Budgets are baseline guardrails, not hard performance claims.",
+  "notes": "Budgets are CI guardrails for the active Network runtime; they are not performance claims.",
   "profiles": {
-    "check_worker_quick": {
-      "description": "Core check focused on worker path, no docker optional checks.",
-      "command": [
-        "./silicium",
-        "check",
-        "--scope",
-        "worker",
-        "--jobs",
-        "2",
-        "--no-docker"
-      ],
-      "timeout_sec": 1500.0,
-      "env": {
-        "CORE_CHECK_FORCE_EXECUTOR_REBUILD": "0"
-      },
+    "network_check": {
+      "description": "Active Python/runtime stability check.",
+      "command": ["./silicium", "check", "--scope", "platform", "--no-docker"],
+      "timeout_sec": 900.0,
       "budgets": {
         "wall_sec": 480.0,
         "cpu_sec": 1200.0,
@@ -24,28 +13,8 @@
       }
     },
     "pytest_core": {
-      "description": "Cross-platform Python tests subset used as test budget sentinel.",
-      "command": [
-        "python",
-        "-m",
-        "pytest",
-        "tests/test_manifests.py"
-      ],
-      "timeout_sec": 300.0,
-      "budgets": {
-        "wall_sec": 180.0,
-        "cpu_sec": 400.0,
-        "max_rss_kib": 1500000.0
-      }
-    },
-    "pytest_core_windows": {
-      "description": "Windows-friendly Python tests subset (no bash entrypoint dependency).",
-      "command": [
-        "python",
-        "-m",
-        "pytest",
-        "tests/test_manifests.py"
-      ],
+      "description": "Cross-platform Python validation subset.",
+      "command": ["python", "-m", "pytest", "tests/test_manifests.py"],
       "timeout_sec": 300.0,
       "budgets": {
         "wall_sec": 180.0,
@@ -54,15 +23,9 @@
       }
     },
     "pytest_core_linux": {
-      "description": "Linux/CI Python tests subset including entrypoint scenarios.",
+      "description": "Linux entrypoint and manifest validation subset.",
       "platforms": ["linux"],
-      "command": [
-        "python3",
-        "-m",
-        "pytest",
-        "tests/test_entrypoint.py",
-        "tests/test_manifests.py"
-      ],
+      "command": ["python3", "-m", "pytest", "tests/test_entrypoint.py", "tests/test_manifests.py"],
       "timeout_sec": 420.0,
       "budgets": {
         "wall_sec": 240.0,
@@ -70,20 +33,15 @@
         "max_rss_kib": 1800000.0
       }
     },
-    "splitter_demo": {
-      "description": "Representative local compute flow (splitter demo + executor).",
-      "platforms": ["linux"],
-      "command": [
-        "make",
-        "-C",
-        "splitter",
-        "demo"
-      ],
-      "timeout_sec": 1200.0,
+    "raytracer_native": {
+      "description": "Native Rust raytracer workload tests.",
+      "platforms": ["linux", "darwin", "windows"],
+      "command": ["cargo", "test", "--manifest-path", "workloads/raytracer/native/Cargo.toml"],
+      "timeout_sec": 600.0,
       "budgets": {
-        "wall_sec": 600.0,
-        "cpu_sec": 1500.0,
-        "max_rss_kib": 4000000.0
+        "wall_sec": 300.0,
+        "cpu_sec": 900.0,
+        "max_rss_kib": 2000000.0
       }
     }
   }

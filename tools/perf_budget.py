@@ -215,6 +215,24 @@ def profile_is_supported(profile: Profile) -> tuple[bool, str | None]:
     return False, f"host '{host}' not in supported platforms: {', '.join(profile.platforms)}"
 
 
+def command_is_available(command: list[str], repo_root: Path, env: dict[str, str]) -> bool:
+    """Check the executable before wrapping it with ``/usr/bin/time``.
+
+    ``time`` reports a missing child command as exit code 127 instead of
+    raising ``FileNotFoundError`` in Python. Preflighting keeps the result
+    contract stable across hosts and makes the diagnostic actionable.
+    """
+    if not command:
+        return False
+    executable = command[0]
+    if os.path.dirname(executable) or (os.altsep and os.altsep in executable):
+        path = Path(executable)
+        if not path.is_absolute():
+            path = repo_root / path
+        return path.is_file() and (os.name == "nt" or os.access(path, os.X_OK))
+    return shutil.which(executable, path=env.get("PATH")) is not None
+
+
 def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
     supported, reason = profile_is_supported(profile)
     effective_command = normalize_command_for_platform(profile.command, repo_root)
@@ -246,6 +264,8 @@ def run_profile(profile: Profile, repo_root: Path) -> ProfileResult:
     run_env.update(profile.env)
 
     try:
+        if not command_is_available(effective_command, repo_root, run_env):
+            raise FileNotFoundError(2, "No such file or directory", effective_command[0])
         if time_bin:
             fmt = f"{TIME_MARKER} elapsed=%e user=%U sys=%S rss_kib=%M exit=%x"
             cmd = [time_bin, "-f", fmt, *effective_command]
@@ -513,7 +533,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.all:
         selected_keys = sorted(profiles.keys())
     else:
-        selected_keys = args.profile or ["check_worker_quick"]
+        selected_keys = args.profile or ["network_check"]
 
     missing = [key for key in selected_keys if key not in profiles]
     if missing:
