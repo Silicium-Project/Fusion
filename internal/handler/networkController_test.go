@@ -7,6 +7,36 @@ import (
 	"testing"
 )
 
+func TestNetworkRootJobIDNormalizesNestedFragmentIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		item map[string]any
+		want string
+	}{
+		{name: "top level root", item: map[string]any{"root_job_id": "site-render-1"}, want: "site-render-1"},
+		{name: "nested root", item: map[string]any{"task": map[string]any{"root_job_id": "site-render-2"}}, want: "site-render-2"},
+		{name: "fragment task fallback", item: map[string]any{"task_id": "site-render-3-frag-004-compute"}, want: "site-render-3"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := networkRootJobID(test.item); got != test.want {
+				t.Fatalf("networkRootJobID(%#v) = %q, want %q", test.item, got, test.want)
+			}
+		})
+	}
+}
+
+func TestNetworkTerminalStatusIncludesAllTerminalSchedulerStates(t *testing.T) {
+	for _, status := range []string{"completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved"} {
+		if !networkTerminalStatus(status) {
+			t.Fatalf("networkTerminalStatus(%q) = false", status)
+		}
+	}
+	if networkTerminalStatus("running") {
+		t.Fatal("running must not be terminal")
+	}
+}
+
 func TestCompareSemanticVersions(t *testing.T) {
 	tests := []struct {
 		left, right string

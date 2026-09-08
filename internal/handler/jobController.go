@@ -115,8 +115,8 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
 		return
 	}
-	// RPC work is imported into the same durable Job model before querying so
-	// the site has one canonical list/dashboard/action surface.
+	// Reconcile only network work already owned by this user before querying.
+	// The shared registry is telemetry, not an authorization boundary.
 	if err := h.syncNetworkJobs(uint(userID)); err != nil { log.Printf("network job sync: %v", err) }
 	page := boundedQueryInt(r, "page", 1, 1, 1_000_000)
 	pageSize := boundedQueryInt(r, "page_size", 20, 1, 100)
@@ -144,18 +144,28 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 type networkJobAggregate struct { status string; total, done, failed int; latest time.Time; subtasks []any; roles map[string]bool; nodes map[string]bool; workload, kind string }
 
 func (h *Handler) syncNetworkJobs(userID uint) error {
-	const dir = "/var/lib/silicium/network/orchestrator/export/tasks"
-	entries, err := os.ReadDir(dir); if err != nil { return err }
+	dir := filepath.Join(silicium.ConfigFromEnv().OrchestratorExportDir, "tasks")
+	allowed, err := h.userNetworkJobIDs(userID)
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(dir); if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
 	aggs := map[string]*networkJobAggregate{}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
 		item := readJSONMap(filepath.Join(dir, entry.Name())); if len(item) == 0 { continue }
-		id := stringValue(item["root_job_id"]); task, _ := item["task"].(map[string]any); if id == "" { id = stringValue(task["root_job_id"]) }; if id == "" { id = stringValue(item["task_id"]) }
-		if marker := strings.Index(id, "-frag-"); marker > 0 { id = id[:marker] }; if id == "" { continue }
-		// Site-submitted raytracer jobs already live in the canonical Job table;
-		// their fragment registry entries must not be imported as extra jobs.
-		if strings.HasPrefix(id, "site-render-") { continue }
-		status := strings.ToLower(stringValue(item["status"])); a := aggs[id]; if a == nil { a=&networkJobAggregate{status: status, roles: map[string]bool{}, nodes: map[string]bool{}}; aggs[id]=a }; a.total++; if status == "completed" { a.done++ }; if status == "failed" { a.failed++ }; if status != "completed" && status != "failed" && status != "cancelled" && status != "expired" { a.status = status }
+		id := networkRootJobID(item)
+		if id == "" { continue }
+		if _, owned := allowed[id]; !owned { continue }
+		emitter := networkTaskEmitter(item)
+		if emitter != "" && emitter != silicium.ConfigFromEnv().OrchestratorNodeID { continue }
+		task, _ := item["task"].(map[string]any)
+		status := strings.ToLower(stringValue(item["status"])); a := aggs[id]; if a == nil { a=&networkJobAggregate{status: status, roles: map[string]bool{}, nodes: map[string]bool{}}; aggs[id]=a }; a.total++; if status == "completed" { a.done++ }; if status == "failed" { a.failed++ }; if !networkTerminalStatus(status) { a.status = status }
 		role := stringValue(item["required_role"]); if role == "" { role = stringValue(item["role"]) }; if role != "" { a.roles[role] = true }
 		node := stringValue(item["handled_by"]); if node == "" { node = stringValue(item["claimed_by"]) }; if node != "" { a.nodes[node] = true }
 		if taskWorkload := stringValue(task["workload"]); taskWorkload != "" { a.workload = taskWorkload }; if taskKind := stringValue(task["kind"]); taskKind != "" { a.kind = taskKind }
@@ -170,18 +180,18 @@ func (h *Handler) syncNetworkJobs(userID uint) error {
 	for id, a := range aggs {
 		status := a.status; if status == "" { status = "queued" }; if a.failed > 0 && a.done < a.total { status = "failed" }; if a.done == a.total && a.total > 0 { status = "completed" }
 		now := a.latest; if now.IsZero() { now = time.Now() }
-		var job models.Job; result := h.DB.Where("silicium_job_id = ?", id).First(&job)
+		var job models.Job; result := h.DB.Where("user_id = ? AND silicium_job_id = ?", userID, id).First(&job)
 		if result.Error == nil {
 			if strings.HasPrefix(job.InputPath, "rpc://") {
 				updates := map[string]any{"status": status, "fragment_count": a.total, "updated_at": now, "network_metadata": networkJobMetadata(id, a, status)}
-				if status == "completed" || status == "failed" || status == "cancelled" || status == "expired" { updates["completed_at"] = now }
+				if networkTerminalStatus(status) { updates["completed_at"] = now }
 				h.DB.Model(&job).Updates(updates)
 			}
 			continue
 		}
-		job = models.Job{UserID:userID, Title:"Raytracer", Description:"Travail réseau RPC", Workload:"raytracer", Priority:"normal", FragmentCount:a.total, Status:status, SiliciumJobID:id, InputPath:"rpc://"+id, NetworkMetadata: networkJobMetadata(id, a, status), CreatedAt:now, UpdatedAt:now}
-		if status == "completed" || status == "failed" || status == "cancelled" { job.CompletedAt = &now }
-		if createErr := h.DB.Create(&job).Error; createErr != nil && !strings.Contains(strings.ToLower(createErr.Error()), "unique") { return createErr }
+		// Unknown roots are deliberately ignored. They may belong to another
+		// emitter or to an operator-level workload, and must never be imported
+		// under the user who happened to open the task list.
 	}
 	return nil
 }

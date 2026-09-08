@@ -67,7 +67,7 @@ func (h *Handler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	value := h.buildSystemStatus(r.Context(), networkPeersPath, updateManifestPath, now)
+	value := h.buildSystemStatus(r.Context(), networkPeersFile(), networkManifestFile(), now)
 	if h.status != nil {
 		h.status.put(value, now)
 	}

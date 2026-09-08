@@ -9,36 +9,119 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	"github.com/gorilla/mux"
+	"github.com/silicium/internal/models"
+	"github.com/silicium/internal/silicium"
 )
 
-const (
-	networkPeersPath   = "/var/lib/silicium/network/orchestrator/export/node.orchestrator-1.peers.json"
-	updateManifestPath = "/var/lib/silicium/downloads/update-manifest.json"
-	networkTasksPath   = "/var/lib/silicium/network/orchestrator/export/tasks"
-)
+func networkTasksDirectory() string {
+	return filepath.Join(silicium.ConfigFromEnv().OrchestratorExportDir, "tasks")
+}
+
+func networkPeersFile() string {
+	cfg := silicium.ConfigFromEnv()
+	return filepath.Join(cfg.OrchestratorExportDir, "node."+cfg.OrchestratorNodeID+".peers.json")
+}
+
+func networkManifestFile() string {
+	return filepath.Join(envDefault("SILICIUM_DOWNLOADS_DIR", "/var/lib/silicium/downloads"), "update-manifest.json")
+}
+
+func networkTerminalStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved":
+		return true
+	default:
+		return false
+	}
+}
+
+func networkRootJobID(item map[string]any) string {
+	rootID := stringField(item, "root_job_id")
+	if rootID == "" {
+		if task, ok := item["task"].(map[string]any); ok {
+			rootID = stringField(task, "root_job_id")
+		}
+	}
+	if rootID == "" {
+		rootID = stringField(item, "task_id")
+	}
+	if marker := strings.Index(rootID, "-frag-"); marker > 0 {
+		rootID = rootID[:marker]
+	}
+	return rootID
+}
+
+func networkTaskEmitter(item map[string]any) string {
+	emitter := stringField(item, "emitter_node_id")
+	if emitter == "" {
+		emitter = stringField(item, "origin_node_id")
+	}
+	if emitter == "" {
+		if task, ok := item["task"].(map[string]any); ok {
+			emitter = stringField(task, "emitter_node_id")
+		}
+	}
+	return emitter
+}
+
+func (h *Handler) userNetworkJobIDs(userID uint) (map[string]struct{}, error) {
+	var jobs []models.Job
+	if result := h.DB.Select("silicium_job_id").Where("user_id = ?", userID).Find(&jobs); result.Error != nil {
+		return nil, result.Error
+	}
+	allowed := make(map[string]struct{}, len(jobs))
+	for _, job := range jobs {
+		if id := strings.TrimSpace(job.SiliciumJobID); id != "" {
+			allowed[id] = struct{}{}
+		}
+	}
+	return allowed, nil
+}
 
 func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
-	entries, err := os.ReadDir(networkTasksPath)
-	if err != nil { http.Error(w, "Could not read network task registry: "+err.Error(), http.StatusInternalServerError); return }
+	userID, ok := userIDFromRequest(r)
+	if !ok {
+		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
+		return
+	}
+	allowed, err := h.userNetworkJobIDs(uint(userID))
+	if err != nil {
+		http.Error(w, "Could not scope network tasks", http.StatusInternalServerError)
+		return
+	}
+	tasksDir := networkTasksDirectory()
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(w).Encode(map[string]any{"active": []map[string]any{}, "recent": []map[string]any{}, "workloads": []map[string]any{}, "emitter_node_id": silicium.ConfigFromEnv().OrchestratorNodeID})
+			return
+		}
+		http.Error(w, "Could not read network task registry: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	sort.Slice(entries, func(i, j int) bool {
 		left, leftErr := entries[i].Info(); right, rightErr := entries[j].Info()
 		if leftErr != nil || rightErr != nil { return entries[i].Name() > entries[j].Name() }
 		return left.ModTime().After(right.ModTime())
 	})
 	terminal := map[string]bool{"completed":true,"failed":true,"dead_lettered":true,"cancelled":true,"canceled":true,"expired":true,"finalized":true,"resolved":true}
+	emitterID := silicium.ConfigFromEnv().OrchestratorNodeID
 	active, recent := []map[string]any{}, []map[string]any{}
 	groups := map[string]map[string]any{}
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
-		raw, readErr := os.ReadFile(filepath.Join(networkTasksPath, entry.Name())); if readErr != nil { continue }
+		raw, readErr := os.ReadFile(filepath.Join(tasksDir, entry.Name())); if readErr != nil { continue }
 		var item map[string]any; if json.Unmarshal(raw, &item) != nil { continue }
+		rootID := networkRootJobID(item)
+		if _, owned := allowed[rootID]; !owned { continue }
+		emitter := networkTaskEmitter(item)
+		if emitter != "" && emitter != emitterID { continue }
 		status := strings.ToLower(stringField(item, "status"))
 		if terminal[status] { recent = append(recent, item) } else { active = append(active, item) }
-		rootID := stringField(item, "root_job_id")
-		if rootID == "" { if task, ok := item["task"].(map[string]any); ok { rootID = stringField(task, "root_job_id") } }
-		if rootID == "" { rootID = stringField(item, "task_id") }
-		if marker := strings.Index(rootID, "-frag-"); marker > 0 { rootID = rootID[:marker] }
 		group := groups[rootID]
 		if group == nil { group = map[string]any{"work_id": rootID, "status": status, "total": 0, "completed": 0, "failed": 0, "active": 0, "subtasks": []map[string]any{}, "updated_at": ""}; groups[rootID] = group }
 		group["total"] = group["total"].(int) + 1
@@ -46,6 +129,7 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 		if status == "failed" { group["failed"] = group["failed"].(int) + 1 }
 		if !terminal[status] { group["active"] = group["active"].(int) + 1; group["status"] = status }
 		if task, ok := item["task"].(map[string]any); ok && group["workload"] == nil { group["workload"] = stringField(task, "workload"); group["kind"] = stringField(task, "kind") }
+		if emitter != "" && group["emitter_node_id"] == nil { group["emitter_node_id"] = emitter }
 		if updated := stringField(item, "handled_utc"); updated != "" { group["updated_at"] = updated }
 		subs := group["subtasks"].([]map[string]any)
 		if len(subs) < 256 {
@@ -59,21 +143,33 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 	for _, group := range workloads { total, done := group["total"].(int), group["completed"].(int); if total > 0 { group["progress_percent"] = float64(done) * 100 / float64(total) } }
 	sort.Slice(workloads, func(i, j int) bool { return stringField(workloads[i], "updated_at") > stringField(workloads[j], "updated_at") })
 	w.Header().Set("Content-Type", "application/json"); w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": workloads})
+	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": workloads, "emitter_node_id": emitterID})
 }
 
 func (h *Handler) CancelNetworkTask(w http.ResponseWriter, r *http.Request) {
 	rootID := strings.TrimSpace(mux.Vars(r)["id"])
 	if rootID == "" { http.Error(w, "missing task id", http.StatusBadRequest); return }
-	entries, err := os.ReadDir(networkTasksPath); if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+	userID, ok := userIDFromRequest(r)
+	if !ok {
+		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
+		return
+	}
+	var job models.Job
+	if result := h.DB.Where("user_id = ? AND silicium_job_id = ?", userID, rootID).First(&job); result.Error != nil {
+		http.Error(w, "Network task not found", http.StatusNotFound)
+		return
+	}
+	tasksDir := networkTasksDirectory()
+	entries, err := os.ReadDir(tasksDir); if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
 	changed := 0
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
-		path := filepath.Join(networkTasksPath, entry.Name()); raw, readErr := os.ReadFile(path); if readErr != nil { continue }
+		path := filepath.Join(tasksDir, entry.Name()); raw, readErr := os.ReadFile(path); if readErr != nil { continue }
 		var item map[string]any; if json.Unmarshal(raw, &item) != nil { continue }
-		candidate := stringField(item, "root_job_id"); if candidate == "" { if task, ok := item["task"].(map[string]any); ok { candidate = stringField(task, "root_job_id") } }
-		if candidate != rootID { continue }
-		status := strings.ToLower(stringField(item, "status")); if status == "completed" || status == "failed" || status == "cancelled" || status == "expired" { continue }
+		if networkRootJobID(item) != rootID { continue }
+		emitter := networkTaskEmitter(item)
+		if emitter != "" && emitter != silicium.ConfigFromEnv().OrchestratorNodeID { continue }
+		status := strings.ToLower(stringField(item, "status")); if networkTerminalStatus(status) { continue }
 		item["status"] = "cancelled"; item["cancelled_utc"] = time.Now().UTC().Format(time.RFC3339)
 		encoded, _ := json.Marshal(item); if os.WriteFile(path, encoded, 0o600) == nil { changed++ }
 	}
@@ -81,7 +177,7 @@ func (h *Handler) CancelNetworkTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetNetworkPeers(w http.ResponseWriter, r *http.Request) {
-	payload, err := loadNetworkPeers(networkPeersPath, updateManifestPath)
+	payload, err := loadNetworkPeers(networkPeersFile(), networkManifestFile())
 	if err != nil {
 		http.Error(w, "Could not read peers registry: "+err.Error(), http.StatusInternalServerError)
 		return
