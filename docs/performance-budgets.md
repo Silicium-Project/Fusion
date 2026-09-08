@@ -1,40 +1,17 @@
-# Performance and Energy Budgets
+# Performance and resource budgets
 
-Issue reference: `#120`
+`docs/performance-budgets.json` contains guardrails for the active Network
+runtime. It intentionally does not contain profiles for the removed C++
+fragment pipeline.
 
-This document defines versioned guardrails for command runtime and host pressure.
-
-Budget file: `docs/performance-budgets.json`
-
-## Metrics
-
-- `wall_sec`: total elapsed time in seconds.
-- `cpu_sec`: user + system CPU seconds (energy proxy).
-- `max_rss_kib`: peak resident memory in KiB.
-
-## Optional Profile Fields
-
-- `timeout_sec`: hard timeout for a profile command (returns `exit_code=124` when exceeded).
-- `env`: extra environment variables injected only for that profile command.
-- `platforms`: optional allow-list (`windows`, `linux`, `darwin`); unsupported hosts are marked `SKIP`.
-
-For `check_worker_quick`, `CORE_CHECK_FORCE_EXECUTOR_REBUILD=0` keeps incremental executor builds by default.
-Set it to `1` only when you explicitly want a clean dependency rebuild.
-
-## Profiles
-
-- `check_worker_quick`: quick worker-focused core check.
-- `pytest_core`: cross-platform Python tests subset.
-- `pytest_core_windows`: same intent, explicit Windows-safe profile.
-- `pytest_core_linux`: Linux/CI profile including `test_entrypoint`.
-- `splitter_demo`: representative splitter/executor run.
-
-## Local Usage
-
-List profiles:
+Metrics are elapsed time (`wall_sec`), CPU time (`cpu_sec`), and peak resident
+memory (`max_rss_kib`). Profiles can restrict supported platforms and can be
+run individually or together:
 
 ```bash
 python3 tools/perf_budget.py --list
+./silicium budget --all --strict --output /tmp/network-budget.json
+./silicium budget --profile network_check --strict
 ```
 
 Run default profile:

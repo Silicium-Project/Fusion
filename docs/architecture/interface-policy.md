@@ -42,41 +42,48 @@ Without this note, maintainers should request changes.
 
 ## Mandatory Seams by Module
 
-### splitter
+### networked
 
 Mandatory interfaces/seams:
 
-- **Instruction/disassembly provider seam**: alternate disassembly or analysis providers must stay behind a contract.
-- **Reporting/output writer seam**: console/json/multi reporter variants must remain swappable via shared contract.
-- **Hashing service seam**: algorithm/provider changes must remain behind a stable hashing contract.
+- **Transport seam**: direct HTTP, UDP hole-punching, and relay fallback must
+  remain behind the active network transport contract.
+- **Content seam**: local files, mesh content, and scheduler-provided blobs
+  must use the shared content-reference contract.
+- **Role runtime seam**: compute, verify, and storage roles must enter through
+  the role/runtime contract instead of duplicating queue handling.
 
 Concrete-first allowed:
 
-- internal data holders and deterministic pipeline phases with single behavior.
+- peer discovery, durable queue bookkeeping, and deterministic protocol
+  helpers with one active implementation.
 
-### executor
+### workloads
 
 Mandatory interfaces/seams:
 
-- **Execution backend seam**: emulation/native backends must implement a shared execution contract (`IExecutionBackend` family).
-- **Backend factory seam**: backend selection is centralized through factory contract(s), not ad-hoc branching.
-- **Runtime integration seam**: OS/runtime specific executors must be isolated behind the backend contract.
+- **Manifest seam**: every workload is selected through the versioned manifest
+  schema and catalog rather than an ad-hoc CLI branch.
+- **Result seam**: workload outputs, receipts, and verification attestations
+  must use stable JSON contracts.
 
 Concrete-first allowed:
 
-- pure domain structs and single-path helpers with no cross-runtime variability.
+- deterministic raytracer stages and bounded workload-specific transforms until
+  a second implementation is actually required.
 
-### worker
+### mcp and control plane
 
 Mandatory interfaces/seams:
 
-- **Backend connector seam**: direct/http (and future transports) must remain plug-compatible behind connector interfaces.
-- **Execution backend target seam**: native/docker/wsl/http routing decisions must consume explicit capability contracts.
-- **Telemetry/report sink seam**: output/report targets that can vary by environment must remain behind stable APIs.
+- **Connector seam**: HTTP, MCP, and protobuf/ZeroMQ control paths must expose
+  the same task and event semantics.
+- **Policy seam**: authentication and allow/deny rules must be evaluated at
+  the control boundary, not scattered through workload code.
 
 Concrete-first allowed:
 
-- orchestration code that coordinates already-abstracted seams without introducing new variability.
+- the local durable export store while it remains the single source of truth.
 
 ### tui
 

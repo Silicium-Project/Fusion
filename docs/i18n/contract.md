@@ -9,8 +9,7 @@ Developer workflow:
 ## Scope
 
 - CLI/TUI Python strings.
-- Worker/executor/splitter runtime user-facing text.
-- Viewer UI strings.
+- Network node, workload, and MCP user-facing text.
 - Infra/scripts user-facing output.
 
 ## Key naming rules
@@ -21,16 +20,15 @@ Developer workflow:
 - Example keys:
   - `cli.shell.prompt`
   - `tui.status.running`
-  - `worker.error.summary_not_found`
-  - `viewer.menu.open_file`
+  - `network.node.peer_unavailable`
+  - `mcp.error.unauthorized`
 
 ## Namespace policy
 
 - `core.*`: shared/common messages.
 - `cli.*`: command-line shell/command messages.
 - `tui.*`: terminal UI labels/status/errors.
-- `splitter.*`, `executor.*`, `worker.*`: runtime components.
-- `viewer.*`: Qt viewer messages.
+- `network.*`, `mcp.*`: active runtime and control-plane messages.
 - `infra.*`: scripts/compose/proxy user output.
 - `workload.*`: workload catalog and validation messages.
 
@@ -70,14 +68,7 @@ Resolve in this order:
 - Continue execution with safe fallback text.
 - Never raise a hard failure for missing translation at runtime.
 
-## Child issue linkage
+## Validation
 
-The following issues must implement this contract:
-
-- `#112` Worker/executor/splitter extraction.
-- `#113` CLI/TUI extraction.
-- `#114` Viewer translation pipeline.
-- `#115` Infra/scripts extraction.
-- `#116` CI i18n gate.
-- `#117` Locale packs baseline.
-- `#118` i18n developer guide.
+Run `python tools/check_i18n_locales.py --strict` and
+`python tools/check_i18n_hardcoded_strings.py --strict` before merging changes.

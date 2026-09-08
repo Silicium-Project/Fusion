@@ -24,16 +24,30 @@ video.mp4
 # Local runtime artifacts
 .silicium/
 __pycache__/
+*.py[cod]
+.cache/
+.tmp/
+.tmp*/
+tmp/
+tmp_pytest_root/
+mcp-smoke-*/
 build/
 perf-budget-report.json
+.silicium/
+.silicium-world/
+
+# Local runtime and validator output
+*.log
+Network-*.ndjson
+solana-validator-*.log
 tools/__pycache__/
 tools/tui/__pycache__/
-executor/fragment_emulator
-executor/libfragment_emulator.so
-executor/libfragment_executor.so
-
-# Experimental leftovers
-# Legacy experiments cleaned up
+tests/__pycache__/
+workloads/raytracer/native/target/
+workloads/raytracer/**/*.ppm
+workloads/raytracer/**/*.out
+workloads/raytracer/**/*.o
+workloads/raytracer/**/*.a
 
 # Secrets generated for the reverse proxy (certificates/private keys)
 infra/docker/reverse-proxy/certs/*.crt

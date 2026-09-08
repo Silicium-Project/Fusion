@@ -29,8 +29,8 @@ flowchart TD
     Compose --> WG[WireGuard secure stack]
 
     %% RPC exposure
-    Proxy --> RPC[RPC endpoint]
-    WG --> RPC
+    Proxy --> Site
+    MCP --> RPC[Authenticated control endpoint]
 
     %% Notes
     Results --> RPC
@@ -51,16 +51,15 @@ legacy HTTP compatibility.
 ```mermaid
 sequenceDiagram
     participant C as Client / CLI
-    participant S as splitter
-    participant E as executor
-    participant W as worker
+    participant N as network scheduler
+    participant W as compute/verify node
     participant R as Results
 
-    C->>S: binary + config
-    S-->>C: summary.json + fragments
-    C->>E: run fragments (emu/native)
-    E->>W: execution reports
-    W-->>R: results / proofs
+    C->>N: workload manifest + inputs
+    N->>W: signed task envelope
+    W-->>N: result + receipt
+    N->>W: verification task
+    W-->>R: accepted result / attestation
 ```
 
 ## Execution flow (network)
@@ -68,15 +67,14 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant D as docker compose
-    participant N as Silicium node
-    participant P as Caddy proxy
-    participant W as WireGuard
+    participant D as Docker Compose
+    participant N as Network node
+    participant P as Reverse proxy
+    participant M as MCP/RPC control plane
 
     C->>D: start localnet/devnet/testnet/mainnet
-    D->>N: run validator/test-validator
+    D->>N: start application and ledger services
     D->>P: start TLS proxy
-    D->>W: start VPN stack
     P-->>C: HTTPS RPC
-    W-->>C: Private RPC
+    M-->>N: authenticated task/control events
 ```
