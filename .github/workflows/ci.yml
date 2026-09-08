@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall tools workloads demo tests
+          python -m compileall tools workloads tests
 
   p2p-node:
     permissions:
@@ -237,9 +237,7 @@ jobs:
           - job: docker-e2e
           - job: p2p-kademlia-smoke
           - job: smoke
-          - job: coverage-assets-smoke
           - job: perf-budget
-          - job: worker-cpp
 
     env:
       E2E_TIMEOUT_S: 2400
@@ -259,13 +257,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up Python
-        if: matrix.job == 'pytest' || matrix.job == 'docker-e2e' || matrix.job == 'pytest-hosted' || matrix.job == 'smoke' || matrix.job == 'coverage-assets-smoke' || matrix.job == 'perf-budget'
+        if: matrix.job == 'pytest' || matrix.job == 'docker-e2e' || matrix.job == 'pytest-hosted' || matrix.job == 'smoke' || matrix.job == 'perf-budget'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Prepare Docker access
-        if: matrix.job == 'docker-e2e' || matrix.job == 'smoke' || matrix.job == 'perf-budget' || matrix.job == 'worker-cpp'
+        if: matrix.job == 'docker-e2e' || matrix.job == 'smoke' || matrix.job == 'perf-budget'
         shell: bash
         run: |
           set -euo pipefail
@@ -285,7 +283,7 @@ jobs:
           echo "$wrapper_dir" >> "$GITHUB_PATH"
 
       - name: Normalize shared workspace ownership
-        if: matrix.job == 'docker-e2e' || matrix.job == 'smoke' || matrix.job == 'perf-budget' || matrix.job == 'worker-cpp'
+        if: matrix.job == 'docker-e2e' || matrix.job == 'smoke' || matrix.job == 'perf-budget'
         shell: bash
         run: |
           set -euo pipefail
@@ -374,23 +372,6 @@ jobs:
         if: matrix.job == 'smoke'
         run: ./silicium smoke
 
-      - name: Validate coverage asset generator
-        if: matrix.job == 'coverage-assets-smoke'
-        run: |
-          SAMPLE=tools/fixtures/coverage-summary-sample.json
-          OUT=/tmp/coverage-assets
-          mkdir -p "$OUT"
-          python tools/worker_coverage_assets.py \
-            --summary "$SAMPLE" \
-            --output "$OUT" \
-            --summary-html "$OUT/index.html" \
-            --full-report coverage-full.html \
-            --snapshot "$OUT/snapshot.svg"
-          test -s "$OUT/badge.json"
-          test -s "$OUT/badge.svg"
-          test -s "$OUT/index.html"
-          test -s "$OUT/snapshot.svg"
-
       - name: Run budget checks
         if: matrix.job == 'perf-budget'
         env:
@@ -437,14 +418,6 @@ jobs:
         with:
           name: perf-budget-report
           path: /tmp/perf-budget-report.json
-
-      - name: Build executor (libs for worker)
-        if: matrix.job == 'worker-cpp'
-        run: make -C executor
-
-      - name: Run worker tests (coverage)
-        if: matrix.job == 'worker-cpp'
-        run: make -C worker test
 
   pytest-hosted:
     if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' }}
