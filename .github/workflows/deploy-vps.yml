@@ -61,7 +61,7 @@ jobs:
             -i "$ssh_dir/id_ed25519" -p "$vps_port" \
             "$vps_user@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
           set -euo pipefail
-          for workspace in /opt/github-runner*/_work/Fusion; do
+          for workspace in /home/*/_work/Fusion /opt/github-runner*/_work/Fusion; do
             if [[ -d "$workspace" ]]; then
               rm -rf -- "$workspace"
             fi
