@@ -33,7 +33,7 @@ jobs:
             fi
           done
           cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-          rm -rf --
+          rm -rf -- \
             "$cargo_home/registry/cache"
             "$cargo_home/registry/src"
             "$cargo_home/git/checkouts"
