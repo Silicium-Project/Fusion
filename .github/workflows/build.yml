@@ -34,9 +34,9 @@ jobs:
           done
           cargo_home="${CARGO_HOME:-$HOME/.cargo}"
           rm -rf -- \
-            "$cargo_home/registry/cache"
-            "$cargo_home/registry/src"
-            "$cargo_home/git/checkouts"
+            "$cargo_home/registry/cache" \
+            "$cargo_home/registry/src" \
+            "$cargo_home/git/checkouts" \
             "$HOME/.npm/_cacache"
           df -h / "$work_root"
 
