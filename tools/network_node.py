@@ -4395,6 +4395,14 @@ class PeerNetwork:
                     if not isinstance(payload, dict):
                         self.send_error(400)
                         return
+                    # Keep the immutable source emitter alongside the
+                    # hop-by-hop dispatched_by field. The signed peer header
+                    # is available at ingress; downstream schedulers preserve
+                    # this value while they update their routing metadata.
+                    emitter_node_id = safe_id(str(self.headers.get("X-Silicium-Node-Id", "")).strip())
+                    if emitter_node_id:
+                        payload.setdefault("emitter_node_id", emitter_node_id)
+                        payload.setdefault("origin_node_id", emitter_node_id)
                     ingest_content_blobs(peer_network.export_dir, payload)
                     enqueue_task_envelope(peer_network.export_dir, payload)
                     body = b'{"ok":true}'

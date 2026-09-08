@@ -267,6 +267,10 @@ def submit_network_task(
 ) -> dict[str, Any]:
     """Queue locally for a shared scheduler, otherwise dispatch to the seed."""
     payload = attach_network_content_blobs(export_dir, payload)
+    emitter_node_id = str(getattr(args, "network_node_id", "") or "").strip()
+    if emitter_node_id:
+        payload.setdefault("emitter_node_id", emitter_node_id)
+        payload.setdefault("origin_node_id", emitter_node_id)
     task_id = str(payload.get("task_id", ""))
     required_roles = payload.get("required_roles", [])
     if emitter_node is None:
