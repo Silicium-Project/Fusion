@@ -189,6 +189,9 @@ jobs:
       matrix:
         crate: ${{ fromJSON(needs.changes.outputs.rust_crates) }}
 
+    env:
+      RUSTUP_TOOLCHAIN: stable
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -199,6 +202,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+
+      - name: Expose Rust toolchain to shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+          export PATH="$cargo_bin:$PATH"
+          rustup run stable rustc --version
+          rustup run stable cargo --version
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
@@ -253,8 +266,9 @@ jobs:
 
       - name: Expose rustup cargo
         run: |
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+          export PATH="$cargo_bin:$PATH"
           rustup override set 1.89.0
           cargo --version
           rustc --version
@@ -278,7 +292,7 @@ jobs:
 
       - name: Install Anchor CLI
         run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
+          export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
           rustup run stable cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
           avm install 0.32.1
           avm use 0.32.1
@@ -357,6 +371,7 @@ jobs:
       E2E_WAIT_S: 1200
       DOCKER_CLIENT_TIMEOUT: 1200
       COMPOSE_HTTP_TIMEOUT: 1200
+      RUSTUP_TOOLCHAIN: stable
 
     steps:
       - name: Checkout
@@ -373,6 +388,17 @@ jobs:
       - name: Set up Rust
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Expose Rust toolchain to shell
+        if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+          export PATH="$cargo_bin:$PATH"
+          rustup run stable rustc --version
+          rustup run stable cargo --version
 
       - name: Cache Rust build
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
