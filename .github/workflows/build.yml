@@ -13,7 +13,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  runner-reclaim:
+    runs-on: [self-hosted, fusion-linux]
+    timeout-minutes: 5
+    steps:
+      - name: Reclaim stale component workspaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          work_root="$(dirname "$(dirname "$GITHUB_WORKSPACE")")"
+          for workspace in Fusion BackEnd FrontEnd Network; do
+            path="$work_root/$workspace"
+            if [[ -d "$path" ]]; then
+              if sudo -n true >/dev/null 2>&1; then
+                sudo -n rm -rf -- "$path"
+              else
+                rm -rf -- "$path"
+              fi
+            fi
+          done
+          df -h / "$work_root"
+
   submodule-ci-gate:
+    needs: [runner-reclaim]
     uses: ./.github/workflows/submodule-ci-gate.yml
     secrets: inherit
 
