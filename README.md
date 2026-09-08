@@ -90,7 +90,7 @@ Options utiles:
 
 Le backend lit notamment:
 
-- `DATABASE_URL`, avec une valeur locale par defaut PostgreSQL si absente;
+- `DATABASE_URL`, utilisee lorsque `DATABASE_DRIVER=postgres`;
 - `DATABASE_DRIVER`, `sqlite` en local par defaut, `postgres` pour une vraie DB;
 - `SQLITE_PATH`, avec `.silicium\site\silicium.db` par defaut;
 - `JWT_SECRET_KEY`, avec une valeur locale de developpement si absente;

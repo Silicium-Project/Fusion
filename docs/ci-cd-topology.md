@@ -73,6 +73,28 @@ The generated installers are staged on the VPS before release and deploy.
 6. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
 
+### Selective execution
+
+Each repository starts with a small `changes` job. It classifies the push or
+pull request by surface before creating the expensive lanes:
+
+- FrontEnd runs unit, build, and functional tests only for application or
+  dependency changes; the Nuxt output is passed from build to Playwright as an
+  artifact instead of being rebuilt.
+- BackEnd runs Go tests and compilation only for Go, module, database, or
+  container changes.
+- Network creates only the affected CodeQL, Rust-crate, workload, Python,
+  Docker, P2P, and performance lanes. The workload matrix still plans every
+  catalog entry when a Python/workload change is involved.
+- Fusion selects the web, network, and node lanes independently. A site-only
+  deployment keeps the existing node installers, while node changes alone do
+  not trigger the web/network test stack.
+
+All long-lived dependency caches are keyed by their lockfiles. Rust targets,
+Go build caches, npm/pip caches, and the Linux desktop Cargo target are kept
+between jobs where the runner supports it; clean-up removes stale tracked
+outputs without deleting those caches.
+
 ## Rules
 
 - Do not add a second deployment path outside the VPS without documenting why
