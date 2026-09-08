@@ -76,6 +76,7 @@ jobs:
           name: frontend-nuxt-output
           path: .output
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 1
 
   functional:
