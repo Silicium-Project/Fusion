@@ -25,7 +25,7 @@ jobs:
     secrets: inherit
 
   build-linux:
-    needs: [submodule-ci-gate]
+    needs: [tests]
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 60
     steps:
@@ -116,3 +116,15 @@ jobs:
             apps/silicium-node/src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
           retention-days: 7
+
+      - name: Reclaim Linux build artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf -- \
+            apps/silicium-node/node_modules \
+            apps/silicium-node/src-tauri/target \
+            Network/networked/p2p_node/target \
+            Network/networked/compute_daemon/target
+          df -h "$GITHUB_WORKSPACE"

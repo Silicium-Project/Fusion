@@ -10,6 +10,8 @@ if [[ ! -d "apps/silicium-node" || ! -d "Network/networked/p2p_node" ]]; then
   exit 1
 fi
 
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+
 pushd apps/silicium-node >/dev/null
 export SILICIUM_RELEASE_VERSION="${SILICIUM_RELEASE_VERSION:-$(node -p "require('./package.json').version")}"
 export SILICIUM_RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
@@ -26,6 +28,10 @@ cargo build --release --manifest-path ../../Network/networked/compute_daemon/Car
 mkdir -p src-tauri/resources/runtime/bin
 cp ../../Network/networked/p2p_node/target/release/p2p_node src-tauri/resources/runtime/bin/
 cp ../../Network/networked/compute_daemon/target/release/compute_daemon src-tauri/resources/runtime/bin/
+
+rm -rf -- \
+  ../../Network/networked/p2p_node/target \
+  ../../Network/networked/compute_daemon/target
 
 cargo test --manifest-path src-tauri/Cargo.toml
 npx tauri build --bundles deb
