@@ -252,6 +252,11 @@ jobs:
           fetch-depth: 0
           clean: false
 
+      - name: Clean legacy workspace artifacts
+        if: matrix.job == 'pytest'
+        shell: bash
+        run: git clean -ffdx
+
       - name: Set up Rust
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
         uses: dtolnay/rust-toolchain@stable
