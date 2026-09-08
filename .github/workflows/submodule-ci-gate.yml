@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   gate:
-    runs-on: [self-hosted, fusion-linux, fusion-bootstrap]
+    runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create GitHub App token
         id: app-token
