@@ -76,6 +76,13 @@ definitions = {
     "dev": (os.environ["SILICIUM_DEV_VERSION"], "silicium-node-windows-dev.exe", int(os.environ["SILICIUM_DEV_CHECK_INTERVAL_SECONDS"])),
     "prod": (os.environ["SILICIUM_PROD_VERSION"], "silicium-node-windows.exe", int(os.environ["SILICIUM_PROD_CHECK_INTERVAL_SECONDS"])),
 }
+missing_artifacts = [
+    str(downloads / filename)
+    for _, filename, _ in definitions.values()
+    if not (downloads / filename).is_file()
+]
+if missing_artifacts:
+    raise SystemExit("required node artifacts are missing: " + ", ".join(missing_artifacts))
 
 
 def signed_peer_headers(url: str, body: bytes) -> dict[str, str]:

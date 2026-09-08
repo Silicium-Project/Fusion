@@ -37,5 +37,5 @@ cargo test --manifest-path src-tauri/Cargo.toml
 # The test profile is no longer needed for packaging; reclaim its target before
 # the release profile is built on the disk-constrained VPS runner.
 rm -rf -- src-tauri/target/debug
-npx tauri build --bundles deb
+npx tauri build --bundles deb,appimage
 popd >/dev/null

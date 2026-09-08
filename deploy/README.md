@@ -109,28 +109,29 @@ For HTTPS, use certbot:
 sudo certbot --nginx -d silicium.example.com -d api.silicium.example.com
 ```
 
-## Windows desktop application
+## Node installers
 
-The frontend downloads the installer from the latest GitHub Release asset:
+The deployment workflow builds and publishes the Windows and Linux node
+artifacts both to the GitHub Release and to the persistent VPS directory. The
+public site uses these stable paths:
 
 ```text
-https://github.com/Silicium-Project/Fusion/releases/latest/download/Silicium-Node-0.2.1-x64-setup.exe
+/downloads/silicium-node-windows.exe
+/downloads/silicium-node-windows-dev.exe
+/downloads/silicium-node-linux-dev.AppImage
+/downloads/silicium-node-linux-dev.deb
 ```
 
-Publish a new installer without copying binaries to the VPS:
+Verify every public asset after a deployment:
 
 ```bash
-gh release create v0.2.1 \
-  "Silicium Node_0.2.1_x64-setup.exe" \
-  --repo Silicium-Project/Fusion \
-  --title "Silicium Node 0.2.1" \
-  --notes "Automatic ICE P2P desktop node."
-```
-
-Verify the public asset:
-
-```bash
-curl -I https://github.com/Silicium-Project/Fusion/releases/latest/download/Silicium-Node-0.2.1-x64-setup.exe
+for artifact in \
+  silicium-node-windows.exe \
+  silicium-node-windows-dev.exe \
+  silicium-node-linux-dev.AppImage \
+  silicium-node-linux-dev.deb; do
+  curl -fI "https://vps-910c1dbc.vps.ovh.net/downloads/$artifact"
+done
 ```
 
 ## Containerized VPS deployment

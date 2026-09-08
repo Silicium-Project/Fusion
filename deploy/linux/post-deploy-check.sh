@@ -5,6 +5,7 @@ ROOT="${1:-/opt/silicium}"
 COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
 COMPOSE_ENV="/etc/silicium/compose.env"
 EXPERIMENT_API_ENV="/etc/silicium/experiment-api.env"
+UPDATE_CHANNELS_ENV="/etc/silicium/update-channels.env"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/linux/post-deploy-check.sh $ROOT" >&2
@@ -14,6 +15,12 @@ fi
 [[ -f "$COMPOSE_FILE" ]] || { echo "Missing compose file: $COMPOSE_FILE" >&2; exit 1; }
 [[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
 [[ -f "$EXPERIMENT_API_ENV" ]] || { echo "Missing experiment API env: $EXPERIMENT_API_ENV" >&2; exit 1; }
+
+if [[ -f "$UPDATE_CHANNELS_ENV" ]]; then
+  set -a
+  . "$UPDATE_CHANNELS_ENV"
+  set +a
+fi
 
 set -a
 . "$EXPERIMENT_API_ENV"
@@ -75,6 +82,20 @@ if ! curl -fsS --max-time 8 "${healthz_headers[@]}" http://127.0.0.1:46110/healt
 fi
 curl -fsS --max-time 8 http://127.0.0.1:9091/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1/downloads/update-manifest.json >/dev/null
+
+downloads_dir="${SILICIUM_DOWNLOADS_DIR:-/var/lib/silicium/downloads}"
+download_base_url="${SILICIUM_DOWNLOAD_BASE_URL:-https://vps-910c1dbc.vps.ovh.net/downloads}"
+for artifact in \
+  silicium-node-windows.exe \
+  silicium-node-windows-dev.exe \
+  silicium-node-linux-dev.deb \
+  silicium-node-linux-dev.AppImage; do
+  if [[ ! -s "$downloads_dir/$artifact" ]]; then
+    echo "Missing published node artifact: $downloads_dir/$artifact" >&2
+    exit 1
+  fi
+  curl -fsSIL --max-time 8 "$download_base_url/$artifact" >/dev/null
+done
 
 echo "Checking node service state..."
 if systemctl list-unit-files --type service --all 2>/dev/null | awk '{print $1}' | grep -qx 'silicium-node.service'; then

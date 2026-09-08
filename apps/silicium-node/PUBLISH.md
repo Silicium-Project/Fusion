@@ -1,9 +1,18 @@
 # Publish Silicium Node
 
-The public site already points to:
+The public site exposes these VPS download paths:
 
 ```text
 /downloads/silicium-node-windows.exe
+/downloads/silicium-node-windows-dev.exe
+/downloads/silicium-node-linux-dev.AppImage
+```
+
+The `.deb` package is published alongside the AppImage for Linux users who
+prefer a system package:
+
+```text
+/downloads/silicium-node-linux-dev.deb
 ```
 
 Recommended production flow:
@@ -60,10 +69,10 @@ The status must be `Valid`. Keep the Tauri identifier
 `network.silicium.node` stable and increment the application version for every
 published installer so NSIS can repair or upgrade an existing installation.
 
-5. Publish it either:
-
-- in a GitHub Release and set `NUXT_PUBLIC_NODE_APP_WINDOWS_URL` to the release asset URL;
-- or on the VPS under the persistent downloads path.
+5. Let the Fusion deployment workflow publish the four generated artifacts to
+the GitHub Release and stage them under the persistent VPS downloads path. The
+public site uses the VPS paths above, so the web links and the updater use the
+same files.
 
 For local site testing, copy the installer to:
 
