@@ -1,13 +1,17 @@
 # Environment Variables
 
-The following environment variables are required to run the application. Create a `.env` file in the root of the project with the following content:
+For local development the API defaults to SQLite when no database URL is
+provided. Production should select PostgreSQL explicitly. Create a `.env`
+file in the root of the project with the relevant configuration:
 
 ```
-# Database configuration
-POSTGRES_DB=your_database_name
-POSTGRES_USER=your_database_user
-POSTGRES_PASSWORD=your_database_password
-HOST=silicium_database
+# Local database (the Fusion launcher sets these values automatically).
+DATABASE_DRIVER=sqlite
+SQLITE_PATH=.silicium/site/silicium.db
+
+# Production database alternative.
+DATABASE_DRIVER=postgres
+DATABASE_URL=postgres://user:password@127.0.0.1:5432/silicium?sslmode=disable
 
 # JWT configuration
 JWT_SECRET_KEY=your_jwt_secret_key
@@ -15,8 +19,7 @@ JWT_SECRET_KEY=your_jwt_secret_key
 
 ## Variable Descriptions
 
--   `POSTGRES_DB`: The name of the database to be created.
--   `POSTGRES_USER`: The username for the PostgreSQL database.
--   `POSTGRES_PASSWORD`: The password for the PostgreSQL database.
--   `HOST`: The hostname of the database. When running with `docker-compose`, this should be the name of the database service (`silicium_database`).
+-   `DATABASE_DRIVER`: `sqlite` for local development or `postgres` for production. If omitted, the API chooses SQLite unless `DATABASE_URL` is present.
+-   `SQLITE_PATH`: SQLite database path; defaults to `.silicium/site/silicium.db`.
+-   `DATABASE_URL`: PostgreSQL DSN, required when `DATABASE_DRIVER=postgres`.
 -   `JWT_SECRET_KEY`: A secret key for signing JWT (JSON Web Tokens). This should be a long, random string.

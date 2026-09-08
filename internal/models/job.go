@@ -12,7 +12,7 @@ type Job struct {
 	FragmentCount      int        `gorm:"not null;default:0" json:"fragmentCount"`
 	Status             string     `gorm:"size:32;not null;default:'queued';index" json:"status"`
 	SiliciumJobID      string     `gorm:"size:128;uniqueIndex;not null" json:"siliciumJobId"`
-	InputPath          string     `gorm:"type:text;not null" json:"inputPath"`
+	InputPath          string     `gorm:"type:text;not null" json:"-"`
 	ResultPath         string     `gorm:"type:text" json:"resultPath,omitempty"`
 	SummaryPath        string     `gorm:"type:text" json:"summaryPath,omitempty"`
 	DevnetTracePath    string     `gorm:"type:text" json:"devnetTracePath,omitempty"`

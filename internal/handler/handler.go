@@ -12,6 +12,7 @@ type Handler struct {
 	runs             *runRegistry
 	walletChallenges *walletChallengeStore
 	status           *statusCache
+	jobRunner        func(uint)
 }
 
 type runRegistry struct {

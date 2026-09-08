@@ -21,6 +21,13 @@ import (
 	"github.com/silicium/internal/silicium"
 )
 
+const maxJobInputBytes int64 = 16 << 20
+
+var (
+	errEmptyJobInput = errors.New("input file is empty")
+	errJobInputTooLarge = errors.New("input file exceeds the 16 MiB limit")
+)
+
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	userID, ok := userIDFromRequest(r)
 	if !ok {
@@ -66,25 +73,38 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+	if header.Size > maxJobInputBytes {
+		http.Error(w, "Input file exceeds the 16 MiB limit", http.StatusRequestEntityTooLarge)
+		return
+	}
 
 	jobID := silicium.NewJobID(userID)
 	inputDir := filepath.Join(envDefault("SILICIUM_SITE_STORAGE_DIR", filepath.Join("storage", "jobs")), jobID, "input")
-	if err := os.MkdirAll(inputDir, 0o755); err != nil {
-		http.Error(w, "Could not create job input directory", http.StatusInternalServerError)
-		return
-	}
-	inputPath := filepath.Join(inputDir, safeFilename(header.Filename))
-	target, err := os.Create(inputPath)
+	inputPath, err := storeJobInput(inputDir, header.Filename, file)
 	if err != nil {
-		http.Error(w, "Could not store input file", http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		message := "Could not store input file"
+		if errors.Is(err, errEmptyJobInput) {
+			status = http.StatusBadRequest
+			message = "Input file cannot be empty"
+		} else if errors.Is(err, errJobInputTooLarge) {
+			status = http.StatusRequestEntityTooLarge
+			message = "Input file exceeds the 16 MiB limit"
+		}
+		http.Error(w, message, status)
 		return
 	}
-	defer target.Close()
-	if _, err := io.Copy(target, file); err != nil {
-		http.Error(w, "Could not write input file", http.StatusInternalServerError)
+	removeInputOnFailure := true
+	defer func() {
+		if removeInputOnFailure {
+			_ = os.Remove(inputPath)
+		}
+	}()
+	absoluteInput, err := filepath.Abs(inputPath)
+	if err != nil {
+		http.Error(w, "Could not resolve input file", http.StatusInternalServerError)
 		return
 	}
-	absoluteInput, _ := filepath.Abs(inputPath)
 
 	job := models.Job{
 		UserID:        userID,
@@ -103,8 +123,13 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not create job: "+result.Error.Error(), http.StatusInternalServerError)
 		return
 	}
+	removeInputOnFailure = false
 
-	go h.runSiliciumJob(job.ID)
+	if h.jobRunner != nil {
+		go h.jobRunner(job.ID)
+	} else {
+		go h.runSiliciumJob(job.ID)
+	}
 
 	writeJSON(w, http.StatusAccepted, job)
 }
@@ -545,7 +570,7 @@ func readJSONMap(path string) map[string]any {
 }
 
 func progressPathForJob(job models.Job) string {
-	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "..", "Network")))
+	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "Network")))
 	if strings.TrimSpace(job.Workload) == "raytracer" {
 		if strings.TrimSpace(job.SummaryPath) != "" {
 			return filepath.Join(filepath.Dir(job.SummaryPath), "raytracer-progress.json")
@@ -599,12 +624,46 @@ func verifiedBillingForJob(job models.Job) (uint64, string) {
 }
 
 func safeFilename(name string) string {
+	// Browsers on Windows may submit a backslash-delimited client path even
+	// when the API itself runs on Linux.
+	name = strings.ReplaceAll(name, "\\", "/")
 	base := filepath.Base(name)
 	base = strings.ReplaceAll(base, " ", "_")
 	if base == "." || base == string(filepath.Separator) || base == "" {
 		return "input.json"
 	}
 	return base
+}
+
+func storeJobInput(inputDir, filename string, source io.Reader) (string, error) {
+	if err := os.MkdirAll(inputDir, 0o755); err != nil {
+		return "", err
+	}
+	inputPath := filepath.Join(inputDir, safeFilename(filename))
+	target, err := os.Create(inputPath)
+	if err != nil {
+		return "", err
+	}
+
+	written, copyErr := io.CopyN(target, source, maxJobInputBytes+1)
+	closeErr := target.Close()
+	if copyErr != nil && !errors.Is(copyErr, io.EOF) {
+		_ = os.Remove(inputPath)
+		return "", copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(inputPath)
+		return "", closeErr
+	}
+	if written == 0 {
+		_ = os.Remove(inputPath)
+		return "", errEmptyJobInput
+	}
+	if written > maxJobInputBytes {
+		_ = os.Remove(inputPath)
+		return "", errJobInputTooLarge
+	}
+	return inputPath, nil
 }
 
 func envDefault(key string, fallback string) string {

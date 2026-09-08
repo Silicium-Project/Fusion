@@ -57,7 +57,9 @@ type RunResult struct {
 func ConfigFromEnv() RunnerConfig {
 	networkRoot := os.Getenv("SILICIUM_NETWORK_ROOT")
 	if networkRoot == "" {
-		networkRoot = filepath.Clean(filepath.Join("..", "..", "Network"))
+		// BackEnd and Network are sibling repositories in the local Fusion
+		// checkout. Production sets an absolute path explicitly.
+		networkRoot = filepath.Clean(filepath.Join("..", "Network"))
 	}
 	return RunnerConfig{
 		NetworkRoot:           networkRoot,
@@ -252,6 +254,23 @@ func raytracerArgs(job models.Job, cfg RunnerConfig) []string {
 	}
 	if cfg.DevnetTrace {
 		args = append(args, "--devnet-trace", "--devnet-tx-delay-ms", cfg.DevnetTxDelayMS)
+	}
+	if job.DeadlineAt != nil {
+		remaining := time.Until(*job.DeadlineAt)
+		seconds := int(remaining / time.Second)
+		if remaining%time.Second != 0 {
+			seconds++
+		}
+		if seconds < 1 {
+			seconds = 1
+		}
+		// Keep the workload timeout aligned with the API deadline. Without
+		// this, a site job configured for more than five minutes was killed by
+		// run_network_job.py's shorter default first.
+		args = append(args,
+			"--result-timeout-s", strconv.Itoa(seconds),
+			"--node-timeout-s", strconv.Itoa(seconds),
+		)
 	}
 	return args
 }

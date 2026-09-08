@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/silicium/internal/models"
 )
@@ -79,6 +80,26 @@ func TestRaytracerArgsForwardRequestedFragmentCount(t *testing.T) {
 	index := slices.Index(args, "--fragments")
 	if index < 0 || index+1 >= len(args) || args[index+1] != "73" {
 		t.Fatalf("expected --fragments 73, got %#v", args)
+	}
+}
+
+func TestRaytracerArgsForwardJobDeadline(t *testing.T) {
+	deadline := time.Now().Add(120 * time.Second)
+	args := raytracerArgs(
+		models.Job{InputPath: "/tmp/scene.cfg", SiliciumJobID: "render-1", DeadlineAt: &deadline},
+		RunnerConfig{},
+	)
+
+	index := slices.Index(args, "--result-timeout-s")
+	if index < 0 || index+1 >= len(args) {
+		t.Fatalf("expected result timeout argument, got %#v", args)
+	}
+	seconds, err := strconv.Atoi(args[index+1])
+	if err != nil || seconds < 100 || seconds > 121 {
+		t.Fatalf("unexpected forwarded deadline %q: %v", args[index+1], err)
+	}
+	if nodeIndex := slices.Index(args, "--node-timeout-s"); nodeIndex < 0 || nodeIndex+1 >= len(args) || args[nodeIndex+1] != args[index+1] {
+		t.Fatalf("expected matching node timeout, got %#v", args)
 	}
 }
 
