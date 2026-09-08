@@ -27,6 +27,7 @@ jobs:
   build-linux:
     needs: [submodule-ci-gate]
     runs-on: [self-hosted, fusion-linux]
+    timeout-minutes: 60
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -97,12 +98,6 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/silicium-node/src-tauri
-          cache-target: false
 
       - name: Build Linux development bundles
         shell: bash
