@@ -2,7 +2,7 @@ import type { JobStatus, NetworkPeer } from '~/types/api';
 
 const statusLabels: Record<string, string> = {
   queued: 'En attente', running: 'En cours', cancelling: 'Arrêt en cours', completed: 'Terminé',
-  failed: 'Échec', cancelled: 'Annulé', canceled: 'Annulé', expired: 'Expiré', operational: 'Opérationnel',
+  failed: 'Échec', cancelled: 'Annulé', canceled: 'Annulé', expired: 'Expiré', dead_lettered: 'Abandonné', finalized: 'Finalisé', resolved: 'Résolu', operational: 'Opérationnel',
   degraded: 'Dégradé', unavailable: 'Indisponible', current: 'À jour', outdated: 'Mise à jour requise',
   'outdated-build': 'Build obsolète', unknown: 'À vérifier', server: 'Serveur', online: 'En ligne', offline: 'Hors ligne',
 };
@@ -26,6 +26,11 @@ export function statusTone(status?: JobStatus): 'success' | 'warning' | 'danger'
   if (['failed', 'cancelled', 'canceled', 'unavailable', 'offline'].includes(value)) return 'danger';
   if (['running', 'active', 'dispatched', 'claimed'].includes(value)) return 'info';
   return 'neutral';
+}
+
+export function isTerminalNetworkStatus(status?: string): boolean {
+  return ['completed', 'failed', 'dead_lettered', 'cancelled', 'canceled', 'expired', 'finalized', 'resolved']
+    .includes(String(status || '').toLowerCase());
 }
 
 export function networkRoleLabel(role?: string): string {

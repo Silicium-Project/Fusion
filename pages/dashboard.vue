@@ -26,6 +26,7 @@
 
 <script setup lang="ts">
 import type { Job } from '~/types/api';
+import { isTerminalNetworkStatus } from '~/utils/format';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const jobStore = useJobs();
 const network = useNetwork();
@@ -36,7 +37,7 @@ const cancelTarget = ref<Job | null>(null);
 const cancelling = ref(false);
 const runningCount = computed(() => jobs.value.filter(job => ['queued','running','cancelling'].includes(job.status)).length);
 const completedCount = computed(() => jobs.value.filter(job => job.status === 'completed').length);
-const activeWorkloads = computed(() => tasksPayload.value.workloads.filter(task => !['completed','failed','cancelled','expired'].includes(task.status)).length);
+const activeWorkloads = computed(() => tasksPayload.value.workloads.filter(task => !isTerminalNetworkStatus(task.status)).length);
 async function load(force = false) { const results = await Promise.allSettled([jobStore.loadJobs(1, 20, 'all', force), network.loadNetwork(force)]); loadError.value = results.some(result => result.status === 'rejected'); }
 function requestCancel(job: Job) { cancelTarget.value = job; }
 async function confirmCancel() { if (!cancelTarget.value) return; cancelling.value = true; try { await jobStore.cancelJob(cancelTarget.value.id); cancelTarget.value = null; await load(true); } finally { cancelling.value = false; } }

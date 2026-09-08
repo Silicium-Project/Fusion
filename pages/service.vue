@@ -30,17 +30,17 @@
     <section id="downloads" class="downloads marketing-container marketing-section--tight">
       <div class="downloads__intro"><span class="marketing-kicker">Pour les contributeurs</span><h2>Aidez le réseau<br><em>à grandir.</em></h2><p>Installez la version stable pour mettre une machine à disposition du réseau. Les versions de développement servent à tester les nouveautés.</p></div>
       <div class="downloads__list">
-        <a :href="String(config.public.nodeAppWindowsUrl)" aria-label="Télécharger Silicium pour Windows, version stable">
+        <a :href="nodeDownloadUrls.windows" aria-label="Télécharger Silicium pour Windows, version stable">
           <span class="downloads__platform downloads__platform--windows"><UiIcon name="windows" /></span>
           <div><strong>Silicium pour Windows</strong><small>Version stable · {{ stableVersion }}</small></div>
           <UiIcon name="arrow" />
         </a>
-        <a :href="String(config.public.nodeAppWindowsDevUrl)" aria-label="Télécharger Silicium pour Windows, version test">
+        <a :href="nodeDownloadUrls.windowsDev" aria-label="Télécharger Silicium pour Windows, version test">
           <span class="downloads__platform downloads__platform--windows downloads__platform--violet"><UiIcon name="windows" /></span>
           <div><strong>Windows · version test</strong><small>Version de test · {{ devVersion }}</small></div>
           <UiIcon name="arrow" />
         </a>
-        <a :href="String(config.public.nodeAppLinuxDevUrl)" aria-label="Télécharger Silicium pour Linux, version test">
+        <a :href="nodeDownloadUrls.linuxDev" aria-label="Télécharger Silicium pour Linux, version test">
           <span class="downloads__platform downloads__platform--linux downloads__platform--graphite"><UiIcon name="linux" /></span>
           <div><strong>Linux · version test</strong><small>AppImage · {{ devVersion }}</small></div>
           <UiIcon name="arrow" />
@@ -53,11 +53,17 @@
 
 <script setup lang="ts">
 import { formatDate, statusLabel } from '~/utils/format';
+import { resolveNodeDownloadUrl } from '~/utils/downloads';
 definePageMeta({ layout: 'public' });
 const config = useRuntimeConfig();
 const route = useRoute();
 const isDownloadPage = computed(() => route.path.startsWith('/service/downloads/'));
 const { status, manifest, loading, error, refresh } = useSystemStatus();
+const nodeDownloadUrls = computed(() => ({
+  windows: resolveNodeDownloadUrl(config.public.nodeAppWindowsUrl, '/downloads/silicium-node-windows.exe'),
+  windowsDev: resolveNodeDownloadUrl(config.public.nodeAppWindowsDevUrl, '/downloads/silicium-node-windows-dev.exe'),
+  linuxDev: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevUrl, '/downloads/silicium-node-linux-dev.AppImage'),
+}));
 const layers = [
   { number: '01', title: 'Votre projet', text: 'Vous l’envoyez une seule fois.', icon: 'code' },
   { number: '02', title: 'Les machines', text: 'Le travail se partage automatiquement.', icon: 'layers' },

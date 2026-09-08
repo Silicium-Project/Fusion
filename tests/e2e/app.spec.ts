@@ -19,11 +19,21 @@ for (const pageCase of [
 
 test('a job can be submitted and opens its canonical detail route', async ({ page }) => {
   await page.goto('/jobs/new');
+  const submit = page.getByRole('button', { name: 'Envoyer le projet' });
+  await expect(submit).toBeVisible();
+  await expect(submit).toBeEnabled();
   await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Rendu architecture');
   await page.locator('input[type=file]').setInputFiles({ name: 'scene.cfg', mimeType: 'text/plain', buffer: Buffer.from('scene') });
-  await page.getByRole('button', { name: 'Envoyer le projet' }).click();
+  await submit.click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
   await expect(page.getByRole('heading', { name: 'Rendu architecture' })).toBeVisible();
+});
+
+test('the task list exposes the submit path', async ({ page }) => {
+  await page.goto('/jobs');
+  await expect(page.getByRole('link', { name: 'Nouvelle tâche' })).toBeVisible();
+  await page.getByRole('link', { name: 'Nouvelle tâche' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs/new');
 });
 
 test('connected mobile navigation remains usable and does not overflow', async ({ page }) => {

@@ -1,3 +1,8 @@
+const directDownloadUrl = (value: string | undefined, fallback: string) => {
+  const configured = value?.trim();
+  return configured && !configured.startsWith('/service/downloads/') ? configured : fallback;
+};
+
 export default defineNuxtConfig({
   devtools: { enabled: false },
 
@@ -9,9 +14,9 @@ export default defineNuxtConfig({
       solanaRpc: process.env.NUXT_PUBLIC_SOLANA_RPC || 'https://api.devnet.solana.com',
       updateManifestUrl: process.env.NUXT_PUBLIC_UPDATE_MANIFEST_URL || '/downloads/update-manifest.json',
       statusRefreshSeconds: process.env.NUXT_PUBLIC_STATUS_REFRESH_SECONDS || '30',
-      nodeAppWindowsUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_URL || '/service/downloads/windows',
-      nodeAppWindowsDevUrl: process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_DEV_URL || '/service/downloads/windows-dev',
-      nodeAppLinuxDevUrl: process.env.NUXT_PUBLIC_NODE_APP_LINUX_DEV_URL || '/service/downloads/linux-dev',
+      nodeAppWindowsUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_URL, '/downloads/silicium-node-windows.exe'),
+      nodeAppWindowsDevUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_DEV_URL, '/downloads/silicium-node-windows-dev.exe'),
+      nodeAppLinuxDevUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_LINUX_DEV_URL, '/downloads/silicium-node-linux-dev.AppImage'),
     },
   },
 

@@ -4,7 +4,10 @@ type MotionElement = HTMLElement & {
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const spatialSelector = '.spatial-tile, .marketing-glass, .surface, .glass-panel, .ui-card, .public-header__mobile';
+// UiCard owns the v-tilt interaction. Keeping it out of the generic spatial
+// scan prevents two pointer handlers from writing the same transform variables
+// and producing a doubled depth/parallax effect.
+const spatialSelector = '.spatial-tile, .marketing-glass, .surface, .glass-panel, .public-header__mobile';
 
 function resetSpatial(element: HTMLElement) {
   element.style.setProperty('--tilt-x', '0deg');

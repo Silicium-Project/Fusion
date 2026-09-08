@@ -76,7 +76,6 @@ const activeNodeLabel = computed(() => {
 type NodeRuntime = {
   group: THREE.Group;
   body: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>;
-  shell: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>;
   position: THREE.Vector3;
   color: number;
@@ -86,7 +85,6 @@ type EdgeRuntime = {
   phase: number;
   curve: THREE.LineCurve3;
   tube: THREE.Mesh<THREE.TubeGeometry, THREE.MeshBasicMaterial>;
-  glow: THREE.Mesh<THREE.TubeGeometry, THREE.MeshBasicMaterial>;
 };
 
 const palette: Record<ProcessGraphNode['tone'], number> = {
@@ -152,15 +150,7 @@ function createNode(node: ProcessGraphNode) {
     opacity: 0.93,
   });
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.78, 0.9), bodyMaterial);
-  body.castShadow = true;
-  body.receiveShadow = true;
   group.add(body);
-
-  const shell = new THREE.Mesh(
-    new THREE.BoxGeometry(1.18, 0.9, 1.04),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.15, wireframe: true }),
-  );
-  group.add(shell);
 
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(0.78, 0.018, 8, 48),
@@ -170,11 +160,7 @@ function createNode(node: ProcessGraphNode) {
   ring.position.y = -0.02;
   group.add(ring);
 
-  const light = new THREE.PointLight(color, 0.46, 4.2, 2);
-  light.position.set(0, 0.3, 0.4);
-  group.add(light);
-
-  nodeRuntimes.set(node.id, { group, body, shell, ring, position, color });
+  nodeRuntimes.set(node.id, { group, body, ring, position, color });
   graphRoot.add(group);
 }
 
@@ -186,17 +172,12 @@ function createEdge(fromId: string, toId: string, phase: number) {
 
   const curve = new THREE.LineCurve3(from, to);
   const geometry = new THREE.TubeGeometry(curve, 18, 0.021, 6, false);
-  const glowGeometry = new THREE.TubeGeometry(curve, 18, 0.075, 6, false);
   const tube = new THREE.Mesh(
     geometry,
     new THREE.MeshBasicMaterial({ color: 0x6ca9a3, transparent: true, opacity: 0.24 }),
   );
-  const glow = new THREE.Mesh(
-    glowGeometry,
-    new THREE.MeshBasicMaterial({ color: 0x13bfae, transparent: true, opacity: 0.045, blending: THREE.AdditiveBlending }),
-  );
-  graphRoot.add(glow, tube);
-  edgeRuntimes.push({ phase, curve, tube, glow });
+  graphRoot.add(tube);
+  edgeRuntimes.push({ phase, curve, tube });
 }
 
 function createParticle(edge: EdgeRuntime, index: number) {
@@ -226,17 +207,12 @@ function setupScene() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-    const hemisphere = new THREE.HemisphereLight(0xffffff, 0x9bc7c0, 2.25);
+    const hemisphere = new THREE.HemisphereLight(0xffffff, 0x9bc7c0, 1.7);
     scene.add(hemisphere);
-    const key = new THREE.DirectionalLight(0xffffff, 3.2);
+    const key = new THREE.DirectionalLight(0xffffff, 2.25);
     key.position.set(-4, 8, 8);
-    key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
     scene.add(key);
-    const fill = new THREE.PointLight(0x7669e8, 2.5, 16, 2);
+    const fill = new THREE.PointLight(0x7669e8, 1.35, 16, 2);
     fill.position.set(4, 1, -5);
     scene.add(fill);
 
@@ -260,17 +236,11 @@ function setupScene() {
       transparent: true,
       opacity: 0.98,
     });
-    const hubBody = new THREE.Mesh(new THREE.IcosahedronGeometry(1.02, 1), hubMaterial);
-    hubBody.castShadow = true;
+    const hubBody = new THREE.Mesh(new THREE.SphereGeometry(0.92, 24, 16), hubMaterial);
     hub.add(hubBody);
-    const hubWire = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(1.2, 1),
-      new THREE.MeshBasicMaterial({ color: 0x13bfae, transparent: true, opacity: 0.24, wireframe: true }),
-    );
-    hub.add(hubWire);
     const hubRing = new THREE.Mesh(
-      new THREE.TorusGeometry(1.42, 0.026, 8, 64),
-      new THREE.MeshBasicMaterial({ color: 0x7669e8, transparent: true, opacity: 0.7 }),
+      new THREE.TorusGeometry(1.24, 0.018, 8, 64),
+      new THREE.MeshBasicMaterial({ color: 0x7669e8, transparent: true, opacity: 0.35 }),
     );
     hubRing.rotation.x = Math.PI / 2.2;
     hub.add(hubRing);
@@ -279,8 +249,7 @@ function setupScene() {
     props.nodes.forEach(createNode);
     edgeDefinitions.forEach(([from, to, phase]) => createEdge(from, to, phase));
     edgeRuntimes.forEach((edge, edgeIndex) => {
-      createParticle(edge, edgeIndex * 2);
-      createParticle(edge, edgeIndex * 2 + 1);
+      createParticle(edge, edgeIndex);
     });
 
     props.nodes.forEach(node => {
@@ -345,17 +314,15 @@ function updateMaterials() {
     const reached = edge.phase < props.activePhase;
     edge.tube.material.opacity = active ? 0.72 : reached ? 0.4 : 0.17;
     edge.tube.material.color.set(active ? 0x13bfae : reached ? 0x6ca9a3 : 0x8ab5b0);
-    edge.glow.material.opacity = active ? 0.19 : reached ? 0.07 : 0.025;
   });
 
   nodeRuntimes.forEach((node, id) => {
     const active = id === props.activeNodeId;
     const phase = props.nodes.find(item => item.id === id)?.phase ?? Number.POSITIVE_INFINITY;
     const reached = phase < props.activePhase;
-    node.body.material.emissiveIntensity = active ? 0.72 : reached ? 0.26 : 0.09;
+    node.body.material.emissiveIntensity = active ? 0.46 : reached ? 0.2 : 0.07;
     node.body.material.opacity = active ? 1 : reached ? 0.95 : 0.78;
-    node.shell.material.opacity = active ? 0.45 : reached ? 0.22 : 0.11;
-    node.ring.material.opacity = active ? 0.95 : reached ? 0.48 : 0.22;
+    node.ring.material.opacity = active ? 0.68 : 0.04;
   });
 }
 
@@ -388,8 +355,6 @@ function animate(timestamp: number) {
   root.value.dataset.cameraY = currentCameraPosition.y.toFixed(2);
   root.value.dataset.cameraZ = currentCameraPosition.z.toFixed(2);
   root.value.dataset.cameraDistance = distance.toFixed(3);
-  canvas.value!.style.filter = moving ? 'blur(1.2px)' : 'blur(0px)';
-
   const hub = graphRoot?.children.find(child => child.type === 'Group' && child.userData.nodeId === undefined);
   if (hub) {
     const ring = hub.children.find(child => child instanceof THREE.Mesh && child.geometry instanceof THREE.TorusGeometry);
@@ -439,9 +404,11 @@ onBeforeUnmount(() => {
   nodeRuntimes.clear();
   edgeRuntimes.splice(0);
   particles.splice(0);
+  labelElements.clear();
 });
 </script>
 
 <style scoped>
 .process-graph-3d{position:relative;width:100%;height:100%;min-height:31rem;overflow:hidden;border:1px solid rgba(255,255,255,.82);border-radius:2rem;background:radial-gradient(circle at 50% 42%,rgba(255,255,255,.96),rgba(224,245,240,.48) 46%,rgba(212,224,246,.36) 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.98),inset 0 0 0 1px rgba(25,51,73,.06),0 32px 62px rgba(25,51,73,.14);isolation:isolate}.process-graph-3d::before{position:absolute;inset:0;z-index:-1;background:radial-gradient(circle at 22% 78%,rgba(118,105,232,.12),transparent 28%),radial-gradient(circle at 78% 20%,rgba(19,191,174,.16),transparent 32%);content:'';pointer-events:none}.process-graph-3d__canvas{position:absolute;inset:0;display:block;width:100%;height:100%;outline:none;transition:filter .25s ease}.process-graph-3d__labels{position:absolute;inset:0;pointer-events:none}.process-graph-3d__label{position:absolute;top:0;left:0;display:flex;align-items:center;gap:.38rem;padding:.36rem .56rem;border:1px solid rgba(255,255,255,.86);border-radius:999px;background:rgba(255,255,255,.67);box-shadow:inset 0 1px 0 rgba(255,255,255,.96),0 9px 24px rgba(25,51,73,.12);color:#244055;font-family:var(--font-mono);font-size:.52rem;font-weight:650;letter-spacing:.025em;white-space:nowrap;backdrop-filter:blur(14px);transform:translate(-50%,-50%);transition:opacity .22s ease}.process-graph-3d__label i{width:.38rem;height:.38rem;border-radius:50%;background:var(--mint-500);box-shadow:0 0 0 .22rem rgba(19,191,174,.11)}.process-graph-3d__label[data-node-label=relay-a] i,.process-graph-3d__label[data-node-label=compute-b] i{background:var(--violet-500);box-shadow:0 0 0 .22rem rgba(118,105,232,.11)}.process-graph-3d__label[data-node-label=compute-a] i{background:#4c86dc;box-shadow:0 0 0 .22rem rgba(76,134,220,.11)}.process-graph-3d__label[data-node-label=result] i{background:#d89a45;box-shadow:0 0 0 .22rem rgba(216,154,69,.13)}.process-graph-3d__readout{position:absolute;right:1.1rem;bottom:1rem;display:flex;align-items:center;gap:.55rem;padding:.55rem .7rem;border:1px solid rgba(255,255,255,.74);border-radius:1rem;background:rgba(255,255,255,.58);box-shadow:inset 0 1px 0 rgba(255,255,255,.92),0 12px 28px rgba(25,51,73,.1);backdrop-filter:blur(16px)}.process-graph-3d__readout-dot{width:.48rem;height:.48rem;border-radius:50%;background:var(--mint-500);box-shadow:0 0 0 .28rem rgba(19,191,174,.12);animation:graph-pulse 1.8s ease-in-out infinite}.process-graph-3d__readout small,.process-graph-3d__readout strong{display:block}.process-graph-3d__readout small{color:#6f7f87;font-family:var(--font-mono);font-size:.45rem;letter-spacing:.06em;text-transform:uppercase}.process-graph-3d__readout strong{margin-top:.15rem;color:#244055;font-size:.68rem;letter-spacing:-.025em}.process-graph-3d__loading,.process-graph-3d__fallback{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:.6rem;color:#5d747d;font-family:var(--font-mono);font-size:.58rem;text-align:center}.process-graph-3d__loading-orbit{width:2rem;height:2rem;border:1px solid rgba(19,191,174,.2);border-top-color:var(--mint-500);border-radius:50%;animation:graph-spin 1.1s linear infinite}.process-graph-3d__fallback{padding:2rem;color:#516a75}.process-graph-3d__fallback strong{font-family:var(--font-sans);font-size:.9rem}.process-graph-3d__fallback span{max-width:18rem;line-height:1.6}@keyframes graph-spin{to{transform:rotate(360deg)}}@keyframes graph-pulse{0%,100%{opacity:.48;transform:scale(.85)}50%{opacity:1;transform:scale(1.12)}}@media(max-width:760px){.process-graph-3d{min-height:22rem;border-radius:1.45rem}.process-graph-3d__readout{right:.65rem;bottom:.65rem;padding:.45rem .55rem}.process-graph-3d__readout small{font-size:.4rem}.process-graph-3d__readout strong{font-size:.58rem}.process-graph-3d__label{padding:.27rem .42rem;font-size:.42rem}.process-graph-3d__label i{width:.31rem;height:.31rem}}@media(max-width:420px){.process-graph-3d{min-height:18rem}.process-graph-3d__label{font-size:.38rem}.process-graph-3d__readout{display:none}}@media(prefers-reduced-motion:reduce){.process-graph-3d__canvas{filter:none!important}.process-graph-3d__readout-dot,.process-graph-3d__loading-orbit{animation:none}}
+.process-graph-3d{contain:layout paint;border-color:var(--glass-edge);border-radius:var(--radius-lg);background:var(--glass-card);box-shadow:var(--glass-inset),var(--glass-shadow)}.process-graph-3d::before{background:radial-gradient(circle at 22% 78%,rgba(118,105,232,.08),transparent 28%),radial-gradient(circle at 78% 20%,rgba(19,191,174,.1),transparent 32%)}.process-graph-3d__canvas{transition:none}.process-graph-3d__labels{contain:layout paint}.process-graph-3d__label{border-color:var(--glass-edge);background:rgba(255,255,255,.66);box-shadow:var(--shadow-xs);color:var(--ink-800);backdrop-filter:blur(10px)}.process-graph-3d__readout{border-color:var(--glass-edge);background:rgba(255,255,255,.58);box-shadow:var(--shadow-xs);backdrop-filter:blur(12px)}.process-graph-3d__readout small{color:var(--ink-500)}.process-graph-3d__readout strong{color:var(--ink-800)}@media(max-width:760px){.process-graph-3d{border-radius:var(--radius-lg)}}
 </style>

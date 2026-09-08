@@ -1,6 +1,6 @@
 <template>
   <div class="app-page">
-    <header class="app-page-head"><div><span class="eyebrow">Infrastructure · flux vivant</span><h1 class="page-title">Réseau</h1><p class="page-intro">Les projets en cours et les machines disponibles, actualisés automatiquement toutes les quelques secondes.</p></div><div class="cluster"><UiButton to="/nodes" variant="secondary" icon="nodes">Voir les machines</UiButton><UiButton variant="secondary" icon="refresh" :loading="loading" @click="loadNetwork(true)">Rafraîchir</UiButton></div></header>
+    <header class="app-page-head"><div><span class="eyebrow">Infrastructure · flux vivant</span><h1 class="page-title">Réseau</h1><p class="page-intro">Les projets de votre émetteur et les machines disponibles, actualisés automatiquement toutes les quelques secondes.</p></div><div class="cluster"><UiStatusBadge v-if="emitterNodeId" status="operational" :label="'Émetteur · ' + compactIdentifier(emitterNodeId, 14, 6)" /><UiButton to="/nodes" variant="secondary" icon="nodes">Voir les machines</UiButton><UiButton variant="secondary" icon="refresh" :loading="loading" @click="loadNetwork(true)">Rafraîchir</UiButton></div></header>
     <UiNotice v-if="error" tone="warning">{{ error }}</UiNotice>
     <NetworkSummary :peers="peers" :role-groups="roleGroups" :outdated-count="outdatedCount" />
     <LiveNetworkMap :total-nodes="peers.length" :active-nodes="currentCount" :active-workloads="activeCount" :role-groups="roleGroups" :last-updated-at="lastUpdatedAt" />
@@ -23,12 +23,13 @@
 </template>
 
 <script setup lang="ts">
-import { compactIdentifier, formatDate } from '~/utils/format';
+import { compactIdentifier, formatDate, isTerminalNetworkStatus } from '~/utils/format';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const network = useNetwork();
 const { peers, roleGroups, outdatedCount, currentCount, loading, error, tasksPayload, lastUpdatedAt, loadNetwork } = network;
 const workloads = computed(() => tasksPayload.value.workloads || []);
-const activeCount = computed(() => workloads.value.filter(item => !['completed','failed','cancelled','expired'].includes(item.status)).length);
+const emitterNodeId = computed(() => tasksPayload.value.emitter_node_id || workloads.value.find(item => item.emitter_node_id)?.emitter_node_id || '');
+const activeCount = computed(() => workloads.value.filter(item => !isTerminalNetworkStatus(item.status)).length);
 const flow = [{ title: 'Nouveau projet', detail: 'Projet reçu', icon: 'upload' }, { title: 'Répartition', detail: 'Machines choisies', icon: 'layers' }, { title: 'Calcul', detail: 'Parties traitées', icon: 'processor' }, { title: 'Contrôle', detail: 'Résultats comparés', icon: 'shield' }, { title: 'Résultat', detail: 'Réponse réunie', icon: 'result' }];
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {

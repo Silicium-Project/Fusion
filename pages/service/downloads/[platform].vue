@@ -4,20 +4,24 @@
       <NuxtLink to="/service#downloads" class="back-link"><UiIcon name="arrow" />Retour aux canaux</NuxtLink>
       <div class="download-page__intro"><span class="marketing-kicker">Télécharger Silicium</span><h1 class="marketing-title">Faites participer<br><em>votre machine.</em></h1><p class="marketing-lede">{{ download.detail }}</p></div>
       <section class="download-card marketing-glass" aria-labelledby="download-title"><div class="download-card__top"><span class="download-card__index">01 / VERSION</span><span class="download-card__status"><i></i>Version disponible</span></div><div class="download-card__body"><div class="download-card__icon"><UiIcon :name="download.icon" /></div><div class="download-card__copy"><span class="marketing-kicker">{{ download.channel }}</span><h2 id="download-title">{{ download.label }}</h2><p>{{ download.note }}</p></div></div><div class="download-card__meta"><span>Version <strong>{{ download.version }}</strong></span><span>Pour <strong>{{ download.usage }}</strong></span><span>Format <strong>{{ download.format }}</strong></span></div></section>
-      <div class="download-page__actions"><UiButton to="/contact" icon="arrow">Proposer une idée</UiButton><UiButton to="/service#downloads" variant="secondary">Voir les canaux</UiButton></div>
+      <div class="download-page__actions"><UiButton :href="download.url" target="_blank" icon="download">Télécharger {{ download.version }}</UiButton><UiButton to="/contact" variant="secondary" icon="arrow">Proposer une idée</UiButton><UiButton to="/service#downloads" variant="secondary">Voir les canaux</UiButton></div>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
+import { resolveNodeDownloadUrl } from '~/utils/downloads';
 const route = useRoute();
+const config = useRuntimeConfig();
+const { manifest } = useSystemStatus();
 definePageMeta({ layout: 'public' });
-const downloads: Record<string, { label: string; channel: string; detail: string; note: string; icon: string; version: string; usage: string; format: string }> = {
-  windows: { label: 'Silicium pour Windows', channel: 'Version stable', detail: 'La version stable pour faire participer une machine Windows au réseau.', note: 'La version stable est publiée séparément de cette interface et doit être fournie par l’environnement de déploiement.', icon: 'windows', version: 'stable', usage: 'usage quotidien', format: 'Windows' },
-  'windows-dev': { label: 'Windows · version test', channel: 'Version de test', detail: 'Une version de test pour essayer les nouveautés avant leur publication.', note: 'La version de test sert à découvrir les nouveautés avant leur arrivée dans la version stable.', icon: 'windows', version: 'dev', usage: 'essai', format: 'Windows' },
-  'linux-dev': { label: 'Linux · version test', channel: 'Version de test', detail: 'Une version Linux pour essayer Silicium sur une machine de test.', note: 'La version Linux de test est publiée lorsqu’une version validée est disponible.', icon: 'linux', version: 'dev', usage: 'essai', format: 'AppImage' },
-};
-const download = computed(() => downloads[String(route.params.platform)] || downloads.windows);
+type Download = { label: string; channel: string; detail: string; note: string; icon: string; version: string; usage: string; format: string; url: string };
+const downloads = computed<Record<string, Download>>(() => ({
+  windows: { label: 'Silicium pour Windows', channel: 'Version stable', detail: 'La version stable pour faire participer une machine Windows au réseau.', note: 'Téléchargez l’installeur stable, puis ouvrez-le pour installer le nœud Silicium.', icon: 'windows', version: manifest.value?.channels?.prod?.version || 'stable', usage: 'usage quotidien', format: 'Windows', url: resolveNodeDownloadUrl(config.public.nodeAppWindowsUrl, '/downloads/silicium-node-windows.exe') },
+  'windows-dev': { label: 'Windows · version test', channel: 'Version de test', detail: 'Une version de test pour essayer les nouveautés avant leur publication.', note: 'Téléchargez l’installeur de test pour découvrir les nouveautés du nœud Silicium.', icon: 'windows', version: manifest.value?.channels?.dev?.version || 'dev', usage: 'essai', format: 'Windows', url: resolveNodeDownloadUrl(config.public.nodeAppWindowsDevUrl, '/downloads/silicium-node-windows-dev.exe') },
+  'linux-dev': { label: 'Linux · version test', channel: 'Version de test', detail: 'Une version Linux pour essayer Silicium sur une machine de test.', note: 'Téléchargez l’AppImage, rendez-la exécutable si nécessaire, puis lancez-la.', icon: 'linux', version: manifest.value?.channels?.dev?.version || 'dev', usage: 'essai', format: 'AppImage', url: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevUrl, '/downloads/silicium-node-linux-dev.AppImage') },
+}));
+const download = computed(() => downloads.value[String(route.params.platform)] || downloads.value.windows);
 useSeoMeta({ title: () => `${download.value.label} — Silicium`, description: 'Téléchargez une version de Silicium pour faire participer une machine au réseau.' });
 </script>
 

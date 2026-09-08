@@ -89,6 +89,7 @@ export interface NetworkSubtask {
 
 export interface NetworkWorkload {
   work_id: string;
+  emitter_node_id?: string;
   workload?: string;
   kind?: string;
   status: JobStatus;
@@ -105,6 +106,7 @@ export interface NetworkTasksResponse {
   active: Record<string, unknown>[];
   recent: Record<string, unknown>[];
   workloads: NetworkWorkload[];
+  emitter_node_id?: string;
 }
 
 export interface JobFragment {

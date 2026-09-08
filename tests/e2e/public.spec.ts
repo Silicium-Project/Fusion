@@ -23,7 +23,9 @@ test('service reports live components and concrete downloads', async ({ page }) 
   await page.goto('/service');
   await expect(page.getByText('3 machines actives')).toBeVisible();
   await expect(page.getByText('Devnet', { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole('link', { name: /Silicium pour Windows/ }).first()).toHaveAttribute('href', /silicium-node-windows|service\/downloads\/windows/);
+  await expect(page.getByRole('link', { name: 'Télécharger Silicium pour Windows, version stable' })).toHaveAttribute('href', '/downloads/silicium-node-windows.exe');
+  await expect(page.getByRole('link', { name: 'Télécharger Silicium pour Windows, version test' })).toHaveAttribute('href', '/downloads/silicium-node-windows-dev.exe');
+  await expect(page.getByRole('link', { name: 'Télécharger Silicium pour Linux, version test' })).toHaveAttribute('href', '/downloads/silicium-node-linux-dev.AppImage');
   await expect(page.locator('.downloads__platform--windows svg')).toHaveCount(2);
   await expect(page.locator('.downloads__platform--linux svg')).toHaveCount(1);
   const walkthrough = page.locator('.process-story');
@@ -32,6 +34,17 @@ test('service reports live components and concrete downloads', async ({ page }) 
   await expect(walkthrough.getByText('Les bonnes machines se coordonnent.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Rafraîchir' }).click();
   await expect(page.getByText('Paiements', { exact: true })).toBeVisible();
+});
+
+test('node download pages expose the published installer', async ({ page }) => {
+  await page.goto('/service/downloads/windows');
+  await expect(page.locator('.download-page__actions a').first()).toHaveAttribute('href', '/downloads/silicium-node-windows.exe');
+
+  await page.goto('/service/downloads/windows-dev');
+  await expect(page.locator('.download-page__actions a').first()).toHaveAttribute('href', '/downloads/silicium-node-windows-dev.exe');
+
+  await page.goto('/service/downloads/linux-dev');
+  await expect(page.locator('.download-page__actions a').first()).toHaveAttribute('href', '/downloads/silicium-node-linux-dev.AppImage');
 });
 
 test('public mobile menu has no horizontal overflow', async ({ page }) => {
