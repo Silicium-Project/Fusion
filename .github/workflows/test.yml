@@ -318,7 +318,7 @@ jobs:
       - name: Verify pinned Network CI coverage
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           git -C Network rev-parse --verify HEAD

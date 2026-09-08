@@ -2,6 +2,15 @@ name: Reclaim self-hosted runner
 
 on:
   workflow_dispatch:
+    inputs:
+      vps_user:
+        description: "SSH user on VPS"
+        required: false
+        default: "ubuntu"
+      vps_port:
+        description: "SSH port on VPS"
+        required: false
+        default: "22"
 
 permissions:
   contents: read
@@ -15,6 +24,8 @@ jobs:
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ inputs.vps_user }}
+          VPS_PORT: ${{ inputs.vps_port }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
@@ -28,9 +39,12 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
           printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
           chmod 600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          vps_user="${VPS_USER:-ubuntu}"
+          vps_port="${VPS_PORT:-22}"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
-            -i "$ssh_dir/id_ed25519" "$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
+            -i "$ssh_dir/id_ed25519" -p "$vps_port" \
+            "$vps_user@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
           set -euo pipefail
           for workspace in /home/*/_work/Fusion /opt/github-runner*/_work/Fusion; do
             if [[ -d "$workspace" ]]; then
