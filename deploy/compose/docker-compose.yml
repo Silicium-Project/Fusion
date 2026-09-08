@@ -60,10 +60,10 @@ services:
       PORT: 8080
       CORS_ALLOWED_ORIGINS: https://vps-910c1dbc.vps.ovh.net,https://213.32.68.67
       SILICIUM_SEED_PEERS: http://213.32.68.67:46100
-      SILICIUM_CONTROL_URL: http://orchestrator:46100/gossip/publish
+      SILICIUM_CONTROL_URL: http://host.docker.internal:46100/gossip/publish
       SILICIUM_ORCHESTRATOR_IDENTITY_KEY: /var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem
       # Control-plane only: results/artifacts remain on authenticated P2P/HTTP.
-      SILICIUM_RPC_EVENTS_CONNECT: tcp://experiment-api:9771
+      SILICIUM_RPC_EVENTS_CONNECT: tcp://host.docker.internal:9771
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,6 +71,8 @@ services:
     - 127.0.0.1:8080:8080
     - 46102:46102/tcp
     - 46102:46102/udp
+    extra_hosts:
+    - host.docker.internal:host-gateway
     volumes:
     - /opt/silicium/Network:/opt/silicium/Network
     - /var/lib/silicium:/var/lib/silicium

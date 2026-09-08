@@ -28,9 +28,6 @@ fi
 
 mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana /var/lib/silicium/downloads
 
-sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-backend.service > /etc/systemd/system/silicium-backend.service
-sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-frontend.service > /etc/systemd/system/silicium-frontend.service
-sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-dashboard.service > /etc/systemd/system/silicium-dashboard.service
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-orchestrator.service > /etc/systemd/system/silicium-orchestrator.service
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-update-manifest.service > /etc/systemd/system/silicium-update-manifest.service
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-experiment-api.service > /etc/systemd/system/silicium-experiment-api.service
@@ -75,9 +72,7 @@ systemctl enable --now silicium-orchestrator.service
 systemctl enable --now silicium-experiment-api.service
 
 echo "Systemd services installed:"
-echo "  silicium-backend"
-echo "  silicium-frontend"
-echo "  silicium-dashboard"
 echo "  silicium-orchestrator"
 echo "  silicium-update-manifest.timer"
 echo "  silicium-experiment-api (installed, host-side systemd service)"
+echo "Web/API/dashboard services are owned by deploy/compose/deploy.sh."

@@ -1,6 +1,6 @@
 # Plan d'attaque figé et tri du repo
 
-Date de gel: 2026-08-05
+Date de gel: 2026-09-08
 
 Ce document fige le périmètre de travail actuel de `Fusion` et sépare le dépôt en trois classes:
 
@@ -130,14 +130,18 @@ Critere de fin:
 - metadata locale de copie de submodule: `BackEnd/.git`, `FrontEnd/.git`, `Network/.git`
 - caches internes locaux: `.agents/`, `.silicium/`, `Network/.silicium/`
 
-## 3. Obsolescences documentaires detectees
+## 3. Nettoyage applique
 
-Ces elements ne sont pas forcement du code mort, mais ils documentent encore un etat depasse et doivent etre refaits ou supprimes dans les docs.
+Le tri de septembre 2026 a retire les anciennes chaines C++/Qt, les fixtures
+PE, les generateurs de couverture, les stacks Docker de demonstration et les
+inventaires de securite correspondants du repo Network. Les anciens services
+systemd du site et les doublons de packaging a la racine de Fusion ont aussi
+ete retires au profit de Compose et des workflows canoniques.
 
-- `Network/README.md` mentionne encore `experimental/splitter/` et `experimental/executor/` alors que le repo expose maintenant `splitter/`, `executor/` et surtout `networked/p2p_node`.
-- `Network/silicium-layer-dashboard/README.md` parle encore d'un unzip depuis `silicium-layer-dashboard.zip`; le repo contient deja le projet a son emplacement courant.
-- `BackEnd/README.md` annonce un plan par phases tres generique; il ne sert pas de spec de reference pour l'etat actuel du produit.
-- les logs root et caches de builds ne doivent jamais etre utilises comme source de verite.
+Les seuls vestiges acceptes sont les scripts de migration et de compatibilite
+qui servent encore a remettre un VPS existant dans le chemin courant. Les logs,
+caches et sorties de build ne doivent jamais etre utilises comme source de
+verite.
 
 ## 4. Regle de gouvernance
 
@@ -156,9 +160,10 @@ Pour les prochaines itérations:
 
 1. Finir le remplacement de la glue Python par le coeur Rust quand le bloc `p2p_node` est a niveau.
 2. Stabiliser les tests E2E multi-workers, web et RPC avec budget de build explicite.
-3. Verrouiller le pipeline VPS unique: `sync-submodules` publie la composition,
-   `deploy-vps` porte build, test et deploy, et les workflows `build` / `test`
-   restent des gates reutilisables pour les PR.
+3. Verrouiller le pipeline VPS unique: `sync-submodules` publie la composition
+   sur les derniers commits verts, `deploy-vps` porte build, test et deploy,
+   et les workflows `build` / `test` restent des gates reutilisables pour les
+   PR.
 4. Nettoyer la documentation qui pointe vers des chemins historiques.
 5. Purger ou ignorer strictement les caches et artefacts locaux.
 6. Ne garder dans le repo que les composants qui servent un flux deployable ou une transition encore assumee.

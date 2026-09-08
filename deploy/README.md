@@ -75,18 +75,23 @@ sudo nano /etc/silicium/frontend.env
 sudo nano /etc/silicium/orchestrator.env
 ```
 
-Build and install services:
+Build the backend binary and install the host-side control-plane services:
 
 ```bash
 sudo bash deploy/linux/build-site.sh /opt/silicium
 sudo bash deploy/linux/install-services.sh /opt/silicium
 ```
 
-Enable services:
+The public web/API/dashboard processes are owned only by Docker Compose:
 
 ```bash
-sudo systemctl enable --now silicium-backend silicium-frontend silicium-dashboard silicium-orchestrator
+sudo systemctl enable --now silicium-orchestrator silicium-experiment-api silicium-update-manifest.timer
+sudo bash deploy/compose/deploy.sh /opt/silicium
 ```
+
+Do not reinstall or enable the removed `silicium-backend`,
+`silicium-frontend`, or `silicium-dashboard` systemd units. They are legacy
+duplicates and would compete with Compose for ports 8080, 3000, and 5174.
 
 Install Nginx config after replacing domains:
 
@@ -147,6 +152,12 @@ sudo bash deploy/linux/migrate-postgres-to-compose.sh /opt/silicium
 Keep the existing `/etc/silicium/backend.env` and its secrets. Compose injects
 the container PostgreSQL URL at runtime; do not replace the backend environment
 file with the example file.
+
+Compose reaches the host-side orchestrator and experiment/MCP RPC event socket
+through `host.docker.internal`; the Compose file supplies the Linux
+`host-gateway` mapping. The HTTP experiment API and its control RPC remain
+private to the host; only the event socket needed by the backend is reachable
+from the backend container.
 
 For the current legacy SQLite installation, the migration detects
 `/var/lib/silicium/site/silicium.db`, checks its integrity, backs it up, creates
