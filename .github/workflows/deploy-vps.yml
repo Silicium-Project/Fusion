@@ -468,6 +468,14 @@ jobs:
         with:
           workspaces: apps/silicium-node/src-tauri
 
+      - name: Cache Tauri Linux bundler tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tauri
+          key: ${{ runner.os }}-tauri-linux-bundler-v1
+          restore-keys: |
+            ${{ runner.os }}-tauri-linux-bundler-
+
       - name: Build Linux development bundles
         shell: bash
         working-directory: apps/silicium-node
@@ -585,8 +593,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   deploy:
-    needs: [changes, validate-monorepo, tests, release-node, release-metadata]
-    if: ${{ always() && needs.changes.outputs.deployable == 'true' && needs.validate-monorepo.result == 'success' && needs.tests.result == 'success' && (needs.release-node.result == 'success' || needs.release-node.result == 'skipped') && needs.release-metadata.result == 'success' }}
+    needs: [changes, validate-monorepo, tests, build-desktop, build-linux, release-node, release-metadata]
+    if: ${{ always() && needs.changes.outputs.deployable == 'true' && needs.validate-monorepo.result == 'success' && needs.tests.result == 'success' && (needs.changes.outputs.node != 'true' || (needs.build-desktop.result == 'success' && needs.build-linux.result == 'success' && needs.release-node.result == 'success')) && needs.release-metadata.result == 'success' }}
     runs-on: [self-hosted, fusion-linux]
     env:
       DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
