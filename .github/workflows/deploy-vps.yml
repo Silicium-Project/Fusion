@@ -382,12 +382,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/silicium-node/src-tauri
-          cache-target: false
-
       - name: Build Linux development bundles
         shell: bash
         working-directory: apps/silicium-node

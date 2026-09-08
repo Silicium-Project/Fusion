@@ -34,5 +34,8 @@ rm -rf -- \
   ../../Network/networked/compute_daemon/target
 
 cargo test --manifest-path src-tauri/Cargo.toml
+# The test profile is no longer needed for packaging; reclaim its target before
+# the release profile is built on the disk-constrained VPS runner.
+rm -rf -- src-tauri/target/debug
 npx tauri build --bundles deb
 popd >/dev/null
