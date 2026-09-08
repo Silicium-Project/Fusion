@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 from workloads.raytracer.raytracer_workload import parse_ppm_bytes, run_raytracer, split_tiles
@@ -65,3 +66,22 @@ def test_raytracer_rectangular_crop_matches_full_render(tmp_path, monkeypatch) -
         expected.extend(full_pixels[start : start + tile_width * 3])
     assert (tile_width, tile_height) == (80, 50)
     assert tile_pixels == bytes(expected)
+
+
+def test_uploaded_scene_file_runs_through_compute_path(tmp_path, monkeypatch) -> None:
+    """Exercise the same file-backed path used by a site-created job."""
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("SILICIUM_RAYTRACER_BIN", str(root / "bin" / "raytracer" / "raytracer.py"))
+    source = root / "workloads" / "raytracer" / "examples" / "demo-scene.cfg"
+    submitted_scene = tmp_path / "site-render-42" / "input" / "demo-scene.cfg"
+    submitted_scene.parent.mkdir(parents=True)
+    shutil.copy2(source, submitted_scene)
+
+    output = tmp_path / "site-render-42" / "fragments" / "fragment-000.ppm"
+    result = run_raytracer(submitted_scene, output, y_start=0, y_end=20, x_start=0, x_end=32)
+
+    width, height, pixels = parse_ppm_bytes(output.read_bytes(), str(output))
+    assert result["returncode"] == 0
+    assert result["result_path"] == str(output.resolve())
+    assert (width, height) == (32, 20)
+    assert len(pixels) == width * height * 3
