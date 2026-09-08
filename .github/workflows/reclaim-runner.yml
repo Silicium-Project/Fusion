@@ -60,5 +60,13 @@ jobs:
               rm -rf -- "$cache"
             fi
           done
+          primary_service="actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service"
+          if systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | grep -Fxq "$primary_service"; then
+            systemctl restart "$primary_service"
+            systemctl is-active --quiet "$primary_service"
+          else
+            echo "Primary Fusion runner service is not installed: $primary_service" >&2
+            exit 1
+          fi
           df -h / /home /opt
           REMOTE
