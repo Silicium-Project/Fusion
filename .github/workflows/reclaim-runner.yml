@@ -60,16 +60,21 @@ jobs:
               rm -rf -- "$cache"
             fi
           done
-          for runner_service in \
-            actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service \
-            actions.runner.Silicium-Project-Fusion.fusion-vps-fusion-extra-1.service; do
-            if systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | grep -Fxq "$runner_service"; then
-              systemctl restart "$runner_service"
-              systemctl is-active --quiet "$runner_service"
-            else
-              echo "Fusion runner service is not installed: $runner_service" >&2
-              exit 1
-            fi
-          done
+          primary_service="actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service"
+          if systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | grep -Fxq "$primary_service"; then
+            systemctl restart "$primary_service"
+            systemctl is-active --quiet "$primary_service"
+          else
+            echo "Primary Fusion runner service is not installed: $primary_service" >&2
+            exit 1
+          fi
+
+          optional_service="actions.runner.Silicium-Project-Fusion.fusion-vps-fusion-extra-1.service"
+          if systemctl list-unit-files --type=service --no-legend | awk '{print $1}' | grep -Fxq "$optional_service"; then
+            systemctl restart "$optional_service"
+            systemctl is-active --quiet "$optional_service"
+          else
+            echo "Optional Fusion runner service is not installed: $optional_service" >&2
+          fi
           df -h / /home /opt
           REMOTE
