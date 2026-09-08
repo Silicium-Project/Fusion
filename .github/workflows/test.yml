@@ -317,4 +317,7 @@ jobs:
 
       - name: Run P2P smoke
         shell: bash
+        env:
+          CARGO_BUILD_JOBS: "1"
+          CARGO_INCREMENTAL: "0"
         run: bash Network/ci/p2p_kademlia_smoke.sh
