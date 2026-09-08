@@ -253,7 +253,7 @@ jobs:
           clean: false
 
       - name: Set up Rust
-        if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke'
+        if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up Python

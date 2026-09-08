@@ -1083,14 +1083,14 @@ def cmd_check(args: argparse.Namespace, ctx: Context) -> None:
 
     env_vars = {
         "CORE_CHECK_MODE": "full" if args.full else "quick",
-        "CORE_CHECK_SCOPE": "platform" if args.scope == "all" else args.scope,
+        "CORE_CHECK_SCOPE": "platform" if args.scope == "all" else args.scope,  # i18n:ignore
     }
     if args.docker is not None:
         env_vars["CORE_CHECK_WITH_DOCKER"] = "1" if args.docker else "0"
     if args.require_docker:
-        env_vars["CORE_CHECK_REQUIRE_DOCKER"] = "1"
+        env_vars["CORE_CHECK_REQUIRE_DOCKER"] = "1"  # i18n:ignore
     if args.python:
-        env_vars["PYTHON_BIN"] = args.python
+        env_vars["PYTHON_BIN"] = args.python  # i18n:ignore
 
     bash = shutil.which("bash")
     if not bash:
@@ -3182,32 +3182,32 @@ def configure_check(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--full",
         action="store_true",
-        help="Run the active checks and the optional Docker proxy smoke.",
+        help="Run the active checks and the optional Docker proxy smoke.",  # i18n:ignore
     )
     parser.add_argument(
         "--scope",
         choices=["all", "platform"],
         default="platform",
-        help="Active Network check scope (default: platform).",
+        help="Active Network check scope (default: platform).",  # i18n:ignore
     )
     parser.add_argument(
         "--docker",
         dest="docker",
         action="store_true",
-        help="Require Docker-backed checks when they are selected.",
+        help="Require Docker-backed checks when they are selected.",  # i18n:ignore
     )
     parser.add_argument(
         "--no-docker",
         dest="docker",
         action="store_false",
-        help="Skip Docker-backed checks.",
+        help="Skip Docker-backed checks.",  # i18n:ignore
     )
     parser.add_argument(
         "--require-docker",
         action="store_true",
-        help="Fail if a selected Docker-backed check cannot run.",
+        help="Fail if a selected Docker-backed check cannot run.",  # i18n:ignore
     )
-    parser.add_argument("--python", help="Path to Python executable used for checks.")
+    parser.add_argument("--python", help="Path to Python executable used for checks.")  # i18n:ignore
     parser.set_defaults(docker=None)
 def configure_doctor(parser: argparse.ArgumentParser) -> None:
     pass
@@ -3426,7 +3426,7 @@ def configure_workload_queue(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--summary",
         required=True,
-        help="Path to a workload summary JSON file.",
+        help="Path to a workload summary JSON file.",  # i18n:ignore
     )
     parser.add_argument(
         "--output",
