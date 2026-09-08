@@ -38,8 +38,6 @@ except ImportError:  # pragma: no cover
 
 
 REPO_ROOT = Path(__file__).resolve().parent
-SPLITTER_DIR = REPO_ROOT / "splitter"
-EXECUTOR_DIR = REPO_ROOT / "executor"
 WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
 WORKLOAD_SCHEMA_FILE = WORKLOAD_ROOT / "schema" / "workload-manifest-v1.schema.json"
 WORKLOAD_FIXTURES_DIR = WORKLOAD_ROOT / "fixtures"
@@ -89,12 +87,10 @@ SERVICE_CHOICES = sorted(
 TOP_LEVEL_COMMANDS = [
     "test",
     "check",
-    "cpp-test",
     "doctor",
     "budget",
     "smoke",
     "setup",
-    "tools",
     "clean",
     "ledger",
     "history",
@@ -114,7 +110,6 @@ TOP_LEVEL_COMMANDS = [
     "quit",
 ]
 SUBCOMMANDS = {
-    "tools": ["demo", "clean"],
     "setup": ["up", "down"],
     "ledger": ["list", "wipe", "export", "import"],
     "history": ["show", "clear"],
@@ -1121,7 +1116,6 @@ def clean_artifacts() -> None:
     ]
     for path in paths:
         remove_path(path)
-    run(["make", "demo-clean"], cwd=SPLITTER_DIR)
 
 
 def cmd_clean(args: argparse.Namespace, ctx: Context) -> None:
@@ -2749,8 +2743,6 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--solana-bridge", default=os.environ.get("SILICIUM_SOLANA_BRIDGE", str(REPO_ROOT / "tools" / "solana_layer_bridge.cjs")))
     parser.add_argument("--solana-timeout-s", type=int, default=int(os.environ.get("SILICIUM_SOLANA_TIMEOUT_S", "45")))
     parser.add_argument("--max-retries", type=int, default=int(os.environ.get("SILICIUM_NODE_MAX_RETRIES", "2")))
-    parser.add_argument("--worker-binary", default=os.environ.get("SILICIUM_WORKER_BINARY", str(REPO_ROOT / "experimental" / "worker" / "worker")))
-    parser.add_argument("--worker-mode", default=os.environ.get("SILICIUM_WORKER_MODE", "emu"))
     parser.add_argument("--bootstrap-worker", action="store_true", default=os.environ.get("SILICIUM_BOOTSTRAP_WORKER", "0") == "1")
     parser.add_argument("--gossip-enable", action="store_true", default=os.environ.get("SILICIUM_GOSSIP_ENABLE", "0") == "1")
     parser.add_argument("--gossip-bind", default=os.environ.get("SILICIUM_GOSSIP_BIND", "127.0.0.1"))
@@ -3434,7 +3426,7 @@ def configure_workload_queue(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--summary",
         required=True,
-        help="Path to summary.json produced by splitter.",
+        help="Path to a workload summary JSON file.",
     )
     parser.add_argument(
         "--output",
@@ -3679,14 +3671,6 @@ def build_registry() -> CommandRegistry:
     registry = CommandRegistry()
     registry.add(CommandSpec("test", "Install dev deps and run pytest", configure_test, cmd_test))
     registry.add(CommandSpec("check", "Run core stability checks", configure_check, cmd_check))
-    registry.add(
-        CommandSpec(
-            "cpp-test",
-            "Run worker/executor C++ tests in Docker (Windows-friendly)",
-            configure_cpp_test,
-            cmd_cpp_test,
-        )
-    )
     registry.add(CommandSpec("doctor", "Run environment diagnostics", configure_doctor, cmd_doctor))
     registry.add(CommandSpec("budget", "Measure command metrics against budgets", configure_budget, cmd_budget))
     registry.add(CommandSpec("smoke", "Run the proxy smoke test", configure_smoke, cmd_smoke))
@@ -3743,22 +3727,6 @@ def build_registry() -> CommandRegistry:
             commands=[
                 CommandSpec("up", "Bootstrap/start selected targets", configure_setup_up, cmd_setup_up),
                 CommandSpec("down", "Stop/cleanup selected targets", configure_setup_down, cmd_setup_down),
-            ],
-        )
-    )
-    registry.add_group(
-        CommandGroup(
-            name="tools",
-            help="Toolbox helpers",
-            dest="tools_cmd",
-            commands=[
-                CommandSpec("demo", "Run splitter demo", configure_tools_demo, cmd_tools_demo),
-                CommandSpec(
-                    "clean",
-                    "Clean splitter + fragment executor artifacts",
-                    configure_tools_clean,
-                    cmd_tools_clean,
-                ),
             ],
         )
     )

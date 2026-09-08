@@ -113,12 +113,12 @@ process.stdin.on("end", () => {
     return path
 
 
-def test_network_node_worker_binary_default_uses_current_tree() -> None:
+def test_network_node_parser_has_no_legacy_worker_binary() -> None:
     parser = network_node.build_arg_parser()
 
     args = parser.parse_args([])
 
-    assert args.worker_binary == str(Path("worker/worker"))
+    assert not hasattr(args, "worker_binary")
 
 
 def _config(
@@ -178,8 +178,6 @@ def _config(
         solana_bridge=solana_bridge or (export_dir / "bridge.cjs"),
         solana_timeout_s=10,
         max_retries=0,
-        worker_binary="missing-worker",
-        worker_mode="emu",
         bootstrap_worker=False,
         gossip_enable=gossip_enable,
         gossip_bind="127.0.0.1",

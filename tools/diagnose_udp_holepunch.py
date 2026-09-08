@@ -115,8 +115,6 @@ def test_udp_probe(
             solana_bridge=export_dir,
             solana_timeout_s=45,
             max_retries=2,
-            worker_binary="",
-            worker_mode="emu",
             bootstrap_worker=False,
             gossip_enable=True,
             gossip_bind="0.0.0.0",
