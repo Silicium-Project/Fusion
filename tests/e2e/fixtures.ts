@@ -28,7 +28,14 @@ export async function mockAPI(page: Page) {
     if (path.endsWith('/jobs/network/peers')) return route.fulfill({ json: { peers: [{ node_id: 'orchestrator-1', version_status: 'server', outdated: false }, { node_id: 'worker-1', node_roles: ['resource'], app_version: '1.0.0', release_channel: 'prod', version_status: 'current', outdated: false }, { node_id: 'worker-2', node_roles: ['verify'], app_version: '0.9.0', release_channel: 'prod', version_status: 'outdated', outdated: true }] } });
     if (path.endsWith('/jobs/network/tasks')) return route.fulfill({ json: { active: [], recent: [], workloads: [{ work_id: 'site-render-functional-1', workload: 'raytracer', status: 'completed', total: 4, completed: 4, failed: 0, active: 0, updated_at: '2026-09-06T08:03:00Z', subtasks: [] }] } });
     if (path.endsWith('/jobs') && request.method() === 'GET') return route.fulfill({ headers: { 'x-total-count': '1', 'x-page': '1', 'x-page-size': '20', 'access-control-expose-headers': 'x-total-count,x-page,x-page-size' }, json: [job] });
-    if (path.endsWith('/jobs') && request.method() === 'POST') return route.fulfill({ status: 202, json: job });
+    if (path.endsWith('/jobs') && request.method() === 'POST') {
+      const contentType = request.headers()['content-type'] || '';
+      const payload = request.postData() || '';
+      if (!contentType.startsWith('multipart/form-data; boundary=') || !payload.includes('resolution = { width = 32 height = 20 }')) {
+        return route.fulfill({ status: 400, json: { message: 'The job file was not sent as a raytracer multipart upload.' } });
+      }
+      return route.fulfill({ status: 202, json: job });
+    }
     if (path.endsWith('/jobs/1/cancel')) return route.fulfill({ status: 202, json: { ...job, status: 'cancelled' } });
     return route.fulfill({ status: 404, json: { message: `No mock for ${request.method()} ${path}` } });
   });

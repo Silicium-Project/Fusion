@@ -11,12 +11,12 @@
       <div><span class="field-label">Durée maximale</span><strong>{{ runtimeLabel }}</strong><input v-model.number="form.maxRuntimeSeconds" type="range" min="60" max="14400" step="60" aria-label="Durée maximale"><small>Une propagation d’arrêt est émise à l’échéance.</small></div>
     </div>
     <label class="job-drop" :class="{ 'job-drop--ready': file }">
-      <input type="file" required accept=".json,.cfg,.txt,application/json,text/plain" @change="onFile">
+      <input type="file" required accept=".cfg,.scene,.txt,text/plain" @change="onFile">
       <span class="job-drop__icon"><UiIcon :name="file ? 'check' : 'upload'"/></span>
-      <span><strong>{{ file ? file.name : 'Ajouter le fichier d’entrée' }}</strong><small>{{ file ? fileSize : 'JSON, CFG ou texte · 16 Mo maximum' }}</small></span>
+      <span><strong>{{ file ? file.name : 'Ajouter le fichier d’entrée' }}</strong><small>{{ file ? fileSize : 'CFG, SCENE ou texte · 16 Mo maximum' }}</small></span>
       <span class="job-drop__action">{{ file ? 'Remplacer' : 'Parcourir' }}</span>
     </label>
-    <UiNotice v-if="error" tone="danger">{{ error }}</UiNotice>
+    <UiNotice v-if="formError" tone="danger">{{ formError }}</UiNotice>
     <div class="job-form__footer"><p>Le projet sera envoyé puis réparti automatiquement par le réseau.</p><div class="cluster"><UiButton to="/jobs" variant="ghost">Annuler</UiButton><UiButton type="submit" icon="arrow" :loading="submitting">Envoyer le projet</UiButton></div></div>
   </form>
 </template>
@@ -25,12 +25,27 @@
 import type { CreateJobInput } from '~/composables/useJobs';
 const props = withDefaults(defineProps<{ submitting?: boolean; error?: string }>(), { submitting: false, error: '' });
 const emit = defineEmits<{ submit: [input: CreateJobInput] }>();
+const MAX_INPUT_BYTES = 16 * 1024 * 1024;
 const file = ref<File | null>(null);
+const localError = ref('');
 const form = reactive({ title: '', description: '', workload: 'raytracer', priority: 'normal', fragmentCount: 64, maxRuntimeSeconds: 3600 });
 const runtimeLabel = computed(() => form.maxRuntimeSeconds < 3600 ? `${Math.round(form.maxRuntimeSeconds / 60)} min` : `${(form.maxRuntimeSeconds / 3600).toFixed(form.maxRuntimeSeconds % 3600 ? 1 : 0)} h`);
 const fileSize = computed(() => file.value ? `${Math.max(.1, file.value.size / 1024).toFixed(1)} Ko` : '');
-function onFile(event: Event) { file.value = (event.target as HTMLInputElement).files?.[0] || null; }
-function submit() { if (!file.value || props.submitting) return; emit('submit', { ...form, file: file.value }); }
+const formError = computed(() => localError.value || props.error);
+function onFile(event: Event) {
+  const selected = (event.target as HTMLInputElement).files?.[0] || null;
+  localError.value = '';
+  file.value = selected;
+  if (!selected) return;
+  if (selected.size === 0) {
+    file.value = null;
+    localError.value = 'Le fichier raytracer ne peut pas être vide.';
+  } else if (selected.size > MAX_INPUT_BYTES) {
+    file.value = null;
+    localError.value = 'Le fichier ne doit pas dépasser 16 Mo.';
+  }
+}
+function submit() { if (!file.value || props.submitting || localError.value) return; emit('submit', { ...form, file: file.value }); }
 </script>
 
 <style scoped>

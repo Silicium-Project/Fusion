@@ -23,7 +23,17 @@ test('a job can be submitted and opens its canonical detail route', async ({ pag
   await expect(submit).toBeVisible();
   await expect(submit).toBeEnabled();
   await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Rendu architecture');
-  await page.locator('input[type=file]').setInputFiles({ name: 'scene.cfg', mimeType: 'text/plain', buffer: Buffer.from('scene') });
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'demo-scene.cfg',
+    mimeType: 'text/plain',
+    buffer: Buffer.from(`# Site raytracer fixture
+camera :
+{
+  resolution = { width = 32 height = 20 }
+  position = { x = 0 y = 0 z = 0 }
+}
+`),
+  });
   await submit.click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
   await expect(page.getByRole('heading', { name: 'Rendu architecture' })).toBeVisible();
