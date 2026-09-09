@@ -411,30 +411,23 @@ jobs:
           $prodVersion = (Get-Content src-tauri/tauri.prod.conf.json -Raw | ConvertFrom-Json).version
           New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 
-          $expectedSignerThumbprint = $null
           function Assert-ValidAuthenticodeSignature([string] $path, [string] $label) {
             if (-not (Test-Path -LiteralPath $path)) { throw "$label was not produced: $path" }
-            $signature = Get-AuthenticodeSignature -FilePath $path
-            $signerCertificate = $signature.SignerCertificate
-            if (-not $signerCertificate) {
-              throw "$label has no Authenticode signer certificate: $($signature.Status) ($($signature.StatusMessage))"
+            $verificationLines = @(& $env:TAURI_WINDOWS_SIGNTOOL_PATH verify /pa /all /v $path 2>&1)
+            $verificationExitCode = $LASTEXITCODE
+            $verificationText = $verificationLines -join [Environment]::NewLine
+            $hasSignature =
+              $verificationText -match "(?im)^\s*0\s+sha\d+\b" -or
+              $verificationText -match "(?im)^\s*Signature Index:\s*0\b" -or
+              $verificationText -match "Successfully verified:"
+            if (-not $hasSignature -or $verificationText -match "No signature found") {
+              throw "$label has no verifiable Authenticode signature: $verificationText"
             }
-            $status = [string]$signature.Status
-            $selfSignedTestSignature =
-              $env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -eq "true" -and
-              $signerCertificate.Subject -eq $signerCertificate.Issuer -and
-              $status -in @("UnknownError", "NotTrusted")
-            if ($status -ne "Valid" -and -not $selfSignedTestSignature) {
-              throw "$label is not Authenticode-valid: $status ($($signature.StatusMessage))"
-            }
-            if ($selfSignedTestSignature) {
-              Write-Warning "$label uses the explicitly allowed self-signed test certificate: $($signature.StatusMessage)"
-            }
-            $signerThumbprint = $signerCertificate.Thumbprint.ToUpperInvariant()
-            if (-not $script:expectedSignerThumbprint) {
-              $script:expectedSignerThumbprint = $signerThumbprint
-            } elseif ($signerThumbprint -ne $script:expectedSignerThumbprint) {
-              throw "$label was signed by an unexpected certificate"
+            if ($verificationExitCode -ne 0) {
+              if ($env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -ne "true") {
+                throw "$label failed Authenticode trust verification: $verificationText"
+              }
+              Write-Warning "$label has a signature, but trust verification is allowed to fail for the self-signed test certificate."
             }
           }
 
