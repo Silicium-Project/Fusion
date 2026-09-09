@@ -507,7 +507,10 @@ jobs:
             $verificationExitCode = $LASTEXITCODE
             $ErrorActionPreference = $previousErrorActionPreference
             $verificationText = $verificationLines -join [Environment]::NewLine
-            if ($verificationExitCode -eq 0) { return }
+            if ($verificationExitCode -eq 0) {
+              $global:LASTEXITCODE = 0
+              return
+            }
 
             $hasNoSignature = $verificationText -match "(?i)(no signature found|no signature was present)"
             # A test certificate may be correctly embedded but untrusted by
@@ -518,6 +521,7 @@ jobs:
               throw "$label failed Authenticode verification: $verificationText"
             }
             Write-Warning "$label has a present Authenticode signature, but trust verification is allowed to fail for the self-signed test certificate: $verificationText"
+            $global:LASTEXITCODE = 0
           }
 
           $env:SILICIUM_RELEASE_CHANNEL = "dev"
