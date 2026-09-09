@@ -82,6 +82,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	inputDir := filepath.Join(envDefault("SILICIUM_SITE_STORAGE_DIR", filepath.Join("storage", "jobs")), jobID, "input")
 	inputPath, err := storeJobInput(inputDir, header.Filename, file)
 	if err != nil {
+		log.Printf("store job %q input in %q: %v", jobID, inputDir, err)
 		status := http.StatusInternalServerError
 		message := "Could not store input file"
 		if errors.Is(err, errEmptyJobInput) {
