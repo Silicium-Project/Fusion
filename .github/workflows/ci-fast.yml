@@ -1,0 +1,110 @@
+name: Fast CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fusion-fast-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      validate: ${{ steps.detect.outputs.validate }}
+      skip_submodule_ci_gate: ${{ steps.detect.outputs.skip_submodule_ci_gate }}
+      web: ${{ steps.detect.outputs.web }}
+      network_core: ${{ steps.detect.outputs.network_core }}
+      node_fast: ${{ steps.detect.outputs.node_fast }}
+    steps:
+      - name: Check out Fusion
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify fast lanes
+        id: detect
+        shell: bash
+        env:
+          EVENT_BEFORE: ${{ github.event.before || '' }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+        run: |
+          set -euo pipefail
+
+          force_all=false
+          base="${PR_BASE_SHA:-${EVENT_BEFORE:-}}"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || -z "$base" || "$base" =~ ^0+$ ]]; then
+            force_all=true
+          elif ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$base"
+          fi
+
+          if [[ "$force_all" == true ]]; then
+            changed_paths="__all__"
+          else
+            changed_paths="$(git diff --name-only "$base" "$GITHUB_SHA")"
+          fi
+
+          matches() {
+            [[ "$force_all" == true ]] || printf '%s\n' "$changed_paths" | grep -Eq "$1"
+          }
+
+          web=false
+          network_core=false
+          node_fast=false
+          validate=false
+          submodule_change=false
+
+          if matches '^(BackEnd|FrontEnd)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$'; then
+            web=true
+            validate=true
+          fi
+          if matches '^Network(/|$)|^(BackEnd|Network)$|^deploy/(compose|linux)/'; then
+            network_core=true
+            validate=true
+          fi
+          if matches '^apps/silicium-node/|^deploy/ci/build-linux-client\.sh$'; then
+            node_fast=true
+            validate=true
+          fi
+          if matches '^BackEnd$|^FrontEnd$|^Network$|^\.gitmodules$'; then
+            submodule_change=true
+          fi
+          if matches '^\.github/workflows/'; then
+            web=true
+            network_core=true
+            node_fast=true
+            validate=true
+          fi
+
+          skip_submodule_ci_gate=true
+          if [[ "$submodule_change" == true ]]; then
+            skip_submodule_ci_gate=false
+          fi
+
+          printf 'Changed paths:\n%s\n' "$changed_paths"
+          printf 'validate=%s\n' "$validate" >> "$GITHUB_OUTPUT"
+          printf 'skip_submodule_ci_gate=%s\n' "$skip_submodule_ci_gate" >> "$GITHUB_OUTPUT"
+          printf 'web=%s\n' "$web" >> "$GITHUB_OUTPUT"
+          printf 'network_core=%s\n' "$network_core" >> "$GITHUB_OUTPUT"
+          printf 'node_fast=%s\n' "$node_fast" >> "$GITHUB_OUTPUT"
+
+  fast-tests:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.validate == 'true' }}
+    uses: ./.github/workflows/test.yml
+    with:
+      skip_submodule_ci_gate: ${{ needs.changes.outputs.skip_submodule_ci_gate == 'true' }}
+      web_stack_already_validated: false
+      run_web_stack: ${{ needs.changes.outputs.web == 'true' }}
+      run_network_core: ${{ needs.changes.outputs.network_core == 'true' }}
+      run_network_e2e: false
+      run_network_smoke: false
+      run_node_fast: ${{ needs.changes.outputs.node_fast == 'true' }}
+    secrets: inherit

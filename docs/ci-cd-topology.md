@@ -65,13 +65,33 @@ The generated installers are staged on the VPS before release and deploy.
    long CI jobs to finish before evaluating the gate. The submodule CI jobs
    themselves run on the VPS runners in parallel when runner capacity is
    available.
-3. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
-4. `deploy-vps.yml` is the canonical mainline path: it validates and builds
+3. `ci-fast.yml` is the short feedback path for pull requests and non-main
+   branches. It runs only the affected web, Network core, and Silicium Node
+   lanes; Docker E2E, smoke, packaging, and deployment are excluded.
+4. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
+5. `deploy-vps.yml` is the canonical mainline path: it validates and builds
    on the VPS runners, builds Windows installers on `windows-latest`, publishes
    release metadata, deploys, and runs post-deploy checks.
-5. `deploy/compose/e2e.sh` validates the real container path on the VPS.
-6. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
+6. `deploy/compose/e2e.sh` validates the real container path on the VPS.
+7. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
+
+### Targeted iteration
+
+`Deploy` also exposes manual validation lanes for an exact ref:
+
+- `web`;
+- `network-core`;
+- `network-e2e`;
+- `network-smoke`;
+- `windows`;
+- `linux`.
+
+These lanes do not stage artifacts on the VPS, publish releases, or deploy.
+Packaging lanes may still upload their test artifacts to the workflow for
+inspection. Only `full` follows the production path. Targeted lanes use their own
+cancelable concurrency group, so a new iteration does not wait behind an
+active production deployment.
 
 ### Selective execution
 
@@ -119,6 +139,8 @@ outputs without deleting those caches.
   pipeline once the composition is updated.
 - `submodule-ci-gate.yml`: reusable latest-green gate for `BackEnd`, `FrontEnd`,
   and `Network`, including VPS runner bootstrap.
+- `ci-fast.yml`: cancelable short feedback path for branch and pull-request
+  iterations.
 - `build.yml`: reusable Linux bundle build gate for PRs and manual runs.
 - `test.yml`: reusable web, Network core, Docker E2E, and P2P smoke gate for
   PRs and manual runs.

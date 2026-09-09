@@ -7,6 +7,19 @@ on:
         description: "Git ref to deploy (branch, tag, or SHA). Defaults to event ref."
         required: false
         default: ""
+      lane:
+        description: "Run only one validation lane; use full for a production deployment."
+        required: false
+        type: choice
+        options:
+          - full
+          - web
+          - network-core
+          - network-e2e
+          - network-smoke
+          - windows
+          - linux
+        default: full
       vps_user:
         description: "SSH user on VPS"
         required: false
@@ -27,18 +40,25 @@ permissions:
   contents: write
 
 concurrency:
-  group: silicium-vps-deploy
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lane != 'full' && format('silicium-lane-{0}-{1}', github.event.inputs.lane, github.ref) || 'silicium-vps-deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.lane != 'full' }}
 
 jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
+      lane: ${{ steps.detect.outputs.lane }}
       web: ${{ steps.detect.outputs.web }}
       network: ${{ steps.detect.outputs.network }}
+      network_core: ${{ steps.detect.outputs.network_core }}
+      network_e2e: ${{ steps.detect.outputs.network_e2e }}
+      network_smoke: ${{ steps.detect.outputs.network_smoke }}
       node_build: ${{ steps.detect.outputs.node_build }}
+      windows_build: ${{ steps.detect.outputs.windows_build }}
+      linux_build: ${{ steps.detect.outputs.linux_build }}
       submodules: ${{ steps.detect.outputs.submodules }}
       validate: ${{ steps.detect.outputs.validate }}
+      testable: ${{ steps.detect.outputs.testable }}
       deployable: ${{ steps.detect.outputs.deployable }}
     steps:
       - name: Check out the composition
@@ -51,50 +71,113 @@ jobs:
         shell: bash
         env:
           EVENT_BEFORE: ${{ github.event.before || '' }}
+          MANUAL_LANE: ${{ github.event.inputs.lane || 'full' }}
         run: |
           set -euo pipefail
+          lane="${MANUAL_LANE:-full}"
+          if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]]; then
+            lane=full
+          fi
+          case "$lane" in
+            full|web|network-core|network-e2e|network-smoke|windows|linux) ;;
+            *) echo "Unsupported validation lane: $lane" >&2; exit 1 ;;
+          esac
+
           force_all=false
           base="${EVENT_BEFORE:-}"
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || -z "$base" || "$base" =~ ^0+$ ]]; then
-            force_all=true
-          else
-            git fetch --no-tags --depth=1 origin "$base"
-          fi
-
-          if [[ "$force_all" == true ]]; then
-            changed_paths="__all__"
-          else
-            changed_paths="$(git diff --name-only "$base" "$GITHUB_SHA")"
-          fi
-
-          matches() {
-            [[ "$force_all" == true ]] || printf '%s\n' "$changed_paths" | grep -Eq "$1"
-          }
-
           web=false
           network=false
+          network_core=false
+          network_e2e=false
+          network_smoke=false
           node_build=false
+          windows_build=false
+          linux_build=false
           submodules=false
           validate=false
+          testable=false
           deployable=false
 
-          if matches '^(BackEnd|FrontEnd|Network)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$|^\.gitmodules$'; then web=true; fi
-          if matches '^(BackEnd|Network)(/|$)|^deploy/(compose|linux)/'; then network=true; fi
-          if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/build-linux-client\.sh$|^\.gitmodules$'; then node_build=true; fi
-          if matches '^BackEnd$|^FrontEnd$|^Network$|^\.gitmodules$'; then submodules=true; fi
-          if matches '^(BackEnd|FrontEnd|Network|apps/silicium-node|deploy/|\.gitmodules$|\.github/workflows/)'; then validate=true; fi
-          if [[ "$web" == true || "$network" == true || "$node_build" == true ]]; then deployable=true; fi
-
-          # A workflow-only change must exercise the lanes it modifies, but
-          # it should not rebuild or redeploy the product by itself.
-          if matches '^\.github/workflows/'; then
-            web=true
-            network=true
+          if [[ "$lane" != "full" ]]; then
+            changed_paths="manual lane: $lane"
             validate=true
+            case "$lane" in
+              web)
+                web=true
+                testable=true
+                ;;
+              network-core)
+                network=true
+                network_core=true
+                testable=true
+                ;;
+              network-e2e)
+                network=true
+                network_e2e=true
+                testable=true
+                ;;
+              network-smoke)
+                network=true
+                network_smoke=true
+                testable=true
+                ;;
+              windows)
+                node_build=true
+                windows_build=true
+                ;;
+              linux)
+                node_build=true
+                linux_build=true
+                ;;
+            esac
+          else
+            if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || -z "$base" || "$base" =~ ^0+$ ]]; then
+              force_all=true
+            else
+              git fetch --no-tags --depth=1 origin "$base"
+            fi
+
+            if [[ "$force_all" == true ]]; then
+              changed_paths="__all__"
+            else
+              changed_paths="$(git diff --name-only "$base" "$GITHUB_SHA")"
+            fi
+
+            matches() {
+              [[ "$force_all" == true ]] || printf '%s\n' "$changed_paths" | grep -Eq "$1"
+            }
+
+            if matches '^(BackEnd|FrontEnd|Network)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$|^\.gitmodules$'; then web=true; fi
+            if matches '^(BackEnd|Network)(/|$)|^deploy/(compose|linux)/'; then network=true; fi
+            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/build-linux-client\.sh$|^\.gitmodules$'; then node_build=true; fi
+            if matches '^BackEnd$|^FrontEnd$|^Network$|^\.gitmodules$'; then submodules=true; fi
+            if matches '^(BackEnd|FrontEnd|Network|apps/silicium-node|deploy/|\.gitmodules$|\.github/workflows/)'; then validate=true; fi
+            if [[ "$web" == true || "$network" == true || "$node_build" == true ]]; then deployable=true; fi
+
+            # A workflow-only change must exercise the lanes it modifies, but
+            # it should not rebuild or redeploy the product by itself.
+            if matches '^\.github/workflows/'; then
+              web=true
+              network=true
+              validate=true
+            fi
+
+            if [[ "$network" == true ]]; then
+              network_core=true
+              network_e2e=true
+              network_smoke=true
+            fi
+            if [[ "$node_build" == true ]]; then
+              windows_build=true
+              linux_build=true
+            fi
+            if [[ "$validate" == true ]]; then
+              testable=true
+            fi
           fi
 
           printf 'Changed paths:\n%s\n' "$changed_paths"
-          for name in web network node_build submodules validate deployable; do
+          for name in lane web network network_core network_e2e network_smoke node_build windows_build linux_build submodules validate testable deployable; do
             printf '%s=%s\n' "$name" "${!name}" >> "$GITHUB_OUTPUT"
           done
 
@@ -199,20 +282,21 @@ jobs:
 
   tests:
     needs: [changes, submodule-ci-gate]
-    if: ${{ always() && needs.changes.outputs.validate == 'true' && (needs.submodule-ci-gate.result == 'success' || needs.submodule-ci-gate.result == 'skipped') }}
+    if: ${{ always() && needs.changes.outputs.testable == 'true' && (needs.submodule-ci-gate.result == 'success' || needs.submodule-ci-gate.result == 'skipped') }}
     uses: ./.github/workflows/test.yml
     with:
       skip_submodule_ci_gate: true
       web_stack_already_validated: false
       run_web_stack: ${{ needs.changes.outputs.web == 'true' }}
-      run_network_core: ${{ needs.changes.outputs.network == 'true' }}
-      run_network_e2e: ${{ needs.changes.outputs.network == 'true' }}
-      run_network_smoke: ${{ needs.changes.outputs.network == 'true' }}
+      run_network_core: ${{ needs.changes.outputs.network_core == 'true' }}
+      run_network_e2e: ${{ needs.changes.outputs.network_e2e == 'true' }}
+      run_network_smoke: ${{ needs.changes.outputs.network_smoke == 'true' }}
+      run_node_fast: ${{ needs.changes.outputs.node_build == 'true' }}
     secrets: inherit
 
   build-desktop:
     needs: [changes, validate-monorepo]
-    if: ${{ needs.changes.outputs.node_build == 'true' && needs.validate-monorepo.result == 'success' }}
+    if: ${{ needs.changes.outputs.windows_build == 'true' && needs.validate-monorepo.result == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -413,27 +497,34 @@ jobs:
 
           function Assert-ValidAuthenticodeSignature([string] $path, [string] $label) {
             if (-not (Test-Path -LiteralPath $path)) { throw "$label was not produced: $path" }
+
+            # Extract the embedded signer certificate independently from chain
+            # trust. A self-signed test certificate can be embedded correctly
+            # while SignTool still returns a trust failure during /pa verify.
+            try {
+              $embeddedCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate]::CreateFromSignedFile($path)
+            } catch {
+              throw "$label has no embedded Authenticode signature: $($_.Exception.Message)"
+            }
+            if (-not $embeddedCertificate) {
+              throw "$label has no embedded Authenticode signature: $path"
+            }
+            Write-Host "$label embedded signer: $($embeddedCertificate.Subject)"
+
             $previousErrorActionPreference = $ErrorActionPreference
             # signtool writes trust failures to stderr. PowerShell 5.1 turns
             # native stderr into an error record, so do not let that hide the
             # verification result before we apply the self-signed test rule.
             $ErrorActionPreference = "Continue"
-            $verificationLines = @(& $env:TAURI_WINDOWS_SIGNTOOL_PATH verify /pa /a /all /v $path 2>&1)
+            $verificationLines = @(& $env:TAURI_WINDOWS_SIGNTOOL_PATH verify /pa /all /v $path 2>&1)
             $verificationExitCode = $LASTEXITCODE
             $ErrorActionPreference = $previousErrorActionPreference
             $verificationText = $verificationLines -join [Environment]::NewLine
-            $hasSignature =
-              $verificationText -match "(?im)^\s*0\s+sha\d+\b" -or
-              $verificationText -match "(?im)^\s*Signature Index:\s*0\b" -or
-              $verificationText -match "Successfully verified:"
-            if (-not $hasSignature -or $verificationText -match "No signature found") {
-              throw "$label has no verifiable Authenticode signature: $verificationText"
-            }
             if ($verificationExitCode -ne 0) {
               if ($env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -ne "true") {
                 throw "$label failed Authenticode trust verification: $verificationText"
               }
-              Write-Warning "$label has a signature, but trust verification is allowed to fail for the self-signed test certificate."
+              Write-Warning "$label has an embedded signature, but trust verification is allowed to fail for the self-signed test certificate."
             }
           }
 
@@ -485,6 +576,7 @@ jobs:
           retention-days: 7
 
       - name: Stage desktop installers on VPS
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full' }}
         working-directory: apps/silicium-node
         shell: powershell
         env:
@@ -526,7 +618,7 @@ jobs:
 
   build-linux:
     needs: [changes, validate-monorepo]
-    if: ${{ needs.changes.outputs.node_build == 'true' && needs.validate-monorepo.result == 'success' }}
+    if: ${{ needs.changes.outputs.linux_build == 'true' && needs.validate-monorepo.result == 'success' }}
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create GitHub App token
@@ -624,6 +716,7 @@ jobs:
         env:
           SILICIUM_RELEASE_CHANNEL: dev
           SILICIUM_RELEASE_BUILD: ${{ github.sha }}
+          SILICIUM_RECLAIM_RUNTIME_TARGETS: auto
         run: |
           set -euo pipefail
           bash "$GITHUB_WORKSPACE/deploy/ci/build-linux-client.sh" "$GITHUB_WORKSPACE"
@@ -641,6 +734,7 @@ jobs:
           retention-days: 7
 
       - name: Stage Linux bundle on VPS
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full' }}
         working-directory: apps/silicium-node
         shell: bash
         env:

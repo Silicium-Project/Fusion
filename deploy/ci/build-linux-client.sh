@@ -5,6 +5,21 @@ ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
 cd "$ROOT"
 
+# A stale release target can consume the remaining VPS disk before Tauri gets
+# to the AppImage step. Reclaim build-only targets only when the host is below
+# the safety threshold; otherwise keep them for incremental builds.
+minimum_free_kb="${SILICIUM_MIN_FREE_KB:-16777216}"
+reclaim_runtime_targets="${SILICIUM_RECLAIM_RUNTIME_TARGETS:-auto}"
+free_kb="$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')"
+if [[ -n "$free_kb" && "$free_kb" -lt "$minimum_free_kb" ]]; then
+  echo "Low disk space (${free_kb} KiB free); reclaiming stale Rust build targets."
+  rm -rf -- \
+    apps/silicium-node/src-tauri/target \
+    Network/networked/p2p_node/target \
+    Network/networked/compute_daemon/target \
+    Network/workloads/raytracer/native/target
+fi
+
 if [[ ! -d "apps/silicium-node" || ! -d "Network/networked/p2p_node" ]]; then
   echo "Expected apps/silicium-node and Network/networked/p2p_node at $ROOT." >&2
   exit 1
@@ -47,14 +62,20 @@ mkdir -p src-tauri/resources/runtime/bin
 cp ../../Network/networked/p2p_node/target/release/p2p_node src-tauri/resources/runtime/bin/
 cp ../../Network/networked/compute_daemon/target/release/compute_daemon src-tauri/resources/runtime/bin/
 
-# Keep the runtime targets available to the next build.  They are ignored by
-# git and are now covered by the Rust cache in both Linux workflows.  Set the
-# escape hatch only on a host that is actually running out of disk space.
-if [[ "${SILICIUM_RECLAIM_RUNTIME_TARGETS:-0}" == "1" ]]; then
+# Keep the runtime targets available to the next build when disk allows it.
+# The CI lanes use `auto`: after copying the runtime binaries, reclaim the
+# compiler-only targets if the host is close to full. `1` remains an explicit
+# override for a constrained runner.
+runtime_free_kb="$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')"
+if [[ "$reclaim_runtime_targets" == "1" ]] || \
+   [[ "$reclaim_runtime_targets" == "auto" && -n "$runtime_free_kb" && "$runtime_free_kb" -lt "$minimum_free_kb" ]]; then
   rm -rf -- \
+    src-tauri/target/raytracer-native \
     ../../Network/networked/p2p_node/target \
     ../../Network/networked/compute_daemon/target
 fi
+
+df -h "$ROOT"
 
 # The frontend was already built above; avoid invoking Vite a second time from
 # Tauri's beforeBuildCommand.

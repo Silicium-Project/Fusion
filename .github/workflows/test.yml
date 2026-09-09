@@ -33,6 +33,11 @@ on:
         required: false
         type: boolean
         default: true
+      run_node_fast:
+        description: "Run the fast Silicium Node frontend/unit lane."
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       skip_submodule_ci_gate:
@@ -65,6 +70,11 @@ on:
         required: false
         type: boolean
         default: true
+      run_node_fast:
+        description: "Run the fast Silicium Node frontend/unit lane."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -129,6 +139,37 @@ jobs:
       - name: Validate web stack
         shell: bash
         run: bash deploy/ci/validate-web-stack.sh "$GITHUB_WORKSPACE"
+
+  node-fast:
+    needs: [submodule-ci-gate]
+    if: ${{ always() && inputs.run_node_fast && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out Fusion
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/silicium-node/package-lock.json
+
+      - name: Install Silicium Node dependencies
+        working-directory: apps/silicium-node
+        run: npm ci
+
+      - name: Run Silicium Node unit tests
+        working-directory: apps/silicium-node
+        run: npm test
+
+      - name: Build Silicium Node frontend
+        working-directory: apps/silicium-node
+        run: npm run build
 
   network-core:
     needs: [submodule-ci-gate]

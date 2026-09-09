@@ -132,6 +132,7 @@ jobs:
         env:
           SILICIUM_RELEASE_CHANNEL: dev
           SILICIUM_RELEASE_BUILD: ${{ github.event.pull_request.head.sha || github.sha }}
+          SILICIUM_RECLAIM_RUNTIME_TARGETS: auto
         run: |
           bash "$GITHUB_WORKSPACE/deploy/ci/build-linux-client.sh" "$GITHUB_WORKSPACE"
 
