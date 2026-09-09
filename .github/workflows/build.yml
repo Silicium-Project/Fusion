@@ -61,15 +61,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clean -ffdx
-          git submodule foreach --recursive 'git clean -ffdx'
-          rm -rf -- apps/silicium-node/src-tauri/target
-          cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-          rm -rf -- \
-            "$cargo_home/registry/cache" \
-            "$cargo_home/registry/src" \
-            "$cargo_home/git/checkouts" \
-            "$HOME/.npm/_cacache"
+          # Preserve ignored dependency and Cargo target directories so the
+          # self-hosted runner can reuse them between builds.
+          git clean -ffd
+          git submodule foreach --recursive 'git clean -ffd'
           df -h "$GITHUB_WORKSPACE"
 
       - name: Verify Linux prerequisites
@@ -105,6 +100,14 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            apps/silicium-node/src-tauri
+            Network/networked/p2p_node
+            Network/networked/compute_daemon
+
       - name: Build Linux development bundles
         shell: bash
         env:
@@ -129,8 +132,5 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf -- \
-            apps/silicium-node/node_modules \
-            apps/silicium-node/src-tauri/target \
-            Network/networked/p2p_node/target \
-            Network/networked/compute_daemon/target
+            apps/silicium-node/node_modules
           df -h "$GITHUB_WORKSPACE"

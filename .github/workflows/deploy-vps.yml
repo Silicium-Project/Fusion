@@ -301,7 +301,10 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/silicium-node/src-tauri
+          workspaces: |
+            apps/silicium-node/src-tauri
+            Network/networked/p2p_node
+            Network/networked/compute_daemon
 
       - name: Install desktop dependencies
         working-directory: apps/silicium-node
@@ -432,6 +435,10 @@ jobs:
           $env:SILICIUM_RELEASE_CHANNEL = "prod"
           $env:SILICIUM_RELEASE_VERSION = $prodVersion
           $env:SILICIUM_SKIP_RUNTIME_PREPARE = "1"
+          # The dev build has already produced the unchanged frontend assets.
+          # Tauri still packages the production Rust binary, but does not
+          # invoke the frontend bundler a second time.
+          $env:SILICIUM_SKIP_FRONTEND_BUILD = "1"
           & .\build-installer.cmd
           if ($LASTEXITCODE -ne 0) { throw "Production installer build failed" }
           $prodInstaller = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" |
@@ -570,7 +577,10 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/silicium-node/src-tauri
+          workspaces: |
+            apps/silicium-node/src-tauri
+            Network/networked/p2p_node
+            Network/networked/compute_daemon
 
       - name: Cache Tauri Linux bundler tools
         uses: actions/cache@v4

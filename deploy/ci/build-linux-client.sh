@@ -10,7 +10,9 @@ if [[ ! -d "apps/silicium-node" || ! -d "Network/networked/p2p_node" ]]; then
   exit 1
 fi
 
-export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
+# Use the runner capacity by default.  CI callers can still lower this when
+# they deliberately need to share a constrained host.
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(nproc)}"
 
 pushd apps/silicium-node >/dev/null
 export SILICIUM_RELEASE_VERSION="${SILICIUM_RELEASE_VERSION:-$(node -p "require('./package.json').version")}"
@@ -22,16 +24,21 @@ npm run build
 npm run prepare:runtime:linux
 
 echo "Building p2p_node and compute_daemon..."
-cargo build --release --manifest-path ../../Network/networked/p2p_node/Cargo.toml
-cargo build --release --manifest-path ../../Network/networked/compute_daemon/Cargo.toml
+cargo build --release --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/p2p_node/Cargo.toml
+cargo build --release --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/compute_daemon/Cargo.toml
 
 mkdir -p src-tauri/resources/runtime/bin
 cp ../../Network/networked/p2p_node/target/release/p2p_node src-tauri/resources/runtime/bin/
 cp ../../Network/networked/compute_daemon/target/release/compute_daemon src-tauri/resources/runtime/bin/
 
-rm -rf -- \
-  ../../Network/networked/p2p_node/target \
-  ../../Network/networked/compute_daemon/target
+# Keep the runtime targets available to the next build.  They are ignored by
+# git and are now covered by the Rust cache in both Linux workflows.  Set the
+# escape hatch only on a host that is actually running out of disk space.
+if [[ "${SILICIUM_RECLAIM_RUNTIME_TARGETS:-0}" == "1" ]]; then
+  rm -rf -- \
+    ../../Network/networked/p2p_node/target \
+    ../../Network/networked/compute_daemon/target
+fi
 
 cargo test --manifest-path src-tauri/Cargo.toml
 # The test profile is no longer needed for packaging; reclaim its target before
