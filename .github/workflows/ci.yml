@@ -279,9 +279,25 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-solana-layer-${{ hashFiles('solana-layer/Cargo.lock', 'solana-layer/programs/**/Cargo.toml') }}
+          key: ${{ runner.os }}-cargo-solana-layer-v2-${{ hashFiles('solana-layer/Cargo.lock', 'solana-layer/programs/**/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-solana-layer-
+            ${{ runner.os }}-cargo-solana-layer-v2-
+
+      - name: Repair incomplete Cargo sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+          while IFS= read -r source_dir; do
+            generated_dir="$source_dir/aws-lc/generated-src/linux-x86_64/crypto/fipsmodule"
+            [[ -d "$source_dir/aws-lc/generated-src" ]] || continue
+            if [[ ! -f "$generated_dir/sha256-x86_64.S" ]]; then
+              crate_name="$(basename "$source_dir")"
+              echo "Removing incomplete Cargo source: $crate_name"
+              rm -rf -- "$source_dir"
+              find "$cargo_home/registry/cache" -type f -name "${crate_name}.crate" -delete 2>/dev/null || true
+            fi
+          done < <(find "$cargo_home/registry/src" -mindepth 1 -maxdepth 2 -type d -name 'aws-lc-sys-*' -print 2>/dev/null)
 
       - name: Install Solana CLI
         run: |
