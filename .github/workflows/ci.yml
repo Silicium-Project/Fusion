@@ -542,8 +542,6 @@ jobs:
 
       - name: Run budget checks
         if: matrix.job == 'perf-budget'
-        env:
-          SILICIUM_MAX_JOBS: "2"
         run: |
           python tools/perf_budget.py \
             --all \
