@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -13,10 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/silicium/internal/contextkeys"
 	"github.com/silicium/internal/models"
 	"github.com/silicium/internal/silicium"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -139,6 +140,54 @@ func TestBoundedQueryInt(t *testing.T) {
 	}
 	if fallback := boundedQueryInt(request, "missing", 20, 1, 100); fallback != 20 {
 		t.Fatalf("expected fallback, got %d", fallback)
+	}
+}
+
+func TestNetworkJobSummaryUsesConfiguredExportDirectory(t *testing.T) {
+	exportDir := t.TempDir()
+	tasksDir := filepath.Join(exportDir, "tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tasks := []map[string]any{
+		{
+			"task_id":     "rpc-job-1-frag-000-compute",
+			"root_job_id": "rpc-job-1",
+			"status":      "completed",
+			"handled_by":  "worker-local",
+			"handled_utc": "2026-09-09T08:00:00Z",
+			"task": map[string]any{
+				"kind":           "compute",
+				"fragment_index": 0,
+				"fragment_count": 1,
+			},
+		},
+		{
+			"task_id":     "other-job-frag-000-compute",
+			"root_job_id": "other-job",
+			"status":      "completed",
+		},
+	}
+	for index, task := range tasks {
+		raw, err := json.Marshal(task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(tasksDir, fmt.Sprintf("task-%d.json", index))
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Setenv("SILICIUM_ORCHESTRATOR_EXPORT_DIR", exportDir)
+	h := New(nil)
+	summary := h.networkJobSummary("rpc-job-1", map[string]any{})
+	if summary["stage"] != "completed" || summary["fragment_count"] != 1 {
+		t.Fatalf("unexpected summary: %#v", summary)
+	}
+	fragments, ok := summary["fragments"].([]map[string]any)
+	if !ok || len(fragments) != 1 || fragments[0]["handledBy"] != "worker-local" {
+		t.Fatalf("unexpected fragments: %#v", summary["fragments"])
 	}
 }
 

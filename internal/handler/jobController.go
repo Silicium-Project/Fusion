@@ -381,7 +381,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 // site-submitted job. The source of truth remains the task registry; no second
 // frontend-specific task model is needed.
 func (h *Handler) networkJobSummary(rootID string, fallback map[string]any) map[string]any {
-	const dir = "/var/lib/silicium/network/orchestrator/export/tasks"
+	dir := filepath.Join(silicium.ConfigFromEnv().OrchestratorExportDir, "tasks")
 	if fallback == nil { fallback = map[string]any{} }
 	fragments := make([]map[string]any, 0)
 	completed, failed, total := 0, 0, 0
