@@ -36,7 +36,7 @@ jobs:
     outputs:
       web: ${{ steps.detect.outputs.web }}
       network: ${{ steps.detect.outputs.network }}
-      node: ${{ steps.detect.outputs.node }}
+      node_build: ${{ steps.detect.outputs.node_build }}
       submodules: ${{ steps.detect.outputs.submodules }}
       validate: ${{ steps.detect.outputs.validate }}
       deployable: ${{ steps.detect.outputs.deployable }}
@@ -73,17 +73,17 @@ jobs:
 
           web=false
           network=false
-          node=false
+          node_build=false
           submodules=false
           validate=false
           deployable=false
 
           if matches '^(BackEnd|FrontEnd|Network)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$|^\.gitmodules$'; then web=true; fi
           if matches '^(BackEnd|Network)(/|$)|^deploy/(compose|linux)/'; then network=true; fi
-          if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/build-linux-client\.sh$|^\.gitmodules$'; then node=true; fi
+          if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/build-linux-client\.sh$|^\.gitmodules$'; then node_build=true; fi
           if matches '^BackEnd$|^FrontEnd$|^Network$|^\.gitmodules$'; then submodules=true; fi
           if matches '^(BackEnd|FrontEnd|Network|apps/silicium-node|deploy/|\.gitmodules$|\.github/workflows/)'; then validate=true; fi
-          if [[ "$web" == true || "$network" == true || "$node" == true ]]; then deployable=true; fi
+          if [[ "$web" == true || "$network" == true || "$node_build" == true ]]; then deployable=true; fi
 
           # A workflow-only change must exercise the lanes it modifies, but
           # it should not rebuild or redeploy the product by itself.
@@ -94,7 +94,7 @@ jobs:
           fi
 
           printf 'Changed paths:\n%s\n' "$changed_paths"
-          for name in web network node submodules validate deployable; do
+          for name in web network node_build submodules validate deployable; do
             printf '%s=%s\n' "$name" "${!name}" >> "$GITHUB_OUTPUT"
           done
 
@@ -207,7 +207,7 @@ jobs:
 
   build-desktop:
     needs: [changes, validate-monorepo]
-    if: ${{ needs.changes.outputs.node == 'true' && needs.validate-monorepo.result == 'success' }}
+    if: ${{ needs.changes.outputs.node_build == 'true' && needs.validate-monorepo.result == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -500,7 +500,7 @@ jobs:
 
   build-linux:
     needs: [changes, validate-monorepo]
-    if: ${{ needs.changes.outputs.node == 'true' && needs.validate-monorepo.result == 'success' }}
+    if: ${{ needs.changes.outputs.node_build == 'true' && needs.validate-monorepo.result == 'success' }}
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create GitHub App token
@@ -656,7 +656,7 @@ jobs:
 
   release-node:
     needs: [changes, validate-monorepo, build-desktop, build-linux, tests]
-    if: ${{ always() && needs.changes.outputs.node == 'true' && needs.validate-monorepo.result == 'success' && needs.build-desktop.result == 'success' && needs.build-linux.result == 'success' && needs.tests.result == 'success' }}
+    if: ${{ always() && needs.changes.outputs.node_build == 'true' && needs.validate-monorepo.result == 'success' && needs.build-desktop.result == 'success' && needs.build-linux.result == 'success' && needs.tests.result == 'success' }}
     runs-on: [self-hosted, fusion-linux]
     outputs:
       release_tag: ${{ steps.meta.outputs.release_tag }}
@@ -708,14 +708,14 @@ jobs:
 
   deploy:
     needs: [changes, validate-monorepo, tests, build-desktop, build-linux, release-node, release-metadata]
-    if: ${{ always() && needs.changes.outputs.deployable == 'true' && needs.validate-monorepo.result == 'success' && needs.tests.result == 'success' && (needs.changes.outputs.node != 'true' || (needs.build-desktop.result == 'success' && needs.build-linux.result == 'success' && needs.release-node.result == 'success')) && needs.release-metadata.result == 'success' }}
+    if: ${{ always() && needs.changes.outputs.deployable == 'true' && needs.validate-monorepo.result == 'success' && needs.tests.result == 'success' && (needs.changes.outputs.node_build != 'true' || (needs.build-desktop.result == 'success' && needs.build-linux.result == 'success' && needs.release-node.result == 'success')) && needs.release-metadata.result == 'success' }}
     runs-on: [self-hosted, fusion-linux]
     env:
       DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
       RELEASE_VERSION: ${{ needs.release-node.outputs.release_version || needs.release-metadata.outputs.release_version }}
       RELEASE_CHANNEL: ${{ startsWith(github.ref_name, 'v') && 'prod' || 'dev' }}
       RELEASE_BUILD: ${{ github.sha }}
-      NODE_ARTIFACTS_STAGED: ${{ needs.changes.outputs.node }}
+      NODE_ARTIFACTS_STAGED: ${{ needs.changes.outputs.node_build }}
     steps:
       - name: Configure SSH
         shell: bash
