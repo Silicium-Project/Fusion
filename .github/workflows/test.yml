@@ -247,6 +247,24 @@ jobs:
         shell: bash
         run: python -m pip install -r Network/requirements-dev.txt
 
+      - name: Remove broken legacy Solana Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! rustup toolchain list --quiet | grep -Fxq 'solana'; then
+            exit 0
+          fi
+          if rustup run solana rustc -vV >/dev/null 2>&1; then
+            echo "The Solana Rust toolchain is valid; keeping it."
+            exit 0
+          fi
+          rustup toolchain uninstall solana
+          if rustup toolchain list --quiet | grep -Fxq 'solana'; then
+            echo "::error::The broken legacy Solana Rust toolchain could not be removed."
+            exit 1
+          fi
+          echo "Removed the broken legacy Solana Rust toolchain."
+
       - name: Cache Network Rust target
         uses: Swatinem/rust-cache@v2
         with:
