@@ -138,7 +138,13 @@ async function checkRepo(repo, refOrSha, label) {
   }
 
   const broken = [...latestByWorkflow.values()].filter((run) => {
-    return run.status !== "completed" || run.conclusion !== "success";
+    if (run.status !== "completed") {
+      return true;
+    }
+    // Path-filtered and optional workflows commonly finish as skipped. They
+    // provide no negative signal about the commit and must not hide a green
+    // required workflow from the latest-green resolver.
+    return !["success", "skipped"].includes(run.conclusion);
   });
 
   if (broken.length > 0) {
