@@ -16,6 +16,7 @@ pushd apps/silicium-node >/dev/null
 export SILICIUM_RELEASE_VERSION="${SILICIUM_RELEASE_VERSION:-$(node -p "require('./package.json').version")}"
 export SILICIUM_RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-local}"
+export SILICIUM_SKIP_CI_TESTS="${SILICIUM_SKIP_CI_TESTS:-0}"
 
 npm ci
 npm run build
@@ -33,9 +34,34 @@ rm -rf -- \
   ../../Network/networked/p2p_node/target \
   ../../Network/networked/compute_daemon/target
 
-cargo test --manifest-path src-tauri/Cargo.toml
+if [[ "$SILICIUM_SKIP_CI_TESTS" == "1" ]]; then
+  echo "Skipping Tauri CI tests because SILICIUM_SKIP_CI_TESTS=1."
+else
+  cargo test --manifest-path src-tauri/Cargo.toml
+fi
 # The test profile is no longer needed for packaging; reclaim its target before
 # the release profile is built on the disk-constrained VPS runner.
 rm -rf -- src-tauri/target/debug
-npx tauri build --bundles deb
+
+# Tauri downloads this script lazily while producing the AppImage. Prime the
+# same cache with retries so a transient raw.githubusercontent.com timeout does
+# not discard the already completed Rust and frontend build.
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+tauri_tools_dir="$XDG_CACHE_HOME/tauri"
+gtk_plugin="$tauri_tools_dir/linuxdeploy-plugin-gtk.sh"
+mkdir -p "$tauri_tools_dir"
+if [[ ! -s "$gtk_plugin" ]]; then
+  gtk_plugin_tmp="${gtk_plugin}.download.$$"
+  trap 'rm -f -- "$gtk_plugin_tmp"' EXIT
+  curl --fail --show-error --location \
+    --connect-timeout 20 --max-time 300 \
+    --retry 10 --retry-all-errors --retry-delay 5 --retry-max-time 900 \
+    --output "$gtk_plugin_tmp" \
+    "https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh"
+  chmod +x "$gtk_plugin_tmp"
+  mv -f -- "$gtk_plugin_tmp" "$gtk_plugin"
+  trap - EXIT
+fi
+chmod +x "$gtk_plugin"
+npx tauri build --bundles deb,appimage
 popd >/dev/null
