@@ -4842,17 +4842,19 @@ class NetworkNode:
             solana_worker=self._solana_worker,
         )
 
-    def refresh_known_peer_onchain_reputations(self) -> None:
+    def refresh_known_peer_onchain_reputations(self, *, force: bool = False) -> None:
         if not self.config.solana_enable or not self.config.solana_reputation_enable:
             return
-        if (time.time() - self._last_peer_reputation_refresh_unix) < max(1, self.config.solana_reputation_refresh_s):
+        if not force and (time.time() - self._last_peer_reputation_refresh_unix) < max(1, self.config.solana_reputation_refresh_s):
             return
+        attempted = False
         for peer in self.peer_network.peers_snapshot().get("peers", []):
             if not isinstance(peer, dict) or peer.get("self"):
                 continue
             owner = str(peer.get("solana_owner", "")).strip()
             if not owner:
                 continue
+            attempted = True
             try:
                 snapshot = self.solana.call("fetch_worker", {"owner": owner})
             except Exception:
@@ -4880,7 +4882,11 @@ class NetworkNode:
                     "onchain_verified_utc": utc_now(),
                 },
             )
-        self._last_peer_reputation_refresh_unix = time.time()
+        # Do not throttle the next refresh when peer discovery has not yet
+        # converged. A one-shot scheduler may learn the peer immediately after
+        # this pass and must be able to fetch its on-chain profile then.
+        if attempted:
+            self._last_peer_reputation_refresh_unix = time.time()
 
     def write_heartbeat(self) -> None:
         self.refresh_local_onchain_profile()
@@ -5767,12 +5773,31 @@ class NetworkNode:
             for value in (envelope.get("excluded_peer_ids", []) if isinstance(envelope.get("excluded_peer_ids"), list) else [])
         }
         excluded_peer_ids.discard("")
-        peer = self.peer_network.select_peers(
-            required_roles={str(role).lower() for role in required_roles},
-            limit=1,
-            exclude={self.config.node_id, *excluded_peer_ids},
-            constraints=_peer_constraints(body, envelope),
-        )
+        required_role_set = {str(role).lower() for role in required_roles}
+        constraints = _peer_constraints(body, envelope)
+        peer: list[dict[str, Any]] = []
+        for attempt in range(4):
+            peer = self.peer_network.select_peers(
+                required_roles=required_role_set,
+                limit=1,
+                exclude={self.config.node_id, *excluded_peer_ids},
+                constraints=constraints,
+            )
+            if peer:
+                break
+
+            # Peer discovery and on-chain reputation publication are
+            # asynchronous. This is especially visible for --once jobs,
+            # which otherwise have no later convergence cycle to retry a
+            # dispatch after the first empty peer snapshot.
+            if attempt == 0:
+                try:
+                    self.peer_network.sync_once()
+                except Exception:
+                    pass
+            self.refresh_known_peer_onchain_reputations(force=True)
+            if attempt < 3:
+                time.sleep(0.05)
         if not peer:
             self.metrics["dispatch_failed"] = int(self.metrics.get("dispatch_failed", 0) or 0) + 1
             return False
