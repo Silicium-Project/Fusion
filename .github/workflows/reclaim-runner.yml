@@ -60,6 +60,26 @@ jobs:
               rm -rf -- "$cache"
             fi
           done
+          # Runner diagnostics and container stdout/stderr are disposable.
+          # Truncate only known log files; do not remove containers, images,
+          # volumes, application exports, task results, or database files.
+          for diagnostics in /opt/github-runner*/_diag /home/*/_diag; do
+            if [[ -d "$diagnostics" ]]; then
+              find "$diagnostics" -type f -name '*.log' -exec truncate -s 0 -- {} +
+            fi
+          done
+          for container_logs in \
+            /var/lib/docker/containers \
+            /var/lib/containers/storage/overlay-containers \
+            /home/*/.local/share/containers/storage/overlay-containers; do
+            if [[ -d "$container_logs" ]]; then
+              find "$container_logs" -type f \( -name '*-json.log' -o -name 'ctr.log' \) -exec truncate -s 0 -- {} +
+            fi
+          done
+          if command -v journalctl >/dev/null 2>&1; then
+            journalctl --rotate || true
+            journalctl --vacuum-time=1s || true
+          fi
           for runner_service in \
             actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service \
             actions.runner.Silicium-Project-Fusion.fusion-vps-fusion-extra-1.service; do
