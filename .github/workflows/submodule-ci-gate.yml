@@ -42,7 +42,28 @@ jobs:
             echo "::error title=Missing secret::Configure SILICIUM_SYNC_PUSH_TOKEN to provision BackEnd and FrontEnd VPS runners."
             exit 1
           fi
-          sudo -E bash deploy/linux/bootstrap-submodule-runners.sh
+          if sudo -n true 2>/dev/null; then
+            sudo -E bash deploy/linux/bootstrap-submodule-runners.sh
+            exit 0
+          fi
+
+          echo "::notice::Passwordless sudo is unavailable; validating already provisioned submodule runner services."
+          required_services=(
+            "actions.runner.Silicium-Project-BackEnd.fusion-vps-backend.service"
+            "actions.runner.Silicium-Project-FrontEnd.fusion-vps-frontend.service"
+          )
+          missing_services=()
+          for service in "${required_services[@]}"; do
+            if ! systemctl is-active --quiet "$service"; then
+              missing_services+=("$service")
+            fi
+          done
+          if (( ${#missing_services[@]} > 0 )); then
+            printf 'Missing active submodule runner services: %s\n' "${missing_services[*]}" >&2
+            echo "Passwordless sudo is required to provision missing VPS runners." >&2
+            exit 1
+          fi
+          echo "Required BackEnd and FrontEnd runner services are already active."
 
       - name: Require healthy submodule mains
         shell: bash
