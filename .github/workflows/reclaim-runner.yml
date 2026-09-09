@@ -53,11 +53,34 @@ jobs:
           done
           for cache in \
             /home/*/.cargo/registry/cache \
+            /home/*/.cargo/registry/index \
             /home/*/.cargo/registry/src \
-            /home/*/.cargo/git/checkouts \
+            /home/*/.cargo/git \
             /home/*/.npm/_cacache; do
             if [[ -d "$cache" ]]; then
               rm -rf -- "$cache"
+            fi
+          done
+          for cache_root in /home/*/.cache /root/.cache; do
+            if [[ -d "$cache_root" ]]; then
+              find "$cache_root" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+            fi
+          done
+          for temporary in /tmp/silicium-release-* /tmp/silicium-*; do
+            if [[ -e "$temporary" ]]; then
+              rm -rf -- "$temporary"
+            fi
+          done
+          # Remove local CLI/build state from the deployed checkout only. The
+          # application data under /var/lib/silicium is intentionally kept.
+          for local_state in \
+            /opt/silicium/Network/.silicium/logs \
+            /opt/silicium/Network/.pytest_cache \
+            /opt/silicium/Network/.cache \
+            /opt/silicium/Network/workloads/raytracer/native/target \
+            /opt/silicium/apps/silicium-node/src-tauri/target; do
+            if [[ -e "$local_state" ]]; then
+              rm -rf -- "$local_state"
             fi
           done
           # Runner diagnostics and container stdout/stderr are disposable.
@@ -76,6 +99,13 @@ jobs:
               find "$container_logs" -type f \( -name '*-json.log' -o -name 'ctr.log' \) -exec truncate -s 0 -- {} +
             fi
           done
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            docker builder prune --all --force || true
+            docker system prune --all --force || true
+          fi
+          if command -v podman >/dev/null 2>&1; then
+            podman system prune --all --force || true
+          fi
           if command -v journalctl >/dev/null 2>&1; then
             journalctl --rotate || true
             journalctl --vacuum-time=1s || true
