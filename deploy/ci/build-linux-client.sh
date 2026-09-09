@@ -13,6 +13,7 @@ fi
 # Use the runner capacity by default.  CI callers can still lower this when
 # they deliberately need to share a constrained host.
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(nproc)}"
+export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 
 pushd apps/silicium-node >/dev/null
 export SILICIUM_RELEASE_VERSION="${SILICIUM_RELEASE_VERSION:-$(node -p "require('./package.json').version")}"
@@ -22,6 +23,18 @@ export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-local}"
 npm ci
 npm run build
 npm run prepare:runtime:linux
+
+# Avoid carrying a stale debug profile into the release build.  The
+# release profile is reused by the tests and by the Tauri bundle below.
+rm -rf -- \
+  src-tauri/target/debug \
+  ../../Network/networked/p2p_node/target/debug \
+  ../../Network/networked/compute_daemon/target/debug \
+  ../../Network/workloads/raytracer/native/target/debug
+
+echo "Testing silicium-node in release mode..."
+cargo test --release --jobs "$CARGO_BUILD_JOBS" --manifest-path src-tauri/Cargo.toml
+rm -rf -- src-tauri/target/debug
 
 echo "Building p2p_node and compute_daemon..."
 cargo build --release --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/p2p_node/Cargo.toml
@@ -39,11 +52,6 @@ if [[ "${SILICIUM_RECLAIM_RUNTIME_TARGETS:-0}" == "1" ]]; then
     ../../Network/networked/p2p_node/target \
     ../../Network/networked/compute_daemon/target
 fi
-
-cargo test --manifest-path src-tauri/Cargo.toml
-# The test profile is no longer needed for packaging; reclaim its target before
-# the release profile is built on the disk-constrained VPS runner.
-rm -rf -- src-tauri/target/debug
 
 # Tauri downloads this script lazily while producing the AppImage. Prime the
 # same cache with retries so a transient raw.githubusercontent.com timeout does
