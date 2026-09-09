@@ -528,7 +528,10 @@ jobs:
           $devInstaller = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $devInstaller) { throw "Development installer was not produced" }
-          Assert-ValidAuthenticodeSignature (Join-Path $PWD "src-tauri\target\release\silicium-node.exe") "Development application"
+          # Tauri signs the patched application copy before embedding it in
+          # NSIS, then restores target/release/silicium-node.exe to the
+          # original unsigned binary after each bundle target. Verify the
+          # distributable installer instead of that restored build artifact.
           Assert-ValidAuthenticodeSignature $devInstaller.FullName "Development installer"
           Copy-Item $devInstaller.FullName (Join-Path $artifacts "silicium-node-windows-dev.exe") -Force
 
@@ -544,7 +547,6 @@ jobs:
           $prodInstaller = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $prodInstaller) { throw "Production installer was not produced" }
-          Assert-ValidAuthenticodeSignature (Join-Path $PWD "src-tauri\target\release\silicium-node.exe") "Production application"
           Assert-ValidAuthenticodeSignature $prodInstaller.FullName "Production installer"
           Copy-Item $prodInstaller.FullName (Join-Path $artifacts "silicium-node-windows.exe") -Force
 
