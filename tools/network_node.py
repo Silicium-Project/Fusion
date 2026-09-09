@@ -4705,6 +4705,7 @@ class NetworkNode:
         self._last_response: dict[str, Any] = {}
         self._task_queue_cache_lock = threading.Lock()
         self._task_queue_cache: list[dict[str, Any]] = []
+        self._task_queue_cache_generation = 0
         self._task_queue_cache_updated_monotonic = 0.0
         self._task_queue_cache_refreshing = False
         self.telemetry_sampler = RuntimeTelemetrySampler(config.export_dir)
@@ -5403,13 +5404,18 @@ class NetworkNode:
             stale = force_refresh or (now - self._task_queue_cache_updated_monotonic) >= 60.0
             if not stale or self._task_queue_cache_refreshing:
                 return cached
+            refresh_generation = self._task_queue_cache_generation
             self._task_queue_cache_refreshing = True
 
         def refresh() -> None:
             try:
                 snapshot = self.task_queue_snapshot(limit=64)
                 with self._task_queue_cache_lock:
-                    self._task_queue_cache = snapshot
+                    # A task can be remembered while the disk scan is in
+                    # flight. Do not let that older snapshot erase the newer
+                    # in-memory announcement.
+                    if self._task_queue_cache_generation == refresh_generation:
+                        self._task_queue_cache = snapshot
                     self._task_queue_cache_updated_monotonic = time.monotonic()
             finally:
                 with self._task_queue_cache_lock:
@@ -5433,6 +5439,7 @@ class NetworkNode:
                 for item in self._task_queue_cache
                 if safe_id(str(item.get("item_id", ""))) != item_id
             ]
+            self._task_queue_cache_generation += 1
             if task_status_is_terminal(status):
                 return
             summary = self.task_activity(envelope)
