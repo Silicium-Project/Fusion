@@ -54,10 +54,23 @@ apps\silicium-node\src-tauri\target\release\bundle\
 silicium-node-windows.exe
 ```
 
-4. Sign both the application and the installer with the organization Windows
-   code-signing certificate before publishing. An unsigned build is suitable
-   for local development only: SmartScreen or endpoint protection may
-   quarantine it, which leaves Windows shortcuts pointing to a missing file.
+4. The Fusion `Deploy` workflow signs both the application and the installer
+   with the organization Windows code-signing certificate before publishing.
+   Configure these repository Actions secrets before pushing a node release:
+
+   - `SILICIUM_WINDOWS_CERTIFICATE_BASE64`: the base64-encoded PFX containing
+     the code-signing certificate and private key;
+   - `SILICIUM_WINDOWS_CERTIFICATE_PASSWORD`: the PFX password.
+
+   The private certificate must never be committed to Git. An unsigned build
+   is suitable for local development only: SmartScreen or endpoint protection
+   may quarantine it, which leaves Windows shortcuts pointing to a missing
+   file.
+
+   For test-only packaging, the workflow can use a self-signed PFX when the
+   repository variable `SILICIUM_WINDOWS_ALLOW_SELF_SIGNED` is set to `true`.
+   This only makes the runner trust the test certificate; Windows users will
+   still see it as untrusted.
 
 Verify the release artifact before upload:
 

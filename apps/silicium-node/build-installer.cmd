@@ -18,8 +18,16 @@ if /I not "%SILICIUM_SKIP_RUNTIME_PREPARE%"=="1" (
 )
 
 if /I "%SILICIUM_RELEASE_CHANNEL%"=="prod" (
-  call .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri\tauri.prod.conf.json
+  if "%SILICIUM_TAURI_CONFIG%"=="" (
+    call .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri\tauri.prod.conf.json
+  ) else (
+    call .\node_modules\.bin\tauri.cmd build --bundles nsis --config src-tauri\tauri.prod.conf.json --config "%SILICIUM_TAURI_CONFIG%"
+  )
 ) else (
-  call .\node_modules\.bin\tauri.cmd build --bundles nsis
+  if "%SILICIUM_TAURI_CONFIG%"=="" (
+    call .\node_modules\.bin\tauri.cmd build --bundles nsis
+  ) else (
+    call .\node_modules\.bin\tauri.cmd build --bundles nsis --config "%SILICIUM_TAURI_CONFIG%"
+  )
 )
 exit /b %errorlevel%

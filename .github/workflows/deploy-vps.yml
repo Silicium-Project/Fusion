@@ -307,15 +307,115 @@ jobs:
         working-directory: apps/silicium-node
         run: npm ci
 
+      - name: Import Windows code-signing certificate
+        shell: powershell
+        env:
+          SILICIUM_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.SILICIUM_WINDOWS_CERTIFICATE_BASE64 }}
+          SILICIUM_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.SILICIUM_WINDOWS_CERTIFICATE_PASSWORD }}
+          SILICIUM_WINDOWS_ALLOW_SELF_SIGNED: ${{ vars.SILICIUM_WINDOWS_ALLOW_SELF_SIGNED }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:SILICIUM_WINDOWS_CERTIFICATE_BASE64)) {
+            throw "Missing SILICIUM_WINDOWS_CERTIFICATE_BASE64 Actions secret"
+          }
+          if ([string]::IsNullOrEmpty($env:SILICIUM_WINDOWS_CERTIFICATE_PASSWORD)) {
+            throw "Missing SILICIUM_WINDOWS_CERTIFICATE_PASSWORD Actions secret"
+          }
+
+          $certificatePath = Join-Path $env:RUNNER_TEMP "silicium-node-code-signing.pfx"
+          try {
+            [IO.File]::WriteAllBytes(
+              $certificatePath,
+              [Convert]::FromBase64String(($env:SILICIUM_WINDOWS_CERTIFICATE_BASE64 -replace "\s", ""))
+            )
+          } catch {
+            throw "SILICIUM_WINDOWS_CERTIFICATE_BASE64 is not valid base64: $($_.Exception.Message)"
+          }
+
+          $password = ConvertTo-SecureString $env:SILICIUM_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $importParameters = @{
+            FilePath = $certificatePath
+            CertStoreLocation = "Cert:\CurrentUser\My"
+            Password = $password
+            Exportable = $true
+          }
+          $imported = @(Import-PfxCertificate @importParameters)
+          $signingCertificate = $imported |
+            Where-Object { $_.HasPrivateKey } |
+            Select-Object -First 1
+          if (-not $signingCertificate) {
+            throw "The PFX does not contain a certificate with a private key"
+          }
+          if (@($signingCertificate.EnhancedKeyUsageList.ObjectId) -notcontains "1.3.6.1.5.5.7.3.3") {
+            throw "The PFX certificate is not valid for code signing"
+          }
+
+          $isSelfSigned = $signingCertificate.Subject -eq $signingCertificate.Issuer
+          if ($isSelfSigned) {
+            if ($env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -ne "true") {
+              throw "A self-signed certificate is allowed only when SILICIUM_WINDOWS_ALLOW_SELF_SIGNED=true"
+            }
+            $publicCertificatePath = Join-Path $env:RUNNER_TEMP "silicium-node-code-signing.cer"
+            Export-Certificate -Cert $signingCertificate -FilePath $publicCertificatePath -Type CERT | Out-Null
+            Import-Certificate -FilePath $publicCertificatePath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+            Remove-Item -LiteralPath $publicCertificatePath -Force
+            Write-Warning "Using a self-signed Windows certificate for test-only packaging"
+          }
+
+          $thumbprint = $signingCertificate.Thumbprint.ToUpperInvariant()
+          $signingConfig = Join-Path $env:RUNNER_TEMP "silicium-node-windows-signing.conf.json"
+          @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $thumbprint
+                digestAlgorithm = "sha256"
+                timestampUrl = "http://timestamp.digicert.com"
+              }
+            }
+          } | ConvertTo-Json -Depth 8 | Out-File -FilePath $signingConfig -Encoding utf8
+
+          "SILICIUM_TAURI_CONFIG=$signingConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "SILICIUM_WINDOWS_CERTIFICATE_THUMBPRINT=$thumbprint" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Remove-Item -LiteralPath $certificatePath -Force
+
+      - name: Locate Windows signing tool
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $signTool = Get-ChildItem `
+            -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" `
+            -Filter signtool.exe -File -Recurse `
+            -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "\\x64\\signtool\.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) {
+            throw "Windows SDK signtool.exe was not found on the GitHub-hosted runner"
+          }
+          "TAURI_WINDOWS_SIGNTOOL_PATH=$($signTool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build development and production installers
         shell: powershell
         working-directory: apps/silicium-node
         run: |
           $ErrorActionPreference = "Stop"
+          if (-not $env:SILICIUM_TAURI_CONFIG) { throw "Windows signing configuration was not initialized" }
+          if (-not $env:SILICIUM_WINDOWS_CERTIFICATE_THUMBPRINT) { throw "Windows signing certificate was not imported" }
           $artifacts = Join-Path $PWD "ci-artifacts"
           $devVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $prodVersion = (Get-Content src-tauri/tauri.prod.conf.json -Raw | ConvertFrom-Json).version
           New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+
+          function Assert-ValidAuthenticodeSignature([string] $path, [string] $label) {
+            if (-not (Test-Path -LiteralPath $path)) { throw "$label was not produced: $path" }
+            $signature = Get-AuthenticodeSignature -FilePath $path
+            if ($signature.Status -ne "Valid") {
+              throw "$label is not Authenticode-valid: $($signature.Status) ($($signature.StatusMessage))"
+            }
+            if ($signature.SignerCertificate.Thumbprint -ne $env:SILICIUM_WINDOWS_CERTIFICATE_THUMBPRINT) {
+              throw "$label was signed by an unexpected certificate"
+            }
+          }
 
           $env:SILICIUM_RELEASE_CHANNEL = "dev"
           $env:SILICIUM_RELEASE_VERSION = $devVersion
@@ -325,6 +425,8 @@ jobs:
           $devInstaller = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $devInstaller) { throw "Development installer was not produced" }
+          Assert-ValidAuthenticodeSignature (Join-Path $PWD "src-tauri\target\release\silicium-node.exe") "Development application"
+          Assert-ValidAuthenticodeSignature $devInstaller.FullName "Development installer"
           Copy-Item $devInstaller.FullName (Join-Path $artifacts "silicium-node-windows-dev.exe") -Force
 
           $env:SILICIUM_RELEASE_CHANNEL = "prod"
@@ -335,6 +437,8 @@ jobs:
           $prodInstaller = Get-ChildItem "src-tauri\target\release\bundle\nsis\*.exe" |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $prodInstaller) { throw "Production installer was not produced" }
+          Assert-ValidAuthenticodeSignature (Join-Path $PWD "src-tauri\target\release\silicium-node.exe") "Production application"
+          Assert-ValidAuthenticodeSignature $prodInstaller.FullName "Production installer"
           Copy-Item $prodInstaller.FullName (Join-Path $artifacts "silicium-node-windows.exe") -Force
 
           Get-FileHash (Join-Path $artifacts "*.exe") -Algorithm SHA256
