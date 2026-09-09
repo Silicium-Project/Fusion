@@ -47,6 +47,7 @@ services:
     networks:
     - backend
   backend:
+    image: silicium-backend:latest
     build:
       context: ../../BackEnd
       dockerfile: Dockerfile

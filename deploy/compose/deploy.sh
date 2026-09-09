@@ -37,9 +37,14 @@ compose=(docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE")
 # user. Without this step, CreateJob cannot create <job-id>/input and returns
 # "Could not create job input directory".
 "${compose[@]}" build backend
-backend_image="$("${compose[@]}" images -q backend | head -n 1)"
-[[ -n "$backend_image" ]] || { echo "Could not resolve the built backend image." >&2; exit 1; }
-backend_identity="$(docker run --rm --entrypoint sh "$backend_image" -c 'printf "%s:%s" "$(id -u)" "$(id -g)"')"
+# `docker compose images -q` reports the image attached to an existing
+# container. During a rolling deploy that container can retain a deleted
+# digest even after the fresh build succeeds. Inspect the explicit image tag
+# produced by this compose file instead.
+backend_image="silicium-backend:latest"
+backend_image_id="$(docker image inspect --format '{{.Id}}' "$backend_image")"
+[[ -n "$backend_image_id" ]] || { echo "Could not resolve the built backend image." >&2; exit 1; }
+backend_identity="$(docker run --rm --entrypoint sh "$backend_image_id" -c 'printf "%s:%s" "$(id -u)" "$(id -g)"')"
 [[ "$backend_identity" =~ ^[0-9]+:[0-9]+$ ]] || {
   echo "Could not resolve backend UID/GID: $backend_identity" >&2
   exit 1
