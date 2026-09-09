@@ -19,7 +19,6 @@ jobs:
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
           permission-contents: read
-          permission-actions: read
 
       - name: Check out Fusion metadata
         uses: actions/checkout@v4

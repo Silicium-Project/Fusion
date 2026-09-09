@@ -313,7 +313,6 @@ jobs:
           private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
-          permission-actions: read
 
       - name: Check out sources
         uses: actions/checkout@v4

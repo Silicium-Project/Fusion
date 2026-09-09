@@ -31,7 +31,6 @@ jobs:
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
           permission-contents: read
-          permission-actions: read
 
       - name: Check out the pinned composition
         uses: actions/checkout@v4
@@ -94,7 +93,6 @@ jobs:
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
           permission-contents: read
-          permission-actions: read
 
       - name: Check out the pinned composition
         uses: actions/checkout@v4
