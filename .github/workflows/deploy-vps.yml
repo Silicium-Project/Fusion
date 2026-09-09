@@ -151,6 +151,7 @@ jobs:
 
   build-desktop:
     needs: [validate-monorepo]
+    if: ${{ always() && needs.validate-monorepo.result == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -333,6 +334,7 @@ jobs:
 
   build-linux:
     needs: [validate-monorepo]
+    if: ${{ always() && needs.validate-monorepo.result == 'success' }}
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Create GitHub App token
