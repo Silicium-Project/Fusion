@@ -131,8 +131,12 @@ jobs:
             "$vps_user@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
           set -euo pipefail
           for workspace in /home/*/_work/Fusion /opt/github-runner*/_work/Fusion; do
-            if [[ -d "$workspace" ]]; then
-              rm -rf -- "$workspace"
+            checkout="$workspace/Fusion"
+            if [[ -d "$checkout" ]]; then
+              git -C "$checkout" reset --hard --quiet || true
+              git -C "$checkout" clean -ffd || true
+              git -C "$checkout" submodule foreach --recursive 'git reset --hard --quiet && git clean -ffd' || true
+              find "$checkout" -type d -path '*/target/debug' -prune -exec rm -rf -- {} +
             fi
           done
           for release_staging in /tmp/silicium-release-*; do
@@ -168,6 +172,7 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
+          clean: false
 
       - name: Sync declared submodules
         shell: bash
@@ -301,10 +306,19 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: fusion-desktop
           workspaces: |
             apps/silicium-node/src-tauri
             Network/networked/p2p_node
             Network/networked/compute_daemon
+
+      - name: Cache Tauri Windows bundler tools
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: ${{ runner.os }}-tauri-windows-bundler-${{ hashFiles('apps/silicium-node/package-lock.json', 'apps/silicium-node/src-tauri/Cargo.lock', 'deploy/ci/prepare-tauri-linux-tools.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-tauri-windows-bundler-
 
       - name: Install desktop dependencies
         working-directory: apps/silicium-node
@@ -517,6 +531,7 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
+          clean: false
 
       - name: Sync declared submodules
         shell: bash
@@ -577,6 +592,7 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: fusion-linux
           workspaces: |
             apps/silicium-node/src-tauri
             Network/networked/p2p_node
@@ -586,7 +602,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/tauri
-          key: ${{ runner.os }}-tauri-linux-bundler-v1
+          key: ${{ runner.os }}-tauri-linux-bundler-${{ hashFiles('apps/silicium-node/package-lock.json', 'apps/silicium-node/src-tauri/Cargo.lock', 'deploy/ci/prepare-tauri-linux-tools.sh') }}
           restore-keys: |
             ${{ runner.os }}-tauri-linux-bundler-
 

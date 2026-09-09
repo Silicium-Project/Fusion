@@ -15,6 +15,9 @@ fi
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-$(nproc)}"
 export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 
+# Prime the exact AppImage tool cache before spending time compiling Rust.
+bash "$ROOT/deploy/ci/prepare-tauri-linux-tools.sh"
+
 pushd apps/silicium-node >/dev/null
 export SILICIUM_RELEASE_VERSION="${SILICIUM_RELEASE_VERSION:-$(node -p "require('./package.json').version")}"
 export SILICIUM_RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
@@ -33,11 +36,11 @@ rm -rf -- \
   ../../Network/workloads/raytracer/native/target/debug
 
 echo "Testing silicium-node in release mode..."
-cargo test --release --jobs "$CARGO_BUILD_JOBS" --manifest-path src-tauri/Cargo.toml
+cargo test --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path src-tauri/Cargo.toml
 rm -rf -- src-tauri/target/debug
 
 echo "Building p2p_node and compute_daemon..."
-cargo build --release --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/p2p_node/Cargo.toml
+cargo build --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/p2p_node/Cargo.toml
 cargo build --release --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/compute_daemon/Cargo.toml
 
 mkdir -p src-tauri/resources/runtime/bin
@@ -53,25 +56,8 @@ if [[ "${SILICIUM_RECLAIM_RUNTIME_TARGETS:-0}" == "1" ]]; then
     ../../Network/networked/compute_daemon/target
 fi
 
-# Tauri downloads this script lazily while producing the AppImage. Prime the
-# same cache with retries so a transient raw.githubusercontent.com timeout does
-# not discard the already completed Rust and frontend build.
-export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
-tauri_tools_dir="$XDG_CACHE_HOME/tauri"
-gtk_plugin="$tauri_tools_dir/linuxdeploy-plugin-gtk.sh"
-mkdir -p "$tauri_tools_dir"
-if [[ ! -s "$gtk_plugin" ]]; then
-  gtk_plugin_tmp="${gtk_plugin}.download.$$"
-  trap 'rm -f -- "$gtk_plugin_tmp"' EXIT
-  curl --fail --show-error --location \
-    --connect-timeout 20 --max-time 300 \
-    --retry 10 --retry-all-errors --retry-delay 5 --retry-max-time 900 \
-    --output "$gtk_plugin_tmp" \
-    "https://raw.githubusercontent.com/tauri-apps/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh"
-  chmod +x "$gtk_plugin_tmp"
-  mv -f -- "$gtk_plugin_tmp" "$gtk_plugin"
-  trap - EXIT
-fi
-chmod +x "$gtk_plugin"
+# The frontend was already built above; avoid invoking Vite a second time from
+# Tauri's beforeBuildCommand.
+export SILICIUM_SKIP_FRONTEND_BUILD="1"
 npx tauri build --bundles deb,appimage
 popd >/dev/null

@@ -44,6 +44,16 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
           persist-credentials: false
+          clean: false
+
+      - name: Reclaim Linux build workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          git reset --hard HEAD
+          git clean -ffd
+          git submodule foreach --recursive 'git reset --hard HEAD && git clean -ffd'
+          df -h "$GITHUB_WORKSPACE"
 
       - name: Sync declared submodules
         shell: bash
@@ -103,10 +113,19 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
+          shared-key: fusion-linux
           workspaces: |
             apps/silicium-node/src-tauri
             Network/networked/p2p_node
             Network/networked/compute_daemon
+
+      - name: Cache Tauri Linux bundler tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/tauri
+          key: ${{ runner.os }}-tauri-linux-bundler-${{ hashFiles('apps/silicium-node/package-lock.json', 'apps/silicium-node/src-tauri/Cargo.lock', 'deploy/ci/prepare-tauri-linux-tools.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-tauri-linux-bundler-
 
       - name: Build Linux development bundles
         shell: bash
