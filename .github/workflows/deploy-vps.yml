@@ -413,8 +413,14 @@ jobs:
 
           function Assert-ValidAuthenticodeSignature([string] $path, [string] $label) {
             if (-not (Test-Path -LiteralPath $path)) { throw "$label was not produced: $path" }
+            $previousErrorActionPreference = $ErrorActionPreference
+            # signtool writes trust failures to stderr. PowerShell 5.1 turns
+            # native stderr into an error record, so do not let that hide the
+            # verification result before we apply the self-signed test rule.
+            $ErrorActionPreference = "Continue"
             $verificationLines = @(& $env:TAURI_WINDOWS_SIGNTOOL_PATH verify /pa /all /v $path 2>&1)
             $verificationExitCode = $LASTEXITCODE
+            $ErrorActionPreference = $previousErrorActionPreference
             $verificationText = $verificationLines -join [Environment]::NewLine
             $hasSignature =
               $verificationText -match "(?im)^\s*0\s+sha\d+\b" -or
