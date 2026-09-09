@@ -498,23 +498,10 @@ jobs:
           function Assert-ValidAuthenticodeSignature([string] $path, [string] $label) {
             if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "$label was not produced: $path" }
 
-            # CreateFromSignedFile is not a reliable Authenticode verifier on
-            # the hosted Windows image: it can reject a freshly signed PE even
-            # though SignTool has just signed it successfully. PowerShell's
-            # Authenticode API exposes the signer certificate without making
-            # the test depend on the certificate chain being trusted.
-            $signature = Get-AuthenticodeSignature -LiteralPath $path
-            if (-not $signature.SignerCertificate -or $signature.Status -eq "NotSigned") {
-              throw "$label has no embedded Authenticode signature: status=$($signature.Status); statusMessage=$($signature.StatusMessage)"
-            }
-            $signerCertificate = $signature.SignerCertificate
-            Write-Host "$label signer: $($signerCertificate.Subject) [$($signerCertificate.Thumbprint)]"
-            Write-Host "$label Authenticode status: $($signature.Status) - $($signature.StatusMessage)"
-
             $previousErrorActionPreference = $ErrorActionPreference
             # signtool writes trust failures to stderr. PowerShell 5.1 turns
-            # native stderr into an error record, so do not let that hide the
-            # verification result before we apply the self-signed test rule.
+            # native stderr into an error record, so capture it as text and
+            # classify the result ourselves.
             $ErrorActionPreference = "Continue"
             $verificationLines = @(& $env:TAURI_WINDOWS_SIGNTOOL_PATH verify /pa /all /v $path 2>&1)
             $verificationExitCode = $LASTEXITCODE
@@ -522,11 +509,12 @@ jobs:
             $verificationText = $verificationLines -join [Environment]::NewLine
             if ($verificationExitCode -eq 0) { return }
 
+            $hasNoSignature = $verificationText -match "(?i)(no signature found|no signature was present)"
             # A test certificate may be correctly embedded but untrusted by
             # the runner. Allow only that narrow failure; malformed or
             # hash-invalid signatures must still fail the packaging lane.
             $isTrustOnlyFailure = $verificationText -match "(?i)(not trusted|trust provider|untrusted publisher|certificate chain.*root certificate)"
-            if ($env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -ne "true" -or -not $isTrustOnlyFailure) {
+            if ($hasNoSignature -or $env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -ne "true" -or -not $isTrustOnlyFailure) {
               throw "$label failed Authenticode verification: $verificationText"
             }
             Write-Warning "$label has a present Authenticode signature, but trust verification is allowed to fail for the self-signed test certificate: $verificationText"
