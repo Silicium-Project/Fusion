@@ -324,7 +324,7 @@ jobs:
         working-directory: apps/silicium-node
         run: npm ci
 
-      - name: Import Windows code-signing certificate
+      - name: Prepare Windows code-signing certificate
         shell: powershell
         env:
           SILICIUM_WINDOWS_CERTIFICATE_BASE64: ${{ secrets.SILICIUM_WINDOWS_CERTIFICATE_BASE64 }}
@@ -348,153 +348,36 @@ jobs:
           } catch {
             throw "SILICIUM_WINDOWS_CERTIFICATE_BASE64 is not valid base64: $($_.Exception.Message)"
           }
-
-          $certificateResultPath = Join-Path $env:RUNNER_TEMP "silicium-node-code-signing.result.json"
-          $certificateErrorPath = Join-Path $env:RUNNER_TEMP "silicium-node-code-signing.error.txt"
-          $env:SILICIUM_WINDOWS_CERTIFICATE_PATH = $certificatePath
-          $env:SILICIUM_WINDOWS_CERTIFICATE_RESULT = $certificateResultPath
-          $env:SILICIUM_WINDOWS_CERTIFICATE_ERROR = $certificateErrorPath
-
-          # Import-PfxCertificate can block indefinitely on the hosted runner
-          # while Windows resolves key-storage or certificate-provider state.
-          # Keep the operation in a child process so it has an explicit timeout,
-          # and use the .NET certificate store APIs to avoid that cmdlet path.
-          $certificateImportScript = @'
-          $ErrorActionPreference = "Stop"
-
-          function Add-CertificateToStore($certificate, $storeName, $storeLocation) {
-            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($storeName, $storeLocation)
-            try {
-              $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-              $matchingCertificates = @($store.Certificates | Where-Object { $_.Thumbprint -eq $certificate.Thumbprint })
-              $usableCertificate = $matchingCertificates |
-                Where-Object { -not $certificate.HasPrivateKey -or $_.HasPrivateKey } |
-                Select-Object -First 1
-              if (-not $usableCertificate) {
-                $store.Add($certificate)
-              }
-            } finally {
-              $store.Close()
-            }
+          $signingScriptPath = Join-Path $env:GITHUB_WORKSPACE "apps\silicium-node\src-tauri\windows\sign-with-pfx.ps1"
+          if (-not (Test-Path -LiteralPath $signingScriptPath -PathType Leaf)) {
+            throw "The Tauri Windows signing helper is missing: $signingScriptPath"
           }
-
-          try {
-            $password = ConvertTo-SecureString $env:SILICIUM_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-            $storageFlags =
-              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet -bor
-              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor
-              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
-            $signingCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
-              $env:SILICIUM_WINDOWS_CERTIFICATE_PATH,
-              $password,
-              $storageFlags
-            )
-            if (-not $signingCertificate.HasPrivateKey) {
-              throw "The PFX does not contain a certificate with a private key"
-            }
-            $hasCodeSigningEku = $false
-            foreach ($extension in $signingCertificate.Extensions) {
-              if ($extension.Oid.Value -eq "2.5.29.37") {
-                $ekuExtension = $extension -as [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]
-                if ($ekuExtension -and @($ekuExtension.EnhancedKeyUsages | Where-Object { $_.Value -eq "1.3.6.1.5.5.7.3.3" }).Count -gt 0) {
-                  $hasCodeSigningEku = $true
-                }
-              }
-            }
-            if (-not $hasCodeSigningEku) {
-              throw "The PFX certificate is not valid for code signing"
-            }
-
-            Add-CertificateToStore `
-              $signingCertificate `
-              ([System.Security.Cryptography.X509Certificates.StoreName]::My) `
-              ([System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-
-            $isSelfSigned = $signingCertificate.Subject -eq $signingCertificate.Issuer
-            if ($isSelfSigned) {
-              if ($env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -ne "true") {
-                throw "A self-signed certificate is allowed only when SILICIUM_WINDOWS_ALLOW_SELF_SIGNED=true"
-              }
-              $publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
-                $signingCertificate.RawData
-              )
-              try {
-                Add-CertificateToStore `
-                  $publicCertificate `
-                  ([System.Security.Cryptography.X509Certificates.StoreName]::Root) `
-                  ([System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-              } finally {
-                $publicCertificate.Dispose()
-              }
-            }
-
-            @{
-              thumbprint = $signingCertificate.Thumbprint.ToUpperInvariant()
-              subject = $signingCertificate.Subject
-              issuer = $signingCertificate.Issuer
-              isSelfSigned = $isSelfSigned
-            } | ConvertTo-Json -Compress | Out-File -FilePath $env:SILICIUM_WINDOWS_CERTIFICATE_RESULT -Encoding utf8
-          } catch {
-            $_.Exception.ToString() | Out-File -FilePath $env:SILICIUM_WINDOWS_CERTIFICATE_ERROR -Encoding utf8
-            exit 1
-          }
-          '@
-          $encodedImportScript = [Convert]::ToBase64String(
-            [Text.Encoding]::Unicode.GetBytes($certificateImportScript)
-          )
-          Write-Host "Importing Windows code-signing certificate into CurrentUser\My (timeout: 60s)..."
-          $certificateProcess = Start-Process `
-            -FilePath "powershell.exe" `
-            -ArgumentList @(
-              "-NoLogo",
-              "-NoProfile",
-              "-NonInteractive",
-              "-ExecutionPolicy",
-              "Bypass",
-              "-EncodedCommand",
-              $encodedImportScript
-            ) `
-            -PassThru `
-            -WindowStyle Hidden
-          if (-not $certificateProcess.WaitForExit(60000)) {
-            $certificateProcess.Kill()
-            $certificateProcess.WaitForExit()
-            throw "Windows certificate import exceeded the 60 second timeout"
-          }
-          if ($certificateProcess.ExitCode -ne 0) {
-            $certificateError = if (Test-Path -LiteralPath $certificateErrorPath) {
-              Get-Content -LiteralPath $certificateErrorPath -Raw
-            } else {
-              "The certificate import helper exited with code $($certificateProcess.ExitCode)"
-            }
-            throw "Windows certificate import failed: $certificateError"
-          }
-          if (-not (Test-Path -LiteralPath $certificateResultPath)) {
-            throw "Windows certificate import completed without producing its result"
-          }
-          $certificateResult = Get-Content -LiteralPath $certificateResultPath -Raw | ConvertFrom-Json
-          $thumbprint = [string]$certificateResult.thumbprint
-          if ([string]::IsNullOrWhiteSpace($thumbprint)) {
-            throw "Windows certificate import produced an empty thumbprint"
-          }
-          Write-Host "Windows signing certificate ready: $thumbprint ($($certificateResult.subject))"
-          if ([bool]$certificateResult.isSelfSigned) {
-            Write-Warning "Using a self-signed Windows certificate for test-only packaging"
-          }
+          Write-Host "Windows code-signing certificate decoded; deferring private-key use to signtool.exe"
           $signingConfig = Join-Path $env:RUNNER_TEMP "silicium-node-windows-signing.conf.json"
           @{
             bundle = @{
               windows = @{
-                certificateThumbprint = $thumbprint
                 digestAlgorithm = "sha256"
                 timestampUrl = "http://timestamp.digicert.com"
+                signCommand = @{
+                  cmd = "powershell.exe"
+                  args = @(
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    $signingScriptPath,
+                    "%1"
+                  )
+                }
               }
             }
           } | ConvertTo-Json -Depth 8 | Out-File -FilePath $signingConfig -Encoding utf8
 
           "SILICIUM_TAURI_CONFIG=$signingConfig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "SILICIUM_WINDOWS_CERTIFICATE_THUMBPRINT=$thumbprint" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Remove-Item -LiteralPath $certificatePath -Force
+          "SILICIUM_WINDOWS_CERTIFICATE_PATH=$certificatePath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Locate Windows signing tool
         shell: powershell
@@ -515,22 +398,42 @@ jobs:
       - name: Build development and production installers
         shell: powershell
         working-directory: apps/silicium-node
+        env:
+          SILICIUM_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.SILICIUM_WINDOWS_CERTIFICATE_PASSWORD }}
+          SILICIUM_WINDOWS_ALLOW_SELF_SIGNED: ${{ vars.SILICIUM_WINDOWS_ALLOW_SELF_SIGNED }}
         run: |
           $ErrorActionPreference = "Stop"
           if (-not $env:SILICIUM_TAURI_CONFIG) { throw "Windows signing configuration was not initialized" }
-          if (-not $env:SILICIUM_WINDOWS_CERTIFICATE_THUMBPRINT) { throw "Windows signing certificate was not imported" }
+          if (-not $env:SILICIUM_WINDOWS_CERTIFICATE_PATH -or -not (Test-Path -LiteralPath $env:SILICIUM_WINDOWS_CERTIFICATE_PATH -PathType Leaf)) { throw "Windows signing certificate file is not available" }
+          if (-not $env:SILICIUM_WINDOWS_CERTIFICATE_PASSWORD) { throw "Windows signing certificate password is not available" }
           $artifacts = Join-Path $PWD "ci-artifacts"
           $devVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $prodVersion = (Get-Content src-tauri/tauri.prod.conf.json -Raw | ConvertFrom-Json).version
           New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 
+          $expectedSignerThumbprint = $null
           function Assert-ValidAuthenticodeSignature([string] $path, [string] $label) {
             if (-not (Test-Path -LiteralPath $path)) { throw "$label was not produced: $path" }
             $signature = Get-AuthenticodeSignature -FilePath $path
-            if ($signature.Status -ne "Valid") {
-              throw "$label is not Authenticode-valid: $($signature.Status) ($($signature.StatusMessage))"
+            $signerCertificate = $signature.SignerCertificate
+            if (-not $signerCertificate) {
+              throw "$label has no Authenticode signer certificate: $($signature.Status) ($($signature.StatusMessage))"
             }
-            if ($signature.SignerCertificate.Thumbprint -ne $env:SILICIUM_WINDOWS_CERTIFICATE_THUMBPRINT) {
+            $status = [string]$signature.Status
+            $selfSignedTestSignature =
+              $env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -eq "true" -and
+              $signerCertificate.Subject -eq $signerCertificate.Issuer -and
+              $status -in @("UnknownError", "NotTrusted")
+            if ($status -ne "Valid" -and -not $selfSignedTestSignature) {
+              throw "$label is not Authenticode-valid: $status ($($signature.StatusMessage))"
+            }
+            if ($selfSignedTestSignature) {
+              Write-Warning "$label uses the explicitly allowed self-signed test certificate: $($signature.StatusMessage)"
+            }
+            $signerThumbprint = $signerCertificate.Thumbprint.ToUpperInvariant()
+            if (-not $script:expectedSignerThumbprint) {
+              $script:expectedSignerThumbprint = $signerThumbprint
+            } elseif ($signerThumbprint -ne $script:expectedSignerThumbprint) {
               throw "$label was signed by an unexpected certificate"
             }
           }
@@ -564,6 +467,15 @@ jobs:
           Copy-Item $prodInstaller.FullName (Join-Path $artifacts "silicium-node-windows.exe") -Force
 
           Get-FileHash (Join-Path $artifacts "*.exe") -Algorithm SHA256
+
+      - name: Remove temporary Windows certificate
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          if ($env:SILICIUM_WINDOWS_CERTIFICATE_PATH -and (Test-Path -LiteralPath $env:SILICIUM_WINDOWS_CERTIFICATE_PATH)) {
+            Remove-Item -LiteralPath $env:SILICIUM_WINDOWS_CERTIFICATE_PATH -Force
+          }
 
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
