@@ -349,37 +349,138 @@ jobs:
             throw "SILICIUM_WINDOWS_CERTIFICATE_BASE64 is not valid base64: $($_.Exception.Message)"
           }
 
-          $password = ConvertTo-SecureString $env:SILICIUM_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-          $importParameters = @{
-            FilePath = $certificatePath
-            CertStoreLocation = "Cert:\CurrentUser\My"
-            Password = $password
-            Exportable = $true
-          }
-          $imported = @(Import-PfxCertificate @importParameters)
-          $signingCertificate = $imported |
-            Where-Object { $_.HasPrivateKey } |
-            Select-Object -First 1
-          if (-not $signingCertificate) {
-            throw "The PFX does not contain a certificate with a private key"
-          }
-          if (@($signingCertificate.EnhancedKeyUsageList.ObjectId) -notcontains "1.3.6.1.5.5.7.3.3") {
-            throw "The PFX certificate is not valid for code signing"
+          $certificateResultPath = Join-Path $env:RUNNER_TEMP "silicium-node-code-signing.result.json"
+          $certificateErrorPath = Join-Path $env:RUNNER_TEMP "silicium-node-code-signing.error.txt"
+          $env:SILICIUM_WINDOWS_CERTIFICATE_PATH = $certificatePath
+          $env:SILICIUM_WINDOWS_CERTIFICATE_RESULT = $certificateResultPath
+          $env:SILICIUM_WINDOWS_CERTIFICATE_ERROR = $certificateErrorPath
+
+          # Import-PfxCertificate can block indefinitely on the hosted runner
+          # while Windows resolves key-storage or certificate-provider state.
+          # Keep the operation in a child process so it has an explicit timeout,
+          # and use the .NET certificate store APIs to avoid that cmdlet path.
+          $certificateImportScript = @'
+          $ErrorActionPreference = "Stop"
+
+          function Add-CertificateToStore($certificate, $storeName, $storeLocation) {
+            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new($storeName, $storeLocation)
+            try {
+              $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+              $matchingCertificates = @($store.Certificates | Where-Object { $_.Thumbprint -eq $certificate.Thumbprint })
+              $usableCertificate = $matchingCertificates |
+                Where-Object { -not $certificate.HasPrivateKey -or $_.HasPrivateKey } |
+                Select-Object -First 1
+              if (-not $usableCertificate) {
+                $store.Add($certificate)
+              }
+            } finally {
+              $store.Close()
+            }
           }
 
-          $isSelfSigned = $signingCertificate.Subject -eq $signingCertificate.Issuer
-          if ($isSelfSigned) {
-            if ($env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -ne "true") {
-              throw "A self-signed certificate is allowed only when SILICIUM_WINDOWS_ALLOW_SELF_SIGNED=true"
+          try {
+            $password = ConvertTo-SecureString $env:SILICIUM_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $storageFlags =
+              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::UserKeySet -bor
+              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor
+              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+            $signingCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+              $env:SILICIUM_WINDOWS_CERTIFICATE_PATH,
+              $password,
+              $storageFlags
+            )
+            if (-not $signingCertificate.HasPrivateKey) {
+              throw "The PFX does not contain a certificate with a private key"
             }
-            $publicCertificatePath = Join-Path $env:RUNNER_TEMP "silicium-node-code-signing.cer"
-            Export-Certificate -Cert $signingCertificate -FilePath $publicCertificatePath -Type CERT | Out-Null
-            Import-Certificate -FilePath $publicCertificatePath -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
-            Remove-Item -LiteralPath $publicCertificatePath -Force
+            $hasCodeSigningEku = $false
+            foreach ($extension in $signingCertificate.Extensions) {
+              if ($extension.Oid.Value -eq "2.5.29.37") {
+                $ekuExtension = $extension -as [System.Security.Cryptography.X509Certificates.X509EnhancedKeyUsageExtension]
+                if ($ekuExtension -and @($ekuExtension.EnhancedKeyUsages | Where-Object { $_.Value -eq "1.3.6.1.5.5.7.3.3" }).Count -gt 0) {
+                  $hasCodeSigningEku = $true
+                }
+              }
+            }
+            if (-not $hasCodeSigningEku) {
+              throw "The PFX certificate is not valid for code signing"
+            }
+
+            Add-CertificateToStore `
+              $signingCertificate `
+              ([System.Security.Cryptography.X509Certificates.StoreName]::My) `
+              ([System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+
+            $isSelfSigned = $signingCertificate.Subject -eq $signingCertificate.Issuer
+            if ($isSelfSigned) {
+              if ($env:SILICIUM_WINDOWS_ALLOW_SELF_SIGNED -ne "true") {
+                throw "A self-signed certificate is allowed only when SILICIUM_WINDOWS_ALLOW_SELF_SIGNED=true"
+              }
+              $publicCertificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+                $signingCertificate.RawData
+              )
+              try {
+                Add-CertificateToStore `
+                  $publicCertificate `
+                  ([System.Security.Cryptography.X509Certificates.StoreName]::Root) `
+                  ([System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+              } finally {
+                $publicCertificate.Dispose()
+              }
+            }
+
+            @{
+              thumbprint = $signingCertificate.Thumbprint.ToUpperInvariant()
+              subject = $signingCertificate.Subject
+              issuer = $signingCertificate.Issuer
+              isSelfSigned = $isSelfSigned
+            } | ConvertTo-Json -Compress | Out-File -FilePath $env:SILICIUM_WINDOWS_CERTIFICATE_RESULT -Encoding utf8
+          } catch {
+            $_.Exception.ToString() | Out-File -FilePath $env:SILICIUM_WINDOWS_CERTIFICATE_ERROR -Encoding utf8
+            exit 1
+          }
+          '@
+          $encodedImportScript = [Convert]::ToBase64String(
+            [Text.Encoding]::Unicode.GetBytes($certificateImportScript)
+          )
+          Write-Host "Importing Windows code-signing certificate into CurrentUser\My (timeout: 60s)..."
+          $certificateProcess = Start-Process `
+            -FilePath "powershell.exe" `
+            -ArgumentList @(
+              "-NoLogo",
+              "-NoProfile",
+              "-NonInteractive",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-EncodedCommand",
+              $encodedImportScript
+            ) `
+            -PassThru `
+            -WindowStyle Hidden
+          if (-not $certificateProcess.WaitForExit(60000)) {
+            $certificateProcess.Kill()
+            $certificateProcess.WaitForExit()
+            throw "Windows certificate import exceeded the 60 second timeout"
+          }
+          if ($certificateProcess.ExitCode -ne 0) {
+            $certificateError = if (Test-Path -LiteralPath $certificateErrorPath) {
+              Get-Content -LiteralPath $certificateErrorPath -Raw
+            } else {
+              "The certificate import helper exited with code $($certificateProcess.ExitCode)"
+            }
+            throw "Windows certificate import failed: $certificateError"
+          }
+          if (-not (Test-Path -LiteralPath $certificateResultPath)) {
+            throw "Windows certificate import completed without producing its result"
+          }
+          $certificateResult = Get-Content -LiteralPath $certificateResultPath -Raw | ConvertFrom-Json
+          $thumbprint = [string]$certificateResult.thumbprint
+          if ([string]::IsNullOrWhiteSpace($thumbprint)) {
+            throw "Windows certificate import produced an empty thumbprint"
+          }
+          Write-Host "Windows signing certificate ready: $thumbprint ($($certificateResult.subject))"
+          if ([bool]$certificateResult.isSelfSigned) {
             Write-Warning "Using a self-signed Windows certificate for test-only packaging"
           }
-
-          $thumbprint = $signingCertificate.Thumbprint.ToUpperInvariant()
           $signingConfig = Join-Path $env:RUNNER_TEMP "silicium-node-windows-signing.conf.json"
           @{
             bundle = @{
