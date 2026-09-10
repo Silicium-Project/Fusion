@@ -74,7 +74,11 @@ services:
     - 46102:46102/tcp
     - 46102:46102/udp
     extra_hosts:
-    - host.docker.internal:host-gateway
+    # The named backend network uses the 172.18.0.0/16 bridge (the TURN
+    # service and its relay address use the same fixed network).  Docker's
+    # generic host-gateway resolves to the default bridge instead, which is
+    # not reachable from this network on the VPS.
+    - host.docker.internal:172.18.0.1
     volumes:
     - /opt/silicium/Network:/opt/silicium/Network
     - /var/lib/silicium:/var/lib/silicium
@@ -128,7 +132,7 @@ services:
     - 80:80
     - 443:443
     extra_hosts:
-    - host.docker.internal:host-gateway
+    - host.docker.internal:172.18.0.1
     volumes:
     - ./nginx.conf:/etc/nginx/nginx.conf:ro
     - /var/lib/silicium:/var/lib/silicium:ro

@@ -122,7 +122,19 @@ fi
 
 public_orchestrator_url="${SILICIUM_NODE_ADVERTISE_URL:-https://vps-910c1dbc.vps.ovh.net/orchestrator}"
 echo "Checking public orchestrator route: ${public_orchestrator_url%/}/healthz"
-public_health="$(curl -fsS --max-time 12 "${public_orchestrator_url%/}/healthz")"
+case "$public_orchestrator_url" in
+  https://*) public_route_port=443 ;;
+  http://*) public_route_port=80 ;;
+  *)
+    echo "Unsupported orchestrator URL scheme: $public_orchestrator_url" >&2
+    exit 1
+    ;;
+esac
+public_route_authority="${public_orchestrator_url#*://}"
+public_route_authority="${public_route_authority%%/*}"
+public_route_host="${public_route_authority%%:*}"
+public_route_args=(--resolve "${public_route_host}:${public_route_port}:127.0.0.1")
+public_health="$(curl -fsS --max-time 12 "${public_route_args[@]}" "${public_orchestrator_url%/}/healthz")"
 if [[ "$public_health" != *'"service":"network_node"'* ]]; then
   echo "The public route does not reach the integrated network node: $public_health" >&2
   exit 1
