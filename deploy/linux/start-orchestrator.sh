@@ -61,7 +61,7 @@ node_args=(
   --gossip-advertise-port "$port"
   --mesh-key "$mesh_key"
   --peer-sync-interval-s "${SILICIUM_PEER_SYNC_INTERVAL_S:-15}"
-  --peer-stale-after-s "${SILICIUM_PEER_STALE_AFTER_S:-300}"
+  --peer-stale-after-s "${SILICIUM_PEER_STALE_AFTER_S:-45}"
   --relay-enable
   --remote-dispatch-enable
   --remote-dispatch-limit "${SILICIUM_REMOTE_DISPATCH_LIMIT:-3}"

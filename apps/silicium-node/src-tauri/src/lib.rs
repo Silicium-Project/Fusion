@@ -309,6 +309,16 @@ struct UpdateRelease {
     check_interval_seconds: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInstallFailure {
+    content_id: String,
+    version: String,
+    build: String,
+    error: String,
+    failed_at_utc: String,
+}
+
 #[tauri::command]
 fn node_status(
     repo_root: Option<String>,
@@ -747,6 +757,53 @@ fn update_install_lock_path() -> PathBuf {
     app_state_dir().join("update-install.lock")
 }
 
+fn update_install_failure_path() -> PathBuf {
+    app_state_dir().join("update-install-failure.json")
+}
+
+fn update_failure_retry_interval() -> u64 {
+    // A failed artifact is blocked until the manifest publishes a different
+    // content id. Keep the background loop quiet even on development builds.
+    21_600
+}
+
+fn read_update_install_failure() -> Option<UpdateInstallFailure> {
+    fs::read_to_string(update_install_failure_path())
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+}
+
+fn write_update_install_failure(failure: &UpdateInstallFailure) {
+    let path = update_install_failure_path();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(raw) = serde_json::to_vec_pretty(failure) {
+        let _ = fs::write(path, raw);
+    }
+}
+
+fn clear_update_install_failure() {
+    let _ = fs::remove_file(update_install_failure_path());
+}
+
+fn update_install_failure_matches(failure: &UpdateInstallFailure, release: &UpdateRelease) -> bool {
+    if !failure.content_id.trim().is_empty() && !release.content_id.trim().is_empty() {
+        return failure.content_id.trim() == release.content_id.trim();
+    }
+    failure.version.trim() == release.version.trim() && failure.build.trim() == release.build.trim()
+}
+
+fn record_update_install_failure(release: &UpdateRelease, error: &str) {
+    write_update_install_failure(&UpdateInstallFailure {
+        content_id: release.content_id.clone(),
+        version: release.version.clone(),
+        build: release.build.clone(),
+        error: error.to_string(),
+        failed_at_utc: current_utc(),
+    });
+}
+
 fn read_update_status() -> Option<UpdateStatus> {
     fs::read_to_string(update_status_path())
         .ok()
@@ -870,6 +927,21 @@ fn check_for_update_locked(status: &mut UpdateStatus, auto_install: bool) -> Res
         release_build(),
     );
     status.error.clear();
+    if !status.update_available {
+        clear_update_install_failure();
+    } else if let Some(failure) = read_update_install_failure() {
+        if update_install_failure_matches(&failure, &release) {
+            status.state = "error".to_string();
+            status.error = format!(
+                "update_install_blocked:{}:{}",
+                failure.error,
+                failure.content_id
+            );
+            status.check_interval_seconds = update_failure_retry_interval();
+            write_update_status(status);
+            return Ok(());
+        }
+    }
     status.state = if status.update_available {
         "available"
     } else {
@@ -894,13 +966,17 @@ fn check_for_update_locked(status: &mut UpdateStatus, auto_install: bool) -> Res
         let installer = match download_update(&release) {
             Ok(installer) => installer,
             Err(error) => {
+                record_update_install_failure(&release, &error);
+                status.check_interval_seconds = update_failure_retry_interval();
                 release_update_install_lock();
                 return Err(error);
             }
         };
         status.state = "installing".to_string();
         write_update_status(status);
-        if let Err(error) = schedule_update_install(&installer) {
+        if let Err(error) = schedule_update_install(&installer, &release) {
+            record_update_install_failure(&release, &error);
+            status.check_interval_seconds = update_failure_retry_interval();
             release_update_install_lock();
             return Err(error);
         }
@@ -1144,7 +1220,7 @@ fn cache_update_for_peers(installer: &Path, content_id: &str) {
         .status();
 }
 
-fn schedule_update_install(installer: &Path) -> Result<(), String> {
+fn schedule_update_install(installer: &Path, release: &UpdateRelease) -> Result<(), String> {
     if !cfg!(target_os = "windows") {
         return Err(format!(
             "automatic_update_installer_not_available:{}",
@@ -1160,7 +1236,11 @@ fn schedule_update_install(installer: &Path) -> Result<(), String> {
   [string]$Executable,
   [string]$RepoRoot,
   [string]$LogPath,
-  [string]$InstallLockPath
+  [string]$InstallLockPath,
+  [string]$FailurePath,
+  [string]$ContentId,
+  [string]$Version,
+  [string]$Build
 )
 $ErrorActionPreference = 'Stop'
 try {
@@ -1201,7 +1281,18 @@ try {
     Start-Process -FilePath $Executable
   }
 } catch {
-  Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) update_failed $($_.Exception.Message)"
+  $errorMessage = $_.Exception.Message
+  Add-Content -LiteralPath $LogPath -Value "$(Get-Date -Format o) update_failed $errorMessage"
+  if ($FailurePath) {
+    $failure = @{
+      contentId = $ContentId
+      version = $Version
+      build = $Build
+      error = $errorMessage
+      failedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
+    } | ConvertTo-Json -Compress
+    Set-Content -LiteralPath $FailurePath -Value $failure -Encoding UTF8
+  }
   if ($RepoRoot -and (Test-Path -LiteralPath (Join-Path $RepoRoot '.silicium\node-app\service-config.env'))) {
     $quotedRepoRoot = '"' + $RepoRoot + '"'
     Start-Process -FilePath $Executable -ArgumentList '--supervisor', '--repo-root', $quotedRepoRoot -WindowStyle Hidden
@@ -1248,6 +1339,14 @@ try {
         .arg(log_path)
         .arg("-InstallLockPath")
         .arg(update_install_lock_path())
+        .arg("-FailurePath")
+        .arg(update_install_failure_path())
+        .arg("-ContentId")
+        .arg(&release.content_id)
+        .arg("-Version")
+        .arg(&release.version)
+        .arg("-Build")
+        .arg(&release.build)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -3672,6 +3771,10 @@ mod tests {
         assert!(source.contains("installer_launch_retry"));
         assert!(source.contains("acquire_update_install_lock"));
         assert!(source.contains("[string]$InstallLockPath"));
+        assert!(source.contains("[string]$FailurePath"));
+        assert!(source.contains("update-install-failure.json"));
+        assert!(source.contains("update_install_blocked"));
+        assert!(source.contains("failedAtUtc"));
         assert!(source.contains("Remove-Item -LiteralPath $InstallLockPath"));
         assert!(source.contains("supervisor_recovered_after_update_failure"));
         assert!(source.contains("stale_node_runtime_stopped"));
@@ -3720,6 +3823,35 @@ mod tests {
         assert!(update_platform_matches(&update_platform()));
         assert!(!update_platform_matches("unsupported-test-platform"));
         assert_eq!(update_platform_matches(""), cfg!(target_os = "windows"));
+    }
+
+    #[test]
+    fn failed_update_is_blocked_only_for_the_same_artifact() {
+        let release = UpdateRelease {
+            version: "0.2.9".to_string(),
+            build: "build-a".to_string(),
+            channel: "prod".to_string(),
+            platform: String::new(),
+            url: String::new(),
+            sha256: String::new(),
+            content_id: "content-a".to_string(),
+            signature: String::new(),
+            signing_key_id: String::new(),
+            size_bytes: 0,
+            auto_install: true,
+            check_interval_seconds: 0,
+        };
+        let failure = UpdateInstallFailure {
+            content_id: "content-a".to_string(),
+            version: release.version.clone(),
+            build: release.build.clone(),
+            error: "installer_exit_1".to_string(),
+            failed_at_utc: current_utc(),
+        };
+        assert!(update_install_failure_matches(&failure, &release));
+        let mut new_release = release.clone();
+        new_release.content_id = "content-b".to_string();
+        assert!(!update_install_failure_matches(&failure, &new_release));
     }
 
     #[test]

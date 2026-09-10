@@ -51,6 +51,7 @@ ensure_env_default() {
 # operator-provided values intact while making upgrades converge old env files
 # that predate the integrated peer daemon.
 ensure_env_default SILICIUM_NODE_ADVERTISE_URL "https://vps-910c1dbc.vps.ovh.net/orchestrator"
+ensure_env_default SILICIUM_PEER_STALE_AFTER_S "45"
 unset -f ensure_env_default
 
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-orchestrator.service > /etc/systemd/system/silicium-orchestrator.service
