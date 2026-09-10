@@ -168,7 +168,8 @@ for artifact in \
   silicium-node-windows.exe \
   silicium-node-windows-dev.exe \
   silicium-node-linux-dev.deb \
-  silicium-node-linux-dev.AppImage; do
+  silicium-node-linux-dev.AppImage \
+  silicium-node-linux-dev.rpm; do
   if [[ ! -s "$downloads_dir/$artifact" ]]; then
     echo "Missing published node artifact: $downloads_dir/$artifact" >&2
     exit 1

@@ -1,8 +1,8 @@
 # Silicium Node
 
 Desktop app for people who want to join the Silicium network with their PC.
-Windows is the production channel; Linux AppImage/deb builds are available on
-the development channel.
+Windows is the production channel; Linux AppImage/deb/rpm builds are available
+on the development channel.
 
 This app is intentionally separate from:
 
@@ -58,11 +58,39 @@ Linux development bundles:
 npm run tauri:build:linux
 ```
 
-This produces an AppImage and a deb. The packaged runtime includes the Network
-Python sources and ICE dependencies, while Python 3, OpenSSL, curl and the
-desktop WebKit runtime are supplied by the Linux distribution. Activation
-installs an XDG autostart entry under `~/.config/autostart` so the supervisor
-returns after login.
+This produces `silicium-node-*.AppImage`, `silicium-node-*.deb` and
+`silicium-node-*.rpm`. The Debian package is the recommended Linux install on
+Debian/Ubuntu because it declares the Python, OpenSSL, curl and certificate
+dependencies:
+
+```bash
+sudo apt install ./silicium-node-*.deb
+```
+
+On Fedora/RHEL, install the RPM with the native package manager:
+
+```bash
+sudo dnf install ./silicium-node-*.rpm
+```
+
+The published `.deb` and `.rpm` files are also directly installable from the
+site after downloading them. The package managers resolve their declared
+dependencies; the AppImage remains the portable option when those host
+dependencies are already present.
+
+The AppImage keeps the same bundled Network runtime and can be used without
+installation on a distribution that already provides Python 3, OpenSSL, curl,
+certificates and the Tauri WebKit runtime. After downloading it, make it
+executable once before launching it:
+
+```bash
+chmod +x silicium-node-*.AppImage
+./silicium-node-*.AppImage
+```
+
+Activation installs an XDG autostart entry under `~/.config/autostart`. When
+started from an AppImage, that entry points to the downloaded AppImage file,
+not to its temporary mounted directory.
 
 Before Tauri bundles the installer, `npm run prepare:runtime` stages a runtime
 under `src-tauri/resources/runtime` containing:

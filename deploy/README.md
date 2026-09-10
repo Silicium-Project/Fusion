@@ -120,7 +120,23 @@ public site uses these stable paths:
 /downloads/silicium-node-windows-dev.exe
 /downloads/silicium-node-linux-dev.AppImage
 /downloads/silicium-node-linux-dev.deb
+/downloads/silicium-node-linux-dev.rpm
 ```
+
+The `.deb` is the native installation path on Debian/Ubuntu:
+
+```bash
+sudo apt install ./silicium-node-linux-dev.deb
+```
+
+The `.rpm` is the native installation path on Fedora/RHEL:
+
+```bash
+sudo dnf install ./silicium-node-linux-dev.rpm
+```
+
+An AppImage downloaded from a browser must be made executable once with
+`chmod +x silicium-node-linux-dev.AppImage` before it is launched.
 
 Verify every public asset after a deployment:
 
@@ -129,7 +145,8 @@ for artifact in \
   silicium-node-windows.exe \
   silicium-node-windows-dev.exe \
   silicium-node-linux-dev.AppImage \
-  silicium-node-linux-dev.deb; do
+  silicium-node-linux-dev.deb \
+  silicium-node-linux-dev.rpm; do
   curl -fI "https://vps-910c1dbc.vps.ovh.net/downloads/$artifact"
 done
 ```

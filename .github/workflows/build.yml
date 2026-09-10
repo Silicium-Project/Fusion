@@ -83,7 +83,7 @@ jobs:
           missing=()
           for package in \
             build-essential curl file libayatana-appindicator3-dev libfuse2 \
-            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip; do
+            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip rpm; do
             installed=false
             if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
               installed=true
@@ -143,6 +143,7 @@ jobs:
           path: |
             apps/silicium-node/src-tauri/target/release/bundle/appimage/*.AppImage
             apps/silicium-node/src-tauri/target/release/bundle/deb/*.deb
+            apps/silicium-node/src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
           retention-days: 7
 

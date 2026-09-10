@@ -59,7 +59,7 @@ configure_runner_runtime() {
     rm -rf /var/lib/apt/lists/*
   fi
 
-  linux_build_deps_marker="/var/lib/silicium/linux-desktop-build-deps-v2"
+  linux_build_deps_marker="/var/lib/silicium/linux-desktop-build-deps-v3"
   if [[ ! -f "$linux_build_deps_marker" ]] && command -v apt-get >/dev/null 2>&1; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update
@@ -69,7 +69,7 @@ configure_runner_runtime() {
     fi
     apt-get install -y --no-install-recommends \
       build-essential curl file libayatana-appindicator3-dev "$fuse_package" \
-      librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip
+      librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip rpm
     install -d -m 0755 "$(dirname "$linux_build_deps_marker")"
     touch "$linux_build_deps_marker"
     apt-get clean

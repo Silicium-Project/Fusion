@@ -1550,8 +1550,11 @@ fn validate_repo_root(repo_root: &Path) -> Result<(), String> {
     if !repo_root.exists() {
         return Err("repo_root_not_found".to_string());
     }
-    if !repo_root.join("Network").exists() {
+    if !repo_root.join("Network").is_dir() {
         return Err("network_directory_not_found".to_string());
+    }
+    if !repo_root.join("Network").join("silicium").is_file() {
+        return Err("network_runtime_not_found".to_string());
     }
     Ok(())
 }
@@ -1650,14 +1653,14 @@ fn is_managed_runtime_root(root: &Path) -> bool {
 }
 
 fn find_packaged_runtime_root() -> Option<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(exe) = env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            candidates.push(parent.join("runtime"));
-            candidates.push(parent.join("resources").join("runtime"));
-            candidates.push(parent.join("..").join("Resources").join("runtime"));
-        }
-    }
+    let exe = env::current_exe().ok();
+    let app_dir = env::var_os("APPDIR")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let mut candidates = exe
+        .as_deref()
+        .map(|path| packaged_runtime_candidates(path, app_dir.as_deref()))
+        .unwrap_or_default();
     candidates.push(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("resources")
@@ -1667,6 +1670,56 @@ fn find_packaged_runtime_root() -> Option<PathBuf> {
     candidates
         .into_iter()
         .find(|path| validate_repo_root(path).is_ok())
+}
+
+fn packaged_runtime_candidates(exe: &Path, app_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let executable_name = exe.file_stem().filter(|name| !name.is_empty());
+
+    if cfg!(target_os = "linux") {
+        // Tauri's Linux resource directory is /usr/lib/<binary>/ for both
+        // AppImage and .deb bundles. AppImage exposes the mounted root as
+        // APPDIR; keep both forms because current_exe() can be resolved from
+        // a wrapper or from an extracted AppImage.
+        if let Some(name) = executable_name {
+            if let Some(app_dir) = app_dir {
+                candidates.push(
+                    app_dir
+                        .join("usr")
+                        .join("lib")
+                        .join(name)
+                        .join("resources")
+                        .join("runtime"),
+                );
+            }
+        }
+    }
+
+    if let Some(parent) = exe.parent() {
+        candidates.push(parent.join("runtime"));
+        candidates.push(parent.join("resources").join("runtime"));
+
+        if cfg!(target_os = "linux") {
+            if let Some(name) = executable_name {
+                // Installed .deb: /usr/bin/<binary> ->
+                // /usr/lib/<binary>/resources/runtime.
+                candidates.push(
+                    parent
+                        .join("..")
+                        .join("lib")
+                        .join(name)
+                        .join("resources")
+                        .join("runtime"),
+                );
+            }
+        }
+
+        // Keep the Windows and macOS layouts used by the existing desktop
+        // build, as well as Tauri's macOS-style fallback.
+        candidates.push(parent.join("..").join("Resources").join("runtime"));
+    }
+
+    candidates
 }
 
 fn same_path(left: &Path, right: &Path) -> bool {
@@ -1980,7 +2033,7 @@ fn install_linux_autostart(repo_root: &Path) -> Result<(), String> {
     let home = env::var("HOME").map_err(|_| "home_directory_not_found".to_string())?;
     let autostart_dir = PathBuf::from(home).join(".config").join("autostart");
     fs::create_dir_all(&autostart_dir).map_err(|error| error.to_string())?;
-    let executable = env::current_exe().map_err(|error| error.to_string())?;
+    let executable = linux_autostart_executable()?;
     let quote = |value: &Path| {
         value
             .display()
@@ -1995,6 +2048,21 @@ fn install_linux_autostart(repo_root: &Path) -> Result<(), String> {
     );
     fs::write(autostart_dir.join("network.silicium.node.desktop"), entry)
         .map_err(|error| error.to_string())
+}
+
+fn linux_autostart_executable() -> Result<PathBuf, String> {
+    if cfg!(target_os = "linux") {
+        // An AppImage runs its binary from a temporary mount. Persisting that
+        // path in XDG autostart would leave a dead entry after the process
+        // exits. APPIMAGE points to the user's stable downloaded file.
+        if let Some(appimage) = env::var_os("APPIMAGE") {
+            let path = PathBuf::from(appimage);
+            if path.is_file() {
+                return Ok(path);
+            }
+        }
+    }
+    env::current_exe().map_err(|error| error.to_string())
 }
 
 fn install_autostart_run_key(task_command: &str) -> Result<(), String> {
@@ -3784,6 +3852,41 @@ mod tests {
     #[test]
     fn current_process_is_detected_as_running() {
         assert!(process_is_running(std::process::id()));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_bundles_use_tauri_resource_layout_for_appimage_and_deb() {
+        let executable = Path::new("/opt/silicium/usr/bin/silicium-node");
+        let candidates = packaged_runtime_candidates(
+            executable,
+            Some(Path::new("/opt/silicium")),
+        );
+
+        assert!(candidates.iter().any(|candidate| {
+            candidate.ends_with(Path::new("usr/lib/silicium-node/resources/runtime"))
+        }));
+        assert!(candidates.iter().any(|candidate| {
+            candidate.ends_with(Path::new("lib/silicium-node/resources/runtime"))
+        }));
+    }
+
+    #[test]
+    fn packaged_runtime_requires_the_network_launcher() {
+        let directory = env::temp_dir().join(format!(
+            "silicium-runtime-validation-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(directory.join("Network")).unwrap();
+        assert_eq!(
+            validate_repo_root(&directory).unwrap_err(),
+            "network_runtime_not_found"
+        );
+        fs::write(directory.join("Network").join("silicium"), b"#!/usr/bin/env python3\n")
+            .unwrap();
+        assert!(validate_repo_root(&directory).is_ok());
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

@@ -80,5 +80,10 @@ df -h "$ROOT"
 # The frontend was already built above; avoid invoking Vite a second time from
 # Tauri's beforeBuildCommand.
 export SILICIUM_SKIP_FRONTEND_BUILD="1"
-npx tauri build --bundles deb,appimage
+npx tauri build --bundles deb,appimage,rpm
+
+appimage_path="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+deb_path="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+rpm_path="$(find src-tauri/target/release/bundle/rpm -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+bash "$ROOT/deploy/ci/verify-linux-bundles.sh" "$appimage_path" "$deb_path" "$rpm_path"
 popd >/dev/null

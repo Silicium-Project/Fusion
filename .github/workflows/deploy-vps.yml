@@ -149,7 +149,7 @@ jobs:
 
             if matches '^(BackEnd|FrontEnd|Network)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$|^\.gitmodules$'; then web=true; fi
             if matches '^(BackEnd|Network)(/|$)|^deploy/(compose|linux)/'; then network=true; fi
-            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/build-linux-client\.sh$|^\.gitmodules$'; then node_build=true; fi
+            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/(build-linux-client|verify-linux-bundles)\.sh$|^\.gitmodules$'; then node_build=true; fi
             if matches '^BackEnd$|^FrontEnd$|^Network$|^\.gitmodules$'; then submodules=true; fi
             if matches '^(BackEnd|FrontEnd|Network|apps/silicium-node|deploy/|\.gitmodules$|\.github/workflows/)'; then validate=true; fi
             if [[ "$web" == true || "$network" == true || "$node_build" == true ]]; then deployable=true; fi
@@ -664,7 +664,7 @@ jobs:
           missing=()
           for package in \
             build-essential curl file libayatana-appindicator3-dev libfuse2 \
-            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip; do
+            librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev patchelf python3-pip rpm; do
             installed=false
             if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
               installed=true
@@ -721,6 +721,7 @@ jobs:
           install -d ci-artifacts
           cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux-dev.deb
           cp src-tauri/target/release/bundle/appimage/*.AppImage ci-artifacts/silicium-node-linux-dev.AppImage
+          cp src-tauri/target/release/bundle/rpm/*.rpm ci-artifacts/silicium-node-linux-dev.rpm
           sha256sum ci-artifacts/*
 
       - name: Upload Linux installers
@@ -754,6 +755,7 @@ jobs:
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$VPS_PORT" \
             ci-artifacts/silicium-node-linux-dev.deb \
             ci-artifacts/silicium-node-linux-dev.AppImage \
+            ci-artifacts/silicium-node-linux-dev.rpm \
             "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
 
   release-metadata:
@@ -937,6 +939,7 @@ jobs:
             sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows.exe" /var/lib/silicium/downloads/silicium-node-windows.exe
             sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.deb" /var/lib/silicium/downloads/silicium-node-linux-dev.deb
             sudo install -m 0755 "$RELEASE_STAGING/silicium-node-linux-dev.AppImage" /var/lib/silicium/downloads/silicium-node-linux-dev.AppImage
+            sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.rpm" /var/lib/silicium/downloads/silicium-node-linux-dev.rpm
           else
             echo "Node sources unchanged; retaining the existing downloaded installers."
           fi

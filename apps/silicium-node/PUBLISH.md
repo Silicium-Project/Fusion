@@ -6,14 +6,16 @@ The public site exposes these VPS download paths:
 /downloads/silicium-node-windows.exe
 /downloads/silicium-node-windows-dev.exe
 /downloads/silicium-node-linux-dev.AppImage
-```
-
-The `.deb` package is published alongside the AppImage for Linux users who
-prefer a system package:
-
-```text
 /downloads/silicium-node-linux-dev.deb
+/downloads/silicium-node-linux-dev.rpm
 ```
+
+The AppImage, Debian package and RPM are built from the same Linux release and
+contain the same Network runtime. Use the AppImage for a portable test run;
+use the `.deb` on Debian/Ubuntu with `apt`, or the `.rpm` on Fedora/RHEL with
+`dnf`, so host dependencies are installed by the native package manager. The
+Linux client resolves Tauri's `/usr/lib/<binary>/resources` layout in all three
+formats.
 
 Recommended production flow:
 
