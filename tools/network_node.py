@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from datetime import datetime, timezone
 import heapq
 import hashlib
 import hmac
@@ -287,7 +288,7 @@ class NodeConfig:
     mesh_key: str = ""
     peer_sync_interval_s: int = 15
     peer_event_limit: int = 128
-    peer_stale_after_s: int = 300
+    peer_stale_after_s: int = 45
     relay_enable: bool = False
     relay_hops: int = 2
     identity_key_path: str = ""
@@ -2680,7 +2681,27 @@ class PeerNetwork:
             }
         self.peers_snapshot()
 
-    def _record_peer(self, message: dict[str, Any]) -> bool:
+    @staticmethod
+    def _peer_seen_unix(message: Mapping[str, Any]) -> int:
+        raw_seen = message.get("last_seen_unix")
+        try:
+            seen = int(raw_seen or 0)
+        except (TypeError, ValueError):
+            seen = 0
+        if seen > 0:
+            return seen
+        timestamp = str(message.get("timestamp_utc", "")).strip()
+        if not timestamp:
+            return 0
+        try:
+            parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return max(0, int(parsed.timestamp()))
+        except ValueError:
+            return 0
+
+    def _record_peer(self, message: dict[str, Any], *, refresh_liveness: bool = True) -> bool:
         node_id = safe_id(str(message.get("node_id", "")))
         if not node_id:
             return False
@@ -2698,6 +2719,12 @@ class PeerNetwork:
             resource_reputation = message.get("resource_reputation") if isinstance(message.get("resource_reputation"), dict) else {}
             activity = message.get("activity") if isinstance(message.get("activity"), dict) else {}
             task_queue = message.get("task_queue") if isinstance(message.get("task_queue"), list) else []
+            observed_seen = self._peer_seen_unix(message)
+            current_seen = int(current.get("last_seen_unix", 0) or 0)
+            if refresh_liveness:
+                last_seen_unix = max(current_seen, observed_seen, int(time.time()))
+            else:
+                last_seen_unix = max(current_seen, observed_seen)
             merged = {
                 "node_id": node_id,
                 # Peer tables are transitive and are not proof that a third
@@ -2737,7 +2764,11 @@ class PeerNetwork:
                 "solana_owner": str(message.get("solana_owner", "") or current.get("solana_owner", "")),
                 "solana_worker": str(message.get("solana_worker", "") or current.get("solana_worker", "")),
                 "updated_utc": str(message.get("timestamp_utc", utc_now())),
-                "last_seen_unix": int(time.time()),
+                # A transitive peer snapshot is evidence of the snapshot
+                # publisher being alive, not of every peer in that snapshot.
+                # Only direct registrations/claims may refresh liveness with
+                # the receiver's clock.
+                "last_seen_unix": last_seen_unix,
                 "self": node_id == self.node_id,
             }
             changed = any(current.get(key) != value for key, value in merged.items() if key not in {"updated_utc", "last_seen_unix"})
@@ -2773,7 +2804,7 @@ class PeerNetwork:
         verified.sort(key=lambda item: int(item.get("timestamp_unix", 0) or 0), reverse=True)
         return verified[:8]
 
-    def _record_candidate_announce(self, message: dict[str, Any]) -> bool:
+    def _record_candidate_announce(self, message: dict[str, Any], *, refresh_liveness: bool = True) -> bool:
         node_id = safe_id(str(message.get("peer_id", message.get("node_id", ""))))
         if not node_id:
             return False
@@ -2782,7 +2813,13 @@ class PeerNetwork:
             current = dict(self._peers.get(node_id, {"node_id": node_id}))
             existing = current.get("candidates", []) if isinstance(current.get("candidates"), list) else []
             current["candidates"] = self._merge_candidate_list([*existing, *candidates], node_id, int(time.time()))
-            current["last_seen_unix"] = int(time.time())
+            observed_seen = self._peer_seen_unix(message)
+            current_seen = int(current.get("last_seen_unix", 0) or 0)
+            current["last_seen_unix"] = (
+                max(current_seen, observed_seen, int(time.time()))
+                if refresh_liveness
+                else max(current_seen, observed_seen)
+            )
             current["updated_utc"] = str(message.get("timestamp_utc", utc_now()))
             current["self"] = node_id == self.node_id
             self._peers[node_id] = current
@@ -3336,12 +3373,12 @@ class PeerNetwork:
             return
         message_type = str(message.get("message_type", ""))
         if message_type == "peer_announce":
-            changed = self._record_peer(message)
+            changed = self._record_peer(message, refresh_liveness=False)
             if changed and safe_id(str(message.get("node_id", ""))) != self.node_id:
                 self.announce()
             return
         if message_type == "candidate_announce":
-            self._record_candidate_announce(message)
+            self._record_candidate_announce(message, refresh_liveness=False)
             return
         if message_type == "punch_probe":
             requester_handshake = message.get("requester_handshake")
@@ -3507,7 +3544,6 @@ class PeerNetwork:
         peers = snapshot.get("peers") if isinstance(snapshot, dict) else None
         if not isinstance(peers, list):
             return
-        now = int(time.time())
         with self._lock:
             for peer in peers:
                 if not isinstance(peer, dict):
@@ -3517,7 +3553,9 @@ class PeerNetwork:
                     continue
                 loaded = dict(peer)
                 loaded["node_id"] = node_id
-                loaded["last_seen_unix"] = int(peer.get("last_seen_unix", now))
+                # Persisted peer data is historical until a fresh direct
+                # registration or signed announcement is observed.
+                loaded["last_seen_unix"] = int(peer.get("last_seen_unix", 0) or 0)
                 self._peers[node_id] = loaded
 
     def _sync_discovery(self) -> None:
@@ -3588,7 +3626,7 @@ class PeerNetwork:
             return
         for peer in peers:
             if isinstance(peer, dict):
-                self._record_peer(peer)
+                self._record_peer(peer, refresh_liveness=False)
 
     def _sync_targets(self) -> list[str]:
         targets: set[str] = set()
@@ -3619,7 +3657,7 @@ class PeerNetwork:
             return
         for peer in peers:
             if isinstance(peer, dict):
-                self._record_peer(peer)
+                self._record_peer(peer, refresh_liveness=False)
 
     def _sync_recent_events(self, base_url: str) -> None:
         path = f"/events/recent?limit={max(1, self.config.peer_event_limit)}"
@@ -5379,7 +5417,74 @@ class NetworkNode:
                 self.write_heartbeat()
                 self.peer_network.announce()
 
+    def reconcile_orphaned_running_tasks(self) -> None:
+        """Close local tasks left active after a crash or worker disconnect."""
+        with self._activity_lock:
+            active_ids = {
+                safe_id(str(item.get("item_id", "")))
+                for item in self._active_tasks
+                if str(item.get("item_id", "")).strip()
+            }
+        now = int(time.time())
+        live_peer_ids = {self.config.node_id}
+        stale_after = int(self.config.peer_stale_after_s)
+        for peer in self.peer_network.peers_snapshot().get("peers", []):
+            if not isinstance(peer, dict):
+                continue
+            peer_id = safe_id(str(peer.get("node_id", "")))
+            last_seen = int(peer.get("last_seen_unix", 0) or 0)
+            if peer_id and (
+                peer.get("self")
+                or stale_after <= 0
+                or (last_seen > 0 and now - last_seen <= stale_after)
+            ):
+                live_peer_ids.add(peer_id)
+        for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
+            if not directory.exists():
+                continue
+            for item_path in directory.glob("*.json"):
+                envelope = read_json(item_path, {})
+                if not isinstance(envelope, dict):
+                    continue
+                status = task_status(envelope.get("status"))
+                kind = str(envelope.get("envelope_kind") or "task")
+                raw_item_id = str(
+                    envelope.get("request_id") if kind == "request" else envelope.get("task_id", "")
+                ).strip()
+                item_id = safe_id(raw_item_id) if raw_item_id else ""
+                if not item_id or item_id in active_ids:
+                    continue
+                handled_by = safe_id(str(envelope.get("handled_by", "")))
+                if status == "running":
+                    if handled_by != self.config.node_id:
+                        # A remote worker may still be running the task; only
+                        # the node that owns the local runtime can recover it.
+                        continue
+                    result = {
+                        "error": "task_interrupted",
+                        "error_type": "TaskInterrupted",
+                        "traceback": "The local node stopped before the task reached a terminal state.",
+                    }
+                elif status == "dispatched":
+                    target_raw = str(
+                        envelope.get("dispatched_to") or envelope.get("assigned_peer_id") or ""
+                    ).strip()
+                    target_id = safe_id(target_raw) if target_raw else ""
+                    owner_id = handled_by or safe_id(str(envelope.get("dispatched_by", "")))
+                    if not target_id or owner_id != self.config.node_id or target_id in live_peer_ids:
+                        continue
+                    result = {
+                        "error": "task_worker_lost",
+                        "error_type": "TaskWorkerLost",
+                        "traceback": f"The dispatched worker {target_id} has not sent a heartbeat within the liveness window.",
+                    }
+                else:
+                    continue
+                self.update_envelope_status(envelope, "failed", result)
+                self.remember_task_queue_envelope({**envelope, "status": "failed"})
+
     def task_queue_snapshot(self, limit: int = 64) -> list[dict[str, Any]]:
+        self.reconcile_orphaned_running_tasks()
         items: list[tuple[float, dict[str, Any]]] = []
         for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
             if not directory.exists():
@@ -5421,10 +5526,36 @@ class NetworkNode:
         force_refresh: bool = False,
     ) -> list[dict[str, Any]]:
         """Return queue telemetry without blocking task execution on disk scans."""
+        if force_refresh:
+            with self._task_queue_cache_lock:
+                refresh_generation = self._task_queue_cache_generation
+                self._task_queue_cache_refreshing = True
+            try:
+                snapshot = self.task_queue_snapshot(limit=64)
+            finally:
+                with self._task_queue_cache_lock:
+                    self._task_queue_cache_refreshing = False
+            with self._task_queue_cache_lock:
+                if self._task_queue_cache_generation == refresh_generation:
+                    self._task_queue_cache = snapshot
+                else:
+                    # Preserve an in-memory terminal/removal update that
+                    # happened while the disk scan was in flight.
+                    current = {
+                        safe_id(str(item.get("item_id", ""))): dict(item)
+                        for item in self._task_queue_cache
+                        if str(item.get("item_id", "")).strip()
+                    }
+                    for item in snapshot:
+                        current.setdefault(safe_id(str(item.get("item_id", ""))), dict(item))
+                    self._task_queue_cache = list(current.values())[:64]
+                self._task_queue_cache_updated_monotonic = time.monotonic()
+                return [dict(item) for item in self._task_queue_cache[: max(1, int(limit))]]
+
         now = time.monotonic()
         with self._task_queue_cache_lock:
             cached = [dict(item) for item in self._task_queue_cache[: max(1, int(limit))]]
-            stale = force_refresh or (now - self._task_queue_cache_updated_monotonic) >= 60.0
+            stale = (now - self._task_queue_cache_updated_monotonic) >= 5.0
             if not stale or self._task_queue_cache_refreshing:
                 return cached
             refresh_generation = self._task_queue_cache_generation
@@ -5497,7 +5628,50 @@ class NetworkNode:
                 daemon=True,
             ).start()
 
+    def _clear_active_task_after_failure(self, item_id: str) -> None:
+        with self._activity_lock:
+            owns_active_task = bool(item_id) and any(
+                safe_id(str(item.get("item_id", ""))) == item_id
+                for item in self._active_tasks
+            )
+            if owns_active_task:
+                self._active_tasks = []
+        if not owns_active_task:
+            return
+        self._task_monitor_stop.set()
+        monitor = self._task_monitor_thread
+        if monitor is not None and monitor is not threading.current_thread():
+            monitor.join(timeout=2.0)
+        self._task_monitor_thread = None
+        try:
+            self.publish_runtime_state(announce=True)
+        except Exception:
+            pass
+
     def handle(self, envelope: dict[str, Any]) -> None:
+        raw_item_id = str(envelope.get("request_id") or envelope.get("task_id") or "").strip()
+        item_id = safe_id(raw_item_id) if raw_item_id else ""
+        try:
+            return self._handle(envelope)
+        except Exception as exc:
+            error_type = type(exc).__name__
+            error = str(exc).strip() or error_type
+            result = {
+                "error": error,
+                "error_type": error_type,
+                "traceback": traceback.format_exc(),
+            }
+            if raw_item_id:
+                try:
+                    self.update_envelope_status(envelope, "failed", result)
+                    self.remember_task_queue_envelope({**envelope, "status": "failed"})
+                except Exception:
+                    pass
+            raise
+        finally:
+            self._clear_active_task_after_failure(item_id)
+
+    def _handle(self, envelope: dict[str, Any]) -> None:
         started = time.monotonic()
         start_telemetry = self.telemetry_sampler.sample()
         kind = str(envelope.get("envelope_kind") or "task")
@@ -6609,6 +6783,10 @@ class NetworkNode:
         current["handled_utc"] = utc_now()
         current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
         current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
+        for key in ("dispatched_to", "assigned_peer_id"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                current[key] = value.strip()
         for key in ("error", "error_type", "traceback"):
             value = result.get(key)
             if isinstance(value, str) and value.strip():
@@ -6670,7 +6848,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", "15")))
     parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
     parser.add_argument("--gossip-max-hops", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_MAX_HOPS", "8")))
-    parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", "300")))
+    parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", "45")))
     parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
     parser.add_argument("--relay-hops", type=int, default=int(os.environ.get("SILICIUM_RELAY_HOPS", "2")))
     parser.add_argument("--identity-key-path", default=os.environ.get("SILICIUM_IDENTITY_KEY_PATH", ""))
