@@ -39,6 +39,7 @@ if [[ -z "$advertise_url" ]]; then
 fi
 
 mkdir -p "$export_dir" "$state_dir"
+cd "$ROOT/Network"
 
 node_args=(
   --export-dir "$export_dir"
@@ -85,4 +86,4 @@ if [[ -n "${SILICIUM_DISCOVERY_SEEDS:-}" ]]; then
   node_args+=(--discovery-seeds "$SILICIUM_DISCOVERY_SEEDS")
 fi
 
-exec /usr/bin/python3 "$ROOT/Network/tools/network_node.py" "${node_args[@]}"
+exec /usr/bin/python3 -m tools.network_node "${node_args[@]}"
