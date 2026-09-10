@@ -415,6 +415,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	job = h.refreshRaytracerArtifacts(job)
 
 	summary := readJSONMap(job.SummaryPath)
 	if len(summary) == 0 {
@@ -453,7 +454,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"computeReceiptHash": job.ComputeReceiptHash,
 			"network":            job.NetworkMetadata,
 		},
-		"resultReady": job.ResultPath != "",
+		"resultReady": regularFile(job.ResultPath),
 		"resultUrl":   "/jobs/" + strconv.Itoa(int(job.ID)) + "/result",
 		"diagnostics": map[string]any{
 			"inputPath":       job.InputPath,
@@ -605,7 +606,8 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if job.ResultPath == "" {
+	job = h.refreshRaytracerArtifacts(job)
+	if !regularFile(job.ResultPath) {
 		http.Error(w, "Result is not ready", http.StatusNotFound)
 		return
 	}
@@ -621,6 +623,7 @@ func (h *Handler) GetJobFragmentPreview(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Fragment previews are only available for raytracer jobs", http.StatusNotFound)
 		return
 	}
+	job = h.refreshRaytracerArtifacts(job)
 	index, err := strconv.Atoi(mux.Vars(r)["index"])
 	if err != nil || index < 0 || index > 9999 {
 		http.Error(w, "Invalid fragment index", http.StatusBadRequest)
@@ -761,14 +764,146 @@ func readJSONMap(path string) map[string]any {
 	return payload
 }
 
-func progressPathForJob(job models.Job) string {
-	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "Network")))
-	if strings.TrimSpace(job.Workload) == "raytracer" {
-		if strings.TrimSpace(job.SummaryPath) != "" {
-			return filepath.Join(filepath.Dir(job.SummaryPath), "raytracer-progress.json")
-		}
-		return filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "raytracer-progress.json")
+func regularFile(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
 	}
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func raytracerJobDirectories(job models.Job) []string {
+	cfg := silicium.ConfigFromEnv()
+	storageRoot := strings.TrimSpace(cfg.WorkloadStorageDir)
+	if storageRoot == "" {
+		storageRoot = filepath.Join(cfg.NetworkRoot, ".silicium", "jobs")
+	} else if !filepath.IsAbs(storageRoot) {
+		storageRoot = filepath.Join(cfg.NetworkRoot, storageRoot)
+	}
+	if absolute, err := filepath.Abs(storageRoot); err == nil {
+		storageRoot = absolute
+	}
+
+	candidates := make([]string, 0, 4)
+	if strings.TrimSpace(job.SummaryPath) != "" {
+		candidates = append(candidates, filepath.Dir(job.SummaryPath))
+	}
+	candidates = append(candidates,
+		filepath.Join(storageRoot, "raytracer", job.SiliciumJobID),
+		// Compatibility with the release that passed the generic workload
+		// root directly to run_network_job.py.
+		filepath.Join(storageRoot, job.SiliciumJobID),
+		filepath.Join(cfg.NetworkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID),
+	)
+	unique := make([]string, 0, len(candidates))
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(candidate)
+		if candidate == "." || seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		unique = append(unique, candidate)
+	}
+	return unique
+}
+
+func safeJobFilePath(jobDir string, values ...any) string {
+	candidates := make([]string, 0, len(values))
+	for _, raw := range values {
+		if value := strings.TrimSpace(stringValue(raw)); value != "" {
+			candidates = append(candidates, value)
+		}
+	}
+	for _, candidate := range candidates {
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(jobDir, candidate)
+		}
+		absolute, err := filepath.Abs(candidate)
+		if err != nil {
+			continue
+		}
+		relative, err := filepath.Rel(jobDir, absolute)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			continue
+		}
+		if regularFile(absolute) {
+			return absolute
+		}
+	}
+	return ""
+}
+
+func jobArtifactPath(jobDir string, values ...any) string {
+	return safeJobFilePath(jobDir, append(values,
+		filepath.Join(jobDir, "reassembled", "render.png"),
+		filepath.Join(jobDir, "reassembled", "render.ppm"),
+	)...)
+}
+
+func (h *Handler) refreshRaytracerArtifacts(job models.Job) models.Job {
+	if strings.TrimSpace(job.Workload) != "raytracer" {
+		return job
+	}
+	if regularFile(job.ResultPath) && regularFile(job.SummaryPath) {
+		return job
+	}
+	for _, jobDir := range raytracerJobDirectories(job) {
+		summaryPath := filepath.Join(jobDir, "raytracer-summary.json")
+		summary := readJSONMap(summaryPath)
+		if len(summary) == 0 {
+			continue
+		}
+		resultPath := jobArtifactPath(jobDir,
+			summary["reassembled_png"],
+			summary["result_png_path"],
+			summary["result_path"],
+			summary["reassembled_ppm"],
+		)
+		updates := map[string]any{"summary_path": summaryPath}
+		job.SummaryPath = summaryPath
+		summarySuccess, successKnown := summary["success"].(bool)
+		if resultPath != "" && (!successKnown || summarySuccess) {
+			updates["result_path"] = resultPath
+			updates["status"] = "completed"
+			updates["error_message"] = ""
+			job.ResultPath = resultPath
+			job.Status = "completed"
+			job.ErrorMessage = ""
+			units, receiptHash := verifiedBillingForJob(job)
+			updates["billable_work_units"] = units
+			updates["compute_receipt_hash"] = receiptHash
+			job.BillableWorkUnits = units
+			job.ComputeReceiptHash = receiptHash
+		}
+		if trace, ok := summary["devnet_trace"].(map[string]any); ok {
+			if tracePath := safeJobFilePath(jobDir, trace["trace_path"]); tracePath != "" {
+				updates["devnet_trace_path"] = tracePath
+				job.DevnetTracePath = tracePath
+			}
+		}
+		if h.DB != nil {
+			h.DB.Model(&models.Job{}).Where("id = ?", job.ID).Updates(updates)
+		}
+		return job
+	}
+	return job
+}
+
+func progressPathForJob(job models.Job) string {
+	if strings.TrimSpace(job.Workload) == "raytracer" {
+		directories := raytracerJobDirectories(job)
+		for _, directory := range directories {
+			candidate := filepath.Join(directory, "raytracer-progress.json")
+			if regularFile(candidate) {
+				return candidate
+			}
+		}
+		if len(directories) > 0 {
+			return filepath.Join(directories[0], "raytracer-progress.json")
+		}
+	}
+	networkRoot := envDefault("SILICIUM_NETWORK_ROOT", filepath.Clean(filepath.Join("..", "Network")))
 	if strings.TrimSpace(job.SummaryPath) != "" {
 		return filepath.Join(filepath.Dir(job.SummaryPath), "auto-split-demo-progress.json")
 	}

@@ -144,6 +144,95 @@ func TestBoundedQueryInt(t *testing.T) {
 	}
 }
 
+func TestProgressPathUsesConfiguredWorkloadStorage(t *testing.T) {
+	networkRoot := t.TempDir()
+	workloadRoot := t.TempDir()
+	t.Setenv("SILICIUM_NETWORK_ROOT", networkRoot)
+	t.Setenv("SILICIUM_WORKLOAD_STORAGE_DIR", workloadRoot)
+	job := models.Job{Workload: "raytracer", SiliciumJobID: "site-render-42"}
+
+	canonical := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "raytracer-progress.json")
+	if err := os.MkdirAll(filepath.Dir(canonical), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(canonical, []byte(`{"stage":"computing"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := progressPathForJob(job); got != canonical {
+		t.Fatalf("progress path = %q, want %q", got, canonical)
+	}
+}
+
+func TestRefreshRaytracerArtifactsRepairsLegacyOutputRoot(t *testing.T) {
+	database, err := gorm.Open(sqlite.Open("file:repair-job-artifacts?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.AutoMigrate(&models.Job{}); err != nil {
+		t.Fatal(err)
+	}
+
+	networkRoot := t.TempDir()
+	workloadRoot := t.TempDir()
+	t.Setenv("SILICIUM_NETWORK_ROOT", networkRoot)
+	t.Setenv("SILICIUM_WORKLOAD_STORAGE_DIR", workloadRoot)
+	job := models.Job{
+		UserID:        42,
+		Title:         "Legacy render",
+		Workload:      "raytracer",
+		Priority:      "normal",
+		Status:        "completed",
+		SiliciumJobID: "site-render-42-legacy",
+		InputPath:     filepath.Join(workloadRoot, "input.cfg"),
+		SummaryPath: filepath.Join(
+			workloadRoot,
+			"raytracer",
+			"site-render-42-legacy",
+			"raytracer-summary.json",
+		),
+	}
+	if result := database.Create(&job); result.Error != nil {
+		t.Fatal(result.Error)
+	}
+
+	legacyDir := filepath.Join(workloadRoot, job.SiliciumJobID)
+	resultPath := filepath.Join(legacyDir, "reassembled", "render.png")
+	if err := os.MkdirAll(filepath.Dir(resultPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(resultPath, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summaryPath := filepath.Join(legacyDir, "raytracer-summary.json")
+	summary := map[string]any{
+		"success":          true,
+		"result_path":      resultPath,
+		"fragment_count":   1,
+		"fragments":        []any{map[string]any{"fragment_index": 0, "status": "reassembled"}},
+		"reassembled_hash": "hash",
+	}
+	raw, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(summaryPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := New(database)
+	repaired := handler.refreshRaytracerArtifacts(job)
+	if repaired.SummaryPath != summaryPath || repaired.ResultPath != resultPath || repaired.Status != "completed" {
+		t.Fatalf("legacy artifacts were not repaired: %#v", repaired)
+	}
+	var persisted models.Job
+	if result := database.First(&persisted, job.ID); result.Error != nil {
+		t.Fatal(result.Error)
+	}
+	if persisted.SummaryPath != summaryPath || persisted.ResultPath != resultPath {
+		t.Fatalf("repaired paths were not persisted: %#v", persisted)
+	}
+}
+
 func TestNetworkJobSummaryUsesConfiguredExportDirectory(t *testing.T) {
 	exportDir := t.TempDir()
 	tasksDir := filepath.Join(exportDir, "tasks")

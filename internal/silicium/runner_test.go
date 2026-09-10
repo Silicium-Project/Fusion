@@ -90,8 +90,27 @@ func TestRaytracerArgsUseConfiguredWorkloadStorageDir(t *testing.T) {
 	)
 
 	index := slices.Index(args, "--output-root")
-	if index < 0 || index+1 >= len(args) || args[index+1] != "/var/lib/silicium/site/runtime" {
+	expectedRoot := filepath.Join("/var/lib/silicium/site/runtime", "raytracer")
+	if index < 0 || index+1 >= len(args) || args[index+1] != expectedRoot {
 		t.Fatalf("expected configured workload output root, got %#v", args)
+	}
+}
+
+func TestValidateRaytracerCompletionRejectsMissingArtifact(t *testing.T) {
+	result := validateRaytracerCompletion(RunResult{Status: "completed"})
+	if result.Status != "failed" || result.ErrorMessage != "raytracer_result_missing" {
+		t.Fatalf("missing artifact must fail the job, got %#v", result)
+	}
+}
+
+func TestValidateRaytracerCompletionAcceptsReadableArtifact(t *testing.T) {
+	resultPath := filepath.Join(t.TempDir(), "render.png")
+	if err := os.WriteFile(resultPath, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := validateRaytracerCompletion(RunResult{Status: "completed", ResultPath: resultPath})
+	if result.Status != "completed" || result.ErrorMessage != "" {
+		t.Fatalf("readable artifact must complete the job, got %#v", result)
 	}
 }
 

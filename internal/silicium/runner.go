@@ -201,23 +201,24 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 	if err != nil {
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
 	}
+	raytracerRoot := filepath.Join(workloadRoot, "raytracer")
 	runConfig := cfg
 	runConfig.WorkloadStorageDir = workloadRoot
 	args := raytracerArgs(job, runConfig)
 	cmd := pythonCommand(ctx, networkRoot, args...)
 	output, err := cmd.CombinedOutput()
-	summaryPath := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "raytracer-summary.json")
+	summaryPath := filepath.Join(raytracerRoot, job.SiliciumJobID, "raytracer-summary.json")
 	result := parseRaytracerSummary(summaryPath)
 	result.SummaryPath = summaryPath
 	if result.DevnetTracePath == "" {
-		tracePath := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "devnet-trace.json")
+		tracePath := filepath.Join(raytracerRoot, job.SiliciumJobID, "devnet-trace.json")
 		if _, statErr := os.Stat(tracePath); statErr == nil {
 			result.DevnetTracePath = tracePath
 		}
 	}
 	if result.ResultPath == "" {
-		pngPath := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "reassembled", "render.png")
-		outputPath := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "reassembled", "render.ppm")
+		pngPath := filepath.Join(raytracerRoot, job.SiliciumJobID, "reassembled", "render.png")
+		outputPath := filepath.Join(raytracerRoot, job.SiliciumJobID, "reassembled", "render.ppm")
 		if _, statErr := os.Stat(pngPath); statErr == nil {
 			result.ResultPath = pngPath
 		} else if _, statErr := os.Stat(outputPath); statErr == nil {
@@ -237,10 +238,7 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 		}
 		return result
 	}
-	if result.Status == "" {
-		result.Status = "completed"
-	}
-	return result
+	return validateRaytracerCompletion(result)
 }
 
 func raytracerArgs(job models.Job, cfg RunnerConfig) []string {
@@ -248,6 +246,7 @@ func raytracerArgs(job models.Job, cfg RunnerConfig) []string {
 	if workloadRoot == "" {
 		workloadRoot = filepath.Join(cfg.NetworkRoot, ".silicium", "jobs")
 	}
+	workloadRoot = filepath.Join(workloadRoot, "raytracer")
 	args := []string{
 		"workloads/raytracer/run_network_job.py",
 		job.InputPath,
@@ -331,6 +330,15 @@ func parseRaytracerSummary(summaryPath string) RunResult {
 		return RunResult{}
 	}
 	result := RunResult{Status: "completed"}
+	if success, ok := payload["success"].(bool); ok && !success {
+		result.Status = "failed"
+		for _, key := range []string{"failure_detail", "error", "error_message"} {
+			if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
+				result.ErrorMessage = strings.TrimSpace(value)
+				break
+			}
+		}
+	}
 	for _, key := range []string{"reassembled_png", "result_png_path", "result_path", "reassembled_ppm"} {
 		if value, ok := payload[key].(string); ok && strings.TrimSpace(value) != "" {
 			result.ResultPath = value
@@ -361,6 +369,28 @@ func parseRaytracerSummary(summaryPath string) RunResult {
 		if receiptHash, ok := billing["receipt_set_hash"].(string); ok {
 			result.ComputeReceiptHash = receiptHash
 		}
+	}
+	return result
+}
+
+func validateRaytracerCompletion(result RunResult) RunResult {
+	if result.Status == "" {
+		result.Status = "failed"
+		result.ErrorMessage = "raytracer_summary_missing"
+		return result
+	}
+	if result.Status != "completed" {
+		return result
+	}
+	if strings.TrimSpace(result.ResultPath) == "" {
+		result.Status = "failed"
+		result.ErrorMessage = "raytracer_result_missing"
+		return result
+	}
+	info, err := os.Stat(result.ResultPath)
+	if err != nil || !info.Mode().IsRegular() {
+		result.Status = "failed"
+		result.ErrorMessage = "raytracer_result_unreadable: " + result.ResultPath
 	}
 	return result
 }
