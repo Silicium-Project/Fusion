@@ -34,6 +34,7 @@ type RunnerConfig struct {
 	OrchestratorHost      string
 	EmitterPort           string
 	OrchestratorExportDir string
+	WorkloadStorageDir    string
 	DashboardURL          string
 	DevnetTrace           bool
 	DevnetTxDelayMS       string
@@ -69,6 +70,7 @@ func ConfigFromEnv() RunnerConfig {
 		OrchestratorHost:      envDefault("SILICIUM_ORCHESTRATOR_HOST", "127.0.0.1"),
 		EmitterPort:           envDefault("SILICIUM_EMITTER_PORT", "46102"),
 		OrchestratorExportDir: envDefault("SILICIUM_ORCHESTRATOR_EXPORT_DIR", filepath.Join(networkRoot, ".silicium", "networked", "orchestrator", "export")),
+		WorkloadStorageDir:    envDefault("SILICIUM_WORKLOAD_STORAGE_DIR", filepath.Join(networkRoot, ".silicium", "jobs")),
 		DashboardURL:          envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
 		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "1") != "0",
 		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
@@ -189,21 +191,33 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 	if _, err := os.Stat(networkRoot); err != nil {
 		return RunResult{Status: "failed", ErrorMessage: fmt.Sprintf("network root not found: %s", networkRoot)}
 	}
-	args := raytracerArgs(job, cfg)
+	workloadRoot := strings.TrimSpace(cfg.WorkloadStorageDir)
+	if workloadRoot == "" {
+		workloadRoot = filepath.Join(networkRoot, ".silicium", "jobs")
+	} else if !filepath.IsAbs(workloadRoot) {
+		workloadRoot = filepath.Join(networkRoot, workloadRoot)
+	}
+	workloadRoot, err = filepath.Abs(workloadRoot)
+	if err != nil {
+		return RunResult{Status: "failed", ErrorMessage: err.Error()}
+	}
+	runConfig := cfg
+	runConfig.WorkloadStorageDir = workloadRoot
+	args := raytracerArgs(job, runConfig)
 	cmd := pythonCommand(ctx, networkRoot, args...)
 	output, err := cmd.CombinedOutput()
-	summaryPath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "raytracer-summary.json")
+	summaryPath := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "raytracer-summary.json")
 	result := parseRaytracerSummary(summaryPath)
 	result.SummaryPath = summaryPath
 	if result.DevnetTracePath == "" {
-		tracePath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "devnet-trace.json")
+		tracePath := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "devnet-trace.json")
 		if _, statErr := os.Stat(tracePath); statErr == nil {
 			result.DevnetTracePath = tracePath
 		}
 	}
 	if result.ResultPath == "" {
-		pngPath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "reassembled", "render.png")
-		outputPath := filepath.Join(networkRoot, ".silicium", "jobs", "raytracer", job.SiliciumJobID, "reassembled", "render.ppm")
+		pngPath := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "reassembled", "render.png")
+		outputPath := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID, "reassembled", "render.ppm")
 		if _, statErr := os.Stat(pngPath); statErr == nil {
 			result.ResultPath = pngPath
 		} else if _, statErr := os.Stat(outputPath); statErr == nil {
@@ -230,10 +244,15 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 }
 
 func raytracerArgs(job models.Job, cfg RunnerConfig) []string {
+	workloadRoot := strings.TrimSpace(cfg.WorkloadStorageDir)
+	if workloadRoot == "" {
+		workloadRoot = filepath.Join(cfg.NetworkRoot, ".silicium", "jobs")
+	}
 	args := []string{
 		"workloads/raytracer/run_network_job.py",
 		job.InputPath,
 		"--job-id", job.SiliciumJobID,
+		"--output-root", workloadRoot,
 		"--node-mode", "network",
 		// The persistent orchestrator owns task/result ingress. Starting an
 		// embedded emitter here made the worker return URL disappear whenever

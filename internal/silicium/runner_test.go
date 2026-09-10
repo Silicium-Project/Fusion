@@ -83,6 +83,18 @@ func TestRaytracerArgsForwardRequestedFragmentCount(t *testing.T) {
 	}
 }
 
+func TestRaytracerArgsUseConfiguredWorkloadStorageDir(t *testing.T) {
+	args := raytracerArgs(
+		models.Job{InputPath: "/var/lib/silicium/site/jobs/render-1/input/scene.cfg", SiliciumJobID: "render-1"},
+		RunnerConfig{NetworkRoot: "/opt/silicium/Network", WorkloadStorageDir: "/var/lib/silicium/site/runtime"},
+	)
+
+	index := slices.Index(args, "--output-root")
+	if index < 0 || index+1 >= len(args) || args[index+1] != "/var/lib/silicium/site/runtime" {
+		t.Fatalf("expected configured workload output root, got %#v", args)
+	}
+}
+
 func TestRaytracerArgsForwardJobDeadline(t *testing.T) {
 	deadline := time.Now().Add(120 * time.Second)
 	args := raytracerArgs(
