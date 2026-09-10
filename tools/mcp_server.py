@@ -476,11 +476,38 @@ class McpTaskStore:
             tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
             tmp_path.write_text(encoded, encoding="utf-8")
             tmp_path.replace(final_path)
-            with self._queue_path.open("a", encoding="utf-8") as queue:
-                queue.write(encoded + "\n")
+            try:
+                with self._queue_path.open("a", encoding="utf-8") as queue:
+                    queue.write(encoded + "\n")
+            except OSError as error:
+                # The scheduler recovers queued work from tasks/*.json when a
+                # queue cursor is stale. Mark this registry entry terminal when
+                # durable queue ingress is rejected, otherwise a worker can
+                # execute work that the submitting job saw fail. Keeping the
+                # terminal entry also protects against an append whose outcome
+                # is uncertain (for example, an error raised while flushing).
+                failed_payload = {
+                    **payload,
+                    "status": "failed",
+                    "failed_utc": _utc_now(),
+                    "error_type": type(error).__name__,
+                    "error": f"queue_ingress_failed:{error}",
+                }
+                failed_encoded = json.dumps(failed_payload, separators=(",", ":"), ensure_ascii=True)
+                failed_tmp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+                failed_tmp_path.write_text(failed_encoded, encoding="utf-8")
+                failed_tmp_path.replace(final_path)
+                raise
             role_queue_path = self._queue_path.with_name(f"tasks.{required_roles[0]}.queue.ndjson")
-            with role_queue_path.open("a", encoding="utf-8") as role_queue:
-                role_queue.write(encoded + "\n")
+            try:
+                with role_queue_path.open("a", encoding="utf-8") as role_queue:
+                    role_queue.write(encoded + "\n")
+            except OSError:
+                # The canonical queue already durably accepted the task. Role
+                # queues are an acceleration path; workers also consume the
+                # canonical queue, so reporting a submission failure here
+                # would be incorrect and could trigger duplicate retries.
+                pass
 
         return {
             "status": "queued",
