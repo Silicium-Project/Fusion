@@ -61,7 +61,20 @@ done
 echo "Checking local HTTP health endpoints..."
 curl -fsS --max-time 8 http://127.0.0.1:8080/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1:3000 >/dev/null
-orchestrator_health="$(curl -fsS --max-time 8 http://127.0.0.1:${SILICIUM_NODE_PORT:-46100}/healthz)"
+orchestrator_port="${SILICIUM_NODE_PORT:-46100}"
+orchestrator_health=""
+for _ in $(seq 1 30); do
+  if orchestrator_health="$(curl -fsS --max-time 3 "http://127.0.0.1:${orchestrator_port}/healthz" 2>/dev/null)"; then
+    break
+  fi
+  sleep 2
+done
+if [[ -z "$orchestrator_health" ]]; then
+  echo "The integrated network node did not become reachable on 127.0.0.1:${orchestrator_port}." >&2
+  systemctl status --no-pager -l silicium-orchestrator.service >&2 || true
+  journalctl -u silicium-orchestrator.service --no-pager -n 100 >&2 || true
+  exit 1
+fi
 if [[ "$orchestrator_health" != *'"service":"network_node"'* ]]; then
   echo "The integrated network node is not serving the orchestrator port: $orchestrator_health" >&2
   exit 1
