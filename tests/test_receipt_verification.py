@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from tools import receipt_verification
-from workloads.raytracer.run_network_job import validate_compute_receipt
+from workloads.raytracer.run_network_job import validate_compute_receipt, validate_receipt_attestation
 
 
 NETWORK_ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +35,31 @@ def _signed_receipt(task_id: str) -> dict[str, object]:
         "worker_identity_id": receipt_verification.identity_id_for_key(public_key),
         "worker_public_key": public_key,
         "worker_signature": private_key.sign(
+            receipt_verification.stable_json(unsigned).encode("utf-8")
+        ).hex(),
+    }
+
+
+def _signed_attestation(task_id: str, receipt_hash: str, *, accepted: bool) -> dict[str, object]:
+    private_key = Ed25519PrivateKey.generate()
+    public_pem = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    public_key = base64.b64encode(public_pem).decode("ascii")
+    unsigned: dict[str, object] = {
+        "schema": "silicium.receipt-attestation.v1",
+        "task_id": task_id,
+        "compute_receipt_hash": receipt_hash,
+        "accepted": accepted,
+        "verifier_node_id": "orchestrator-1",
+        "finished_utc": "2026-09-10T15:48:12Z",
+    }
+    return {
+        **unsigned,
+        "verifier_identity_id": receipt_verification.identity_id_for_key(public_key),
+        "verifier_public_key": public_key,
+        "verifier_signature": private_key.sign(
             receipt_verification.stable_json(unsigned).encode("utf-8")
         ).hex(),
     }
@@ -77,6 +102,30 @@ def test_compute_receipt_keeps_ed25519_validation() -> None:
     tampered = {**receipt, "billable_work_units": 4_200}
     with pytest.raises(RuntimeError, match="compute_receipt_hash_invalid"):
         validate_compute_receipt({"compute_receipt": tampered}, task_id)
+
+
+def test_rejected_receipt_attestation_reports_verifier_and_hashes() -> None:
+    task_id = "site-render-27-frag-000-verify"
+    receipt_hash = "a" * 64
+    attestation = _signed_attestation(task_id, receipt_hash, accepted=False)
+    result = {
+        "receipt_attestation": attestation,
+        "verification": {
+            "expected_pixel_hash": "b" * 64,
+            "recomputed_pixel_hash": "c" * 64,
+        },
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            rf"receipt_attestation_rejected:{task_id}"
+            rf":verifier=orchestrator-1"
+            rf":expected={'b' * 64}"
+            rf":recomputed={'c' * 64}"
+        ),
+    ):
+        validate_receipt_attestation(result, receipt_hash, task_id)
 
 
 def test_signature_verification_falls_back_to_openssl(monkeypatch: pytest.MonkeyPatch) -> None:

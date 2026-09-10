@@ -111,7 +111,15 @@ def validate_receipt_attestation(
     ):
         raise RuntimeError(f"receipt_attestation_signature_invalid:{verify_task_id}")
     if not bool(attestation.get("accepted", False)):
-        raise RuntimeError(f"receipt_attestation_rejected:{verify_task_id}")
+        verification = verify_result.get("verification")
+        if not isinstance(verification, dict):
+            verification = {}
+        raise RuntimeError(
+            f"receipt_attestation_rejected:{verify_task_id}"
+            f":verifier={attestation.get('verifier_node_id', '')}"
+            f":expected={verification.get('expected_pixel_hash', verify_result.get('expected_hash', ''))}"
+            f":recomputed={verification.get('recomputed_pixel_hash', verify_result.get('recomputed_hash', ''))}"
+        )
     return attestation
 
 
