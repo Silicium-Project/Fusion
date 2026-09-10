@@ -1167,10 +1167,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let api_addr = format!("127.0.0.1:{}", api_port);
     let api_listener = TcpListener::bind(&api_addr).await?;
-    println!(" API for P2P injection listening on {}", api_port);
+    println!(" API for P2P injection listening on {}", api_port); // i18n:ignore -- operator log with the bound port
     tokio::spawn(async move {
         if let Err(error) = axum::serve(api_listener, app).await {
-            eprintln!("P2P API server stopped: {error}");
+            eprintln!("P2P API server stopped: {error}"); // i18n:ignore -- operator log with the runtime error
         }
     });
 
