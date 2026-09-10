@@ -9,22 +9,22 @@ const firstPartyRoutes: RouteCase[] = [
   { path: '/blockchain', heading: 'Du calcul au paiement' },
   { path: '/service/downloads/windows', heading: 'Faites participer' },
   { path: '/service/downloads/windows-dev', heading: 'Faites participer' },
-  { path: '/service/downloads/linux-dev', heading: 'Faites participer' },
+  { path: '/service/downloads/linux-dev', heading: 'Faites participer' }, { path: '/download', heading: 'Une machine prête' },
   { path: '/about', heading: 'Plusieurs machines' },
   { path: '/contact', heading: 'Une idée pour le réseau' },
   { path: '/auth?mode=login', heading: 'Connectez-vous' },
-  { path: '/dashboard', heading: 'Vue d’ensemble', authenticated: true },
-  { path: '/jobs', heading: 'Tâches', authenticated: true },
-  { path: '/jobs/new', heading: 'Envoyer un projet', authenticated: true },
+  { path: '/dashboard', heading: 'Accueil', authenticated: true },
+  { path: '/jobs', heading: 'Mes projets', authenticated: true },
+  { path: '/jobs/new', heading: 'Lancer un calcul', authenticated: true },
   { path: '/jobs/1', heading: 'Rendu architecture', authenticated: true },
   { path: '/jobs/1/dashboard', heading: 'Rendu architecture', authenticated: true, canonicalPath: '/jobs/1' },
   { path: '/jobs/1/result', heading: 'Rendu architecture', authenticated: true, canonicalPath: '/jobs/1' },
-  { path: '/network', heading: 'Réseau', authenticated: true },
+  { path: '/network', heading: 'Santé du réseau', authenticated: true },
   { path: '/nodes', heading: 'Machines', authenticated: true },
   { path: '/profile', heading: 'Paramètres', authenticated: true },
 ];
 
-const knownRoute = /^(?:\/|\/service|\/blockchain|\/service\/downloads\/(?:windows|windows-dev|linux-dev)|\/about|\/contact|\/auth|\/dashboard|\/jobs|\/jobs\/new|\/jobs\/\d+(?:\/dashboard|\/result)?|\/network|\/nodes|\/profile)$/;
+const knownRoute = /^(?:\/|\/service|\/blockchain|\/service\/downloads\/(?:windows|windows-dev|linux-dev)|\/download|\/about|\/contact|\/auth|\/dashboard|\/jobs|\/jobs\/new|\/jobs\/\d+(?:\/dashboard|\/result)?|\/network|\/nodes|\/profile)$/;
 
 test('every first-party route and internal link has a canonical destination', async ({ page }) => {
   await mockAPI(page);

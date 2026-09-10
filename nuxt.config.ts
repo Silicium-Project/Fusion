@@ -17,6 +17,8 @@ export default defineNuxtConfig({
       nodeAppWindowsUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_URL, '/downloads/silicium-node-windows.exe'),
       nodeAppWindowsDevUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_DEV_URL, '/downloads/silicium-node-windows-dev.exe'),
       nodeAppLinuxDevUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_LINUX_DEV_URL, '/downloads/silicium-node-linux-dev.AppImage'),
+      nodeAppLinuxDevDebUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_LINUX_DEV_DEB_URL, '/downloads/silicium-node-linux-dev.deb'),
+      nodeAppLinuxDevRpmUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_LINUX_DEV_RPM_URL, '/downloads/silicium-node-linux-dev.rpm'),
     },
   },
 

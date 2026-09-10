@@ -5,7 +5,7 @@
         <span class="marketing-kicker">Comment ça marche</span>
         <h1 class="marketing-title">Votre projet avance<br><em>au-delà d’une seule machine.</em></h1>
         <p class="marketing-lede">Envoyez-le une fois. Silicium répartit automatiquement le travail et vous rend un seul résultat.</p>
-        <div class="marketing-action-row"><UiButton to="#status" size="large" icon="arrow">Voir le réseau</UiButton><UiButton to="#downloads" variant="secondary" size="large">Aider le réseau</UiButton></div>
+        <div class="marketing-action-row"><UiButton to="#status" size="large" icon="arrow">Voir l’état du service</UiButton><UiButton to="/download" variant="secondary" size="large">Installer un nœud</UiButton></div>
       </div>
       <div v-reveal="'right'" class="service-console marketing-glass">
         <header class="service-console__header"><div><span class="service-console__label">Comment le réseau vous aide</span><strong>Votre projet, étape par étape</strong></div><span class="service-console__badge"><i></i>Le réseau travaille</span></header>
@@ -45,6 +45,16 @@
           <div><strong>Linux · version test</strong><small>AppImage · {{ devVersion }}</small></div>
           <UiIcon name="arrow" />
         </a>
+        <a :href="nodeDownloadUrls.linuxDevDeb" aria-label="Télécharger Silicium pour Linux, paquet Debian">
+          <span class="downloads__platform downloads__platform--linux downloads__platform--graphite"><UiIcon name="linux" /></span>
+          <div><strong>Linux · paquet Debian</strong><small>.deb · {{ devVersion }}</small></div>
+          <UiIcon name="arrow" />
+        </a>
+        <a :href="nodeDownloadUrls.linuxDevRpm" aria-label="Télécharger Silicium pour Linux, paquet RPM">
+          <span class="downloads__platform downloads__platform--linux downloads__platform--graphite"><UiIcon name="linux" /></span>
+          <div><strong>Linux · paquet RPM</strong><small>.rpm · {{ devVersion }}</small></div>
+          <UiIcon name="arrow" />
+        </a>
       </div>
     </section>
   </div>
@@ -63,6 +73,8 @@ const nodeDownloadUrls = computed(() => ({
   windows: resolveNodeDownloadUrl(config.public.nodeAppWindowsUrl, '/downloads/silicium-node-windows.exe'),
   windowsDev: resolveNodeDownloadUrl(config.public.nodeAppWindowsDevUrl, '/downloads/silicium-node-windows-dev.exe'),
   linuxDev: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevUrl, '/downloads/silicium-node-linux-dev.AppImage'),
+  linuxDevDeb: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevDebUrl, '/downloads/silicium-node-linux-dev.deb'),
+  linuxDevRpm: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevRpmUrl, '/downloads/silicium-node-linux-dev.rpm'),
 }));
 const layers = [
   { number: '01', title: 'Votre projet', text: 'Vous l’envoyez une seule fois.', icon: 'code' },

@@ -1,6 +1,6 @@
 <template>
   <div class="app-page">
-    <header class="app-page-head"><div><span class="eyebrow">Infrastructure · flux vivant</span><h1 class="page-title">Réseau</h1><p class="page-intro">Les projets de votre émetteur et les machines disponibles, actualisés automatiquement toutes les quelques secondes.</p></div><div class="cluster"><UiStatusBadge v-if="emitterNodeId" status="operational" :label="'Émetteur · ' + compactIdentifier(emitterNodeId, 14, 6)" /><UiButton to="/nodes" variant="secondary" icon="nodes">Voir les machines</UiButton><UiButton variant="secondary" icon="refresh" :loading="loading" @click="loadNetwork(true)">Rafraîchir</UiButton></div></header>
+    <header class="app-page-head"><div><span class="eyebrow">Ressources · vue technique</span><h1 class="page-title">Santé du réseau</h1><p class="page-intro">Vérifiez la capacité disponible et les calculs actifs de votre espace.</p></div><div class="cluster"><UiStatusBadge v-if="emitterNodeId" status="operational" :label="'Émetteur · ' + compactIdentifier(emitterNodeId, 14, 6)" /><UiButton to="/nodes" variant="secondary" icon="nodes">Voir les machines</UiButton><UiButton variant="secondary" icon="refresh" :loading="loading" @click="loadNetwork(true)">Rafraîchir</UiButton></div></header>
     <UiNotice v-if="error" tone="warning">{{ error }}</UiNotice>
     <NetworkSummary :connected-count="onlineCount" :role-groups="onlineRoleGroups" :outdated-count="outdatedCount" />
     <LiveNetworkMap :total-nodes="onlinePeers.length" :active-nodes="onlineCount" :active-workloads="activeCount" :role-groups="onlineRoleGroups" :network-metrics="networkMetrics" :last-updated-at="lastUpdatedAt" />
@@ -28,9 +28,9 @@ import { compactIdentifier, formatDate } from '~/utils/format';
 import { compactJobError } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const network = useNetwork();
-const { onlinePeers, onlineRoleGroups, outdatedCount, onlineCount, loading, error, tasksPayload, networkMetrics, lastUpdatedAt, loadNetwork } = network;
-const workloads = computed(() => (tasksPayload.value.workloads || []).filter(item => Number(item.active || 0) > 0));
-const emitterNodeId = computed(() => tasksPayload.value.emitter_node_id || workloads.value.find(item => item.emitter_node_id)?.emitter_node_id || '');
+const { onlinePeers, onlineRoleGroups, outdatedCount, onlineCount, loading, error, workloads: networkWorkloads, emitterNodeId: payloadEmitterNodeId, networkMetrics, lastUpdatedAt, loadNetwork } = network;
+const workloads = computed(() => networkWorkloads.value.filter(item => Number(item.active || 0) > 0));
+const emitterNodeId = computed(() => payloadEmitterNodeId.value || workloads.value.find(item => item.emitter_node_id)?.emitter_node_id || '');
 const activeCount = computed(() => workloads.value.length);
 function taskFailure(task: NetworkSubtask): string { return String(task.failureDetail || task.failure_detail || task.error || task.error_message || task.traceback || task.error_traceback || ''); }
 const flow = [{ title: 'Nouveau projet', detail: 'Projet reçu', icon: 'upload' }, { title: 'Répartition', detail: 'Machines choisies', icon: 'layers' }, { title: 'Calcul', detail: 'Parties traitées', icon: 'processor' }, { title: 'Contrôle', detail: 'Résultats comparés', icon: 'shield' }, { title: 'Résultat', detail: 'Réponse réunie', icon: 'result' }];
@@ -42,7 +42,7 @@ onMounted(() => {
   }, 5_000);
 });
 onBeforeUnmount(() => { if (refreshTimer) clearInterval(refreshTimer); });
-useSeoMeta({ title: 'Réseau — Silicium' });
+useSeoMeta({ title: 'Santé du réseau — Silicium' });
 </script>
 
 <style scoped>

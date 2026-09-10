@@ -1,7 +1,7 @@
 <template>
   <div class="app-page new-job-page">
-    <header><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>Retour aux tâches</NuxtLink><span class="eyebrow">Envoi manuel</span><h1 class="page-title">Envoyer un projet</h1><p class="page-intro">Les projets sont normalement reçus automatiquement. Cette page reste disponible pour transmettre un fichier lorsqu’une intégration en a besoin.</p></header>
-    <div class="new-job-layout"><UiCard title="Envoi manuel" description="Transmettez un fichier si votre intégration ne peut pas encore utiliser l’envoi automatique." padded><JobForm :submitting="submitting" :error="error" @submit="submit" /></UiCard><aside class="stack"><UiCard title="Ce qui se passe ensuite" padded><ol class="expectations"><li v-for="(item,index) in expectations" :key="item.title"><span>{{ index + 1 }}</span><div><strong>{{ item.title }}</strong><small>{{ item.text }}</small></div></li></ol></UiCard><UiNotice title="Transmission">Le fichier suit le même parcours que les projets reçus automatiquement.</UiNotice></aside></div>
+    <header><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>Retour aux projets</NuxtLink><span class="eyebrow">Nouveau calcul</span><h1 class="page-title">Lancer un calcul</h1><p class="page-intro">Ajoutez votre fichier, choisissez la configuration adaptée puis suivez le résultat depuis votre espace.</p></header>
+    <div class="new-job-layout"><UiCard title="Créer un projet" description="Le réseau s’occupe de la répartition et de la vérification." padded><JobForm :submitting="submitting" :error="error" @submit="submit" /></UiCard><aside class="stack"><UiCard title="Votre parcours" padded><ol class="expectations"><li v-for="(item,index) in expectations" :key="item.title"><span>{{ index + 1 }}</span><div><strong>{{ item.title }}</strong><small>{{ item.text }}</small></div></li></ol></UiCard><UiNotice title="Après le lancement">Vous serez redirigé vers le suivi du projet dès que le fichier sera accepté.</UiNotice></aside></div>
   </div>
 </template>
 
@@ -10,9 +10,9 @@ import type { CreateJobInput } from '~/composables/useJobs';
 import { extractJobError } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const router = useRouter(); const { createJob } = useJobs(); const submitting = ref(false); const error = ref('');
-const expectations = [{ title: 'Réception', text: 'Le format du fichier est vérifié.' }, { title: 'Mise en file', text: 'Le projet attend son tour avec un avancement visible.' }, { title: 'Attribution', text: 'Les machines compatibles prennent une partie du projet.' }, { title: 'Vérification', text: 'Les résultats valides sont réunis.' }];
+const expectations = [{ title: 'Ajouter le fichier', text: 'Le format et la taille sont vérifiés immédiatement.' }, { title: 'Choisir les options', text: 'La configuration recommandée est proposée par défaut.' }, { title: 'Suivre le calcul', text: 'La progression et le résultat restent visibles dans votre espace.' }];
 async function submit(input: CreateJobInput) { submitting.value = true; error.value = ''; try { const job = await createJob(input); await router.push(`/jobs/${job.id}`); } catch (failure) { error.value = extractJobError(failure); } finally { submitting.value = false; } }
-useSeoMeta({ title: 'Envoyer un projet — Silicium' });
+useSeoMeta({ title: 'Nouveau calcul — Silicium' });
 </script>
 
 <style scoped>

@@ -4,9 +4,9 @@ import { authenticate, dashboard, job, mockAPI } from './fixtures';
 test.beforeEach(async ({ page }) => { await mockAPI(page); await authenticate(page); });
 
 for (const pageCase of [
-  { path: '/dashboard', heading: 'Vue d’ensemble' }, { path: '/jobs', heading: 'Tâches' },
-  { path: '/jobs/new', heading: 'Envoyer un projet' }, { path: '/jobs/1', heading: 'Rendu architecture' },
-  { path: '/network', heading: 'Réseau' }, { path: '/nodes', heading: 'Machines' }, { path: '/profile', heading: 'Paramètres' },
+  { path: '/dashboard', heading: 'Accueil' }, { path: '/jobs', heading: 'Mes projets' },
+  { path: '/jobs/new', heading: 'Lancer un calcul' }, { path: '/jobs/1', heading: 'Rendu architecture' },
+  { path: '/network', heading: 'Santé du réseau' }, { path: '/nodes', heading: 'Machines' }, { path: '/profile', heading: 'Paramètres' },
 ]) {
   test(`${pageCase.path} renders without browser errors`, async ({ page }) => {
     const errors: string[] = [];
@@ -19,9 +19,8 @@ for (const pageCase of [
 
 test('a job can be submitted and opens its canonical detail route', async ({ page }) => {
   await page.goto('/jobs/new');
-  const submit = page.getByRole('button', { name: 'Envoyer le projet' });
-  await expect(submit).toBeVisible();
-  await expect(submit).toBeEnabled();
+  const continueButton = page.getByRole('button', { name: 'Continuer' });
+  await expect(continueButton).toBeVisible();
   await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Rendu architecture');
   await page.locator('input[type=file]').setInputFiles({
     name: 'demo-scene.cfg',
@@ -34,6 +33,10 @@ camera :
 }
 `),
   });
+  await continueButton.click();
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  const submit = page.getByRole('button', { name: 'Lancer le calcul' });
+  await expect(submit).toBeEnabled();
   await submit.click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
   await expect(page.getByRole('heading', { name: 'Rendu architecture' })).toBeVisible();
@@ -54,10 +57,11 @@ test('a failed job keeps the worker traceback visible', async ({ page }) => {
   await expect(notice).toContainText('ValueError: bad scene');
 });
 
-test('the task list exposes the submit path', async ({ page }) => {
+test('the project list exposes the submit path', async ({ page }) => {
   await page.goto('/jobs');
-  await expect(page.getByRole('link', { name: 'Nouvelle tâche' })).toBeVisible();
-  await page.getByRole('link', { name: 'Nouvelle tâche' }).click();
+  const createLink = page.getByRole('main').getByRole('link', { name: 'Nouveau calcul' });
+  await expect(createLink).toBeVisible();
+  await createLink.click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/new');
 });
 
@@ -65,9 +69,9 @@ test('connected mobile navigation remains usable and does not overflow', async (
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/dashboard');
   const navigation = page.getByRole('navigation', { name: 'Navigation mobile de l’application' });
-  await expect(navigation.getByRole('link', { name: 'Tâches' })).toBeVisible();
-  await navigation.getByRole('link', { name: 'Flux' }).click();
-  await expect(page).toHaveURL(url => url.pathname === '/network');
+  await expect(navigation.getByRole('link', { name: 'Mes projets' })).toBeVisible();
+  await navigation.getByRole('link', { name: 'Nouveau calcul' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs/new');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 

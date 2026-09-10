@@ -2,19 +2,19 @@
   <div class="app-page">
     <template v-if="dashboard">
       <header class="job-head">
-        <div><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>Toutes les tâches</NuxtLink><div class="job-head__title"><span class="job-head__cube"><UiIcon name="cube"/></span><div><div class="cluster"><h1>{{ dashboard.job.title }}</h1><UiStatusBadge :status="dashboard.job.status" /></div><p>{{ dashboard.job.description || `${dashboard.job.workload} distribué sur le réseau Silicium.` }}</p></div></div></div>
+        <div><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>Tous mes projets</NuxtLink><div class="job-head__title"><span class="job-head__cube"><UiIcon name="cube"/></span><div><div class="cluster"><h1>{{ dashboard.job.title }}</h1><UiStatusBadge :status="dashboard.job.status" /></div><p>{{ dashboard.job.description || 'Calcul distribué sur le réseau Silicium.' }}</p></div></div></div>
         <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">Rafraîchir</UiButton><UiButton v-if="dashboard.resultReady" icon="download" size="small" @click="download">Télécharger</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">Arrêter</UiButton></div>
       </header>
-      <UiNotice v-if="jobErrorDetail" tone="danger" title="L’exécution a rencontré une erreur">{{ compactJobError(jobErrorDetail) }}</UiNotice>
+      <UiNotice v-if="jobErrorDetail" tone="danger" title="Le calcul a rencontré une erreur">{{ compactJobError(jobErrorDetail) }}</UiNotice>
       <section class="metric-grid">
-        <MetricCard label="Fragments" :value="fragmentTotal" :detail="`${fragmentDone} terminés`" icon="layers" tone="mint" />
-        <MetricCard label="Nœuds mobilisés" :value="nodeCount" detail="calcul et vérification" icon="nodes" tone="ink" />
+        <MetricCard label="Parties" :value="fragmentTotal" :detail="`${fragmentDone} terminées`" icon="layers" tone="mint" />
+        <MetricCard label="Machines mobilisées" :value="nodeCount" detail="calcul et vérification" icon="nodes" tone="ink" />
         <MetricCard label="Durée" :value="duration" detail="depuis le démarrage" icon="clock" tone="violet" />
-        <MetricCard label="Reçus Devnet" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? 'traçabilité active' : 'traçabilité inactive'" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
+        <MetricCard label="Preuves" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? 'traçabilité active' : 'traçabilité inactive'" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
-        <UiCard id="result" title="Résultat" description="Aperçu de l’artefact réassemblé." padded><RenderPreview :dashboard="dashboard" :image-url="resultPreview" /></UiCard>
-        <UiCard title="Parcours de l’exécution" description="Étapes métier, de l’entrée à la vérification." padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
+        <UiCard id="result" title="Votre résultat" description="Aperçu de l’artefact réassemblé." padded><RenderPreview :dashboard="dashboard" :image-url="resultPreview" /></UiCard>
+        <UiCard title="Étapes du calcul" description="De la réception à la disponibilité du résultat." padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
       </div>
       <div class="job-detail-grid job-detail-grid--bottom">
         <UiCard title="Fragments" :description="`${fragmentDone} terminés, ${fragmentActive} actifs, ${fragmentFailed} en erreur.`">
@@ -29,8 +29,8 @@
       </div>
     </template>
     <div v-else-if="loading" class="detail-loading"><div class="skeleton"></div><div class="metric-grid"><div v-for="n in 4" :key="n" class="skeleton"></div></div><div class="skeleton large"></div></div>
-    <UiCard v-else padded><UiEmptyState title="Tâche introuvable" :description="error || 'Cette tâche n’existe pas ou n’appartient pas à votre compte.'" icon="alert"><UiButton to="/jobs" variant="secondary" size="small">Retour aux tâches</UiButton></UiEmptyState></UiCard>
-    <UiModal :open="confirmOpen" title="Arrêter l’exécution ?" @close="confirmOpen = false"><p class="modal-copy">Une demande signée sera propagée à toutes les sous-tâches actives. Les résultats déjà vérifiés resteront enregistrés.</p><div class="modal-actions"><UiButton variant="ghost" @click="confirmOpen = false">Continuer le calcul</UiButton><UiButton variant="danger" :loading="cancelling" @click="cancel">Arrêter maintenant</UiButton></div></UiModal>
+    <UiCard v-else padded><UiEmptyState title="Projet introuvable" :description="error || 'Ce projet n’existe pas ou n’appartient pas à votre compte.'" icon="alert"><UiButton to="/jobs" variant="secondary" size="small">Retour aux projets</UiButton></UiEmptyState></UiCard>
+    <UiModal :open="confirmOpen" title="Arrêter le calcul ?" @close="confirmOpen = false"><p class="modal-copy">Les parties encore en cours recevront une demande d’arrêt. Les résultats déjà vérifiés resteront enregistrés.</p><div class="modal-actions"><UiButton variant="ghost" @click="confirmOpen = false">Continuer le calcul</UiButton><UiButton variant="danger" :loading="cancelling" @click="cancel">Arrêter maintenant</UiButton></div></UiModal>
   </div>
 </template>
 
@@ -83,7 +83,7 @@ async function cancel() { if (!dashboard.value) return; cancelling.value = true;
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => { load(); timer = setInterval(() => { if (shouldPoll.value) load(true, true); }, 2_000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); });
-useSeoMeta({ title: () => dashboard.value ? `${dashboard.value.job.title} — Silicium` : 'Détail de la tâche — Silicium' });
+useSeoMeta({ title: () => dashboard.value ? `${dashboard.value.job.title} — Silicium` : 'Suivi du projet — Silicium' });
 </script>
 
 <style scoped>

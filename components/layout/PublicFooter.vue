@@ -2,8 +2,8 @@
   <footer class="public-footer">
     <div class="marketing-container public-footer__top">
       <div class="public-footer__brand"><BrandLogo /><p>Silicium donne à vos projets accès à plusieurs machines, puis vous rend un résultat vérifié.</p></div>
-      <div class="public-footer__links"><strong>Explorer</strong><NuxtLink to="/service">Produit</NuxtLink><NuxtLink to="/blockchain">Blockchain</NuxtLink><NuxtLink to="/about">À propos</NuxtLink><NuxtLink to="/contact">Idées</NuxtLink></div>
-      <div class="public-footer__links"><strong>Accès</strong><NuxtLink to="/auth?mode=login">Connexion</NuxtLink><NuxtLink to="/auth?mode=register">Ouvrir un compte</NuxtLink><NuxtLink to="/service#downloads">Machines</NuxtLink></div>
+      <div class="public-footer__links"><strong>Explorer</strong><NuxtLink to="/service">Produit</NuxtLink><NuxtLink to="/download">Télécharger le nœud</NuxtLink><NuxtLink to="/blockchain">Blockchain</NuxtLink><NuxtLink to="/about">À propos</NuxtLink><NuxtLink to="/contact">Idées</NuxtLink></div>
+      <div class="public-footer__links"><strong>Accès</strong><NuxtLink to="/auth?mode=login">Connexion</NuxtLink><NuxtLink to="/auth?mode=register">Ouvrir un compte</NuxtLink><NuxtLink to="/download">Installer une machine</NuxtLink></div>
       <div class="public-footer__status"><span class="public-footer__status-dot"></span><div><strong>Devnet opérationnel</strong><small>Infrastructure expérimentale</small></div></div>
     </div>
     <div class="marketing-container public-footer__bottom"><span>© {{ new Date().getFullYear() }} Silicium Project</span><span>Conçu pour rendre le calcul vérifiable.</span></div>

@@ -71,6 +71,11 @@ export function useNetwork() {
   const currentCount = computed(() => peers.value.filter(peer => ['current', 'server'].includes(String(peer.version_status || ''))).length);
   const onlineCount = computed(() => peers.value.filter(peer => peer.online === true).length);
   const networkMetrics = computed(() => peersPayload.value.metrics || deriveNetworkMetrics(peers.value));
+  const emitterNodeId = computed(() => String(tasksPayload.value.emitter_node_id || '').trim());
+  const workloads = computed(() => (tasksPayload.value.workloads || []).filter(workload => {
+    const workloadEmitter = String(workload.emitter_node_id || '').trim();
+    return !emitterNodeId.value || !workloadEmitter || workloadEmitter === emitterNodeId.value;
+  }));
 
   async function loadNetwork(force = false): Promise<void> {
     loading.value = true;
@@ -92,5 +97,5 @@ export function useNetwork() {
     }
   }
 
-  return { peersPayload, tasksPayload, peers, onlinePeers, roleGroups, onlineRoleGroups, outdatedCount, currentCount, onlineCount, networkMetrics, loading, error, lastUpdatedAt, loadNetwork };
+  return { peersPayload, tasksPayload, peers, onlinePeers, roleGroups, onlineRoleGroups, outdatedCount, currentCount, onlineCount, networkMetrics, emitterNodeId, workloads, loading, error, lastUpdatedAt, loadNetwork };
 }

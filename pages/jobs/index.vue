@@ -1,11 +1,11 @@
 <template>
   <div class="app-page">
-    <header class="app-page-head"><div><span class="eyebrow">Workspace</span><h1 class="page-title">Tâches</h1><p class="page-intro">Les projets reçus automatiquement, avec leur avancement et les informations utiles.</p></div><div class="jobs-page-head__actions"><UiStatusBadge status="operational" label="Réception automatique" /><UiButton to="/jobs/new" icon="upload">Nouvelle tâche</UiButton></div></header>
+    <header class="app-page-head"><div><span class="eyebrow">Votre espace</span><h1 class="page-title">Mes projets</h1><p class="page-intro">Retrouvez vos calculs, leur avancement et les résultats disponibles.</p></div><div class="jobs-page-head__actions"><UiStatusBadge status="operational" label="Vos projets uniquement" /><UiButton to="/jobs/new" icon="upload">Nouveau calcul</UiButton></div></header>
     <UiCard>
-      <template #header><div class="jobs-toolbar"><div class="jobs-search"><UiIcon name="search"/><input v-model.trim="search" type="search" placeholder="Rechercher par nom ou identifiant" aria-label="Rechercher une tâche"></div><select v-model="status" class="select" aria-label="Filtrer par statut"><option value="all">Tous les statuts</option><option value="running">En cours</option><option value="queued">En attente</option><option value="completed">Terminées</option><option value="failed">Échouées</option><option value="cancelled">Annulées</option><option value="expired">Expirées</option></select><UiButton variant="secondary" size="small" icon="refresh" :loading="loading" @click="load(true)">Rafraîchir</UiButton></div></template>
+      <template #header><div class="jobs-toolbar"><div class="jobs-search"><UiIcon name="search"/><input v-model.trim="search" type="search" placeholder="Rechercher un projet ou un identifiant" aria-label="Rechercher un projet"></div><select v-model="status" class="select" aria-label="Filtrer par statut"><option value="all">Tous les projets</option><option value="running">En cours</option><option value="queued">En attente</option><option value="completed">Terminés</option><option value="failed">Échoués</option><option value="cancelled">Annulés</option><option value="expired">Expirés</option></select><UiButton variant="secondary" size="small" icon="refresh" :loading="loading" @click="load(true)">Rafraîchir</UiButton></div></template>
       <UiNotice v-if="error" tone="warning">{{ error }}</UiNotice>
       <JobTable :jobs="filteredJobs" :loading="loading" @cancel="requestCancel" @download="download" />
-      <footer v-if="totalPages > 1" class="pagination"><span>Page {{ page }} sur {{ totalPages }} · {{ total }} tâche{{ total > 1 ? 's' : '' }}</span><div><UiButton variant="secondary" size="small" :disabled="page <= 1" @click="page--">Précédente</UiButton><UiButton variant="secondary" size="small" :disabled="page >= totalPages" @click="page++">Suivante</UiButton></div></footer>
+      <footer v-if="totalPages > 1" class="pagination"><span>Page {{ page }} sur {{ totalPages }} · {{ total }} projet{{ total > 1 ? 's' : '' }}</span><div><UiButton variant="secondary" size="small" :disabled="page <= 1" @click="page--">Précédente</UiButton><UiButton variant="secondary" size="small" :disabled="page >= totalPages" @click="page++">Suivante</UiButton></div></footer>
     </UiCard>
     <UiModal :open="Boolean(cancelTarget)" title="Arrêter ce projet ?" @close="cancelTarget = null"><p class="modal-copy">Cette action demande au réseau d’arrêter les parties encore en cours. Elle ne supprime ni le projet ni son historique.</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">Retour</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">Confirmer l’arrêt</UiButton></div></UiModal>
   </div>
@@ -26,7 +26,7 @@ async function confirmCancel() { if (!cancelTarget.value) return; cancelling.val
 async function download(job: Job) { await store.downloadResult(job).catch(() => undefined); }
 watch([page, status], () => { if (status.value !== 'all') page.value = Math.min(page.value, totalPages.value); load(); });
 onMounted(() => load());
-useSeoMeta({ title: 'Tâches — Silicium' });
+useSeoMeta({ title: 'Mes projets — Silicium' });
 </script>
 
 <style scoped>

@@ -19,6 +19,7 @@
     <template v-else-if="name === 'cube'"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4.5 7.8 7.5 4.3 7.5-4.3M12 12v9"/></template>
     <template v-else-if="name === 'layers'"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5m-18 4 9 5 9-5"/></template>
     <template v-else-if="name === 'shield'"><path d="M12 3 5 6v5c0 4.6 2.8 8 7 10 4.2-2 7-5.4 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-4"/></template>
+    <template v-else-if="name === 'sparkle'"><path d="m12 3 1.35 5.65L19 10l-5.65 1.35L12 17l-1.35-5.65L5 10l5.65-1.35L12 3Z"/><path d="m19 16 .55 2.45L22 19l-2.45.55L19 22l-.55-2.45L16 19l2.45-.55L19 16Z"/></template>
     <template v-else-if="name === 'download'"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/></template>
     <template v-else-if="name === 'wallet'"><path d="M4 6h14a2 2 0 0 1 2 2v11H5a2 2 0 0 1-2-2V6a3 3 0 0 1 3-3h11v3"/><path d="M15 12h5v4h-5a2 2 0 0 1 0-4Z"/></template>
     <template v-else-if="name === 'menu'"><path d="M4 7h16M4 12h16M4 17h16"/></template>

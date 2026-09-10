@@ -7,7 +7,7 @@
         <p class="marketing-lede">Envoyez votre projet. Silicium mobilise plusieurs machines et vous rend un résultat contrôlé.</p>
         <div class="marketing-action-row">
           <UiButton :to="primaryTarget" size="large" icon="arrow">{{ isAuthenticated ? 'Ouvrir mon espace' : 'Commencer maintenant' }}</UiButton>
-          <UiButton to="/service" variant="secondary" size="large">Voir comment ça fonctionne</UiButton>
+          <UiButton to="/download" variant="secondary" size="large">Installer un nœud</UiButton>
         </div>
         <div class="home-hero__meta" aria-label="Engagements Silicium">
           <span><i>01</i>Un seul envoi</span>

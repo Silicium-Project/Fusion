@@ -26,8 +26,10 @@ test('service reports live components and concrete downloads', async ({ page }) 
   await expect(page.getByRole('link', { name: 'Télécharger Silicium pour Windows, version stable' })).toHaveAttribute('href', '/downloads/silicium-node-windows.exe');
   await expect(page.getByRole('link', { name: 'Télécharger Silicium pour Windows, version test' })).toHaveAttribute('href', '/downloads/silicium-node-windows-dev.exe');
   await expect(page.getByRole('link', { name: 'Télécharger Silicium pour Linux, version test' })).toHaveAttribute('href', '/downloads/silicium-node-linux-dev.AppImage');
+  await expect(page.getByRole('link', { name: 'Télécharger Silicium pour Linux, paquet Debian' })).toHaveAttribute('href', '/downloads/silicium-node-linux-dev.deb');
+  await expect(page.getByRole('link', { name: 'Télécharger Silicium pour Linux, paquet RPM' })).toHaveAttribute('href', '/downloads/silicium-node-linux-dev.rpm');
   await expect(page.locator('.downloads__platform--windows svg')).toHaveCount(2);
-  await expect(page.locator('.downloads__platform--linux svg')).toHaveCount(1);
+  await expect(page.locator('.downloads__platform--linux svg')).toHaveCount(3);
   const walkthrough = page.locator('.process-story');
   await expect(walkthrough.getByText('Vous envoyez, une seule fois.', { exact: true })).toBeVisible();
   await walkthrough.getByRole('button', { name: 'Répartir' }).click();
@@ -45,6 +47,8 @@ test('node download pages expose the published installer', async ({ page }) => {
 
   await page.goto('/service/downloads/linux-dev');
   await expect(page.locator('.download-page__actions a').first()).toHaveAttribute('href', '/downloads/silicium-node-linux-dev.AppImage');
+  await expect(page.locator('.download-page__actions a').nth(1)).toHaveAttribute('href', '/downloads/silicium-node-linux-dev.deb');
+  await expect(page.locator('.download-page__actions a').nth(2)).toHaveAttribute('href', '/downloads/silicium-node-linux-dev.rpm');
 });
 
 test('public mobile menu has no horizontal overflow', async ({ page }) => {

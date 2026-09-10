@@ -2,13 +2,13 @@
   <aside class="app-sidebar">
     <div class="app-sidebar__brand"><BrandLogo /></div>
     <nav class="app-sidebar__nav" aria-label="Navigation de l’application">
-      <p>Workspace</p>
+      <p>Votre espace</p>
       <NuxtLink v-for="item in primary" :key="item.to" :to="item.to" :title="item.label" :aria-label="item.label"><UiIcon :name="item.icon"/><span>{{ item.label }}</span></NuxtLink>
-      <p>Infrastructure</p>
+      <p>Ressources</p>
       <NuxtLink v-for="item in infrastructure" :key="item.to" :to="item.to" :title="item.label" :aria-label="item.label"><UiIcon :name="item.icon"/><span>{{ item.label }}</span></NuxtLink>
     </nav>
     <div class="app-sidebar__bottom">
-      <UiButton to="/network" icon="network" title="Voir le réseau" aria-label="Voir le réseau"><span class="app-sidebar__network-label">Voir le réseau</span></UiButton>
+      <UiButton to="/jobs/new" icon="upload" title="Nouveau calcul" aria-label="Nouveau calcul"><span class="app-sidebar__network-label">Nouveau calcul</span></UiButton>
       <NuxtLink to="/profile" class="app-sidebar__profile"><span>{{ initials }}</span><div><strong>{{ displayName }}</strong><small>{{ user?.email }}</small></div><UiIcon name="chevron"/></NuxtLink>
     </div>
   </aside>
@@ -16,8 +16,8 @@
 
 <script setup lang="ts">
 const { user, displayName, initials } = useSession();
-const primary = [{ label: 'Vue d’ensemble', to: '/dashboard', icon: 'overview' }, { label: 'Tâches', to: '/jobs', icon: 'jobs' }];
-const infrastructure = [{ label: 'Réseau', to: '/network', icon: 'network' }, { label: 'Machines', to: '/nodes', icon: 'nodes' }];
+const primary = [{ label: 'Accueil', to: '/dashboard', icon: 'overview' }, { label: 'Mes projets', to: '/jobs', icon: 'jobs' }];
+const infrastructure = [{ label: 'Machines', to: '/nodes', icon: 'nodes' }, { label: 'Télécharger le nœud', to: '/download', icon: 'download' }, { label: 'Santé du réseau', to: '/network', icon: 'network' }];
 </script>
 
 <style scoped>

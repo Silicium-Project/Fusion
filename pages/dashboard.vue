@@ -1,23 +1,23 @@
 <template>
   <div class="app-page">
-    <header class="app-page-head"><div><span class="eyebrow">Aujourd’hui</span><h1 class="page-title">Vue d’ensemble</h1><p class="page-intro">Les projets reçus, leur avancement et les machines disponibles au même endroit.</p></div><UiButton to="/network" icon="network">Suivre le flux</UiButton></header>
+    <header class="app-page-head"><div><span class="eyebrow">Votre espace</span><h1 class="page-title">Accueil</h1><p class="page-intro">Lancez un calcul, suivez vos projets et récupérez vos résultats au même endroit.</p></div><UiButton to="/jobs/new" icon="upload">Nouveau calcul</UiButton></header>
     <UiNotice v-if="loadError" tone="warning">Certaines données ne sont pas disponibles. Vous pouvez continuer à utiliser les autres fonctions.</UiNotice>
     <section class="metric-grid" aria-label="Indicateurs clés">
-      <MetricCard label="Projets reçus" :value="total" detail="dans votre espace" icon="jobs" tone="ink" />
+      <MetricCard label="Mes projets" :value="total" detail="dans votre espace" icon="jobs" tone="ink" />
       <MetricCard label="En cours" :value="runningCount" detail="projets actifs" icon="activity" tone="mint" />
-      <MetricCard label="Terminées" :value="completedCount" detail="dans la vue récente" icon="check" tone="violet" />
-      <MetricCard label="Machines connues" :value="peers.length" :detail="`${onlineCount} en ligne · ${outdatedCount} à mettre à jour`" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
+      <MetricCard label="Terminés" :value="completedCount" detail="résultats disponibles" icon="check" tone="violet" />
+      <MetricCard label="Machines en ligne" :value="onlineCount" :detail="`${outdatedCount} à mettre à jour`" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
     </section>
     <div class="two-column">
-      <UiCard title="Projets récents" description="Les derniers projets pris en charge par le réseau.">
-        <template #actions><UiButton to="/jobs" variant="ghost" size="small" icon="arrow">Toutes les tâches</UiButton></template>
+      <UiCard title="Mes projets récents" description="Vos derniers calculs et leur progression.">
+        <template #actions><UiButton to="/jobs" variant="ghost" size="small" icon="arrow">Voir tous les projets</UiButton></template>
         <JobTable :jobs="jobs.slice(0, 6)" :loading="jobsLoading" @cancel="requestCancel" @download="download" />
       </UiCard>
       <div class="stack">
-        <UiCard title="Réseau" description="La file, les rôles et les travaux actifs en un coup d’œil." padded interactive>
-          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ peers.length }} machine{{ peers.length > 1 ? 's' : '' }} connue{{ peers.length > 1 ? 's' : '' }}</strong><small>{{ onlineCount }} en ligne · {{ currentCount }} à jour</small></div><UiStatusBadge :status="onlineCount ? 'operational' : peers.length ? 'degraded' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ group.role }}</dt><dd>{{ group.count }}</dd></div><div><dt>Projets en cours</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">Explorer le réseau</UiButton></div>
+        <UiCard title="Santé du réseau" description="La capacité disponible pour vos prochains calculs." padded interactive>
+          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ onlineCount }} machine{{ onlineCount > 1 ? 's' : '' }} en ligne</strong><small>{{ currentCount }} à jour · {{ activeWorkloads }} calcul{{ activeWorkloads > 1 ? 's' : '' }} actif{{ activeWorkloads > 1 ? 's' : '' }}</small></div><UiStatusBadge :status="onlineCount ? 'operational' : peers.length ? 'degraded' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ group.role }}</dt><dd>{{ group.count }}</dd></div><div><dt>Calculs actifs</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">Voir l’état du réseau</UiButton></div>
         </UiCard>
-        <UiCard title="Suivi rapide" padded><div class="quick-actions"><NuxtLink to="/network"><span><UiIcon name="activity"/></span><div><strong>Voir les projets en cours</strong><small>Répartition, avancement et résultat</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/nodes"><span><UiIcon name="nodes"/></span><div><strong>Voir les machines</strong><small>Versions, rôles et disponibilité</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/profile"><span><UiIcon name="wallet"/></span><div><strong>Connecter Phantom</strong><small>Signer la preuve de propriété</small></div><UiIcon name="chevron"/></NuxtLink></div></UiCard>
+        <UiCard title="Accès rapides" padded><div class="quick-actions"><NuxtLink to="/jobs"><span><UiIcon name="activity"/></span><div><strong>Suivre mes calculs</strong><small>Avancement, résultat et historique</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/nodes"><span><UiIcon name="nodes"/></span><div><strong>Gérer mes machines</strong><small>Disponibilité, versions et capacité</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/download"><span><UiIcon name="download"/></span><div><strong>Installer un nœud</strong><small>Télécharger la version recommandée</small></div><UiIcon name="chevron"/></NuxtLink></div></UiCard>
       </div>
     </div>
     <UiModal :open="Boolean(cancelTarget)" title="Arrêter ce projet ?" @close="cancelTarget = null"><p class="modal-copy">Les parties encore en cours recevront une demande d’arrêt. Les résultats déjà vérifiés restent comptabilisés.</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">Continuer</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">Arrêter le projet</UiButton></div></UiModal>
@@ -30,13 +30,13 @@ definePageMeta({ layout: 'app', middleware: 'auth' });
 const jobStore = useJobs();
 const network = useNetwork();
 const { jobs, total, loading: jobsLoading } = jobStore;
-const { peers, roleGroups, outdatedCount, currentCount, onlineCount, tasksPayload } = network;
+const { peers, roleGroups, outdatedCount, currentCount, onlineCount, workloads } = network;
 const loadError = ref(false);
 const cancelTarget = ref<Job | null>(null);
 const cancelling = ref(false);
 const runningCount = computed(() => jobs.value.filter(job => ['queued','running','cancelling'].includes(job.status)).length);
 const completedCount = computed(() => jobs.value.filter(job => job.status === 'completed').length);
-const activeWorkloads = computed(() => tasksPayload.value.workloads.filter(task => Number(task.active || 0) > 0).length);
+const activeWorkloads = computed(() => workloads.value.filter(task => Number(task.active || 0) > 0).length);
 async function load(force = false) { const results = await Promise.allSettled([jobStore.loadJobs(1, 20, 'all', force), network.loadNetwork(force)]); loadError.value = results.some(result => result.status === 'rejected'); }
 function requestCancel(job: Job) { cancelTarget.value = job; }
 async function confirmCancel() { if (!cancelTarget.value) return; cancelling.value = true; try { await jobStore.cancelJob(cancelTarget.value.id); cancelTarget.value = null; await load(true); } finally { cancelling.value = false; } }
@@ -44,7 +44,7 @@ async function download(job: Job) { await jobStore.downloadResult(job).catch(() 
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => { load(); timer = setInterval(() => load(), 5_000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });
-useSeoMeta({ title: 'Vue d’ensemble — Silicium' });
+useSeoMeta({ title: 'Accueil — Silicium' });
 </script>
 
 <style scoped>

@@ -260,7 +260,17 @@ export interface WalletChallenge {
   expiresAt: string;
 }
 
+export interface UpdateRelease {
+  version?: string;
+  build?: string;
+  url?: string;
+  sha256?: string;
+  signature?: string;
+  generated_utc?: string;
+  [key: string]: unknown;
+}
+
 export interface UpdateManifest {
   generated_utc?: string;
-  channels?: Record<string, { version?: string; build?: string; url?: string }>;
+  channels?: Record<string, UpdateRelease>;
 }

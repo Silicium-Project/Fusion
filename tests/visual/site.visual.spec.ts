@@ -3,7 +3,7 @@ import path from 'node:path';
 import { authenticate, mockAPI } from '../e2e/fixtures';
 
 const publicPages = [
-  ['home', '/'], ['service', '/service'], ['blockchain', '/blockchain'], ['about', '/about'], ['contact', '/contact'], ['auth', '/auth'],
+  ['home', '/'], ['service', '/service'], ['download', '/download'], ['blockchain', '/blockchain'], ['about', '/about'], ['contact', '/contact'], ['auth', '/auth'],
 ] as const;
 
 const privatePages = [

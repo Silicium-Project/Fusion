@@ -1,13 +1,13 @@
 <template>
   <nav class="mobile-nav" aria-label="Navigation mobile de l’application">
-    <NuxtLink v-for="item in items" :key="item.to" :to="item.to"><UiIcon :name="item.icon"/><span>{{ item.label }}</span></NuxtLink>
+    <NuxtLink v-for="item in items" :key="item.to" :to="item.to" :aria-label="item.label"><UiIcon :name="item.icon"/><span>{{ item.shortLabel || item.label }}</span></NuxtLink>
   </nav>
 </template>
 
 <script setup lang="ts">
 const items = [
-  { label: 'Accueil', to: '/dashboard', icon: 'overview' }, { label: 'Tâches', to: '/jobs', icon: 'jobs' },
-  { label: 'Flux', to: '/network', icon: 'activity' }, { label: 'Machines', to: '/nodes', icon: 'nodes' }, { label: 'Compte', to: '/profile', icon: 'account' },
+  { label: 'Accueil', to: '/dashboard', icon: 'overview' }, { label: 'Mes projets', shortLabel: 'Projets', to: '/jobs', icon: 'jobs' },
+  { label: 'Nouveau calcul', shortLabel: 'Nouveau', to: '/jobs/new', icon: 'upload' }, { label: 'Machines', to: '/nodes', icon: 'nodes' }, { label: 'Compte', to: '/profile', icon: 'account' },
 ];
 </script>
 

@@ -34,10 +34,11 @@ const menuOpen = ref(false);
 const { isAuthenticated, displayName, loadUser } = useSession();
 const navigation = [
   { index: '01', label: 'Produit', to: '/service' },
-  { index: '02', label: 'Réseau', to: '/about#network' },
-  { index: '03', label: 'Blockchain', to: '/blockchain' },
-  { index: '04', label: 'À propos', to: '/about' },
-  { index: '05', label: 'Idées', to: '/contact' },
+  { index: '02', label: 'Télécharger', to: '/download' },
+  { index: '03', label: 'Réseau', to: '/about#network' },
+  { index: '04', label: 'Blockchain', to: '/blockchain' },
+  { index: '05', label: 'À propos', to: '/about' },
+  { index: '06', label: 'Idées', to: '/contact' },
 ];
 function isCurrent(item: { to: string }) {
   const target = new URL(item.to, 'http://silicium.local');
