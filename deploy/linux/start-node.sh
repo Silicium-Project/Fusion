@@ -35,6 +35,8 @@ python3 silicium node start \
   --seed-peers "$SEED_URL" \
   --mesh-key "$MESH_KEY" \
   --reputation-score "$REPUTATION" \
+  --peer-sync-interval-s "${SILICIUM_PEER_SYNC_INTERVAL_S:-5}" \
+  --peer-stale-after-s "${SILICIUM_PEER_STALE_AFTER_S:-15}" \
   --pull-tasks-enable \
   --nat-punch-enable \
   --p2p-direct-transport-backend auto \
