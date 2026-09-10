@@ -14,6 +14,7 @@ from workloads.raytracer.run_network_job import (
     ensure_submission_success,
     ensure_raytracer_compute_contract,
     is_transient_task_failure,
+    task_failure_details,
     poll_task_result_attempts,
     refresh_attempt_deadline,
     RetryFragmentStage,
@@ -78,6 +79,22 @@ def test_scheduler_dispatch_failure_is_immediate() -> None:
                 },
             }
         )
+
+
+def test_task_failure_details_preserves_worker_traceback() -> None:
+    detail, node_id = task_failure_details(
+        {
+            "error": "raytracer_fragment_failed",
+            "error_type": "RuntimeError",
+            "traceback": "Traceback (most recent call last):\n  worker.py:42\nRuntimeError: bad scene",
+            "node_id": "worker-a",
+        }
+    )
+
+    assert node_id == "worker-a"
+    assert "RuntimeError: raytracer_fragment_failed" in detail
+    assert "worker.py:42" in detail
+    assert "RuntimeError: bad scene" in detail
 
 
 def test_task_dispatch_attaches_hash_verified_network_inputs(tmp_path) -> None:
@@ -423,4 +440,3 @@ def test_fragment_validation_rejects_dimension_and_hash_mismatches() -> None:
             expected_height=2,
             expected_hash="0" * 64,
         )
-

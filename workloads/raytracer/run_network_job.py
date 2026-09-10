@@ -224,9 +224,16 @@ def read_ref_bytes(args: argparse.Namespace, export_dir: Path, ref: dict[str, An
 
 
 def task_failure_details(result: dict[str, Any]) -> tuple[str, str]:
-    error = str(result.get("error") or result.get("last_error") or "unknown_error")
+    error = str(result.get("error") or result.get("last_error") or "unknown_error").strip()
+    error_type = str(result.get("error_type") or "").strip()
+    traceback_text = str(result.get("traceback") or result.get("error_traceback") or "").strip()
+    detail = error or "unknown_error"
+    if error_type and error_type not in detail:
+        detail = f"{error_type}: {detail}"
+    if traceback_text and traceback_text not in detail:
+        detail = f"{detail}\n\nTraceback worker:\n{traceback_text}"
     node_id = str(result.get("node_id") or "")
-    return error, node_id
+    return detail, node_id
 
 
 def is_transient_task_failure(error: str) -> bool:

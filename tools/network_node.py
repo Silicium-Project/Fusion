@@ -28,6 +28,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 import uuid
@@ -5548,9 +5549,15 @@ class NetworkNode:
             error = ""
         except Exception as exc:
             item_id = str(envelope.get("request_id") or envelope.get("task_id") or "unknown")
-            result = {"success": False, "error": str(exc)}
+            error_type = type(exc).__name__
+            error = str(exc).strip() or error_type
+            result = {
+                "success": False,
+                "error": error,
+                "error_type": error_type,
+                "traceback": traceback.format_exc(),
+            }
             ok = False
-            error = str(exc)
 
         duration_ms = int((time.monotonic() - started) * 1000)
         self._task_monitor_stop.set()
@@ -5612,7 +5619,15 @@ class NetworkNode:
             }
         safe_item = safe_id(item_id)
         path_item = safe_path_id(safe_item)
-        log_payload = {"schema_version": 1, "item_id": safe_item, "ok": ok, "error": error, "duration_ms": duration_ms}
+        log_payload = {
+            "schema_version": 1,
+            "item_id": safe_item,
+            "ok": ok,
+            "error": error,
+            "error_type": result.get("error_type", "") if not ok else "",
+            "traceback": result.get("traceback", "") if not ok else "",
+            "duration_ms": duration_ms,
+        }
         atomic_write_json(self.config.export_dir / f"result.{path_item}.json", result)
         atomic_write_json(self.config.export_dir / f"logs.{path_item}.json", log_payload)
         active_control = self.task_control_for(item_id, control_origin)
@@ -5971,6 +5986,10 @@ class NetworkNode:
         current["handled_utc"] = utc_now()
         current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
         current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
+        for key in ("error", "error_type", "traceback"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                current[key] = value
         atomic_write_json(envelope_path, current)
         self.return_dispatched_result(current, result, log_payload)
         append_jsonl(
@@ -6574,6 +6593,10 @@ class NetworkNode:
         current["handled_utc"] = utc_now()
         current["result_hash"] = result.get("result_hash") or result.get("input_hash", "")
         current["result_resource"] = f"resources://silicium/results/by-task/{item_id}"
+        for key in ("error", "error_type", "traceback"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                current[key] = value
         if isinstance(result.get("task_control"), dict):
             current["task_control"] = dict(result["task_control"])
         atomic_write_json(path, current)

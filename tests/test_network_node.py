@@ -859,6 +859,12 @@ def test_network_node_retries_then_dead_letters_failures(tmp_path: Path) -> None
 
     result = json.loads((export_dir / f"result.{_path_id('storage:missing')}.json").read_text(encoding="utf-8"))
     assert result["success"] is False
+    assert result["error_type"]
+    assert "Traceback" in result["traceback"]
+    log = json.loads((export_dir / f"logs.{_path_id('storage:missing')}.json").read_text(encoding="utf-8"))
+    assert log["traceback"] == result["traceback"]
+    envelope = json.loads((export_dir / "tasks" / f"{network_node.safe_path_id(network_node.safe_id('storage:missing'))}.json").read_text(encoding="utf-8"))
+    assert envelope["traceback"] == result["traceback"]
     assert (export_dir / "dead_letters.ndjson").exists()
     metrics = json.loads((export_dir / "node.node-a.metrics.json").read_text(encoding="utf-8"))
     assert metrics["dead_lettered"] == 1
