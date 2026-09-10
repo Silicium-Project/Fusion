@@ -27,7 +27,8 @@ def test_main_uses_hostname_from_control_url(monkeypatch, tmp_path: Path) -> Non
         if url.endswith("/gossip/publish"):
             payload = kwargs.get("payload")
             assert isinstance(payload, dict)
-            assert payload["resolved_addresses"] == ["127.0.0.1"]
+            assert payload["topic"] == "node_probe"
+            assert payload["payload"]["resolved_addresses"] == ["127.0.0.1"]
             return {"published": True}
         raise AssertionError(url)
 

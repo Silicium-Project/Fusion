@@ -4131,7 +4131,10 @@ class PeerNetwork:
                     self.end_headers()
                     self.wfile.write(body)
                     return
-                if not peer_network._authorize_peer_request(self, raw):
+                # The VPS e2e probe runs on the host and uses loopback. Keep
+                # that local control path available while requiring signed
+                # requests from every non-loopback caller.
+                if not self._local_or_authorized(raw):
                     self.send_error(403)
                     return
                 if self.path == "/mesh":
@@ -4168,12 +4171,17 @@ class PeerNetwork:
                         and peer_network.node is not None
                         and peer_network.node.validate_task_control(event_payload, signed_by=peer_network.node_id)
                     )
-                    if not valid_software_update and not valid_task_control:
+                    valid_node_probe = (
+                        topic == "node_probe"
+                        and isinstance(event_payload, dict)
+                        and bool(str(event_payload.get("probe_id", "")).strip())
+                    )
+                    if not valid_software_update and not valid_task_control and not valid_node_probe:
                         self.send_error(400)
                         return
                     if valid_software_update:
                         peer_network._record_update_announcement(event_payload, peer_network.node_id)
-                    else:
+                    elif valid_task_control:
                         peer_network.node.apply_task_control(event_payload, signed_by=peer_network.node_id)
                     # The announcement is durable locally before this call. Fan-out may
                     # encounter slow/offline peers and must not hold the HTTP response.

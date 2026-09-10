@@ -1778,6 +1778,34 @@ def test_update_gossip_publish_ack_does_not_wait_for_slow_fanout(
         target.stop()
 
 
+def test_local_node_probe_can_publish_without_peer_signature(tmp_path: Path) -> None:
+    export_dir = tmp_path / "node-probe"
+    peer = network_node.PeerNetwork(_config(export_dir, "probe-target", gossip_enable=False), export_dir)
+    peer.start()
+    try:
+        payload = network_node.stable_json(
+            {
+                "topic": "node_probe",
+                "payload": {
+                    "probe_id": "local-test",
+                    "status": "ok",
+                    "resolved_addresses": ["127.0.0.1"],
+                },
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            peer.http_base_url + "/gossip/publish",
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=2) as response:
+            assert response.status == 202
+            assert json.loads(response.read().decode("utf-8")) == {"ok": True, "topic": "node_probe"}
+    finally:
+        peer.stop()
+
+
 def test_update_manifest_anti_entropy_recovers_a_missed_gossip_event(tmp_path: Path) -> None:
     export_a = tmp_path / "update-source"
     export_b = tmp_path / "late-peer"

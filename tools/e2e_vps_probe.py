@@ -93,10 +93,13 @@ def main() -> int:
                 publish_url,
                 method="POST",
                 payload={
-                    "probe_id": args.probe_id,
-                    "status": "ok",
-                    "timestamp_utc": _utc_now(),
-                    "resolved_addresses": host_addrs,
+                    "topic": "node_probe",
+                    "payload": {
+                        "probe_id": args.probe_id,
+                        "status": "ok",
+                        "timestamp_utc": _utc_now(),
+                        "resolved_addresses": host_addrs,
+                    },
                 },
                 timeout_s=float(args.timeout_s),
             )
