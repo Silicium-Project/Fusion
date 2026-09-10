@@ -2758,6 +2758,34 @@ def test_dispatched_task_to_stale_worker_is_closed_as_worker_lost(tmp_path: Path
     assert persisted["error_type"] == "TaskWorkerLost"
 
 
+def test_dispatched_task_without_target_is_closed_as_incomplete(tmp_path: Path) -> None:
+    export_dir = tmp_path / "missing-dispatch-target"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="storage"))
+    envelope = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": "missing-dispatch-target-001",
+        "status": "dispatched",
+        "required_roles": ["compute"],
+        "task": {"kind": "compute"},
+    }
+    network_node.enqueue_task_envelope(export_dir, envelope)
+    network_node.atomic_write_json(
+        export_dir / "tasks" / f"{_path_id('missing-dispatch-target-001')}.json",
+        envelope,
+    )
+
+    assert node.task_queue_snapshot() == []
+    persisted = json.loads(
+        (export_dir / "tasks" / f"{_path_id('missing-dispatch-target-001')}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persisted["status"] == "failed"
+    assert persisted["error"] == "task_dispatch_target_missing"
+    assert persisted["error_type"] == "TaskDispatchTargetMissing"
+
+
 @pytest.mark.parametrize(
     "status",
     [

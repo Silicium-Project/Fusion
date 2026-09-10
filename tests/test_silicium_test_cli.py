@@ -302,6 +302,16 @@ def test_node_start_uses_explicit_p2p_node_binary(monkeypatch) -> None:
     assert cli._p2p_node_command() == [r"C:\\tmp\\p2p_node.exe"]
 
 
+def test_node_start_never_builds_p2p_node_implicitly(monkeypatch, tmp_path: Path) -> None:
+    cli = _load_silicium_module()
+    monkeypatch.delenv("SILICIUM_P2P_NODE_BIN", raising=False)
+    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cli.shutil, "which", lambda _name: r"C:\\cargo.exe")
+
+    with pytest.raises(RuntimeError, match="set_SILICIUM_P2P_NODE_BIN"):
+        cli._p2p_node_command()
+
+
 def test_world_mode_merges_discovery_seeds(monkeypatch) -> None:
     cli = _load_silicium_module()
     parser = argparse.ArgumentParser()

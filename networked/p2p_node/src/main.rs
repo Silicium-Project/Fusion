@@ -1165,11 +1165,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health))
         .with_state(api_state);
 
+    let api_addr = format!("127.0.0.1:{}", api_port);
+    let api_listener = TcpListener::bind(&api_addr).await?;
+    println!(" API for P2P injection listening on {}", api_port);
     tokio::spawn(async move {
-        let addr = format!("127.0.0.1:{}", api_port);
-        let listener = TcpListener::bind(&addr).await.unwrap();
-        println!(" API for P2P injection listening on {}", api_port);
-        axum::serve(listener, app).await.unwrap();
+        if let Err(error) = axum::serve(api_listener, app).await {
+            eprintln!("P2P API server stopped: {error}");
+        }
     });
 
     let dispatcher = Dispatcher::with_seed(context.dispatcher_seed);

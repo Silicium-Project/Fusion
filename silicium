@@ -2815,18 +2815,10 @@ def _p2p_node_command() -> list[str]:
     if release_binary.exists():
         return [str(release_binary)]
 
-    cargo = shutil.which("cargo")
-    if cargo:
-        return [
-            cargo,
-            "run",
-            "--release",
-            "--manifest-path",
-            str(REPO_ROOT / "networked" / "p2p_node" / "Cargo.toml"),
-            "--",
-        ]
-
-    raise RuntimeError("p2p_node_binary_not_found")
+    # Never turn a node startup into an implicit production build. End-user
+    # runtimes must execute a packaged binary, while developers can opt in by
+    # setting SILICIUM_P2P_NODE_BIN explicitly.
+    raise RuntimeError("p2p_node_binary_not_found:set_SILICIUM_P2P_NODE_BIN")
 
 
 def _build_p2p_node_env(args: argparse.Namespace, settings: Mapping[str, Any], node_id: str) -> dict[str, str]:

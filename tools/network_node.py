@@ -5490,13 +5490,20 @@ class NetworkNode:
                     ).strip()
                     target_id = safe_id(target_raw) if target_raw else ""
                     owner_id = handled_by or safe_id(str(envelope.get("dispatched_by", "")))
-                    if not target_id or owner_id != self.config.node_id or target_id in live_peer_ids:
+                    if not target_id:
+                        result = {
+                            "error": "task_dispatch_target_missing",
+                            "error_type": "TaskDispatchTargetMissing",
+                            "traceback": "The task is marked as dispatched but has no target worker.",
+                        }
+                    elif owner_id != self.config.node_id or target_id in live_peer_ids:
                         continue
-                    result = {
-                        "error": "task_worker_lost",
-                        "error_type": "TaskWorkerLost",
-                        "traceback": f"The dispatched worker {target_id} has not sent a heartbeat within the liveness window.",
-                    }
+                    else:
+                        result = {
+                            "error": "task_worker_lost",
+                            "error_type": "TaskWorkerLost",
+                            "traceback": f"The dispatched worker {target_id} has not sent a heartbeat within the liveness window.",
+                        }
                 else:
                     continue
                 self.update_envelope_status(envelope, "failed", result)
