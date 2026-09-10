@@ -1,14 +1,13 @@
 <template>
   <div v-tilt="1.5" class="network-summary tilt-surface">
-    <div class="network-summary__core"><span class="network-summary__pulse"><i></i></span><div><span class="eyebrow">Réseau Silicium</span><strong>{{ peers.length }} machine{{ peers.length > 1 ? 's' : '' }} connectée{{ peers.length > 1 ? 's' : '' }}</strong><small>Une vue claire du réseau, même lorsqu’il grandit.</small></div></div>
+    <div class="network-summary__core"><span class="network-summary__pulse"><i></i></span><div><span class="eyebrow">Réseau Silicium</span><strong>{{ connectedCount }} machine{{ connectedCount > 1 ? 's' : '' }} connectée{{ connectedCount > 1 ? 's' : '' }}</strong><small>Une vue claire du réseau, même lorsqu’il grandit.</small></div></div>
     <div class="network-summary__groups"><div v-for="group in roleGroups.slice(0,4)" :key="group.role"><span>{{ group.count }}</span><small>{{ networkRoleLabel(group.role) }}</small></div><div><span>{{ outdatedCount }}</span><small>à mettre à jour</small></div></div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { NetworkPeer } from '~/types/api';
 import { networkRoleLabel } from '~/utils/format';
-defineProps<{ peers: NetworkPeer[]; roleGroups: { role: string; count: number }[]; outdatedCount: number }>();
+defineProps<{ connectedCount: number; roleGroups: { role: string; count: number }[]; outdatedCount: number }>();
 </script>
 
 <style scoped>

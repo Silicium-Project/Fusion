@@ -2,8 +2,8 @@
   <div class="app-page">
     <header class="app-page-head"><div><span class="eyebrow">Infrastructure · flux vivant</span><h1 class="page-title">Réseau</h1><p class="page-intro">Les projets de votre émetteur et les machines disponibles, actualisés automatiquement toutes les quelques secondes.</p></div><div class="cluster"><UiStatusBadge v-if="emitterNodeId" status="operational" :label="'Émetteur · ' + compactIdentifier(emitterNodeId, 14, 6)" /><UiButton to="/nodes" variant="secondary" icon="nodes">Voir les machines</UiButton><UiButton variant="secondary" icon="refresh" :loading="loading" @click="loadNetwork(true)">Rafraîchir</UiButton></div></header>
     <UiNotice v-if="error" tone="warning">{{ error }}</UiNotice>
-    <NetworkSummary :peers="peers" :role-groups="roleGroups" :outdated-count="outdatedCount" />
-    <LiveNetworkMap :total-nodes="peers.length" :active-nodes="onlineCount" :active-workloads="activeCount" :role-groups="roleGroups" :network-metrics="networkMetrics" :last-updated-at="lastUpdatedAt" />
+    <NetworkSummary :connected-count="onlineCount" :role-groups="onlineRoleGroups" :outdated-count="outdatedCount" />
+    <LiveNetworkMap :total-nodes="onlinePeers.length" :active-nodes="onlineCount" :active-workloads="activeCount" :role-groups="onlineRoleGroups" :network-metrics="networkMetrics" :last-updated-at="lastUpdatedAt" />
     <section class="network-flow surface">
       <div class="network-flow__copy"><span class="eyebrow">Lecture du réseau</span><h2>Du projet au résultat, par étape.</h2><p>Les machines sont regroupées par rôle. Le détail d’un projet ou d’une machine s’ouvre uniquement lorsqu’il devient utile.</p></div>
       <div class="network-flow__diagram"><div v-for="(stage,index) in flow" :key="stage.title"><span><UiIcon :name="stage.icon"/></span><strong>{{ stage.title }}</strong><small>{{ stage.detail }}</small><UiIcon v-if="index < flow.length - 1" name="arrow" class="network-flow__arrow"/></div></div>
@@ -28,7 +28,7 @@ import { compactIdentifier, formatDate, isTerminalNetworkStatus } from '~/utils/
 import { compactJobError } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const network = useNetwork();
-const { peers, roleGroups, outdatedCount, onlineCount, loading, error, tasksPayload, networkMetrics, lastUpdatedAt, loadNetwork } = network;
+const { onlinePeers, onlineRoleGroups, outdatedCount, onlineCount, loading, error, tasksPayload, networkMetrics, lastUpdatedAt, loadNetwork } = network;
 const workloads = computed(() => tasksPayload.value.workloads || []);
 const emitterNodeId = computed(() => tasksPayload.value.emitter_node_id || workloads.value.find(item => item.emitter_node_id)?.emitter_node_id || '');
 const activeCount = computed(() => workloads.value.filter(item => !isTerminalNetworkStatus(item.status)).length);

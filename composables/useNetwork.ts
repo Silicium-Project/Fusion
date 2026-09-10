@@ -26,13 +26,14 @@ function arrayLength(value: unknown): number {
 }
 
 function deriveNetworkMetrics(peers: NetworkPeer[]): NetworkMetrics {
-  const telemetry = peers.map(peerRuntime).filter((value): value is NetworkRuntimeTelemetry => Boolean(value));
+  const onlinePeers = peers.filter(peer => peer.online === true);
+  const telemetry = onlinePeers.map(peerRuntime).filter((value): value is NetworkRuntimeTelemetry => Boolean(value));
   const average = (key: keyof NetworkRuntimeTelemetry): number | undefined => {
     const values = telemetry.map(item => asNumber(item[key])).filter((value): value is number => value !== undefined);
     return values.length ? Number((values.reduce((total, value) => total + value, 0) / values.length).toFixed(2)) : undefined;
   };
-  const activityCount = peers.reduce((total, peer) => total + arrayLength(asRecord(peer.activity)?.active_tasks), 0);
-  const queueDepth = peers.reduce((total, peer) => total + arrayLength(peer.task_queue), 0);
+  const activityCount = onlinePeers.reduce((total, peer) => total + arrayLength(asRecord(peer.activity)?.active_tasks), 0);
+  const queueDepth = onlinePeers.reduce((total, peer) => total + arrayLength(peer.task_queue), 0);
   const logicalCpuCount = telemetry.reduce((total, item) => total + (asNumber(item.logical_cpu_count) || 0), 0);
   return {
     online_peers: peers.filter(peer => peer.online === true).length,
@@ -60,6 +61,12 @@ export function useNetwork() {
     for (const peer of peers.value) for (const role of peerRoles(peer)) groups.set(role, (groups.get(role) || 0) + 1);
     return [...groups.entries()].map(([role, count]) => ({ role, count })).sort((a, b) => b.count - a.count);
   });
+  const onlinePeers = computed(() => peers.value.filter(peer => peer.online === true));
+  const onlineRoleGroups = computed(() => {
+    const groups = new Map<string, number>();
+    for (const peer of onlinePeers.value) for (const role of peerRoles(peer)) groups.set(role, (groups.get(role) || 0) + 1);
+    return [...groups.entries()].map(([role, count]) => ({ role, count })).sort((a, b) => b.count - a.count);
+  });
   const outdatedCount = computed(() => peers.value.filter(peer => peer.outdated).length);
   const currentCount = computed(() => peers.value.filter(peer => ['current', 'server'].includes(String(peer.version_status || ''))).length);
   const onlineCount = computed(() => peers.value.filter(peer => peer.online === true).length);
@@ -85,5 +92,5 @@ export function useNetwork() {
     }
   }
 
-  return { peersPayload, tasksPayload, peers, roleGroups, outdatedCount, currentCount, onlineCount, networkMetrics, loading, error, lastUpdatedAt, loadNetwork };
+  return { peersPayload, tasksPayload, peers, onlinePeers, roleGroups, onlineRoleGroups, outdatedCount, currentCount, onlineCount, networkMetrics, loading, error, lastUpdatedAt, loadNetwork };
 }
