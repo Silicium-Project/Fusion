@@ -10,7 +10,7 @@ import (
 	"unicode"
 )
 
-const defaultNetworkPeerStaleAfterSeconds int64 = 45
+const defaultNetworkPeerStaleAfterSeconds int64 = 15
 
 var networkMetricCounters = []string{
 	"handled",

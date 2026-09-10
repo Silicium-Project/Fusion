@@ -210,12 +210,18 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 			group["progress_percent"] = float64(done) * 100 / float64(total)
 		}
 	}
-	sort.Slice(workloads, func(i, j int) bool {
-		return stringField(workloads[i], "updated_at") > stringField(workloads[j], "updated_at")
+	activeWorkloads := make([]map[string]any, 0, len(workloads))
+	for _, group := range workloads {
+		if active, ok := group["active"].(int); ok && active > 0 {
+			activeWorkloads = append(activeWorkloads, group)
+		}
+	}
+	sort.Slice(activeWorkloads, func(i, j int) bool {
+		return stringField(activeWorkloads[i], "updated_at") > stringField(activeWorkloads[j], "updated_at")
 	})
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": workloads, "emitter_node_id": emitterID})
+	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": activeWorkloads, "emitter_node_id": emitterID})
 }
 
 func (h *Handler) CancelNetworkTask(w http.ResponseWriter, r *http.Request) {
