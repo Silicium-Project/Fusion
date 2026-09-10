@@ -91,7 +91,11 @@ chmod 0755 "$ROOT/deploy/linux/start-orchestrator.sh"
 
 systemctl daemon-reload
 systemctl enable --now silicium-update-manifest.timer
-systemctl enable --now silicium-orchestrator.service
+# The unit can already be active from a previous release. Enabling an active
+# unit does not reload its changed ExecStart, so explicitly restart it to
+# replace the legacy bootstrap server with the integrated node.
+systemctl enable silicium-orchestrator.service
+systemctl restart silicium-orchestrator.service
 # The authenticated experiment/MCP API is a host-side control plane service.
 # Keep it enabled so deploy-time health checks and e2e validation can hit the
 # real HTTP and RPC endpoints on 46110/9770.
