@@ -6,7 +6,7 @@
       <MetricCard label="Projets reçus" :value="total" detail="dans votre espace" icon="jobs" tone="ink" />
       <MetricCard label="En cours" :value="runningCount" detail="projets actifs" icon="activity" tone="mint" />
       <MetricCard label="Terminées" :value="completedCount" detail="dans la vue récente" icon="check" tone="violet" />
-      <MetricCard label="Machines connectées" :value="peers.length" :detail="`${outdatedCount} à mettre à jour`" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
+      <MetricCard label="Machines connues" :value="peers.length" :detail="`${onlineCount} en ligne · ${outdatedCount} à mettre à jour`" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
     </section>
     <div class="two-column">
       <UiCard title="Projets récents" description="Les derniers projets pris en charge par le réseau.">
@@ -15,7 +15,7 @@
       </UiCard>
       <div class="stack">
         <UiCard title="Réseau" description="La file, les rôles et les travaux actifs en un coup d’œil." padded interactive>
-          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ peers.length }} machine{{ peers.length > 1 ? 's' : '' }}</strong><small>{{ currentCount }} à jour</small></div><UiStatusBadge :status="peers.length ? 'operational' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ group.role }}</dt><dd>{{ group.count }}</dd></div><div><dt>Projets en cours</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">Explorer le réseau</UiButton></div>
+          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ peers.length }} machine{{ peers.length > 1 ? 's' : '' }} connue{{ peers.length > 1 ? 's' : '' }}</strong><small>{{ onlineCount }} en ligne · {{ currentCount }} à jour</small></div><UiStatusBadge :status="onlineCount ? 'operational' : peers.length ? 'degraded' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ group.role }}</dt><dd>{{ group.count }}</dd></div><div><dt>Projets en cours</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">Explorer le réseau</UiButton></div>
         </UiCard>
         <UiCard title="Suivi rapide" padded><div class="quick-actions"><NuxtLink to="/network"><span><UiIcon name="activity"/></span><div><strong>Voir les projets en cours</strong><small>Répartition, avancement et résultat</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/nodes"><span><UiIcon name="nodes"/></span><div><strong>Voir les machines</strong><small>Versions, rôles et disponibilité</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/profile"><span><UiIcon name="wallet"/></span><div><strong>Connecter Phantom</strong><small>Signer la preuve de propriété</small></div><UiIcon name="chevron"/></NuxtLink></div></UiCard>
       </div>
@@ -31,7 +31,7 @@ definePageMeta({ layout: 'app', middleware: 'auth' });
 const jobStore = useJobs();
 const network = useNetwork();
 const { jobs, total, loading: jobsLoading } = jobStore;
-const { peers, roleGroups, outdatedCount, currentCount, tasksPayload } = network;
+const { peers, roleGroups, outdatedCount, currentCount, onlineCount, tasksPayload } = network;
 const loadError = ref(false);
 const cancelTarget = ref<Job | null>(null);
 const cancelling = ref(false);

@@ -48,12 +48,12 @@
       <div v-reveal="'left'" class="home-receipt__visual marketing-glass">
         <header class="home-receipt__bar"><span><i></i><i></i><i></i></span><strong>PROJET / RÉSULTAT</strong><small>EN DIRECT</small></header>
         <div class="home-receipt__body">
-          <div class="home-receipt__headline"><div><span class="marketing-kicker">Résultat vérifiable</span><strong>Résultat disponible</strong></div><span class="home-receipt__check"><UiIcon name="check" /></span></div>
-          <div class="home-receipt__progress"><span>Parties vérifiées</span><strong>64 / 64</strong><div><i></i></div></div>
+          <div class="home-receipt__headline"><div><span class="marketing-kicker">Résultat vérifiable</span><strong>Le résultat suit son origine</strong></div><span class="home-receipt__check"><UiIcon name="check" /></span></div>
+          <div class="home-receipt__progress"><span>Avancement du projet</span><strong>Visible dans votre espace</strong><div><i></i></div></div>
           <div class="home-receipt__rows">
-            <div><span><UiIcon name="layers" /></span><p><strong>Calcul terminé</strong><small>5 machines · contrôles terminés</small></p><b>08:42</b></div>
-            <div><span><UiIcon name="shield" /></span><p><strong>Résultat contrôlé</strong><small>Origine du résultat conservée</small></p><b>08:43</b></div>
-            <div><span><UiIcon name="result" /></span><p><strong>Image prête</strong><small>PNG · 4K · 18.4 MB</small></p><b class="home-receipt__valid">VÉRIFIÉ</b></div>
+            <div><span><UiIcon name="layers" /></span><p><strong>Projet réparti</strong><small>Les parties sont attribuées aux machines disponibles.</small></p><b>ÉTAPE</b></div>
+            <div><span><UiIcon name="shield" /></span><p><strong>Résultats contrôlés</strong><small>Les contrôles restent reliés à chaque partie.</small></p><b>CONTRÔLE</b></div>
+            <div><span><UiIcon name="result" /></span><p><strong>Résultat disponible</strong><small>Le suivi et les détails restent accessibles.</small></p><b class="home-receipt__valid">SUIVI</b></div>
           </div>
         </div>
       </div>

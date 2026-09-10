@@ -3,18 +3,18 @@
     <header class="network-panel__header">
       <div>
         <span class="network-panel__label">Réseau Silicium</span>
-        <strong>Le réseau est en ligne</strong>
+        <strong>{{ networkStatusLabel }}</strong>
       </div>
-      <span class="network-panel__status"><i aria-hidden="true"></i>Opérationnel</span>
+      <span class="network-panel__status"><i aria-hidden="true"></i>{{ statusLabel(status?.network.status || 'unknown') }}</span>
     </header>
 
     <div class="network-panel__summary">
       <div>
-        <span class="network-panel__eyebrow">Puissance disponible</span>
-        <strong>78.6 <small>TFLOPS</small></strong>
-        <p>512 machines actives · mise à jour il y a 12 s</p>
+        <span class="network-panel__eyebrow">Machines actives</span>
+        <strong>{{ activePeers }} <small>/ {{ totalPeers }}</small></strong>
+        <p>{{ totalPeers }} machine{{ totalPeers === 1 ? '' : 's' }} connue{{ totalPeers === 1 ? '' : 's' }} · {{ updatedLabel }}</p>
       </div>
-      <span class="network-panel__signal" aria-label="Signal réseau stable"><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="network-panel__signal" :aria-label="`État réseau : ${statusLabel(status?.network.status || 'unknown')}`"><i></i><i></i><i></i><i></i><i></i></span>
     </div>
 
     <div class="network-panel__map" role="img" aria-label="Réseau de machines reliées autour d’un point central">
@@ -51,12 +51,28 @@
     </div>
 
     <footer class="network-panel__metrics">
-      <div><span>Réponse</span><strong>28 <small>ms</small></strong></div>
-      <div><span>Vitesse du réseau</span><strong>1.3 <small>Tb/s</small></strong></div>
-      <div><span>Disponibilité</span><strong>99.94 <small>%</small></strong></div>
+      <div><span>CPU système</span><strong>{{ percent(status?.network.systemCpuPercent) }}</strong></div>
+      <div><span>File réseau</span><strong>{{ integer(status?.network.queueDepth) }}</strong></div>
+      <div><span>À mettre à jour</span><strong>{{ status?.network.outdatedPeers ?? '—' }}</strong></div>
     </footer>
   </section>
 </template>
+
+<script setup lang="ts">
+import { formatDate, statusLabel } from '~/utils/format';
+
+const { status, refresh } = useSystemStatus();
+const totalPeers = computed(() => status.value?.network.peers ?? 0);
+const activePeers = computed(() => status.value?.network.activePeers ?? 0);
+const networkStatusLabel = computed(() => statusLabel(status.value?.network.status || 'unknown'));
+const updatedLabel = computed(() => status.value?.checkedAt ? `actualisé ${formatDate(status.value.checkedAt)}` : 'en attente de télémétrie');
+const percent = (value: unknown): string => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} %` : '—';
+const integer = (value: unknown): string => Number.isFinite(Number(value)) ? String(Math.max(0, Math.round(Number(value)))) : '—';
+
+onMounted(() => {
+  if (!status.value) refresh().catch(() => undefined);
+});
+</script>
 
 <style scoped>
 .network-panel{border-radius:2rem;padding:1.1rem;background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(227,249,245,.5) 55%,rgba(239,237,255,.54));box-shadow:var(--glass-inset),0 32px 82px rgba(31,54,72,.15);-webkit-backdrop-filter:blur(30px) saturate(1.3);backdrop-filter:blur(30px) saturate(1.3)}

@@ -53,7 +53,7 @@ import { compactIdentifier, statusLabel } from '~/utils/format';
 const props = withDefaults(defineProps<{ compact?: boolean; status?: SystemStatus['blockchain'] | null }>(), { compact: false });
 const chain = computed(() => ({
   status: props.status?.status || 'unknown',
-  network: props.status?.network || 'devnet',
+  network: props.status?.network || 'unknown',
   configured: Boolean(props.status?.configured),
   programId: props.status?.programId,
 }));

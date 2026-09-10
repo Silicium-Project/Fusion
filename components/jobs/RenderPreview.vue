@@ -16,7 +16,7 @@ const tileCount = computed(() => Math.min(48, Math.max(12, total.value || 24)));
 const resultReady = computed(() => props.dashboard.resultReady);
 const width = computed(() => props.dashboard.summary?.image?.width || '—');
 const height = computed(() => props.dashboard.summary?.image?.height || '—');
-function tileTone(index: number) { if (!fragments.value.length) return index <= Math.round(tileCount.value * .3) ? 'done' : ''; const fragment = fragments.value[(index - 1) % fragments.value.length]; return ['completed','verified'].includes(String(fragment?.status)) ? 'done' : String(fragment?.status) === 'failed' ? 'failed' : ''; }
+function tileTone(index: number) { if (!fragments.value.length) return ''; const fragment = fragments.value[(index - 1) % fragments.value.length]; return ['completed','verified'].includes(String(fragment?.status)) ? 'done' : String(fragment?.status) === 'failed' ? 'failed' : ''; }
 </script>
 
 <style scoped>

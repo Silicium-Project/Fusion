@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { clampJobPage, compactJobError, isJobCancellable } from '../utils/jobs';
+import { clampJobPage, compactJobError, extractJobError, isJobCancellable } from '../utils/jobs';
 
 describe('job dashboard helpers', () => {
-  it('keeps traceback payloads compact', () => {
-    const message = `RuntimeError: worker failed\n${'x'.repeat(500)}`;
-    expect(compactJobError(message)).toBe('RuntimeError: worker failed');
+  it('preserves multiline traceback details while bounding oversized payloads', () => {
+    const message = 'RuntimeError: worker failed\nTraceback (most recent call last):\n  worker.py:42\nValueError: invalid scene';
+    expect(compactJobError(message)).toBe(message);
+    expect(compactJobError('x'.repeat(20_000), 180)).toContain('détail d’erreur tronqué');
+  });
+
+  it('extracts structured submit failures without dropping the traceback', () => {
+    expect(extractJobError({ data: { error: 'worker failed', traceback: 'Traceback\nValueError: bad scene' } })).toBe('worker failed\n\nTraceback\nValueError: bad scene');
+    expect(extractJobError({ data: 'plain backend error' })).toBe('plain backend error');
   });
 
   it('only offers cancellation for non-terminal jobs', () => {

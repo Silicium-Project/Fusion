@@ -22,7 +22,7 @@ export function useSystemStatus() {
       status.value = {
         status: 'unavailable', checkedAt: new Date().toISOString(),
         backend: { status: 'unavailable' }, network: { status: 'unknown', peers: 0, activePeers: 0, outdatedPeers: 0 },
-        blockchain: { status: 'unknown', network: 'devnet', configured: false },
+        blockchain: { status: 'unknown', network: 'unknown', configured: false },
       };
       error.value = 'Le service d’état ne répond pas pour le moment.';
     } finally {

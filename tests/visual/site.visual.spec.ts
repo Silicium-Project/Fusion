@@ -49,16 +49,15 @@ test('network panel keeps the live visual hierarchy', async ({ page }, testInfo)
   await expect(visual.locator('.network-panel__route').first()).toBeVisible();
 });
 
-test('live network telemetry produces a fresh visual sample', async ({ page }, testInfo) => {
+test('live network telemetry displays the API snapshot', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'The live sample check runs once on the desktop project.');
   await mockAPI(page);
   await authenticate(page);
   await page.goto('/network', { waitUntil: 'networkidle' });
-  const latency = page.locator('.live-network-map__telemetry strong').first();
-  await expect(latency).toBeVisible();
-  const before = await latency.textContent();
-  await page.waitForTimeout(5_000);
-  await expect(latency).not.toHaveText(before || '');
+  const telemetry = page.locator('.live-network-map__telemetry');
+  await expect(telemetry).toContainText('31.4 %');
+  await expect(telemetry).toContainText('48.2 %');
+  await expect(telemetry).toContainText('2');
 });
 
 test('scroll story keeps the 3D network visible and changes its stage', async ({ page }, testInfo) => {

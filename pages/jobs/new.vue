@@ -7,10 +7,11 @@
 
 <script setup lang="ts">
 import type { CreateJobInput } from '~/composables/useJobs';
+import { extractJobError } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const router = useRouter(); const { createJob } = useJobs(); const submitting = ref(false); const error = ref('');
 const expectations = [{ title: 'Réception', text: 'Le format du fichier est vérifié.' }, { title: 'Mise en file', text: 'Le projet attend son tour avec un avancement visible.' }, { title: 'Attribution', text: 'Les machines compatibles prennent une partie du projet.' }, { title: 'Vérification', text: 'Les résultats valides sont réunis.' }];
-async function submit(input: CreateJobInput) { submitting.value = true; error.value = ''; try { const job = await createJob(input); await router.push(`/jobs/${job.id}`); } catch (failure) { const data = failure as { data?: string | { message?: string } }; error.value = typeof data.data === 'string' ? data.data : data.data?.message || 'La tâche ne peut pas être soumise pour le moment.'; } finally { submitting.value = false; } }
+async function submit(input: CreateJobInput) { submitting.value = true; error.value = ''; try { const job = await createJob(input); await router.push(`/jobs/${job.id}`); } catch (failure) { error.value = extractJobError(failure); } finally { submitting.value = false; } }
 useSeoMeta({ title: 'Envoyer un projet — Silicium' });
 </script>
 

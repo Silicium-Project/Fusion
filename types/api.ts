@@ -56,6 +56,9 @@ export interface NetworkPeer {
   roles?: string[];
   node_roles?: string[];
   status?: string;
+  availability_status?: 'online' | 'offline' | string;
+  online?: boolean;
+  last_seen_unix?: number;
   last_seen_utc?: string;
   lastSeenUtc?: string;
   app_version?: string;
@@ -65,11 +68,66 @@ export interface NetworkPeer {
   version_status?: string;
   outdated?: boolean;
   reputation?: number;
+  telemetry?: NetworkRuntimeTelemetry;
+  metrics?: NetworkPeerMetrics;
+  activity?: { active_tasks?: Record<string, unknown>[]; telemetry?: NetworkRuntimeTelemetry; [key: string]: unknown };
+  task_queue?: Record<string, unknown>[];
+  [key: string]: unknown;
+}
+
+export interface NetworkRuntimeTelemetry {
+  schema?: string;
+  sampled_unix?: number;
+  sample_interval_ms?: number;
+  node_uptime_seconds?: number;
+  process_cpu_percent?: number;
+  process_cpu_percent_one_core?: number;
+  process_cpu_seconds?: number;
+  process_rss_bytes?: number;
+  process_peak_rss_bytes?: number;
+  system_cpu_percent?: number;
+  system_memory_total_bytes?: number;
+  system_memory_available_bytes?: number;
+  system_memory_used_bytes?: number;
+  system_memory_percent?: number;
+  logical_cpu_count?: number;
+  python_thread_count?: number;
+  load_average?: number[];
+  storage_total_bytes?: number;
+  storage_free_bytes?: number;
+  storage_used_percent?: number;
+  [key: string]: unknown;
+}
+
+export interface NetworkPeerMetrics {
+  updated_utc?: string;
+  runtime?: NetworkRuntimeTelemetry;
+  handled?: number;
+  failed?: number;
+  retried?: number;
+  dead_lettered?: number;
+  dispatched?: number;
+  dispatch_failed?: number;
+  [key: string]: unknown;
+}
+
+export interface NetworkMetrics {
+  online_peers?: number;
+  telemetry_nodes?: number;
+  active_tasks?: number;
+  queue_depth?: number;
+  logical_cpu_count?: number;
+  system_cpu_percent?: number;
+  system_memory_percent?: number;
+  storage_used_percent?: number;
+  updated_utc?: string;
   [key: string]: unknown;
 }
 
 export interface NetworkPeersResponse {
   peers: NetworkPeer[];
+  updated_utc?: string;
+  metrics?: NetworkMetrics;
   release_channels?: Record<string, unknown>;
   release_manifest_generated_utc?: string;
   [key: string]: unknown;
@@ -84,6 +142,14 @@ export interface NetworkSubtask {
   fragment_index?: number;
   fragmentIndex?: number;
   stage?: string;
+  error?: string;
+  error_message?: string;
+  errorType?: string;
+  error_type?: string;
+  traceback?: string;
+  error_traceback?: string;
+  failureDetail?: string;
+  failure_detail?: string;
   [key: string]: unknown;
 }
 
@@ -99,6 +165,11 @@ export interface NetworkWorkload {
   active: number;
   progress_percent?: number;
   updated_at?: string;
+  error?: string;
+  failure_detail?: string;
+  errorType?: string;
+  traceback?: string;
+  failureDetail?: string;
   subtasks?: NetworkSubtask[];
 }
 
@@ -133,6 +204,10 @@ export interface JobDashboard {
     progress?: number;
     stage?: string;
     updatedUtc?: string;
+    error?: string;
+    errorType?: string;
+    traceback?: string;
+    failureDetail?: string;
     fragmentCount?: number;
     finalHash?: string;
     reassembledHash?: string;
@@ -162,7 +237,20 @@ export interface SystemStatus {
   status: 'operational' | 'degraded' | 'unavailable' | string;
   checkedAt: string;
   backend: { status: string; database?: string };
-  network: { status: string; peers: number; activePeers: number; outdatedPeers: number };
+  network: {
+    status: string;
+    peers: number;
+    activePeers: number;
+    outdatedPeers: number;
+    telemetryNodes?: number;
+    activeTasks?: number;
+    queueDepth?: number;
+    logicalCpuCount?: number;
+    systemCpuPercent?: number;
+    systemMemoryPercent?: number;
+    storageUsedPercent?: number;
+    updatedAt?: string;
+  };
   blockchain: { status: string; network: string; configured: boolean; programId?: string };
 }
 

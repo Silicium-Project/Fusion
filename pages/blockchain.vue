@@ -74,7 +74,7 @@ definePageMeta({ layout: 'public' });
 const { isAuthenticated } = useSession();
 const { status, refresh } = useSystemStatus();
 const config = useRuntimeConfig();
-const blockchain = computed<SystemStatus['blockchain']>(() => status.value?.blockchain || { status: 'unknown', network: 'devnet', configured: false });
+const blockchain = computed<SystemStatus['blockchain']>(() => status.value?.blockchain || { status: 'unknown', network: 'unknown', configured: false });
 const walletTarget = computed(() => isAuthenticated.value ? '/profile' : '/auth?mode=register');
 const principles = [
   { index: '01', icon: 'processor', title: 'Travailler ensemble', text: 'Les machines exécutent les différentes parties du projet.', detail: 'Machines · réseau · résultat' },

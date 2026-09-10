@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { authenticate, mockAPI } from './fixtures';
+import { authenticate, dashboard, job, mockAPI } from './fixtures';
 
 test.beforeEach(async ({ page }) => { await mockAPI(page); await authenticate(page); });
 
@@ -37,6 +37,21 @@ camera :
   await submit.click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
   await expect(page.getByRole('heading', { name: 'Rendu architecture' })).toBeVisible();
+});
+
+test('a failed job keeps the worker traceback visible', async ({ page }) => {
+  await page.route('**/api/jobs/1/dashboard', route => route.fulfill({
+    json: {
+      ...dashboard,
+      job: { ...job, status: 'failed', errorMessage: 'RuntimeError: worker failed\nTraceback (most recent call last):\n  worker.py:42\nValueError: bad scene' },
+      summary: { ...dashboard.summary, success: false, stage: 'failed', failureDetail: 'RuntimeError: worker failed\nTraceback (most recent call last):\n  worker.py:42\nValueError: bad scene' },
+    },
+  }));
+  await page.goto('/jobs/1');
+  const notice = page.locator('.notice--danger');
+  await expect(notice).toContainText('RuntimeError: worker failed');
+  await expect(notice).toContainText('worker.py:42');
+  await expect(notice).toContainText('ValueError: bad scene');
 });
 
 test('the task list exposes the submit path', async ({ page }) => {

@@ -12,7 +12,7 @@
         <div class="service-console__list">
           <article v-for="(layer, index) in layers" :key="layer.title"><span class="service-console__index">{{ layer.number }}</span><span class="service-console__icon"><UiIcon :name="layer.icon" /></span><div><strong>{{ layer.title }}</strong><p>{{ layer.text }}</p></div><span class="service-console__state">{{ index === 3 ? 'SORTIE' : 'ACTIF' }}</span></article>
         </div>
-        <footer class="service-console__footer"><span><i></i>Dernière mise à jour</span><span class="mono">12 s</span></footer>
+        <footer class="service-console__footer"><span><i></i>Dernière mise à jour</span><span class="mono">{{ status?.checkedAt ? formatDate(status.checkedAt) : '—' }}</span></footer>
       </div>
     </section>
 
@@ -72,12 +72,12 @@ const layers = [
 ];
 const statusItems = computed(() => [
   { label: 'Silicium', status: status.value?.backend.status || 'unknown', value: statusLabel(status.value?.backend.status), detail: 'Comptes, projets et coordination du calcul.', icon: 'code' },
-  { label: 'Réseau', status: status.value?.network.status || 'unknown', value: `${status.value?.network.activePeers || 0} machines actives`, detail: `${status.value?.network.outdatedPeers || 0} mise(s) à jour en attente.`, icon: 'network' },
+  { label: 'Réseau', status: status.value?.network.status || 'unknown', value: status.value ? `${status.value.network.activePeers} machines actives` : '—', detail: status.value ? `${status.value.network.outdatedPeers} mise(s) à jour en attente.` : 'Télémétrie indisponible.', icon: 'network' },
   { label: 'Paiements', status: status.value?.blockchain.status || 'unknown', value: blockchainNetwork.value, detail: status.value?.blockchain.configured ? 'Paiements et contrôles disponibles.' : 'Service en préparation.', icon: 'shield' },
 ]);
-const blockchainNetwork = computed(() => { const value = status.value?.blockchain.network || 'devnet'; return value.charAt(0).toUpperCase() + value.slice(1); });
-const stableVersion = computed(() => manifest.value?.channels?.prod?.version || 'version publiée');
-const devVersion = computed(() => manifest.value?.channels?.dev?.version || 'version de développement');
+const blockchainNetwork = computed(() => { const value = status.value?.blockchain.network || 'unknown'; return value.charAt(0).toUpperCase() + value.slice(1); });
+const stableVersion = computed(() => manifest.value?.channels?.prod?.version || 'indisponible');
+const devVersion = computed(() => manifest.value?.channels?.dev?.version || 'indisponible');
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => { refresh(); timer = setInterval(() => refresh(), Math.max(10, Number(config.public.statusRefreshSeconds) || 30) * 1000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });

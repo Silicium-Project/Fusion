@@ -72,5 +72,13 @@ export function peerId(peer: NetworkPeer): string {
 export function peerRoles(peer: NetworkPeer): string[] {
   const direct = Array.isArray(peer.roles) ? peer.roles : Array.isArray(peer.node_roles) ? peer.node_roles : [];
   if (direct.length) return direct.map(String);
-  return peer.role ? [String(peer.role)] : peerId(peer) === 'orchestrator-1' ? ['orchestrateur'] : ['ressource'];
+  return peer.role ? [String(peer.role)] : [];
+}
+
+export function peerAvailability(peer: NetworkPeer): 'online' | 'offline' | 'unknown' {
+  if (typeof peer.online === 'boolean') return peer.online ? 'online' : 'offline';
+  const status = String(peer.availability_status || peer.status || '').toLowerCase();
+  if (['online', 'operational', 'working', 'idle'].includes(status)) return 'online';
+  if (['offline', 'disconnected'].includes(status)) return 'offline';
+  return 'unknown';
 }

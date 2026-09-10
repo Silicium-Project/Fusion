@@ -5,7 +5,7 @@
         <div><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>Toutes les tâches</NuxtLink><div class="job-head__title"><span class="job-head__cube"><UiIcon name="cube"/></span><div><div class="cluster"><h1>{{ dashboard.job.title }}</h1><UiStatusBadge :status="dashboard.job.status" /></div><p>{{ dashboard.job.description || `${dashboard.job.workload} distribué sur le réseau Silicium.` }}</p></div></div></div>
         <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">Rafraîchir</UiButton><UiButton v-if="dashboard.resultReady" icon="download" size="small" @click="download">Télécharger</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">Arrêter</UiButton></div>
       </header>
-      <UiNotice v-if="dashboard.job.errorMessage" tone="danger" title="L’exécution a rencontré une erreur">{{ compactJobError(dashboard.job.errorMessage) }}</UiNotice>
+      <UiNotice v-if="jobErrorDetail" tone="danger" title="L’exécution a rencontré une erreur">{{ compactJobError(jobErrorDetail) }}</UiNotice>
       <section class="metric-grid">
         <MetricCard label="Fragments" :value="fragmentTotal" :detail="`${fragmentDone} terminés`" icon="layers" tone="mint" />
         <MetricCard label="Nœuds mobilisés" :value="nodeCount" detail="calcul et vérification" icon="nodes" tone="ink" />
@@ -44,6 +44,7 @@ const dashboard = ref<JobDashboard | null>(null); const loading = ref(true); con
 const visibleLimit = 80;
 const fragments = computed(() => dashboard.value?.summary?.fragments || []);
 const visibleFragments = computed(() => fragments.value.slice(-visibleLimit).reverse());
+const jobErrorDetail = computed(() => dashboard.value?.job.errorMessage || dashboard.value?.summary?.failureDetail || dashboard.value?.summary?.traceback || dashboard.value?.summary?.error || '');
 const fragmentTotal = computed(() => Number(dashboard.value?.summary?.fragmentCount || dashboard.value?.job.fragmentCount || fragments.value.length || 0));
 const fragmentDone = computed(() => fragments.value.filter(item => ['completed','verified'].includes(String(item.status))).length);
 const fragmentActive = computed(() => fragments.value.filter(item => ['running','claimed','dispatched'].includes(String(item.status))).length);

@@ -2,14 +2,14 @@
   <section v-tilt="1.25" class="live-network-map tilt-surface" :class="{ 'live-network-map--compact': compact }" aria-labelledby="live-network-map-title">
     <header class="live-network-map__header">
       <div>
-        <div class="live-network-map__kicker"><span class="eyebrow">Flux réseau</span><span class="live-network-map__live-badge"><i></i> En direct</span></div>
+        <div class="live-network-map__kicker"><span class="eyebrow">Flux réseau</span><span class="live-network-map__live-badge"><i></i> {{ lastUpdatedAt ? 'En direct' : 'En attente' }}</span></div>
         <h2 id="live-network-map-title">Voyez le réseau travailler.</h2>
         <p>Les machines se mettent à jour en direct et les points lumineux montrent le travail qui circule.</p>
       </div>
       <div class="live-network-map__updated" aria-live="polite"><span class="live-network-map__updated-dot"></span><span>Actualisé <strong>{{ updatedLabel }}</strong></span></div>
     </header>
 
-    <div class="live-network-map__stage" role="img" :aria-label="`Vue temps réel du réseau : ${activeNodes} machines actives sur ${nodes} connectées, ${activeWorkloads} projet${activeWorkloads > 1 ? 's' : ''} en cours.`">
+    <div class="live-network-map__stage" role="img" :aria-label="`Vue temps réel du réseau : ${activeNodes} machines actives sur ${totalNodes} connectées, ${activeWorkloads} projet${activeWorkloads > 1 ? 's' : ''} en cours.`">
       <div class="live-network-map__stage-grid" aria-hidden="true"></div>
       <div class="live-network-map__scan" aria-hidden="true"></div>
       <svg class="live-network-map__paths" viewBox="0 0 900 380" preserveAspectRatio="none" aria-hidden="true">
@@ -60,16 +60,17 @@
     </div>
 
     <footer class="live-network-map__telemetry" aria-label="Télémétrie réseau">
-      <div><span class="live-network-map__telemetry-label"><i></i> Temps de réponse</span><strong class="mono">{{ telemetry.latencyMs }} ms</strong><small>stable sur les 5 dernières mesures</small></div>
-      <div><span class="live-network-map__telemetry-label"><i></i> Vitesse du réseau</span><strong class="mono">{{ telemetry.throughputTbps.toFixed(2) }} Tb/s</strong><small>{{ telemetry.packetsPerSecond }} échanges / s</small></div>
-      <div><span class="live-network-map__telemetry-label"><i></i> Réseau utilisé</span><strong class="mono">{{ telemetry.utilization }} %</strong><small>{{ activeWorkloads }} projet{{ activeWorkloads > 1 ? 's' : '' }} en circulation</small></div>
-      <div class="live-network-map__bars" aria-hidden="true"><span v-for="(bar, index) in bars" :key="index" :style="{ height: `${bar}%`, animationDelay: `${index * -120}ms` }"></span></div>
+      <div><span class="live-network-map__telemetry-label"><i></i> CPU système moyen</span><strong class="mono">{{ percent(metrics.system_cpu_percent) }}</strong><small>{{ metrics.telemetry_nodes || 0 }} machine{{ metrics.telemetry_nodes === 1 ? '' : 's' }} instrumentée{{ metrics.telemetry_nodes === 1 ? '' : 's' }}</small></div>
+      <div><span class="live-network-map__telemetry-label"><i></i> Mémoire système moyenne</span><strong class="mono">{{ percent(metrics.system_memory_percent) }}</strong><small>{{ metrics.logical_cpu_count || 0 }} cœur{{ metrics.logical_cpu_count === 1 ? '' : 's' }} logique{{ metrics.logical_cpu_count === 1 ? '' : 's' }}</small></div>
+      <div><span class="live-network-map__telemetry-label"><i></i> File réseau</span><strong class="mono">{{ integer(metrics.queue_depth) }}</strong><small>{{ integer(metrics.active_tasks) }} tâche{{ metrics.active_tasks === 1 ? '' : 's' }} active{{ metrics.active_tasks === 1 ? '' : 's' }} · {{ activeWorkloads }} projet{{ activeWorkloads > 1 ? 's' : '' }}</small></div>
+      <div v-if="bars.length" class="live-network-map__bars" aria-hidden="true"><span v-for="(bar, index) in bars" :key="index" :style="{ height: `${bar}%`, animationDelay: `${index * -120}ms` }"></span></div>
     </footer>
   </section>
 </template>
 
 <script setup lang="ts">
-import { networkRoleLabel } from '~/utils/format';
+import type { NetworkMetrics } from '~/types/api';
+import { formatDate, networkRoleLabel } from '~/utils/format';
 
 interface RoleGroup { role: string; count: number }
 
@@ -78,36 +79,37 @@ interface Props {
   activeNodes?: number;
   activeWorkloads?: number;
   roleGroups?: RoleGroup[];
+  networkMetrics?: NetworkMetrics;
   lastUpdatedAt?: string | null;
   compact?: boolean;
 }
 
 const props = defineProps<Props>();
-const totalNodes = computed(() => Math.max(0, Math.round(props.totalNodes ?? 512)));
-const configuredActiveNodes = computed(() => Math.max(0, Math.round(props.activeNodes ?? totalNodes.value * .74)));
-const { telemetry, nodes, activeNodes, updatedLabel } = useLiveTelemetry({
-  baseNodes: totalNodes,
-  baseActiveNodes: configuredActiveNodes,
-  sourceUpdatedAt: () => props.lastUpdatedAt,
-  interval: 4_500,
-  seed: 8,
-});
-const activeWorkloads = computed(() => Math.max(0, Math.round(props.activeWorkloads ?? 3)));
+const totalNodes = computed(() => Math.max(0, Math.round(Number(props.totalNodes) || 0)));
+const activeNodes = computed(() => Math.max(0, Math.round(Number(props.activeNodes) || 0)));
+const activeWorkloads = computed(() => Math.max(0, Math.round(Number(props.activeWorkloads) || 0)));
+const metrics = computed<NetworkMetrics>(() => props.networkMetrics || {});
+const updatedLabel = computed(() => props.lastUpdatedAt ? formatDate(props.lastUpdatedAt) : 'aucune observation');
+const percent = (value: unknown): string => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} %` : '—';
+const integer = (value: unknown): string => Number.isFinite(Number(value)) ? String(Math.max(0, Math.round(Number(value)))) : '—';
 
-const groups = computed(() => (props.roleGroups || []).filter(group => group.count > 0).slice(0, 3));
+const groups = computed(() => (props.roleGroups || []).filter(group => group.count > 0));
 const labelForRole = (role: string): string => networkRoleLabel(role);
-const countForRole = (role: string, fallback: number): number => groups.value.find(group => labelForRole(group.role) === role)?.count ?? fallback;
+const countForRole = (role: string): number => groups.value.filter(group => labelForRole(group.role) === role).reduce((total, group) => total + group.count, 0);
+const detailForRole = (role: string): string => countForRole(role) ? 'machines annoncées' : 'aucune donnée';
+const orchestratorCount = computed(() => countForRole('Orchestration'));
 
 const mapNodes = computed(() => [
-  { key: 'orchestrator', kicker: 'PLANIFICATION', label: 'Orchestration', detail: 'routage stable', value: '1 hub', icon: 'layers', tone: 'mint', style: { '--node-x': '5%', '--node-y': '12%', '--node-delay': '0ms' } },
-  { key: 'compute', kicker: 'POOL ACTIF', label: 'Calcul', detail: 'ressources disponibles', value: String(countForRole('Calcul', Math.round(nodes.value * .68))), icon: 'processor', tone: 'mint', style: { '--node-x': '5%', '--node-y': '65%', '--node-delay': '-900ms' } },
-  { key: 'verify', kicker: 'GARDE-FOU', label: 'Vérification', detail: 'preuves contrôlées', value: String(countForRole('Vérification', Math.round(nodes.value * .18))), icon: 'shield', tone: 'violet', style: { '--node-x': '78%', '--node-y': '14%', '--node-delay': '-1.5s' } },
-  { key: 'storage', kicker: 'SORTIE', label: 'Persistance', detail: 'artefacts répliqués', value: String(countForRole('Persistance', Math.round(nodes.value * .08))), icon: 'database', tone: 'ink', style: { '--node-x': '78%', '--node-y': '66%', '--node-delay': '-2.2s' } },
+  { key: 'orchestrator', kicker: 'PLANIFICATION', label: 'Orchestration', detail: detailForRole('Orchestration'), value: String(orchestratorCount.value), icon: 'layers', tone: 'mint', style: { '--node-x': '5%', '--node-y': '12%', '--node-delay': '0ms' } },
+  { key: 'compute', kicker: 'POOL ACTIF', label: 'Calcul', detail: detailForRole('Calcul'), value: String(countForRole('Calcul')), icon: 'processor', tone: 'mint', style: { '--node-x': '5%', '--node-y': '65%', '--node-delay': '-900ms' } },
+  { key: 'verify', kicker: 'GARDE-FOU', label: 'Vérification', detail: detailForRole('Vérification'), value: String(countForRole('Vérification')), icon: 'shield', tone: 'violet', style: { '--node-x': '78%', '--node-y': '14%', '--node-delay': '-1.5s' } },
+  { key: 'storage', kicker: 'SORTIE', label: 'Persistance', detail: detailForRole('Persistance'), value: String(countForRole('Persistance')), icon: 'database', tone: 'ink', style: { '--node-x': '78%', '--node-y': '66%', '--node-delay': '-2.2s' } },
 ]);
 
 const bars = computed(() => {
-  const base = telemetry.value.utilization;
-  return [34, 46, 39, 66, 53, 74, 58, 82, 64, 76, 61, base].map((value, index) => Math.max(20, Math.min(92, value + ((index % 3) - 1) * Math.round(base / 15))));
+  return [metrics.value.system_cpu_percent, metrics.value.system_memory_percent, metrics.value.storage_used_percent]
+    .filter((value): value is number => Number.isFinite(Number(value)))
+    .map(value => Math.max(12, Math.min(100, Number(value))));
 });
 </script>
 

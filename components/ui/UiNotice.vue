@@ -11,7 +11,7 @@ withDefaults(defineProps<{ tone?: 'info' | 'success' | 'warning' | 'danger'; tit
 
 <style scoped>
 .notice { display: flex; gap: .75rem; border: 1px solid; border-radius: var(--radius-md); padding: .85rem 1rem; font-size: .78rem; line-height: 1.5; }
-.notice p { margin: .12rem 0 0; }
+.notice p { margin: .12rem 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .notice__icon { width: 1.05rem; height: 1.05rem; flex: 0 0 auto; margin-top: .1rem; }
 .notice--info { border-color: rgba(13,149,136,.2); background: var(--mint-100); color: var(--mint-700); }
 .notice--success { border-color: rgba(32,124,93,.2); background: var(--green-100); color: var(--green-600); }
