@@ -53,6 +53,16 @@ ensure_env_default() {
 ensure_env_default SILICIUM_NODE_ADVERTISE_URL "https://vps-910c1dbc.vps.ovh.net/orchestrator"
 ensure_env_default SILICIUM_PEER_SYNC_INTERVAL_S "5"
 ensure_env_default SILICIUM_PEER_STALE_AFTER_S "15"
+# The VPS is the durable scheduler and storage rendezvous, not a workload
+# worker. Older operator files may still advertise compute/verify, causing the
+# scheduler to run verification with its Python fallback against tiles rendered
+# by the desktop Rust runtime. Those implementations do not currently guarantee
+# byte-identical pixels, so converge upgrades to the supported control-plane roles.
+if grep -q -E '^SILICIUM_NODE_ROLES=' "$ORCHESTRATOR_ENV"; then
+  sed -i -E 's/^SILICIUM_NODE_ROLES=.*/SILICIUM_NODE_ROLES=resource,storage/' "$ORCHESTRATOR_ENV"
+else
+  printf '%s\n' 'SILICIUM_NODE_ROLES=resource,storage' >> "$ORCHESTRATOR_ENV"
+fi
 # Migrate the value shipped by the previous integrated-node release. Keep any
 # operator-selected value intact while preventing a stale 45-second default
 # from surviving upgrades and masking worker disconnects.

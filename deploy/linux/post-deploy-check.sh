@@ -85,6 +85,19 @@ if [[ ! -s "$heartbeat_file" ]]; then
   echo "Missing live orchestrator heartbeat: $heartbeat_file" >&2
   exit 1
 fi
+if ! python3 - "$heartbeat_file" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as heartbeat_stream:
+    heartbeat = json.load(heartbeat_stream)
+roles = {str(role).strip().lower() for role in heartbeat.get("roles", [])}
+raise SystemExit(0 if roles == {"resource", "storage"} else 1)
+PY
+then
+  echo "The orchestrator heartbeat advertises workload roles; expected only resource,storage: $heartbeat_file" >&2
+  exit 1
+fi
 if systemctl cat silicium-experiment-api.service >/dev/null 2>&1; then
   if ! systemctl is-active --quiet silicium-experiment-api.service; then
     echo "silicium-experiment-api.service is installed but not active." >&2
