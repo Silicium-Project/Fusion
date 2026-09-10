@@ -8,6 +8,8 @@ describe('display contracts', () => {
     expect(statusTone('completed')).toBe('success');
     expect(statusTone('failed')).toBe('danger');
     expect(statusTone('queued')).toBe('warning');
+    expect(statusLabel('queued_verify')).toBe('Validation en attente');
+    expect(statusTone('reassembled')).toBe('success');
   });
 
   it('compacts technical identifiers without hiding short values', () => {

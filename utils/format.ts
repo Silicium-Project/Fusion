@@ -2,6 +2,7 @@ import type { JobStatus, NetworkPeer } from '~/types/api';
 
 const statusLabels: Record<string, string> = {
   queued: 'En attente', running: 'En cours', cancelling: 'Arrêt en cours', completed: 'Terminé',
+  planned: 'Planifié', queued_compute: 'Calcul en attente', computed: 'Calcul terminé', queued_verify: 'Validation en attente', verified: 'Validé', reassembled: 'Assemblé',
   failed: 'Échec', cancelled: 'Annulé', canceled: 'Annulé', expired: 'Expiré', dead_lettered: 'Abandonné', finalized: 'Finalisé', resolved: 'Résolu', operational: 'Opérationnel',
   degraded: 'Dégradé', unavailable: 'Indisponible', current: 'À jour', outdated: 'Mise à jour requise',
   'outdated-build': 'Build obsolète', unknown: 'À vérifier', server: 'Serveur', online: 'En ligne', offline: 'Hors ligne',
@@ -21,10 +22,10 @@ export function statusLabel(status?: JobStatus): string {
 
 export function statusTone(status?: JobStatus): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
   const value = String(status || '').toLowerCase();
-  if (['completed', 'operational', 'online', 'current', 'verified', 'server'].includes(value)) return 'success';
-  if (['queued', 'cancelling', 'degraded', 'outdated', 'outdated-build', 'expired'].includes(value)) return 'warning';
+  if (['completed', 'operational', 'online', 'current', 'verified', 'reassembled', 'server'].includes(value)) return 'success';
+  if (['queued', 'planned', 'queued_compute', 'queued_verify', 'cancelling', 'degraded', 'outdated', 'outdated-build', 'expired'].includes(value)) return 'warning';
   if (['failed', 'cancelled', 'canceled', 'unavailable', 'offline'].includes(value)) return 'danger';
-  if (['running', 'active', 'dispatched', 'claimed'].includes(value)) return 'info';
+  if (['running', 'active', 'dispatched', 'claimed', 'computed'].includes(value)) return 'info';
   return 'neutral';
 }
 

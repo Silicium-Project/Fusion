@@ -7,15 +7,20 @@
 <script setup lang="ts">
 import type { JobDashboard } from '~/types/api';
 import { formatDate } from '~/utils/format';
+import { fragmentVisualState } from '~/utils/jobs';
 const props = defineProps<{ dashboard: JobDashboard }>();
 const terminal = computed(() => ['completed','failed','cancelled','expired'].includes(props.dashboard.job.status));
-const completedFragments = computed(() => (props.dashboard.summary?.fragments || []).filter(fragment => ['completed','verified'].includes(String(fragment.status))).length);
+const fragments = computed(() => props.dashboard.summary?.fragments || []);
+const completedFragments = computed(() => fragments.value.filter(fragment => fragmentVisualState(fragment.status) === 'done').length);
+const computingFragments = computed(() => fragments.value.filter(fragment => fragmentVisualState(fragment.status) === 'computing').length);
+const validatingFragments = computed(() => fragments.value.filter(fragment => fragmentVisualState(fragment.status) === 'validating').length);
 const totalFragments = computed(() => Number(props.dashboard.summary?.fragmentCount || props.dashboard.job.fragmentCount || props.dashboard.summary?.fragments?.length || 0));
+const calculationDone = computed(() => totalFragments.value > 0 && completedFragments.value === totalFragments.value);
 const steps = computed(() => [
   { label: 'Tâche reçue', detail: formatDate(props.dashboard.job.createdAt), state: 'done', icon: 'upload' },
   { label: 'Orchestration démarrée', detail: props.dashboard.job.startedAt ? formatDate(props.dashboard.job.startedAt) : 'En attente d’attribution', state: props.dashboard.job.startedAt ? 'done' : 'current', icon: 'layers' },
-  { label: 'Calcul distribué', detail: `${completedFragments.value} fragment${completedFragments.value > 1 ? 's' : ''} traité${completedFragments.value > 1 ? 's' : ''} sur ${totalFragments.value || '—'}`, state: props.dashboard.job.status === 'failed' ? 'failed' : terminal.value ? 'done' : props.dashboard.job.startedAt ? 'current' : 'pending', icon: 'processor' },
-  { label: 'Vérification & résultat', detail: props.dashboard.resultReady ? 'Résultat prêt à être récupéré' : terminal.value ? 'Exécution terminée sans résultat disponible' : 'À venir', state: props.dashboard.resultReady ? 'done' : props.dashboard.job.status === 'failed' ? 'failed' : 'pending', icon: 'shield' },
+  { label: 'Calcul distribué', detail: computingFragments.value ? `${computingFragments.value} fragment${computingFragments.value > 1 ? 's' : ''} en calcul · ${completedFragments.value}/${totalFragments.value || '—'} terminé${completedFragments.value > 1 ? 's' : ''}` : `${completedFragments.value} fragment${completedFragments.value > 1 ? 's' : ''} terminé${completedFragments.value > 1 ? 's' : ''} sur ${totalFragments.value || '—'}`, state: props.dashboard.job.status === 'failed' ? 'failed' : calculationDone.value || props.dashboard.resultReady ? 'done' : props.dashboard.job.startedAt ? 'current' : 'pending', icon: 'processor' },
+  { label: 'Vérification & résultat', detail: props.dashboard.resultReady ? 'Résultat prêt à être prévisualisé ou téléchargé' : validatingFragments.value ? `${validatingFragments.value} fragment${validatingFragments.value > 1 ? 's' : ''} en validation` : props.dashboard.job.status === 'completed' ? 'Récupération de l’artefact en cours' : terminal.value ? 'Exécution interrompue sans résultat' : 'À venir', state: props.dashboard.resultReady ? 'done' : props.dashboard.job.status === 'failed' ? 'failed' : validatingFragments.value || props.dashboard.job.status === 'completed' ? 'current' : 'pending', icon: 'shield' },
 ]);
 </script>
 

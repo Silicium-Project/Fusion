@@ -32,6 +32,28 @@ export const extractJobError = (failure: unknown, fallback = 'La tâche ne peut 
 export const isJobCancellable = (status: string): boolean =>
   ['queued', 'running', 'cancelling'].includes(status);
 
+export type FragmentVisualState = 'planned' | 'computing' | 'validating' | 'done' | 'failed';
+
+export const fragmentVisualState = (status: unknown): FragmentVisualState => {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (['failed', 'error', 'cancelled', 'canceled', 'expired'].some(value => normalized.includes(value))) return 'failed';
+  if (['reassembled', 'verified', 'completed', 'finished', 'resolved'].includes(normalized)) return 'done';
+  if (normalized.includes('verify') || normalized.includes('validat') || normalized === 'computed') return 'validating';
+  if (normalized.includes('compute') || ['claimed', 'dispatched', 'running', 'processing', 'in_progress'].includes(normalized)) return 'computing';
+  return 'planned';
+};
+
+export const fragmentStateLabel = (status: unknown): string => ({
+  planned: 'En attente',
+  computing: 'Calcul en cours',
+  validating: 'Validation en cours',
+  done: 'Terminé',
+  failed: 'En erreur',
+})[fragmentVisualState(status)];
+
+export const shouldRefreshJob = (status: string, resultReady: boolean): boolean =>
+  isJobCancellable(status) || (status === 'completed' && !resultReady);
+
 export const clampJobPage = (page: number, total: number, pageSize: number): number => {
   const lastPage = Math.max(1, Math.ceil(Math.max(0, total) / Math.max(1, pageSize)));
   return Math.max(1, Math.min(lastPage, Math.trunc(page) || 1));

@@ -19,7 +19,7 @@
       <div class="job-detail-grid job-detail-grid--bottom">
         <UiCard title="Fragments" :description="`${fragmentDone} terminés, ${fragmentActive} actifs, ${fragmentFailed} en erreur.`">
           <div v-if="!fragments.length" class="empty-dash"><UiEmptyState title="Aucun fragment publié" description="Les fragments apparaîtront dès que l’orchestrateur aura produit le plan d’exécution." icon="layers" /></div>
-          <div v-else class="table-wrap"><table class="data-table fragments-table"><thead><tr><th>Fragment</th><th>Étape</th><th>Nœud</th><th>Statut</th></tr></thead><tbody><tr v-for="(fragment,index) in visibleFragments" :key="fragmentKey(fragment,index)"><td class="mono">#{{ fragmentIndex(fragment,index) }}</td><td>{{ fragment.stage || 'calcul' }}</td><td class="mono">{{ compactIdentifier(fragmentNode(fragment), 10, 5) }}</td><td><UiStatusBadge :status="String(fragment.status || 'unknown')" /></td></tr></tbody></table></div>
+          <div v-else class="table-wrap"><table class="data-table fragments-table"><thead><tr><th>Fragment</th><th>Étape</th><th>Nœud</th><th>Statut</th></tr></thead><tbody><tr v-for="(fragment,index) in visibleFragments" :key="fragmentKey(fragment,index)"><td class="mono">#{{ fragmentIndex(fragment,index) }}</td><td>{{ fragmentStateLabel(fragment.status) }}</td><td class="mono">{{ compactIdentifier(fragmentNode(fragment), 10, 5) }}</td><td><UiStatusBadge :status="String(fragment.status || 'unknown')" /></td></tr></tbody></table></div>
           <footer v-if="fragments.length > visibleLimit" class="card-footer">Les {{ visibleLimit }} fragments les plus récents sont affichés sur {{ fragments.length }}.</footer>
         </UiCard>
         <div class="stack">
@@ -37,30 +37,51 @@
 <script setup lang="ts">
 import type { JobDashboard, JobFragment } from '~/types/api';
 import { compactIdentifier, formatDuration } from '~/utils/format';
-import { compactJobError, isJobCancellable } from '~/utils/jobs';
+import { compactJobError, fragmentStateLabel, fragmentVisualState, isJobCancellable, shouldRefreshJob } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();
-const dashboard = ref<JobDashboard | null>(null); const loading = ref(true); const error = ref(''); const confirmOpen = ref(false); const cancelling = ref(false); const resultPreview = ref('');
+const dashboard = ref<JobDashboard | null>(null); const loading = ref(true); const error = ref(''); const confirmOpen = ref(false); const cancelling = ref(false); const resultPreview = ref(''); const previewAttempts = ref(0);
 const visibleLimit = 80;
 const fragments = computed(() => dashboard.value?.summary?.fragments || []);
 const visibleFragments = computed(() => fragments.value.slice(-visibleLimit).reverse());
 const jobErrorDetail = computed(() => dashboard.value?.job.errorMessage || dashboard.value?.summary?.failureDetail || dashboard.value?.summary?.traceback || dashboard.value?.summary?.error || '');
 const fragmentTotal = computed(() => Number(dashboard.value?.summary?.fragmentCount || dashboard.value?.job.fragmentCount || fragments.value.length || 0));
-const fragmentDone = computed(() => fragments.value.filter(item => ['completed','verified'].includes(String(item.status))).length);
-const fragmentActive = computed(() => fragments.value.filter(item => ['running','claimed','dispatched'].includes(String(item.status))).length);
-const fragmentFailed = computed(() => fragments.value.filter(item => String(item.status) === 'failed').length);
+const fragmentDone = computed(() => fragments.value.filter(item => fragmentVisualState(item.status) === 'done').length);
+const fragmentActive = computed(() => fragments.value.filter(item => ['computing','validating'].includes(fragmentVisualState(item.status))).length);
+const fragmentFailed = computed(() => fragments.value.filter(item => fragmentVisualState(item.status) === 'failed').length);
 const nodeCount = computed(() => new Set(fragments.value.map(fragmentNode).filter(Boolean)).size || Number((dashboard.value?.job.network?.nodes as unknown[])?.length || 0));
 const duration = computed(() => dashboard.value ? formatDuration(dashboard.value.job.startedAt, dashboard.value.job.completedAt) : '—');
 const cancellable = computed(() => Boolean(dashboard.value && isJobCancellable(dashboard.value.job.status)));
+const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || (dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
 function fragmentIndex(fragment: JobFragment, fallback: number) { return fragment.fragment_index ?? fragment.fragmentIndex ?? fallback; }
 function fragmentNode(fragment: JobFragment) { return String(fragment.handled_by || fragment.handledBy || 'En attente'); }
 function fragmentKey(fragment: JobFragment, fallback: number) { return `${fragmentIndex(fragment,fallback)}-${fragmentNode(fragment)}-${fragment.status}`; }
-async function load(force = false) { loading.value = true; error.value = ''; try { dashboard.value = await jobsStore.getJobDashboard(String(route.params.id), force); if (dashboard.value.resultReady && !resultPreview.value) await loadPreview(); } catch (failure) { const response = failure as { status?: number; statusCode?: number }; error.value = response.status === 404 || response.statusCode === 404 ? 'Cette tâche est introuvable.' : 'Le détail de cette tâche ne peut pas être chargé.'; dashboard.value = null; } finally { loading.value = false; } }
-async function loadPreview() { if (!dashboard.value?.resultReady || !import.meta.client) return; const token = await session.ensureAccessToken(); if (!token) return; const response = await fetch(`${config.public.apiBase}/jobs/${route.params.id}/result`, { headers: { Authorization: `Bearer ${token}` } }); if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return; const next = URL.createObjectURL(await response.blob()); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); resultPreview.value = next; }
+let loadPromise: Promise<void> | undefined;
+function load(force = false, background = false): Promise<void> {
+  if (loadPromise) return loadPromise;
+  if (!background) loading.value = true;
+  error.value = '';
+  loadPromise = (async () => {
+    try {
+      dashboard.value = await jobsStore.getJobDashboard(String(route.params.id), force);
+      if (dashboard.value.resultReady && !resultPreview.value) await loadPreview();
+    } catch (failure) {
+      if (!dashboard.value) {
+        const response = failure as { status?: number; statusCode?: number };
+        error.value = response.status === 404 || response.statusCode === 404 ? 'Cette tâche est introuvable.' : 'Le détail de cette tâche ne peut pas être chargé.';
+      }
+    } finally {
+      loading.value = false;
+      loadPromise = undefined;
+    }
+  })();
+  return loadPromise;
+}
+async function loadPreview() { if (!dashboard.value?.resultReady || !import.meta.client) return; previewAttempts.value += 1; const token = await session.ensureAccessToken(); if (!token) return; const response = await fetch(`${config.public.apiBase}/jobs/${route.params.id}/result`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }); if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return; const next = URL.createObjectURL(await response.blob()); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); resultPreview.value = next; }
 async function download() { if (dashboard.value) await jobsStore.downloadResult(dashboard.value.job); }
 async function cancel() { if (!dashboard.value) return; cancelling.value = true; try { await jobsStore.cancelJob(dashboard.value.job.id); confirmOpen.value = false; await load(true); } finally { cancelling.value = false; } }
 let timer: ReturnType<typeof setInterval> | undefined;
-onMounted(() => { load(); timer = setInterval(() => { if (dashboard.value && isJobCancellable(dashboard.value.job.status)) load(true); }, 5_000); });
+onMounted(() => { load(); timer = setInterval(() => { if (shouldPoll.value) load(true, true); }, 2_000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); });
 useSeoMeta({ title: () => dashboard.value ? `${dashboard.value.job.title} — Silicium` : 'Détail de la tâche — Silicium' });
 </script>
