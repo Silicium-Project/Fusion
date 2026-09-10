@@ -2713,6 +2713,12 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
         help="Enable one-command wide-area mesh defaults (gossip, relay, dispatch, NAT punch, advertised endpoints).",
     )
     parser.add_argument(
+        "--experimental-p2p-node",
+        action="store_true",
+        default=os.environ.get("SILICIUM_EXPERIMENTAL_P2P_NODE", "0") == "1",
+        help="Run the experimental Rust p2p_node core instead of the integrated network daemon.",
+    )
+    parser.add_argument(
         "--world-name",
         default=os.environ.get("SILICIUM_WORLD_NAME", ""),
         help="Shared world namespace used to derive a deterministic mesh key when --mesh-key is omitted.",
@@ -2749,6 +2755,7 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gossip-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_PORT", "0")))
     parser.add_argument("--peer-http-bind", default=os.environ.get("SILICIUM_PEER_HTTP_BIND", "127.0.0.1"))
     parser.add_argument("--peer-http-port", type=int, default=int(os.environ.get("SILICIUM_PEER_HTTP_PORT", "0")))
+    parser.add_argument("--peer-advertise-url", default=os.environ.get("SILICIUM_PEER_ADVERTISE_URL", ""))
     parser.add_argument("--peer-advertise-host", default=os.environ.get("SILICIUM_PEER_ADVERTISE_HOST", ""))
     parser.add_argument("--peer-advertise-port", type=int, default=int(os.environ.get("SILICIUM_PEER_ADVERTISE_PORT", "0")))
     parser.add_argument("--gossip-advertise-host", default=os.environ.get("SILICIUM_GOSSIP_ADVERTISE_HOST", ""))
@@ -2848,6 +2855,168 @@ def _run_p2p_node(command: list[str], env: Mapping[str, str]) -> int:
     return int(completed.returncode)
 
 
+def _network_node_args(
+    args: argparse.Namespace,
+    settings: Mapping[str, Any],
+    node_id: str,
+) -> list[str]:
+    """Translate the public CLI node options to the integrated daemon.
+
+    ``node start`` used to launch the Rust p2p experiment.  That process has a
+    small localhost API but does not publish the heartbeat/peer registry used
+    by the site.  Keep the translation in one place so the desktop app,
+    ``start-node.sh`` and local network emitters all exercise the same daemon.
+    """
+
+    export_dir = str(args.export_dir or settings["export_dir"])
+    command = [
+        "--export-dir",
+        export_dir,
+        "--node-id",
+        node_id,
+        "--roles",
+        str(args.roles),
+        "--app-version",
+        str(args.app_version),
+        "--release-channel",
+        str(args.release_channel),
+        "--release-build",
+        str(args.release_build),
+        "--idle-ms",
+        str(args.idle_ms),
+        "--max-items",
+        str(args.max_items),
+        "--p2p-gateway",
+        str(args.p2p_gateway),
+        "--gossip-bind",
+        str(args.gossip_bind),
+        "--gossip-port",
+        str(args.gossip_port),
+        "--peer-http-bind",
+        str(args.peer_http_bind),
+        "--peer-http-port",
+        str(args.peer_http_port),
+        "--peer-advertise-url",
+        str(args.peer_advertise_url),
+        "--peer-advertise-host",
+        str(args.peer_advertise_host),
+        "--peer-advertise-port",
+        str(args.peer_advertise_port),
+        "--gossip-advertise-host",
+        str(args.gossip_advertise_host),
+        "--gossip-advertise-port",
+        str(args.gossip_advertise_port),
+        "--seed-peers",
+        str(args.seed_peers),
+        "--mesh-key",
+        str(args.mesh_key),
+        "--peer-sync-interval-s",
+        str(args.peer_sync_interval_s),
+        "--peer-event-limit",
+        str(args.peer_event_limit),
+        "--gossip-max-hops",
+        str(args.gossip_max_hops if hasattr(args, "gossip_max_hops") else 8),
+        "--peer-stale-after-s",
+        str(args.peer_stale_after_s),
+        "--relay-hops",
+        str(args.relay_hops),
+        "--reputation-score",
+        str(args.reputation_score),
+        "--replication-factor",
+        str(args.replication_factor),
+        "--replication-quorum",
+        str(args.replication_quorum),
+        "--discovery-seeds",
+        str(args.discovery_seeds),
+        "--discovery-sync-interval-s",
+        str(args.discovery_sync_interval_s),
+        "--remote-dispatch-limit",
+        str(args.remote_dispatch_limit),
+        "--pull-tasks-interval-s",
+        str(args.pull_tasks_interval_s),
+        "--p2p-candidate-ttl-s",
+        str(args.p2p_candidate_ttl_s),
+        "--p2p-candidate-refresh-s",
+        str(args.p2p_candidate_refresh_s),
+        "--p2p-session-ttl-s",
+        str(args.p2p_session_ttl_s),
+        "--p2p-punch-retry-count",
+        str(args.p2p_punch_retry_count),
+        "--p2p-punch-interval-ms",
+        str(args.p2p_punch_interval_ms),
+        "--p2p-session-timeout-ms",
+        str(args.p2p_session_timeout_ms),
+        "--p2p-direct-transport-backend",
+        str(args.p2p_direct_transport_backend),
+        "--p2p-turn-username",
+        str(args.p2p_turn_username),
+        "--p2p-turn-password",
+        str(args.p2p_turn_password),
+        "--p2p-turn-transport",
+        str(args.p2p_turn_transport),
+        "--solana-rpc",
+        str(args.solana_rpc),
+        "--solana-program-id",
+        str(args.solana_program_id),
+        "--solana-wallet",
+        str(args.solana_wallet),
+        "--solana-bridge",
+        str(args.solana_bridge),
+        "--solana-timeout-s",
+        str(args.solana_timeout_s),
+        "--max-retries",
+        str(args.max_retries),
+        "--solana-reputation-refresh-s",
+        str(args.solana_reputation_refresh_s),
+        "--scheduler-onchain-weight",
+        str(args.scheduler_onchain_weight),
+        "--scheduler-offchain-weight",
+        str(args.scheduler_offchain_weight),
+        "--scheduler-capacity-weight",
+        str(args.scheduler_capacity_weight),
+    ]
+    if str(args.state_dir).strip():
+        command.extend(["--state-dir", str(args.state_dir)])
+    if str(args.identity_key_path).strip():
+        command.extend(["--identity-key-path", str(args.identity_key_path)])
+    if str(args.p2p_stun_server).strip():
+        command.extend(["--p2p-stun-server", str(args.p2p_stun_server)])
+    if str(args.p2p_turn_server).strip():
+        command.extend(["--p2p-turn-server", str(args.p2p_turn_server)])
+    if str(args.world_name).strip():
+        command.extend(["--world-name", str(args.world_name)])
+    if str(args.world_seeds).strip():
+        command.extend(["--world-seeds", str(args.world_seeds)])
+
+    boolean_flags = {
+        "world": "--world",
+        "once": "--once",
+        "bootstrap_worker": "--bootstrap-worker",
+        "gossip_enable": "--gossip-enable",
+        "relay_enable": "--relay-enable",
+        "identity_dev_mesh_auth": "--identity-dev-mesh-auth",
+        "remote_dispatch_enable": "--remote-dispatch-enable",
+        "pull_tasks_enable": "--pull-tasks-enable",
+        "nat_punch_enable": "--nat-punch-enable",
+        "solana_enable": "--solana-enable",
+        "solana_reputation_enable": "--solana-reputation-enable",
+    }
+    for attribute, flag in boolean_flags.items():
+        if bool(getattr(args, attribute, False)):
+            command.append(flag)
+    return command
+
+
+def _run_network_node(
+    args: argparse.Namespace,
+    settings: Mapping[str, Any],
+    node_id: str,
+) -> int:
+    from tools import network_node
+
+    return int(network_node.main(_network_node_args(args, settings, node_id)))
+
+
 def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
     (void := ctx)
     settings = _resolve_mcp_settings(args)
@@ -2855,6 +3024,12 @@ def cmd_node_start(args: argparse.Namespace, ctx: Context) -> None:
     node_id = args.node_id or f"node-{secrets.token_hex(4)}"
     args = _apply_world_mode_defaults(args, node_id=node_id)
     args = _apply_nat_traversal_defaults(args)
+    if not bool(getattr(args, "experimental_p2p_node", False)):
+        raise SystemExit(_run_network_node(args, settings, node_id))
+
+    # The Rust p2p_node is retained as an explicitly opt-in experiment.  It is
+    # not the production node because it does not publish the integrated
+    # heartbeat and peer registry consumed by the site.
     command = _p2p_node_command()
     dispatch_seed = int.from_bytes(hashlib.sha256(node_id.encode("utf-8")).digest()[:8], "little")
     env = _build_p2p_node_env(args, settings, node_id)

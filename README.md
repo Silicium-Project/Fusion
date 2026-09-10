@@ -29,7 +29,10 @@ Fusion orchestrator ──► Network node
 
 The active paths are:
 
-- `networked/`: Rust node, P2P transport, compute daemon, and reputation bridge;
+- `tools/network_node.py`: integrated production node used by the CLI, desktop
+  app, VPS orchestrator, task polling, peer registry, and telemetry;
+- `networked/`: Rust P2P/compute experiments and supporting transport bridges;
+  `p2p_node` is opt-in via `--experimental-p2p-node`;
 - `tools/`: orchestration, RPC, telemetry, receipts, update manifests, and E2E helpers;
 - `workloads/raytracer/`: the current workload and its native Rust implementation;
 - `solana-layer/`: Anchor program, SDK, migrations, IDL, and tests;

@@ -399,6 +399,19 @@ def test_seed_url_preserves_reverse_proxy_path(tmp_path: Path) -> None:
     assert peer._normalize_http_target("https://vps.example/emitter/") == "https://vps.example/emitter"
 
 
+def test_network_node_health_identifies_integrated_daemon(tmp_path: Path) -> None:
+    peer = network_node.PeerNetwork(_config(tmp_path / "health", "node-health"), tmp_path / "health")
+    peer.start()
+    try:
+        with urllib.request.urlopen(peer.http_base_url + "/healthz", timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        assert payload["ok"] is True
+        assert payload["service"] == "network_node"
+        assert payload["node_id"] == "node-health"
+    finally:
+        peer.stop()
+
+
 def test_session_handshake_accepts_valid_signed_payload(tmp_path: Path) -> None:
     source = network_node.PeerNetwork(_config(tmp_path / "source", "node-a", roles="compute", reputation_score=25), tmp_path / "source")
     target = network_node.PeerNetwork(_config(tmp_path / "target", "node-b", roles="verify"), tmp_path / "target")

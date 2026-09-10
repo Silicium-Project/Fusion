@@ -3855,8 +3855,16 @@ class PeerNetwork:
                 return peer_network._authorize_peer_request(self, body)
 
             def do_GET(self) -> None:  # noqa: N802
-                if self.path == "/healthz":
-                    raw = b'{"ok":true}'
+                if self.path in {"/health", "/healthz"}:
+                    raw = stable_json(
+                        {
+                            "ok": True,
+                            "status": "ok",
+                            "service": "network_node",
+                            "node_id": peer_network.node_id,
+                            "updated_utc": utc_now(),
+                        }
+                    ).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(raw)))

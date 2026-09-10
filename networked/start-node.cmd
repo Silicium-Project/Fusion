@@ -12,8 +12,8 @@ if exist ".silicium\env\raytracer.env" (
 
 if "%~1"=="" (
   echo Usage: demo\networked\start-node.cmd ^<node-id^> ^<roles^> ^<port^> ^<seed-url^> [advertise-host] [mesh-key] [reputation-score]
-  echo Example worker: demo\networked\start-node.cmd worker-1 compute 46101 http://192.168.1.10:46100 192.168.1.11 demo-mesh 120
-  echo Example verifier: demo\networked\start-node.cmd verifier-1 verify 46102 http://192.168.1.10:46100 192.168.1.12 demo-mesh 90
+  echo Example worker: demo\networked\start-node.cmd worker-1 compute 46101 https://vps-910c1dbc.vps.ovh.net/orchestrator 192.168.1.11 demo-mesh 120
+  echo Example verifier: demo\networked\start-node.cmd verifier-1 verify 46102 https://vps-910c1dbc.vps.ovh.net/orchestrator 192.168.1.12 demo-mesh 90
   exit /b 2
 )
 
@@ -38,11 +38,18 @@ py silicium node start ^
   --state-dir ".silicium\networked\%NODE_ID%\state" ^
   --peer-http-bind 0.0.0.0 ^
   --peer-http-port "%PORT%" ^
+  --gossip-enable ^
+  --gossip-bind 0.0.0.0 ^
+  --gossip-port "%PORT%" ^
   --peer-advertise-host "%ADVERTISE%" ^
   --peer-advertise-port "%PORT%" ^
+  --gossip-advertise-host "%ADVERTISE%" ^
+  --gossip-advertise-port "%PORT%" ^
   --seed-peers "%SEED%" ^
   --mesh-key "%MESH%" ^
   --reputation-score "%REPUTATION%" ^
-  --idle-ms 250
+  --idle-ms 250 ^
+  --pull-tasks-enable ^
+  --nat-punch-enable
 
 popd

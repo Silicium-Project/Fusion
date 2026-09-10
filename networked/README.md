@@ -28,14 +28,14 @@ Run from `Network/`.
 On the compute machine:
 
 ```powershell
-.\demo\networked\start-node.cmd worker-1 compute 46101 http://EMITTER_IP:46100 WORKER_IP demo-mesh 120
+.\demo\networked\start-node.cmd worker-1 compute 46101 https://vps-910c1dbc.vps.ovh.net/orchestrator WORKER_IP demo-mesh 120
 ```
 
 On verifier machines:
 
 ```powershell
-.\demo\networked\start-node.cmd verifier-1 verify 46102 http://EMITTER_IP:46100 VERIFIER1_IP demo-mesh 90
-.\demo\networked\start-node.cmd verifier-2 verify 46103 http://EMITTER_IP:46100 VERIFIER2_IP demo-mesh 70
+.\demo\networked\start-node.cmd verifier-1 verify 46102 https://vps-910c1dbc.vps.ovh.net/orchestrator VERIFIER1_IP demo-mesh 90
+.\demo\networked\start-node.cmd verifier-2 verify 46103 https://vps-910c1dbc.vps.ovh.net/orchestrator VERIFIER2_IP demo-mesh 70
 ```
 
 Use the same `mesh-key` on every node for the demo network.
