@@ -410,11 +410,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
-          echo "$cargo_bin" >> "$GITHUB_PATH"
-          export PATH="$cargo_bin:$PATH"
           rustup run stable rustc --version
           rustup run stable cargo --version
+          if command -v cargo >/dev/null 2>&1; then
+            cargo_bin="$(dirname "$(command -v cargo)")"
+          else
+            cargo_bin="$RUNNER_TEMP/rust-toolchain-bin"
+            mkdir -p "$cargo_bin"
+            printf '%s\n' '#!/usr/bin/env bash' 'exec rustup run stable cargo "$@"' > "$cargo_bin/cargo"
+            chmod +x "$cargo_bin/cargo"
+          fi
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+          export PATH="$cargo_bin:$PATH"
+          cargo --version
 
       - name: Cache Rust build
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'

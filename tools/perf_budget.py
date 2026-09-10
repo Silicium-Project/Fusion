@@ -186,14 +186,19 @@ def check_budgets(metrics: dict[str, float | None], budgets: dict[str, float]) -
 
 
 def normalize_command_for_platform(command: list[str], repo_root: Path) -> list[str]:
-    if host_platform_tag() != "windows" or not command:
+    if not command:
         return command
-    head = command[0].replace("\\", "/")
-    if head in {"./silicium", "silicium"}:
+    normalized = list(command)
+    head = normalized[0].replace("\\", "/")
+    if host_platform_tag() == "windows" and head in {"./silicium", "silicium"}:
         script = repo_root / "silicium"
         if script.exists():
-            return [sys.executable, str(script), *command[1:]]
-    return command
+            normalized = [sys.executable, str(script), *normalized[1:]]
+            head = normalized[0]
+    if head == "cargo" and shutil.which("cargo") is None and shutil.which("rustup") is not None:
+        toolchain = os.environ.get("RUSTUP_TOOLCHAIN", "stable").strip() or "stable"
+        return ["rustup", "run", toolchain, "cargo", *normalized[1:]]
+    return normalized
 
 
 def host_platform_tag() -> str:

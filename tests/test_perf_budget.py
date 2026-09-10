@@ -130,6 +130,34 @@ def test_normalize_command_for_platform_windows_silicium(monkeypatch: pytest.Mon
     assert command[2:] == ["budget", "--list"]
 
 
+def test_normalize_cargo_command_uses_rustup_when_proxy_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(perf_budget, "host_platform_tag", lambda: "linux")
+    monkeypatch.setattr(
+        perf_budget.shutil,
+        "which",
+        lambda executable: "/usr/bin/rustup" if executable == "rustup" else None,
+    )
+    monkeypatch.setenv("RUSTUP_TOOLCHAIN", "stable")
+
+    command = perf_budget.normalize_command_for_platform(
+        ["cargo", "test", "--manifest-path", "workloads/raytracer/native/Cargo.toml"],
+        tmp_path,
+    )
+
+    assert command == [
+        "rustup",
+        "run",
+        "stable",
+        "cargo",
+        "test",
+        "--manifest-path",
+        "workloads/raytracer/native/Cargo.toml",
+    ]
+
+
 def test_run_profile_timeout() -> None:
     profile = perf_budget.Profile(
         key="timeout",
