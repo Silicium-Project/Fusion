@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestNetworkRootJobIDNormalizesNestedFragmentIDs(t *testing.T) {
@@ -35,6 +37,47 @@ func TestNetworkTerminalStatusIncludesAllTerminalSchedulerStates(t *testing.T) {
 	if networkTerminalStatus("running") {
 		t.Fatal("running must not be terminal")
 	}
+	for _, status := range []string{"failed", "dead_lettered", "expired"} {
+		if !networkTaskFailed(status) {
+			t.Fatalf("%q must count as a failed task", status)
+		}
+	}
+	if networkTaskFailed("cancelled") {
+		t.Fatal("cancelled must not count as a failed task")
+	}
+}
+
+func TestNetworkTaskFailureDetailsLoadsWorkerArtifacts(t *testing.T) {
+	exportDir := t.TempDir()
+	tasksDir := filepath.Join(exportDir, "tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	item := map[string]any{
+		"task_id": "job-frag-000",
+		"status":  "failed",
+	}
+	result := map[string]any{
+		"success":    false,
+		"error":      "raytracer_fragment_failed",
+		"error_type": "RuntimeError",
+		"traceback":  "Traceback (most recent call last):\n  worker.py:42\nRuntimeError: bad scene",
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(exportDir, "result.job-frag-000.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	details := networkTaskFailureDetails(tasksDir, item)
+	if details["error"] != "raytracer_fragment_failed" || details["error_type"] != "RuntimeError" {
+		t.Fatalf("unexpected failure fields: %#v", details)
+	}
+	if !strings.Contains(stringValue(details["failure_detail"]), "worker.py:42") {
+		t.Fatalf("traceback was not retained: %#v", details)
+	}
 }
 
 func TestCompareSemanticVersions(t *testing.T) {
@@ -57,10 +100,10 @@ func TestCompareSemanticVersions(t *testing.T) {
 
 func TestLoadNetworkPeersAnnotatesOutdatedAndUnknownNodes(t *testing.T) {
 	directory := t.TempDir()
-	peersPath := filepath.Join(directory, "peers.json")
+	peersPath := filepath.Join(directory, "node.orchestrator-1.peers.json")
 	manifestPath := filepath.Join(directory, "manifest.json")
 	peers := map[string]any{"peers": []any{
-		map[string]any{"node_id": "orchestrator-1"},
+		map[string]any{"node_id": "orchestrator-1", "self": true, "last_seen_unix": time.Now().Unix()},
 		map[string]any{"node_id": "old-worker", "app_version": "0.2.9-dev.0", "release_channel": "dev"},
 		map[string]any{"node_id": "current-worker", "app_version": "0.2.9-dev.1", "release_channel": "dev", "release_build": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		map[string]any{"node_id": "stale-build-worker", "app_version": "0.2.9-dev.1", "release_channel": "dev", "release_build": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
@@ -80,6 +123,12 @@ func TestLoadNetworkPeersAnnotatesOutdatedAndUnknownNodes(t *testing.T) {
 	}
 	writeJSON(peersPath, peers)
 	writeJSON(manifestPath, manifest)
+	writeJSON(filepath.Join(directory, "node.orchestrator-1.heartbeat.json"), map[string]any{
+		"node_id":       "orchestrator-1",
+		"timestamp_utc": time.Now().UTC().Format(time.RFC3339),
+		"telemetry":     map[string]any{"system_cpu_percent": 12.5, "system_memory_percent": 41.25, "storage_used_percent": 33.0, "logical_cpu_count": 8},
+	})
+	writeJSON(filepath.Join(directory, "node.orchestrator-1.metrics.json"), map[string]any{"handled": 4, "failed": 1, "updated_utc": time.Now().UTC().Format(time.RFC3339)})
 
 	payload, err := loadNetworkPeers(peersPath, manifestPath)
 	if err != nil {
@@ -103,5 +152,17 @@ func TestLoadNetworkPeersAnnotatesOutdatedAndUnknownNodes(t *testing.T) {
 	}
 	if !annotated[4].(map[string]any)["outdated"].(bool) {
 		t.Fatal("legacy worker without telemetry should require an update")
+	}
+	local := annotated[0].(map[string]any)
+	if local["online"] != true || local["last_seen_utc"] == "" {
+		t.Fatalf("local peer liveness was not annotated: %#v", local)
+	}
+	telemetry, ok := local["telemetry"].(map[string]any)
+	if !ok || telemetry["system_cpu_percent"] != 12.5 {
+		t.Fatalf("local peer telemetry was not loaded: %#v", local)
+	}
+	metrics, ok := payload["metrics"].(map[string]any)
+	if !ok || metrics["telemetry_nodes"] != 1 || metrics["logical_cpu_count"] != 8 {
+		t.Fatalf("network metrics were not aggregated: %#v", payload["metrics"])
 	}
 }

@@ -17,10 +17,18 @@ type componentStatus struct {
 }
 
 type networkStatus struct {
-	Status        string `json:"status"`
-	Peers         int    `json:"peers"`
-	ActivePeers   int    `json:"activePeers"`
-	OutdatedPeers int    `json:"outdatedPeers"`
+	Status              string  `json:"status"`
+	Peers               int     `json:"peers"`
+	ActivePeers         int     `json:"activePeers"`
+	OutdatedPeers       int     `json:"outdatedPeers"`
+	TelemetryNodes      int     `json:"telemetryNodes"`
+	ActiveTasks         int     `json:"activeTasks"`
+	QueueDepth          int     `json:"queueDepth"`
+	LogicalCPUCount     int     `json:"logicalCpuCount"`
+	SystemCPUPercent    float64 `json:"systemCpuPercent,omitempty"`
+	SystemMemoryPercent float64 `json:"systemMemoryPercent,omitempty"`
+	StorageUsedPercent  float64 `json:"storageUsedPercent,omitempty"`
+	UpdatedAt           string  `json:"updatedAt,omitempty"`
 }
 
 type blockchainStatus struct {
@@ -127,7 +135,23 @@ func (h *Handler) buildSystemStatus(ctx context.Context, peersPath, manifestPath
 				value.Network.OutdatedPeers++
 			}
 		}
-		if value.Network.Peers == 0 {
+		if metrics, ok := payload["metrics"].(map[string]any); ok {
+			value.Network.TelemetryNodes = int(networkInt64Value(metrics["telemetry_nodes"]))
+			value.Network.ActiveTasks = int(networkInt64Value(metrics["active_tasks"]))
+			value.Network.QueueDepth = int(networkInt64Value(metrics["queue_depth"]))
+			value.Network.LogicalCPUCount = int(networkInt64Value(metrics["logical_cpu_count"]))
+			if metric, ok := networkFloatValue(metrics["system_cpu_percent"]); ok {
+				value.Network.SystemCPUPercent = metric
+			}
+			if metric, ok := networkFloatValue(metrics["system_memory_percent"]); ok {
+				value.Network.SystemMemoryPercent = metric
+			}
+			if metric, ok := networkFloatValue(metrics["storage_used_percent"]); ok {
+				value.Network.StorageUsedPercent = metric
+			}
+			value.Network.UpdatedAt = stringField(metrics, "updated_utc")
+		}
+		if value.Network.Peers == 0 || value.Network.ActivePeers == 0 {
 			value.Network.Status = "degraded"
 			if value.Status == "operational" {
 				value.Status = "degraded"
@@ -157,6 +181,8 @@ func pingDatabase(parent context.Context, database databasePinger) error {
 func solanaNetwork(rpc string) string {
 	value := strings.ToLower(strings.TrimSpace(rpc))
 	switch {
+	case value == "":
+		return "unknown"
 	case strings.Contains(value, "mainnet"):
 		return "mainnet"
 	case strings.Contains(value, "testnet"):

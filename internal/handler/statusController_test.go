@@ -14,7 +14,7 @@ func TestSystemStatusAggregatesPeersAndConfiguration(t *testing.T) {
 	peersPath := filepath.Join(directory, "peers.json")
 	manifestPath := filepath.Join(directory, "manifest.json")
 	writeStatusFixture(t, peersPath, map[string]any{"peers": []any{
-		map[string]any{"node_id": "orchestrator-1", "online": true},
+		map[string]any{"node_id": "orchestrator-1", "self": true, "online": true},
 		map[string]any{"node_id": "worker-current", "online": true, "app_version": "1.0.0", "release_channel": "prod", "release_build": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 		map[string]any{"node_id": "worker-old", "online": false, "app_version": "0.9.0", "release_channel": "prod"},
 	}})
@@ -46,6 +46,12 @@ func TestStatusCacheExpires(t *testing.T) {
 	}
 	if _, ok := cache.get(now.Add(statusCacheLifetime)); ok {
 		t.Fatal("expired cache entry was returned")
+	}
+}
+
+func TestSolanaNetworkIsUnknownWhenRPCIsNotConfigured(t *testing.T) {
+	if got := solanaNetwork(""); got != "unknown" {
+		t.Fatalf("expected unknown network without an RPC, got %q", got)
 	}
 }
 

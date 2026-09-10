@@ -104,51 +104,126 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sort.Slice(entries, func(i, j int) bool {
-		left, leftErr := entries[i].Info(); right, rightErr := entries[j].Info()
-		if leftErr != nil || rightErr != nil { return entries[i].Name() > entries[j].Name() }
+		left, leftErr := entries[i].Info()
+		right, rightErr := entries[j].Info()
+		if leftErr != nil || rightErr != nil {
+			return entries[i].Name() > entries[j].Name()
+		}
 		return left.ModTime().After(right.ModTime())
 	})
-	terminal := map[string]bool{"completed":true,"failed":true,"dead_lettered":true,"cancelled":true,"canceled":true,"expired":true,"finalized":true,"resolved":true}
+	terminal := map[string]bool{"completed": true, "failed": true, "dead_lettered": true, "cancelled": true, "canceled": true, "expired": true, "finalized": true, "resolved": true}
 	emitterID := silicium.ConfigFromEnv().OrchestratorNodeID
 	active, recent := []map[string]any{}, []map[string]any{}
 	groups := map[string]map[string]any{}
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
-		raw, readErr := os.ReadFile(filepath.Join(tasksDir, entry.Name())); if readErr != nil { continue }
-		var item map[string]any; if json.Unmarshal(raw, &item) != nil { continue }
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, readErr := os.ReadFile(filepath.Join(tasksDir, entry.Name()))
+		if readErr != nil {
+			continue
+		}
+		var item map[string]any
+		if json.Unmarshal(raw, &item) != nil {
+			continue
+		}
 		rootID := networkRootJobID(item)
-		if _, owned := allowed[rootID]; !owned { continue }
+		if _, owned := allowed[rootID]; !owned {
+			continue
+		}
 		emitter := networkTaskEmitter(item)
-		if emitter != "" && emitter != emitterID { continue }
+		if emitter != "" && emitter != emitterID {
+			continue
+		}
+		for key, value := range networkTaskFailureDetails(tasksDir, item) {
+			item[key] = value
+		}
 		status := strings.ToLower(stringField(item, "status"))
-		if terminal[status] { recent = append(recent, item) } else { active = append(active, item) }
+		if terminal[status] {
+			recent = append(recent, item)
+		} else {
+			active = append(active, item)
+		}
 		group := groups[rootID]
-		if group == nil { group = map[string]any{"work_id": rootID, "status": status, "total": 0, "completed": 0, "failed": 0, "active": 0, "subtasks": []map[string]any{}, "updated_at": ""}; groups[rootID] = group }
+		if group == nil {
+			group = map[string]any{"work_id": rootID, "status": status, "total": 0, "completed": 0, "failed": 0, "active": 0, "subtasks": []map[string]any{}, "updated_at": ""}
+			groups[rootID] = group
+		}
 		group["total"] = group["total"].(int) + 1
-		if status == "completed" { group["completed"] = group["completed"].(int) + 1 }
-		if status == "failed" { group["failed"] = group["failed"].(int) + 1 }
-		if !terminal[status] { group["active"] = group["active"].(int) + 1; group["status"] = status }
-		if task, ok := item["task"].(map[string]any); ok && group["workload"] == nil { group["workload"] = stringField(task, "workload"); group["kind"] = stringField(task, "kind") }
-		if emitter != "" && group["emitter_node_id"] == nil { group["emitter_node_id"] = emitter }
-		if updated := stringField(item, "handled_utc"); updated != "" { group["updated_at"] = updated }
+		if status == "completed" {
+			group["completed"] = group["completed"].(int) + 1
+		}
+		if networkTaskFailed(status) {
+			group["failed"] = group["failed"].(int) + 1
+		}
+		if networkTaskFailed(status) {
+			for _, key := range []string{"error", "error_message", "error_type", "traceback", "error_traceback", "failure_detail"} {
+				if value, ok := item[key]; ok && strings.TrimSpace(stringValue(value)) != "" {
+					group[key] = value
+				}
+			}
+		}
+		if !terminal[status] {
+			group["active"] = group["active"].(int) + 1
+			group["status"] = status
+		}
+		if task, ok := item["task"].(map[string]any); ok && group["workload"] == nil {
+			group["workload"] = stringField(task, "workload")
+			group["kind"] = stringField(task, "kind")
+		}
+		if emitter != "" && group["emitter_node_id"] == nil {
+			group["emitter_node_id"] = emitter
+		}
+		if updated := stringField(item, "handled_utc"); updated != "" {
+			group["updated_at"] = updated
+		}
 		subs := group["subtasks"].([]map[string]any)
 		if len(subs) < 256 {
 			tile := map[string]any{"task_id": stringField(item, "task_id"), "status": status, "handled_by": stringField(item, "handled_by")}
-			if task, ok := item["task"].(map[string]any); ok { tile["fragment_index"] = task["fragment_index"]; tile["fragment_count"] = task["fragment_count"]; tile["stage"] = task["kind"] }
+			for _, key := range []string{"error", "error_message", "error_type", "traceback", "error_traceback", "failure_detail"} {
+				if value, ok := item[key]; ok && strings.TrimSpace(stringValue(value)) != "" {
+					tile[key] = value
+				}
+			}
+			if task, ok := item["task"].(map[string]any); ok {
+				tile["fragment_index"] = task["fragment_index"]
+				tile["fragment_count"] = task["fragment_count"]
+				tile["stage"] = task["kind"]
+			}
 			subs = append(subs, tile)
 		}
 		group["subtasks"] = subs
 	}
-	workloads := make([]map[string]any, 0, len(groups)); for _, group := range groups { workloads = append(workloads, group) }
-	for _, group := range workloads { total, done := group["total"].(int), group["completed"].(int); if total > 0 { group["progress_percent"] = float64(done) * 100 / float64(total) } }
-	sort.Slice(workloads, func(i, j int) bool { return stringField(workloads[i], "updated_at") > stringField(workloads[j], "updated_at") })
-	w.Header().Set("Content-Type", "application/json"); w.Header().Set("Cache-Control", "no-store")
+	workloads := make([]map[string]any, 0, len(groups))
+	for _, group := range groups {
+		workloads = append(workloads, group)
+	}
+	for _, group := range workloads {
+		total, done := group["total"].(int), group["completed"].(int)
+		failed := group["failed"].(int)
+		if failed > 0 && done < total {
+			group["status"] = "failed"
+		} else if done == total && total > 0 {
+			group["status"] = "completed"
+		}
+		if total > 0 {
+			group["progress_percent"] = float64(done) * 100 / float64(total)
+		}
+	}
+	sort.Slice(workloads, func(i, j int) bool {
+		return stringField(workloads[i], "updated_at") > stringField(workloads[j], "updated_at")
+	})
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": workloads, "emitter_node_id": emitterID})
 }
 
 func (h *Handler) CancelNetworkTask(w http.ResponseWriter, r *http.Request) {
 	rootID := strings.TrimSpace(mux.Vars(r)["id"])
-	if rootID == "" { http.Error(w, "missing task id", http.StatusBadRequest); return }
+	if rootID == "" {
+		http.Error(w, "missing task id", http.StatusBadRequest)
+		return
+	}
 	userID, ok := userIDFromRequest(r)
 	if !ok {
 		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
@@ -160,20 +235,45 @@ func (h *Handler) CancelNetworkTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tasksDir := networkTasksDirectory()
-	entries, err := os.ReadDir(tasksDir); if err != nil { http.Error(w, err.Error(), http.StatusInternalServerError); return }
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	changed := 0
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" { continue }
-		path := filepath.Join(tasksDir, entry.Name()); raw, readErr := os.ReadFile(path); if readErr != nil { continue }
-		var item map[string]any; if json.Unmarshal(raw, &item) != nil { continue }
-		if networkRootJobID(item) != rootID { continue }
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(tasksDir, entry.Name())
+		raw, readErr := os.ReadFile(path)
+		if readErr != nil {
+			continue
+		}
+		var item map[string]any
+		if json.Unmarshal(raw, &item) != nil {
+			continue
+		}
+		if networkRootJobID(item) != rootID {
+			continue
+		}
 		emitter := networkTaskEmitter(item)
-		if emitter != "" && emitter != silicium.ConfigFromEnv().OrchestratorNodeID { continue }
-		status := strings.ToLower(stringField(item, "status")); if networkTerminalStatus(status) { continue }
-		item["status"] = "cancelled"; item["cancelled_utc"] = time.Now().UTC().Format(time.RFC3339)
-		encoded, _ := json.Marshal(item); if os.WriteFile(path, encoded, 0o600) == nil { changed++ }
+		if emitter != "" && emitter != silicium.ConfigFromEnv().OrchestratorNodeID {
+			continue
+		}
+		status := strings.ToLower(stringField(item, "status"))
+		if networkTerminalStatus(status) {
+			continue
+		}
+		item["status"] = "cancelled"
+		item["cancelled_utc"] = time.Now().UTC().Format(time.RFC3339)
+		encoded, _ := json.Marshal(item)
+		if os.WriteFile(path, encoded, 0o600) == nil {
+			changed++
+		}
 	}
-	w.Header().Set("Content-Type", "application/json"); _ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "work_id": rootID, "cancelled": changed})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "work_id": rootID, "cancelled": changed})
 }
 
 func (h *Handler) GetNetworkPeers(w http.ResponseWriter, r *http.Request) {
@@ -211,6 +311,7 @@ func loadNetworkPeers(peersPath, manifestPath string) (map[string]any, error) {
 	payload["release_channels"] = channels
 
 	peers, _ := payload["peers"].([]any)
+	registryNodeID := networkRegistryNodeID(peersPath)
 	for _, item := range peers {
 		peer, ok := item.(map[string]any)
 		if !ok {
@@ -230,7 +331,8 @@ func loadNetworkPeers(peersPath, manifestPath string) (map[string]any, error) {
 		build := stringField(peer, "release_build")
 		status := "current"
 		outdated := false
-		if stringField(peer, "node_id") == "orchestrator-1" {
+		self, _ := peer["self"].(bool)
+		if self || (registryNodeID != "" && stringField(peer, "node_id") == registryNodeID) {
 			status = "server"
 			outdated = false
 		} else if version == "" || channel == "unknown" {
@@ -252,7 +354,16 @@ func loadNetworkPeers(peersPath, manifestPath string) (map[string]any, error) {
 		peer["version_status"] = status
 		peer["outdated"] = outdated
 	}
+	enrichNetworkPeers(payload, peersPath)
 	return payload, nil
+}
+
+func networkRegistryNodeID(peersPath string) string {
+	name := filepath.Base(peersPath)
+	if !strings.HasPrefix(name, "node.") || !strings.HasSuffix(name, ".peers.json") {
+		return ""
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(name, "node."), ".peers.json")
 }
 
 func stringField(values map[string]any, key string) string {

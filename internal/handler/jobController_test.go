@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,6 +189,62 @@ func TestNetworkJobSummaryUsesConfiguredExportDirectory(t *testing.T) {
 	fragments, ok := summary["fragments"].([]map[string]any)
 	if !ok || len(fragments) != 1 || fragments[0]["handledBy"] != "worker-local" {
 		t.Fatalf("unexpected fragments: %#v", summary["fragments"])
+	}
+}
+
+func TestNetworkJobSummaryIncludesWorkerFailureDetails(t *testing.T) {
+	exportDir := t.TempDir()
+	tasksDir := filepath.Join(exportDir, "tasks")
+	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	task := map[string]any{
+		"task_id":     "rpc-job-fail-frag-000-compute",
+		"root_job_id": "rpc-job-fail",
+		"status":      "failed",
+		"handled_by":  "worker-local",
+		"task": map[string]any{
+			"kind":           "compute",
+			"fragment_index": 0,
+			"fragment_count": 1,
+		},
+	}
+	raw, err := json.Marshal(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tasksDir, "failed.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result := map[string]any{
+		"success":    false,
+		"error":      "raytracer_fragment_failed",
+		"error_type": "RuntimeError",
+		"traceback":  "Traceback (most recent call last):\n  worker.py:42\nRuntimeError: bad scene",
+	}
+	raw, err = json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(exportDir, "result.rpc-job-fail-frag-000-compute.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SILICIUM_ORCHESTRATOR_EXPORT_DIR", exportDir)
+	h := New(nil)
+	summary := h.networkJobSummary("rpc-job-fail", map[string]any{"status": "queued"})
+	fragments, ok := summary["fragments"].([]map[string]any)
+	if !ok || len(fragments) != 1 {
+		t.Fatalf("unexpected fragments: %#v", summary["fragments"])
+	}
+	if !strings.Contains(fragments[0]["failureDetail"].(string), "worker.py:42") {
+		t.Fatalf("worker traceback missing from fragment: %#v", fragments[0])
+	}
+	if !strings.Contains(summary["failure_detail"].(string), "RuntimeError: bad scene") {
+		t.Fatalf("worker traceback missing from summary: %#v", summary)
+	}
+	if summary["stage"] != "failed" {
+		t.Fatalf("task registry status must override stale fallback status: %#v", summary)
 	}
 }
 
