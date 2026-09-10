@@ -20,8 +20,8 @@ Recommended first public setup:
    - Nuxt frontend on `127.0.0.1:3000`
    - Go backend on `127.0.0.1:8080`
    - Devnet dashboard on `127.0.0.1:5174` for local/admin inspection only
-   - Silicium orchestrator on public port `46100`
-2. Remote worker/verifier machines connect to the VPS orchestrator.
+   - Silicium orchestrator on host port `46100`, behind the HTTPS `/orchestrator/` route
+2. Remote worker/verifier machines connect to the HTTPS orchestrator rendezvous URL.
 3. Nginx exposes:
    - `https://silicium.example.com`
    - `https://api.silicium.example.com`
@@ -268,11 +268,11 @@ post-deploy checks as standard deployment, then rewrites
 On a worker machine, install the repo and raytracer runtime, then start:
 
 ```bash
-bash deploy/linux/start-node.sh worker-1 compute 46101 http://ORCHESTRATOR_PUBLIC_IP:46100 WORKER_PUBLIC_IP demo-mesh 120
+bash deploy/linux/start-node.sh worker-1 compute 46101 https://vps-910c1dbc.vps.ovh.net/orchestrator WORKER_PUBLIC_IP demo-mesh 120
 ```
 
 On a verifier:
 
 ```bash
-bash deploy/linux/start-node.sh verifier-1 verify 46102 http://ORCHESTRATOR_PUBLIC_IP:46100 VERIFIER_PUBLIC_IP demo-mesh 90
+bash deploy/linux/start-node.sh verifier-1 verify 46102 https://vps-910c1dbc.vps.ovh.net/orchestrator VERIFIER_PUBLIC_IP demo-mesh 90
 ```

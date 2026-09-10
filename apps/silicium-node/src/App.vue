@@ -493,9 +493,27 @@ import {
   taskStatusLabel,
 } from './format';
 
+const DEFAULT_ORCHESTRATOR_URL = 'https://vps-910c1dbc.vps.ovh.net/orchestrator';
+const LEGACY_ORCHESTRATOR_URLS = new Set([
+  'http://213.32.68.67:46100',
+  'https://213.32.68.67:46100',
+  'http://vps-910c1dbc.vps.ovh.net:46100',
+  'https://vps-910c1dbc.vps.ovh.net:46100',
+  'http://silicium.example.com:46100',
+  'https://silicium.example.com:46100',
+]);
+
+function migrateOrchestratorUrl(value: string) {
+  const normalized = value.trim().replace(/\/+$/, '');
+  const base = normalized.toLowerCase().replace(/\/orchestrator$/, '');
+  return LEGACY_ORCHESTRATOR_URLS.has(base)
+    ? DEFAULT_ORCHESTRATOR_URL
+    : normalized;
+}
+
 const form = reactive({
   repoRoot: localStorage.getItem('silicium.repoRoot') || '',
-  orchestratorUrl: localStorage.getItem('silicium.orchestratorUrl') || 'http://213.32.68.67:46100',
+  orchestratorUrl: migrateOrchestratorUrl(localStorage.getItem('silicium.orchestratorUrl') || DEFAULT_ORCHESTRATOR_URL),
   advertiseHost: localStorage.getItem('silicium.advertiseHost') || '',
   nodeId: localStorage.getItem('silicium.nodeId') || `silicium-${crypto.randomUUID().slice(0, 8)}`,
   reputationScore: Number(localStorage.getItem('silicium.reputationScore') || 100),

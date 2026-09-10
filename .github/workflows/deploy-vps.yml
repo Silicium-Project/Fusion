@@ -968,6 +968,18 @@ jobs:
           cat /var/lib/silicium/releases/current.env
           REMOTE
 
+      - name: Verify public orchestrator route from CI
+        env:
+          PUBLIC_ORCHESTRATOR_URL: https://vps-910c1dbc.vps.ovh.net/orchestrator
+        run: |
+          set -euo pipefail
+          health="$(curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 15 "$PUBLIC_ORCHESTRATOR_URL/healthz")"
+          if [[ "$health" != *'"service":"network_node"'* ]]; then
+            echo "The public orchestrator route did not reach the integrated network node: $health" >&2
+            exit 1
+          fi
+          echo "Public orchestrator route is serving the integrated network node."
+
       - name: Publish deployment summary
         run: |
           {

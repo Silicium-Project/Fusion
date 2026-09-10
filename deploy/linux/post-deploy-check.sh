@@ -6,6 +6,7 @@ COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
 COMPOSE_ENV="/etc/silicium/compose.env"
 EXPERIMENT_API_ENV="/etc/silicium/experiment-api.env"
 UPDATE_CHANNELS_ENV="/etc/silicium/update-channels.env"
+ORCHESTRATOR_ENV="/etc/silicium/orchestrator.env"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/linux/post-deploy-check.sh $ROOT" >&2
@@ -15,6 +16,11 @@ fi
 [[ -f "$COMPOSE_FILE" ]] || { echo "Missing compose file: $COMPOSE_FILE" >&2; exit 1; }
 [[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
 [[ -f "$EXPERIMENT_API_ENV" ]] || { echo "Missing experiment API env: $EXPERIMENT_API_ENV" >&2; exit 1; }
+[[ -f "$ORCHESTRATOR_ENV" ]] || { echo "Missing orchestrator env: $ORCHESTRATOR_ENV" >&2; exit 1; }
+
+set -a
+. "$ORCHESTRATOR_ENV"
+set +a
 
 if [[ -f "$UPDATE_CHANNELS_ENV" ]]; then
   set -a
@@ -55,7 +61,17 @@ done
 echo "Checking local HTTP health endpoints..."
 curl -fsS --max-time 8 http://127.0.0.1:8080/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1:3000 >/dev/null
-curl -fsS --max-time 8 http://127.0.0.1:46100/health >/dev/null
+orchestrator_health="$(curl -fsS --max-time 8 http://127.0.0.1:${SILICIUM_NODE_PORT:-46100}/healthz)"
+if [[ "$orchestrator_health" != *'"service":"network_node"'* ]]; then
+  echo "The integrated network node is not serving the orchestrator port: $orchestrator_health" >&2
+  exit 1
+fi
+export_dir="${SILICIUM_EXPORT_DIR:-/var/lib/silicium/network/orchestrator/export}"
+heartbeat_file="$export_dir/node.$(printf '%s' "${SILICIUM_NODE_ID:-orchestrator-1}" | tr -c 'A-Za-z0-9_.-' '_').heartbeat.json"
+if [[ ! -s "$heartbeat_file" ]]; then
+  echo "Missing live orchestrator heartbeat: $heartbeat_file" >&2
+  exit 1
+fi
 if systemctl cat silicium-experiment-api.service >/dev/null 2>&1; then
   if ! systemctl is-active --quiet silicium-experiment-api.service; then
     echo "silicium-experiment-api.service is installed but not active." >&2
@@ -102,6 +118,14 @@ if systemctl list-unit-files --type service --all 2>/dev/null | awk '{print $1}'
   systemctl is-active --quiet silicium-node.service
 else
   echo "Skipping silicium-node.service check: service is not installed on this host."
+fi
+
+public_orchestrator_url="${SILICIUM_NODE_ADVERTISE_URL:-https://vps-910c1dbc.vps.ovh.net/orchestrator}"
+echo "Checking public orchestrator route: ${public_orchestrator_url%/}/healthz"
+public_health="$(curl -fsS --max-time 12 "${public_orchestrator_url%/}/healthz")"
+if [[ "$public_health" != *'"service":"network_node"'* ]]; then
+  echo "The public route does not reach the integrated network node: $public_health" >&2
+  exit 1
 fi
 
 echo "Checking deployed release marker..."

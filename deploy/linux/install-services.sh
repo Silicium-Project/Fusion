@@ -23,10 +23,35 @@ sys.exit(0 if not missing else 1)
 PY
 then
   apt-get update
-  apt-get install -y --no-install-recommends python3-protobuf python3-zmq
+  apt-get install -y --no-install-recommends python3-cryptography python3-protobuf python3-zmq
+fi
+
+if ! python3 -c 'import cryptography' >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y --no-install-recommends python3-cryptography
 fi
 
 mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana /var/lib/silicium/downloads
+
+ORCHESTRATOR_ENV=/etc/silicium/orchestrator.env
+if [[ ! -f "$ORCHESTRATOR_ENV" ]]; then
+  echo "Missing $ORCHESTRATOR_ENV; copy deploy/env/orchestrator.example.env and configure it before installing services." >&2
+  exit 1
+fi
+
+ensure_env_default() {
+  local key="$1"
+  local value="$2"
+  if ! grep -q -E "^${key}=" "$ORCHESTRATOR_ENV"; then
+    printf '%s=%s\n' "$key" "$value" >> "$ORCHESTRATOR_ENV"
+  fi
+}
+
+# The public URL is the stable HTTPS rendezvous used by desktop nodes.  Keep
+# operator-provided values intact while making upgrades converge old env files
+# that predate the integrated peer daemon.
+ensure_env_default SILICIUM_NODE_ADVERTISE_URL "https://vps-910c1dbc.vps.ovh.net/orchestrator"
+unset -f ensure_env_default
 
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-orchestrator.service > /etc/systemd/system/silicium-orchestrator.service
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-update-manifest.service > /etc/systemd/system/silicium-update-manifest.service
@@ -62,6 +87,7 @@ if [[ ! -f /etc/silicium/experiment-api.env ]]; then
   cp deploy/env/experiment-api.example.env /etc/silicium/experiment-api.env
 fi
 chmod 0755 "$ROOT/deploy/linux/publish-update-manifest.sh"
+chmod 0755 "$ROOT/deploy/linux/start-orchestrator.sh"
 
 systemctl daemon-reload
 systemctl enable --now silicium-update-manifest.timer

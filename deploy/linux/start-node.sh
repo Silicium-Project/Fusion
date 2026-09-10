@@ -25,11 +25,17 @@ python3 silicium node start \
   --state-dir ".silicium/networked/$NODE_ID/state" \
   --peer-http-bind 0.0.0.0 \
   --peer-http-port "$PORT" \
+  --gossip-enable \
+  --gossip-bind 0.0.0.0 \
+  --gossip-port "$PORT" \
   --peer-advertise-host "$ADVERTISE_HOST" \
   --peer-advertise-port "$PORT" \
+  --gossip-advertise-host "$ADVERTISE_HOST" \
+  --gossip-advertise-port "$PORT" \
   --seed-peers "$SEED_URL" \
   --mesh-key "$MESH_KEY" \
   --reputation-score "$REPUTATION" \
+  --pull-tasks-enable \
   --nat-punch-enable \
   --p2p-direct-transport-backend auto \
   "${EXTRA_ARGS[@]}"

@@ -83,7 +83,7 @@ npm run prepare:runtime
 Default public orchestrator:
 
 ```text
-http://213.32.68.67:46100
+https://vps-910c1dbc.vps.ovh.net/orchestrator
 ```
 
 ## Current scope

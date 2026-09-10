@@ -9,7 +9,7 @@ use std::{
     env,
     fs::{self, OpenOptions},
     io::Read,
-    net::{TcpStream, ToSocketAddrs, UdpSocket},
+    net::{TcpStream, UdpSocket},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
@@ -37,6 +37,7 @@ struct ProcessState {
 
 const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
 const SUPERVISOR_RUN_KEY_NAME: &str = "SiliciumNodeService";
+const DEFAULT_ORCHESTRATOR_URL: &str = "https://vps-910c1dbc.vps.ovh.net/orchestrator";
 // NAT/ICE discovery and the first scheduler poll can legitimately take longer
 // than a short watchdog interval.  Restarting during that bootstrap period
 // prevents a node from ever becoming available to claim work.
@@ -370,6 +371,7 @@ fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<Stri
     }
 
     config.node_id = effective_node_id(&config.node_id);
+    config.orchestrator_url = migrate_legacy_orchestrator_url(&config.orchestrator_url);
     config.orchestrator_url = normalize_orchestrator_url(&config.orchestrator_url)?;
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
@@ -618,7 +620,7 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
     let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
     let orchestrator_url = read_service_config(&root)
         .map(|config| config.orchestrator_url)
-        .unwrap_or_else(|_| "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string());
+        .unwrap_or_else(|_| DEFAULT_ORCHESTRATOR_URL.to_string());
     let log_dir = node_app_log_path(&root, "silicium-node.err.log")
         .parent()
         .map(|path| path.display().to_string())
@@ -655,7 +657,7 @@ fn app_defaults() -> AppDefaults {
         orchestrator_url: saved_config
             .as_ref()
             .map(|config| config.orchestrator_url.clone())
-            .unwrap_or_else(|| "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string()),
+            .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_URL.to_string()),
         node_id: saved_config
             .map(|config| effective_node_id(&config.node_id))
             .unwrap_or_else(persistent_node_id),
@@ -1609,9 +1611,17 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("0.0.0.0")
             .arg("--peer-http-port")
             .arg("46101")
+            .arg("--gossip-bind")
+            .arg("0.0.0.0")
+            .arg("--gossip-port")
+            .arg("46101")
             .arg("--peer-advertise-host")
             .arg(&advertise_host)
             .arg("--peer-advertise-port")
+            .arg("46101")
+            .arg("--gossip-advertise-host")
+            .arg(&advertise_host)
+            .arg("--gossip-advertise-port")
             .arg("46101")
             .arg("--seed-peers")
             .arg(&config.orchestrator_url)
@@ -1879,7 +1889,7 @@ pub fn run_supervisor_cli() -> i32 {
     thread::spawn(run_background_update_loop);
     let config = read_service_config(&repo_root).unwrap_or_else(|_| NodeConfig {
         repo_root: repo_root.display().to_string(),
-        orchestrator_url: "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string(),
+        orchestrator_url: DEFAULT_ORCHESTRATOR_URL.to_string(),
         advertise_host: detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
         node_id: "silicium-desktop-node".to_string(),
         reputation_score: 100,
@@ -2119,7 +2129,8 @@ fn persistent_node_id() -> String {
 }
 
 fn normalize_orchestrator_url(value: &str) -> Result<String, String> {
-    let trimmed = value.trim().trim_end_matches('/');
+    let migrated = migrate_legacy_orchestrator_url(value);
+    let trimmed = migrated.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         return Err("orchestrator_url_missing".to_string());
     }
@@ -2139,6 +2150,23 @@ fn normalize_orchestrator_url(value: &str) -> Result<String, String> {
     Ok(trimmed.to_string())
 }
 
+fn migrate_legacy_orchestrator_url(value: &str) -> String {
+    let trimmed = value.trim().trim_end_matches('/');
+    let lower = trimmed.to_ascii_lowercase();
+    let legacy_hosts = [
+        "http://213.32.68.67:46100",
+        "https://213.32.68.67:46100",
+        "http://vps-910c1dbc.vps.ovh.net:46100",
+        "https://vps-910c1dbc.vps.ovh.net:46100",
+        "http://silicium.example.com:46100",
+        "https://silicium.example.com:46100",
+    ];
+    if legacy_hosts.iter().any(|host| lower == *host || lower == format!("{host}/orchestrator")) {
+        return DEFAULT_ORCHESTRATOR_URL.to_string();
+    }
+    trimmed.to_string()
+}
+
 fn orchestrator_check(url: &str) -> CheckItem {
     let normalized = match normalize_orchestrator_url(url) {
         Ok(value) => value,
@@ -2150,37 +2178,56 @@ fn orchestrator_check(url: &str) -> CheckItem {
             };
         }
     };
-    let secure = normalized.starts_with("https://");
-    let authority = normalized
-        .split_once("://")
-        .map(|(_, rest)| rest)
-        .unwrap_or_default()
-        .split('/')
-        .next()
-        .unwrap_or_default();
-    let address = if authority.contains(':') {
-        authority.to_string()
+    let health_url = format!("{}/healthz", normalized.trim_end_matches('/'));
+    let curl = if cfg!(target_os = "windows") {
+        "curl.exe"
     } else {
-        format!("{}:{}", authority, if secure { 443 } else { 80 })
+        "curl"
     };
-    let reachable = address
-        .to_socket_addrs()
-        .ok()
-        .and_then(|mut addresses| {
-            addresses
-                .any(|socket| {
-                    TcpStream::connect_timeout(&socket, Duration::from_millis(800)).is_ok()
-                })
-                .then_some(())
-        })
-        .is_some();
-    CheckItem {
-        name: "Orchestrateur".to_string(),
-        ok: reachable,
-        detail: if reachable {
-            format!("{} joignable", normalized)
-        } else {
-            format!("{} injoignable", normalized)
+    let mut command = Command::new(curl);
+    command
+        .args([
+            "--fail",
+            "--silent",
+            "--show-error",
+            "--connect-timeout",
+            "5",
+            "--max-time",
+            "8",
+        ])
+        .arg(&health_url)
+        .stdin(Stdio::null());
+    configure_detached_process(&mut command);
+    match command.output() {
+        Ok(output) if output.status.success() => {
+            let body = String::from_utf8_lossy(&output.stdout);
+            let integrated = body.contains("\"service\":\"network_node\"");
+            CheckItem {
+                name: "Orchestrateur".to_string(),
+                ok: integrated,
+                detail: if integrated {
+                    format!("{} repond avec le daemon reseau integre", normalized)
+                } else {
+                    format!("{} repond avec un service inattendu", normalized)
+                },
+            }
+        }
+        Ok(output) => {
+            let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            CheckItem {
+                name: "Orchestrateur".to_string(),
+                ok: false,
+                detail: if detail.is_empty() {
+                    format!("{} injoignable", normalized)
+                } else {
+                    format!("{} injoignable: {}", normalized, detail)
+                },
+            }
+        }
+        Err(error) => CheckItem {
+            name: "Orchestrateur".to_string(),
+            ok: false,
+            detail: format!("verification impossible: {}", error),
         },
     }
 }
@@ -2382,7 +2429,7 @@ fn read_service_config(repo_root: &Path) -> Result<NodeConfig, String> {
         fs::read_to_string(service_config_path(repo_root)).map_err(|error| error.to_string())?;
     let mut config = NodeConfig {
         repo_root: repo_root.display().to_string(),
-        orchestrator_url: "https://vps-910c1dbc.vps.ovh.net/orchestrator".to_string(),
+        orchestrator_url: DEFAULT_ORCHESTRATOR_URL.to_string(),
         advertise_host: String::new(),
         node_id: "silicium-desktop-node".to_string(),
         reputation_score: 100,
@@ -2402,6 +2449,7 @@ fn read_service_config(repo_root: &Path) -> Result<NodeConfig, String> {
             _ => {}
         }
     }
+    config.orchestrator_url = migrate_legacy_orchestrator_url(&config.orchestrator_url);
     Ok(config)
 }
 
@@ -3480,6 +3528,24 @@ mod tests {
         );
         assert!(normalize_orchestrator_url("127.0.0.1:46100").is_err());
         assert!(normalize_orchestrator_url("https://").is_err());
+    }
+
+    #[test]
+    fn legacy_public_orchestrator_urls_migrate_to_tls_proxy() {
+        for value in [
+            "http://213.32.68.67:46100",
+            "https://213.32.68.67:46100/",
+            "http://vps-910c1dbc.vps.ovh.net:46100/orchestrator",
+        ] {
+            assert_eq!(
+                normalize_orchestrator_url(value).unwrap(),
+                DEFAULT_ORCHESTRATOR_URL
+            );
+        }
+        assert_eq!(
+            normalize_orchestrator_url("http://127.0.0.1:46100").unwrap(),
+            "http://127.0.0.1:46100"
+        );
     }
 
     #[test]
