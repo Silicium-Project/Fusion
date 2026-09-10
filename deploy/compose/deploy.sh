@@ -53,6 +53,18 @@ backend_uid="${backend_identity%%:*}"
 backend_gid="${backend_identity##*:}"
 install -d -m 0750 -o "$backend_uid" -g "$backend_gid" /var/lib/silicium/site/jobs /var/lib/silicium/site/runtime
 
+# The API submits task envelopes into the host-side orchestrator export. Keep
+# the shared control-plane directories writable by the container user while
+# leaving the rest of the export tree untouched.
+orchestrator_export_dir="/var/lib/silicium/network/orchestrator/export"
+for shared_dir in \
+  "$orchestrator_export_dir" \
+  "$orchestrator_export_dir/tasks" \
+  "$orchestrator_export_dir/requests" \
+  "$orchestrator_export_dir/p2p"; do
+  install -d -m 0770 -o "$backend_uid" -g "$backend_gid" "$shared_dir"
+done
+
 # The orchestrator runs on the host and keeps its private identity key mode
 # 0600. The API container must sign task-control messages as the same identity,
 # but it must not receive the host service's key path directly. Maintain a
