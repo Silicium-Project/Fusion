@@ -128,18 +128,14 @@ services:
     - reputation_bridge
     - frontend
     - dashboard
-    ports:
-    - 80:80
-    - 443:443
-    extra_hosts:
-    - host.docker.internal:172.18.0.1
+    # The ingress must reach the host-side orchestrator on 46100. Sharing the
+    # host network also lets it use the loopback-published web services without
+    # relying on Docker bridge hairpin routing.
+    network_mode: host
     volumes:
     - ./nginx.conf:/etc/nginx/nginx.conf:ro
     - /var/lib/silicium:/var/lib/silicium:ro
     - /etc/letsencrypt:/etc/letsencrypt:ro
-    networks:
-    - backend
-    - frontend
 networks:
   backend:
     name: silicium-backend

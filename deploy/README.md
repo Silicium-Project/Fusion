@@ -154,10 +154,11 @@ Keep the existing `/etc/silicium/backend.env` and its secrets. Compose injects
 the container PostgreSQL URL at runtime; do not replace the backend environment
 file with the example file.
 
-Compose reaches the host-side orchestrator and experiment/MCP RPC event socket
-through `host.docker.internal`; the Compose file maps that name to the
-`172.18.0.1` gateway of the named Docker network. The HTTP experiment API and
-its control RPC remain
+The backend reaches the host-side orchestrator and experiment/MCP RPC event
+socket through `host.docker.internal`; the Compose file maps that name to the
+`172.18.0.1` gateway of the named Docker network. The reverse proxy uses host
+network mode and reaches the host-side services through loopback. The HTTP
+experiment API and its control RPC remain
 private to the host; only the event socket needed by the backend is reachable
 from the backend container.
 
