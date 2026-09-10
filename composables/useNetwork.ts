@@ -78,8 +78,8 @@ export function useNetwork() {
     const scope = String(user.value?.id || 'current');
     try {
       const [nextPeers, nextTasks] = await Promise.all([
-        clientCache.remember(`network:${scope}:peers`, () => authorizedFetch<NetworkPeersResponse>('/jobs/network/peers'), { ttl: 10_000, force }),
-        clientCache.remember(`network:${scope}:tasks`, () => authorizedFetch<NetworkTasksResponse>('/jobs/network/tasks'), { ttl: 6_000, force }),
+        clientCache.remember(`network:${scope}:peers`, () => authorizedFetch<NetworkPeersResponse>('/jobs/network/peers'), { ttl: 2_000, force }),
+        clientCache.remember(`network:${scope}:tasks`, () => authorizedFetch<NetworkTasksResponse>('/jobs/network/tasks'), { ttl: 2_000, force }),
       ]);
       peersPayload.value = nextPeers;
       tasksPayload.value = nextTasks;

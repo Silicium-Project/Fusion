@@ -24,14 +24,14 @@
 
 <script setup lang="ts">
 import type { NetworkSubtask } from '~/types/api';
-import { compactIdentifier, formatDate, isTerminalNetworkStatus } from '~/utils/format';
+import { compactIdentifier, formatDate } from '~/utils/format';
 import { compactJobError } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const network = useNetwork();
 const { onlinePeers, onlineRoleGroups, outdatedCount, onlineCount, loading, error, tasksPayload, networkMetrics, lastUpdatedAt, loadNetwork } = network;
-const workloads = computed(() => tasksPayload.value.workloads || []);
+const workloads = computed(() => (tasksPayload.value.workloads || []).filter(item => Number(item.active || 0) > 0));
 const emitterNodeId = computed(() => tasksPayload.value.emitter_node_id || workloads.value.find(item => item.emitter_node_id)?.emitter_node_id || '');
-const activeCount = computed(() => workloads.value.filter(item => !isTerminalNetworkStatus(item.status)).length);
+const activeCount = computed(() => workloads.value.length);
 function taskFailure(task: NetworkSubtask): string { return String(task.failureDetail || task.failure_detail || task.error || task.error_message || task.traceback || task.error_traceback || ''); }
 const flow = [{ title: 'Nouveau projet', detail: 'Projet reçu', icon: 'upload' }, { title: 'Répartition', detail: 'Machines choisies', icon: 'layers' }, { title: 'Calcul', detail: 'Parties traitées', icon: 'processor' }, { title: 'Contrôle', detail: 'Résultats comparés', icon: 'shield' }, { title: 'Résultat', detail: 'Réponse réunie', icon: 'result' }];
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -39,7 +39,7 @@ onMounted(() => {
   loadNetwork().catch(() => undefined);
   refreshTimer = setInterval(() => {
     if (document.visibilityState === 'visible') loadNetwork().catch(() => undefined);
-  }, 12_000);
+  }, 5_000);
 });
 onBeforeUnmount(() => { if (refreshTimer) clearInterval(refreshTimer); });
 useSeoMeta({ title: 'Réseau — Silicium' });
