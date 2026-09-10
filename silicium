@@ -172,6 +172,8 @@ TUI_CONNECTORS = {"inprocess", "stdio", "http"}
 MCP_DEFAULT_BIND = "127.0.0.1"
 WORLD_DEFAULT_GOSSIP_PORT = 46000
 WORLD_DEFAULT_PEER_HTTP_PORT = 46001
+DEFAULT_PEER_SYNC_INTERVAL_S = 5
+DEFAULT_PEER_STALE_AFTER_S = 15
 WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 DEFAULT_PUBLIC_STUN_SERVER = "stun.l.google.com:19302"
@@ -2762,9 +2764,9 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gossip-advertise-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_ADVERTISE_PORT", "0")))
     parser.add_argument("--seed-peers", default=os.environ.get("SILICIUM_SEED_PEERS", ""))
     parser.add_argument("--mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", ""))
-    parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", "15")))
+    parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", str(DEFAULT_PEER_SYNC_INTERVAL_S))))
     parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
-    parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", "45")))
+    parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", str(DEFAULT_PEER_STALE_AFTER_S))))
     parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
     parser.add_argument("--relay-hops", type=int, default=int(os.environ.get("SILICIUM_RELAY_HOPS", "2")))
     parser.add_argument("--identity-key-path", default=os.environ.get("SILICIUM_IDENTITY_KEY_PATH", ""))

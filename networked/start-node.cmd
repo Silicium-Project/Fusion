@@ -48,6 +48,8 @@ py silicium node start ^
   --seed-peers "%SEED%" ^
   --mesh-key "%MESH%" ^
   --reputation-score "%REPUTATION%" ^
+  --peer-sync-interval-s 5 ^
+  --peer-stale-after-s 15 ^
   --idle-ms 250 ^
   --pull-tasks-enable ^
   --nat-punch-enable

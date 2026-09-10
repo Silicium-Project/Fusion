@@ -2697,6 +2697,39 @@ def test_orphaned_local_running_task_is_closed_as_interrupted(tmp_path: Path) ->
     assert persisted["error_type"] == "TaskInterrupted"
 
 
+def test_running_task_on_disconnected_worker_is_closed_as_worker_lost(tmp_path: Path) -> None:
+    export_dir = tmp_path / "running-lost-worker-task"
+    node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="storage"))
+    node.peer_network._peers["worker-a"] = {
+        "node_id": "worker-a",
+        "last_seen_unix": int(time.time()) - 120,
+        "roles": ["compute"],
+    }
+    envelope = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": "running-lost-worker-task-001",
+        "status": "running",
+        "handled_by": "worker-a",
+        "dispatched_to": "worker-a",
+        "required_roles": ["compute"],
+        "task": {"kind": "compute"},
+    }
+    network_node.enqueue_task_envelope(export_dir, envelope)
+    network_node.atomic_write_json(
+        export_dir / "tasks" / f"{_path_id('running-lost-worker-task-001')}.json",
+        envelope,
+    )
+
+    assert node.task_queue_snapshot() == []
+    persisted = json.loads(
+        (export_dir / "tasks" / f"{_path_id('running-lost-worker-task-001')}.json").read_text(encoding="utf-8")
+    )
+    assert persisted["status"] == "failed"
+    assert persisted["error"] == "task_worker_lost"
+    assert persisted["error_type"] == "TaskWorkerLost"
+
+
 def test_dispatched_task_to_stale_worker_is_closed_as_worker_lost(tmp_path: Path) -> None:
     export_dir = tmp_path / "lost-worker-task"
     node = network_node.NetworkNode(_config(export_dir, "orchestrator", roles="storage"))

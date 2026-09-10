@@ -54,6 +54,8 @@ WORLD_DEFAULT_GOSSIP_PORT = 46000
 WORLD_DEFAULT_PEER_HTTP_PORT = 46001
 WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
+DEFAULT_PEER_SYNC_INTERVAL_S = 5
+DEFAULT_PEER_STALE_AFTER_S = 15
 DEFAULT_PUBLIC_STUN_SERVER = "stun.l.google.com:19302"
 ATOMIC_WRITE_LOCK = threading.Lock()
 
@@ -286,9 +288,9 @@ class NodeConfig:
     gossip_advertise_port: int = 0
     seed_peers: list[str] = field(default_factory=list)
     mesh_key: str = ""
-    peer_sync_interval_s: int = 15
+    peer_sync_interval_s: int = DEFAULT_PEER_SYNC_INTERVAL_S
     peer_event_limit: int = 128
-    peer_stale_after_s: int = 45
+    peer_stale_after_s: int = DEFAULT_PEER_STALE_AFTER_S
     relay_enable: bool = False
     relay_hops: int = 2
     identity_key_path: str = ""
@@ -5418,7 +5420,7 @@ class NetworkNode:
                 self.peer_network.announce()
 
     def reconcile_orphaned_running_tasks(self) -> None:
-        """Close local tasks left active after a crash or worker disconnect."""
+        """Close tasks left active after a crash or worker disconnect."""
         with self._activity_lock:
             active_ids = {
                 safe_id(str(item.get("item_id", "")))
@@ -5426,7 +5428,8 @@ class NetworkNode:
                 if str(item.get("item_id", "")).strip()
             }
         now = int(time.time())
-        live_peer_ids = {self.config.node_id}
+        self_id = safe_id(str(self.config.node_id))
+        live_peer_ids = {self_id}
         stale_after = int(self.config.peer_stale_after_s)
         for peer in self.peer_network.peers_snapshot().get("peers", []):
             if not isinstance(peer, dict):
@@ -5455,16 +5458,32 @@ class NetworkNode:
                 if not item_id or item_id in active_ids:
                     continue
                 handled_by = safe_id(str(envelope.get("handled_by", "")))
+                assigned_worker = safe_id(
+                    str(
+                        envelope.get("dispatched_to")
+                        or envelope.get("assigned_peer_id")
+                        or envelope.get("target_peer_id")
+                        or ""
+                    )
+                )
                 if status == "running":
-                    if handled_by != self.config.node_id:
-                        # A remote worker may still be running the task; only
-                        # the node that owns the local runtime can recover it.
+                    worker_id = handled_by or assigned_worker
+                    if worker_id == self_id:
+                        result = {
+                            "error": "task_interrupted",
+                            "error_type": "TaskInterrupted",
+                            "traceback": "The local node stopped before the task reached a terminal state.",
+                        }
+                    elif not worker_id or stale_after <= 0 or worker_id in live_peer_ids:
+                        # A remote worker with a recent heartbeat may still be
+                        # running the task. Keep it visible until it goes stale.
                         continue
-                    result = {
-                        "error": "task_interrupted",
-                        "error_type": "TaskInterrupted",
-                        "traceback": "The local node stopped before the task reached a terminal state.",
-                    }
+                    else:
+                        result = {
+                            "error": "task_worker_lost",
+                            "error_type": "TaskWorkerLost",
+                            "traceback": f"The worker {worker_id} has not sent a heartbeat within the liveness window.",
+                        }
                 elif status == "dispatched":
                     target_raw = str(
                         envelope.get("dispatched_to") or envelope.get("assigned_peer_id") or ""
@@ -6212,7 +6231,8 @@ class NetworkNode:
                 if not peer_id or peer_id in excluded_peer_ids or peer.get("self"):
                     continue
                 last_seen = int(peer.get("last_seen_unix", 0) or 0)
-                if last_seen <= 0 or now - last_seen > 45:
+                stale_after = int(self.config.peer_stale_after_s)
+                if last_seen <= 0 or (stale_after > 0 and now - last_seen > stale_after):
                     continue
                 roles = {
                     str(role).lower()
@@ -6845,10 +6865,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gossip-advertise-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_ADVERTISE_PORT", "0")))
     parser.add_argument("--seed-peers", default=os.environ.get("SILICIUM_SEED_PEERS", ""))
     parser.add_argument("--mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", ""))
-    parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", "15")))
+    parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", str(DEFAULT_PEER_SYNC_INTERVAL_S))))
     parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
     parser.add_argument("--gossip-max-hops", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_MAX_HOPS", "8")))
-    parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", "45")))
+    parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", str(DEFAULT_PEER_STALE_AFTER_S))))
     parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
     parser.add_argument("--relay-hops", type=int, default=int(os.environ.get("SILICIUM_RELAY_HOPS", "2")))
     parser.add_argument("--identity-key-path", default=os.environ.get("SILICIUM_IDENTITY_KEY_PATH", ""))
