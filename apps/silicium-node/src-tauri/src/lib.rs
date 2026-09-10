@@ -8,7 +8,7 @@ use std::{
     cmp::Ordering,
     env,
     fs::{self, OpenOptions},
-    io::Read,
+    io::{Read, Write},
     net::{TcpStream, UdpSocket},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -42,6 +42,7 @@ const DEFAULT_ORCHESTRATOR_URL: &str = "https://vps-910c1dbc.vps.ovh.net/orchest
 // than a short watchdog interval.  Restarting during that bootstrap period
 // prevents a node from ever becoming available to claim work.
 const CLAIM_POLL_STALE_AFTER: Duration = Duration::from_secs(90);
+const NODE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 const UPDATE_SIGNING_PUBLIC_KEY_B64: &str = "px9didtoGftLilUX8iA1Yoj4PjNiCvZD47GK6/fdzX8=";
 const UPDATE_SIGNING_KEY_ID: &str =
     "f8d1c0149d9fcc171a39f96e5b9965a235500b7fe20cd2348912d38ca91e6d4c";
@@ -351,13 +352,8 @@ fn node_status(
         .and_then(|root| read_pid(root).ok().flatten())
         .map(process_is_running)
         .unwrap_or(false);
-    let supervisor_running = root
-        .as_ref()
-        .and_then(|root| read_supervisor_pid(root).ok().flatten())
-        .map(process_is_running)
-        .unwrap_or(false);
-    let port_ready = root.is_some() && TcpStream::connect(("127.0.0.1", 46101)).is_ok();
-    let running = node_running || supervisor_running || port_ready;
+    let node_ready = root.is_some() && local_network_node_ready(46101);
+    let running = node_ready;
     if !node_running {
         if let Some(root) = root.as_ref() {
             remove_pid(root);
@@ -385,6 +381,17 @@ fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<Stri
     config.orchestrator_url = normalize_orchestrator_url(&config.orchestrator_url)?;
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
+    cleanup_dead_pids(&repo_root);
+    if local_network_node_ready(46101) {
+        return Ok("Silicium node already running in background".to_string());
+    }
+    let managed_process_starting = read_supervisor_pid(&repo_root)?
+        .map(process_is_running)
+        .unwrap_or(false)
+        || read_pid(&repo_root)?.map(process_is_running).unwrap_or(false);
+    if managed_process_starting && wait_for_existing_node_start(&repo_root, 46101) {
+        return Ok("Silicium local service already running".to_string());
+    }
     cleanup_previous_node_processes(&repo_root);
     cleanup_dead_pids(&repo_root);
     if let Some(pid) = read_supervisor_pid(&repo_root)? {
@@ -412,7 +419,6 @@ fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<Stri
         }
     };
     let mut child = spawn_supervisor(&repo_root)?;
-    write_supervisor_pid(&repo_root, child.id())?;
     wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
     drop(child);
     *node = None;
@@ -440,11 +446,13 @@ fn start_configured_node_service() -> Result<String, String> {
         .map(process_is_running)
         .unwrap_or(false)
     {
-        return Ok("Le service Silicium est deja demarre.".to_string());
+        if wait_for_existing_node_start(&repo_root, 46101) {
+            return Ok("Le service Silicium est deja demarre.".to_string());
+        }
+        cleanup_previous_node_processes(&repo_root);
     }
 
     let mut child = spawn_supervisor(&repo_root)?;
-    write_supervisor_pid(&repo_root, child.id())?;
     wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
     drop(child);
     Ok("Le service Silicium est demarre.".to_string())
@@ -481,17 +489,7 @@ fn configured_node_service_running() -> bool {
         return false;
     };
     cleanup_dead_pids(&repo_root);
-    read_supervisor_pid(&repo_root)
-        .ok()
-        .flatten()
-        .map(process_is_running)
-        .unwrap_or(false)
-        || read_pid(&repo_root)
-            .ok()
-            .flatten()
-            .map(process_is_running)
-            .unwrap_or(false)
-        || TcpStream::connect(("127.0.0.1", 46101)).is_ok()
+    local_network_node_ready(46101)
 }
 
 #[tauri::command]
@@ -627,7 +625,7 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
     let supervisor_pid = read_supervisor_pid(&root).ok().flatten();
     let node_running = node_pid.map(process_is_running).unwrap_or(false);
     let supervisor_running = supervisor_pid.map(process_is_running).unwrap_or(false);
-    let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
+    let port_ready = local_network_node_ready(46101);
     let orchestrator_url = read_service_config(&root)
         .map(|config| config.orchestrator_url)
         .unwrap_or_else(|_| DEFAULT_ORCHESTRATOR_URL.to_string());
@@ -1605,6 +1603,38 @@ fn remove_legacy_runtime_assets(root: &Path) -> Result<(), String> {
             )
         })?;
     }
+    // The integrated Python daemon only needs networked_runtime.py. Older
+    // bundles copied the complete Rust workspaces, including Cargo targets,
+    // into the user profile. Besides wasting disk, that allowed the CLI to
+    // compile an experimental node during activation.
+    let legacy_networked_crates = root.join("Network").join("networked");
+    for crate_name in [
+        "compute_daemon",
+        "p2p_node",
+        "reputation_bridge",
+        "silicium_node_core",
+    ] {
+        let path = legacy_networked_crates.join(crate_name);
+        if path.exists() {
+            fs::remove_dir_all(&path).map_err(|error| {
+                format!("legacy_runtime_cleanup_failed:{}:{error}", path.display())
+            })?;
+        }
+    }
+    let legacy_raytracer_target = root
+        .join("Network")
+        .join("workloads")
+        .join("raytracer")
+        .join("native")
+        .join("target");
+    if legacy_raytracer_target.exists() {
+        fs::remove_dir_all(&legacy_raytracer_target).map_err(|error| {
+            format!(
+                "legacy_runtime_cleanup_failed:{}:{error}",
+                legacy_raytracer_target.display()
+            )
+        })?;
+    }
     Ok(())
 }
 
@@ -1781,18 +1811,27 @@ fn wait_for_supervised_node_start(
     repo_root: &Path,
     port: u16,
 ) -> Result<(), String> {
-    let deadline = Instant::now() + Duration::from_secs(12);
+    let deadline = Instant::now() + NODE_READY_TIMEOUT;
+    let supervisor_pid = supervisor.id();
     loop {
-        if let Some(status) = supervisor.try_wait().map_err(|error| error.to_string())? {
-            remove_supervisor_pid(repo_root);
-            let logs = read_node_log_tail(repo_root);
-            return Err(format!(
-                "supervisor_exited_before_ready: {status}\n{}",
-                logs.unwrap_or_else(|| "No supervisor logs available yet.".to_string())
-            ));
-        }
-        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+        if local_network_node_ready(port) {
             return Ok(());
+        }
+        if let Some(status) = supervisor.try_wait().map_err(|error| error.to_string())? {
+            let replacement_running = read_supervisor_pid(repo_root)
+                .ok()
+                .flatten()
+                .filter(|pid| *pid != supervisor_pid)
+                .map(process_is_running)
+                .unwrap_or(false);
+            if !replacement_running {
+                remove_supervisor_pid(repo_root);
+                let logs = read_node_log_tail(repo_root);
+                return Err(format!(
+                    "supervisor_exited_before_ready: {status}\n{}",
+                    logs.unwrap_or_else(|| "No supervisor logs available yet.".to_string())
+                ));
+            }
         }
         if Instant::now() >= deadline {
             let logs = read_node_log_tail(repo_root);
@@ -1805,7 +1844,78 @@ fn wait_for_supervised_node_start(
     }
 }
 
+fn wait_for_existing_node_start(repo_root: &Path, port: u16) -> bool {
+    let deadline = Instant::now() + NODE_READY_TIMEOUT;
+    loop {
+        if local_network_node_ready(port) {
+            return true;
+        }
+        cleanup_dead_pids(repo_root);
+        let supervisor_running = read_supervisor_pid(repo_root)
+            .ok()
+            .flatten()
+            .map(process_is_running)
+            .unwrap_or(false);
+        let node_running = read_pid(repo_root)
+            .ok()
+            .flatten()
+            .map(process_is_running)
+            .unwrap_or(false);
+        if !supervisor_running && !node_running {
+            return false;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(300));
+    }
+}
+
+fn local_network_node_ready(port: u16) -> bool {
+    let Ok(address) = format!("127.0.0.1:{port}").parse() else {
+        return false;
+    };
+    let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(300)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(700)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(700)));
+    if stream
+        .write_all(b"GET /healthz HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .is_err()
+    {
+        return false;
+    }
+    let mut response = String::new();
+    let _ = stream.read_to_string(&mut response);
+    (response.starts_with("HTTP/1.0 200") || response.starts_with("HTTP/1.1 200"))
+        && response.contains("\"service\":\"network_node\"")
+        && response.contains("\"ok\":true")
+}
+
+fn reset_node_session_logs(repo_root: &Path) -> Result<(), String> {
+    for name in [
+        "silicium-supervisor.out.log",
+        "silicium-supervisor.err.log",
+        "silicium-node.out.log",
+        "silicium-node.err.log",
+    ] {
+        let path = node_app_log_path(repo_root, name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 fn spawn_supervisor(repo_root: &Path) -> Result<Child, String> {
+    reset_node_session_logs(repo_root)?;
     let exe = env::current_exe().map_err(|error| error.to_string())?;
     let mut command = Command::new(exe);
     command
@@ -1978,9 +2088,13 @@ pub fn run_supervisor_cli() -> i32 {
     if validate_repo_root(&repo_root).is_err() {
         return 2;
     }
-    if let Ok(Some(existing_pid)) = read_supervisor_pid(&repo_root) {
-        if existing_pid != std::process::id() && process_is_running(existing_pid) {
-            return 0;
+    match claim_supervisor_pid(&repo_root) {
+        Ok(true) => {}
+        Ok(false) => return 0,
+        Err(error) => {
+            let _ =
+                append_supervisor_log(&repo_root, &format!("supervisor_lease_failed: {error}\n"));
+            return 2;
         }
     }
     // An older updater may have lost silicium-node.pid while leaving the
@@ -1988,7 +2102,6 @@ pub fn run_supervisor_cli() -> i32 {
     // advertised app version/build always matches this executable.
     kill_managed_node_processes(&repo_root);
     remove_pid(&repo_root);
-    let _ = write_supervisor_pid(&repo_root, std::process::id());
     thread::spawn(run_background_update_loop);
     let config = read_service_config(&repo_root).unwrap_or_else(|_| NodeConfig {
         repo_root: repo_root.display().to_string(),
@@ -2007,8 +2120,7 @@ pub fn run_supervisor_cli() -> i32 {
             .flatten()
             .map(process_is_running)
             .unwrap_or(false);
-        let port_ready = TcpStream::connect(("127.0.0.1", 46101)).is_ok();
-        let mut node_running = pid_running || port_ready;
+        let mut node_running = pid_running;
         if node_running
             && node_started_at.elapsed() >= CLAIM_POLL_STALE_AFTER
             && !claim_poll_is_fresh(&repo_root, CLAIM_POLL_STALE_AFTER)
@@ -2065,8 +2177,9 @@ fn claim_poll_health_path(repo_root: &Path) -> PathBuf {
 fn claim_poll_is_fresh(repo_root: &Path, maximum_age: Duration) -> bool {
     let path = claim_poll_health_path(repo_root);
     if !path.exists() {
-        // No claim has been polled yet; an idle node is still healthy.
-        return true;
+        // The caller already applies a bootstrap grace period. Beyond it, a
+        // missing file means that the scheduler pull loop never became live.
+        return false;
     }
     fs::metadata(path)
         .and_then(|metadata| metadata.modified())
@@ -2457,14 +2570,6 @@ fn write_pid(repo_root: &Path, pid: u32) -> Result<(), String> {
     fs::write(path, pid.to_string()).map_err(|error| error.to_string())
 }
 
-fn write_supervisor_pid(repo_root: &Path, pid: u32) -> Result<(), String> {
-    let path = supervisor_pid_path(repo_root);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    fs::write(path, pid.to_string()).map_err(|error| error.to_string())
-}
-
 fn read_pid(repo_root: &Path) -> Result<Option<u32>, String> {
     let path = pid_path(repo_root);
     if !path.exists() {
@@ -2485,6 +2590,31 @@ fn read_supervisor_pid(repo_root: &Path) -> Result<Option<u32>, String> {
     }
     let raw = fs::read_to_string(path).map_err(|error| error.to_string())?;
     Ok(raw.trim().parse::<u32>().ok())
+}
+
+fn claim_supervisor_pid(repo_root: &Path) -> Result<bool, String> {
+    let path = supervisor_pid_path(repo_root);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let current_pid = std::process::id();
+    for _ in 0..3 {
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                writeln!(file, "{current_pid}").map_err(|error| error.to_string())?;
+                return Ok(true);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let existing_pid = read_supervisor_pid(repo_root)?.unwrap_or(0);
+                if existing_pid != current_pid && process_is_running(existing_pid) {
+                    return Ok(false);
+                }
+                let _ = fs::remove_file(&path);
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Err("supervisor_pid_claim_retries_exhausted".to_string())
 }
 
 fn remove_supervisor_pid(repo_root: &Path) {
@@ -2702,7 +2832,7 @@ fn kill_managed_node_processes(repo_root: &Path) {
     }
     let escaped = repo_root.display().to_string().replace('\'', "''");
     let script = format!(
-        "$root = '{escaped}'; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 }} | ForEach-Object {{ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null }}"
+        "$root = '{escaped}'; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and ($_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf('networked\\p2p_node', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.Name -ieq 'p2p_node.exe') }} | ForEach-Object {{ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null }}"
     );
     let mut command = Command::new("powershell.exe");
     command
@@ -3708,7 +3838,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_runtime_cleanup_removes_only_the_legacy_openssl_cli() {
+    fn managed_runtime_cleanup_removes_obsolete_build_assets() {
         let directory =
             env::temp_dir().join(format!("silicium-runtime-cleanup-{}", std::process::id()));
         let _ = fs::remove_dir_all(&directory);
@@ -3719,16 +3849,83 @@ mod tests {
             .join("Lib")
             .join("site-packages")
             .join("cryptography");
+        let obsolete_p2p_target = directory
+            .join("Network")
+            .join("networked")
+            .join("p2p_node")
+            .join("target")
+            .join("release");
+        let networked_runtime = directory
+            .join("Network")
+            .join("networked")
+            .join("networked_runtime.py");
         fs::create_dir_all(&legacy).unwrap();
         fs::create_dir_all(&python_crypto).unwrap();
+        fs::create_dir_all(&obsolete_p2p_target).unwrap();
         fs::write(legacy.join("openssl.exe"), b"legacy").unwrap();
         fs::write(python_crypto.join("_rust.pyd"), b"keep").unwrap();
+        fs::write(obsolete_p2p_target.join("p2p_node.exe"), b"remove").unwrap();
+        fs::write(&networked_runtime, b"keep").unwrap();
 
         remove_legacy_runtime_assets(&directory).unwrap();
 
         assert!(!directory.join("tools").join("openssl").exists());
         assert!(python_crypto.join("_rust.pyd").exists());
+        assert!(!directory
+            .join("Network")
+            .join("networked")
+            .join("p2p_node")
+            .exists());
+        assert!(networked_runtime.exists());
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn missing_claim_health_is_stale_after_the_supervisor_grace_period() {
+        let directory =
+            env::temp_dir().join(format!("silicium-claim-health-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        assert!(!claim_poll_is_fresh(&directory, Duration::from_secs(60)));
+
+        let health_path = claim_poll_health_path(&directory);
+        fs::create_dir_all(health_path.parent().unwrap()).unwrap();
+        fs::write(&health_path, b"{}").unwrap();
+        assert!(claim_poll_is_fresh(&directory, Duration::from_secs(60)));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn readiness_requires_the_integrated_network_health_response() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 512];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(
+                    b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true,\"service\":\"network_node\"}",
+                )
+                .unwrap();
+        });
+
+        assert!(local_network_node_ready(port));
+        server.join().unwrap();
+
+        let unexpected_listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let unexpected_port = unexpected_listener.local_addr().unwrap().port();
+        let unexpected_server = thread::spawn(move || {
+            let (mut stream, _) = unexpected_listener.accept().unwrap();
+            let mut request = [0_u8; 512];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(
+                    b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true,\"service\":\"p2p_node\"}",
+                )
+                .unwrap();
+        });
+        assert!(!local_network_node_ready(unexpected_port));
+        unexpected_server.join().unwrap();
     }
 
     #[test]

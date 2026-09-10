@@ -47,6 +47,20 @@ ensure_env_default() {
   fi
 }
 
+set_env_value() {
+  local key="$1"
+  local value="$2"
+  if [[ ! "$value" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+    echo "Invalid value for $key: $value" >&2
+    exit 1
+  fi
+  if grep -q -E "^${key}=" "$ORCHESTRATOR_ENV"; then
+    sed -i -E "s#^${key}=.*#${key}=${value}#" "$ORCHESTRATOR_ENV"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$ORCHESTRATOR_ENV"
+  fi
+}
+
 # The public URL is the stable HTTPS rendezvous used by desktop nodes.  Keep
 # operator-provided values intact while making upgrades converge old env files
 # that predate the integrated peer daemon.
@@ -69,7 +83,24 @@ fi
 if [[ "$(grep -E '^SILICIUM_PEER_STALE_AFTER_S=' "$ORCHESTRATOR_ENV" | tail -n 1 | cut -d= -f2-)" == "45" ]]; then
   sed -i -E 's/^SILICIUM_PEER_STALE_AFTER_S=45$/SILICIUM_PEER_STALE_AFTER_S=15/' "$ORCHESTRATOR_ENV"
 fi
-unset -f ensure_env_default
+
+# Systemd does not inherit the release variables supplied to this installer.
+# Persist them in the service environment so node heartbeats identify the
+# exact deployed application version and source revision.
+release_version="${SILICIUM_RELEASE_VERSION:-}"
+if [[ -z "$release_version" ]]; then
+  release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")"
+fi
+release_channel="${SILICIUM_RELEASE_CHANNEL:-dev}"
+release_build="${SILICIUM_RELEASE_BUILD:-}"
+if [[ -z "$release_build" ]]; then
+  release_build="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
+fi
+release_build="${release_build:-local}"
+set_env_value SILICIUM_APP_VERSION "$release_version"
+set_env_value SILICIUM_RELEASE_CHANNEL "$release_channel"
+set_env_value SILICIUM_RELEASE_BUILD "$release_build"
+unset -f ensure_env_default set_env_value
 
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-orchestrator.service > /etc/systemd/system/silicium-orchestrator.service
 sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-update-manifest.service > /etc/systemd/system/silicium-update-manifest.service

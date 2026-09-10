@@ -7,6 +7,7 @@ COMPOSE_ENV="/etc/silicium/compose.env"
 EXPERIMENT_API_ENV="/etc/silicium/experiment-api.env"
 UPDATE_CHANNELS_ENV="/etc/silicium/update-channels.env"
 ORCHESTRATOR_ENV="/etc/silicium/orchestrator.env"
+RELEASE_MARKER="/var/lib/silicium/releases/current.env"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/linux/post-deploy-check.sh $ROOT" >&2
@@ -17,10 +18,21 @@ fi
 [[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
 [[ -f "$EXPERIMENT_API_ENV" ]] || { echo "Missing experiment API env: $EXPERIMENT_API_ENV" >&2; exit 1; }
 [[ -f "$ORCHESTRATOR_ENV" ]] || { echo "Missing orchestrator env: $ORCHESTRATOR_ENV" >&2; exit 1; }
+[[ -s "$RELEASE_MARKER" ]] || { echo "Missing release marker: $RELEASE_MARKER" >&2; exit 1; }
 
 set -a
 . "$ORCHESTRATOR_ENV"
 set +a
+
+set -a
+. "$RELEASE_MARKER"
+set +a
+for release_key in SILICIUM_RELEASE_VERSION SILICIUM_RELEASE_CHANNEL SILICIUM_RELEASE_BUILD; do
+  if [[ -z "${!release_key:-}" ]]; then
+    echo "Missing $release_key in $RELEASE_MARKER" >&2
+    exit 1
+  fi
+done
 
 if [[ -f "$UPDATE_CHANNELS_ENV" ]]; then
   set -a
@@ -98,6 +110,31 @@ then
   echo "The orchestrator heartbeat advertises workload roles; expected only resource,storage: $heartbeat_file" >&2
   exit 1
 fi
+if ! python3 - "$heartbeat_file" "$SILICIUM_RELEASE_VERSION" "$SILICIUM_RELEASE_CHANNEL" "$SILICIUM_RELEASE_BUILD" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as heartbeat_stream:
+    heartbeat = json.load(heartbeat_stream)
+
+expected = {
+    "app_version": sys.argv[2],
+    "release_channel": sys.argv[3],
+    "release_build": sys.argv[4],
+}
+mismatches = [
+    f"{key}={heartbeat.get(key)!r} (expected {value!r})"
+    for key, value in expected.items()
+    if str(heartbeat.get(key, "")) != value
+]
+if mismatches:
+    print("Orchestrator heartbeat release mismatch: " + ", ".join(mismatches), file=sys.stderr)
+    raise SystemExit(1)
+PY
+then
+  echo "The orchestrator service is not running the marked release: $heartbeat_file" >&2
+  exit 1
+fi
 if systemctl cat silicium-experiment-api.service >/dev/null 2>&1; then
   if ! systemctl is-active --quiet silicium-experiment-api.service; then
     echo "silicium-experiment-api.service is installed but not active." >&2
@@ -165,11 +202,5 @@ if [[ "$public_health" != *'"service":"network_node"'* ]]; then
   echo "The public route does not reach the integrated network node: $public_health" >&2
   exit 1
 fi
-
-echo "Checking deployed release marker..."
-[[ -s /var/lib/silicium/releases/current.env ]] || {
-  echo "Missing release marker: /var/lib/silicium/releases/current.env" >&2
-  exit 1
-}
 
 echo "Post-deploy checks passed."

@@ -460,7 +460,7 @@
           <span>Supervisor PID</span>
           <code>{{ diagnostics.supervisorPid || 'aucun' }}</code>
           <span>Port local</span>
-          <code>{{ diagnostics.portReady ? '46101 ouvert' : '46101 ferme' }}</code>
+          <code>{{ diagnostics.portReady ? 'daemon reseau pret' : 'daemon reseau indisponible' }}</code>
         </div>
 
         <pre class="logs">{{ diagnostics.logTail }}</pre>
@@ -840,7 +840,14 @@ async function activateOneClick() {
     userMessage.value = message;
     await refreshAll();
   } catch (error) {
-    userMessage.value = `L activation n a pas pu se terminer : ${friendlyError(error)}`;
+    try {
+      await refreshAll();
+    } catch {
+      // Preserve the activation error when local status cannot be refreshed.
+    }
+    userMessage.value = status.running
+      ? 'Votre PC est actif. Son demarrage a simplement depasse le delai initial.'
+      : `L activation n a pas pu se terminer : ${friendlyError(error)}`;
     await refreshDiagnostics();
   } finally {
     busy.value = false;
@@ -1111,8 +1118,11 @@ function friendlyError(error: unknown) {
     orchestrator_url_missing: 'l adresse de l orchestrateur est vide',
     orchestrator_url_invalid_scheme: 'l adresse doit commencer par http:// ou https://',
     orchestrator_url_invalid_host: 'l adresse de l orchestrateur est invalide',
+    node_not_ready_after_supervisor_start: 'le service local met trop de temps a demarrer; une nouvelle verification sera faite automatiquement',
+    supervisor_exited_before_ready: 'le superviseur local s est arrete avant que le reseau soit disponible',
   };
-  return messages[raw] || raw;
+  const knownPrefix = Object.keys(messages).find((key) => raw.startsWith(key));
+  return knownPrefix ? messages[knownPrefix] : raw;
 }
 
 function scheduleRefresh() {

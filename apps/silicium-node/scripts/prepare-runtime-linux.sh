@@ -30,9 +30,18 @@ rm -rf -- "$RUNTIME_NETWORK/workloads/raytracer/native/target"
 install -d "$RUNTIME_NETWORK/bin/raytracer"
 install -m 0755 "$NATIVE_RAYTRACER_TARGET/release/silicium-raytracer" "$RUNTIME_NETWORK/bin/raytracer/silicium-raytracer"
 if [[ -d "$NETWORK_ROOT/networked" ]]; then
-  cp -a "$NETWORK_ROOT/networked" "$RUNTIME_NETWORK/networked"
+  networked_source="$NETWORK_ROOT/networked"
 elif [[ -d "$NETWORK_ROOT/demo/networked" ]]; then
-  cp -a "$NETWORK_ROOT/demo/networked" "$RUNTIME_NETWORK/networked"
+  networked_source="$NETWORK_ROOT/demo/networked"
+else
+  networked_source=""
+fi
+if [[ -n "$networked_source" ]]; then
+  install -d "$RUNTIME_NETWORK/networked"
+  install -m 0644 \
+    "$networked_source/__init__.py" \
+    "$networked_source/networked_runtime.py" \
+    "$RUNTIME_NETWORK/networked/"
 fi
 
 cat > "$RUNTIME_ROOT/.silicium/env/raytracer.env" <<'EOF'

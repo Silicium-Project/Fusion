@@ -319,8 +319,15 @@ if (-not (Test-Path -LiteralPath $networkedSource -PathType Container)) {
 }
 if (Test-Path -LiteralPath $networkedSource -PathType Container) {
     $networkedDestination = Join-Path $runtimeNetwork "networked"
-    Copy-Directory -Source $networkedSource -Destination $networkedDestination
-    Write-Host "[ok] Bundled networked runtime -> $networkedDestination"
+    New-Item -ItemType Directory -Force -Path $networkedDestination | Out-Null
+    foreach ($runtimeFile in @("__init__.py", "networked_runtime.py")) {
+        $sourceFile = Join-Path $networkedSource $runtimeFile
+        if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) {
+            throw "Missing networked runtime file: $sourceFile"
+        }
+        Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $networkedDestination $runtimeFile) -Force
+    }
+    Write-Host "[ok] Bundled minimal networked runtime -> $networkedDestination"
 }
 
 $envDir = Join-Path $runtimeRoot ".silicium\env"
