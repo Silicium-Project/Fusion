@@ -65,6 +65,20 @@ for shared_dir in \
   install -d -m 0770 -o "$backend_uid" -g "$backend_gid" "$shared_dir"
 done
 
+# `install -d` only fixes directory ownership. Queue files created by the
+# host-side (root) orchestrator during an earlier release remain root:root and
+# make the unprivileged API fail while appending a task. Preserve their
+# contents, but hand every existing role queue to the backend identity. Create
+# the two canonical queues now so the first writer also gets the right owner.
+touch \
+  "$orchestrator_export_dir/tasks.queue.ndjson" \
+  "$orchestrator_export_dir/requests.queue.ndjson"
+for shared_queue in "$orchestrator_export_dir"/*.queue.ndjson; do
+  [[ -e "$shared_queue" ]] || continue
+  chown "$backend_uid:$backend_gid" "$shared_queue"
+  chmod 0660 "$shared_queue"
+done
+
 # The orchestrator runs on the host and keeps its private identity key mode
 # 0600. The API container must sign task-control messages as the same identity,
 # but it must not receive the host service's key path directly. Maintain a
