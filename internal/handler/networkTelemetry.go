@@ -10,7 +10,7 @@ import (
 	"unicode"
 )
 
-const defaultNetworkPeerStaleAfterSeconds int64 = 300
+const defaultNetworkPeerStaleAfterSeconds int64 = 45
 
 var networkMetricCounters = []string{
 	"handled",
@@ -240,8 +240,15 @@ func aggregateNetworkMetrics(peers []any) map[string]any {
 		if !ok {
 			continue
 		}
-		if online, ok := peer["online"].(bool); ok && online {
+		online, isOnline := peer["online"].(bool)
+		if isOnline && online {
 			result["online_peers"] = result["online_peers"].(int) + 1
+		}
+		// Offline peers remain in the registry for identity/history, but their
+		// last activity and telemetry must not keep the live network counters
+		// artificially active after a worker disconnects.
+		if !isOnline || !online {
+			continue
 		}
 		if queue, ok := peer["task_queue"].([]any); ok {
 			result["queue_depth"] = result["queue_depth"].(int) + len(queue)
