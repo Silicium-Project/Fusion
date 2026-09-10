@@ -62,8 +62,9 @@ services:
       CORS_ALLOWED_ORIGINS: https://vps-910c1dbc.vps.ovh.net,https://213.32.68.67
       SILICIUM_SEED_PEERS: http://host.docker.internal:46100
       SILICIUM_CONTROL_URL: http://host.docker.internal:46100/gossip/publish
-      SILICIUM_ORCHESTRATOR_IDENTITY_KEY: /var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem
+      SILICIUM_ORCHESTRATOR_IDENTITY_KEY: /var/lib/silicium/network/orchestrator/backend-identity/peer_identity_ed25519.pem
       SILICIUM_SITE_STORAGE_DIR: /var/lib/silicium/site/jobs
+      SILICIUM_WORKLOAD_STORAGE_DIR: /var/lib/silicium/site/runtime
       # Control-plane only: results/artifacts remain on authenticated P2P/HTTP.
       SILICIUM_RPC_EVENTS_CONNECT: tcp://host.docker.internal:9771
     depends_on:

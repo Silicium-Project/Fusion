@@ -51,7 +51,29 @@ backend_identity="$(docker run --rm --entrypoint sh "$backend_image_id" -c 'prin
 }
 backend_uid="${backend_identity%%:*}"
 backend_gid="${backend_identity##*:}"
-install -d -m 0750 -o "$backend_uid" -g "$backend_gid" /var/lib/silicium/site/jobs
+install -d -m 0750 -o "$backend_uid" -g "$backend_gid" /var/lib/silicium/site/jobs /var/lib/silicium/site/runtime
+
+# The orchestrator runs on the host and keeps its private identity key mode
+# 0600. The API container must sign task-control messages as the same identity,
+# but it must not receive the host service's key path directly. Maintain a
+# private, UID-scoped copy for the unprivileged backend user.
+orchestrator_identity_dir="/var/lib/silicium/network/orchestrator/state"
+orchestrator_identity="$orchestrator_identity_dir/peer_identity_ed25519.pem"
+orchestrator_public_identity="$orchestrator_identity_dir/peer_identity_ed25519.pub.pem"
+backend_identity_dir="/var/lib/silicium/network/orchestrator/backend-identity"
+for _ in $(seq 1 30); do
+  if [[ -f "$orchestrator_identity" && -f "$orchestrator_public_identity" ]]; then
+    break
+  fi
+  sleep 1
+done
+if [[ ! -f "$orchestrator_identity" || ! -f "$orchestrator_public_identity" ]]; then
+  echo "Orchestrator identity key was not created at $orchestrator_identity" >&2
+  exit 1
+fi
+install -d -m 0750 -o "$backend_uid" -g "$backend_gid" "$backend_identity_dir"
+install -o "$backend_uid" -g "$backend_gid" -m 0600 "$orchestrator_identity" "$backend_identity_dir/peer_identity_ed25519.pem"
+install -o "$backend_uid" -g "$backend_gid" -m 0644 "$orchestrator_public_identity" "$backend_identity_dir/peer_identity_ed25519.pub.pem"
 
 # Older installations ran these processes as host systemd services. Compose is
 # now the single owner of the web and API ports; stop and disable the stale
