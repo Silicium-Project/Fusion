@@ -41,6 +41,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
+from networked.networked_runtime import attach_network_content_blobs
 from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
 from tools.resource_intelligence import DualMemoryBayes, build_resource_profile, resource_baselines
 from tools.runtime_telemetry import RuntimeTelemetrySampler
@@ -6153,6 +6154,7 @@ class NetworkNode:
         )
         http_status = 0
         error = ""
+        return_started = time.monotonic()
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
                 http_status = int(response.status)
@@ -6173,6 +6175,7 @@ class NetworkNode:
                 "http_status": http_status,
                 "error": error,
                 "return_url": return_url,
+                "duration_ms": round((time.monotonic() - return_started) * 1000),
             },
         )
 
@@ -6336,6 +6339,11 @@ class NetworkNode:
             payload["dispatched_utc"] = utc_now()
             origin_return_url = str(current.get("origin_result_return_url", "")).strip()
             payload["result_return_url"] = origin_return_url if origin_return_url.startswith(("http://", "https://")) else self.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
+            # The scheduler owns the durable input cache. Attach referenced
+            # content to the authenticated claim response so a newly started
+            # or NATed worker does not depend on peer discovery converging
+            # before it can execute its first fragment.
+            payload = attach_network_content_blobs(self.config.export_dir, payload)
 
             self.update_envelope_status(current, "dispatched", {"result_hash": "", "dispatched_to": worker_id})
             self.state.mark_seen(key)
@@ -6400,16 +6408,21 @@ class NetworkNode:
             self._pull_thread = None
 
     def _poll_and_claim_tasks_once(self) -> None:
+        poll_started = time.monotonic()
         targets: set[str] = set()
         for seed in self.config.seed_peers + self.config.discovery_seeds:
             normalized = self.peer_network._normalize_http_target(seed)
             if normalized and normalized != self.peer_network.advertised_http_base_url:
                 targets.add(normalized)
 
-        polled_at = utc_now()
+        poll_started_utc = utc_now()
         attempts: list[dict[str, Any]] = []
         claimed_item_id = ""
-        candidates = self.peer_network.refresh_candidates()
+        # Candidate discovery is network-bound and already refreshed by the
+        # dedicated peer sync loop. A claim only needs the latest local
+        # snapshot; forcing discovery here can delay task pickup by several
+        # seconds when a rendezvous endpoint is slow or unreachable.
+        candidates = self.peer_network.local_candidates_snapshot()
         raw_payload = stable_json({
             "node_id": self.config.node_id,
             "roles": sorted(self.config.roles),
@@ -6430,13 +6443,15 @@ class NetworkNode:
         }).encode("utf-8")
 
         for base_url in sorted(targets):
-            self.peer_network._poll_signaling_sessions(base_url)
-            # Controls have their own durable anti-entropy feed. Reconcile it
-            # immediately before claiming so a restart cannot revive old work.
-            self.peer_network._sync_task_controls(base_url)
+            # Signaling and task-control anti-entropy already run in the peer
+            # sync loop. Repeating their bounded HTTP calls here added several
+            # network timeouts to every claim. The scheduler rejects controlled
+            # tasks atomically, and the local check below still covers controls
+            # learned before the claim response.
             path = "/tasks/claim"
             url = base_url.rstrip("/") + path
             attempt: dict[str, Any] = {"target": base_url, "url": url, "result": "unknown"}
+            attempt_started = time.monotonic()
             request = urllib.request.Request(
                 url,
                 data=raw_payload,
@@ -6465,9 +6480,6 @@ class NetworkNode:
                         candidate_item_id = safe_id(
                             str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown")
                         )
-                        # Close the race where a control is published while the
-                        # claim request is in flight.
-                        self.peer_network._sync_task_controls(base_url)
                         control_origin = str(
                             claimed_task.get("origin_node_id") or claimed_task.get("dispatched_by") or ""
                         )
@@ -6509,11 +6521,13 @@ class NetworkNode:
                                 self.events_path,
                                 {
                                     "schema_version": 1,
-                                    "timestamp_utc": polled_at,
+                                    "timestamp_utc": utc_now(),
                                     "node_id": self.config.node_id,
                                     "kind": "claimed_task_received",
                                     "item_id": claimed_item_id,
                                     "from_seed": base_url,
+                                    "poll_started_utc": poll_started_utc,
+                                    "claim_duration_ms": round((time.monotonic() - attempt_started) * 1000),
                                 },
                             )
             except urllib.error.HTTPError as error:
@@ -6523,12 +6537,15 @@ class NetworkNode:
             except Exception as error:
                 attempt["result"] = "request_error"
                 attempt["error"] = f"{type(error).__name__}:{error}"
+            attempt["duration_ms"] = round((time.monotonic() - attempt_started) * 1000)
             attempts.append(attempt)
 
+        completed_at = utc_now()
+        poll_duration_ms = round((time.monotonic() - poll_started) * 1000)
         errors = [f"{item.get('target')}: {item.get('error') or item.get('http_status')}" for item in attempts if item.get("result") in {"http_error", "request_error", "invalid_response"}]
         result = "claimed" if claimed_item_id else (str(attempts[0].get("result")) if attempts else "no_scheduler_target")
         self._last_claim_poll_unix = time.time()
-        self._last_claim_poll_utc = polled_at
+        self._last_claim_poll_utc = completed_at
         self._last_claim_error = "; ".join(errors)
         self._last_claim_result = result
         self._last_claim_targets = attempts
@@ -6536,7 +6553,9 @@ class NetworkNode:
             self.config.export_dir / "claim-poll.health.json",
             {
                 "schema_version": 2,
-                "timestamp_utc": polled_at,
+                "timestamp_utc": completed_at,
+                "started_utc": poll_started_utc,
+                "duration_ms": poll_duration_ms,
                 "node_id": self.config.node_id,
                 "targets_count": len(targets),
                 "roles": sorted(self.config.roles),
@@ -6553,7 +6572,9 @@ class NetworkNode:
             self.events_path,
             {
                 "schema_version": 1,
-                "timestamp_utc": polled_at,
+                "timestamp_utc": completed_at,
+                "started_utc": poll_started_utc,
+                "duration_ms": poll_duration_ms,
                 "node_id": self.config.node_id,
                 "kind": "claim_poll",
                 "status": result,

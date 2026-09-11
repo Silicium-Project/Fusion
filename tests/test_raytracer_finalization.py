@@ -17,6 +17,7 @@ from workloads.raytracer.run_network_job import (
     task_failure_details,
     poll_task_result_attempts,
     refresh_attempt_deadline,
+    retry_excluded_peer_ids,
     RetryFragmentStage,
     resolve_in_flight_limit,
     run_bounded_fragment_pipeline,
@@ -189,6 +190,42 @@ def test_automatic_in_flight_limit_tracks_discovered_role_capacity(tmp_path) -> 
     assert discovered_role_capacity(tmp_path, "orchestrator", "verify") == 1
     assert resolve_in_flight_limit(0, tmp_path, "orchestrator", "compute") == 2
     assert resolve_in_flight_limit(7, tmp_path, "orchestrator", "compute") == 7
+
+
+def test_retry_allows_the_only_compatible_worker_to_reclaim() -> None:
+    excluded, relaxed = retry_excluded_peer_ids(
+        [],
+        "only-worker",
+        1,
+        "peer_content_not_found:scene",
+    )
+
+    assert excluded == []
+    assert relaxed is True
+
+
+def test_retry_prefers_another_worker_when_capacity_exists() -> None:
+    excluded, relaxed = retry_excluded_peer_ids(
+        [],
+        "failed-worker",
+        2,
+        "connection reset by peer",
+    )
+
+    assert excluded == ["failed-worker"]
+    assert relaxed is False
+
+
+def test_retry_relaxes_after_every_available_worker_failed() -> None:
+    excluded, relaxed = retry_excluded_peer_ids(
+        ["worker-a"],
+        "worker-b",
+        2,
+        "connection reset by peer",
+    )
+
+    assert excluded == []
+    assert relaxed is True
 
 
 def test_wait_for_network_role_accepts_a_discovered_worker(tmp_path) -> None:

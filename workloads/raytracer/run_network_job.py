@@ -543,6 +543,29 @@ def discovered_role_capacity(
     return max(1, len(eligible))
 
 
+def retry_excluded_peer_ids(
+    current: Iterable[str],
+    failed_node_id: str,
+    available_capacity: int,
+    error: str,
+) -> tuple[list[str], bool]:
+    """Prefer a different worker without making a retry unclaimable."""
+    excluded = {str(value).strip() for value in current if str(value).strip()}
+    failed = str(failed_node_id).strip()
+    if failed:
+        excluded.add(failed)
+
+    no_alternative = bool(excluded) and max(1, int(available_capacity)) <= len(excluded)
+    unknown_timeout = not failed and any(
+        marker in str(error).lower()
+        for marker in ("missing network result after deadline:", "timeout", "timed out")
+    )
+    relaxed = no_alternative or (bool(excluded) and unknown_timeout)
+    if relaxed:
+        excluded.clear()
+    return sorted(excluded), relaxed
+
+
 def resolve_in_flight_limit(configured: int, export_dir: Path, node_id: str, role: str) -> int:
     return max(1, configured) if configured > 0 else discovered_role_capacity(export_dir, node_id, role)
 
@@ -854,24 +877,17 @@ def main(argv: list[str] | None = None) -> int:
             if not is_transient_task_failure(error) or attempt >= max_attempts:
                 return None
             excluded_key = f"{stage}_excluded_peer_ids"
-            excluded = {
-                str(value)
-                for value in context.get(excluded_key, [])
-                if str(value).strip()
-            }
-            relaxed_exclusions = False
-            if node_id:
-                excluded.add(node_id)
-            elif excluded and (
-                "missing network result after deadline:" in error.lower()
-                or "timeout" in error.lower()
-                or "timed out" in error.lower()
-            ):
-                # Prefer another worker once, but do not strand a fragment on
-                # a small network where the failed worker is the only peer.
-                excluded.clear()
-                relaxed_exclusions = True
-            context[excluded_key] = sorted(excluded)
+            excluded, relaxed_exclusions = retry_excluded_peer_ids(
+                context.get(excluded_key, []),
+                node_id,
+                discovered_role_capacity(
+                    export_dir,
+                    args.network_node_id,
+                    stage,
+                ),
+                error,
+            )
+            context[excluded_key] = excluded
             retry = {
                 "stage": stage,
                 "attempt": attempt,
@@ -1143,7 +1159,6 @@ def main(argv: list[str] | None = None) -> int:
                 export_dir,
                 args.network_node_id,
                 "verify",
-                ("raytracer_fastpath_v1",),
             ) > 1:
                 verify_excluded_peer_ids.add(str(compute_result.get("node_id", "")))
             verify_payload = {

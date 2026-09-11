@@ -2455,7 +2455,7 @@ def test_remote_dispatch_normalizes_excluded_peer_ids(tmp_path: Path, monkeypatc
     assert observed_exclude == {"node-a", "compute_worker"}
 
 
-def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
+def test_worker_claims_task_over_http_poll(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     export_seed = tmp_path / "seed"
     export_worker = tmp_path / "worker"
     config_seed = _config(export_seed, "seed-orchestrator", roles="storage")
@@ -2468,8 +2468,19 @@ def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
             "task_id": "test:claim:001",
             "status": "queued",
             "required_roles": ["compute"],
-            "task": {"kind": "compute", "workload": "raytracer-fragment"},
+            "task": {
+                "kind": "compute",
+                "workload": "raytracer-fragment",
+                "scene_p2p_ref": {
+                    "protocol": "silicium",
+                    "content_id": network_node.sha256_bytes(b"scene"),
+                    "peer_id": "seed-orchestrator",
+                },
+            },
         }
+        scene_id = network_node.sha256_bytes(b"scene")
+        (export_seed / "p2p").mkdir(parents=True)
+        (export_seed / "p2p" / scene_id).write_bytes(b"scene")
         network_node.enqueue_task_envelope(export_seed, task_envelope)
 
         config_worker = _config(
@@ -2482,6 +2493,22 @@ def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
         config_worker.pull_tasks_interval_s = 1
         config_worker.gossip_port = 46133
         worker_node = network_node.NetworkNode(config_worker)
+        worker_node.peer_network.refresh_candidates()
+        monkeypatch.setattr(
+            worker_node.peer_network,
+            "_poll_signaling_sessions",
+            lambda _base_url: pytest.fail("signaling sync must stay out of the claim hot path"),
+        )
+        monkeypatch.setattr(
+            worker_node.peer_network,
+            "_sync_task_controls",
+            lambda _base_url: pytest.fail("control anti-entropy must stay out of the claim hot path"),
+        )
+        monkeypatch.setattr(
+            worker_node.peer_network,
+            "refresh_candidates",
+            lambda: pytest.fail("candidate discovery must stay out of the claim hot path"),
+        )
 
         worker_node._poll_and_claim_tasks_once()
 
@@ -2492,7 +2519,11 @@ def test_worker_claims_task_over_http_poll(tmp_path: Path) -> None:
         assert claimed_data["result_return_url"] == (
             seed_node.peer_network.advertised_http_base_url.rstrip("/") + "/results/dispatch"
         )
+        assert (export_worker / "p2p" / scene_id).read_bytes() == b"scene"
         assert (export_worker / "claim-poll.health.json").exists()
+        claim_health = json.loads((export_worker / "claim-poll.health.json").read_text(encoding="utf-8"))
+        assert claim_health["duration_ms"] >= 0
+        assert claim_health["attempts"][0]["duration_ms"] >= 0
         worker_peer = next(
             peer
             for peer in seed_node.peer_network.peers_snapshot()["peers"]
