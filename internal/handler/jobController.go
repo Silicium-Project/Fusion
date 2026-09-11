@@ -488,6 +488,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"enabled":    devnetTrace["enabled"],
 			"ok":         devnetTrace["ok"],
 			"status":     devnetTrace["status"],
+			"error":      devnetTrace["error"],
 			"job":        trace["job"],
 			"programId":  trace["program_id"],
 			"rpc":        trace["rpc"],
@@ -664,7 +665,8 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 	defer h.unregisterRun(job.ID)
 	defer cancel(nil)
 	defer deadlineCancel()
-	runResult := silicium.RunJob(ctx, job, silicium.ConfigFromEnv())
+	runnerConfig := silicium.ConfigFromEnv()
+	runResult := silicium.RunJob(ctx, job, runnerConfig)
 	var current models.Job
 	h.DB.First(&current, jobID)
 	if current.Status == "cancelled" || current.Status == "cancelling" {
@@ -674,6 +676,13 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 		runResult.Status = "expired"
 		runResult.ErrorMessage = "job deadline exceeded"
 	}
+	asyncDevnetTrace := runResult.Status == "completed" && runnerConfig.DevnetTraceMode == silicium.DevnetTraceModeAsyncCompact
+	if asyncDevnetTrace {
+		tracePath, err := silicium.MarkCompactDevnetTracePending(runResult.SummaryPath)
+		if err == nil {
+			runResult.DevnetTracePath = tracePath
+		}
+	}
 	completedAt := time.Now()
 	updates := map[string]any{
 		"status":               runResult.Status,
@@ -682,12 +691,15 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 		"devnet_trace_path":    runResult.DevnetTracePath,
 		"devnet_job":           runResult.DevnetJob,
 		"error_message":        runResult.ErrorMessage,
-		"dashboard_url":        silicium.ConfigFromEnv().DashboardURL,
+		"dashboard_url":        runnerConfig.DashboardURL,
 		"billable_work_units":  runResult.BillableWorkUnits,
 		"compute_receipt_hash": runResult.ComputeReceiptHash,
 		"completed_at":         completedAt,
 	}
 	h.DB.Model(&models.Job{}).Where("id = ?", jobID).Updates(updates)
+	if asyncDevnetTrace {
+		go h.runCompactDevnetTrace(jobID, runnerConfig, runResult.SummaryPath)
+	}
 	if runResult.Status == "failed" || runResult.Status == "expired" {
 		signalCtx, signalCancel := context.WithTimeout(context.Background(), 12*time.Second)
 		if err := publishTerminalTaskControl(signalCtx, job, runResult.Status, runResult.ErrorMessage); err != nil {
@@ -695,6 +707,42 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 				Update("error_message", runResult.ErrorMessage+"\nnetwork terminal announcement pending: "+err.Error())
 		}
 		signalCancel()
+	}
+}
+
+func (h *Handler) runCompactDevnetTrace(jobID uint, cfg silicium.RunnerConfig, summaryPath string) {
+	timeoutSeconds, err := strconv.Atoi(strings.TrimSpace(cfg.DevnetTraceTimeoutS))
+	if err != nil || timeoutSeconds < 1 {
+		timeoutSeconds = 240
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+	result := silicium.RunCompactDevnetTrace(ctx, cfg, summaryPath)
+	updates := map[string]any{"devnet_trace_path": result.TracePath}
+	if result.DevnetJob != "" {
+		updates["devnet_job"] = result.DevnetJob
+	}
+	if h.DB != nil {
+		h.DB.Model(&models.Job{}).Where("id = ?", jobID).Updates(updates)
+	}
+}
+
+func (h *Handler) resumePendingCompactDevnetTraces() {
+	cfg := silicium.ConfigFromEnv()
+	if cfg.DevnetTraceMode != silicium.DevnetTraceModeAsyncCompact || h.DB == nil {
+		return
+	}
+	var jobs []models.Job
+	if result := h.DB.Where("status = ? AND summary_path <> ?", "completed", "").Limit(100).Find(&jobs); result.Error != nil {
+		return
+	}
+	for _, job := range jobs {
+		summary := readJSONMap(job.SummaryPath)
+		trace, _ := summary["devnet_trace"].(map[string]any)
+		if strings.TrimSpace(stringValue(trace["status"])) != "pending" {
+			continue
+		}
+		go h.runCompactDevnetTrace(job.ID, cfg, job.SummaryPath)
 	}
 }
 

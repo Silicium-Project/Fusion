@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/silicium/internal/silicium"
 )
 
 const statusCacheLifetime = 5 * time.Second
@@ -32,10 +34,13 @@ type networkStatus struct {
 }
 
 type blockchainStatus struct {
-	Status     string `json:"status"`
-	Network    string `json:"network"`
-	Configured bool   `json:"configured"`
-	ProgramID  string `json:"programId,omitempty"`
+	Status          string `json:"status"`
+	Network         string `json:"network"`
+	Configured      bool   `json:"configured"`
+	ProgramID       string `json:"programId,omitempty"`
+	TraceMode       string `json:"traceMode"`
+	ProofReady      bool   `json:"proofReady"`
+	ReadinessDetail string `json:"readinessDetail"`
 }
 
 type systemStatus struct {
@@ -89,17 +94,29 @@ func writeStatus(w http.ResponseWriter, value systemStatus) {
 }
 
 func (h *Handler) buildSystemStatus(ctx context.Context, peersPath, manifestPath string, now time.Time) systemStatus {
+	runnerConfig := silicium.ConfigFromEnv()
+	proofReady, readinessDetail := silicium.CompactDevnetTraceReadiness(runnerConfig)
+	blockchainState := "operational"
+	if !proofReady {
+		blockchainState = "degraded"
+	}
 	value := systemStatus{
 		Status:    "operational",
 		CheckedAt: now.UTC(),
 		Backend:   componentStatus{Status: "operational", Database: "operational"},
 		Network:   networkStatus{Status: "operational"},
 		Blockchain: blockchainStatus{
-			Status:     "operational",
-			Network:    solanaNetwork(os.Getenv("SILICIUM_SOLANA_RPC")),
-			Configured: strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_RPC")) != "" && strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_PROGRAM_ID")) != "",
-			ProgramID:  strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_PROGRAM_ID")),
+			Status:          blockchainState,
+			Network:         solanaNetwork(os.Getenv("SILICIUM_SOLANA_RPC")),
+			Configured:      strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_RPC")) != "" && strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_PROGRAM_ID")) != "",
+			ProgramID:       strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_PROGRAM_ID")),
+			TraceMode:       runnerConfig.DevnetTraceMode,
+			ProofReady:      proofReady,
+			ReadinessDetail: readinessDetail,
 		},
+	}
+	if blockchainState != "operational" {
+		value.Status = "degraded"
 	}
 
 	if h.DB == nil {
