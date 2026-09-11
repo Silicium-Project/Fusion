@@ -38,7 +38,7 @@ export function safeRpcLabel(rpc) {
   return `${parsed.protocol}//${parsed.host}`;
 }
 
-export function compactProof(summary) {
+export function compactProof(summary, programId = "") {
   const billing =
     summary.billing && typeof summary.billing === "object"
       ? summary.billing
@@ -54,11 +54,22 @@ export function compactProof(summary) {
     receipts: receiptHash,
     fragments: Number(summary.fragment_count ?? 0),
   };
+  if (programId) {
+    proof.program = String(programId);
+  }
   const encoded = Buffer.from(JSON.stringify(proof), "utf8");
   if (encoded.length > MAX_MEMO_BYTES) {
     proof.job = `sha256:${sha256(proof.job)}`;
   }
   return proof;
+}
+
+export function buildMemoInstruction(memo, signerPublicKey) {
+  return new TransactionInstruction({
+    programId: MEMO_PROGRAM_ID,
+    keys: [{ pubkey: signerPublicKey, isSigner: true, isWritable: false }],
+    data: memo,
+  });
 }
 
 function writeJsonAtomic(filePath, payload) {
@@ -87,18 +98,14 @@ async function main() {
   const secret = Uint8Array.from(readJson(walletPath));
   const payer = Keypair.fromSecretKey(secret);
   const connection = new Connection(rpc, "confirmed");
-  const proof = compactProof(summary);
+  const proof = compactProof(summary, projectProgram.toBase58());
   const memo = Buffer.from(JSON.stringify(proof), "utf8");
 
   if (memo.length > MAX_MEMO_BYTES) {
     throw new Error(`proof_memo_too_large:${memo.length}`);
   }
 
-  const instruction = new TransactionInstruction({
-    programId: MEMO_PROGRAM_ID,
-    keys: [{ pubkey: projectProgram, isSigner: false, isWritable: false }],
-    data: memo,
-  });
+  const instruction = buildMemoInstruction(memo, payer.publicKey);
   const transaction = new Transaction().add(instruction);
   const signature = await sendAndConfirmTransaction(
     connection,
