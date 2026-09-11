@@ -317,6 +317,9 @@ jobs:
       - name: Install JavaScript dependencies
         run: yarn install --frozen-lockfile
 
+      - name: Test compact Devnet trace contract
+        run: npm run test:trace
+
       - name: Create temporary local wallet
         run: |
           mkdir -p ~/.config/solana

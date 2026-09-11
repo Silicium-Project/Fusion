@@ -670,9 +670,9 @@ def reassemble_fragments(fragment_files: list[tuple[int, int, Path]], output_ppm
 
 
 def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, Any]:
-    npx = shutil.which("npx.cmd") or shutil.which("npx")
-    if not npx:
-        raise RuntimeError("npx_not_found")
+    node = shutil.which("node.exe") or shutil.which("node")
+    if not node:
+        raise RuntimeError("node_not_found")  # i18n:ignore
     wallet_path = resolve_solana_wallet(args.solana_wallet)
     if not wallet_path.exists():
         raise RuntimeError(
@@ -690,8 +690,11 @@ def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, 
     env["SOLANA_RPC_URL"] = args.solana_rpc
     env["SOLANA_LAYER_PROGRAM_ID"] = args.solana_program_id
     env["SILICIUM_DEVNET_TX_DELAY_MS"] = str(args.devnet_tx_delay_ms)
+    trace_script = NETWORK_ROOT / "solana-layer" / "scripts" / "devnet_trace_fragments.mjs"
+    if not trace_script.is_file():
+        raise RuntimeError("devnet_trace_script_not_found")  # i18n:ignore
     completed = subprocess.run(
-        [npx, "ts-node", "scripts/devnet_trace_fragments.ts", str(summary_path)],
+        [node, str(trace_script), str(summary_path)],
         cwd=str(NETWORK_ROOT / "solana-layer"),
         env=env,
         text=True,
