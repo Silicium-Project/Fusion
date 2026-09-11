@@ -53,6 +53,52 @@ backend_uid="${backend_identity%%:*}"
 backend_gid="${backend_identity##*:}"
 install -d -m 0750 -o "$backend_uid" -g "$backend_gid" /var/lib/silicium/site/jobs /var/lib/silicium/site/runtime
 
+# Trace mode supersedes the legacy boolean. Migrate persistent operator files
+# once so an old SILICIUM_DEVNET_TRACE=0 cannot silently disable compact proofs.
+backend_env="/etc/silicium/backend.env"
+if grep -q -E '^SILICIUM_DEVNET_TRACE_MODE=' "$backend_env"; then
+  sed -i -E '/^SILICIUM_DEVNET_TRACE=/d' "$backend_env"
+elif grep -q -E '^SILICIUM_DEVNET_TRACE=0$' "$backend_env"; then
+  printf '%s\n' 'SILICIUM_DEVNET_TRACE_MODE=off' >> "$backend_env"
+else
+  printf '%s\n' 'SILICIUM_DEVNET_TRACE_MODE=async_compact' >> "$backend_env"
+fi
+
+# The Solana layer is bind-mounted into the backend container. Install its
+# production dependencies on the host only when the lockfile changes; this
+# avoids a full npm rebuild on every deployment while keeping the runtime
+# deterministic.
+solana_layer_dir="$ROOT/Network/solana-layer"
+solana_dependency_stamp="$solana_layer_dir/node_modules/.silicium-production-deps.sha256"
+[[ -f "$solana_layer_dir/package-lock.json" ]] || {
+  echo "Missing Solana dependency lockfile: $solana_layer_dir/package-lock.json" >&2
+  exit 1
+}
+solana_dependency_hash="$(sha256sum "$solana_layer_dir/package.json" "$solana_layer_dir/package-lock.json" | sha256sum | cut -d' ' -f1)"
+installed_solana_hash="$(cat "$solana_dependency_stamp" 2>/dev/null || true)"
+if [[ "$installed_solana_hash" != "$solana_dependency_hash" ]]; then
+  # Install from the backend image itself so native optional packages target
+  # the same Alpine/musl runtime that will execute the proof.
+  docker run --rm --user 0:0 \
+    --volume "$solana_layer_dir:/work" \
+    --workdir /work \
+    --entrypoint npm \
+    "$backend_image_id" ci --omit=dev
+  printf '%s\n' "$solana_dependency_hash" > "$solana_dependency_stamp"
+else
+  echo "Solana trace dependencies unchanged; retaining node_modules."
+fi
+
+# The API runs under the image's unprivileged identity and executes the trace
+# process itself. Keep the private wallet restricted to that exact UID/GID.
+solana_wallet="/var/lib/silicium/solana/id.json"
+if [[ -f "$solana_wallet" ]]; then
+  chown "$backend_uid:$backend_gid" "$solana_wallet"
+  chmod 0600 "$solana_wallet"
+else
+  echo "Warning: Devnet wallet is missing at $solana_wallet; compact proofs will report a failed state." >&2
+fi
+
 # The API submits task envelopes into the host-side orchestrator export. Keep
 # the shared control-plane directories writable by the container user while
 # leaving the rest of the export tree untouched.
