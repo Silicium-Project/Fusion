@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::{
     cmp::Ordering,
     env,
+    ffi::OsStr,
     fs::{self, OpenOptions},
     io::{Read, Write},
     net::{TcpStream, UdpSocket},
@@ -1681,17 +1682,11 @@ fn packaged_runtime_candidates(exe: &Path, app_dir: Option<&Path>) -> Vec<PathBu
         // AppImage and .deb bundles. AppImage exposes the mounted root as
         // APPDIR; keep both forms because current_exe() can be resolved from
         // a wrapper or from an extracted AppImage.
-        if let Some(name) = executable_name {
-            if let Some(app_dir) = app_dir {
-                candidates.push(
-                    app_dir
-                        .join("usr")
-                        .join("lib")
-                        .join(name)
-                        .join("resources")
-                        .join("runtime"),
-                );
-            }
+        if let Some(app_dir) = app_dir {
+            candidates.extend(linux_resource_runtime_candidates(
+                &app_dir.join("usr").join("lib"),
+                executable_name,
+            ));
         }
     }
 
@@ -1700,18 +1695,14 @@ fn packaged_runtime_candidates(exe: &Path, app_dir: Option<&Path>) -> Vec<PathBu
         candidates.push(parent.join("resources").join("runtime"));
 
         if cfg!(target_os = "linux") {
-            if let Some(name) = executable_name {
-                // Installed .deb: /usr/bin/<binary> ->
-                // /usr/lib/<binary>/resources/runtime.
-                candidates.push(
-                    parent
-                        .join("..")
-                        .join("lib")
-                        .join(name)
-                        .join("resources")
-                        .join("runtime"),
-                );
-            }
+            // Installed .deb/.rpm: /usr/bin/<binary> -> /usr/lib/<product>
+            // name/resources/runtime. Tauri uses productName for the resource
+            // directory, so it may contain spaces and differ from the binary
+            // name (for example, "Silicium Node" vs "silicium-node").
+            candidates.extend(linux_resource_runtime_candidates(
+                &parent.join("..").join("lib"),
+                executable_name,
+            ));
         }
 
         // Keep the Windows and macOS layouts used by the existing desktop
@@ -1719,6 +1710,31 @@ fn packaged_runtime_candidates(exe: &Path, app_dir: Option<&Path>) -> Vec<PathBu
         candidates.push(parent.join("..").join("Resources").join("runtime"));
     }
 
+    candidates
+}
+
+fn linux_resource_runtime_candidates(
+    lib_dir: &Path,
+    executable_name: Option<&OsStr>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(name) = executable_name {
+        candidates.push(
+            lib_dir
+                .join(Path::new(name))
+                .join("resources")
+                .join("runtime"),
+        );
+    }
+    let Ok(entries) = fs::read_dir(lib_dir) else {
+        return candidates;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            candidates.push(path.join("resources").join("runtime"));
+        }
+    }
     candidates
 }
 
@@ -3869,6 +3885,38 @@ mod tests {
         assert!(candidates.iter().any(|candidate| {
             candidate.ends_with(Path::new("lib/silicium-node/resources/runtime"))
         }));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_bundles_accept_tauri_product_name_resource_directory() {
+        let app_dir = env::temp_dir().join(format!(
+            "silicium-product-resource-layout-{}",
+            std::process::id()
+        ));
+        let runtime = app_dir
+            .join("usr")
+            .join("lib")
+            .join("Silicium Node")
+            .join("resources")
+            .join("runtime")
+            .join("Network");
+        let _ = fs::remove_dir_all(&app_dir);
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("silicium"), b"#!/usr/bin/env python3\n").unwrap();
+
+        let candidates = packaged_runtime_candidates(
+            Path::new("/opt/silicium/usr/bin/silicium-node"),
+            Some(&app_dir),
+        );
+
+        assert!(candidates.iter().any(|candidate| {
+            candidate.ends_with(Path::new("usr/lib/Silicium Node/resources/runtime"))
+        }));
+        assert!(candidates
+            .iter()
+            .any(|candidate| validate_repo_root(candidate).is_ok()));
+        fs::remove_dir_all(app_dir).unwrap();
     }
 
     #[test]
