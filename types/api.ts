@@ -223,7 +223,6 @@ export interface JobDashboard {
     enabled?: boolean;
     ok?: boolean;
     status?: string;
-    error?: string;
     job?: string;
     programId?: string;
     rpc?: string;
@@ -252,7 +251,7 @@ export interface SystemStatus {
     storageUsedPercent?: number;
     updatedAt?: string;
   };
-  blockchain: { status: string; network: string; configured: boolean; programId?: string; traceMode?: string; proofReady?: boolean; readinessDetail?: string };
+  blockchain: { status: string; network: string; configured: boolean; programId?: string };
 }
 
 export interface WalletChallenge {
