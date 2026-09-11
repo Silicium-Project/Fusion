@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/siliciu
 
 FROM alpine:3.20 AS runtime
 WORKDIR /app
-RUN apk add --no-cache ca-certificates tzdata python3 openssl nodejs npm \
+RUN apk add --no-cache ca-certificates tzdata python3 openssl \
     && addgroup -S silicium \
     && adduser -S -G silicium -h /app silicium
 COPY --from=build --chown=silicium:silicium /out/silicium-api ./silicium-api

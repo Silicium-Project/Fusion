@@ -21,16 +21,12 @@ type runRegistry struct {
 }
 
 func New(db *gorm.DB) Handler {
-	handler := Handler{
+	return Handler{
 		DB:               db,
 		runs:             &runRegistry{cancels: make(map[uint]context.CancelCauseFunc)},
 		walletChallenges: newWalletChallengeStore(),
 		status:           &statusCache{},
 	}
-	if db != nil {
-		go handler.resumePendingCompactDevnetTraces()
-	}
-	return handler
 }
 
 func (h *Handler) registerRun(jobID uint, cancel context.CancelCauseFunc) {

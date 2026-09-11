@@ -36,20 +36,13 @@ type RunnerConfig struct {
 	OrchestratorExportDir string
 	WorkloadStorageDir    string
 	DashboardURL          string
-	DevnetTraceMode       string
-	DevnetTraceTimeoutS   string
+	DevnetTrace           bool
 	DevnetTxDelayMS       string
 	MinComputeReputation  string
 	MinVerifyReputation   string
 	ControlURL            string
 	IdentityKeyPath       string
 }
-
-const (
-	DevnetTraceModeOff          = "off"
-	DevnetTraceModeAsyncCompact = "async_compact"
-	DevnetTraceModeFullDemo     = "full_demo"
-)
 
 type RunResult struct {
 	Status             string
@@ -79,35 +72,12 @@ func ConfigFromEnv() RunnerConfig {
 		OrchestratorExportDir: envDefault("SILICIUM_ORCHESTRATOR_EXPORT_DIR", filepath.Join(networkRoot, ".silicium", "networked", "orchestrator", "export")),
 		WorkloadStorageDir:    envDefault("SILICIUM_WORKLOAD_STORAGE_DIR", filepath.Join(networkRoot, ".silicium", "jobs")),
 		DashboardURL:          envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
-		DevnetTraceMode:       configuredDevnetTraceMode(),
-		DevnetTraceTimeoutS:   envDefault("SILICIUM_DEVNET_TRACE_TIMEOUT_S", "240"),
+		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "1") != "0",
 		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
 		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
 		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
 		ControlURL:            envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:46100/gossip/publish"),
 		IdentityKeyPath:       envDefault("SILICIUM_ORCHESTRATOR_IDENTITY_KEY", "/var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem"),
-	}
-}
-
-func configuredDevnetTraceMode() string {
-	mode := strings.ToLower(strings.TrimSpace(os.Getenv("SILICIUM_DEVNET_TRACE_MODE")))
-	switch mode {
-	case DevnetTraceModeOff, DevnetTraceModeAsyncCompact, DevnetTraceModeFullDemo:
-		return mode
-	case "":
-		// Preserve compatibility with installations created before trace modes
-		// were introduced. A configured mode always takes precedence over this
-		// legacy switch so stale SILICIUM_DEVNET_TRACE=0 values cannot disable it.
-		legacy := strings.TrimSpace(os.Getenv("SILICIUM_DEVNET_TRACE"))
-		if legacy == "0" {
-			return DevnetTraceModeOff
-		}
-		if legacy != "" {
-			return DevnetTraceModeFullDemo
-		}
-		return DevnetTraceModeAsyncCompact
-	default:
-		return mode
 	}
 }
 
@@ -300,12 +270,8 @@ func raytracerArgs(job models.Job, cfg RunnerConfig) []string {
 	if job.FragmentCount > 0 {
 		args = append(args, "--fragments", fmt.Sprintf("%d", job.FragmentCount))
 	}
-	if cfg.DevnetTraceMode == DevnetTraceModeFullDemo {
-		args = append(args,
-			"--devnet-trace",
-			"--devnet-trace-timeout-s", envValueOr(cfg.DevnetTraceTimeoutS, "240"),
-			"--devnet-tx-delay-ms", cfg.DevnetTxDelayMS,
-		)
+	if cfg.DevnetTrace {
+		args = append(args, "--devnet-trace", "--devnet-tx-delay-ms", cfg.DevnetTxDelayMS)
 	}
 	if job.DeadlineAt != nil {
 		remaining := time.Until(*job.DeadlineAt)
@@ -325,187 +291,6 @@ func raytracerArgs(job models.Job, cfg RunnerConfig) []string {
 		)
 	}
 	return args
-}
-
-type DevnetTraceResult struct {
-	OK           bool
-	Status       string
-	TracePath    string
-	DevnetJob    string
-	ErrorMessage string
-}
-
-func CompactDevnetTracePath(summaryPath string) string {
-	return filepath.Join(filepath.Dir(summaryPath), "devnet-trace.json")
-}
-
-func MarkCompactDevnetTracePending(summaryPath string) (string, error) {
-	tracePath := CompactDevnetTracePath(summaryPath)
-	err := updateDevnetTraceSummary(summaryPath, map[string]any{
-		"enabled":    true,
-		"ok":         false,
-		"status":     "pending",
-		"trace_path": tracePath,
-	})
-	return tracePath, err
-}
-
-func RunCompactDevnetTrace(ctx context.Context, cfg RunnerConfig, summaryPath string) DevnetTraceResult {
-	tracePath := CompactDevnetTracePath(summaryPath)
-	result := DevnetTraceResult{Status: "failed", TracePath: tracePath}
-	networkRoot, err := filepath.Abs(cfg.NetworkRoot)
-	if err != nil {
-		result.ErrorMessage = "network_root_invalid"
-		_ = finishCompactDevnetTrace(summaryPath, result, nil)
-		return result
-	}
-	scriptPath := filepath.Join(networkRoot, "solana-layer", "scripts", "devnet_trace_fragments.mjs")
-	if info, statErr := os.Stat(scriptPath); statErr != nil || !info.Mode().IsRegular() {
-		result.ErrorMessage = "devnet_trace_script_not_found"
-		_ = finishCompactDevnetTrace(summaryPath, result, nil)
-		return result
-	}
-
-	cmd := exec.CommandContext(ctx, nodeBinary(), scriptPath, summaryPath)
-	cmd.Dir = filepath.Join(networkRoot, "solana-layer")
-	cmd.Env = append(os.Environ(), "SILICIUM_TRACE_RESULT_PATH="+tracePath)
-	if _, commandErr := cmd.CombinedOutput(); commandErr != nil {
-		if cause := context.Cause(ctx); cause != nil {
-			result.ErrorMessage = "devnet_trace_timeout"
-		} else {
-			result.ErrorMessage = "devnet_trace_command_failed"
-		}
-		_ = finishCompactDevnetTrace(summaryPath, result, nil)
-		return result
-	}
-
-	trace := readJSONFile(tracePath)
-	signatures, _ := trace["signatures"].([]any)
-	if len(trace) == 0 || len(signatures) == 0 {
-		result.ErrorMessage = "devnet_trace_result_missing"
-		_ = finishCompactDevnetTrace(summaryPath, result, trace)
-		return result
-	}
-	result.OK = true
-	result.Status = "submitted"
-	if job, ok := trace["job"].(string); ok {
-		result.DevnetJob = job
-	}
-	_ = finishCompactDevnetTrace(summaryPath, result, trace)
-	return result
-}
-
-func CompactDevnetTraceReadiness(cfg RunnerConfig) (bool, string) {
-	if cfg.DevnetTraceMode == DevnetTraceModeOff {
-		return true, "disabled"
-	}
-	if cfg.DevnetTraceMode != DevnetTraceModeAsyncCompact && cfg.DevnetTraceMode != DevnetTraceModeFullDemo {
-		return false, "trace_mode_invalid"
-	}
-	if strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_RPC")) == "" {
-		return false, "rpc_missing"
-	}
-	if strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_PROGRAM_ID")) == "" {
-		return false, "program_id_missing"
-	}
-	walletPath := envDefault("SILICIUM_SOLANA_WALLET", filepath.Join("~", ".config", "solana", "id.json"))
-	walletData, err := os.ReadFile(walletPath)
-	if err != nil {
-		return false, "wallet_unreadable"
-	}
-	var walletBytes []int
-	if err := json.Unmarshal(walletData, &walletBytes); err != nil || len(walletBytes) != ed25519.PrivateKeySize {
-		return false, "wallet_invalid"
-	}
-	for _, value := range walletBytes {
-		if value < 0 || value > 255 {
-			return false, "wallet_invalid"
-		}
-	}
-	if _, err := lookPath(nodeBinary()); err != nil {
-		return false, "node_missing"
-	}
-	networkRoot, err := filepath.Abs(cfg.NetworkRoot)
-	if err != nil {
-		return false, "network_root_invalid"
-	}
-	if info, err := os.Stat(filepath.Join(networkRoot, "solana-layer", "scripts", "devnet_trace_fragments.mjs")); err != nil || !info.Mode().IsRegular() {
-		return false, "trace_script_missing"
-	}
-	if info, err := os.Stat(filepath.Join(networkRoot, "solana-layer", "node_modules", "@solana", "web3.js")); err != nil || !info.IsDir() {
-		return false, "trace_dependencies_missing"
-	}
-	return true, "ready"
-}
-
-func finishCompactDevnetTrace(summaryPath string, result DevnetTraceResult, trace map[string]any) error {
-	payload := map[string]any{
-		"enabled":    true,
-		"ok":         result.OK,
-		"status":     result.Status,
-		"trace_path": result.TracePath,
-	}
-	if result.ErrorMessage != "" {
-		payload["error"] = result.ErrorMessage
-	}
-	if len(trace) > 0 {
-		payload["trace"] = trace
-	}
-	return updateDevnetTraceSummary(summaryPath, payload)
-}
-
-func updateDevnetTraceSummary(summaryPath string, trace map[string]any) error {
-	payload := readJSONFile(summaryPath)
-	if len(payload) == 0 {
-		return errors.New("raytracer_summary_missing")
-	}
-	payload["devnet_trace"] = trace
-	encoded, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return err
-	}
-	encoded = append(encoded, '\n')
-	temporaryPath := summaryPath + ".tmp"
-	if err := os.WriteFile(temporaryPath, encoded, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(temporaryPath, summaryPath); err == nil {
-		return nil
-	}
-	// Windows cannot atomically replace an existing destination with Rename.
-	// Keep the original summary in place until the replacement bytes are ready.
-	err = os.WriteFile(summaryPath, encoded, 0o600)
-	_ = os.Remove(temporaryPath)
-	return err
-}
-
-func readJSONFile(path string) map[string]any {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return map[string]any{}
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return map[string]any{}
-	}
-	return payload
-}
-
-func nodeBinary() string {
-	if override := strings.TrimSpace(os.Getenv("SILICIUM_NODE_BIN")); override != "" {
-		return override
-	}
-	if path, err := lookPath("node"); err == nil {
-		return path
-	}
-	return "node"
-}
-
-func envValueOr(value, fallback string) string {
-	if value = strings.TrimSpace(value); value != "" {
-		return value
-	}
-	return fallback
 }
 
 func NewJobID(userID uint) string {
