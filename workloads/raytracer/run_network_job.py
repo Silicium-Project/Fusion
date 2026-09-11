@@ -549,7 +549,7 @@ def retry_excluded_peer_ids(
     available_capacity: int,
     error: str,
 ) -> tuple[list[str], bool]:
-    """Prefer a different worker without making a retry unclaimable."""
+    """Prefer another worker while keeping at least one eligible peer."""  # i18n:ignore - developer documentation
     excluded = {str(value).strip() for value in current if str(value).strip()}
     failed = str(failed_node_id).strip()
     if failed:
@@ -558,7 +558,7 @@ def retry_excluded_peer_ids(
     no_alternative = bool(excluded) and max(1, int(available_capacity)) <= len(excluded)
     unknown_timeout = not failed and any(
         marker in str(error).lower()
-        for marker in ("missing network result after deadline:", "timeout", "timed out")
+        for marker in ("missing network result after deadline:", "timeout", "timed out")  # i18n:ignore - internal error classifiers
     )
     relaxed = no_alternative or (bool(excluded) and unknown_timeout)
     if relaxed:
