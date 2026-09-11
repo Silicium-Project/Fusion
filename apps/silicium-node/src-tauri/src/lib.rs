@@ -2202,7 +2202,11 @@ pub fn run_supervisor_cli() -> i32 {
             repo_root = args.next().unwrap_or_default();
         }
     }
-    let Ok(repo_root) = resolve_repo_root_readonly(&repo_root) else {
+    // The supervisor is also the Linux autostart entrypoint. It must refresh
+    // the persistent runtime from the currently mounted AppImage before it
+    // starts the network child; using the readonly resolver here left an old
+    // start-node.sh in ~/.config after an AppImage update.
+    let Ok(repo_root) = resolve_repo_root(&repo_root) else {
         return 2;
     };
     if let Err(error) = remove_legacy_runtime_assets(&repo_root) {
