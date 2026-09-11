@@ -73,13 +73,28 @@ if len(public_der) < 32:
 public_key = public_der[-32:]
 signing_key_id = hashlib.sha256(public_key).hexdigest()
 definitions = {
-    "dev": (os.environ["SILICIUM_DEV_VERSION"], "silicium-node-windows-dev.exe", int(os.environ["SILICIUM_DEV_CHECK_INTERVAL_SECONDS"])),
-    "prod": (os.environ["SILICIUM_PROD_VERSION"], "silicium-node-windows.exe", int(os.environ["SILICIUM_PROD_CHECK_INTERVAL_SECONDS"])),
+    "dev": {
+        "version": os.environ["SILICIUM_DEV_VERSION"],
+        "interval": int(os.environ["SILICIUM_DEV_CHECK_INTERVAL_SECONDS"]),
+        "artifacts": [
+            ("windows-x86_64", "silicium-node-windows-dev.exe"),
+            ("linux-x86_64", "silicium-node-linux-dev.AppImage"),
+        ],
+    },
+    "prod": {
+        "version": os.environ["SILICIUM_PROD_VERSION"],
+        "interval": int(os.environ["SILICIUM_PROD_CHECK_INTERVAL_SECONDS"]),
+        "artifacts": [
+            ("windows-x86_64", "silicium-node-windows.exe"),
+            ("linux-x86_64", "silicium-node-linux.AppImage"),
+        ],
+    },
 }
 missing_artifacts = [
     str(downloads / filename)
-    for _, filename, _ in definitions.values()
-    if not (downloads / filename).is_file()
+    for definition in definitions.values()
+    for platform, filename in definition["artifacts"]
+    if platform.startswith("windows") and not (downloads / filename).is_file()
 ]
 if missing_artifacts:
     raise SystemExit("required node artifacts are missing: " + ", ".join(missing_artifacts))
@@ -133,77 +148,115 @@ def signed_peer_headers(url: str, body: bytes) -> dict[str, str]:
         "X-Silicium-Signature": signature,
     }
 
-for channel, (version, filename, interval) in definitions.items():
-    artifact = downloads / filename
-    if not artifact.is_file():
-        continue
-    digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
-    content_id = digest
-    requested_build = os.environ.get(f"SILICIUM_{channel.upper()}_RELEASE_BUILD", os.environ.get("SILICIUM_RELEASE_BUILD", "")).strip()
-    existing_release = existing_channels.get(channel, {})
-    unchanged_artifact = (
-        isinstance(existing_release, dict)
-        and str(existing_release.get("version", "")).strip() == version
-        and str(existing_release.get("sha256", "")).strip().lower() == digest
-        and int(existing_release.get("size_bytes", 0) or 0) == artifact.stat().st_size
-    )
-    release_build = requested_build
-    if not release_build and unchanged_artifact:
-        release_build = str(existing_release.get("build", "")).strip()
-    if not release_build:
-        release_build = subprocess.run(
-            ["git", "-C", os.environ["SILICIUM_ROOT"], "rev-parse", "HEAD"],
-            check=False,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    cached_artifact = p2p_dir / content_id
-    if not cached_artifact.is_file() or cached_artifact.stat().st_size != artifact.stat().st_size:
-        temporary_artifact = p2p_dir / f".{content_id}.tmp"
-        shutil.copyfile(artifact, temporary_artifact)
-        if hashlib.sha256(temporary_artifact.read_bytes()).hexdigest() != digest:
-            temporary_artifact.unlink(missing_ok=True)
-            raise SystemExit(f"P2P update cache verification failed: {artifact}")
-        temporary_artifact.replace(cached_artifact)
-    release = {
-        "version": version,
-        "build": release_build,
-        "channel": channel,
-        "url": f"{base_url}/{filename}",
-        "sha256": digest,
-        "content_id": content_id,
-        "size_bytes": artifact.stat().st_size,
-        "auto_install": True,
-        "check_interval_seconds": max(15, interval),
-        "signing_key_id": signing_key_id,
-    }
-    canonical = "\n".join(
-        [
-            "silicium-update-v1",
-            release["channel"],
-            release["version"],
-            release["sha256"],
-            str(release["size_bytes"]),
-            release["url"],
-            release["content_id"],
-            "",
-        ]
-    ).encode("utf-8")
-    with tempfile.NamedTemporaryFile() as signing_input:
-        signing_input.write(canonical)
-        signing_input.flush()
-        signature = subprocess.run(
-            ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(signing_key), "-in", signing_input.name],
-            check=True,
-            capture_output=True,
-        ).stdout
-    release["signature"] = base64.b64encode(signature).decode("ascii")
-    channels[channel] = release
+releases = []
+existing_releases = existing_manifest.get("releases", []) if isinstance(existing_manifest, dict) else []
+if not isinstance(existing_releases, list):
+    existing_releases = []
+
+for channel, definition in definitions.items():
+    channel_releases = []
+    version = definition["version"]
+    interval = definition["interval"]
+    for platform, filename in definition["artifacts"]:
+        artifact = downloads / filename
+        if not artifact.is_file():
+            continue
+        digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
+        content_id = digest
+        requested_build = os.environ.get(
+            f"SILICIUM_{channel.upper()}_RELEASE_BUILD",
+            os.environ.get("SILICIUM_RELEASE_BUILD", ""),
+        ).strip()
+        existing_release = next(
+            (
+                item
+                for item in existing_releases
+                if isinstance(item, dict)
+                and str(item.get("channel", "")).strip() == channel
+                and str(item.get("platform", "")).strip().lower() == platform
+                and str(item.get("url", "")).rstrip("/").endswith("/" + filename)
+            ),
+            None,
+        )
+        if existing_release is None:
+            legacy_release = existing_channels.get(channel, {})
+            if (
+                isinstance(legacy_release, dict)
+                and str(legacy_release.get("url", "")).rstrip("/").endswith("/" + filename)
+            ):
+                existing_release = legacy_release
+        unchanged_artifact = (
+            isinstance(existing_release, dict)
+            and str(existing_release.get("version", "")).strip() == version
+            and str(existing_release.get("sha256", "")).strip().lower() == digest
+            and int(existing_release.get("size_bytes", 0) or 0) == artifact.stat().st_size
+        )
+        release_build = requested_build
+        if not release_build and unchanged_artifact:
+            release_build = str(existing_release.get("build", "")).strip()
+        if not release_build:
+            release_build = subprocess.run(
+                ["git", "-C", os.environ["SILICIUM_ROOT"], "rev-parse", "HEAD"],
+                check=False,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        cached_artifact = p2p_dir / content_id
+        if not cached_artifact.is_file() or cached_artifact.stat().st_size != artifact.stat().st_size:
+            temporary_artifact = p2p_dir / f".{content_id}.tmp"
+            shutil.copyfile(artifact, temporary_artifact)
+            if hashlib.sha256(temporary_artifact.read_bytes()).hexdigest() != digest:
+                temporary_artifact.unlink(missing_ok=True)
+                raise SystemExit(f"P2P update cache verification failed: {artifact}")
+            temporary_artifact.replace(cached_artifact)
+        release = {
+            "version": version,
+            "build": release_build,
+            "channel": channel,
+            "platform": platform,
+            "url": f"{base_url}/{filename}",
+            "sha256": digest,
+            "content_id": content_id,
+            "size_bytes": artifact.stat().st_size,
+            "auto_install": True,
+            "check_interval_seconds": max(15, interval),
+            "signing_key_id": signing_key_id,
+        }
+        canonical = "\n".join(
+            [
+                "silicium-update-v1",
+                release["channel"],
+                release["platform"],
+                release["version"],
+                release["sha256"],
+                str(release["size_bytes"]),
+                release["url"],
+                release["content_id"],
+                "",
+            ]
+        ).encode("utf-8")
+        with tempfile.NamedTemporaryFile() as signing_input:
+            signing_input.write(canonical)
+            signing_input.flush()
+            signature = subprocess.run(
+                ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(signing_key), "-in", signing_input.name],
+                check=True,
+                capture_output=True,
+            ).stdout
+        release["signature"] = base64.b64encode(signature).decode("ascii")
+        channel_releases.append(release)
+        releases.append(release)
+    if channel_releases:
+        channels[channel] = next(
+            (release for release in channel_releases if release["platform"].startswith("windows-")),
+            channel_releases[0],
+        )
 
 payload = {
     "schema_version": 1,
     "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     "channels": channels,
+    "releases": releases,
 }
 temporary = downloads / ".update-manifest.json.tmp"
 temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -213,7 +266,7 @@ gossip_url = os.environ.get("SILICIUM_UPDATE_GOSSIP_URL", "").strip()
 mesh_key = os.environ.get("SILICIUM_MESH_KEY", "").strip()
 if gossip_url:
     gossip_failures = []
-    for release in channels.values():
+    for release in releases:
         body = json.dumps({"topic": "software_update", "payload": release}, separators=(",", ":")).encode("utf-8")
         headers = signed_peer_headers(gossip_url, body)
         if mesh_key:

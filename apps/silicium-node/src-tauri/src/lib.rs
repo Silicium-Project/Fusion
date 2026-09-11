@@ -10,7 +10,7 @@ use std::{
     ffi::OsStr,
     fs::{self, OpenOptions},
     io::{Read, Write},
-    net::{TcpStream, UdpSocket},
+    net::{TcpListener, TcpStream, UdpSocket},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::Mutex,
@@ -519,7 +519,7 @@ fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Result<St
 fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
     let root = resolve_repo_root(&repo_root)?;
     let mut checks = vec![
-        command_check("Python", &python_launcher(&root), &["--version"]),
+        python_command_check(&root),
         identity_mode_check(),
     ];
 
@@ -561,6 +561,7 @@ fn install_runtime(repo_root: String) -> Result<String, String> {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         apply_runtime_path(&mut command, &root);
+        configure_python_command(&mut command, &root);
         command.status()
     } else {
         return Err(format!("runtime_install_unsupported:{}", env::consts::OS));
@@ -646,7 +647,7 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
         port_ready,
         orchestrator: orchestrator_check(&orchestrator_url),
         openssl: identity_mode_check(),
-        python: command_check("Python", &python_launcher(&root), &["--version"]),
+        python: python_command_check(&root),
         log_tail: read_node_log_tail(&root)
             .unwrap_or_else(|| "Aucun log node disponible pour le moment.".to_string()),
     })
@@ -1106,6 +1107,20 @@ fn validate_update_release(release: &UpdateRelease) -> Result<(), String> {
 
 fn update_signature_payload(release: &UpdateRelease) -> Vec<u8> {
     format!(
+        "silicium-update-v1\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+        release.channel,
+        release.platform,
+        release.version,
+        release.sha256.to_ascii_lowercase(),
+        release.size_bytes,
+        release.url,
+        release.content_id.to_ascii_lowercase(),
+    )
+    .into_bytes()
+}
+
+fn legacy_update_signature_payload(release: &UpdateRelease) -> Vec<u8> {
+    format!(
         "silicium-update-v1\n{}\n{}\n{}\n{}\n{}\n{}\n",
         release.channel,
         release.version,
@@ -1131,9 +1146,23 @@ fn verify_update_signature(release: &UpdateRelease) -> Result<(), String> {
         .map_err(|_| "update_signature_invalid".to_string())?;
     let signature =
         Signature::from_slice(&signature).map_err(|_| "update_signature_invalid".to_string())?;
-    verifying_key
+    if verifying_key
         .verify(&update_signature_payload(release), &signature)
-        .map_err(|_| "update_signature_untrusted".to_string())
+        .is_ok()
+    {
+        return Ok(());
+    }
+    // Releases published before platform-specific artifacts were added did
+    // not include `platform` in the signed payload. Accept that legacy form
+    // only when the field is absent; a non-empty platform must be signed.
+    if release.platform.trim().is_empty()
+        && verifying_key
+            .verify(&legacy_update_signature_payload(release), &signature)
+            .is_ok()
+    {
+        return Ok(());
+    }
+    Err("update_signature_untrusted".to_string())
 }
 
 fn download_update(release: &UpdateRelease) -> Result<PathBuf, String> {
@@ -1962,6 +1991,19 @@ fn local_network_node_ready(port: u16) -> bool {
         && response.contains("\"ok\":true")
 }
 
+fn wait_for_local_port_release(port: u16, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 fn reset_node_session_logs(repo_root: &Path) -> Result<(), String> {
     for name in [
         "silicium-supervisor.out.log",
@@ -2207,6 +2249,7 @@ pub fn run_supervisor_cli() -> i32 {
         let mut node_running = pid_running;
         if node_running
             && node_started_at.elapsed() >= CLAIM_POLL_STALE_AFTER
+            && !local_network_node_ready(46101)
             && !claim_poll_is_fresh(&repo_root, CLAIM_POLL_STALE_AFTER)
         {
             let _ = append_supervisor_log(
@@ -2215,32 +2258,45 @@ pub fn run_supervisor_cli() -> i32 {
             );
             if let Ok(Some(pid)) = read_pid(&repo_root) {
                 let _ = kill_process_tree(pid);
-            } else {
-                kill_known_silicium_processes(Some(&repo_root));
             }
+            // Older Linux bundles tracked the shell wrapper instead of the
+            // Python child. Reap both the recorded tree and any orphaned
+            // managed launcher before trying to bind the node port again.
+            kill_known_silicium_processes(Some(&repo_root));
             remove_pid(&repo_root);
             node_running = false;
-            thread::sleep(Duration::from_secs(1));
+            let _ = wait_for_local_port_release(46101, Duration::from_secs(2));
         }
         if node_running {
             restart_attempts = 0;
         }
         if !node_running {
             remove_pid(&repo_root);
-            match spawn_node(&repo_root, &config) {
-                Ok(child) => {
-                    restart_attempts = restart_attempts.saturating_add(1);
-                    node_started_at = Instant::now();
-                    let _ = write_pid(&repo_root, child.id());
-                    let _ = append_supervisor_log(
-                        &repo_root,
-                        &format!("node_started pid={}\n", child.id()),
-                    );
+            kill_known_silicium_processes(Some(&repo_root));
+            if wait_for_local_port_release(46101, Duration::from_secs(2)) {
+                match spawn_node(&repo_root, &config) {
+                    Ok(child) => {
+                        restart_attempts = restart_attempts.saturating_add(1);
+                        node_started_at = Instant::now();
+                        let _ = write_pid(&repo_root, child.id());
+                        let _ = append_supervisor_log(
+                            &repo_root,
+                            &format!("node_started pid={}\n", child.id()),
+                        );
+                    }
+                    Err(error) => {
+                        let _ = append_supervisor_log(
+                            &repo_root,
+                            &format!("spawn_node_failed: {error}\n"),
+                        );
+                    }
                 }
-                Err(error) => {
-                    let _ =
-                        append_supervisor_log(&repo_root, &format!("spawn_node_failed: {error}\n"));
-                }
+            } else {
+                restart_attempts = restart_attempts.saturating_add(1);
+                let _ = append_supervisor_log(
+                    &repo_root,
+                    "node_port_occupied: waiting before retrying managed network node",
+                );
             }
         }
         let delay = if restart_attempts > 3 { 20 } else { 5 };
@@ -2280,6 +2336,19 @@ fn detect_local_ip() -> Option<String> {
 }
 
 fn python_launcher(repo_root: &Path) -> String {
+    if cfg!(target_os = "linux") {
+        if let Ok(configured) = env::var("SILICIUM_PYTHON3") {
+            if !configured.trim().is_empty() {
+                return configured;
+            }
+        }
+        for candidate in ["/usr/bin/python3", "/usr/local/bin/python3"] {
+            if Path::new(candidate).exists() {
+                return candidate.to_string();
+            }
+        }
+        return "python3".to_string();
+    }
     if !cfg!(target_os = "windows") {
         return "python3".to_string();
     }
@@ -2532,26 +2601,50 @@ fn orchestrator_check(url: &str) -> CheckItem {
     }
 }
 
-fn command_check(name: &str, command: &str, args: &[&str]) -> CheckItem {
-    let mut process = Command::new(command);
-    process.args(args).stdin(Stdio::null());
+fn python_command_check(repo_root: &Path) -> CheckItem {
+    let python = python_launcher(repo_root);
+    let mut process = Command::new(python);
+    configure_python_command(&mut process, repo_root);
+    process.arg("--version").stdin(Stdio::null());
     configure_detached_process(&mut process);
     match process.output() {
         Ok(output) if output.status.success() => CheckItem {
-            name: name.to_string(),
+            name: "Python".to_string(),
             ok: true,
-            detail: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            detail: String::from_utf8_lossy(if output.stdout.is_empty() {
+                &output.stderr
+            } else {
+                &output.stdout
+            })
+            .trim()
+            .to_string(),
         },
         Ok(output) => CheckItem {
-            name: name.to_string(),
+            name: "Python".to_string(),
             ok: false,
             detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         },
         Err(error) => CheckItem {
-            name: name.to_string(),
+            name: "Python".to_string(),
             ok: false,
             detail: error.to_string(),
         },
+    }
+}
+
+fn configure_python_command(command: &mut Command, repo_root: &Path) {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    // AppImage's launcher exports PYTHONHOME/PYTHONPATH for its bundled
+    // partial Python tree. The node uses the host interpreter with the
+    // packaged third-party modules instead.
+    command.env_remove("PYTHONHOME");
+    let site_packages = repo_root.join("tools").join("python").join("site-packages");
+    if site_packages.exists() {
+        command.env("PYTHONPATH", site_packages.display().to_string());
+    } else {
+        command.env_remove("PYTHONPATH");
     }
 }
 
@@ -2575,14 +2668,11 @@ fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
         }
     } else {
         let site_packages = repo_root.join("tools").join("python").join("site-packages");
+        command.env_remove("PYTHONHOME");
         if site_packages.exists() {
-            let current = env::var("PYTHONPATH").unwrap_or_default();
-            let value = if current.is_empty() {
-                site_packages.display().to_string()
-            } else {
-                format!("{}:{}", site_packages.display(), current)
-            };
-            command.env("PYTHONPATH", value);
+            command.env("PYTHONPATH", site_packages.display().to_string());
+        } else {
+            command.env_remove("PYTHONPATH");
         }
     }
     if !path_entries.is_empty() {
@@ -2879,10 +2969,66 @@ pub fn run_cleanup_cli() -> i32 {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+fn linux_managed_node_pids(repo_root: Option<&Path>) -> Vec<u32> {
+    let root = repo_root.and_then(|path| path.canonicalize().ok());
+    let root_text = root
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_default();
+    let mut pids = Vec::new();
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return pids;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Ok(pid) = name.to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+        if pid == std::process::id() {
+            continue;
+        }
+        let command_line = fs::read(format!("/proc/{pid}/cmdline"))
+            .ok()
+            .map(|raw| {
+                String::from_utf8_lossy(&raw)
+                    .split('\0')
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
+            .unwrap_or_default();
+        let is_node_launcher = command_line.contains("start-node.sh")
+            || command_line.contains("silicium node start");
+        if !is_node_launcher {
+            continue;
+        }
+        let cwd = fs::read_link(format!("/proc/{pid}/cwd")).ok();
+        let in_scope = match root.as_ref() {
+            Some(root) => cwd
+                .as_ref()
+                .map(|path| path.starts_with(root))
+                .unwrap_or(false)
+                || command_line.contains(&root_text),
+            None => true,
+        };
+        if in_scope {
+            pids.push(pid);
+        }
+    }
+    pids
+}
+
 fn kill_known_silicium_processes(repo_root: Option<&Path>) {
-    if !cfg!(target_os = "windows") {
+    #[cfg(not(target_os = "windows"))]
+    {
+        for pid in linux_managed_node_pids(repo_root) {
+            let _ = kill_process_tree(pid);
+        }
         return;
     }
+    #[cfg(target_os = "windows")]
+    {
     let mut filters = vec![
         "$_.CommandLine -like '*silicium node start*'".to_string(),
         "$_.CommandLine -like '* --supervisor *'".to_string(),
@@ -2908,12 +3054,20 @@ fn kill_known_silicium_processes(repo_root: Option<&Path>) {
         .stderr(Stdio::null());
     configure_detached_process(&mut command);
     let _ = command.status();
+    }
 }
 
 fn kill_managed_node_processes(repo_root: &Path) {
-    if !cfg!(target_os = "windows") {
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Ok(Some(pid)) = read_pid(repo_root) {
+            let _ = kill_process_tree(pid);
+        }
+        kill_known_silicium_processes(Some(repo_root));
         return;
     }
+    #[cfg(target_os = "windows")]
+    {
     let escaped = repo_root.display().to_string().replace('\'', "''");
     let script = format!(
         "$root = '{escaped}'; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and ($_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf('networked\\p2p_node', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.Name -ieq 'p2p_node.exe') }} | ForEach-Object {{ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null }}"
@@ -2931,6 +3085,7 @@ fn kill_managed_node_processes(repo_root: &Path) {
         .stderr(Stdio::null());
     configure_detached_process(&mut command);
     let _ = command.status();
+    }
 }
 
 fn append_supervisor_log(repo_root: &Path, message: &str) -> Result<(), String> {
@@ -2971,6 +3126,15 @@ fn process_is_running(pid: u32) -> bool {
 
 #[cfg(not(target_os = "windows"))]
 fn process_is_running(pid: u32) -> bool {
+    if let Ok(status) = fs::read_to_string(format!("/proc/{pid}/status")) {
+        if let Some(state) = status
+            .lines()
+            .find(|line| line.starts_with("State:"))
+            .and_then(|line| line.split_whitespace().nth(1))
+        {
+            return state != "Z";
+        }
+    }
     Command::new("kill")
         .arg("-0")
         .arg(pid.to_string())
@@ -2983,7 +3147,8 @@ fn process_is_running(pid: u32) -> bool {
 }
 
 fn kill_process_tree(pid: u32) -> Result<(), String> {
-    let status = if cfg!(target_os = "windows") {
+    #[cfg(target_os = "windows")]
+    {
         let mut command = Command::new("taskkill");
         command
             .arg("/PID")
@@ -2994,16 +3159,79 @@ fn kill_process_tree(pid: u32) -> Result<(), String> {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         configure_detached_process(&mut command);
-        command.status()
-    } else {
-        Command::new("kill")
-            .arg(pid.to_string())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+        return command
             .status()
-    };
-    status.map_err(|error| error.to_string()).map(|_| ())
+            .map_err(|error| error.to_string())
+            .map(|_| ());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let tree = linux_process_tree(pid);
+        let mut first_error = None;
+        for target in &tree {
+            match Command::new("kill")
+                .arg("-TERM")
+                .arg(target.to_string())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+            {
+                Ok(_) => {}
+                Err(error) if first_error.is_none() => first_error = Some(error.to_string()),
+                Err(_) => {}
+            }
+        }
+        thread::sleep(Duration::from_millis(100));
+        for target in &tree {
+            if !process_is_running(*target) {
+                continue;
+            }
+            match Command::new("kill")
+                .arg("-KILL")
+                .arg(target.to_string())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+            {
+                Ok(_) => {}
+                Err(error) if first_error.is_none() => first_error = Some(error.to_string()),
+                Err(_) => {}
+            }
+        }
+        if let Some(error) = first_error {
+            Err(error)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn linux_process_tree(pid: u32) -> Vec<u32> {
+    fn visit(pid: u32, seen: &mut std::collections::HashSet<u32>, result: &mut Vec<u32>) {
+        if !seen.insert(pid) {
+            return;
+        }
+        let children_path = format!("/proc/{pid}/task/{pid}/children");
+        if let Ok(children) = fs::read_to_string(children_path) {
+            for child in children
+                .split_whitespace()
+                .filter_map(|value| value.parse::<u32>().ok())
+            {
+                visit(child, seen, result);
+            }
+        }
+        // Children are returned before their parent so a shell wrapper cannot
+        // outlive the Python process that owns the listening socket.
+        result.push(pid);
+    }
+
+    let mut result = Vec::new();
+    visit(pid, &mut std::collections::HashSet::new(), &mut result);
+    result
 }
 
 fn read_node_log_tail(repo_root: &Path) -> Option<String> {

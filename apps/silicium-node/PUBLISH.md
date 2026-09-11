@@ -25,6 +25,10 @@ The updater uses two independent channels published in
 - `dev`: SemVer prereleases such as `0.2.9-dev.20`, checked every 30 seconds;
 - `prod`: stable SemVer releases such as `0.2.17`, checked every 6 hours.
 
+The legacy `channels` map remains available for the website, while the signed
+`releases` list contains one entry per platform. Linux clients select the
+`linux-x86_64` AppImage entry and never attempt to install the Windows `.exe`.
+
 Builds must set `SILICIUM_RELEASE_CHANNEL`, `SILICIUM_RELEASE_VERSION`, and
 `SILICIUM_RELEASE_BUILD`. The supervisor reports those exact compiled values in
 the P2P heartbeat and installs a newer version or a different published build
