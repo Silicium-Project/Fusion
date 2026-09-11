@@ -22,6 +22,13 @@ if [[ ! -s "$RPM_PATH" ]]; then
   exit 1
 fi
 
+# The build script discovers bundles from apps/silicium-node and passes paths
+# relative to that directory. The AppImage validation below changes into a
+# temporary extraction directory, so retain canonical paths before doing so.
+APPIMAGE_PATH="$(realpath "$APPIMAGE_PATH")"
+DEB_PATH="$(realpath "$DEB_PATH")"
+RPM_PATH="$(realpath "$RPM_PATH")"
+
 # Keep the artifact executable in the release workspace. The deployment step
 # also restores this mode after staging it on the VPS; browsers themselves do
 # not preserve executable bits when a user downloads an AppImage.
