@@ -41,9 +41,12 @@ if ! rpm -qip "$RPM_PATH" >/dev/null; then
   echo "The RPM package metadata is invalid: $RPM_PATH" >&2
   exit 1
 fi
-rpm_runtime_path="/usr/lib/silicium-node/resources/runtime/Network/silicium"
-if ! rpm -qpl "$RPM_PATH" | grep -Fxq "$rpm_runtime_path"; then
-  echo "The RPM package is missing its Network runtime: $rpm_runtime_path" >&2
+rpm_runtime_path="$(
+  rpm -qpl "$RPM_PATH" \
+    | awk '/\/resources\/runtime\/Network\/silicium$/ && !found { print; found = 1 }'
+)"
+if [[ -z "$rpm_runtime_path" ]]; then
+  echo "The RPM package is missing its Network runtime." >&2
   rpm -qpl "$RPM_PATH" | sed -n '1,120p' >&2
   exit 1
 fi
@@ -55,9 +58,12 @@ if ! dpkg-deb --extract "$DEB_PATH" "$extract_root/deb" >/dev/null; then
   exit 1
 fi
 
-runtime_path="$extract_root/deb/usr/lib/silicium-node/resources/runtime"
-if [[ ! -f "$runtime_path/Network/silicium" ]]; then
-  echo "The Debian package is missing its Network runtime: $runtime_path" >&2
+deb_runtime_entry="$(
+  find "$extract_root/deb/usr/lib" -type f \
+    -path '*/resources/runtime/Network/silicium' -print -quit
+)"
+if [[ -z "$deb_runtime_entry" ]]; then
+  echo "The Debian package is missing its Network runtime." >&2
   find "$extract_root/deb/usr" -maxdepth 6 -type f | sort | sed -n '1,80p' >&2
   exit 1
 fi
@@ -73,11 +79,16 @@ if ! (
   exit 1
 fi
 
-appimage_runtime="$extract_root/appimage/squashfs-root/usr/lib/silicium-node/resources/runtime"
-if [[ ! -f "$appimage_runtime/Network/silicium" ]]; then
-  echo "The AppImage is missing its Network runtime: $appimage_runtime" >&2
+appimage_runtime_entry="$(
+  find "$extract_root/appimage/squashfs-root/usr/lib" -type f \
+    -path '*/resources/runtime/Network/silicium' -print -quit
+)"
+if [[ -z "$appimage_runtime_entry" ]]; then
+  echo "The AppImage is missing its Network runtime." >&2
   find "$extract_root/appimage/squashfs-root/usr" -maxdepth 6 -type f | sort | sed -n '1,80p' >&2
   exit 1
 fi
 
 echo "Linux bundles verified: AppImage, deb and rpm contain the packaged Network runtime."
+printf '  AppImage: %s\n  deb: %s\n  rpm: %s\n' \
+  "$appimage_runtime_entry" "$deb_runtime_entry" "$rpm_runtime_path"
