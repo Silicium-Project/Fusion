@@ -10,7 +10,7 @@
         <MetricCard label="Parties" :value="fragmentTotal" :detail="`${fragmentDone} terminées`" icon="layers" tone="mint" />
         <MetricCard label="Machines mobilisées" :value="nodeCount" detail="calcul et vérification" icon="nodes" tone="ink" />
         <MetricCard label="Durée" :value="duration" detail="depuis le démarrage" icon="clock" tone="violet" />
-        <MetricCard label="Preuves" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? 'traçabilité active' : 'traçabilité inactive'" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
+        <MetricCard label="Preuves" :value="dashboard.devnet?.signatures?.length || 0" :detail="devnetDetail" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
         <UiCard id="result" title="Votre résultat" description="Aperçu de l’artefact réassemblé." padded><RenderPreview :dashboard="dashboard" :image-url="resultPreview" /></UiCard>
@@ -52,7 +52,14 @@ const fragmentFailed = computed(() => fragments.value.filter(item => fragmentVis
 const nodeCount = computed(() => new Set(fragments.value.map(fragmentNode).filter(Boolean)).size || Number((dashboard.value?.job.network?.nodes as unknown[])?.length || 0));
 const duration = computed(() => dashboard.value ? formatDuration(dashboard.value.job.startedAt, dashboard.value.job.completedAt) : '—');
 const cancellable = computed(() => Boolean(dashboard.value && isJobCancellable(dashboard.value.job.status)));
-const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || (dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
+const devnetDetail = computed(() => {
+  if (!dashboard.value?.devnet?.enabled) return 'traçabilité inactive';
+  if (dashboard.value.devnet.ok) return 'preuve Devnet confirmée';
+  if (dashboard.value.devnet.status === 'pending') return 'ancrage Devnet en cours';
+  if (dashboard.value.devnet.status === 'failed') return 'preuve Devnet en erreur';
+  return 'traçabilité active';
+});
+const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || dashboard.value.devnet?.status === 'pending' || (dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
 function fragmentIndex(fragment: JobFragment, fallback: number) { return fragment.fragment_index ?? fragment.fragmentIndex ?? fallback; }
 function fragmentNode(fragment: JobFragment) { return String(fragment.handled_by || fragment.handledBy || 'En attente'); }
 function fragmentKey(fragment: JobFragment, fallback: number) { return `${fragmentIndex(fragment,fallback)}-${fragmentNode(fragment)}-${fragment.status}`; }
