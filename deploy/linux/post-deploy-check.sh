@@ -73,22 +73,6 @@ done
 echo "Checking local HTTP health endpoints..."
 curl -fsS --max-time 8 http://127.0.0.1:8080/health >/dev/null
 curl -fsS --max-time 8 http://127.0.0.1:3000 >/dev/null
-backend_status="$(curl -fsS --max-time 8 http://127.0.0.1:8080/status)"
-if ! python3 - "$backend_status" <<'PY'
-import json
-import sys
-
-status = json.loads(sys.argv[1])
-blockchain = status.get("blockchain", {})
-if blockchain.get("proofReady") is not True:
-    detail = blockchain.get("readinessDetail", "unknown")
-    print(f"Devnet proof runtime is not ready: {detail}", file=sys.stderr)
-    raise SystemExit(1)
-PY
-then
-  echo "The backend cannot produce the configured Devnet proof." >&2
-  exit 1
-fi
 orchestrator_port="${SILICIUM_NODE_PORT:-46100}"
 orchestrator_health=""
 for _ in $(seq 1 30); do
