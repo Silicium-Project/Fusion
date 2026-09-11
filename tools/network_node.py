@@ -2251,6 +2251,7 @@ class PeerNetwork:
             "schema_version": 1,
             "channel": channel,
             "version": version,
+            "platform": str(payload.get("platform", "")).strip().lower(),
             "url": str(payload.get("url", "")).strip(),
             "sha256": digest,
             "content_id": content_id,

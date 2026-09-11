@@ -1727,6 +1727,26 @@ def test_signed_update_announcement_and_artifact_cross_an_isolated_peer(tmp_path
         peer_a.stop()
 
 
+def test_update_announcement_preserves_platform_for_client_selection() -> None:
+    digest = network_node.sha256_bytes(b"linux-update")
+    normalized = network_node.PeerNetwork._normalize_update_announcement(
+        {
+            "channel": "dev",
+            "version": "0.2.9-dev.100",
+            "platform": "linux-x86_64",
+            "url": "https://vps-910c1dbc.vps.ovh.net/downloads/silicium-node-linux-dev.AppImage",
+            "sha256": digest,
+            "content_id": digest,
+            "size_bytes": len(b"linux-update"),
+            "signature": "signed-by-release-authority",
+            "signing_key_id": "test-key",
+        }
+    )
+
+    assert normalized is not None
+    assert normalized["platform"] == "linux-x86_64"
+
+
 def test_update_gossip_publish_ack_does_not_wait_for_slow_fanout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
