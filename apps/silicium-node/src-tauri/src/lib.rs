@@ -1320,7 +1320,7 @@ while kill -0 "$PARENT_PID" 2>/dev/null; do
 done
 
 case "$NODE_PID" in
-  ''|*[!0-9]*) ;;
+  ''|0|*[!0-9]*) ;;
   *)
     kill -TERM "$NODE_PID" 2>/dev/null || true
     attempts=0
