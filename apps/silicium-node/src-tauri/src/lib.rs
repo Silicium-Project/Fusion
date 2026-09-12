@@ -2063,6 +2063,7 @@ fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
             .arg("--p2p-direct-transport-backend")
             .arg("auto")
             .current_dir(repo_root);
+        apply_raytracer_env(&mut command, repo_root);
         apply_runtime_path(&mut command, repo_root);
         spawn_detached(command, repo_root)
     }
@@ -4547,6 +4548,46 @@ mod tests {
 
         assert!(!target.join("tools").join("openssl").exists());
         assert!(target.join("Network").join("silicium").exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn raytracer_env_resolves_relative_paths_from_runtime_root() {
+        let directory =
+            env::temp_dir().join(format!("silicium-raytracer-env-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        let env_file = directory.join(".silicium").join("env").join("raytracer.env");
+        fs::create_dir_all(env_file.parent().unwrap()).unwrap();
+        fs::write(
+            &env_file,
+            "SILICIUM_RAYTRACER_BIN=Network/bin/raytracer/silicium-raytracer\nSILICIUM_RAYTRACER_ASSETS_DIR=Network/bin/raytracer\n",
+        )
+        .unwrap();
+
+        let mut command = Command::new("silicium-test");
+        apply_raytracer_env(&mut command, &directory);
+
+        let value_for = |name: &str| {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == name)
+                .and_then(|(_, value)| value)
+                .map(PathBuf::from)
+        };
+        assert_eq!(
+            value_for("SILICIUM_RAYTRACER_BIN"),
+            Some(
+                directory
+                    .join("Network")
+                    .join("bin")
+                    .join("raytracer")
+                    .join("silicium-raytracer")
+            )
+        );
+        assert_eq!(
+            value_for("SILICIUM_RAYTRACER_ASSETS_DIR"),
+            Some(directory.join("Network").join("bin").join("raytracer"))
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 

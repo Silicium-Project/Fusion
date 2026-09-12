@@ -16,6 +16,23 @@ REPUTATION="${7:-50}"
 EXTRA_ARGS=("${@:8}")
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+# Keep direct Linux launches aligned with the desktop supervisor. The runtime
+# manifest stores paths relative to the runtime root because the AppImage and
+# the per-user managed copy live in different locations.
+RAYTRACER_ENV_FILE="$ROOT/.silicium/env/raytracer.env"
+if [[ -f "$RAYTRACER_ENV_FILE" ]]; then
+  while IFS='=' read -r key value; do
+    case "$key" in
+      SILICIUM_RAYTRACER_BIN|SILICIUM_RAYTRACER_ASSETS_DIR)
+        if [[ "$value" != /* ]]; then
+          value="$ROOT/$value"
+        fi
+        export "$key=$value"
+        ;;
+    esac
+  done < "$RAYTRACER_ENV_FILE"
+fi
+
 # AppImage's linuxdeploy environment can put an incomplete bundled Python
 # ahead of the host interpreter and export PYTHONHOME/PYTHONPATH for it. The
 # Network runtime is shipped as Python sources plus site-packages, so launch it
