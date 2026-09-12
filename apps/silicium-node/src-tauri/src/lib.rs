@@ -1717,6 +1717,22 @@ fn packaged_runtime_candidates(exe: &Path, app_dir: Option<&Path>) -> Vec<PathBu
                 executable_name,
             ));
         }
+
+        // linuxdeploy's AppRun.wrapped can be reported as current_exe()
+        // without exporting APPDIR. Walk its ancestors so a supervisor
+        // started by XDG autostart can still find the mounted AppImage
+        // resources instead of falling back to a stale managed runtime.
+        let mut ancestor = exe.parent();
+        while let Some(path) = ancestor {
+            candidates.push(
+                path.join("usr")
+                    .join("lib")
+                    .join("Silicium Node")
+                    .join("resources")
+                    .join("runtime"),
+            );
+            ancestor = path.parent();
+        }
     }
 
     if let Some(parent) = exe.parent() {
@@ -4145,6 +4161,32 @@ mod tests {
         assert!(candidates.iter().any(|candidate| {
             candidate.ends_with(Path::new("usr/lib/Silicium Node/resources/runtime"))
         }));
+        assert!(candidates
+            .iter()
+            .any(|candidate| validate_repo_root(candidate).is_ok()));
+        fs::remove_dir_all(app_dir).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_appimage_wrapper_ancestors_find_product_runtime_without_appdir() {
+        let app_dir = env::temp_dir().join(format!(
+            "silicium-appimage-wrapper-layout-{}",
+            std::process::id()
+        ));
+        let runtime = app_dir
+            .join("usr")
+            .join("lib")
+            .join("Silicium Node")
+            .join("resources")
+            .join("runtime")
+            .join("Network");
+        let _ = fs::remove_dir_all(&app_dir);
+        fs::create_dir_all(&runtime).unwrap();
+        fs::write(runtime.join("silicium"), b"#!/usr/bin/env python3\n").unwrap();
+
+        let candidates = packaged_runtime_candidates(&app_dir.join("AppRun.wrapped"), None);
+
         assert!(candidates
             .iter()
             .any(|candidate| validate_repo_root(candidate).is_ok()));
