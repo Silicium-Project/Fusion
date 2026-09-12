@@ -2222,8 +2222,12 @@ pub fn run_supervisor_cli() -> i32 {
     // the persistent runtime from the currently mounted AppImage before it
     // starts the network child; using the readonly resolver here left an old
     // start-node.sh in ~/.config after an AppImage update.
-    let Ok(repo_root) = resolve_repo_root(&repo_root) else {
-        return 2;
+    let repo_root = match resolve_repo_root(&repo_root) {
+        Ok(root) => root,
+        Err(error) => {
+            let _ = append_app_log(&format!("supervisor_start_failed: {error}\n"));
+            return 2;
+        }
     };
     if let Err(error) = remove_legacy_runtime_assets(&repo_root) {
         let _ = append_supervisor_log(
@@ -2242,6 +2246,17 @@ pub fn run_supervisor_cli() -> i32 {
                 append_supervisor_log(&repo_root, &format!("supervisor_lease_failed: {error}\n"));
             return 2;
         }
+    }
+    // A supervisor launched directly by XDG autostart does not pass through
+    // spawn_supervisor(), so the previous session's Python traceback would
+    // otherwise remain in the diagnostic tail after a successful recovery.
+    // Reset only after taking the lease: a second supervisor must never wipe
+    // logs belonging to the active one.
+    if let Err(error) = reset_node_session_logs(&repo_root) {
+        let _ = append_supervisor_log(
+            &repo_root,
+            &format!("session_log_reset_failed: {error}\n"),
+        );
     }
     // An older updater may have lost silicium-node.pid while leaving the
     // Python network runtime alive. Replace it on supervisor startup so the
