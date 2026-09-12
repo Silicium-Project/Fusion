@@ -1393,7 +1393,10 @@ exit 0
 }
 
 #[cfg(not(target_os = "linux"))]
-fn schedule_update_install_non_linux(installer: &Path, release: &UpdateRelease) -> Result<(), String> {
+fn schedule_update_install_non_linux(
+    installer: &Path,
+    release: &UpdateRelease,
+) -> Result<(), String> {
     if !cfg!(target_os = "windows") {
         return Err(format!(
             "automatic_update_installer_not_available:{}",
