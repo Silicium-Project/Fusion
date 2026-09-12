@@ -1249,6 +1249,151 @@ fn cache_update_for_peers(installer: &Path, content_id: &str) {
 }
 
 fn schedule_update_install(installer: &Path, release: &UpdateRelease) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        return schedule_linux_appimage_install(installer, release);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        schedule_update_install_non_linux(installer, release)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn schedule_linux_appimage_install(
+    installer: &Path,
+    release: &UpdateRelease,
+) -> Result<(), String> {
+    // Only an AppImage can be replaced by the unprivileged node process. RPM
+    // and DEB installations remain package-manager managed and must not be
+    // overwritten behind the user's back.
+    let appimage = env::var_os("APPIMAGE")
+        .map(PathBuf::from)
+        .filter(|path| path.is_file())
+        .and_then(|path| path.canonicalize().ok())
+        .ok_or_else(|| "automatic_update_requires_appimage".to_string())?;
+    let script_path = app_state_dir().join("apply-update.sh");
+    let log_path = app_state_dir().join("update-install.log");
+    let script = r#"#!/bin/sh
+set -u
+
+PARENT_PID="$1"
+NODE_PID="$2"
+INSTALLER="$3"
+APPIMAGE="$4"
+REPO_ROOT="$5"
+LOG_PATH="$6"
+INSTALL_LOCK_PATH="$7"
+FAILURE_PATH="$8"
+CONTENT_ID="$9"
+VERSION="${SILICIUM_UPDATE_VERSION:-unknown}"
+BUILD="${SILICIUM_UPDATE_BUILD:-unknown}"
+
+log_line() {
+  printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" >> "$LOG_PATH"
+}
+
+write_failure() {
+  printf '{"contentId":"%s","version":"%s","build":"%s","error":"%s","failedAtUtc":"%s"}\n' \
+    "$CONTENT_ID" "$VERSION" "$BUILD" "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$FAILURE_PATH"
+}
+
+restart_supervisor() {
+  if [ -n "$REPO_ROOT" ] && [ -f "$APPIMAGE" ]; then
+    nohup "$APPIMAGE" --supervisor --repo-root "$REPO_ROOT" >> "$LOG_PATH" 2>&1 </dev/null &
+  fi
+}
+
+fail_update() {
+  log_line "update_failed $1"
+  write_failure "$1"
+  rm -f "$INSTALL_LOCK_PATH"
+  restart_supervisor
+  exit 1
+}
+
+# The current supervisor is executing the AppImage from its temporary mount.
+# Wait for it to exit before replacing the stable AppImage file and starting
+# a fresh supervisor from that stable path.
+while kill -0 "$PARENT_PID" 2>/dev/null; do
+  sleep 0.25
+done
+
+case "$NODE_PID" in
+  ''|*[!0-9]*) ;;
+  *)
+    kill -TERM "$NODE_PID" 2>/dev/null || true
+    attempts=0
+    while kill -0 "$NODE_PID" 2>/dev/null && [ "$attempts" -lt 40 ]; do
+      sleep 0.25
+      attempts=$((attempts + 1))
+    done
+    kill -KILL "$NODE_PID" 2>/dev/null || true
+    ;;
+esac
+
+if [ -n "$REPO_ROOT" ]; then
+  rm -f "$REPO_ROOT/.silicium/node-app/silicium-node.pid"
+fi
+if [ ! -f "$INSTALLER" ]; then
+  fail_update "linux_update_artifact_missing"
+fi
+if [ ! -w "$(dirname "$APPIMAGE")" ]; then
+  fail_update "linux_appimage_not_writable"
+fi
+
+temporary_appimage="$APPIMAGE.new.$$"
+if ! cp "$INSTALLER" "$temporary_appimage"; then
+  fail_update "linux_appimage_copy_failed"
+fi
+if ! chmod 0755 "$temporary_appimage"; then
+  rm -f "$temporary_appimage"
+  fail_update "linux_appimage_permission_failed"
+fi
+if ! mv -f "$temporary_appimage" "$APPIMAGE"; then
+  rm -f "$temporary_appimage"
+  fail_update "linux_appimage_replace_failed"
+fi
+
+rm -f "$FAILURE_PATH" "$INSTALL_LOCK_PATH"
+log_line "update_installed $APPIMAGE"
+nohup "$APPIMAGE" --supervisor --repo-root "$REPO_ROOT" >> "$LOG_PATH" 2>&1 </dev/null &
+exit 0
+"#;
+    fs::write(&script_path, script).map_err(|error| error.to_string())?;
+    let runtime_root = discover_managed_runtime_root();
+    let node_pid = runtime_root
+        .as_ref()
+        .and_then(|root| read_pid(root).ok().flatten())
+        .unwrap_or(0);
+    let repo_root = runtime_root
+        .as_ref()
+        .map(|root| root.display().to_string())
+        .unwrap_or_default();
+    let mut command = Command::new("sh");
+    command
+        .arg(&script_path)
+        .arg(std::process::id().to_string())
+        .arg(node_pid.to_string())
+        .arg(installer)
+        .arg(&appimage)
+        .arg(&repo_root)
+        .arg(&log_path)
+        .arg(update_install_lock_path())
+        .arg(update_install_failure_path())
+        .arg(&release.content_id)
+        .env("SILICIUM_UPDATE_VERSION", &release.version)
+        .env("SILICIUM_UPDATE_BUILD", &release.build)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    command.spawn().map_err(|error| error.to_string())?;
+    release_update_lock();
+    std::process::exit(0);
+}
+
+#[cfg(not(target_os = "linux"))]
+fn schedule_update_install_non_linux(installer: &Path, release: &UpdateRelease) -> Result<(), String> {
     if !cfg!(target_os = "windows") {
         return Err(format!(
             "automatic_update_installer_not_available:{}",
