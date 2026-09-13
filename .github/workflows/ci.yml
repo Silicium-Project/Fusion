@@ -3,8 +3,18 @@ name: Frontend CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Release channel to validate."
+        required: true
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+env:
+  NUXT_PUBLIC_RELEASE_CHANNEL: ${{ github.event.inputs.release_channel || (github.ref_name == 'main' && 'prod' || 'dev') }}
 
 jobs:
   changes:

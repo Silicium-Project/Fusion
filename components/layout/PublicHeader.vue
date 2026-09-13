@@ -6,6 +6,7 @@
         <NuxtLink v-for="item in navigation" :key="item.to" :to="item.to" :class="{ 'is-active': isCurrent(item) }"><span>{{ item.index }}</span>{{ item.label }}</NuxtLink>
       </nav>
       <div class="public-header__actions">
+        <ReleaseBadge :channel="releaseChannel" :version="releaseVersion" :build="releaseBuild" />
         <UiButton v-if="isAuthenticated" to="/dashboard" variant="ghost" size="small">Ouvrir l’espace</UiButton>
         <UiButton v-if="isAuthenticated" to="/profile" variant="secondary" size="small" icon="account">{{ displayName }}</UiButton>
         <template v-else>
@@ -31,6 +32,10 @@
 <script setup lang="ts">
 const route = useRoute();
 const menuOpen = ref(false);
+const config = useRuntimeConfig();
+const releaseChannel = String(config.public.releaseChannel || 'dev');
+const releaseVersion = String(config.public.releaseVersion || 'unknown');
+const releaseBuild = String(config.public.releaseBuild || 'local');
 const { isAuthenticated, displayName, loadUser } = useSession();
 const navigation = [
   { index: '01', label: 'Produit', to: '/service' },
@@ -59,7 +64,7 @@ onMounted(() => { if (isAuthenticated.value) loadUser().catch(() => undefined); 
 .public-header__nav a:hover,.public-header__nav a.is-active{color:var(--ink-900)}
 .public-header__nav a::after{position:absolute;right:0;bottom:0;left:0;height:2px;transform:scaleX(0);border-radius:9px;background:var(--mint-500);content:'';transition:transform .25s var(--ease-out)}
 .public-header__nav a.is-active::after{transform:scaleX(1)}
-.public-header__actions{display:flex;align-items:center;gap:.35rem}
+.public-header__actions{display:flex;align-items:center;gap:.35rem}.public-header__actions :deep(.release-badge){margin-right:.3rem}
 .public-header__menu{display:none;width:2.6rem;height:2.6rem;place-items:center;border:1px solid var(--border);border-radius:.75rem;background:rgba(255,255,255,.6);cursor:pointer}
 .public-header__menu svg{width:1.05rem}
 .public-header__mobile{display:none;width:min(calc(100% - 2rem),1240px);margin:.7rem auto 1rem;padding:.65rem;border:1px solid var(--glass-edge);border-radius:1.25rem;background:var(--glass-solid);box-shadow:var(--glass-inset),var(--glass-shadow);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px)}

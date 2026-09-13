@@ -10,6 +10,9 @@ export default defineNuxtConfig({
     public: {
       contactEmail: process.env.NUXT_PUBLIC_CONTACT_EMAIL || '',
       apiBase: process.env.NUXT_PUBLIC_API_BASE || '/api',
+      releaseChannel: process.env.NUXT_PUBLIC_RELEASE_CHANNEL === 'prod' ? 'prod' : 'dev',
+      releaseVersion: process.env.NUXT_PUBLIC_RELEASE_VERSION || 'unknown',
+      releaseBuild: process.env.NUXT_PUBLIC_RELEASE_BUILD || 'local',
       devnetDashboardUrl: process.env.NUXT_PUBLIC_DEVNET_DASHBOARD_URL || '/network/',
       solanaRpc: process.env.NUXT_PUBLIC_SOLANA_RPC || 'https://api.devnet.solana.com',
       updateManifestUrl: process.env.NUXT_PUBLIC_UPDATE_MANIFEST_URL || '/downloads/update-manifest.json',

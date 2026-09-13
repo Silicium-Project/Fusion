@@ -21,6 +21,11 @@ export function useSystemStatus() {
     } catch {
       status.value = {
         status: 'unavailable', checkedAt: new Date().toISOString(),
+        release: {
+          release_channel: String(config.public.releaseChannel || 'dev'),
+          release_version: String(config.public.releaseVersion || 'unknown'),
+          release_build: String(config.public.releaseBuild || 'local'),
+        },
         backend: { status: 'unavailable' }, network: { status: 'unknown', peers: 0, activePeers: 0, outdatedPeers: 0 },
         blockchain: { status: 'unknown', network: 'unknown', configured: false },
       };

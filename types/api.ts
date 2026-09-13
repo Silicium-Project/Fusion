@@ -236,6 +236,11 @@ export interface JobDashboard {
 export interface SystemStatus {
   status: 'operational' | 'degraded' | 'unavailable' | string;
   checkedAt: string;
+  release?: {
+    release_channel?: 'dev' | 'prod' | string;
+    release_version?: string;
+    release_build?: string;
+  };
   backend: { status: string; database?: string };
   network: {
     status: string;
