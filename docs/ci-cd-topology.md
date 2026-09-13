@@ -66,9 +66,11 @@ The generated installers are staged on the VPS before release and deploy.
   update feed is switched implicitly by a development push.
 
 The Network peer table rejects peers from the other release channel, preventing
-development workers from claiming production tasks and vice versa. The two
-deployment roots, Compose project names and data roots in the contract are
-separate so a second VPS service can be provisioned without sharing state.
+development workers from claiming production tasks and vice versa. The
+deployment roots, Compose project names, data roots, ports and systemd unit
+names in the contract are separate. Dev and prod can therefore run on the same
+VPS; dev is bound to local HTTPS port `8443` and does not replace the
+production ingress on `80/443`.
 
 ## Canonical flow
 
@@ -93,8 +95,11 @@ separate so a second VPS service can be provisioned without sharing state.
 5. `deploy-vps.yml` is the canonical mainline path: it validates and builds
    on the VPS runners, builds Windows installers on `windows-latest`, publishes
    release metadata, deploys, and runs post-deploy checks.
-6. `deploy/compose/e2e.sh` validates the real container path on the VPS.
-7. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
+6. `deploy-dev-vps.yml` is the explicit development deployment path. It pulls
+   only `dev`, prepares isolated development configuration, deploys to
+   `/opt/silicium-dev`, and never stops or rewrites production units.
+7. `deploy/compose/e2e.sh` validates the real container path on the VPS.
+8. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
 
 ### Targeted iteration
@@ -168,6 +173,8 @@ outputs without deleting those caches.
 - `deploy-vps.yml`: canonical production deploy and VPS validation path. It
   also invokes the reusable build and test gates, packages Windows installers
   on `windows-latest`, and publishes them with the VPS deployment.
+- `deploy-dev-vps.yml`: guarded development deploy path using the isolated
+  `/opt/silicium-dev` runtime and channel-specific ports and units.
 - `rollback-vps.yml`: manual recovery path only.
 - `mirror-epitech.yml`: explicit external mirror path to the Epitech repo.
 

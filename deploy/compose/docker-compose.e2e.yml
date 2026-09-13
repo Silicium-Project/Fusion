@@ -1,4 +1,4 @@
-name: silicium-e2e-vps
+name: ${SILICIUM_E2E_COMPOSE_PROJECT_NAME:-silicium-e2e-vps}
 
 x-worker-base: &worker-base
   image: python:3.12-slim-bookworm
@@ -6,8 +6,8 @@ x-worker-base: &worker-base
   entrypoint:
     - python3
   volumes:
-    - /opt/silicium:/workspace:ro
-    - /var/lib/silicium:/var/lib/silicium
+    - ${SILICIUM_E2E_ROOT:-/opt/silicium}:/workspace:ro
+    - ${SILICIUM_E2E_DATA_ROOT:-/var/lib/silicium}:/var/lib/silicium
 
 services:
   e2e-worker-compute-a:

@@ -28,8 +28,7 @@ services:
     - --lt-cred-mech
     - --realm=vps-910c1dbc.vps.ovh.net
     - --user=${SILICIUM_TURN_USER:-silicium}:${SILICIUM_TURN_PASSWORD:-demo-mesh}
-    - --external-ip=${SILICIUM_TURN_EXTERNAL_IP:-213.32.68.67}/172.18.0.5
-    - --relay-ip=172.18.0.5
+    - --external-ip=${SILICIUM_TURN_EXTERNAL_IP:-213.32.68.67}
     - --listening-port=3478
     - --tls-listening-port=5349
     - --cert=/etc/coturn/fullchain.pem
@@ -59,17 +58,19 @@ services:
         dbname=${POSTGRES_DB} port=5432 sslmode=disable
       HOST: 0.0.0.0
       PORT: 8080
-      CORS_ALLOWED_ORIGINS: https://vps-910c1dbc.vps.ovh.net,https://213.32.68.67
+      CORS_ALLOWED_ORIGINS: ${SILICIUM_CORS_ALLOWED_ORIGINS:-https://vps-910c1dbc.vps.ovh.net}
       SILICIUM_SEED_PEERS: http://host.docker.internal:${SILICIUM_ORCHESTRATOR_PORT:-46100}
       SILICIUM_CONTROL_URL: http://host.docker.internal:${SILICIUM_ORCHESTRATOR_PORT:-46100}/gossip/publish
       SILICIUM_RELEASE_CHANNEL: ${SILICIUM_RELEASE_CHANNEL:-prod}
       SILICIUM_RELEASE_VERSION: ${SILICIUM_RELEASE_VERSION:-unknown}
       SILICIUM_RELEASE_BUILD: ${SILICIUM_RELEASE_BUILD:-local}
       SILICIUM_ORCHESTRATOR_IDENTITY_KEY: /var/lib/silicium/network/orchestrator/backend-identity/peer_identity_ed25519.pem
+      SILICIUM_ORCHESTRATOR_EXPORT_DIR: /var/lib/silicium/network/orchestrator/export
       SILICIUM_SITE_STORAGE_DIR: /var/lib/silicium/site/jobs
       SILICIUM_WORKLOAD_STORAGE_DIR: /var/lib/silicium/site/runtime
+      SILICIUM_SOLANA_WALLET: /var/lib/silicium/solana/id.json
       # Control-plane only: results/artifacts remain on authenticated P2P/HTTP.
-      SILICIUM_RPC_EVENTS_CONNECT: tcp://host.docker.internal:9771
+      SILICIUM_RPC_EVENTS_CONNECT: tcp://host.docker.internal:${SILICIUM_EXPERIMENT_EVENTS_PORT:-9771}
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,11 +79,9 @@ services:
     - ${SILICIUM_BACKEND_P2P_PORT:-46102}:46102/tcp
     - ${SILICIUM_BACKEND_P2P_PORT:-46102}:46102/udp
     extra_hosts:
-    # The named backend network uses the 172.18.0.0/16 bridge (the TURN
-    # service and its relay address use the same fixed network).  Docker's
-    # generic host-gateway resolves to the default bridge instead, which is
-    # not reachable from this network on the VPS.
-    - host.docker.internal:172.18.0.1
+    # Use Docker's host-gateway resolver so this remains valid when prod and
+    # dev each receive a different user-defined bridge subnet.
+    - host.docker.internal:host-gateway
     volumes:
     - ${SILICIUM_RUNTIME_ROOT:-/opt/silicium}/Network:/opt/silicium/Network
     - ${SILICIUM_DATA_ROOT:-/var/lib/silicium}:/var/lib/silicium
@@ -99,6 +98,7 @@ services:
       NUXT_PUBLIC_API_BASE: /api
       NUXT_PUBLIC_DEVNET_DASHBOARD_URL: /dashboard/
       NUXT_PUBLIC_UPDATE_MANIFEST_URL: /downloads/update-manifest.json
+      NUXT_PUBLIC_ORCHESTRATOR_URL: ${SILICIUM_PUBLIC_ORCHESTRATOR_URL:-https://vps-910c1dbc.vps.ovh.net/orchestrator}
       NUXT_PUBLIC_STATUS_REFRESH_SECONDS: "30"
       NUXT_PUBLIC_RELEASE_CHANNEL: ${SILICIUM_RELEASE_CHANNEL:-prod}
       NUXT_PUBLIC_RELEASE_VERSION: ${SILICIUM_RELEASE_VERSION:-unknown}
@@ -135,14 +135,18 @@ services:
     - reputation_bridge
     - frontend
     - dashboard
-    # The ingress must reach the host-side orchestrator on 46100. Sharing the
-    # host network also lets it use the loopback-published web services without
-    # relying on Docker bridge hairpin routing.
-    network_mode: host
+    ports:
+    - ${SILICIUM_PROXY_BIND_ADDRESS:-0.0.0.0}:${SILICIUM_PROXY_HTTP_PORT:-80}:80
+    - ${SILICIUM_PROXY_BIND_ADDRESS:-0.0.0.0}:${SILICIUM_PROXY_HTTPS_PORT:-443}:443
+    extra_hosts:
+    - host.docker.internal:host-gateway
     volumes:
     - ${SILICIUM_NGINX_CONFIG:-./nginx.conf}:/etc/nginx/nginx.conf:ro
     - ${SILICIUM_DATA_ROOT:-/var/lib/silicium}:/var/lib/silicium:ro
     - ${SILICIUM_TLS_ROOT:-/etc/letsencrypt}:/etc/letsencrypt:ro
+    networks:
+    - backend
+    - frontend
 networks:
   backend:
     name: ${SILICIUM_BACKEND_NETWORK_NAME:-silicium-backend}

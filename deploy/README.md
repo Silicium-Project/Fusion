@@ -13,20 +13,32 @@ The channel contract lives in `deploy/release/channels.json`:
 
 - `dev` follows the `dev` branch, uses `/opt/silicium-dev`,
   `/etc/silicium-dev`, `/var/lib/silicium-dev` and Compose project
-  `silicium-dev` by default;
+  `silicium-dev` by default. On a shared VPS it uses host ports `46200`,
+  `8180`, `3300`, `5274`, `9191` and local HTTPS ingress `8443`, with
+  channel-suffixed systemd units such as `silicium-orchestrator-dev.service`;
 - `prod` follows `main` and `v*` tags and keeps the legacy production paths
   `/opt/silicium`, `/etc/silicium`, `/var/lib/silicium` and project `silicium`.
 
-Use an explicit channel for a development deployment. The installer and
-Compose scripts validate it and propagate it to the FrontEnd, BackEnd,
+Use an explicit channel for a development deployment. The bootstrap creates
+isolated dev secrets, PostgreSQL credentials and a self-signed local TLS
+certificate without reading production configuration. The installer and
+Compose scripts then propagate the channel to the FrontEnd, BackEnd,
 orchestrator, update manifest and Network peer identity:
 
 ```bash
+sudo SILICIUM_RELEASE_CHANNEL=dev \
+  bash deploy/linux/prepare-dev-config.sh /opt/silicium-dev
 sudo SILICIUM_RELEASE_CHANNEL=dev \
   bash deploy/linux/install-services.sh /opt/silicium-dev
 sudo SILICIUM_RELEASE_CHANNEL=dev \
   bash deploy/compose/deploy.sh /opt/silicium-dev
 ```
+
+The guarded `.github/workflows/deploy-dev-vps.yml` workflow runs the same
+sequence over the configured VPS SSH connection. Its dev ingress is
+`https://vps-910c1dbc.vps.ovh.net:8443`; the certificate is intentionally
+self-signed for development, so use `curl -k` or install the generated cert
+when testing from another machine.
 
 Production remains explicit in CI and is also the safe default for the
 production paths:

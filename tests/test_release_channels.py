@@ -17,6 +17,10 @@ def test_release_channels_are_explicit_and_isolated() -> None:
     assert dev["deployment_root"] != prod["deployment_root"]
     assert dev["data_dir"] != prod["data_dir"]
     assert dev["compose_project"] != prod["compose_project"]
+    assert dev["service_suffix"] == "-dev"
+    assert dev["orchestrator_port"] != prod["orchestrator_port"]
+    assert dev["proxy_https_port"] != prod["proxy_https_port"]
+    assert dev["backend_network_name"] != prod["backend_network_name"]
 
 
 def test_channel_inference_keeps_main_and_tags_production_only() -> None:

@@ -8,6 +8,8 @@ CHANNEL_TOOL="$SILICIUM_ROOT/deploy/release/channel.py"
 python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
 channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
 channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
+channel_orchestrator_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field orchestrator_port)"
+channel_public_base_url="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field public_base_url)"
 CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
 DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
 CONFIG_PATH="${SILICIUM_UPDATE_CHANNELS_CONFIG:-$CONFIG_DIR/update-channels.env}"
@@ -23,7 +25,9 @@ CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$CONFIG_DIR}"
 DATA_ROOT="${SILICIUM_DATA_ROOT:-$DATA_ROOT}"
 
 export SILICIUM_DOWNLOADS_DIR="${SILICIUM_DOWNLOADS_DIR:-$DATA_ROOT/downloads}"
-export SILICIUM_DOWNLOAD_BASE_URL="${SILICIUM_DOWNLOAD_BASE_URL:-https://vps-910c1dbc.vps.ovh.net/downloads}"
+if [[ -z "${SILICIUM_DOWNLOAD_BASE_URL:-}" || "$SILICIUM_DOWNLOAD_BASE_URL" == "https://vps-910c1dbc.vps.ovh.net/downloads" ]]; then
+  export SILICIUM_DOWNLOAD_BASE_URL="$channel_public_base_url/downloads"
+fi
 DEFAULT_DEV_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$SILICIUM_ROOT/apps/silicium-node/package.json")"
 export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-$DEFAULT_DEV_VERSION}"
 export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-0.2.17}"
@@ -34,7 +38,9 @@ export SILICIUM_DEV_CHECK_INTERVAL_SECONDS="${SILICIUM_DEV_CHECK_INTERVAL_SECOND
 export SILICIUM_PROD_CHECK_INTERVAL_SECONDS="${SILICIUM_PROD_CHECK_INTERVAL_SECONDS:-21600}"
 export SILICIUM_UPDATE_SIGNING_KEY="${SILICIUM_UPDATE_SIGNING_KEY:-$CONFIG_DIR/update-signing-key.pem}"
 export SILICIUM_UPDATE_P2P_DIR="${SILICIUM_UPDATE_P2P_DIR:-$DATA_ROOT/network/orchestrator/export/p2p}"
-export SILICIUM_UPDATE_GOSSIP_URL="${SILICIUM_UPDATE_GOSSIP_URL:-http://127.0.0.1:46100/gossip/publish}"
+if [[ -z "${SILICIUM_UPDATE_GOSSIP_URL:-}" || "$SILICIUM_UPDATE_GOSSIP_URL" == "http://127.0.0.1:46100/gossip/publish" ]]; then
+  export SILICIUM_UPDATE_GOSSIP_URL="http://127.0.0.1:${channel_orchestrator_port}/gossip/publish"
+fi
 export SILICIUM_MESH_KEY="${SILICIUM_MESH_KEY:-demo-mesh}"
 export SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY="${SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY:-$DATA_ROOT/update-publisher/peer_identity_ed25519.pem}"
 export SILICIUM_UPDATE_GOSSIP_REQUIRED="${SILICIUM_UPDATE_GOSSIP_REQUIRED:-0}"
@@ -103,12 +109,15 @@ definitions = {
         ],
     },
 }
-missing_artifacts = [
-    str(downloads / filename)
-    for definition in definitions.values()
-    for platform, filename in definition["artifacts"]
-    if platform.startswith("windows") and not (downloads / filename).is_file()
-]
+require_all_artifacts = os.environ.get("SILICIUM_UPDATE_REQUIRE_ALL_ARTIFACTS", "") == "1"
+missing_artifacts = []
+if os.environ.get("SILICIUM_RELEASE_CHANNEL") == "prod" or require_all_artifacts:
+    missing_artifacts = [
+        str(downloads / filename)
+        for definition in definitions.values()
+        for platform, filename in definition["artifacts"]
+        if platform.startswith("windows") and not (downloads / filename).is_file()
+    ]
 if missing_artifacts:
     raise SystemExit("required node artifacts are missing: " + ", ".join(missing_artifacts))
 

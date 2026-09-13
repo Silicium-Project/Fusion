@@ -9,8 +9,28 @@ export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
 channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
 channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
 channel_compose_project="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field compose_project)"
+channel_runtime_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field deployment_root)"
+backend_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field backend_http_port)"
+backend_p2p_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field backend_p2p_port)"
+frontend_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field frontend_http_port)"
+dashboard_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field dashboard_http_port)"
+reputation_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field reputation_http_port)"
+orchestrator_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field orchestrator_port)"
+experiment_events_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field experiment_events_port)"
+turn_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field turn_port)"
+turn_tls_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field turn_tls_port)"
+turn_relay_min_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field turn_relay_min_port)"
+turn_relay_max_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field turn_relay_max_port)"
+proxy_bind_address="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field proxy_bind_address)"
+proxy_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field proxy_http_port)"
+proxy_https_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field proxy_https_port)"
+backend_network_name="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field backend_network_name)"
+frontend_network_name="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field frontend_network_name)"
+channel_tls_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field tls_root)"
+public_base_url="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field public_base_url)"
 COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
 APP_PACKAGE_JSON="$ROOT/apps/silicium-node/package.json"
+initial_config_dir="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/compose/deploy.sh $ROOT" >&2
@@ -20,12 +40,60 @@ fi
 [[ -f "$COMPOSE_FILE" ]] || { echo "Missing compose file: $COMPOSE_FILE" >&2; exit 1; }
 [[ -f "$APP_PACKAGE_JSON" ]] || { echo "Missing app package: $APP_PACKAGE_JSON" >&2; exit 1; }
 
-export SILICIUM_RUNTIME_ROOT="${SILICIUM_RUNTIME_ROOT:-$ROOT}"
-export SILICIUM_DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
-export SILICIUM_CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
-export SILICIUM_COMPOSE_PROJECT_NAME="${SILICIUM_COMPOSE_PROJECT_NAME:-$channel_compose_project}"
-COMPOSE_ENV="${SILICIUM_COMPOSE_ENV:-$SILICIUM_CONFIG_DIR/compose.env}"
+COMPOSE_ENV="${SILICIUM_COMPOSE_ENV:-$initial_config_dir/compose.env}"
 [[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
+
+# Read operator settings first, then replace only the production example
+# defaults when this is the dev channel. This lets dev and prod share one VPS
+# without sharing ports, Docker networks, TLS roots or persistent data.
+set -a
+# shellcheck disable=SC1090
+. "$COMPOSE_ENV"
+set +a
+
+channel_or_legacy_default() {
+  local current="$1"
+  local value="$2"
+  local legacy="$3"
+  if [[ -z "$current" || "$current" == "$legacy" ]]; then
+    printf '%s' "$value"
+  else
+    printf '%s' "$current"
+  fi
+}
+
+export SILICIUM_RUNTIME_ROOT="$(channel_or_legacy_default "${SILICIUM_RUNTIME_ROOT:-}" "$channel_runtime_root" /opt/silicium)"
+export SILICIUM_DATA_ROOT="$(channel_or_legacy_default "${SILICIUM_DATA_ROOT:-}" "$channel_data_root" /var/lib/silicium)"
+export SILICIUM_CONFIG_DIR="$(channel_or_legacy_default "${SILICIUM_CONFIG_DIR:-}" "$channel_config_dir" /etc/silicium)"
+export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
+export SILICIUM_COMPOSE_PROJECT_NAME="$(channel_or_legacy_default "${SILICIUM_COMPOSE_PROJECT_NAME:-}" "$channel_compose_project" silicium)"
+export SILICIUM_BACKEND_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_BACKEND_HTTP_PORT:-}" "$backend_http_port" 8080)"
+export SILICIUM_BACKEND_P2P_PORT="$(channel_or_legacy_default "${SILICIUM_BACKEND_P2P_PORT:-}" "$backend_p2p_port" 46102)"
+export SILICIUM_FRONTEND_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_FRONTEND_HTTP_PORT:-}" "$frontend_http_port" 3000)"
+export SILICIUM_DASHBOARD_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_DASHBOARD_HTTP_PORT:-}" "$dashboard_http_port" 5174)"
+export SILICIUM_REPUTATION_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_REPUTATION_HTTP_PORT:-}" "$reputation_http_port" 9091)"
+export SILICIUM_ORCHESTRATOR_PORT="$(channel_or_legacy_default "${SILICIUM_ORCHESTRATOR_PORT:-}" "$orchestrator_port" 46100)"
+export SILICIUM_EXPERIMENT_EVENTS_PORT="$(channel_or_legacy_default "${SILICIUM_EXPERIMENT_EVENTS_PORT:-}" "$experiment_events_port" 9771)"
+export SILICIUM_TURN_PORT="$(channel_or_legacy_default "${SILICIUM_TURN_PORT:-}" "$turn_port" 3478)"
+export SILICIUM_TURN_TLS_PORT="$(channel_or_legacy_default "${SILICIUM_TURN_TLS_PORT:-}" "$turn_tls_port" 5349)"
+export SILICIUM_TURN_RELAY_MIN_PORT="$(channel_or_legacy_default "${SILICIUM_TURN_RELAY_MIN_PORT:-}" "$turn_relay_min_port" 49160)"
+export SILICIUM_TURN_RELAY_MAX_PORT="$(channel_or_legacy_default "${SILICIUM_TURN_RELAY_MAX_PORT:-}" "$turn_relay_max_port" 49200)"
+export SILICIUM_PROXY_BIND_ADDRESS="$(channel_or_legacy_default "${SILICIUM_PROXY_BIND_ADDRESS:-}" "$proxy_bind_address" 0.0.0.0)"
+export SILICIUM_PROXY_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_PROXY_HTTP_PORT:-}" "$proxy_http_port" 80)"
+export SILICIUM_PROXY_HTTPS_PORT="$(channel_or_legacy_default "${SILICIUM_PROXY_HTTPS_PORT:-}" "$proxy_https_port" 443)"
+export SILICIUM_BACKEND_NETWORK_NAME="$(channel_or_legacy_default "${SILICIUM_BACKEND_NETWORK_NAME:-}" "$backend_network_name" silicium-backend)"
+export SILICIUM_FRONTEND_NETWORK_NAME="$(channel_or_legacy_default "${SILICIUM_FRONTEND_NETWORK_NAME:-}" "$frontend_network_name" silicium-frontend)"
+export SILICIUM_TLS_ROOT="$(channel_or_legacy_default "${SILICIUM_TLS_ROOT:-}" "$channel_tls_root" /etc/letsencrypt)"
+export SILICIUM_PUBLIC_ORCHESTRATOR_URL="${SILICIUM_PUBLIC_ORCHESTRATOR_URL:-$public_base_url/orchestrator}"
+export SILICIUM_PUBLIC_API_BASE="${SILICIUM_PUBLIC_API_BASE:-/api}"
+export SILICIUM_CORS_ALLOWED_ORIGINS="${SILICIUM_CORS_ALLOWED_ORIGINS:-$public_base_url}"
+export SILICIUM_NGINX_CONFIG="$SILICIUM_CONFIG_DIR/nginx.conf"
+unset -f channel_or_legacy_default
+
+install -d -m 0750 "$SILICIUM_CONFIG_DIR"
+sed \
+  -e "s#__SILICIUM_ORCHESTRATOR_PORT__#$SILICIUM_ORCHESTRATOR_PORT#g" \
+  deploy/compose/nginx.conf > "$SILICIUM_NGINX_CONFIG"
 
 # The orchestrator participates in peer telemetry even though it is not a
 # desktop binary. Prefer the CI/CD release version when provided, otherwise
@@ -121,18 +189,17 @@ install -d -m 0750 -o "$backend_uid" -g "$backend_gid" "$backend_identity_dir"
 install -o "$backend_uid" -g "$backend_gid" -m 0600 "$orchestrator_identity" "$backend_identity_dir/peer_identity_ed25519.pem"
 install -o "$backend_uid" -g "$backend_gid" -m 0644 "$orchestrator_public_identity" "$backend_identity_dir/peer_identity_ed25519.pub.pem"
 
-# Older installations ran these processes as host systemd services. Compose is
-# now the single owner of the web and API ports; stop and disable the stale
-# host services before recreating containers so 3000, 5174 and 8080 cannot
-# remain occupied. The orchestrator stays on the host because it owns 46100.
-# The authenticated experiment/MCP API is also a host-side systemd service and
-# must stay enabled for deploy-time checks and e2e validation on 46110/9770.
-for legacy_unit in \
-  silicium-backend.service \
-  silicium-frontend.service \
-  silicium-dashboard.service; do
-  systemctl disable --now "$legacy_unit" 2>/dev/null || true
-done
+# Older production installations ran these processes as host systemd
+# services. They may only be stopped during a production deployment; a dev
+# deployment must leave the production units untouched.
+if [[ "$RELEASE_CHANNEL" == "prod" ]]; then
+  for legacy_unit in \
+    silicium-backend.service \
+    silicium-frontend.service \
+    silicium-dashboard.service; do
+    systemctl disable --now "$legacy_unit" 2>/dev/null || true
+  done
+fi
 
 "${compose[@]}" up -d --build --remove-orphans
 # Nginx resolves Compose service names at startup; recreate it after app

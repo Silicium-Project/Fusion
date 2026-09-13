@@ -5,7 +5,7 @@ Description=Refresh Silicium desktop update manifest frequently in development
 OnBootSec=5s
 OnUnitActiveSec=30s
 AccuracySec=1s
-Unit=silicium-update-manifest.service
+Unit=__SILICIUM_UPDATE_MANIFEST_UNIT__
 Persistent=true
 
 [Install]

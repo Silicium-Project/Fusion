@@ -31,8 +31,10 @@ reproductible. Le workflow `Sync submodule gitlinks` examine toutes les cinq
 minutes la composition `prod` sur `main`; il peut aussi synchroniser explicitement
 la composition `dev` vers la branche `dev`. Dans les deux cas, il selectionne pour
 chaque submodule le dernier commit dont les workflows du canal sont tous verts,
-puis publie cette composition exacte sur la branche correspondante. Seul le push
-`main` declenche le pipeline VPS canonique.
+puis publie cette composition exacte sur la branche correspondante. Le push
+`main` declenche le pipeline VPS de production; le workflow manuel
+`deploy-dev-vps.yml` deploye explicitement la composition `dev` sous
+`/opt/silicium-dev` sans toucher a la production.
 `submodule-ci-gate` reutilise le meme resoluteur et refuse une composition sans
 candidat vert. Si le head courant est encore rouge ou en attente, Fusion reste
 sur le dernier commit vert au lieu d'introduire une revision non qualifiee.
