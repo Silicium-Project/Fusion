@@ -56,7 +56,7 @@ def test_update_announcement_cannot_cross_channel(tmp_path: Path) -> None:
 
 
 def test_task_control_cannot_cross_channel(tmp_path: Path) -> None:
-    peer = network_node.PeerNetwork(_config(tmp_path / "dev", "dev-node", release_channel="dev"), tmp_path / "dev")
+    node = network_node.NetworkNode(_config(tmp_path / "dev", "dev-node", release_channel="dev"))
     control = {
         "root_job_id": "job-1",
         "control_id": "control-1",
@@ -65,4 +65,4 @@ def test_task_control_cannot_cross_channel(tmp_path: Path) -> None:
         "release_channel": "prod",
     }
 
-    assert peer.validate_task_control(control, signed_by="orchestrator-1") is False
+    assert node.validate_task_control(control, signed_by="orchestrator-1") is False
