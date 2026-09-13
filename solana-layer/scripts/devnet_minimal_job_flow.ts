@@ -8,7 +8,7 @@
  *   npx ts-node scripts/devnet_minimal_job_flow.ts
  *
  * What it does on Devnet:
- * - loads local IDL
+ * - loads the local IDL, or the deployed Anchor IDL from Devnet
  * - checks deployed program
  * - creates a fresh test SPL mint
  * - creates a fresh compute worker and two fresh verifiers
@@ -64,7 +64,17 @@ function readKeypair(filePath: string): Keypair {
   return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fs.readFileSync(resolved, "utf8"))));
 }
 
-function loadIdl(): any {
+function defaultWalletPath(): string {
+  const candidates = [
+    path.resolve(process.cwd(), ".silicium/solana/id.json"),
+    path.resolve(process.cwd(), "../.silicium/solana/id.json"),
+    path.resolve(process.cwd(), "../../.silicium/solana/id.json"),
+    path.join(os.homedir(), ".config/solana/id.json"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[candidates.length - 1];
+}
+
+async function loadIdl(provider: anchor.AnchorProvider): Promise<any> {
   const candidates = [
     path.resolve(process.cwd(), "target/idl/solana_layer.json"),
     path.resolve(process.cwd(), "solana-layer/target/idl/solana_layer.json"),
@@ -78,7 +88,16 @@ function loadIdl(): any {
     }
   }
 
-  throw new Error("IDL not found. Run `anchor build` from solana-layer/ first.");
+  const fetchIdl = (anchor as any).Program?.fetchIdl;
+  if (typeof fetchIdl === "function") {
+    const remoteIdl = await fetchIdl(PROGRAM_ID, provider);
+    if (remoteIdl) {
+      remoteIdl.address = PROGRAM_ID.toBase58();
+      return remoteIdl;
+    }
+  }
+
+  throw new Error("IDL not found locally or on-chain. Run `anchor build` or deploy the Anchor IDL first.");
 }
 
 function u32le(n: number): Buffer {
@@ -145,6 +164,13 @@ function votePda(fragment: PublicKey, verifier: PublicKey, round: number): Publi
 function roundResolutionPda(fragment: PublicKey, round: number): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("fragment_resolution"), fragment.toBuffer(), u16le(round)],
+    PROGRAM_ID,
+  )[0];
+}
+
+function resultPda(job: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("result"), job.toBuffer()],
     PROGRAM_ID,
   )[0];
 }
@@ -291,10 +317,10 @@ async function stakeWorker(
   console.log(`${label} stakeWorker tx:`, sig);
 }
 
-async function main() {
+export async function main() {
   logStep("Setup");
   const connection = new Connection(DEVNET_RPC, "confirmed");
-  const walletPath = process.env.ANCHOR_WALLET ?? "~/.config/solana/id.json";
+  const walletPath = process.env.ANCHOR_WALLET ?? defaultWalletPath();
   const payer = readKeypair(walletPath);
   const wallet = new anchor.Wallet(payer);
   const provider = new anchor.AnchorProvider(connection, wallet, {
@@ -303,7 +329,7 @@ async function main() {
   });
   anchor.setProvider(provider);
 
-  const idl = loadIdl();
+  const idl = await loadIdl(provider);
   const program = new (anchor as any).Program(idl, provider) as any;
 
   console.log("rpc:", DEVNET_RPC);
@@ -330,11 +356,21 @@ async function main() {
       ok: true,
     },
   };
-  const resultHash = hash32(resultPayload);
-  const proofRef = hash32({
-    script: "devnet_minimal_job_flow.ts",
-    resultHash,
-  });
+  const suppliedResultHash = (process.env.SILICIUM_CHAIN_RESULT_HASH ?? "")
+    .replace(/^sha256:/, "")
+    .trim();
+  const resultHash = /^[0-9a-fA-F]{64}$/.test(suppliedResultHash)
+    ? Array.from(Buffer.from(suppliedResultHash, "hex"))
+    : hash32(resultPayload);
+  const suppliedProofHash = (process.env.SILICIUM_CHAIN_PROOF_HASH ?? "")
+    .replace(/^sha256:/, "")
+    .trim();
+  const proofRef = /^[0-9a-fA-F]{64}$/.test(suppliedProofHash)
+    ? Array.from(Buffer.from(suppliedProofHash, "hex"))
+    : hash32({
+        script: "devnet_minimal_job_flow.ts",
+        resultHash,
+      });
   const tileImagePath = writeTileImage(tileRegion, resultHash);
   console.log("task:", stableStringify(taskPayload));
 
@@ -544,9 +580,36 @@ async function main() {
 
   console.log("verifier 2 claimVerifierReward tx:", claimReward2Sig);
 
+  logStep("Finalize job and reconcile the on-chain result");
+  const finalHash = hash32({
+    job: job.toBase58(),
+    resultHash: hashHex(resultHash),
+    taskId,
+  });
+  const outputUri = Buffer.from(
+    process.env.SILICIUM_CHAIN_OUTPUT_URI ?? `devnet://silicium/${taskId}`,
+  );
+  const result = resultPda(job);
+  const finalizeSig = await program.methods
+    .finalizeJob(finalHash, outputUri)
+    .accounts({
+      client: wallet.publicKey,
+      job,
+      result,
+      escrowAuth,
+      escrow: escrow.publicKey,
+      clientToken,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+
+  console.log("finalizeJob tx:", finalizeSig);
+
   logStep("Final state");
   const jobState = await program.account.job.fetch(job);
   const fragmentState = await program.account.fragment.fetch(fragment);
+  const resultState = await program.account.jobResult.fetch(result);
   const computeState = await program.account.worker.fetch(computeWorkerAccount);
   const verifier1State = await program.account.worker.fetch(verifier1WorkerAccount);
   const verifier2State = await program.account.worker.fetch(verifier2WorkerAccount);
@@ -560,6 +623,12 @@ async function main() {
     verifiedFragments: rep(jobState.verifiedFragments),
     status: jobState.status,
   });
+  if (JSON.stringify(jobState.status) !== JSON.stringify({ finalized: {} })) {
+    throw new Error(`job_not_finalized:${JSON.stringify(jobState.status)}`);
+  }
+  if (hashHex(resultState.finalHash) !== hashHex(finalHash)) {
+    throw new Error("final_result_hash_mismatch");
+  }
   console.log("fragment:", {
     status: fragmentState.status,
     yesVotes: rep(fragmentState.yesVotes),
@@ -608,7 +677,11 @@ async function main() {
         vote_2: vote2Sig,
         claim_reward_1: claimReward1Sig,
         claim_reward_2: claimReward2Sig,
+        finalize_job: finalizeSig,
       },
+      result: result.toBase58(),
+      final_hash: `sha256:${hashHex(finalHash)}`,
+      output_uri: outputUri.toString(),
     },
     finished_utc: new Date().toISOString(),
   });
@@ -616,8 +689,10 @@ async function main() {
   console.log("\n✅ Devnet minimal V2.5 job flow passed");
 }
 
-main().catch((error) => {
-  console.error("\n❌ Devnet minimal V2.5 job flow failed");
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("\n❌ Devnet minimal V2.5 job flow failed");
+    console.error(error);
+    process.exit(1);
+  });
+}

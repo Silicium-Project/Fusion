@@ -6,3 +6,4 @@
 !infra/docker/world-node.Dockerfile
 !infra/docker/world-node-entrypoint.sh
 !infra/docker/solana-tools.Dockerfile
+!requirements-p2p.txt

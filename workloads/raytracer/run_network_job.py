@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import secrets
 import shutil
@@ -58,6 +59,78 @@ def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
 
 RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/raytracer-fragment"
 RAYTRACER_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/raytracer-fragment"
+RAYTRACER_PERFORMANCE_SCHEMA = "silicium.raytracer-performance.v1"
+
+
+def performance_duration(value: Any) -> float:
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return round(duration, 3) if math.isfinite(duration) and duration >= 0 else 0.0
+
+
+def performance_ratio(numerator: float, denominator: float) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(max(0.0, numerator) / denominator, 4)
+
+
+def merge_compute_intervals(records: Iterable[dict[str, Any]]) -> float:
+    intervals: list[tuple[float, float]] = []
+    for record in records:
+        start = performance_duration(record.get("compute_started_unix_ms"))
+        finish = performance_duration(record.get("compute_finished_unix_ms"))
+        if start > 0 and finish > start:
+            intervals.append((start, finish))
+    if not intervals:
+        return 0.0
+    intervals.sort()
+    merged_start, merged_finish = intervals[0]
+    total = 0.0
+    for start, finish in intervals[1:]:
+        if start <= merged_finish:
+            merged_finish = max(merged_finish, finish)
+            continue
+        total += merged_finish - merged_start
+        merged_start, merged_finish = start, finish
+    return performance_duration(total + merged_finish - merged_start)
+
+
+def build_performance_summary(records: Iterable[dict[str, Any]], total_ms: float) -> dict[str, Any]:
+    measured = [record for record in records if isinstance(record, dict)]
+    compute_records = [record for record in measured if str(record.get("role", "")) == "compute"]
+    verify_records = [record for record in measured if str(record.get("role", "")) == "verify"]
+    compute_work_ms = performance_duration(sum(performance_duration(item.get("compute_ms")) for item in compute_records))
+    verification_work_ms = performance_duration(sum(performance_duration(item.get("compute_ms")) for item in verify_records))
+    compute_wall_ms = merge_compute_intervals(compute_records)
+    if compute_wall_ms <= 0 and compute_records:
+        compute_wall_ms = performance_duration(max(performance_duration(item.get("compute_ms")) for item in compute_records))
+    total_wall_ms = performance_duration(total_ms)
+    compute_wall_ms = performance_duration(min(total_wall_ms, compute_wall_ms))
+    network_ms = performance_duration(sum(performance_duration(item.get("network_ms")) for item in measured))
+    worker_overhead_ms = performance_duration(sum(performance_duration(item.get("worker_overhead_ms")) for item in measured))
+    return {
+        "schema": RAYTRACER_PERFORMANCE_SCHEMA,
+        "total_ms": total_wall_ms,
+        "compute_ms": compute_wall_ms,
+        "compute_work_ms": compute_work_ms,
+        "verification_ms": verification_work_ms,
+        "network_ms": network_ms,
+        "overhead_ms": performance_duration(max(0.0, total_wall_ms - compute_wall_ms)),
+        "worker_overhead_ms": worker_overhead_ms,
+        "compute_to_total_ratio": performance_ratio(compute_wall_ms, total_wall_ms),
+        "compute_to_network_ratio": performance_ratio(compute_work_ms, network_ms),
+        "parallelism_factor": performance_ratio(compute_work_ms, compute_wall_ms),
+        "measured_compute_tasks": len(compute_records),
+        "measured_verify_tasks": len(verify_records),
+        "definition": {
+            "total_ms": "wall time from workload start to assembled result",
+            "compute_ms": "union of renderer intervals on compute workers; parallel work is counted once",
+            "compute_work_ms": "sum of renderer time across compute workers",
+            "network_ms": "dispatch, queue/result wait and artifact fetch outside the worker; verification is included",
+        },
+    }
 
 
 def validate_compute_receipt(result: dict[str, Any], task_id: str) -> dict[str, Any]:
@@ -184,7 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--devnet-trace-timeout-s", type=float, default=420.0)
     parser.add_argument("--solana-wallet", default=os.environ.get("SILICIUM_SOLANA_WALLET", os.environ.get("ANCHOR_WALLET", "")))
     parser.add_argument("--solana-rpc", default=os.environ.get("SILICIUM_SOLANA_RPC", "https://api.devnet.solana.com"))
-    parser.add_argument("--solana-program-id", default=os.environ.get("SILICIUM_SOLANA_PROGRAM_ID", "AkAFDh9CpGHAoM7gL7zAZxdCJVV6bheBTidZEyZ4BMpA"))
+    parser.add_argument("--solana-program-id", default=os.environ.get("SILICIUM_SOLANA_PROGRAM_ID", "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2"))
     parser.add_argument("--devnet-tx-delay-ms", type=int, default=int(os.environ.get("SILICIUM_DEVNET_TX_DELAY_MS", "1200")))
     return parser
 
@@ -704,11 +777,14 @@ def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, 
         payload = json.loads(trace_path.read_text(encoding="utf-8"))
         if isinstance(payload, dict):
             trace = payload
+    reconciliation = trace.get("reconciliation") if isinstance(trace.get("reconciliation"), dict) else {}
+    trace_ok = completed.returncode == 0 and reconciliation.get("hash_match") is True
     return {
         "enabled": True,
-        "ok": completed.returncode == 0,
+        "ok": trace_ok,
         "trace_path": str(trace_path),
         "returncode": completed.returncode,
+        "artifact_hash_reconciled": reconciliation.get("hash_match") is True,
         "stdout_tail": completed.stdout[-4096:],
         "stderr_tail": completed.stderr[-4096:],
         "trace": trace,
@@ -717,6 +793,7 @@ def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    job_started = time.perf_counter()
     scene_path = Path(args.scene).resolve()
     width, height = scene_resolution(scene_path)
     job_id = args.job_id or f"raytracer-auto-{int(time.time())}"
@@ -782,6 +859,7 @@ def main(argv: list[str] | None = None) -> int:
 
     node_runs: list[dict[str, Any]] = []
     submissions: list[dict[str, Any]] = []
+    performance_records: list[dict[str, Any]] = []
     emitter_result: dict[str, Any] = {"enabled": False}
     progress_fragments = {
         int(fragment["fragment_index"]): {**fragment, "status": "planned"}
@@ -811,10 +889,69 @@ def main(argv: list[str] | None = None) -> int:
                 "fragments": [progress_fragments[index] for index in sorted(progress_fragments)],
                 "submissions": submissions,
                 "node_runs": node_runs,
+                "performance": build_performance_summary(
+                    performance_records,
+                    (time.perf_counter() - job_started) * 1000.0,
+                ),
                 "network": emitter_result,
                 "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             },
         )
+
+    def orchestration_performance_record(
+        role: str,
+        context: dict[str, Any],
+        token: dict[str, Any],
+        result: dict[str, Any],
+        *,
+        artifact_fetch_ms: float = 0.0,
+    ) -> dict[str, Any]:
+        worker_performance = result.get("performance") if isinstance(result.get("performance"), dict) else {}
+        worker_total_ms = performance_duration(
+            worker_performance.get("workload_total_ms")
+            or worker_performance.get("total_ms")
+            or result.get("duration_ms")
+        )
+        compute_ms = performance_duration(worker_performance.get("compute_ms"))
+        worker_network_ms = performance_duration(
+            worker_performance.get("worker_network_ms")
+            or worker_performance.get("network_ms")
+        )
+        worker_overhead_ms = performance_duration(
+            worker_performance.get("workload_overhead_ms")
+            or worker_performance.get("overhead_ms")
+        )
+        dispatch_ms = performance_duration(token.get("dispatch_ms"))
+        result_wait_ms = performance_duration(token.get("result_wait_ms"))
+        artifact_fetch_ms = performance_duration(artifact_fetch_ms)
+        external_network_ms = performance_duration(
+            dispatch_ms + max(0.0, result_wait_ms - worker_total_ms) + artifact_fetch_ms
+        )
+        total_ms = performance_duration(dispatch_ms + result_wait_ms + artifact_fetch_ms)
+        network_ms = performance_duration(external_network_ms + worker_network_ms)
+        record = {
+            "schema": RAYTRACER_PERFORMANCE_SCHEMA,
+            "role": role,
+            "fragment_index": int(context["index"]),
+            "task_id": str(token.get("resolved_task_id") or token.get("task_id") or ""),
+            "node_id": str(result.get("node_id", "")),
+            "total_ms": total_ms,
+            "compute_ms": compute_ms,
+            "network_ms": network_ms,
+            "external_network_ms": external_network_ms,
+            "worker_total_ms": worker_total_ms,
+            "worker_network_ms": worker_network_ms,
+            "worker_overhead_ms": worker_overhead_ms,
+            "dispatch_ms": dispatch_ms,
+            "result_wait_ms": result_wait_ms,
+            "artifact_fetch_ms": artifact_fetch_ms,
+            "overhead_ms": performance_duration(max(0.0, total_ms - compute_ms)),
+            "compute_to_total_ratio": performance_ratio(compute_ms, total_ms),
+            "compute_to_network_ratio": performance_ratio(compute_ms, network_ms),
+            "compute_started_unix_ms": performance_duration(worker_performance.get("compute_started_unix_ms")),
+            "compute_finished_unix_ms": performance_duration(worker_performance.get("compute_finished_unix_ms")),
+        }
+        return record
 
     emitter_node: LocalNetworkEmitter | None = None
     if args.node_mode == "network" and args.network_start_emitter:
@@ -943,6 +1080,7 @@ def main(argv: list[str] | None = None) -> int:
                     "compute_max_attempts": max(1, int(args.max_compute_attempts)),
                 }
             )
+            dispatch_started = time.perf_counter()
             compute_payload = {
                 "task_id": task_id,
                 "required_roles": ["compute"],
@@ -990,11 +1128,14 @@ def main(argv: list[str] | None = None) -> int:
                 progress_fragments[index].update({"status": "compute_dispatch_failed", "error": str(error)})
                 write_progress("compute_dispatch_failed")
                 raise
+            dispatch_ms = performance_duration((time.perf_counter() - dispatch_started) * 1000.0)
             write_progress("compute_queued")
             return {
                 "task_id": task_id,
                 "attempt": attempt,
                 "queue_deadline": time.monotonic() + args.result_timeout_s,
+                "dispatch_ms": dispatch_ms,
+                "result_wait_started": time.perf_counter(),
             }
 
         def poll_compute(
@@ -1027,6 +1168,14 @@ def main(argv: list[str] | None = None) -> int:
                 return None
             resolved_task_id, compute_result = resolved
             token["resolved_task_id"] = resolved_task_id
+            result_wait_started = token.get("result_wait_started")
+            if result_wait_started is not None:
+                try:
+                    token["result_wait_ms"] = performance_duration(
+                        (time.perf_counter() - float(result_wait_started)) * 1000.0
+                    )
+                except (TypeError, ValueError):
+                    token["result_wait_ms"] = 0.0
             node_runs.append(
                 {
                     "role": "compute",
@@ -1053,7 +1202,9 @@ def main(argv: list[str] | None = None) -> int:
                 compute_receipt = validate_compute_receipt(compute_result, resolved_task_id)
                 output_ref = output_ref_from_compute(compute_result)
                 result_hash = result_hash_from_compute(compute_result)
+                artifact_fetch_started = time.perf_counter()
                 fragment_bytes = read_ref_bytes(args, export_dir, output_ref)
+                artifact_fetch_ms = performance_duration((time.perf_counter() - artifact_fetch_started) * 1000.0)
                 fragment_metadata = validate_fragment_ppm(
                     fragment_bytes,
                     task_id=resolved_task_id,
@@ -1074,6 +1225,16 @@ def main(argv: list[str] | None = None) -> int:
                 progress_fragments[index].update({"status": "compute_failed", "error": str(error)})
                 write_progress("compute_failed")
                 raise
+            compute_performance = orchestration_performance_record(
+                "compute",
+                context,
+                token,
+                compute_result,
+                artifact_fetch_ms=artifact_fetch_ms,
+            )
+            performance_records.append(compute_performance)
+            if node_runs:
+                node_runs[-1]["performance"] = compute_performance
             fragment_file = fragments_dir / f"fragment-{index:03d}.ppm"
             fragment_png = fragments_dir / f"fragment-{index:03d}.png"
             fragment_file.write_bytes(fragment_bytes)
@@ -1097,6 +1258,7 @@ def main(argv: list[str] | None = None) -> int:
                     "verification_milestone_count": expected_milestones["milestone_count"],
                     "compute_receipt_hash": compute_receipt["receipt_hash"],
                     "compute_billable_work_units": int(compute_receipt.get("billable_work_units", 0) or 0),
+                    "performance": compute_performance,
                 }
             )
             write_progress("fragment_computed")
@@ -1161,6 +1323,7 @@ def main(argv: list[str] | None = None) -> int:
                 "verify",
             ) > 1:
                 verify_excluded_peer_ids.add(str(compute_result.get("node_id", "")))
+            dispatch_started = time.perf_counter()
             verify_payload = {
                 "task_id": verify_id,
                 "required_roles": ["verify"],
@@ -1207,6 +1370,7 @@ def main(argv: list[str] | None = None) -> int:
                 progress_fragments[index].update({"status": "verify_dispatch_failed", "error": str(error)})
                 write_progress("verify_dispatch_failed")
                 raise
+            dispatch_ms = performance_duration((time.perf_counter() - dispatch_started) * 1000.0)
             progress_fragments[index]["status"] = "queued_verify"
             write_progress("verify_queued")
             return {
@@ -1214,6 +1378,8 @@ def main(argv: list[str] | None = None) -> int:
                 "attempt": attempt,
                 "challenge": challenge,
                 "queue_deadline": time.monotonic() + args.result_timeout_s,
+                "dispatch_ms": dispatch_ms,
+                "result_wait_started": time.perf_counter(),
             }
 
         def poll_verify(
@@ -1242,6 +1408,14 @@ def main(argv: list[str] | None = None) -> int:
                 return None
             resolved_verify_id, verify_result = resolved
             token["resolved_task_id"] = resolved_verify_id
+            result_wait_started = token.get("result_wait_started")
+            if result_wait_started is not None:
+                try:
+                    token["result_wait_ms"] = performance_duration(
+                        (time.perf_counter() - float(result_wait_started)) * 1000.0
+                    )
+                except (TypeError, ValueError):
+                    token["result_wait_ms"] = 0.0
             verify_challenges = context.get("verify_challenges", {})
             if isinstance(verify_challenges, dict):
                 token["resolved_challenge"] = verify_challenges.get(resolved_verify_id, token["challenge"])
@@ -1290,6 +1464,10 @@ def main(argv: list[str] | None = None) -> int:
                 verify_id,
             )
             verify_receipt = validate_compute_receipt(verify_result, verify_id)
+            verify_performance = orchestration_performance_record("verify", context, token, verify_result)
+            performance_records.append(verify_performance)
+            if node_runs:
+                node_runs[-1]["performance"] = verify_performance
             progress_fragments[index].update(
                 {
                     "status": "verified" if verified else "verify_failed",
@@ -1303,6 +1481,7 @@ def main(argv: list[str] | None = None) -> int:
                     "verify_receipt_hash": verify_receipt["receipt_hash"],
                     "verify_billable_work_units": int(verify_receipt.get("billable_work_units", 0) or 0),
                     "receipt_attestation": receipt_attestation,
+                    "verify_performance": verify_performance,
                 }
             )
             write_progress("fragment_verified")
@@ -1369,6 +1548,10 @@ def main(argv: list[str] | None = None) -> int:
             "reassembled_png_error": str(reassembled.get("result_png_error") or ""),
             "reassembled_hash": reassembled.get("result_sha256", sha256_file(reassembled_ppm)),
             "result_path": str(reassembled.get("result_png_path") or reassembled_ppm),
+            "performance": build_performance_summary(
+                performance_records,
+                (time.perf_counter() - job_started) * 1000.0,
+            ),
             "devnet_trace": {"enabled": False, "status": "not_requested"},
             "billing": {
                 "schema": "silicium.verified-billing.v1",

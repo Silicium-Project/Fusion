@@ -20,10 +20,12 @@ import http.server
 import importlib.util
 import ipaddress
 import json
+import math
 import os
 import platform
 import shutil
 import socket
+import socketserver
 import subprocess
 import sys
 import tempfile
@@ -46,6 +48,7 @@ from tools.direct_transport import DirectTransportBackend, IceDirectTransport, N
 from tools.resource_intelligence import DualMemoryBayes, build_resource_profile, resource_baselines
 from tools.runtime_telemetry import RuntimeTelemetrySampler
 from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256, run_raytracer, scene_resolution
+from workloads.standard.standard_workloads import run_standard_workload
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
@@ -57,6 +60,8 @@ WORLD_DEFAULT_PEER_SYNC_INTERVAL_S = 10
 WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S = 15
 DEFAULT_PEER_SYNC_INTERVAL_S = 5
 DEFAULT_PEER_STALE_AFTER_S = 15
+DEFAULT_PEER_HTTP_MAX_WORKERS = 16
+DEFAULT_PEER_SYNC_FANOUT = 8
 DEFAULT_PUBLIC_STUN_SERVER = "stun.l.google.com:19302"
 ATOMIC_WRITE_LOCK = threading.Lock()
 
@@ -100,6 +105,16 @@ def optional_peer_id(value: Any) -> str:
     return safe_id(raw) if raw else ""
 
 
+RELEASE_CHANNELS = frozenset({"dev", "prod"})
+
+
+def normalize_release_channel(value: Any, *, default: str = "") -> str:
+    channel = str(value or "").strip().lower()
+    if not channel:
+        return default
+    return channel if channel in RELEASE_CHANNELS else ""
+
+
 def safe_path_id(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value.strip())
     return cleaned or uuid.uuid4().hex
@@ -131,6 +146,42 @@ def sha256_bytes(data: bytes) -> str:
 
 def sha256_json(value: Any) -> str:
     return sha256_bytes(stable_json(value).encode("utf-8"))
+
+
+RAYTRACER_PERFORMANCE_SCHEMA = "silicium.raytracer-performance.v1"
+
+
+def performance_duration(value: Any) -> float:
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return round(duration, 3) if math.isfinite(duration) and duration >= 0 else 0.0
+
+
+def performance_ratio(numerator: float, denominator: float) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(max(0.0, numerator) / denominator, 4)
+
+
+def last_json_object(text: str) -> dict[str, Any]:
+    """Extract the last JSON object from a renderer's stdout."""
+    decoder = json.JSONDecoder()
+    best: dict[str, Any] = {}
+    best_end = -1
+    for index in range(len(text)):
+        if text[index] != "{":
+            continue
+        try:
+            candidate, end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        absolute_end = index + end
+        if isinstance(candidate, dict) and absolute_end > best_end:
+            best = candidate
+            best_end = absolute_end
+    return best
 
 
 def guess_world_advertise_host() -> str:
@@ -323,11 +374,20 @@ class NodeConfig:
     scheduler_capacity_weight: float = 0.01
     world: bool = False
     pull_tasks_enable: bool = False
-    pull_tasks_interval_s: float = 1.0
+    # Pull is a fallback for NATed workers. Keep its idle latency below one
+    # renderer tick without making the scheduler spin aggressively.
+    pull_tasks_interval_s: float = 0.25
+    # High-throughput workers can reserve several compatible tasks with one
+    # authenticated request. The default remains one for compatibility.
+    pull_tasks_batch_size: int = 1
     app_version: str = "unknown"
     release_channel: str = "dev"
     release_build: str = ""
     gossip_max_hops: int = 8
+    # Bound HTTP and anti-entropy fan-out without changing legacy positional
+    # construction of NodeConfig's existing fields.
+    peer_http_max_workers: int = DEFAULT_PEER_HTTP_MAX_WORKERS
+    peer_sync_fanout: int = DEFAULT_PEER_SYNC_FANOUT
 
 
 def build_capacity_snapshot(config: NodeConfig) -> dict[str, Any]:
@@ -804,6 +864,15 @@ class RoleRuntime:
     def run_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
         if str(task.get("workload", "")).strip().lower() == "calcul/rendering/raytracer-fragment":
             return self.run_raytracer_fragment(task, p2p_data, p2p_meta)
+        standard_result = run_standard_workload(
+            str(task.get("workload", "")),
+            task,
+            p2p_data,
+            p2p_meta,
+            self.p2p.put_local,
+        )
+        if standard_result is not None:
+            return standard_result
         compute_result = {
             "mode": "network-workload",
             "executed": False,
@@ -823,6 +892,7 @@ class RoleRuntime:
         }
 
     def run_raytracer_fragment(self, task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        fragment_started = time.perf_counter()
         try:
             spec = json.loads(p2p_data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -832,14 +902,18 @@ class RoleRuntime:
         scene_ref = task.get("scene_p2p_ref") or spec.get("scene_p2p_ref")
         if not isinstance(scene_ref, dict):
             raise RuntimeError("raytracer_scene_ref_missing")
+        scene_fetch_started = time.perf_counter()
         scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
+        scene_fetch_ms = performance_duration((time.perf_counter() - scene_fetch_started) * 1000.0)
         root = Path(__file__).resolve().parents[1]
         compute_script = root / "workloads" / "raytracer" / "compute.py"
         with tempfile.TemporaryDirectory(prefix="silicium-raytracer-fragment-") as temp_dir:
             temp_path = Path(temp_dir)
             scene_path = temp_path / "scene.cfg"
             output_path = temp_path / "fragment.ppm"
+            staging_started = time.perf_counter()
             scene_path.write_bytes(scene_bytes)
+            staging_ms = performance_duration((time.perf_counter() - staging_started) * 1000.0)
             x_start = int(task.get("x_start", spec.get("x_start", 0)) or 0)
             x_end = int(task.get("x_end", spec.get("x_end", 0)) or 0)
             if x_end <= x_start:
@@ -859,13 +933,44 @@ class RoleRuntime:
             progress_file = str(task.get("_runtime_progress_path", "")).strip()
             if progress_file:
                 command.extend(["--progress-file", progress_file])
+            compute_started_unix_ms = int(time.time() * 1000)
+            compute_started = time.perf_counter()
             completed = self.run_process(command, timeout=int(task.get("timeout_s", 300) or 300) + 15)
+            compute_process_ms = performance_duration((time.perf_counter() - compute_started) * 1000.0)
+            compute_finished_unix_ms = int(time.time() * 1000)
             if completed.returncode != 0 or not output_path.exists():
                 raise RuntimeError(f"raytracer_fragment_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}")
             output = output_path.read_bytes()
+            renderer_result = last_json_object(completed.stdout)
         if not output.startswith(b"P6\n"):
             raise RuntimeError("raytracer_fragment_invalid_ppm")
+        renderer_performance = renderer_result.get("performance") if isinstance(renderer_result.get("performance"), dict) else {}
+        compute_ms = performance_duration(renderer_performance.get("compute_ms"))
+        if compute_ms <= 0:
+            compute_ms = performance_duration(renderer_result.get("renderer_duration_ms")) or compute_process_ms
+        output_store_started = time.perf_counter()
         output_ref = self.p2p.put_local(output)
+        output_store_ms = performance_duration((time.perf_counter() - output_store_started) * 1000.0)
+        fragment_total_ms = performance_duration((time.perf_counter() - fragment_started) * 1000.0)
+        overhead_ms = performance_duration(max(0.0, fragment_total_ms - compute_ms))
+        fragment_performance = {
+            "schema": RAYTRACER_PERFORMANCE_SCHEMA,
+            "total_ms": fragment_total_ms,
+            "compute_ms": compute_ms,
+            "network_ms": scene_fetch_ms,
+            "overhead_ms": overhead_ms,
+            "compute_to_total_ratio": performance_ratio(compute_ms, fragment_total_ms),
+            "compute_to_network_ratio": performance_ratio(compute_ms, scene_fetch_ms),
+            "compute_started_unix_ms": compute_started_unix_ms,
+            "compute_finished_unix_ms": compute_finished_unix_ms,
+            "stages_ms": {
+                "scene_fetch": scene_fetch_ms,
+                "input_staging": staging_ms,
+                "compute_process": compute_process_ms,
+                "output_store": output_store_ms,
+            },
+            "scene_fetch_source": str(scene_meta.get("source", "")),
+        }
         result_hash = sha256_bytes(output)
         milestone_manifest = build_verification_milestones(
             output,
@@ -879,6 +984,7 @@ class RoleRuntime:
             "scene": scene_meta,
             "input_hash": sha256_bytes(p2p_data),
             "compute": {"mode": "raytracer-fragment", "executed": True, "stdout": completed.stdout[-2048:], "stderr": completed.stderr[-2048:]},
+            "performance": fragment_performance,
             "output_ref": output_ref,
             "proof_ref": output_ref,
             "result_hash": result_hash,
@@ -891,6 +997,7 @@ class RoleRuntime:
         p2p_data: bytes,
         p2p_meta: dict[str, Any],
     ) -> dict[str, Any]:
+        verification_started = time.perf_counter()
         try:
             challenge = json.loads(p2p_data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -917,11 +1024,16 @@ class RoleRuntime:
         scene_ref = task.get("scene_p2p_ref") or challenge.get("scene_p2p_ref")
         if not isinstance(scene_ref, dict):
             raise RuntimeError("raytracer_scene_ref_missing")
+        scene_fetch_started = time.perf_counter()
         scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
+        scene_fetch_ms = performance_duration((time.perf_counter() - scene_fetch_started) * 1000.0)
         source_output_ref = task.get("source_output_ref")
         handoff_meta: dict[str, Any] = {}
+        source_handoff_ms = 0.0
         if isinstance(source_output_ref, dict):
+            source_handoff_started = time.perf_counter()
             source_output, handoff_meta = self.p2p.fetch(source_output_ref)
+            source_handoff_ms = performance_duration((time.perf_counter() - source_handoff_started) * 1000.0)
             source_manifest = build_verification_milestones(
                 source_output,
                 int(task.get("y_start", 0) or 0),
@@ -939,7 +1051,7 @@ class RoleRuntime:
                 x_end = scene_resolution(scene_path)[0]
             if x_end <= x_start:
                 raise RuntimeError("raytracer_verification_milestone_range_invalid")
-            run_raytracer(
+            recomputed = run_raytracer(
                 scene_path,
                 output_path,
                 int(task.get("timeout_s", 300) or 300),
@@ -951,6 +1063,11 @@ class RoleRuntime:
             recomputed_hash = ppm_pixel_sha256(output_path.read_bytes())
 
         passed = recomputed_hash == expected
+        recompute_performance = recomputed.get("performance") if isinstance(recomputed.get("performance"), dict) else {}
+        compute_ms = performance_duration(recompute_performance.get("compute_ms"))
+        total_ms = performance_duration((time.perf_counter() - verification_started) * 1000.0)
+        network_ms = performance_duration(scene_fetch_ms + source_handoff_ms)
+        overhead_ms = performance_duration(max(0.0, total_ms - compute_ms))
         fragment_rows = max(sample_rows, int(challenge.get("fragment_rows", sample_rows) or sample_rows))
         verification = {
             "mode": str(challenge.get("strategy")),
@@ -985,6 +1102,22 @@ class RoleRuntime:
             "verified": passed,
             "choice": passed,
             "result_hash": sha256_json({"verified": passed, **verification}),
+            "performance": {
+                "schema": RAYTRACER_PERFORMANCE_SCHEMA,
+                "total_ms": total_ms,
+                "compute_ms": compute_ms,
+                "network_ms": network_ms,
+                "overhead_ms": overhead_ms,
+                "compute_to_total_ratio": performance_ratio(compute_ms, total_ms),
+                "compute_to_network_ratio": performance_ratio(compute_ms, network_ms),
+                "stages_ms": {
+                    "scene_fetch": scene_fetch_ms,
+                    "source_handoff_fetch": source_handoff_ms,
+                    "compute_process": performance_duration(recompute_performance.get("process_ms")),
+                },
+                "scene_fetch_source": str(scene_meta.get("source", "")),
+                "source_handoff_source": str(handoff_meta.get("source", "")),
+            },
         }
 
     def run_storage_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
@@ -1092,6 +1225,7 @@ class RoleRuntime:
 class PeerNetwork:
     def __init__(self, config: NodeConfig, export_dir: Path) -> None:
         self.config = config
+        self.config.release_channel = normalize_release_channel(self.config.release_channel, default="dev")
         self.export_dir = export_dir
         self.node_id = safe_id(config.node_id)
         self.identity = NodeIdentity(config)
@@ -1122,7 +1256,7 @@ class PeerNetwork:
         self._seen_handshake_nonces: dict[str, float] = {}
         self._seen_punch_nonces: set[str] = set()
         self._lock = threading.RLock()
-        self._http_server: http.server.ThreadingHTTPServer | None = None
+        self._http_server: http.server.HTTPServer | None = None
         self._http_thread: threading.Thread | None = None
         self._udp_socket: socket.socket | None = None
         self._udp_thread: threading.Thread | None = None
@@ -1245,27 +1379,41 @@ class PeerNetwork:
             self._sync_thread.join(timeout=1)
             self._sync_thread = None
 
-    def peers_snapshot(self) -> dict[str, Any]:
+    def peers_snapshot(self, *, persist: bool = True, include_routes: bool = True) -> dict[str, Any]:
         self._prune_stale_peers()
         self._prune_expired_peer_candidates()
         with self._lock:
-            peers = sorted(self._peers.values(), key=lambda item: str(item.get("node_id", "")))
+            peers = sorted(
+                (peer for peer in self._peers.values() if self._peer_channel_matches(peer)),
+                key=lambda item: str(item.get("node_id", "")),
+            )
+        channel_counts: dict[str, int] = {}
+        for peer in peers:
+            channel = normalize_release_channel(peer.get("release_channel"), default="unknown") or "unknown"
+            channel_counts[channel] = channel_counts.get(channel, 0) + 1
         payload = {
             "schema_version": 1,
             "node_id": self.node_id,
             "count": len(peers),
             "peers": peers,
-            "routes": self.route_table_snapshot(),
+            "release_channel": self.config.release_channel,
+            "release_channels": channel_counts,
+            "routes": self.route_table_snapshot() if include_routes else [],
             "updated_utc": utc_now(),
         }
-        atomic_write_json(self.peers_path, payload)
-        atomic_write_json(self.discovery_registry_path, payload)
+        if persist:
+            atomic_write_json(self.peers_path, payload)
+            atomic_write_json(self.discovery_registry_path, payload)
         return payload
 
     def route_table_snapshot(self) -> list[dict[str, Any]]:
         """Compute shortest known peer paths, preferring direct ICE/UDP links."""
         with self._lock:
-            peers = {str(peer.get("node_id", "")): dict(peer) for peer in self._peers.values() if peer.get("node_id")}
+            peers = {
+                str(peer.get("node_id", "")): dict(peer)
+                for peer in self._peers.values()
+                if peer.get("node_id") and self._peer_channel_matches(peer)
+            }
         peers[self.node_id] = {"node_id": self.node_id}
         graph: dict[str, list[tuple[float, str, str]]] = {node_id: [] for node_id in peers}
         weights = {"direct": 1.0, "relay": 2.0, "central": 8.0, "peer-http": 8.0}
@@ -2262,9 +2410,15 @@ class PeerNetwork:
             "signing_key_id": str(payload.get("signing_key_id", "")).strip(),
         }
 
+    def _peer_channel_matches(self, peer: Mapping[str, Any]) -> bool:
+        raw_channel = str(peer.get("release_channel", "") or "").strip().lower()
+        return not raw_channel or raw_channel == self.config.release_channel
+
     def _record_update_announcement(self, payload: Any, source_peer_id: str) -> bool:
         release = self._normalize_update_announcement(payload)
         if release is None:
+            return False
+        if release["channel"] != self.config.release_channel:
             return False
         release["source_peer_id"] = safe_id(source_peer_id) if source_peer_id else ""
         release["observed_utc"] = utc_now()
@@ -2282,7 +2436,7 @@ class PeerNetwork:
             for path in self.update_announcements_dir.glob("*/*.json"):
                 payload = read_json(path, {})
                 normalized = self._normalize_update_announcement(payload)
-                if normalized is None:
+                if normalized is None or normalized["channel"] != self.config.release_channel:
                     continue
                 normalized["source_peer_id"] = str(payload.get("source_peer_id", ""))
                 normalized["observed_utc"] = str(payload.get("observed_utc", ""))
@@ -2705,9 +2859,18 @@ class PeerNetwork:
         except ValueError:
             return 0
 
-    def _record_peer(self, message: dict[str, Any], *, refresh_liveness: bool = True) -> bool:
+    def _record_peer(
+        self,
+        message: dict[str, Any],
+        *,
+        refresh_liveness: bool = True,
+        persist_snapshot: bool = True,
+    ) -> bool:
         node_id = safe_id(str(message.get("node_id", "")))
         if not node_id:
+            return False
+        remote_channel = str(message.get("release_channel", "") or "").strip().lower()
+        if node_id != self.node_id and remote_channel and remote_channel != self.config.release_channel:
             return False
         changed = False
         candidates = self._normalize_candidate_list(message.get("candidates", []), node_id)
@@ -2778,7 +2941,8 @@ class PeerNetwork:
             changed = any(current.get(key) != value for key, value in merged.items() if key not in {"updated_utc", "last_seen_unix"})
             current.update(merged)
             self._peers[node_id] = current
-        self.peers_snapshot()
+        if persist_snapshot:
+            self.peers_snapshot()
         if node_id != self.node_id and self._peer_score_sink is not None:
             try:
                 self._peer_score_sink(node_id, float(merged.get("reputation_score", 0.0) or 0.0))
@@ -3258,6 +3422,8 @@ class PeerNetwork:
             node_id = str(peer.get("node_id", ""))
             if not node_id or node_id in exclude_ids or peer.get("self"):
                 continue
+            if not self._peer_channel_matches(peer):
+                continue
             peer_roles = {str(role).lower() for role in peer.get("roles", [])}
             if required_roles and not required_roles.intersection(peer_roles):
                 continue
@@ -3557,6 +3723,8 @@ class PeerNetwork:
                     continue
                 loaded = dict(peer)
                 loaded["node_id"] = node_id
+                if not self._peer_channel_matches(loaded):
+                    continue
                 # Persisted peer data is historical until a fresh direct
                 # registration or signed announcement is observed.
                 loaded["last_seen_unix"] = int(peer.get("last_seen_unix", 0) or 0)
@@ -3633,19 +3801,29 @@ class PeerNetwork:
                 self._record_peer(peer, refresh_liveness=False)
 
     def _sync_targets(self) -> list[str]:
-        targets: set[str] = set()
+        seed_targets: set[str] = set()
         for seed in self.config.seed_peers:
             http_base = self._normalize_http_target(seed)
             if http_base:
-                targets.add(http_base)
+                seed_targets.add(http_base)
+        peer_targets: set[str] = set()
         with self._lock:
             for peer in self._peers.values():
                 http_base = str(peer.get("http_base_url", "")).strip()
                 if http_base:
-                    targets.add(http_base)
-        targets.discard("")
-        targets.discard(self.advertised_http_base_url)
-        return sorted(targets)
+                    peer_targets.add(http_base)
+        seed_targets.discard("")
+        peer_targets.discard("")
+        seed_targets.discard(self.advertised_http_base_url)
+        peer_targets.discard(self.advertised_http_base_url)
+        # A bounded deterministic fan-out avoids O(N²) HTTP anti-entropy in a
+        # world mesh. The rendezvous/seed path remains authoritative for task
+        # claims and is never evicted by this limit.
+        peer_targets.difference_update(seed_targets)
+        fanout = int(self.config.peer_sync_fanout)
+        if fanout > 0:
+            peer_targets = set(sorted(peer_targets)[:fanout])
+        return sorted(seed_targets | peer_targets)
 
     def _sync_peer_table(self, base_url: str) -> None:
         path = "/peers"
@@ -3904,6 +4082,8 @@ class PeerNetwork:
                             "status": "ok",
                             "service": "network_node",
                             "node_id": peer_network.node_id,
+                            "release_channel": peer_network.config.release_channel,
+                            "release_build": peer_network.config.release_build,
                             "updated_utc": utc_now(),
                         }
                     ).encode("utf-8")
@@ -4391,6 +4571,22 @@ class PeerNetwork:
                     if not isinstance(payload, dict):
                         self.send_error(400)
                         return
+                    raw_channel = str(payload.get("release_channel", "") or "").strip()
+                    requested_channel = normalize_release_channel(raw_channel)
+                    if raw_channel and requested_channel != peer_network.config.release_channel:
+                        body = stable_json(
+                            {
+                                "ok": False,
+                                "error": "release_channel_mismatch",
+                                "expected_release_channel": peer_network.config.release_channel,
+                            }
+                        ).encode("utf-8")
+                        self.send_response(409)
+                        self.send_header("Content-Type", "application/json; charset=utf-8")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
                     requester_node_id = safe_id(str(payload.get("node_id", "") or self.headers.get("X-Silicium-Node-Id", "")))
                     roles = payload.get("roles", [])
                     if isinstance(roles, str):
@@ -4418,9 +4614,28 @@ class PeerNetwork:
                                 "release_channel": payload.get("release_channel", ""),
                                 "release_build": payload.get("release_build", ""),
                                 "timestamp_utc": utc_now(),
-                            }
+                            },
+                            # Claims are a hot path. Keep liveness in memory
+                            # immediately and let heartbeat/anti-entropy write
+                            # the durable peer snapshot at a bounded cadence.
+                            persist_snapshot=False,
                         )
-                    claimed_envelope = peer_network.node.claim_task_for_worker(requester_node_id, roles_set) if peer_network.node else None
+                    requested_batch = payload.get("max_tasks", 1)
+                    try:
+                        requested_batch = int(requested_batch)
+                    except (TypeError, ValueError):
+                        requested_batch = 1
+                    requested_batch = max(1, min(32, requested_batch))
+                    claimed_envelopes = (
+                        peer_network.node.claim_tasks_for_worker(
+                            requester_node_id,
+                            roles_set,
+                            limit=requested_batch,
+                        )
+                        if peer_network.node
+                        else []
+                    )
+                    claimed_envelope = claimed_envelopes[0] if claimed_envelopes else None
                     if peer_network.node:
                         append_jsonl(
                             peer_network.node.events_path,
@@ -4434,11 +4649,25 @@ class PeerNetwork:
                                 "app_version": str(payload.get("app_version", "")),
                                 "release_channel": str(payload.get("release_channel", "")),
                                 "release_build": str(payload.get("release_build", "")),
-                                "claimed": isinstance(claimed_envelope, dict),
+                                "claimed": bool(claimed_envelopes),
+                                "claimed_count": len(claimed_envelopes),
                                 "item_id": safe_id(str((claimed_envelope or {}).get("request_id") or (claimed_envelope or {}).get("task_id") or "")),
+                                "item_ids": [
+                                    safe_id(str(item.get("request_id") or item.get("task_id") or ""))
+                                    for item in claimed_envelopes
+                                ],
                             },
                         )
-                    body = stable_json({"ok": True, "task": claimed_envelope}).encode("utf-8")
+                    body = stable_json(
+                        {
+                            "ok": True,
+                            # Keep `task` for older workers; new workers use
+                            # `tasks` to amortise authenticated HTTP claims.
+                            "task": claimed_envelope,
+                            "tasks": claimed_envelopes,
+                            "claimed_count": len(claimed_envelopes),
+                        }
+                    ).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(body)))
@@ -4613,7 +4842,37 @@ class PeerNetwork:
             def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
                 return
 
-        server = http.server.ThreadingHTTPServer((self.config.peer_http_bind, self.config.peer_http_port), _PeerHandler)
+        class _BoundedThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+            daemon_threads = True
+            block_on_close = False
+
+            def __init__(self, *args: Any, max_workers: int, **kwargs: Any) -> None:
+                self._request_slots = threading.BoundedSemaphore(max(1, min(256, int(max_workers))))
+                super().__init__(*args, **kwargs)
+
+            def process_request(self, request: Any, client_address: Any) -> None:
+                # Reject excess work quickly; peer callers already retry and
+                # this keeps the accept loop and process thread count bounded.
+                if not self._request_slots.acquire(timeout=0.25):
+                    self.close_request(request)
+                    return
+                try:
+                    super().process_request(request, client_address)
+                except Exception:
+                    self._request_slots.release()
+                    self.close_request(request)
+
+            def process_request_thread(self, request: Any, client_address: Any) -> None:
+                try:
+                    super().process_request_thread(request, client_address)
+                finally:
+                    self._request_slots.release()
+
+        server = _BoundedThreadingHTTPServer(
+            (self.config.peer_http_bind, self.config.peer_http_port),
+            _PeerHandler,
+            max_workers=self.config.peer_http_max_workers,
+        )
         self._http_server = server
         bind_host, bind_port = server.server_address[:2]
         local_host = "127.0.0.1" if bind_host in {"0.0.0.0", ""} else str(bind_host)
@@ -4754,6 +5013,9 @@ class NetworkNode:
         self._solana_onchain_status = ""
         self._pull_thread: threading.Thread | None = None
         self._pull_stop_event = threading.Event()
+        # Claiming must be atomic across HTTP handlers, but it must not block
+        # peer discovery/heartbeat handlers on the broader P2P lock.
+        self._task_claim_lock = threading.Lock()
         self._last_claim_poll_unix = 0.0
         self._last_claim_poll_utc = ""
         self._last_claim_error = ""
@@ -4993,6 +5255,10 @@ class NetworkNode:
                 "peer_count": int(self.peer_network.peers_snapshot().get("count", 0)),
                 "gossip_enabled": self.config.gossip_enable,
                 "peer_sync_interval_s": self.config.peer_sync_interval_s,
+                "peer_sync_fanout": self.config.peer_sync_fanout,
+                "peer_http_max_workers": self.config.peer_http_max_workers,
+                "pull_tasks_interval_s": self.config.pull_tasks_interval_s,
+                "pull_tasks_batch_size": self.config.pull_tasks_batch_size,
                 "mesh_auth_enabled": bool(self.config.mesh_key),
                 "identity_id": self.peer_network.identity.identity_id,
                 "relay_enabled": self.config.relay_enable,
@@ -5213,12 +5479,14 @@ class NetworkNode:
         action = str(payload.get("action", "")).strip().lower()
         issuer = str(payload.get("issuer_node_id", "")).strip()
         control_id = str(payload.get("control_id", "")).strip()
+        release_channel = str(payload.get("release_channel", "") or "").strip().lower()
         return bool(
             root_job_id
             and control_id
             and action in {"cancel", "expire"}
             and issuer
             and safe_id(issuer) == safe_id(signed_by)
+            and (not release_channel or release_channel == self.config.release_channel)
         )
 
     def apply_task_control(self, payload: dict[str, Any], *, signed_by: str) -> bool:
@@ -5701,6 +5969,7 @@ class NetworkNode:
 
     def _handle(self, envelope: dict[str, Any]) -> None:
         started = time.monotonic()
+        started_unix_ms = int(time.time() * 1000)
         start_telemetry = self.telemetry_sampler.sample()
         kind = str(envelope.get("envelope_kind") or "task")
         active = self.task_activity(envelope)
@@ -5783,8 +6052,19 @@ class NetworkNode:
             self._task_monitor_thread.join(timeout=2.0)
         end_telemetry = self.telemetry_sampler.sample()
         self._telemetry = end_telemetry
+        role_performance = result.get("performance") if isinstance(result.get("performance"), dict) else {}
+        workload_total_ms = performance_duration(role_performance.get("total_ms"))
+        finished_unix_ms = int(time.time() * 1000)
+        role_schema = str(role_performance.get("schema", "")).strip()
+        role_overhead_ms = performance_duration(role_performance.get("overhead_ms"))
+        role_network_ms = performance_duration(role_performance.get("network_ms"))
         performance = {
+            **role_performance,
+            "schema": role_schema or "silicium.task-performance.v1",
             "duration_ms": duration_ms,
+            "total_ms": duration_ms,
+            "started_unix_ms": started_unix_ms,
+            "finished_unix_ms": finished_unix_ms,
             "process_cpu_seconds": round(
                 max(
                     0.0,
@@ -5798,6 +6078,20 @@ class NetworkNode:
             "system_memory_percent": float(end_telemetry.get("system_memory_percent", 0.0) or 0.0),
             "logical_cpu_count": int(end_telemetry.get("logical_cpu_count", 0) or 0),
         }
+        if workload_total_ms > 0:
+            performance["workload_total_ms"] = workload_total_ms
+        if role_overhead_ms > 0:
+            performance["workload_overhead_ms"] = role_overhead_ms
+        if role_network_ms > 0:
+            performance["worker_network_ms"] = role_network_ms
+        compute_ms = performance_duration(performance.get("compute_ms"))
+        if compute_ms > 0:
+            performance["compute_ms"] = compute_ms
+            performance["overhead_ms"] = performance_duration(max(0.0, duration_ms - compute_ms))
+            performance["compute_to_total_ratio"] = performance_ratio(compute_ms, float(duration_ms))
+            network_ms = performance_duration(performance.get("network_ms"))
+            if network_ms > 0:
+                performance["compute_to_network_ratio"] = performance_ratio(compute_ms, network_ms)
         finished_utc = utc_now()
         result.update(
             {
@@ -5862,6 +6156,23 @@ class NetworkNode:
         )
         self.update_envelope_status(envelope, terminal_status, result)
         self.remember_task_queue_envelope({**envelope, "status": terminal_status})
+        try:
+            append_jsonl(
+                self.config.export_dir / "rpc.events.ndjson",
+                {
+                    "schema_version": 1,
+                    "event": f"task.{terminal_status}",
+                    "item_id": safe_item,
+                    "timestamp_utc": utc_now(),
+                    "handled_by": self.config.node_id,
+                    "duration_ms": duration_ms,
+                    "performance": performance,
+                },
+            )
+        except Exception:
+            # The RPC event journal is an optional wake-up optimisation. The
+            # durable result file remains authoritative when it is unavailable.
+            pass
         if ok:
             self.metrics["handled"] = int(self.metrics.get("handled", 0) or 0) + 1
         elif not cancelled and not timed_out:
@@ -6211,6 +6522,21 @@ class NetworkNode:
             if isinstance(value, str) and value.strip():
                 current[key] = value
         atomic_write_json(envelope_path, current)
+        try:
+            append_jsonl(
+                self.config.export_dir / "rpc.events.ndjson",
+                {
+                    "schema_version": 1,
+                    "event": f"task.{current['status']}",
+                    "item_id": item_id,
+                    "timestamp_utc": utc_now(),
+                    "handled_by": current.get("handled_by", ""),
+                    "duration_ms": result.get("duration_ms", 0),
+                    "performance": result.get("performance", {}),
+                },
+            )
+        except Exception:
+            pass
         self.return_dispatched_result(current, result, log_payload)
         append_jsonl(
             self.events_path,
@@ -6224,9 +6550,17 @@ class NetworkNode:
             },
         )
 
-    def claim_task_for_worker(self, worker_id: str, worker_roles: set[str]) -> dict[str, Any] | None:
+    def claim_tasks_for_worker(
+        self,
+        worker_id: str,
+        worker_roles: set[str],
+        *,
+        limit: int = 1,
+    ) -> list[dict[str, Any]]:
         if not worker_id or not worker_roles:
-            return None
+            return []
+
+        requested_limit = max(1, min(32, int(limit)))
 
         def preferred_worker(
             current: Mapping[str, Any],
@@ -6235,7 +6569,7 @@ class NetworkNode:
         ) -> str:
             now = int(time.time())
             compatible: set[str] = set()
-            for peer in self.peer_network.peers_snapshot().get("peers", []):
+            for peer in self.peer_network.peers_snapshot(persist=False, include_routes=False).get("peers", []):
                 if not isinstance(peer, dict):
                     continue
                 peer_id = optional_peer_id(peer.get("node_id", ""))
@@ -6363,14 +6697,32 @@ class NetworkNode:
             )
             return payload
 
-        with self.peer_network._lock:
+        claimed_items: list[dict[str, Any]] = []
+        claimed_ids: set[str] = set()
+
+        def consume_queue(queue_path: Path) -> bool:
+            """Claim compatible entries from one queue until the batch is full."""
+            for envelope in self.read_new(queue_path):
+                if not isinstance(envelope, dict):
+                    continue
+                item_id = safe_id(
+                    str(envelope.get("request_id") or envelope.get("task_id") or "")
+                )
+                if not item_id or item_id in claimed_ids:
+                    continue
+                claimed = try_claim(envelope)
+                if claimed is None:
+                    continue
+                claimed_items.append(claimed)
+                claimed_ids.add(item_id)
+                if len(claimed_items) >= requested_limit:
+                    return True
+            return False
+
+        with self._task_claim_lock:
             for queue_path in self.queue_order():
-                for envelope in self.read_new(queue_path):
-                    if not isinstance(envelope, dict):
-                        continue
-                    claimed = try_claim(envelope)
-                    if claimed is not None:
-                        return claimed
+                if consume_queue(queue_path):
+                    return claimed_items
 
             # Queue cursors are persisted across restarts. If a cursor was
             # advanced while a prior process died before dispatching, recover
@@ -6383,10 +6735,24 @@ class NetworkNode:
                     envelope = read_json(item_path, {})
                     if not isinstance(envelope, dict):
                         continue
+                    item_id = safe_id(
+                        str(envelope.get("request_id") or envelope.get("task_id") or "")
+                    )
+                    if not item_id or item_id in claimed_ids:
+                        continue
                     claimed = try_claim(envelope)
-                    if claimed is not None:
-                        return claimed
-        return None
+                    if claimed is None:
+                        continue
+                    claimed_items.append(claimed)
+                    claimed_ids.add(item_id)
+                    if len(claimed_items) >= requested_limit:
+                        return claimed_items
+        return claimed_items
+
+    def claim_task_for_worker(self, worker_id: str, worker_roles: set[str]) -> dict[str, Any] | None:
+        """Backward-compatible single-task claim used by older callers."""
+        claimed = self.claim_tasks_for_worker(worker_id, worker_roles, limit=1)
+        return claimed[0] if claimed else None
 
     def _start_pull_tasks_loop(self) -> None:
         self._pull_stop_event.clear()
@@ -6419,6 +6785,7 @@ class NetworkNode:
         poll_started_utc = utc_now()
         attempts: list[dict[str, Any]] = []
         claimed_item_id = ""
+        claimed_item_ids: list[str] = []
         # Candidate discovery is network-bound and already refreshed by the
         # dedicated peer sync loop. A claim only needs the latest local
         # snapshot; forcing discovery here can delay task pickup by several
@@ -6441,6 +6808,7 @@ class NetworkNode:
             "capacity": build_capacity_snapshot(self.config),
             "reputation_score": self.reputation.local_score(),
             "resource_reputation": self.reputation.resource_snapshot(),
+            "max_tasks": max(1, min(32, int(self.config.pull_tasks_batch_size))),
         }).encode("utf-8")
 
         for base_url in sorted(targets):
@@ -6452,6 +6820,7 @@ class NetworkNode:
             path = "/tasks/claim"
             url = base_url.rstrip("/") + path
             attempt: dict[str, Any] = {"target": base_url, "url": url, "result": "unknown"}
+            attempt_item_ids: list[str] = []
             attempt_started = time.monotonic()
             request = urllib.request.Request(
                 url,
@@ -6460,49 +6829,60 @@ class NetworkNode:
                 headers=self.peer_network._signed_headers("POST", path, raw_payload, {"Content-Type": "application/json"}),
             )
             try:
-                with urllib.request.urlopen(request, timeout=4) as response:
+                # Claims are serialized per scheduler for atomic reservation;
+                # allow a busy but healthy scheduler to drain its queue rather
+                # than turning contention into a false worker-loss signal.
+                with urllib.request.urlopen(request, timeout=10) as response:
                     attempt["http_status"] = int(response.status)
                     response_raw = response.read()
                     payload = json.loads(response_raw.decode("utf-8"))
                     if not isinstance(payload, dict) or not bool(payload.get("ok")):
                         attempt["result"] = "invalid_response"
-                    elif not isinstance(payload.get("task"), dict):
-                        attempt["result"] = "no_task_available"
                     else:
-                        claimed_task = payload["task"]
-                        # The claim request just proved that this scheduler URL
-                        # is reachable from the worker. Prefer that direct path
-                        # for locally originated tasks instead of routing the
-                        # result through a potentially slow public reverse
-                        # proxy. Explicit origin callbacks are preserved.
-                        if not str(claimed_task.get("origin_result_return_url", "")).strip():
-                            claimed_task["result_return_url"] = base_url.rstrip("/") + "/results/dispatch"
-                        kind = str(claimed_task.get("envelope_kind") or "task")
-                        candidate_item_id = safe_id(
-                            str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown")
-                        )
-                        control_origin = str(
-                            claimed_task.get("origin_node_id") or claimed_task.get("dispatched_by") or ""
-                        )
-                        active_control = self.task_control_for(candidate_item_id, control_origin)
-                        if active_control is not None:
-                            attempt["result"] = "rejected_task_control"
-                            attempt["item_id"] = candidate_item_id
-                            attempt["control_id"] = str(active_control.get("control_id", ""))
-                        else:
+                        response_tasks = payload.get("tasks")
+                        if not isinstance(response_tasks, list):
+                            response_tasks = []
+                        if not response_tasks and isinstance(payload.get("task"), dict):
+                            response_tasks = [payload["task"]]
+                        response_tasks = [item for item in response_tasks if isinstance(item, dict)]
+                        if not response_tasks:
+                            attempt["result"] = "no_task_available"
+                            attempt["claimed_count"] = 0
+                            response_tasks = []
+                        for claimed_task in response_tasks:
+                            # The claim request just proved that this scheduler
+                            # URL is reachable from the worker. Prefer that
+                            # direct path for locally originated tasks instead
+                            # of routing the result through a public proxy.
+                            if not str(claimed_task.get("origin_result_return_url", "")).strip():
+                                claimed_task["result_return_url"] = base_url.rstrip("/") + "/results/dispatch"
+                            kind = str(claimed_task.get("envelope_kind") or "task")
+                            candidate_item_id = safe_id(
+                                str(claimed_task.get("request_id") or claimed_task.get("task_id") or "unknown")
+                            )
+                            control_origin = str(
+                                claimed_task.get("origin_node_id") or claimed_task.get("dispatched_by") or ""
+                            )
+                            active_control = self.task_control_for(candidate_item_id, control_origin)
+                            if active_control is not None:
+                                attempt["result"] = "rejected_task_control"
+                                attempt.setdefault("rejected_item_ids", []).append(candidate_item_id)
+                                attempt["control_id"] = str(active_control.get("control_id", ""))
+                                continue
                             self.ingest_content_blobs(claimed_task)
-                            claimed_item_id = candidate_item_id
                             if kind == "request":
                                 enqueue_request_envelope(self.config.export_dir, claimed_task)
                             else:
                                 enqueue_task_envelope(self.config.export_dir, claimed_task)
                             self.remember_task_queue_envelope(claimed_task)
-                            attempt["result"] = "claimed"
-                            attempt["item_id"] = claimed_item_id
+                            claimed_item_ids.append(candidate_item_id)
+                            attempt_item_ids.append(candidate_item_id)
+                            if not claimed_item_id:
+                                claimed_item_id = candidate_item_id
                             target_peer = next(
                                 (
                                     peer
-                                    for peer in self.peer_network.peers_snapshot().get("peers", [])
+                                    for peer in self.peer_network.peers_snapshot(persist=False, include_routes=False).get("peers", [])
                                     if str(peer.get("http_base_url", "")).rstrip("/") == base_url.rstrip("/")
                                 ),
                                 {},
@@ -6512,7 +6892,7 @@ class NetworkNode:
                                 transport_backend="scheduler-http",
                                 remote_peer_id=str(target_peer.get("node_id", "")),
                                 proof_scope="task_delivery",
-                                task_id=claimed_item_id,
+                                task_id=candidate_item_id,
                                 content_sha256=sha256_bytes(response_raw),
                                 size_bytes=len(response_raw),
                                 endpoint=base_url,
@@ -6525,12 +6905,19 @@ class NetworkNode:
                                     "timestamp_utc": utc_now(),
                                     "node_id": self.config.node_id,
                                     "kind": "claimed_task_received",
-                                    "item_id": claimed_item_id,
+                                    "item_id": candidate_item_id,
                                     "from_seed": base_url,
                                     "poll_started_utc": poll_started_utc,
                                     "claim_duration_ms": round((time.monotonic() - attempt_started) * 1000),
                                 },
                             )
+                        if attempt_item_ids:
+                            attempt["result"] = "claimed"
+                            attempt["item_id"] = attempt_item_ids[0]
+                            attempt["item_ids"] = list(attempt_item_ids)
+                            attempt["claimed_count"] = len(attempt_item_ids)
+                        elif attempt.get("result") in {"", "unknown", None}:
+                            attempt["result"] = "no_task_available"
             except urllib.error.HTTPError as error:
                 attempt["result"] = "http_error"
                 attempt["http_status"] = int(error.code)
@@ -6565,6 +6952,9 @@ class NetworkNode:
                 "release_build": self.config.release_build,
                 "result": result,
                 "claimed_item_id": claimed_item_id,
+                "claimed_item_ids": list(claimed_item_ids),
+                "claimed_count": len(claimed_item_ids),
+                "batch_size": max(1, min(32, int(self.config.pull_tasks_batch_size))),
                 "last_error": self._last_claim_error,
                 "attempts": attempts,
             },
@@ -6887,6 +7277,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gossip-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_PORT", "0")))
     parser.add_argument("--peer-http-bind", default=os.environ.get("SILICIUM_PEER_HTTP_BIND", "127.0.0.1"))
     parser.add_argument("--peer-http-port", type=int, default=int(os.environ.get("SILICIUM_PEER_HTTP_PORT", "0")))
+    parser.add_argument(
+        "--peer-http-max-workers",
+        type=int,
+        default=int(os.environ.get("SILICIUM_PEER_HTTP_MAX_WORKERS", str(DEFAULT_PEER_HTTP_MAX_WORKERS))),
+        help="Maximum concurrent peer HTTP requests (default: 16).",
+    )
     parser.add_argument("--peer-advertise-url", default=os.environ.get("SILICIUM_PEER_ADVERTISE_URL", ""))
     parser.add_argument("--peer-advertise-host", default=os.environ.get("SILICIUM_PEER_ADVERTISE_HOST", ""))
     parser.add_argument("--peer-advertise-port", type=int, default=int(os.environ.get("SILICIUM_PEER_ADVERTISE_PORT", "0")))
@@ -6895,6 +7291,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed-peers", default=os.environ.get("SILICIUM_SEED_PEERS", ""))
     parser.add_argument("--mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", ""))
     parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", str(DEFAULT_PEER_SYNC_INTERVAL_S))))
+    parser.add_argument(
+        "--peer-sync-fanout",
+        type=int,
+        default=int(os.environ.get("SILICIUM_PEER_SYNC_FANOUT", str(DEFAULT_PEER_SYNC_FANOUT))),
+        help="Additional peer HTTP anti-entropy targets per sync (0 means unlimited; default: 8).",
+    )
     parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
     parser.add_argument("--gossip-max-hops", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_MAX_HOPS", "8")))
     parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", str(DEFAULT_PEER_STALE_AFTER_S))))
@@ -6915,7 +7317,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
     parser.add_argument("--pull-tasks-enable", action="store_true", default=os.environ.get("SILICIUM_PULL_TASKS_ENABLE", "0") == "1")
-    parser.add_argument("--pull-tasks-interval-s", type=float, default=float(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "1")))
+    parser.add_argument("--pull-tasks-interval-s", type=float, default=float(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "0.25")))
+    parser.add_argument("--pull-tasks-batch-size", type=int, default=int(os.environ.get("SILICIUM_PULL_TASKS_BATCH_SIZE", "1")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
     parser.add_argument("--p2p-candidate-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_TTL_S", "60")))
     parser.add_argument("--p2p-candidate-refresh-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_REFRESH_S", "20")))
@@ -6994,6 +7397,7 @@ def main(argv: list[str] | None = None) -> int:
         gossip_port=int(args.gossip_port),
         peer_http_bind=str(args.peer_http_bind),
         peer_http_port=int(args.peer_http_port),
+        peer_http_max_workers=max(1, min(256, int(args.peer_http_max_workers))),
         peer_advertise_url=str(args.peer_advertise_url),
         peer_advertise_host=str(args.peer_advertise_host),
         peer_advertise_port=int(args.peer_advertise_port),
@@ -7002,6 +7406,7 @@ def main(argv: list[str] | None = None) -> int:
         seed_peers=[item.strip() for item in str(args.seed_peers).split(",") if item.strip()],
         mesh_key=str(args.mesh_key),
         peer_sync_interval_s=max(0, int(args.peer_sync_interval_s)),
+        peer_sync_fanout=max(0, min(256, int(args.peer_sync_fanout))),
         peer_event_limit=max(1, int(args.peer_event_limit)),
         peer_stale_after_s=max(0, int(args.peer_stale_after_s)),
         relay_enable=bool(args.relay_enable),
@@ -7017,6 +7422,7 @@ def main(argv: list[str] | None = None) -> int:
         remote_dispatch_limit=max(1, int(args.remote_dispatch_limit)),
         pull_tasks_enable=bool(args.pull_tasks_enable),
         pull_tasks_interval_s=max(0.25, float(args.pull_tasks_interval_s)),
+        pull_tasks_batch_size=max(1, min(32, int(args.pull_tasks_batch_size))),
         app_version=str(args.app_version).strip() or "unknown",
         release_channel=str(args.release_channel).strip().lower() or "dev",
         release_build=str(args.release_build).strip(),

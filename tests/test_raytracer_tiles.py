@@ -2,6 +2,7 @@ import shutil
 from pathlib import Path
 
 from workloads.raytracer.raytracer_workload import parse_ppm_bytes, run_raytracer, split_tiles
+from workloads.raytracer.run_network_job import build_performance_summary
 
 
 def test_split_tiles_covers_image_with_requested_count() -> None:
@@ -83,5 +84,38 @@ def test_uploaded_scene_file_runs_through_compute_path(tmp_path, monkeypatch) ->
     width, height, pixels = parse_ppm_bytes(output.read_bytes(), str(output))
     assert result["returncode"] == 0
     assert result["result_path"] == str(output.resolve())
+    assert result["performance"]["compute_ms"] > 0
     assert (width, height) == (32, 20)
     assert len(pixels) == width * height * 3
+
+
+def test_performance_summary_merges_parallel_compute_intervals() -> None:
+    records = [
+        {
+            "role": "compute",
+            "compute_ms": 100,
+            "network_ms": 25,
+            "worker_overhead_ms": 30,
+            "compute_started_unix_ms": 1_000,
+            "compute_finished_unix_ms": 1_100,
+        },
+        {
+            "role": "compute",
+            "compute_ms": 150,
+            "network_ms": 35,
+            "worker_overhead_ms": 40,
+            "compute_started_unix_ms": 1_050,
+            "compute_finished_unix_ms": 1_200,
+        },
+        {"role": "verify", "compute_ms": 20, "network_ms": 10},
+    ]
+
+    summary = build_performance_summary(records, 300)
+
+    assert summary["compute_ms"] == 200
+    assert summary["compute_work_ms"] == 250
+    assert summary["verification_ms"] == 20
+    assert summary["network_ms"] == 70
+    assert summary["compute_to_total_ratio"] == 0.6667
+    assert summary["compute_to_network_ratio"] == 3.5714
+    assert summary["parallelism_factor"] == 1.25

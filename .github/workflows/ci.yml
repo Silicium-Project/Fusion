@@ -4,14 +4,31 @@ on:
   push:
     branches:
       - main
+      - dev
       - "issue/**"
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Release channel to validate."
+        required: true
+        type: choice
+        options: [dev, prod]
+        default: dev
   workflow_call:
+    inputs:
+      release_channel:
+        description: "Release channel to validate."
+        required: false
+        type: string
+        default: dev
 
 permissions:
   contents: read
+
+env:
+  SILICIUM_RELEASE_CHANNEL: ${{ inputs.release_channel || github.event.inputs.release_channel || (github.ref_name == 'main' && 'prod' || 'dev') }}
 
 concurrency:
   group: network-ci-${{ github.event.pull_request.number || github.ref }}

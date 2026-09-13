@@ -2,6 +2,7 @@
 "use strict";
 
 const fs = require("fs");
+const crypto = require("crypto");
 const Module = require("module");
 const os = require("os");
 const path = require("path");
@@ -44,7 +45,7 @@ function readKeypairPubkey(filePath) {
   return readKeypair(filePath).publicKey;
 }
 
-function loadIdl(programId) {
+async function loadIdl(programId, provider) {
   const candidates = [
     path.join(solanaLayerDir, "target", "idl", "solana_layer.json"),
     path.join(repoRoot, "target", "idl", "solana_layer.json"),
@@ -56,7 +57,18 @@ function loadIdl(programId) {
       return idl;
     }
   }
-  throw new Error("solana_layer_idl_not_found");
+  // A deployed Anchor program may publish its IDL on-chain. Prefer that
+  // authoritative copy when the local checkout has not run `anchor build`;
+  // this is what lets a production worker reconnect to Devnet after a clean
+  // deployment without silently falling back to a guessed instruction shape.
+  if (typeof anchor.Program.fetchIdl === "function") {
+    const remoteIdl = await anchor.Program.fetchIdl(programId, provider);
+    if (remoteIdl) {
+      remoteIdl.address = programId.toBase58();
+      return remoteIdl;
+    }
+  }
+  throw new Error("solana_layer_idl_not_found_local_or_onchain");
 }
 
 function publicKey(value, field) {
@@ -101,7 +113,7 @@ async function createContext(request) {
     preflightCommitment: "confirmed",
   });
   anchor.setProvider(provider);
-  const program = new anchor.Program(loadIdl(programId), provider);
+  const program = new anchor.Program(await loadIdl(programId, provider), provider);
   return {
     connection,
     payer,

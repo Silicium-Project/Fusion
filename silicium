@@ -2757,6 +2757,12 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--gossip-port", type=int, default=int(os.environ.get("SILICIUM_GOSSIP_PORT", "0")))
     parser.add_argument("--peer-http-bind", default=os.environ.get("SILICIUM_PEER_HTTP_BIND", "127.0.0.1"))
     parser.add_argument("--peer-http-port", type=int, default=int(os.environ.get("SILICIUM_PEER_HTTP_PORT", "0")))
+    parser.add_argument(
+        "--peer-http-max-workers",
+        type=int,
+        default=int(os.environ.get("SILICIUM_PEER_HTTP_MAX_WORKERS", "16")),
+        help="Maximum concurrent peer HTTP requests (default: 16).",
+    )
     parser.add_argument("--peer-advertise-url", default=os.environ.get("SILICIUM_PEER_ADVERTISE_URL", ""))
     parser.add_argument("--peer-advertise-host", default=os.environ.get("SILICIUM_PEER_ADVERTISE_HOST", ""))
     parser.add_argument("--peer-advertise-port", type=int, default=int(os.environ.get("SILICIUM_PEER_ADVERTISE_PORT", "0")))
@@ -2765,6 +2771,12 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--seed-peers", default=os.environ.get("SILICIUM_SEED_PEERS", ""))
     parser.add_argument("--mesh-key", default=os.environ.get("SILICIUM_MESH_KEY", ""))
     parser.add_argument("--peer-sync-interval-s", type=int, default=int(os.environ.get("SILICIUM_PEER_SYNC_INTERVAL_S", str(DEFAULT_PEER_SYNC_INTERVAL_S))))
+    parser.add_argument(
+        "--peer-sync-fanout",
+        type=int,
+        default=int(os.environ.get("SILICIUM_PEER_SYNC_FANOUT", "8")),
+        help="Additional peer HTTP anti-entropy targets per sync (0 means unlimited; default: 8).",
+    )
     parser.add_argument("--peer-event-limit", type=int, default=int(os.environ.get("SILICIUM_PEER_EVENT_LIMIT", "128")))
     parser.add_argument("--peer-stale-after-s", type=int, default=int(os.environ.get("SILICIUM_PEER_STALE_AFTER_S", str(DEFAULT_PEER_STALE_AFTER_S))))
     parser.add_argument("--relay-enable", action="store_true", default=os.environ.get("SILICIUM_RELAY_ENABLE", "0") == "1")
@@ -2784,7 +2796,8 @@ def configure_node_start(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--remote-dispatch-enable", action="store_true", default=os.environ.get("SILICIUM_REMOTE_DISPATCH_ENABLE", "0") == "1")
     parser.add_argument("--remote-dispatch-limit", type=int, default=int(os.environ.get("SILICIUM_REMOTE_DISPATCH_LIMIT", "3")))
     parser.add_argument("--pull-tasks-enable", action="store_true", default=os.environ.get("SILICIUM_PULL_TASKS_ENABLE", "0") == "1")
-    parser.add_argument("--pull-tasks-interval-s", type=int, default=int(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "2")))
+    parser.add_argument("--pull-tasks-interval-s", type=float, default=float(os.environ.get("SILICIUM_PULL_TASKS_INTERVAL_S", "0.25")))
+    parser.add_argument("--pull-tasks-batch-size", type=int, default=int(os.environ.get("SILICIUM_PULL_TASKS_BATCH_SIZE", "1")))
     parser.add_argument("--nat-punch-enable", action="store_true", default=os.environ.get("SILICIUM_NAT_PUNCH_ENABLE", "0") == "1")
     parser.add_argument("--p2p-candidate-ttl-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_TTL_S", "60")))
     parser.add_argument("--p2p-candidate-refresh-s", type=int, default=int(os.environ.get("SILICIUM_P2P_CANDIDATE_REFRESH_S", "20")))
@@ -2890,6 +2903,8 @@ def _network_node_args(
         str(args.peer_http_bind),
         "--peer-http-port",
         str(args.peer_http_port),
+        "--peer-http-max-workers",
+        str(args.peer_http_max_workers),
         "--peer-advertise-url",
         str(args.peer_advertise_url),
         "--peer-advertise-host",
@@ -2906,6 +2921,8 @@ def _network_node_args(
         str(args.mesh_key),
         "--peer-sync-interval-s",
         str(args.peer_sync_interval_s),
+        "--peer-sync-fanout",
+        str(args.peer_sync_fanout),
         "--peer-event-limit",
         str(args.peer_event_limit),
         "--gossip-max-hops",
@@ -2928,6 +2945,8 @@ def _network_node_args(
         str(args.remote_dispatch_limit),
         "--pull-tasks-interval-s",
         str(args.pull_tasks_interval_s),
+        "--pull-tasks-batch-size",
+        str(args.pull_tasks_batch_size),
         "--p2p-candidate-ttl-s",
         str(args.p2p_candidate_ttl_s),
         "--p2p-candidate-refresh-s",

@@ -48,7 +48,7 @@ solana-layer/target/idl/solana_layer.json
 
 ```txt
 RPC URL    = https://api.devnet.solana.com
-Program ID = 4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP
+Program ID = A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
 ```
 
 4. Cliquer sur `Charger depuis Solana`.

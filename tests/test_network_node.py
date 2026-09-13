@@ -220,6 +220,9 @@ def _config(
         p2p_turn_username=p2p_turn_username,
         p2p_turn_password=p2p_turn_password,
         p2p_turn_transport=p2p_turn_transport,
+        app_version=app_version,
+        release_channel=release_channel,
+        release_build=release_build,
         solana_reputation_enable=solana_reputation_enable,
         solana_reputation_refresh_s=1,
         scheduler_onchain_weight=10.0,
@@ -2595,6 +2598,48 @@ def test_worker_claim_respects_assigned_peer_id(tmp_path: Path) -> None:
     assert claimed is not None
     assert claimed["task_id"] == "test:assigned:001"
     assert claimed["dispatched_to"] == "worker-b"
+
+
+def test_worker_claims_multiple_tasks_in_one_batch(tmp_path: Path) -> None:
+    export_seed = tmp_path / "batch-seed"
+    seed_node = network_node.NetworkNode(_config(export_seed, "seed-orchestrator", roles="storage"))
+    for index in range(3):
+        network_node.enqueue_task_envelope(
+            export_seed,
+            {
+                "schema_version": 1,
+                "envelope_kind": "task",
+                "task_id": f"batch-task-{index}",
+                "status": "queued",
+                "required_roles": ["compute"],
+                "task": {"kind": "compute", "workload": "calcul/integrity/sha256"},
+            },
+        )
+
+    first_batch = seed_node.claim_tasks_for_worker("worker-a", {"compute"}, limit=2)
+    assert [item["task_id"] for item in first_batch] == ["batch-task-0", "batch-task-1"]
+    assert all(item["dispatched_to"] == "worker-a" for item in first_batch)
+    second_batch = seed_node.claim_tasks_for_worker("worker-a", {"compute"}, limit=2)
+    assert [item["task_id"] for item in second_batch] == ["batch-task-2"]
+
+
+def test_peer_sync_fanout_keeps_seed_and_bounds_transitive_targets(tmp_path: Path) -> None:
+    node = network_node.PeerNetwork(_config(tmp_path / "fanout", "node-a", gossip_enable=False, seed_peers=["http://seed:46001"]), tmp_path / "fanout")
+    node.config.peer_sync_fanout = 2
+    node.advertised_http_base_url = "http://node-a:46001"
+    node._peers.update(
+        {
+            "peer-1": {"node_id": "peer-1", "http_base_url": "http://peer-1:46001"},
+            "peer-2": {"node_id": "peer-2", "http_base_url": "http://peer-2:46001"},
+            "peer-3": {"node_id": "peer-3", "http_base_url": "http://peer-3:46001"},
+        }
+    )
+
+    assert node._sync_targets() == [
+        "http://peer-1:46001",
+        "http://peer-2:46001",
+        "http://seed:46001",
+    ]
 
 
 def test_worker_claim_respects_excluded_peer_ids(tmp_path: Path) -> None:

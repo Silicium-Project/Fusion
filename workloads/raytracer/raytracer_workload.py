@@ -32,6 +32,15 @@ def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
 
 
+def _duration_value(value: Any) -> float:
+    """Return a finite, non-negative duration value from renderer telemetry."""
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return round(duration, 3) if math.isfinite(duration) and duration >= 0 else 0.0
+
+
 def write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
@@ -470,6 +479,7 @@ def run_raytracer(
             cmd.extend(["--x-end", str(x_end)])
         if progress_file is not None:
             cmd.extend(["--progress-file", str(progress_file.resolve())])
+        process_started = time.perf_counter()
         completed = subprocess.run(
             cmd,
             cwd=runtime_dir,
@@ -478,6 +488,7 @@ def run_raytracer(
             timeout=timeout_s,
             check=False,
         )
+        execution_duration_ms = _duration_value((time.perf_counter() - process_started) * 1000.0)
         if completed.returncode != 0:
             raise RuntimeError(
                 "raytracer_failed:"
@@ -500,12 +511,22 @@ def run_raytracer(
         if isinstance(candidate, dict) and candidate.get("renderer"):
             renderer_telemetry = candidate
             break
+    renderer_duration_ms = _duration_value(renderer_telemetry.get("duration_ms"))
+    compute_duration_ms = renderer_duration_ms or execution_duration_ms
     return {
         "binary": str(binary),
         "returncode": completed.returncode,
         "stdout": completed.stdout[-4096:],
         "stderr": completed.stderr[-4096:],
         "renderer_telemetry": renderer_telemetry,
+        "execution_duration_ms": execution_duration_ms,
+        "renderer_duration_ms": renderer_duration_ms,
+        "performance": {
+            "schema": "silicium.raytracer-performance.v1",
+            "compute_ms": compute_duration_ms,
+            "process_ms": execution_duration_ms,
+            "renderer_ms": renderer_duration_ms,
+        },
         "result_sha256": sha256_bytes(result_bytes),
         "result_path": str(output),
         "result_format": "ppm/p6",
@@ -639,6 +660,7 @@ def command_verify(args: argparse.Namespace) -> int:
     actual_hash = sha256_file(result_path)
     recompute_error = ""
     recomputed_hash = ""
+    recompute_performance: dict[str, Any] = {}
     verification_mode = "declared-hash"
     verified = False
     recompute_match = False
@@ -667,6 +689,8 @@ def command_verify(args: argparse.Namespace) -> int:
             try:
                 recomputed = run_raytracer(scene, recomputed_path, int(args.timeout_s), y_start, y_end, x_start, x_end)
                 recomputed_hash = str(recomputed.get("result_sha256") or "")
+                if isinstance(recomputed.get("performance"), dict):
+                    recompute_performance = dict(recomputed["performance"])
             except Exception as exc:
                 recompute_error = str(exc)
         recompute_match = bool(recomputed_hash) and actual_hash == recomputed_hash
@@ -690,6 +714,8 @@ def command_verify(args: argparse.Namespace) -> int:
     }
     if probabilistic_result:
         payload["probabilistic_metrics"] = probabilistic_result
+    if recompute_performance:
+        payload["performance"] = recompute_performance
     if args.result_json:
         write_json(Path(args.result_json).resolve(), payload)
     print(json.dumps(payload, indent=2, sort_keys=True))

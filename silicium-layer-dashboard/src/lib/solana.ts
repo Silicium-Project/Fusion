@@ -1,7 +1,7 @@
 import { AnchorProvider, Program, Idl, Wallet } from "@coral-xyz/anchor";
 import { Connection, PublicKey, Keypair } from "@solana/web3.js";
 
-export const DEVNET_PROGRAM_ID = "4FPGViycNEGCtwnNs3NN2pPQu9ziTch8o9zkVc2VnKVP";
+export const DEVNET_PROGRAM_ID = "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2";
 export const DEVNET_RPC = "https://api.devnet.solana.com";
 export const LOCALNET_RPC = "http://127.0.0.1:8899";
 
@@ -29,7 +29,11 @@ export function makeReadonlyProgram(idl: Idl, rpcUrl: string, programId: string)
   const provider = new AnchorProvider(connection, new ReadonlyWallet(), {
     commitment: "confirmed",
   });
-  return new Program(idl, provider);
+  // Anchor 0.32 resolves the program address from the IDL. Keep the
+  // dashboard's explicit cluster selection authoritative so a stale/generated
+  // IDL cannot silently query a different deployed program.
+  const configuredIdl = { ...idl, address: new PublicKey(programId).toBase58() } as Idl;
+  return new Program(configuredIdl, provider);
 }
 
 export function toPublicKey(value: string): PublicKey | null {

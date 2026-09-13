@@ -5,7 +5,7 @@ Anchor program: `solana-layer`
 Current Devnet Program ID:
 
 ```txt
-48Bdt8Dg9FW8n6Mpvvdh6dgTXrsBvBfqMrwhnWQ2WQm1
+A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
 ```
 
 Keep the following files and tools aligned with the same Program ID:
@@ -1452,7 +1452,7 @@ solana program deploy target/deploy/solana_layer.so \
 Check:
 
 ```bash
-solana program show 48Bdt8Dg9FW8n6Mpvvdh6dgTXrsBvBfqMrwhnWQ2WQm1 --url devnet
+solana program show A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2 --url devnet
 ```
 
 Run smoke tests:
@@ -1567,4 +1567,3 @@ New participants begin with neutral trust, receive low-risk work, are heavily ve
 Trusted participants receive more valuable work, less redundant verification, and better economics.
 
 The storage layer gives workers and verifiers a standard way to download task data and verify checksums without putting heavy files on Solana.
-
