@@ -7,6 +7,39 @@ The intended operating model is VPS-first: GitHub acts as source control and
 trigger surface, while the actual deploy/test path runs on the VPS or on a
 self-hosted runner attached to the VPS.
 
+## Release channels
+
+The channel contract lives in `deploy/release/channels.json`:
+
+- `dev` follows the `dev` branch, uses `/opt/silicium-dev`,
+  `/etc/silicium-dev`, `/var/lib/silicium-dev` and Compose project
+  `silicium-dev` by default;
+- `prod` follows `main` and `v*` tags and keeps the legacy production paths
+  `/opt/silicium`, `/etc/silicium`, `/var/lib/silicium` and project `silicium`.
+
+Use an explicit channel for a development deployment. The installer and
+Compose scripts validate it and propagate it to the FrontEnd, BackEnd,
+orchestrator, update manifest and Network peer identity:
+
+```bash
+sudo SILICIUM_RELEASE_CHANNEL=dev \
+  bash deploy/linux/install-services.sh /opt/silicium-dev
+sudo SILICIUM_RELEASE_CHANNEL=dev \
+  bash deploy/compose/deploy.sh /opt/silicium-dev
+```
+
+Production remains explicit in CI and is also the safe default for the
+production paths:
+
+```bash
+sudo SILICIUM_RELEASE_CHANNEL=prod bash deploy/linux/install-services.sh /opt/silicium
+sudo SILICIUM_RELEASE_CHANNEL=prod bash deploy/compose/deploy.sh /opt/silicium
+```
+
+Development pushes publish a prerelease through `.github/workflows/release-dev.yml`.
+Promotion is a reviewed merge from `dev` to `main`; the production deployment
+workflow does not run from `dev`.
+
 The canonical GitHub-visible pipeline is split into three stages:
 
 1. `build.yml` produces the Linux bundles on the VPS runner.

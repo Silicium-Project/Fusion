@@ -2,6 +2,13 @@
 set -euo pipefail
 
 ROOT="${1:-/opt/silicium}"
+RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-prod}"
+CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
+channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
+channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
+CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
+DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/linux/install-services.sh $ROOT" >&2
@@ -31,13 +38,27 @@ if ! python3 -c 'import cryptography' >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends python3-cryptography
 fi
 
-mkdir -p /etc/silicium /var/lib/silicium/site /var/lib/silicium/network /var/lib/silicium/solana /var/lib/silicium/downloads
+mkdir -p "$CONFIG_DIR" "$DATA_ROOT/site" "$DATA_ROOT/network" "$DATA_ROOT/solana" "$DATA_ROOT/downloads"
 
-ORCHESTRATOR_ENV=/etc/silicium/orchestrator.env
+ORCHESTRATOR_ENV="$CONFIG_DIR/orchestrator.env"
 if [[ ! -f "$ORCHESTRATOR_ENV" ]]; then
   echo "Missing $ORCHESTRATOR_ENV; copy deploy/env/orchestrator.example.env and configure it before installing services." >&2
   exit 1
 fi
+
+# A channel-specific config directory can start from the checked-in examples.
+# Migrate only the legacy default roots so a dev install cannot accidentally
+# write its scheduler state into the production data tree.
+migrate_default_paths() {
+  local env_file="$1"
+  [[ -f "$env_file" ]] || return 0
+  sed -i \
+    -e "s#/var/lib/silicium#${DATA_ROOT}#g" \
+    -e "s#/etc/silicium#${CONFIG_DIR}#g" \
+    "$env_file"
+}
+
+migrate_default_paths "$ORCHESTRATOR_ENV"
 
 ensure_env_default() {
   local key="$1"
@@ -66,6 +87,8 @@ set_env_value() {
 # that predate the integrated peer daemon.
 ensure_env_default SILICIUM_NODE_ADVERTISE_URL "https://vps-910c1dbc.vps.ovh.net/orchestrator"
 ensure_env_default SILICIUM_PEER_SYNC_INTERVAL_S "5"
+ensure_env_default SILICIUM_PEER_SYNC_FANOUT "8"
+ensure_env_default SILICIUM_PEER_HTTP_MAX_WORKERS "32"
 ensure_env_default SILICIUM_PEER_STALE_AFTER_S "15"
 # The VPS is the durable scheduler and storage rendezvous, not a workload
 # worker. Older operator files may still advertise compute/verify, causing the
@@ -91,7 +114,7 @@ release_version="${SILICIUM_RELEASE_VERSION:-}"
 if [[ -z "$release_version" ]]; then
   release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")"
 fi
-release_channel="${SILICIUM_RELEASE_CHANNEL:-dev}"
+release_channel="${SILICIUM_RELEASE_CHANNEL:-prod}"
 release_build="${SILICIUM_RELEASE_BUILD:-}"
 if [[ -z "$release_build" ]]; then
   release_build="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)"
@@ -102,14 +125,30 @@ set_env_value SILICIUM_RELEASE_CHANNEL "$release_channel"
 set_env_value SILICIUM_RELEASE_BUILD "$release_build"
 unset -f ensure_env_default set_env_value
 
-sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-orchestrator.service > /etc/systemd/system/silicium-orchestrator.service
-sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-update-manifest.service > /etc/systemd/system/silicium-update-manifest.service
-sed "s#__SILICIUM_ROOT__#$ROOT#g" deploy/systemd/silicium-experiment-api.service > /etc/systemd/system/silicium-experiment-api.service
+sed \
+  -e "s#__SILICIUM_ROOT__#$ROOT#g" \
+  -e "s#__SILICIUM_CONFIG_DIR__#$CONFIG_DIR#g" \
+  -e "s#__SILICIUM_DATA_ROOT__#$DATA_ROOT#g" \
+  -e "s#__SILICIUM_RELEASE_CHANNEL__#$RELEASE_CHANNEL#g" \
+  deploy/systemd/silicium-orchestrator.service > /etc/systemd/system/silicium-orchestrator.service
+sed \
+  -e "s#__SILICIUM_ROOT__#$ROOT#g" \
+  -e "s#__SILICIUM_CONFIG_DIR__#$CONFIG_DIR#g" \
+  -e "s#__SILICIUM_DATA_ROOT__#$DATA_ROOT#g" \
+  -e "s#__SILICIUM_RELEASE_CHANNEL__#$RELEASE_CHANNEL#g" \
+  deploy/systemd/silicium-update-manifest.service > /etc/systemd/system/silicium-update-manifest.service
+sed \
+  -e "s#__SILICIUM_ROOT__#$ROOT#g" \
+  -e "s#__SILICIUM_CONFIG_DIR__#$CONFIG_DIR#g" \
+  -e "s#__SILICIUM_DATA_ROOT__#$DATA_ROOT#g" \
+  -e "s#__SILICIUM_RELEASE_CHANNEL__#$RELEASE_CHANNEL#g" \
+  deploy/systemd/silicium-experiment-api.service > /etc/systemd/system/silicium-experiment-api.service
 cp deploy/systemd/silicium-update-manifest.timer /etc/systemd/system/silicium-update-manifest.timer
 
-if [[ ! -f /etc/silicium/update-channels.env ]]; then
-  cp deploy/env/update-channels.example.env /etc/silicium/update-channels.env
+if [[ ! -f "$CONFIG_DIR/update-channels.env" ]]; then
+  cp deploy/env/update-channels.example.env "$CONFIG_DIR/update-channels.env"
 fi
+migrate_default_paths "$CONFIG_DIR/update-channels.env"
 # Release identifiers are source-controlled and must follow the artifacts built
 # by CI. Preserve operator-specific URLs, keys and cache paths in the existing
 # file while refreshing only the channel cadence/version fields.
@@ -126,15 +165,16 @@ for release_key in \
     release_line="$(grep -E "^${release_key}=" deploy/env/update-channels.example.env | tail -n 1)"
   fi
   [[ -n "$release_line" ]] || continue
-  if grep -q -E "^${release_key}=" /etc/silicium/update-channels.env; then
-    sed -i -E "s#^${release_key}=.*#${release_line}#" /etc/silicium/update-channels.env
+  if grep -q -E "^${release_key}=" "$CONFIG_DIR/update-channels.env"; then
+    sed -i -E "s#^${release_key}=.*#${release_line}#" "$CONFIG_DIR/update-channels.env"
   else
-    printf '%s\n' "$release_line" >> /etc/silicium/update-channels.env
+    printf '%s\n' "$release_line" >> "$CONFIG_DIR/update-channels.env"
   fi
 done
-if [[ ! -f /etc/silicium/experiment-api.env ]]; then
-  cp deploy/env/experiment-api.example.env /etc/silicium/experiment-api.env
+if [[ ! -f "$CONFIG_DIR/experiment-api.env" ]]; then
+  cp deploy/env/experiment-api.example.env "$CONFIG_DIR/experiment-api.env"
 fi
+migrate_default_paths "$CONFIG_DIR/experiment-api.env"
 chmod 0755 "$ROOT/deploy/linux/publish-update-manifest.sh"
 chmod 0755 "$ROOT/deploy/linux/start-orchestrator.sh"
 

@@ -83,6 +83,17 @@ jobs:
             *) echo "Unsupported validation lane: $lane" >&2; exit 1 ;;
           esac
 
+          if [[ "$lane" == "full" && "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            requested_ref="${{ github.event.inputs.ref || github.ref_name }}"
+            case "$requested_ref" in
+              dev|refs/heads/dev|dev-*)
+                echo "The production Deploy workflow cannot deploy a dev ref: $requested_ref" >&2
+                echo "Use the dev channel workflow or promote the commit to main first." >&2
+                exit 1
+                ;;
+            esac
+          fi
+
           force_all=false
           base="${EVENT_BEFORE:-}"
           web=false
@@ -234,6 +245,8 @@ jobs:
     needs: [changes, prepare-vps-runner]
     if: ${{ needs.changes.outputs.submodules == 'true' && needs.changes.outputs.deployable == 'true' }}
     uses: ./.github/workflows/submodule-ci-gate.yml
+    with:
+      release_channel: prod
     secrets: inherit
 
   validate-monorepo:
@@ -285,6 +298,7 @@ jobs:
     if: ${{ always() && needs.changes.outputs.testable == 'true' && (needs.submodule-ci-gate.result == 'success' || needs.submodule-ci-gate.result == 'skipped') }}
     uses: ./.github/workflows/test.yml
     with:
+      release_channel: prod
       skip_submodule_ci_gate: true
       web_stack_already_validated: false
       run_web_stack: ${{ needs.changes.outputs.web == 'true' }}
@@ -835,7 +849,7 @@ jobs:
     env:
       DEPLOY_REF: ${{ github.event.inputs.ref || github.ref_name }}
       RELEASE_VERSION: ${{ needs.release-node.outputs.release_version || needs.release-metadata.outputs.release_version }}
-      RELEASE_CHANNEL: ${{ startsWith(github.ref_name, 'v') && 'prod' || 'dev' }}
+      RELEASE_CHANNEL: prod
       RELEASE_BUILD: ${{ github.sha }}
       NODE_ARTIFACTS_STAGED: ${{ needs.changes.outputs.node_build }}
     steps:

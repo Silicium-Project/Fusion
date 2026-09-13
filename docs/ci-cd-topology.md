@@ -12,6 +12,7 @@ Keep the workflow traceable:
   deployment path.
 - GitHub-hosted Windows capacity executes the desktop packaging lane.
 - The visible lifecycle is `Build` -> `Test` -> `Deploy`.
+- Every component is built on one of two explicit channels: `dev` or `prod`.
 
 ## Current contract
 
@@ -52,13 +53,31 @@ Set `SILICIUM_EXTRA_RUNNER_COUNT=0` when the VPS is resource-constrained.
 The desktop Windows packaging lane runs on `windows-latest`.
 The generated installers are staged on the VPS before release and deploy.
 
+## Release channels
+
+`deploy/release/channels.json` is the source of truth for the channel contract.
+
+- `dev` is the `dev` branch, accepts prereleases, advertises `release_channel=dev`
+  in the FrontEnd, BackEnd and Network metadata, and publishes a prerelease from
+  `release-dev.yml`.
+- `prod` is `main` (or a `v*` tag), publishes stable artifacts, and is the only
+  channel allowed to execute the production VPS deployment in `deploy-vps.yml`.
+- Promotion is a normal reviewed merge from `dev` to `main`; no runtime or
+  update feed is switched implicitly by a development push.
+
+The Network peer table rejects peers from the other release channel, preventing
+development workers from claiming production tasks and vice versa. The two
+deployment roots, Compose project names and data roots in the contract are
+separate so a second VPS service can be provisioned without sharing state.
+
 ## Canonical flow
 
-1. `sync-submodules.yml` examines the configured `main` branches for
-   `BackEnd`, `FrontEnd`, and `Network`, resolves the newest commit for which
-   every visible workflow is green, then publishes those exact gitlinks on
-   `main`.
-2. `submodule-ci-gate.yml` uses the same resolver. A red, incomplete, or
+1. `sync-submodules.yml` examines the configured branch for the selected
+   channel (`dev` or `main`) in `BackEnd`, `FrontEnd`, and `Network`, resolves
+   the newest commit for which every visible workflow is green, then publishes
+   those exact gitlinks on the matching Fusion branch.
+2. `submodule-ci-gate.yml` uses the same resolver and selects `dev` for the
+   development channel or `main` for production. A red, incomplete, or
    missing head is therefore skipped until a newer green candidate exists;
    Fusion never pins an unqualified commit. On the VPS it also provisions the
    dedicated `BackEnd` and `FrontEnd` self-hosted runners and waits for their
@@ -134,9 +153,9 @@ outputs without deleting those caches.
 
 ### Fusion root
 
-- `sync-submodules.yml`: canonical scheduler for resolving the latest green
-  submodule commits, publishing exact gitlinks, and dispatching the deploy
-  pipeline once the composition is updated.
+- `sync-submodules.yml`: channel-aware scheduler for resolving the latest green
+  submodule commits, publishing exact gitlinks on `dev` or `main`, and
+  dispatching the deploy pipeline once the production composition is updated.
 - `submodule-ci-gate.yml`: reusable latest-green gate for `BackEnd`, `FrontEnd`,
   and `Network`, including VPS runner bootstrap.
 - `ci-fast.yml`: cancelable short feedback path for branch and pull-request

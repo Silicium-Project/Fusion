@@ -2,8 +2,14 @@
 set -euo pipefail
 
 ROOT="${1:-/opt/silicium}"
+RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-prod}"
+CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
+export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
+channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
+channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
+channel_compose_project="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field compose_project)"
 COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
-COMPOSE_ENV="/etc/silicium/compose.env"
 APP_PACKAGE_JSON="$ROOT/apps/silicium-node/package.json"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -12,8 +18,14 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 [[ -f "$COMPOSE_FILE" ]] || { echo "Missing compose file: $COMPOSE_FILE" >&2; exit 1; }
-[[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
 [[ -f "$APP_PACKAGE_JSON" ]] || { echo "Missing app package: $APP_PACKAGE_JSON" >&2; exit 1; }
+
+export SILICIUM_RUNTIME_ROOT="${SILICIUM_RUNTIME_ROOT:-$ROOT}"
+export SILICIUM_DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
+export SILICIUM_CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
+export SILICIUM_COMPOSE_PROJECT_NAME="${SILICIUM_COMPOSE_PROJECT_NAME:-$channel_compose_project}"
+COMPOSE_ENV="${SILICIUM_COMPOSE_ENV:-$SILICIUM_CONFIG_DIR/compose.env}"
+[[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
 
 # The orchestrator participates in peer telemetry even though it is not a
 # desktop binary. Prefer the CI/CD release version when provided, otherwise
@@ -26,7 +38,6 @@ if [[ -z "${SILICIUM_APP_VERSION:-}" ]]; then
 fi
 [[ -n "$SILICIUM_APP_VERSION" ]] || { echo "Could not derive SILICIUM_APP_VERSION" >&2; exit 1; }
 export SILICIUM_APP_VERSION
-export SILICIUM_RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-$(git -C "$ROOT" rev-parse --short=12 HEAD)}"
 
 compose=(docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE")
@@ -51,21 +62,21 @@ backend_identity="$(docker run --rm --entrypoint sh "$backend_image_id" -c 'prin
 }
 backend_uid="${backend_identity%%:*}"
 backend_gid="${backend_identity##*:}"
-install -d -m 0750 -o "$backend_uid" -g "$backend_gid" /var/lib/silicium/site/jobs /var/lib/silicium/site/runtime
+install -d -m 0750 -o "$backend_uid" -g "$backend_gid" "$SILICIUM_DATA_ROOT/site/jobs" "$SILICIUM_DATA_ROOT/site/runtime"
 
 # Keep blockchain proofs disabled in both the legacy and current runtimes.
 # Existing installations may contain either setting, so replace both
 # deterministically instead of relying on defaults from a particular release.
-backend_env="/etc/silicium/backend.env"
+backend_env="$SILICIUM_CONFIG_DIR/backend.env"
 sed -i -E '/^SILICIUM_DEVNET_TRACE(_MODE)?=/d' "$backend_env"
 printf '%s\n' \
   'SILICIUM_DEVNET_TRACE=0' \
-  'SILICIUM_DEVNET_TRACE_MODE=off' >> "$backend_env"
+  'SILICIUM_DEVNET_TRACE_MODE=devnet' >> "$backend_env"
 
 # The API submits task envelopes into the host-side orchestrator export. Keep
 # the shared control-plane directories writable by the container user while
 # leaving the rest of the export tree untouched.
-orchestrator_export_dir="/var/lib/silicium/network/orchestrator/export"
+orchestrator_export_dir="$SILICIUM_DATA_ROOT/network/orchestrator/export"
 for shared_dir in \
   "$orchestrator_export_dir" \
   "$orchestrator_export_dir/tasks" \
@@ -92,10 +103,10 @@ done
 # 0600. The API container must sign task-control messages as the same identity,
 # but it must not receive the host service's key path directly. Maintain a
 # private, UID-scoped copy for the unprivileged backend user.
-orchestrator_identity_dir="/var/lib/silicium/network/orchestrator/state"
+orchestrator_identity_dir="$SILICIUM_DATA_ROOT/network/orchestrator/state"
 orchestrator_identity="$orchestrator_identity_dir/peer_identity_ed25519.pem"
 orchestrator_public_identity="$orchestrator_identity_dir/peer_identity_ed25519.pub.pem"
-backend_identity_dir="/var/lib/silicium/network/orchestrator/backend-identity"
+backend_identity_dir="$SILICIUM_DATA_ROOT/network/orchestrator/backend-identity"
 for _ in $(seq 1 30); do
   if [[ -f "$orchestrator_identity" && -f "$orchestrator_public_identity" ]]; then
     break

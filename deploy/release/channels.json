@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "channels": {
+    "dev": {
+      "branch": "dev",
+      "environment": "development",
+      "node_update_channel": "dev",
+      "allow_prerelease": true,
+      "deployment_root": "/opt/silicium-dev",
+      "config_dir": "/etc/silicium-dev",
+      "data_dir": "/var/lib/silicium-dev",
+      "compose_project": "silicium-dev"
+    },
+    "prod": {
+      "branch": "main",
+      "environment": "production",
+      "node_update_channel": "prod",
+      "allow_prerelease": false,
+      "deployment_root": "/opt/silicium",
+      "config_dir": "/etc/silicium",
+      "data_dir": "/var/lib/silicium",
+      "compose_project": "silicium"
+    }
+  }
+}

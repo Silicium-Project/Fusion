@@ -3,7 +3,20 @@ name: Build
 on:
   pull_request:
   workflow_call:
+    inputs:
+      release_channel:
+        description: "Release channel to build."
+        required: false
+        type: string
+        default: dev
   workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Release channel to build."
+        required: false
+        type: choice
+        options: [dev, prod]
+        default: dev
 
 permissions:
   contents: read
@@ -15,12 +28,15 @@ concurrency:
 jobs:
   submodule-ci-gate:
     uses: ./.github/workflows/submodule-ci-gate.yml
+    with:
+      release_channel: ${{ inputs.release_channel || 'dev' }}
     secrets: inherit
 
   tests:
     needs: [submodule-ci-gate]
     uses: ./.github/workflows/test.yml
     with:
+      release_channel: ${{ inputs.release_channel || 'dev' }}
       skip_submodule_ci_gate: true
     secrets: inherit
 
@@ -130,7 +146,7 @@ jobs:
       - name: Build Linux development bundles
         shell: bash
         env:
-          SILICIUM_RELEASE_CHANNEL: dev
+          SILICIUM_RELEASE_CHANNEL: ${{ inputs.release_channel || 'dev' }}
           SILICIUM_RELEASE_BUILD: ${{ github.event.pull_request.head.sha || github.sha }}
           SILICIUM_RECLAIM_RUNTIME_TARGETS: auto
         run: |

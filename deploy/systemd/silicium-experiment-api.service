@@ -6,7 +6,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=__SILICIUM_ROOT__/Network
-EnvironmentFile=/etc/silicium/experiment-api.env
+EnvironmentFile=__SILICIUM_CONFIG_DIR__/experiment-api.env
+Environment=SILICIUM_CONFIG_DIR=__SILICIUM_CONFIG_DIR__
+Environment=SILICIUM_DATA_ROOT=__SILICIUM_DATA_ROOT__
+Environment=SILICIUM_RELEASE_CHANNEL=__SILICIUM_RELEASE_CHANNEL__
 ExecStart=/usr/bin/python3 tools/mcp_server.py --bind 127.0.0.1 --port ${SILICIUM_EXPERIMENT_API_PORT} --export-dir ${SILICIUM_EXPERIMENT_EXPORT_DIR} --snapshot-dir ${SILICIUM_EXPERIMENT_SNAPSHOT_DIR} --enable-tools --rpc-bind tcp://127.0.0.1:9770 --rpc-events-bind tcp://0.0.0.0:9771 --log-format json
 Restart=always
 RestartSec=3

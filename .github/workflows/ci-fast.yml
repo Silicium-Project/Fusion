@@ -101,6 +101,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       skip_submodule_ci_gate: ${{ needs.changes.outputs.skip_submodule_ci_gate == 'true' }}
+      release_channel: ${{ github.base_ref == 'main' && 'prod' || 'dev' }}
       web_stack_already_validated: false
       run_web_stack: ${{ needs.changes.outputs.web == 'true' }}
       run_network_core: ${{ needs.changes.outputs.network_core == 'true' }}
