@@ -261,8 +261,21 @@ fi
 if ! public_health="$(curl -fsS --max-time 12 "${public_tls_args[@]}" "${public_route_args[@]}" "${public_orchestrator_url%/}/healthz" 2>&1)"; then
   echo "Public orchestrator route probe failed: $public_health" >&2
   echo "Docker backend network gateway:" >&2
-  docker network inspect --format '{{(index .IPAM.Config 0).Gateway}}' \
-    "${SILICIUM_BACKEND_NETWORK_NAME:-silicium-backend}" >&2 || true
+  backend_network_gateway="$(docker network inspect --format '{{(index .IPAM.Config 0).Gateway}}' \
+    "${SILICIUM_BACKEND_NETWORK_NAME:-silicium-backend}" 2>/dev/null || true)"
+  printf '%s\n' "${backend_network_gateway:-<unavailable>}" >&2
+  echo "Host listener and gateway probe:" >&2
+  ss -ltnp 2>/dev/null | grep -E ":(${orchestrator_port}|${public_route_port})[[:space:]]" >&2 || true
+  if [[ -n "$backend_network_gateway" ]]; then
+    curl -v --max-time 5 "http://${backend_network_gateway}:${orchestrator_port}/healthz" >&2 || true
+  fi
+  echo "Firewall summary:" >&2
+  if command -v ufw >/dev/null 2>&1; then
+    ufw status verbose >&2 || true
+  fi
+  if command -v nft >/dev/null 2>&1; then
+    nft list ruleset 2>/dev/null | grep -E "docker|${orchestrator_port}|drop|reject|policy" >&2 || true
+  fi
   proxy_container="$(docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" ps -q proxy 2>/dev/null || true)"
   if [[ -n "$proxy_container" ]]; then
     echo "Proxy host mapping and direct orchestrator probe:" >&2
