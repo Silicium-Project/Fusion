@@ -110,6 +110,20 @@ export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-$(git -C "$ROOT" rev-pa
 
 compose=(docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE")
 
+# Create the channel's backend bridge before starting containers so the host
+# gateway can be resolved from its actual user-defined subnet. Docker's
+# `host-gateway` placeholder otherwise points at the default bridge on some
+# VPS installations, where the host-side orchestrator is not reachable from
+# the dev proxy/backend containers.
+"${compose[@]}" up -d postgres
+host_gateway="$(docker network inspect --format '{{(index .IPAM.Config 0).Gateway}}' "$SILICIUM_BACKEND_NETWORK_NAME" 2>/dev/null || true)"
+if [[ -z "$host_gateway" || "$host_gateway" == "<no value>" ]]; then
+  echo "Could not resolve the gateway for Docker network $SILICIUM_BACKEND_NETWORK_NAME" >&2
+  exit 1
+fi
+export SILICIUM_HOST_GATEWAY="$host_gateway"
+sed -i -e "s#host.docker.internal#$SILICIUM_HOST_GATEWAY#g" "$SILICIUM_NGINX_CONFIG"
+
 # The backend image deliberately runs as an unprivileged user while the
 # persistent bind mount is created by root on the host. Resolve the image's
 # effective UID/GID after building it and give only the jobs directory to that

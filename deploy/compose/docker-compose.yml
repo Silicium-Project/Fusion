@@ -79,9 +79,11 @@ services:
     - ${SILICIUM_BACKEND_P2P_PORT:-46102}:46102/tcp
     - ${SILICIUM_BACKEND_P2P_PORT:-46102}:46102/udp
     extra_hosts:
-    # Use Docker's host-gateway resolver so this remains valid when prod and
-    # dev each receive a different user-defined bridge subnet.
-    - host.docker.internal:host-gateway
+    # The deploy script resolves the gateway of this channel's backend bridge
+    # before starting the application containers. Keeping the mapping
+    # explicit avoids Docker's default-bridge gateway being selected on a
+    # shared VPS.
+    - host.docker.internal:${SILICIUM_HOST_GATEWAY:-host-gateway}
     volumes:
     - ${SILICIUM_RUNTIME_ROOT:-/opt/silicium}/Network:/opt/silicium/Network
     - ${SILICIUM_DATA_ROOT:-/var/lib/silicium}:/var/lib/silicium
@@ -139,7 +141,7 @@ services:
     - ${SILICIUM_PROXY_BIND_ADDRESS:-0.0.0.0}:${SILICIUM_PROXY_HTTP_PORT:-80}:80
     - ${SILICIUM_PROXY_BIND_ADDRESS:-0.0.0.0}:${SILICIUM_PROXY_HTTPS_PORT:-443}:443
     extra_hosts:
-    - host.docker.internal:host-gateway
+    - host.docker.internal:${SILICIUM_HOST_GATEWAY:-host-gateway}
     volumes:
     - ${SILICIUM_NGINX_CONFIG:-./nginx.conf}:/etc/nginx/nginx.conf:ro
     - ${SILICIUM_DATA_ROOT:-/var/lib/silicium}:/var/lib/silicium:ro
