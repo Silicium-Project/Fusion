@@ -93,7 +93,7 @@ unset -f channel_or_legacy_default
 install -d -m 0750 "$SILICIUM_CONFIG_DIR"
 sed \
   -e "s#__SILICIUM_ORCHESTRATOR_PORT__#$SILICIUM_ORCHESTRATOR_PORT#g" \
-  deploy/compose/nginx.conf > "$SILICIUM_NGINX_CONFIG"
+  "$ROOT/deploy/compose/nginx.conf" > "$SILICIUM_NGINX_CONFIG"
 
 # The orchestrator participates in peer telemetry even though it is not a
 # desktop binary. Prefer the CI/CD release version when provided, otherwise
