@@ -1,12 +1,12 @@
 [submodule "Network"]
 	path = Network
 	url = https://github.com/Silicium-Project/Network.git
-	branch = dev
+	branch = main
 [submodule "BackEnd"]
 	path = BackEnd
 	url = https://github.com/Silicium-Project/BackEnd.git
-	branch = dev
+	branch = main
 [submodule "FrontEnd"]
 	path = FrontEnd
 	url = https://github.com/Silicium-Project/FrontEnd.git
-	branch = dev
+	branch = main

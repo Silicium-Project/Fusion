@@ -72,10 +72,12 @@ separate so a second VPS service can be provisioned without sharing state.
 
 ## Canonical flow
 
-1. `sync-submodules.yml` examines the configured branch for the selected
-   channel (`dev` or `main`) in `BackEnd`, `FrontEnd`, and `Network`, resolves
-   the newest commit for which every visible workflow is green, then publishes
-   those exact gitlinks on the matching Fusion branch.
+1. `sync-submodules.yml` examines the branch selected by the channel contract
+   (`dev` or `main`) in `BackEnd`, `FrontEnd`, and `Network`, resolves the
+   newest commit for which every visible workflow is green, then publishes
+   those exact gitlinks on the matching Fusion branch. `.gitmodules` keeps its
+   production-safe `main` hint in both branches so promotion cannot rewrite the
+   production tracking configuration.
 2. `submodule-ci-gate.yml` uses the same resolver and selects `dev` for the
    development channel or `main` for production. A red, incomplete, or
    missing head is therefore skipped until a newer green candidate exists;

@@ -166,12 +166,15 @@ jobs:
           while read -r path_key path; do
             name="${path_key#submodule.}"
             name="${name%.path}"
-            branch="$(git config --file .gitmodules --get "submodule.${name}.branch" || true)"
-            branch="${branch:-$TARGET_BRANCH}"
-            if [[ "$branch" != "$TARGET_BRANCH" ]]; then
-              echo "::error title=Channel branch mismatch::${name} is configured on '${branch}', expected '${TARGET_BRANCH}'."
+            configured_branch="$(git config --file .gitmodules --get "submodule.${name}.branch" || true)"
+            if [[ -n "$configured_branch" && "$configured_branch" != "main" && "$configured_branch" != "dev" ]]; then
+              echo "::error title=Unsupported submodule branch::${name} is configured on '${configured_branch}'."
               exit 1
             fi
+            # Keep .gitmodules stable so a dev -> main promotion cannot
+            # accidentally change the production tracking branch. The channel
+            # contract, not the optional git-submodule hint, selects the ref.
+            branch="$TARGET_BRANCH"
             url="$(git config --file .gitmodules --get "submodule.${name}.url")"
             repo="${url#https://github.com/}"
             repo="${repo#git@github.com:}"
