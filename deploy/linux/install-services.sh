@@ -69,9 +69,9 @@ migrate_default_paths() {
   [[ -f "$env_file" ]] || return 0
   sed -i \
     -e "s#/var/lib/silicium/#${DATA_ROOT}/#g" \
-    -e "s#=/var/lib/silicium$#=${DATA_ROOT}#g" \
+    -e "s#=/var/lib/silicium\$#=${DATA_ROOT}#g" \
     -e "s#/etc/silicium/#${CONFIG_DIR}/#g" \
-    -e "s#=/etc/silicium$#=${CONFIG_DIR}#g" \
+    -e "s#=/etc/silicium\$#=${CONFIG_DIR}#g" \
     "$env_file"
 }
 
