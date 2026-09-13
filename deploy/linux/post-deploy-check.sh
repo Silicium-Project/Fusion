@@ -258,7 +258,22 @@ public_tls_args=()
 if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
   public_tls_args=(-k)
 fi
-public_health="$(curl -fsS --max-time 12 "${public_tls_args[@]}" "${public_route_args[@]}" "${public_orchestrator_url%/}/healthz")"
+if ! public_health="$(curl -fsS --max-time 12 "${public_tls_args[@]}" "${public_route_args[@]}" "${public_orchestrator_url%/}/healthz" 2>&1)"; then
+  echo "Public orchestrator route probe failed: $public_health" >&2
+  echo "Docker backend network gateway:" >&2
+  docker network inspect --format '{{(index .IPAM.Config 0).Gateway}}' \
+    "${SILICIUM_BACKEND_NETWORK_NAME:-silicium-backend}" >&2 || true
+  proxy_container="$(docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" ps -q proxy 2>/dev/null || true)"
+  if [[ -n "$proxy_container" ]]; then
+    echo "Proxy host mapping and direct orchestrator probe:" >&2
+    docker exec "$proxy_container" getent hosts host.docker.internal >&2 || true
+    docker exec "$proxy_container" busybox wget -S -O - -T 5 \
+      "http://host.docker.internal:${orchestrator_port}/healthz" >&2 || true
+    echo "Proxy error log:" >&2
+    docker logs --tail 100 "$proxy_container" >&2 || true
+  fi
+  exit 28
+fi
 if [[ "$public_health" != *'"service":"network_node"'* ]]; then
   echo "The public route does not reach the integrated network node: $public_health" >&2
   exit 1
