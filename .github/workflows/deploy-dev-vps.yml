@@ -75,18 +75,14 @@ jobs:
           docker compose version
           sudo -n true
 
-          # The current installer uses legacy unit names and default ports for
-          # production. Refuse to proceed until dev is isolated from an active
-          # production runtime on the same host.
-          for unit in silicium-orchestrator.service silicium-experiment-api.service silicium-update-manifest.timer; do
-            if systemctl is-active --quiet "$unit" 2>/dev/null; then
-              echo "Production unit is active: $unit" >&2
-              exit 20
-            fi
-          done
+          # Production is allowed to remain active: the channel contract now
+          # gives dev its own systemd units, ports, Compose project and data
+          # roots. Report the state for the audit trail without touching it.
+          if systemctl is-active --quiet silicium-orchestrator.service 2>/dev/null; then
+            echo "Production orchestrator is active; channel isolation will preserve it."
+          fi
           if docker ps --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | grep -Fxq silicium; then
-            echo "Production Compose project is running; dev cannot safely share its ports yet." >&2
-            exit 21
+            echo "Production Compose project is active; channel isolation will preserve it."
           fi
 
           if [[ -d "$VPS_ROOT" ]]; then
@@ -187,11 +183,15 @@ jobs:
           SILICIUM_DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           EOF
           sudo SILICIUM_RELEASE_VERSION="$release_version" SILICIUM_RELEASE_CHANNEL=dev \
+            SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/linux/prepare-dev-config.sh" "$VPS_ROOT"
+          sudo SILICIUM_RELEASE_VERSION="$release_version" SILICIUM_RELEASE_CHANNEL=dev \
             SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
           sudo SILICIUM_RELEASE_VERSION="$release_version" SILICIUM_RELEASE_CHANNEL=dev \
             SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
-          sudo systemctl start silicium-update-manifest.service
-          sudo bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
+          sudo systemctl start silicium-update-manifest-dev.service
+          sudo SILICIUM_RELEASE_CHANNEL=dev bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
+          sudo SILICIUM_RELEASE_CHANNEL=dev \
+            E2E_TIMEOUT_S=1200 E2E_WAIT_S=600 \
+            bash "$VPS_ROOT/deploy/compose/e2e.sh" "$VPS_ROOT"
           echo "Development channel deployed: $release_version ($RELEASE_BUILD)"
           REMOTE
-
