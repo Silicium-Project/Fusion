@@ -79,6 +79,7 @@ func terminalTaskControl(job models.Job, status, reason string, now time.Time, c
 		Reason:     reason,
 		IssuerNode: cfg.OrchestratorNodeID,
 		IssuedUTC:  now.UTC().Format(time.RFC3339Nano),
+		ReleaseChannel: cfg.ReleaseChannel,
 	}
 	if action == "expire" && job.DeadlineAt != nil {
 		control.DeadlineUTC = job.DeadlineAt.UTC().Format(time.RFC3339Nano)

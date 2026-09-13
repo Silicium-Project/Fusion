@@ -16,10 +16,14 @@ import (
 	"github.com/silicium/internal/db"
 	"github.com/silicium/internal/handler"
 	"github.com/silicium/internal/middleware"
+	"github.com/silicium/internal/release"
 	"github.com/silicium/internal/routes"
 )
 
 func main() {
+	if err := release.Validate(os.Getenv("SILICIUM_RELEASE_CHANNEL")); err != nil {
+		log.Fatal(err)
+	}
 	applicationContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

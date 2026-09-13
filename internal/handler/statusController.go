@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/silicium/internal/release"
 )
 
 const statusCacheLifetime = 5 * time.Second
@@ -41,6 +43,7 @@ type blockchainStatus struct {
 type systemStatus struct {
 	Status     string           `json:"status"`
 	CheckedAt  time.Time        `json:"checkedAt"`
+	Release    release.Metadata `json:"release"`
 	Backend    componentStatus  `json:"backend"`
 	Network    networkStatus    `json:"network"`
 	Blockchain blockchainStatus `json:"blockchain"`
@@ -92,6 +95,7 @@ func (h *Handler) buildSystemStatus(ctx context.Context, peersPath, manifestPath
 	value := systemStatus{
 		Status:    "operational",
 		CheckedAt: now.UTC(),
+		Release:   release.Current(),
 		Backend:   componentStatus{Status: "operational", Database: "operational"},
 		Network:   networkStatus{Status: "operational"},
 		Blockchain: blockchainStatus{

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/silicium/internal/models"
+	"github.com/silicium/internal/release"
 )
 
 var lookPath = exec.LookPath
@@ -42,6 +43,7 @@ type RunnerConfig struct {
 	MinVerifyReputation   string
 	ControlURL            string
 	IdentityKeyPath       string
+	ReleaseChannel        string
 }
 
 type RunResult struct {
@@ -72,26 +74,37 @@ func ConfigFromEnv() RunnerConfig {
 		OrchestratorExportDir: envDefault("SILICIUM_ORCHESTRATOR_EXPORT_DIR", filepath.Join(networkRoot, ".silicium", "networked", "orchestrator", "export")),
 		WorkloadStorageDir:    envDefault("SILICIUM_WORKLOAD_STORAGE_DIR", filepath.Join(networkRoot, ".silicium", "jobs")),
 		DashboardURL:          envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
-		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "1") != "0",
+		// Devnet settlement is an explicit write operation. Keep it opt-in so a
+		// backend without a funded wallet cannot accidentally publish or pay a
+		// trace during a normal render.
+		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "0") == "1",
 		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
 		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
 		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
 		ControlURL:            envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:46100/gossip/publish"),
 		IdentityKeyPath:       envDefault("SILICIUM_ORCHESTRATOR_IDENTITY_KEY", "/var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem"),
+		ReleaseChannel:        release.Current().Channel,
 	}
 }
 
 type TaskControl struct {
-	ControlID   string `json:"control_id"`
-	RootJobID   string `json:"root_job_id"`
-	Action      string `json:"action"`
-	Reason      string `json:"reason"`
-	IssuerNode  string `json:"issuer_node_id"`
-	IssuedUTC   string `json:"issued_utc"`
-	DeadlineUTC string `json:"deadline_utc,omitempty"`
+	ControlID      string `json:"control_id"`
+	RootJobID      string `json:"root_job_id"`
+	Action         string `json:"action"`
+	Reason         string `json:"reason"`
+	IssuerNode     string `json:"issuer_node_id"`
+	IssuedUTC      string `json:"issued_utc"`
+	DeadlineUTC    string `json:"deadline_utc,omitempty"`
+	ReleaseChannel string `json:"release_channel,omitempty"`
 }
 
 func PublishTaskControl(ctx context.Context, cfg RunnerConfig, control TaskControl) error {
+	if strings.TrimSpace(control.ReleaseChannel) == "" {
+		control.ReleaseChannel = release.Current().Channel
+		if strings.TrimSpace(cfg.ReleaseChannel) != "" {
+			control.ReleaseChannel = cfg.ReleaseChannel
+		}
+	}
 	payload, err := json.Marshal(map[string]any{"topic": "task_control", "payload": control})
 	if err != nil {
 		return err
