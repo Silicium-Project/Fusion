@@ -1,0 +1,197 @@
+name: Development VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Development ref to deploy."
+        required: false
+        default: dev
+      vps_user:
+        description: "SSH user on the VPS."
+        required: false
+        default: ""
+      vps_port:
+        description: "SSH port on the VPS."
+        required: false
+        default: "22"
+      vps_root:
+        description: "Development checkout path on the VPS."
+        required: false
+        default: /opt/silicium-dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: silicium-vps-dev
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure SSH
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "$VPS_SSH_KEY" ]] || { echo "VPS_SSH_KEY is required." >&2; exit 1; }
+          [[ -n "$VPS_KNOWN_HOSTS" ]] || { echo "VPS_KNOWN_HOSTS is required." >&2; exit 1; }
+          install -d -m 700 "$RUNNER_TEMP/silicium-dev-ssh"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519" "$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
+
+      - name: Check VPS without changing state
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER }}
+          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_ROOT: ${{ github.event.inputs.vps_root }}
+        run: |
+          set -euo pipefail
+          vps_user="${VPS_USER:-ubuntu}"
+          vps_port="${VPS_PORT:-22}"
+          vps_root="${VPS_ROOT:-/opt/silicium-dev}"
+          [[ "$vps_root" == "/opt/silicium-dev" ]] || {
+            echo "The development workflow is restricted to /opt/silicium-dev." >&2
+            exit 1
+          }
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+            "VPS_ROOT='$vps_root' bash -s" <<'REMOTE'
+          set -euo pipefail
+          echo "host=$(hostname -f 2>/dev/null || hostname)"
+          echo "user=$(id -un)"
+          command -v python3 >/dev/null
+          command -v docker >/dev/null
+          docker compose version
+          sudo -n true
+
+          # The current installer uses legacy unit names and default ports for
+          # production. Refuse to proceed until dev is isolated from an active
+          # production runtime on the same host.
+          for unit in silicium-orchestrator.service silicium-experiment-api.service silicium-update-manifest.timer; do
+            if systemctl is-active --quiet "$unit" 2>/dev/null; then
+              echo "Production unit is active: $unit" >&2
+              exit 20
+            fi
+          done
+          if docker ps --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | grep -Fxq silicium; then
+            echo "Production Compose project is running; dev cannot safely share its ports yet." >&2
+            exit 21
+          fi
+
+          if [[ -d "$VPS_ROOT" ]]; then
+            [[ -f "$VPS_ROOT/deploy/release/channels.json" ]] || {
+              echo "Existing development checkout is incomplete: $VPS_ROOT" >&2
+              exit 22
+            }
+          fi
+          for env_file in orchestrator.env experiment-api.env backend.env frontend.env compose.env update-channels.env; do
+            if [[ ! -f "/etc/silicium-dev/$env_file" ]]; then
+              echo "Missing development config: /etc/silicium-dev/$env_file" >&2
+            fi
+          done
+          echo "Development preflight passed; no VPS state was changed."
+          REMOTE
+
+  deploy:
+    needs: [preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Configure SSH
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$RUNNER_TEMP/silicium-dev-ssh"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
+          chmod 600 "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519" "$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
+
+      - name: Create read-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Pull and deploy the dev channel
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER }}
+          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_ROOT: ${{ github.event.inputs.vps_root }}
+          VPS_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          DEPLOY_REF: ${{ github.event.inputs.ref || 'dev' }}
+          RELEASE_BUILD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          vps_user="${VPS_USER:-ubuntu}"
+          vps_port="${VPS_PORT:-22}"
+          vps_root="${VPS_ROOT:-/opt/silicium-dev}"
+          [[ "$vps_root" == "/opt/silicium-dev" ]] || { echo "Invalid dev root." >&2; exit 1; }
+          [[ "$DEPLOY_REF" == "dev" ]] || { echo "The dev workflow only deploys the dev ref." >&2; exit 1; }
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+            "VPS_ROOT='$vps_root' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' DEPLOY_REF='$DEPLOY_REF' RELEASE_BUILD='$RELEASE_BUILD' bash -s" <<'REMOTE'
+          set -euo pipefail
+          VPS_ROOT="${VPS_ROOT:?}"
+          VPS_GITHUB_TOKEN="${VPS_GITHUB_TOKEN:?}"
+          DEPLOY_REF="${DEPLOY_REF:?}"
+          RELEASE_BUILD="${RELEASE_BUILD:?}"
+          GIT_AUTH="$(printf 'x-access-token:%s' "$VPS_GITHUB_TOKEN" | base64 -w 0)"
+          git_auth() {
+            sudo env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader \
+              "GIT_CONFIG_VALUE_0=Authorization: Basic $GIT_AUTH" git "$@"
+          }
+
+          if [[ ! -d "$VPS_ROOT/.git" ]]; then
+            sudo install -d -m 0755 "$VPS_ROOT"
+            sudo chown "$(id -u):$(id -g)" "$VPS_ROOT"
+            git_auth clone --branch dev --recurse-submodules \
+              https://github.com/Silicium-Project/Fusion.git "$VPS_ROOT"
+          fi
+          sudo git config --system --add safe.directory "$VPS_ROOT"
+          sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
+          git_auth -C "$VPS_ROOT" fetch --no-tags --prune origin dev
+          sudo git -C "$VPS_ROOT" checkout dev
+          sudo git -C "$VPS_ROOT" reset --hard origin/dev
+          sudo git -C "$VPS_ROOT" submodule sync -- BackEnd FrontEnd Network
+          git_auth -C "$VPS_ROOT" submodule update --init --force --recursive -- BackEnd FrontEnd Network
+          unset GIT_AUTH VPS_GITHUB_TOKEN
+
+          release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$VPS_ROOT/apps/silicium-node/package.json")"
+          sudo install -d -m 0755 /var/lib/silicium-dev/releases
+          cat <<EOF | sudo tee /var/lib/silicium-dev/releases/current.env >/dev/null
+          SILICIUM_RELEASE_VERSION=$release_version
+          SILICIUM_RELEASE_CHANNEL=dev
+          SILICIUM_RELEASE_BUILD=$RELEASE_BUILD
+          SILICIUM_DEPLOY_REF=$DEPLOY_REF
+          SILICIUM_DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          sudo SILICIUM_RELEASE_VERSION="$release_version" SILICIUM_RELEASE_CHANNEL=dev \
+            SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
+          sudo SILICIUM_RELEASE_VERSION="$release_version" SILICIUM_RELEASE_CHANNEL=dev \
+            SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
+          sudo systemctl start silicium-update-manifest.service
+          sudo bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
+          echo "Development channel deployed: $release_version ($RELEASE_BUILD)"
+          REMOTE
+
