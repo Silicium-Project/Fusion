@@ -121,8 +121,26 @@ if [[ -z "$host_gateway" || "$host_gateway" == "<no value>" ]]; then
   echo "Could not resolve the gateway for Docker network $SILICIUM_BACKEND_NETWORK_NAME" >&2
   exit 1
 fi
+backend_network_subnet="$(docker network inspect --format '{{(index .IPAM.Config 0).Subnet}}' "$SILICIUM_BACKEND_NETWORK_NAME" 2>/dev/null || true)"
+if [[ -z "$backend_network_subnet" || "$backend_network_subnet" == "<no value>" ]]; then
+  echo "Could not resolve the subnet for Docker network $SILICIUM_BACKEND_NETWORK_NAME" >&2
+  exit 1
+fi
 export SILICIUM_HOST_GATEWAY="$host_gateway"
 sed -i -e "s#host.docker.internal#$SILICIUM_HOST_GATEWAY#g" "$SILICIUM_NGINX_CONFIG"
+
+# UFW commonly denies traffic arriving from Docker bridges even when the host
+# itself can reach the service. Permit only this channel's bridge to reach the
+# two host-side control-plane sockets required by the backend/proxy. The
+# precise source subnet and gateway keep the rule isolated from other Docker
+# projects and make repeated deployments converge without opening the ports
+# publicly.
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+  for firewall_port in "$SILICIUM_ORCHESTRATOR_PORT" "$SILICIUM_EXPERIMENT_EVENTS_PORT"; do
+    ufw allow from "$backend_network_subnet" to "$host_gateway" port "$firewall_port" proto tcp \
+      comment "Silicium ${RELEASE_CHANNEL} container control plane" >/dev/null
+  done
+fi
 
 # The backend image deliberately runs as an unprivileged user while the
 # persistent bind mount is created by root on the host. Resolve the image's
