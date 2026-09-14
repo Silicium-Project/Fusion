@@ -29,8 +29,9 @@ if [[ -z "${SILICIUM_DOWNLOAD_BASE_URL:-}" || "$SILICIUM_DOWNLOAD_BASE_URL" == "
   export SILICIUM_DOWNLOAD_BASE_URL="$channel_public_base_url/downloads"
 fi
 DEFAULT_DEV_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$SILICIUM_ROOT/apps/silicium-node/package.json")"
+DEFAULT_PROD_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$SILICIUM_ROOT/apps/silicium-node/src-tauri/tauri.prod.conf.json")"
 export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-$DEFAULT_DEV_VERSION}"
-export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-0.2.17}"
+export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-$DEFAULT_PROD_VERSION}"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-}"
 export SILICIUM_DEV_RELEASE_BUILD="${SILICIUM_DEV_RELEASE_BUILD:-$SILICIUM_RELEASE_BUILD}"
 export SILICIUM_PROD_RELEASE_BUILD="${SILICIUM_PROD_RELEASE_BUILD:-$SILICIUM_RELEASE_BUILD}"
@@ -110,14 +111,24 @@ definitions = {
     },
 }
 require_all_artifacts = os.environ.get("SILICIUM_UPDATE_REQUIRE_ALL_ARTIFACTS", "") == "1"
-missing_artifacts = []
-if os.environ.get("SILICIUM_RELEASE_CHANNEL") == "prod" or require_all_artifacts:
-    missing_artifacts = [
-        str(downloads / filename)
-        for definition in definitions.values()
-        for platform, filename in definition["artifacts"]
-        if platform.startswith("windows") and not (downloads / filename).is_file()
-    ]
+published_channel = os.environ.get("SILICIUM_RELEASE_CHANNEL", "")
+if published_channel not in definitions:
+    raise SystemExit(f"unsupported release channel: {published_channel}")
+required_definitions = list(definitions.values()) if require_all_artifacts else [definitions[published_channel]]
+# Development releases currently publish the Linux AppImage as the updater
+# target; native .deb/.rpm packages remain direct-install assets. Production
+# must always contain all three Linux bundles plus the Windows installer.
+required_artifacts = [
+    (platform, filename)
+    for definition in required_definitions
+    for platform, filename in definition["artifacts"]
+    if published_channel == "prod" or filename.endswith(".AppImage")
+]
+missing_artifacts = [
+    str(downloads / filename)
+    for _platform, filename in required_artifacts
+    if not (downloads / filename).is_file()
+]
 if missing_artifacts:
     raise SystemExit("required node artifacts are missing: " + ", ".join(missing_artifacts))
 

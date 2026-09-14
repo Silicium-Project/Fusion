@@ -143,12 +143,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-tauri-linux-bundler-
 
-      - name: Build Linux development bundles
+      - name: Build Linux bundles
         shell: bash
         env:
           SILICIUM_RELEASE_CHANNEL: ${{ inputs.release_channel || 'dev' }}
           SILICIUM_RELEASE_BUILD: ${{ github.event.pull_request.head.sha || github.sha }}
           SILICIUM_RECLAIM_RUNTIME_TARGETS: auto
+          SILICIUM_RUN_RELEASE_TESTS: "0"
         run: |
           bash "$GITHUB_WORKSPACE/deploy/ci/build-linux-client.sh" "$GITHUB_WORKSPACE"
 

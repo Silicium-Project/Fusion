@@ -246,19 +246,38 @@ download_base_url="${SILICIUM_DOWNLOAD_BASE_URL:-$channel_public_base_url/downlo
   exit 1
 }
 if [[ "$RELEASE_CHANNEL" == "prod" ]]; then
-  for artifact in \
-    silicium-node-windows.exe \
-    silicium-node-windows-dev.exe \
-    silicium-node-linux-dev.deb \
-    silicium-node-linux-dev.AppImage \
-    silicium-node-linux-dev.rpm; do
+  required_artifacts=(
+    silicium-node-windows.exe
+    silicium-node-linux.AppImage
+    silicium-node-linux.deb
+    silicium-node-linux.rpm
+  )
+else
+  required_artifacts=(
+    silicium-node-linux-dev.AppImage
+    silicium-node-linux-dev.deb
+    silicium-node-linux-dev.rpm
+  )
+fi
+for artifact in "${required_artifacts[@]}"; do
     if [[ ! -s "$downloads_dir/$artifact" ]]; then
       echo "Missing published node artifact: $downloads_dir/$artifact" >&2
       exit 1
     fi
     curl -fsSIL --max-time 8 "$download_base_url/$artifact" >/dev/null
-  done
+done
+package_suite=stable
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  package_suite=dev
 fi
+for repository_metadata in \
+  "apt/dists/${package_suite}/InRelease" \
+  "rpm/repodata/repomd.xml"; do
+  curl -fsSIL --max-time 8 "$download_base_url/$repository_metadata" >/dev/null || {
+    echo "Missing published package repository metadata: $download_base_url/$repository_metadata" >&2
+    exit 1
+  }
+done
 
 if [[ "$RELEASE_CHANNEL" == "prod" ]]; then
   echo "Checking node service state..."

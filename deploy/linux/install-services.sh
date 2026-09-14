@@ -192,7 +192,11 @@ ensure_env_text_channel_default "$ORCHESTRATOR_ENV" SILICIUM_NODE_ADVERTISE_URL 
 # exact deployed application version and source revision.
 release_version="${SILICIUM_RELEASE_VERSION:-}"
 if [[ -z "$release_version" ]]; then
-  release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")"
+  release_metadata="$ROOT/apps/silicium-node/package.json"
+  if [[ "$RELEASE_CHANNEL" == "prod" && -f "$ROOT/apps/silicium-node/src-tauri/tauri.prod.conf.json" ]]; then
+    release_metadata="$ROOT/apps/silicium-node/src-tauri/tauri.prod.conf.json"
+  fi
+  release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$release_metadata")"
 fi
 release_channel="${SILICIUM_RELEASE_CHANNEL:-prod}"
 release_build="${SILICIUM_RELEASE_BUILD:-}"
@@ -242,17 +246,18 @@ ensure_env_text_channel_default "$CONFIG_DIR/update-channels.env" SILICIUM_UPDAT
 # by CI. Preserve operator-specific URLs, keys and cache paths in the existing
 # file while refreshing only the channel cadence/version fields.
 dev_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")"
+prod_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/src-tauri/tauri.prod.conf.json")"
 for release_key in \
   SILICIUM_DEV_VERSION \
   SILICIUM_PROD_VERSION \
   SILICIUM_DEV_CHECK_INTERVAL_SECONDS \
   SILICIUM_PROD_CHECK_INTERVAL_SECONDS \
   SILICIUM_UPDATE_GOSSIP_REQUIRED; do
-  if [[ "$release_key" == "SILICIUM_DEV_VERSION" ]]; then
-    release_line="SILICIUM_DEV_VERSION=${dev_version}"
-  else
-    release_line="$(grep -E "^${release_key}=" deploy/env/update-channels.example.env | tail -n 1)"
-  fi
+  case "$release_key" in
+    SILICIUM_DEV_VERSION) release_line="SILICIUM_DEV_VERSION=${dev_version}" ;;
+    SILICIUM_PROD_VERSION) release_line="SILICIUM_PROD_VERSION=${prod_version}" ;;
+    *) release_line="$(grep -E "^${release_key}=" deploy/env/update-channels.example.env | tail -n 1)" ;;
+  esac
   [[ -n "$release_line" ]] || continue
   if grep -q -E "^${release_key}=" "$CONFIG_DIR/update-channels.env"; then
     sed -i -E "s#^${release_key}=.*#${release_line}#" "$CONFIG_DIR/update-channels.env"
@@ -267,6 +272,12 @@ migrate_default_paths "$CONFIG_DIR/experiment-api.env"
 ensure_env_channel_default "$CONFIG_DIR/experiment-api.env" SILICIUM_EXPERIMENT_API_PORT "$experiment_api_port" 46110
 unset -f ensure_env_default set_env_value set_env_value_file ensure_env_channel_default ensure_env_text_channel_default
 chmod 0755 "$ROOT/deploy/linux/publish-update-manifest.sh"
+if [[ -f "$ROOT/deploy/linux/publish-package-repositories.sh" ]]; then
+  chmod 0755 "$ROOT/deploy/linux/publish-package-repositories.sh"
+fi
+if [[ -f "$ROOT/deploy/linux/cleanup-vps.sh" ]]; then
+  chmod 0755 "$ROOT/deploy/linux/cleanup-vps.sh"
+fi
 chmod 0755 "$ROOT/deploy/linux/start-orchestrator.sh"
 
 systemctl daemon-reload

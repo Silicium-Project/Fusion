@@ -260,3 +260,6 @@ fi
 "${compose[@]}" up -d --force-recreate proxy
 "${compose[@]}" ps
 "$ROOT/deploy/linux/publish-update-manifest.sh"
+if [[ -f "$ROOT/deploy/linux/publish-package-repositories.sh" ]]; then
+  bash "$ROOT/deploy/linux/publish-package-repositories.sh" "$ROOT"
+fi

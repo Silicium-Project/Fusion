@@ -187,6 +187,9 @@ public site uses these stable paths:
 ```text
 /downloads/silicium-node-windows.exe
 /downloads/silicium-node-windows-dev.exe
+/downloads/silicium-node-linux.AppImage
+/downloads/silicium-node-linux.deb
+/downloads/silicium-node-linux.rpm
 /downloads/silicium-node-linux-dev.AppImage
 /downloads/silicium-node-linux-dev.deb
 /downloads/silicium-node-linux-dev.rpm
@@ -204,6 +207,25 @@ The `.rpm` is the native installation path on Fedora/RHEL:
 sudo dnf install ./silicium-node-linux-dev.rpm
 ```
 
+Production also exposes native package repositories:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://vps-910c1dbc.vps.ovh.net/downloads/apt/silicium-packages.asc \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/silicium-prod.gpg
+echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/silicium-prod.gpg] https://vps-910c1dbc.vps.ovh.net/downloads/apt stable main' \
+  | sudo tee /etc/apt/sources.list.d/silicium-node.list >/dev/null
+sudo apt update && sudo apt install silicium-node
+
+sudo install -d -m 0755 /etc/yum.repos.d
+sudo curl -fsSL https://vps-910c1dbc.vps.ovh.net/downloads/rpm/silicium-node.repo \
+  -o /etc/yum.repos.d/silicium-node.repo
+sudo dnf makecache && sudo dnf install silicium-node
+```
+
+The development repository uses the same paths behind WireGuard at
+`https://10.77.0.1:8443/downloads` and the APT suite `dev`.
+
 An AppImage downloaded from a browser must be made executable once with
 `chmod +x silicium-node-linux-dev.AppImage` before it is launched.
 
@@ -213,6 +235,9 @@ Verify every public asset after a deployment:
 for artifact in \
   silicium-node-windows.exe \
   silicium-node-windows-dev.exe \
+  silicium-node-linux.AppImage \
+  silicium-node-linux.deb \
+  silicium-node-linux.rpm \
   silicium-node-linux-dev.AppImage \
   silicium-node-linux-dev.deb \
   silicium-node-linux-dev.rpm; do

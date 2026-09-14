@@ -25,6 +25,9 @@ apt-get install -y \
   python3-cryptography \
   python3-protobuf \
   python3-zmq \
+  apt-utils \
+  createrepo-c \
+  gpg \
   golang-go
 
 if apt-cache show docker-compose-plugin >/dev/null 2>&1; then

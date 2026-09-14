@@ -23,7 +23,7 @@ on:
       vps_user:
         description: "SSH user on VPS"
         required: false
-        default: "ubuntu"
+        default: "luis"
       vps_port:
         description: "SSH port on VPS"
         required: false
@@ -160,7 +160,7 @@ jobs:
 
             if matches '^(BackEnd|FrontEnd|Network)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$|^\.gitmodules$'; then web=true; fi
             if matches '^(BackEnd|Network)(/|$)|^deploy/(compose|linux)/'; then network=true; fi
-            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/(build-linux-client|verify-linux-bundles)\.sh$|^\.gitmodules$'; then node_build=true; fi
+            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/(build-linux-client|verify-linux-bundles)\.sh$|^deploy/release/|^\.gitmodules$'; then node_build=true; fi
             if matches '^BackEnd$|^FrontEnd$|^Network$|^\.gitmodules$'; then submodules=true; fi
             if matches '^(BackEnd|FrontEnd|Network|apps/silicium-node|deploy/|\.gitmodules$|\.github/workflows/)'; then validate=true; fi
             if [[ "$web" == true || "$network" == true || "$node_build" == true ]]; then deployable=true; fi
@@ -202,8 +202,8 @@ jobs:
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ github.event.inputs.vps_user }}
-          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ github.event.inputs.vps_port || '22' }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
@@ -212,7 +212,7 @@ jobs:
             echo "VPS_HOST, VPS_SSH_KEY and VPS_KNOWN_HOSTS are required." >&2
             exit 1
           fi
-          vps_user="${VPS_USER:-ubuntu}"
+          vps_user="${VPS_USER:-luis}"
           vps_port="${VPS_PORT:-22}"
           ssh_dir="$RUNNER_TEMP/silicium-vps-ssh"
           install -d -m 700 "$ssh_dir"
@@ -224,14 +224,19 @@ jobs:
             -i "$ssh_dir/id_ed25519" -p "$vps_port" \
             "$vps_user@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
           set -euo pipefail
-          for workspace in /home/*/_work/Fusion /opt/github-runner*/_work/Fusion; do
-            checkout="$workspace/Fusion"
+          for checkout in /home/*/_work/Fusion /opt/github-runner*/_work/Fusion; do
             if [[ -d "$checkout" ]]; then
               git -C "$checkout" reset --hard --quiet || true
               git -C "$checkout" clean -ffd || true
               git -C "$checkout" submodule foreach --recursive 'git reset --hard --quiet && git clean -ffd' || true
               find "$checkout" -type d -path '*/target/debug' -prune -exec rm -rf -- {} +
             fi
+          done
+          for temp_root in /home/*/_work/_temp /opt/github-runner*/_work/_temp; do
+            [[ -d "$temp_root" ]] || continue
+            find "$temp_root" -mindepth 1 -maxdepth 1 -type d \
+              \( -name 'silicium-e2e-*' -o -name 'silicium-raytracer-cache' \) \
+              -exec rm -rf -- {} +
           done
           for release_staging in /tmp/silicium-release-*; do
             if [[ -d "$release_staging" ]]; then
@@ -593,8 +598,8 @@ jobs:
         shell: powershell
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ github.event.inputs.vps_user }}
-          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ github.event.inputs.vps_port || '22' }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
@@ -602,7 +607,7 @@ jobs:
           if (-not $env:VPS_HOST) { throw "Missing VPS_HOST secret" }
           if (-not $env:VPS_SSH_KEY) { throw "Missing VPS_SSH_KEY secret" }
           if (-not $env:VPS_KNOWN_HOSTS) { throw "Missing VPS_KNOWN_HOSTS secret" }
-          $vpsUser = if ([string]::IsNullOrWhiteSpace($env:VPS_USER)) { "ubuntu" } else { $env:VPS_USER }
+          $vpsUser = if ([string]::IsNullOrWhiteSpace($env:VPS_USER)) { "luis" } else { $env:VPS_USER }
           $vpsPort = if ([string]::IsNullOrWhiteSpace($env:VPS_PORT)) { "22" } else { $env:VPS_PORT }
           $vpsHost = $env:VPS_HOST
           $releaseStaging = "/tmp/silicium-release-${{ github.run_id }}-${{ github.run_attempt }}"
@@ -722,20 +727,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-tauri-linux-bundler-
 
-      - name: Build Linux development bundles
+      - name: Build Linux production bundles
         shell: bash
         working-directory: apps/silicium-node
         env:
-          SILICIUM_RELEASE_CHANNEL: dev
+          SILICIUM_RELEASE_CHANNEL: prod
           SILICIUM_RELEASE_BUILD: ${{ github.sha }}
           SILICIUM_RECLAIM_RUNTIME_TARGETS: auto
+          SILICIUM_RUN_RELEASE_TESTS: "0"
         run: |
           set -euo pipefail
           bash "$GITHUB_WORKSPACE/deploy/ci/build-linux-client.sh" "$GITHUB_WORKSPACE"
           install -d ci-artifacts
-          cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux-dev.deb
-          cp src-tauri/target/release/bundle/appimage/*.AppImage ci-artifacts/silicium-node-linux-dev.AppImage
-          cp src-tauri/target/release/bundle/rpm/*.rpm ci-artifacts/silicium-node-linux-dev.rpm
+          cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux.deb
+          cp src-tauri/target/release/bundle/appimage/*.AppImage ci-artifacts/silicium-node-linux.AppImage
+          cp src-tauri/target/release/bundle/rpm/*.rpm ci-artifacts/silicium-node-linux.rpm
           sha256sum ci-artifacts/*
 
       - name: Upload Linux installers
@@ -752,13 +758,13 @@ jobs:
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ github.event.inputs.vps_user }}
-          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ github.event.inputs.vps_port || '22' }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          VPS_USER="${VPS_USER:-ubuntu}"
+          VPS_USER="${VPS_USER:-luis}"
           VPS_PORT="${VPS_PORT:-22}"
           RELEASE_STAGING="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           install -d -m 700 "$HOME/.ssh"
@@ -767,9 +773,9 @@ jobs:
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
           scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$VPS_PORT" \
-            ci-artifacts/silicium-node-linux-dev.deb \
-            ci-artifacts/silicium-node-linux-dev.AppImage \
-            ci-artifacts/silicium-node-linux-dev.rpm \
+            ci-artifacts/silicium-node-linux.deb \
+            ci-artifacts/silicium-node-linux.AppImage \
+            ci-artifacts/silicium-node-linux.rpm \
             "$VPS_USER@$VPS_HOST:$RELEASE_STAGING/"
 
   release-metadata:
@@ -782,13 +788,15 @@ jobs:
       - name: Check out release metadata
         uses: actions/checkout@v4
         with:
-          sparse-checkout: apps/silicium-node/package.json
+          sparse-checkout: |
+            apps/silicium-node/package.json
+            apps/silicium-node/src-tauri/tauri.prod.conf.json
           sparse-checkout-cone-mode: false
 
       - name: Read node version
         id: meta
         shell: bash
-        run: echo "release_version=$(node -p "require('./apps/silicium-node/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: echo "release_version=$(node -p "require('./apps/silicium-node/src-tauri/tauri.prod.conf.json').version")" >> "$GITHUB_OUTPUT"
 
   release-node:
     needs: [changes, validate-monorepo, build-desktop, build-linux, tests]
@@ -815,7 +823,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="$(node -p "require('./apps/silicium-node/package.json').version")"
+          VERSION="$(node -p "require('./apps/silicium-node/src-tauri/tauri.prod.conf.json').version")"
           TAG="v${VERSION}"
           echo "release_version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${TAG}" >> "$GITHUB_OUTPUT"
@@ -885,9 +893,9 @@ jobs:
       - name: Pull and deploy on VPS
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ github.event.inputs.vps_user }}
-          VPS_PORT: ${{ github.event.inputs.vps_port }}
-          VPS_ROOT: ${{ github.event.inputs.vps_root }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ github.event.inputs.vps_port || '22' }}
+          VPS_ROOT: ${{ github.event.inputs.vps_root || '/opt/silicium' }}
           VPS_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           DEPLOY_REF: ${{ env.DEPLOY_REF }}
           RELEASE_VERSION: ${{ env.RELEASE_VERSION }}
@@ -896,7 +904,7 @@ jobs:
           NODE_ARTIFACTS_STAGED: ${{ env.NODE_ARTIFACTS_STAGED }}
         run: |
           set -euo pipefail
-          VPS_USER="${VPS_USER:-ubuntu}"
+          VPS_USER="${VPS_USER:-luis}"
           VPS_PORT="${VPS_PORT:-22}"
           VPS_ROOT="${VPS_ROOT:-/opt/silicium}"
           if [ -z "$VPS_GITHUB_TOKEN" ]; then
@@ -926,6 +934,12 @@ jobs:
           }
           sudo git config --system --add safe.directory "$VPS_ROOT"
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
+          # This checkout is a deployment target, not a working copy. Remove
+          # generated files from earlier runs before resolving the requested
+          # ref, otherwise stale Network binaries can survive a release.
+          sudo git -C "$VPS_ROOT" reset --hard --quiet || true
+          sudo git -C "$VPS_ROOT" clean -ffd || true
+          sudo git -C "$VPS_ROOT" submodule foreach --recursive 'git reset --hard --quiet && git clean -ffd' || true
           git_auth -C "$VPS_ROOT" fetch --tags --prune origin
           if git -C "$VPS_ROOT" rev-parse --verify --quiet "refs/remotes/origin/$DEPLOY_REF" >/dev/null; then
             sudo git -C "$VPS_ROOT" checkout "$DEPLOY_REF"
@@ -946,14 +960,17 @@ jobs:
             fi
           done
           git_auth -C "$VPS_ROOT" submodule update --init --force --recursive -- BackEnd FrontEnd Network
+          sudo git -C "$VPS_ROOT" clean -ffd
+          sudo git -C "$VPS_ROOT" submodule foreach --recursive 'git clean -ffd'
+          sudo SILICIUM_PRUNE_DOCKER=auto bash "$VPS_ROOT/deploy/linux/cleanup-vps.sh"
           sudo usermod -aG docker github-runner || true
           unset GIT_AUTH VPS_GITHUB_TOKEN
           if [[ "$NODE_ARTIFACTS_STAGED" == "true" ]]; then
             sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium/downloads/silicium-node-windows-dev.exe
             sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows.exe" /var/lib/silicium/downloads/silicium-node-windows.exe
-            sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.deb" /var/lib/silicium/downloads/silicium-node-linux-dev.deb
-            sudo install -m 0755 "$RELEASE_STAGING/silicium-node-linux-dev.AppImage" /var/lib/silicium/downloads/silicium-node-linux-dev.AppImage
-            sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.rpm" /var/lib/silicium/downloads/silicium-node-linux-dev.rpm
+            sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux.deb" /var/lib/silicium/downloads/silicium-node-linux.deb
+            sudo install -m 0755 "$RELEASE_STAGING/silicium-node-linux.AppImage" /var/lib/silicium/downloads/silicium-node-linux.AppImage
+            sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux.rpm" /var/lib/silicium/downloads/silicium-node-linux.rpm
           else
             echo "Node sources unchanged; retaining the existing downloaded installers."
           fi
@@ -1006,5 +1023,5 @@ jobs:
             echo "- release version: $RELEASE_VERSION"
             echo "- release channel: $RELEASE_CHANNEL"
             echo "- release build: $RELEASE_BUILD"
-            echo "- ssh user: ${VPS_USER:-ubuntu}"
+            echo "- ssh user: ${VPS_USER:-luis}"
           } >> "$GITHUB_STEP_SUMMARY"
