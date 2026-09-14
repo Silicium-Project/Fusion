@@ -5022,6 +5022,8 @@ class NetworkNode:
         # Claiming must be atomic across HTTP handlers, but it must not block
         # peer discovery/heartbeat handlers on the broader P2P lock.
         self._task_claim_lock = threading.Lock()
+        self._claim_pending_envelopes: list[dict[str, Any]] = []
+        self._queue_recovery_attempted = False
         self._last_claim_poll_unix = 0.0
         self._last_claim_poll_utc = ""
         self._last_claim_error = ""
@@ -6717,9 +6719,10 @@ class NetworkNode:
         claimed_items: list[dict[str, Any]] = []
         claimed_ids: set[str] = set()
 
-        def consume_queue(queue_path: Path) -> bool:
-            """Claim compatible entries from one queue until the batch is full."""
-            for envelope in self.read_new(queue_path):
+        def consume_envelopes(envelopes: Iterable[dict[str, Any]]) -> bool:
+            """Claim compatible entries and retain unclaimable queue items."""
+            materialized = list(envelopes)
+            for index, envelope in enumerate(materialized):
                 if not isinstance(envelope, dict):
                     continue
                 item_id = safe_id(
@@ -6729,22 +6732,41 @@ class NetworkNode:
                     continue
                 claimed = try_claim(envelope)
                 if claimed is None:
+                    self._claim_pending_envelopes.append(envelope)
                     continue
                 claimed_items.append(claimed)
                 claimed_ids.add(item_id)
                 if len(claimed_items) >= requested_limit:
+                    self._claim_pending_envelopes.extend(materialized[index + 1 :])
                     return True
             return False
 
+        def consume_queue(queue_path: Path) -> bool:
+            """Claim compatible entries from one queue until the batch is full."""
+            return consume_envelopes(self.read_new(queue_path))
+
         with self._task_claim_lock:
+            pending = self._claim_pending_envelopes
+            self._claim_pending_envelopes = []
+            if consume_envelopes(pending):
+                self._queue_recovery_attempted = True
+                return claimed_items
             for queue_path in self.queue_order():
                 if consume_queue(queue_path):
+                    # The append-only queues are authoritative while the
+                    # process is alive. Do not rescan every canonical task
+                    # file after a successful queue read: that recovery pass
+                    # is only needed once after startup/crash recovery.
+                    self._queue_recovery_attempted = True
                     return claimed_items
 
             # Queue cursors are persisted across restarts. If a cursor was
             # advanced while a prior process died before dispatching, recover
             # from the authoritative task files instead of leaving work stuck
             # forever in compute_queued. Oldest files are attempted first.
+            if self._queue_recovery_attempted or self._claim_pending_envelopes:
+                return claimed_items
+            self._queue_recovery_attempted = True
             for directory in (self.config.export_dir / "tasks", self.config.export_dir / "requests"):
                 if not directory.exists():
                     continue
