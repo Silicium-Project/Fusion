@@ -3573,7 +3573,7 @@ class PeerNetwork:
             return
         message_type = str(message.get("message_type", ""))
         if message_type == "peer_announce":
-            changed = self._record_peer(message, refresh_liveness=False)
+            changed = self._record_peer(message, refresh_liveness=False, persist_snapshot=False)
             if changed and safe_id(str(message.get("node_id", ""))) != self.node_id:
                 # Never make the inbound HTTP handler fan out synchronously:
                 # one peer announcement must not consume the whole request
@@ -3831,7 +3831,9 @@ class PeerNetwork:
             return
         for peer in peers:
             if isinstance(peer, dict):
-                self._record_peer(peer, refresh_liveness=False)
+                self._record_peer(peer, refresh_liveness=False, persist_snapshot=False)
+        if peers:
+            self.peers_snapshot()
 
     def _sync_targets(self) -> list[str]:
         seed_targets: set[str] = set()
@@ -3872,7 +3874,9 @@ class PeerNetwork:
             return
         for peer in peers:
             if isinstance(peer, dict):
-                self._record_peer(peer, refresh_liveness=False)
+                self._record_peer(peer, refresh_liveness=False, persist_snapshot=False)
+        if peers:
+            self.peers_snapshot()
 
     def _sync_recent_events(self, base_url: str) -> None:
         path = f"/events/recent?limit={max(1, self.config.peer_event_limit)}"
@@ -4130,7 +4134,7 @@ class PeerNetwork:
                     if not peer_network._authorize_peer_request(self):
                         self.send_error(403)
                         return
-                    raw = stable_json(peer_network.peers_snapshot()).encode("utf-8")
+                    raw = stable_json(peer_network.peers_snapshot(persist=False)).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(raw)))
@@ -4141,7 +4145,12 @@ class PeerNetwork:
                     if not peer_network._authorize_peer_request(self):
                         self.send_error(403)
                         return
-                    raw = stable_json(read_json(peer_network.discovery_registry_path, peer_network.peers_snapshot())).encode("utf-8")
+                    raw = stable_json(
+                        read_json(
+                            peer_network.discovery_registry_path,
+                            peer_network.peers_snapshot(persist=False),
+                        )
+                    ).encode("utf-8")
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(raw)))
@@ -5293,7 +5302,10 @@ class NetworkNode:
                 "resource_reputation": resource_reputation,
                 "peer_http_base_url": self.peer_network.http_base_url,
                 "peer_public_base_url": self.peer_network.advertised_http_base_url,
-                "peer_count": int(self.peer_network.peers_snapshot().get("count", 0)),
+                # Heartbeats are emitted on the node's idle cadence. Do not
+                # serialize and persist the full routed peer graph on every
+                # heartbeat; sync/announce paths own durable peer snapshots.
+                "peer_count": int(self.peer_network.peers_snapshot(persist=False, include_routes=False).get("count", 0)),
                 "gossip_enabled": self.config.gossip_enable,
                 "peer_sync_interval_s": self.config.peer_sync_interval_s,
                 "peer_sync_fanout": self.config.peer_sync_fanout,
