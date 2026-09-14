@@ -224,22 +224,19 @@ jobs:
             -i "$ssh_dir/id_ed25519" -p "$vps_port" \
             "$vps_user@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
           set -euo pipefail
-          for checkout in /home/*/_work/Fusion /opt/github-runner*/_work/Fusion; do
-            if [[ -d "$checkout" ]]; then
-              git -C "$checkout" reset --hard --quiet || true
-              git -C "$checkout" clean -ffd || true
-              git -C "$checkout" submodule foreach --recursive 'git reset --hard --quiet && git clean -ffd' || true
-              find "$checkout" -type d -path '*/target/debug' -prune -exec rm -rf -- {} +
-            fi
-          done
+          # Do not mutate checkout directories here: self-hosted runners can
+          # execute the dev and prod workflows concurrently, and a checkout
+          # may belong to another live job. Each job owns and cleans its own
+          # workspace.
           for temp_root in /home/*/_work/_temp /opt/github-runner*/_work/_temp; do
             [[ -d "$temp_root" ]] || continue
             find "$temp_root" -mindepth 1 -maxdepth 1 -type d \
               \( -name 'silicium-e2e-*' -o -name 'silicium-raytracer-cache' \) \
+              -mmin +180 \
               -exec rm -rf -- {} +
           done
           for release_staging in /tmp/silicium-release-*; do
-            if [[ -d "$release_staging" ]]; then
+            if [[ -d "$release_staging" ]] && [[ -n "$(find "$release_staging" -maxdepth 0 -mmin +180 -print -quit)" ]]; then
               rm -rf -- "$release_staging"
             fi
           done

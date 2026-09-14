@@ -36,13 +36,14 @@ for temp_root in /home/*/_work/_temp /opt/github-runner*/_work/_temp; do
     removed_temp=$((removed_temp + 1))
   done < <(
     find "$temp_root" -mindepth 1 -maxdepth 1 -type d \
-      \( -name 'silicium-e2e-*' -o -name 'silicium-raytracer-cache' \) -print0
+      \( -name 'silicium-e2e-*' -o -name 'silicium-raytracer-cache' \) \
+      -mmin +180 -print0
   )
 done
 
 while IFS= read -r -d '' staging_dir; do
   rm -rf -- "$staging_dir"
-done < <(find /tmp -maxdepth 1 -type d -name 'silicium-release-*' -print0 2>/dev/null)
+done < <(find /tmp -maxdepth 1 -type d -name 'silicium-release-*' -mmin +180 -print0 2>/dev/null)
 
 free_kb="$(df -Pk / | awk 'NR == 2 {print $4}')"
 if [[ "$PRUNE_DOCKER" == "1" || ( "$PRUNE_DOCKER" == "auto" && "$free_kb" -lt "$MIN_FREE_KB" ) ]]; then
