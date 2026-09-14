@@ -6667,7 +6667,18 @@ class NetworkNode:
             req_set = {str(role).lower() for role in required_roles if str(role).strip()}
             if req_set and not req_set.issubset(worker_roles):
                 return None
-            selected_worker = preferred_worker(current, req_set, excluded_peer_ids)
+            body_key = "request" if kind == "request" else "task"
+            body = current.get(body_key) if isinstance(current.get(body_key), Mapping) else {}
+            fragment_index = body.get("fragment_index", current.get("fragment_index"))
+            if fragment_index is None or str(fragment_index).strip() == "":
+                # Generic tasks are pull-balanced by the workers themselves.
+                # Recomputing a rendezvous target from the complete peer book
+                # makes every idle worker scan the whole queue and causes
+                # avoidable scheduler contention at high fanout. Fragments
+                # keep deterministic assignment below for render balancing.
+                selected_worker = safe_id(worker_id)
+            else:
+                selected_worker = preferred_worker(current, req_set, excluded_peer_ids)
             if selected_worker and selected_worker != safe_id(worker_id):
                 return None
 

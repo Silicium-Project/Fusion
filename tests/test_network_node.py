@@ -2703,6 +2703,35 @@ def test_fragment_claims_are_balanced_by_index_across_compatible_workers(tmp_pat
     assert second["task"]["fragment_index"] == 1
 
 
+def test_generic_claim_is_served_by_the_requesting_compatible_worker(tmp_path: Path) -> None:
+    export_seed = tmp_path / "generic-claim"
+    seed_node = network_node.NetworkNode(_config(export_seed, "seed-orchestrator", roles="storage"))
+    for worker_id in ("worker-a", "worker-b"):
+        seed_node.peer_network.update_peer_metadata(
+            worker_id,
+            {
+                "roles": ["compute"],
+                "last_seen_unix": int(time.time()),
+            },
+        )
+    network_node.enqueue_task_envelope(
+        export_seed,
+        {
+            "schema_version": 1,
+            "envelope_kind": "task",
+            "task_id": "generic-compute-001",
+            "status": "queued",
+            "required_roles": ["compute"],
+            "task": {"kind": "compute", "workload": "calcul/integrity/sha256"},
+        },
+    )
+
+    claimed = seed_node.claim_task_for_worker("worker-a", {"compute"})
+
+    assert claimed is not None
+    assert claimed["dispatched_to"] == "worker-a"
+
+
 def test_task_queue_and_live_activity_are_announced_in_peer_book(tmp_path: Path) -> None:
     export_dir = tmp_path / "observable-node"
     node = network_node.NetworkNode(_config(export_dir, "worker-a", roles="compute,verify"))
