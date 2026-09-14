@@ -1261,6 +1261,8 @@ class PeerNetwork:
         self._udp_socket: socket.socket | None = None
         self._udp_thread: threading.Thread | None = None
         self._sync_thread: threading.Thread | None = None
+        self._announce_schedule_lock = threading.Lock()
+        self._announce_scheduled = False
         self._stop_event = threading.Event()
         self._peer_score_sink: Any = None
         self.http_base_url = ""
@@ -2514,6 +2516,30 @@ class PeerNetwork:
         self._broadcast(message)
         self.announce_candidates(candidates)
 
+    def schedule_announce(self) -> None:
+        """Coalesce peer announcements away from inbound HTTP handlers."""
+        with self._announce_schedule_lock:
+            if self._announce_scheduled or self._stop_event.is_set():
+                return
+            self._announce_scheduled = True
+
+        def _run() -> None:
+            try:
+                self.announce()
+            except Exception:
+                # Announcement is best effort; the periodic sync loop remains
+                # responsible for eventual peer-book convergence.
+                pass
+            finally:
+                with self._announce_schedule_lock:
+                    self._announce_scheduled = False
+
+        threading.Thread(
+            target=_run,
+            name=f"silicium-peer-announce-{self.node_id}",
+            daemon=True,
+        ).start()
+
     def announce_candidates(self, candidates: list[dict[str, Any]] | None = None) -> None:
         candidate_list = candidates if candidates is not None else self.refresh_candidates()
         message = {
@@ -3549,7 +3575,10 @@ class PeerNetwork:
         if message_type == "peer_announce":
             changed = self._record_peer(message, refresh_liveness=False)
             if changed and safe_id(str(message.get("node_id", ""))) != self.node_id:
-                self.announce()
+                # Never make the inbound HTTP handler fan out synchronously:
+                # one peer announcement must not consume the whole request
+                # pool while it waits on every other peer.
+                self.schedule_announce()
             return
         if message_type == "candidate_announce":
             self._record_candidate_announce(message, refresh_liveness=False)
@@ -5699,7 +5728,7 @@ class NetworkNode:
             if sequence % 2 == 0:
                 self.write_metrics()
                 self.write_heartbeat()
-                self.peer_network.announce()
+                self.peer_network.schedule_announce()
 
     def reconcile_orphaned_running_tasks(self) -> None:
         """Close tasks left active after a crash or worker disconnect."""
@@ -5931,7 +5960,7 @@ class NetworkNode:
         )
         if announce:
             threading.Thread(
-                target=self.peer_network.announce,
+                target=self.peer_network.schedule_announce,
                 name="silicium-peer-announce",
                 daemon=True,
             ).start()
