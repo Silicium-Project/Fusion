@@ -115,8 +115,11 @@ def _node_command(
         node_id,
         "--roles",
         roles,
+        # Match the production default.  A 25 ms sweep is useful for a tiny
+        # fixture but creates a busy-loop storm when hundreds of idle workers
+        # are alive and masks scheduler capacity with local CPU contention.
         "--idle-ms",
-        "25",
+        "250",
         "--max-retries",
         "1",
         "--gossip-enable",
