@@ -23,6 +23,21 @@ python3 tools/load_test.py --workers 32 --tasks 256 --batch-size 4
 python3 tools/load_test.py --workers 64 --tasks 512 --batch-size 8
 ```
 
+Qualification de montée en charge sur le profil hétérogène :
+
+```bash
+python3 tools/load_test.py --workers 100 --tasks 400 --batch-size 8 \
+  --report .silicium/load-tests/100-workers.json
+python3 tools/load_test.py --workers 300 --tasks 1200 --batch-size 8 --no-build \
+  --report .silicium/load-tests/300-workers.json
+```
+
+Le profil crée des workers `compute`, `verify`, `storage`, `audit` et
+`resource` avec des combinaisons réalistes. Les workloads synthétiques sont
+affectés aux rôles calculables (`compute`/`verify`) ; les autres profils sont
+néanmoins soumis à la pression d'inscription, de heartbeat, de gossip et de
+sélection de pairs.
+
 Le rapport JSON contient les tâches terminées/échouées, le débit, les
 latences p50/p95, la répartition par worker, les métriques P2P et le nombre de
 claims groupés. `--keep` conserve le projet Compose pour diagnostiquer les

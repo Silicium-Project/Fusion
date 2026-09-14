@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.load_test import build_compose_config, build_task
+from tools.load_test import build_compose_config, build_task, role_profile_counts
 
 
 def test_load_topology_has_one_isolated_service_per_worker(tmp_path: Path) -> None:
@@ -25,6 +25,26 @@ def test_load_topology_has_one_isolated_service_per_worker(tmp_path: Path) -> No
     assert all("--pull-tasks-batch-size" in service["command"] for name, service in services.items() if name.startswith("worker-"))
     assert "--peer-http-max-workers" in services["scheduler"]["command"]
     assert all("--peer-http-max-workers" in service["command"] for name, service in services.items() if name.startswith("worker-"))
+
+
+def test_load_topology_exercises_heterogeneous_worker_roles(tmp_path: Path) -> None:
+    config = build_compose_config(
+        repo_root=Path(__file__).resolve().parents[1],
+        state_dir=tmp_path,
+        worker_count=100,
+        batch_size=8,
+        scheduler_port=46012,
+        mcp_port=9767,
+    )
+    roles = {
+        service["command"][service["command"].index("--roles") + 1]
+        for name, service in config["services"].items()
+        if name.startswith("worker-")
+    }
+    assert {"compute", "verify", "storage", "audit", "resource"}.issubset(
+        {role for profile in roles for role in profile.split(",")}
+    )
+    assert all(count > 0 for count in role_profile_counts(100).values())
 
 
 def test_load_task_mix_is_hashable_and_role_specific() -> None:

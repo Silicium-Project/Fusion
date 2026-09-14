@@ -31,8 +31,40 @@ TERMINAL_STATUSES = frozenset(
     {"completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved"}
 )
 DEFAULT_BATCH_SIZE = 4
-MAX_WORKERS = 128
+MAX_WORKERS = 512
 MAX_TASKS = 10_000
+
+# Keep a heterogeneous node population in the load profile.  The scheduler
+# remains a broker with storage/audit/resource capabilities, while workers
+# advertise combinations that occur in the real network.  Compute and verify
+# are the executable roles used by the synthetic workload; the other roles
+# still participate in identity, gossip, peer-book and liveness pressure.
+ROLE_PROFILES: tuple[tuple[str, ...], ...] = (
+    ("compute",),
+    ("compute", "verify"),
+    ("verify",),
+    ("storage",),
+    ("audit",),
+    ("resource",),
+    ("compute", "storage"),
+    ("verify", "audit"),
+    ("storage", "resource"),
+    ("compute", "verify", "resource"),
+)
+
+
+def worker_roles_for_index(index: int) -> str:
+    """Return a deterministic heterogeneous role profile for a worker."""
+    profile = ROLE_PROFILES[int(index) % len(ROLE_PROFILES)]
+    return ",".join(profile)
+
+
+def role_profile_counts(worker_count: int) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for index in range(max(0, int(worker_count))):
+        for role in ROLE_PROFILES[index % len(ROLE_PROFILES)]:
+            counts[role] = counts.get(role, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def stable_json(value: Any) -> str:
@@ -213,7 +245,7 @@ def build_compose_config(
         node_id = f"worker-{index + 1:03d}"
         service_name = node_id
         export_dir, state_path, identity_path = _node_paths(state_dir, node_id)
-        roles = "compute" if index % 4 else "compute,verify"
+        roles = worker_roles_for_index(index)
         services[service_name] = {
             "image": image,
             "command": _node_command(
@@ -475,6 +507,7 @@ def run_load_test(args: argparse.Namespace) -> dict[str, Any]:
                 "workers_requested": worker_count,
                 "tasks_requested": task_count,
                 "batch_size": batch_size,
+                "worker_role_counts": role_profile_counts(worker_count),
                 "scheduler_host_port": scheduler_port,
                 "mcp_host_port": mcp_port,
                 "containers_are_isolated_instances": True,
