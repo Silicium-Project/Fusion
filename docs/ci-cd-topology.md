@@ -12,6 +12,7 @@ Keep the workflow traceable:
   deployment path.
 - GitHub-hosted Windows capacity executes the desktop packaging lane.
 - The visible lifecycle is `Build` -> `Test` -> `Deploy`.
+- Every component is built on one of two explicit channels: `dev` or `prod`.
 
 ## Current contract
 
@@ -52,13 +53,36 @@ Set `SILICIUM_EXTRA_RUNNER_COUNT=0` when the VPS is resource-constrained.
 The desktop Windows packaging lane runs on `windows-latest`.
 The generated installers are staged on the VPS before release and deploy.
 
+## Release channels
+
+`deploy/release/channels.json` is the source of truth for the channel contract.
+
+- `dev` is the `dev` branch, accepts prereleases, advertises `release_channel=dev`
+  in the FrontEnd, BackEnd and Network metadata, and publishes a prerelease from
+  `release-dev.yml`.
+- `prod` is `main` (or a `v*` tag), publishes stable artifacts, and is the only
+  channel allowed to execute the production VPS deployment in `deploy-vps.yml`.
+- Promotion is a normal reviewed merge from `dev` to `main`; no runtime or
+  update feed is switched implicitly by a development push.
+
+The Network peer table rejects peers from the other release channel, preventing
+development workers from claiming production tasks and vice versa. The
+deployment roots, Compose project names, data roots, ports and systemd unit
+names in the contract are separate. Dev and prod can therefore run on the same
+VPS; dev is bound to the WireGuard address `10.77.0.1:8443` and does not
+replace the production ingress on `80/443`. The dev web/API surface is private
+to the `10.77.0.0/24` VPN and is not a public Internet endpoint.
+
 ## Canonical flow
 
-1. `sync-submodules.yml` examines the configured `main` branches for
-   `BackEnd`, `FrontEnd`, and `Network`, resolves the newest commit for which
-   every visible workflow is green, then publishes those exact gitlinks on
-   `main`.
-2. `submodule-ci-gate.yml` uses the same resolver. A red, incomplete, or
+1. `sync-submodules.yml` examines the branch selected by the channel contract
+   (`dev` or `main`) in `BackEnd`, `FrontEnd`, and `Network`, resolves the
+   newest commit for which every visible workflow is green, then publishes
+   those exact gitlinks on the matching Fusion branch. `.gitmodules` keeps its
+   production-safe `main` hint in both branches so promotion cannot rewrite the
+   production tracking configuration.
+2. `submodule-ci-gate.yml` uses the same resolver and selects `dev` for the
+   development channel or `main` for production. A red, incomplete, or
    missing head is therefore skipped until a newer green candidate exists;
    Fusion never pins an unqualified commit. On the VPS it also provisions the
    dedicated `BackEnd` and `FrontEnd` self-hosted runners and waits for their
@@ -72,8 +96,12 @@ The generated installers are staged on the VPS before release and deploy.
 5. `deploy-vps.yml` is the canonical mainline path: it validates and builds
    on the VPS runners, builds Windows installers on `windows-latest`, publishes
    release metadata, deploys, and runs post-deploy checks.
-6. `deploy/compose/e2e.sh` validates the real container path on the VPS.
-7. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
+6. `deploy-dev-vps.yml` is the explicit development deployment path. It pulls
+   only `dev`, provisions the isolated WireGuard ingress, prepares isolated
+   development configuration, deploys to `/opt/silicium-dev`, and never stops
+   or rewrites production units.
+7. `deploy/compose/e2e.sh` validates the real container path on the VPS.
+8. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
 
 ### Targeted iteration
@@ -134,9 +162,9 @@ outputs without deleting those caches.
 
 ### Fusion root
 
-- `sync-submodules.yml`: canonical scheduler for resolving the latest green
-  submodule commits, publishing exact gitlinks, and dispatching the deploy
-  pipeline once the composition is updated.
+- `sync-submodules.yml`: channel-aware scheduler for resolving the latest green
+  submodule commits, publishing exact gitlinks on `dev` or `main`, and
+  dispatching the deploy pipeline once the production composition is updated.
 - `submodule-ci-gate.yml`: reusable latest-green gate for `BackEnd`, `FrontEnd`,
   and `Network`, including VPS runner bootstrap.
 - `ci-fast.yml`: cancelable short feedback path for branch and pull-request
@@ -147,6 +175,8 @@ outputs without deleting those caches.
 - `deploy-vps.yml`: canonical production deploy and VPS validation path. It
   also invokes the reusable build and test gates, packages Windows installers
   on `windows-latest`, and publishes them with the VPS deployment.
+- `deploy-dev-vps.yml`: guarded development deploy path using the isolated
+  `/opt/silicium-dev` runtime and channel-specific ports and units.
 - `rollback-vps.yml`: manual recovery path only.
 - `mirror-epitech.yml`: explicit external mirror path to the Epitech repo.
 

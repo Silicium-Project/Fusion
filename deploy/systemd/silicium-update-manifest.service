@@ -4,4 +4,8 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+Environment=SILICIUM_UPDATE_CHANNELS_CONFIG=__SILICIUM_CONFIG_DIR__/update-channels.env
+Environment=SILICIUM_CONFIG_DIR=__SILICIUM_CONFIG_DIR__
+Environment=SILICIUM_DATA_ROOT=__SILICIUM_DATA_ROOT__
+Environment=SILICIUM_RELEASE_CHANNEL=__SILICIUM_RELEASE_CHANNEL__
 ExecStart=__SILICIUM_ROOT__/deploy/linux/publish-update-manifest.sh

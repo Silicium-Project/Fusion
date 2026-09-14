@@ -13,7 +13,7 @@ on:
       release_channel:
         description: "Release channel label"
         required: false
-        default: "rollback"
+        default: "prod"
       vps_user:
         description: "SSH user on VPS"
         required: false
@@ -85,7 +85,7 @@ jobs:
           VPS_PORT="${VPS_PORT:-22}"
           VPS_ROOT="${VPS_ROOT:-/opt/silicium}"
           RELEASE_VERSION="${RELEASE_VERSION:-rollback}"
-          RELEASE_CHANNEL="${RELEASE_CHANNEL:-rollback}"
+          RELEASE_CHANNEL="${RELEASE_CHANNEL:-prod}"
           if [ -z "$DEPLOY_REF" ]; then
             echo "::error title=Missing input::deploy_ref is required."
             exit 1

@@ -10,7 +10,7 @@ on:
       vps_user:
         description: "SSH user on the VPS."
         required: false
-        default: ""
+        default: luis
       vps_port:
         description: "SSH port on the VPS."
         required: false
@@ -19,6 +19,15 @@ on:
         description: "Development checkout path on the VPS."
         required: false
         default: /opt/silicium-dev
+      release_tag:
+        description: "Existing dev GitHub Release tag to install. Blank selects the newest published dev release."
+        required: false
+        default: ""
+      run_e2e:
+        description: "Run the long Docker end-to-end suite after deployment."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -50,12 +59,12 @@ jobs:
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER }}
-          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ github.event.inputs.vps_port || '22' }}
           VPS_ROOT: ${{ github.event.inputs.vps_root }}
         run: |
           set -euo pipefail
-          vps_user="${VPS_USER:-ubuntu}"
+          vps_user="${VPS_USER:-luis}"
           vps_port="${VPS_PORT:-22}"
           vps_root="${VPS_ROOT:-/opt/silicium-dev}"
           [[ "$vps_root" == "/opt/silicium-dev" ]] || {
@@ -131,19 +140,119 @@ jobs:
           owner: Silicium-Project
           repositories: Fusion,BackEnd,FrontEnd,Network
 
+      - name: Check out development release metadata
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ github.event.inputs.ref || 'dev' }}
+          fetch-depth: 1
+          sparse-checkout: |
+            apps/silicium-node/package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve and download validated dev release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG_INPUT: ${{ github.event.inputs.release_tag }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/silicium-node/package.json').version")"
+          release_tag="${RELEASE_TAG_INPUT:-}"
+          if [[ -z "$release_tag" ]]; then
+            preferred="dev-${version}-${GITHUB_SHA:0:12}"
+            if gh release view "$preferred" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              release_tag="$preferred"
+            else
+              release_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+                --json tagName,isPrerelease,isDraft,createdAt \
+                --jq '[.[] | select(.isPrerelease == true and .isDraft == false and (.tagName | startswith("dev-")))] | sort_by(.createdAt) | last | .tagName')"
+            fi
+          fi
+          [[ "$release_tag" =~ ^dev-[A-Za-z0-9._+-]+-[0-9a-fA-F]{7,64}$ ]] || {
+            echo "No valid published dev release was found. Pass release_tag explicitly." >&2
+            exit 1
+          }
+          rm -rf -- release-assets
+          install -d -m 0755 release-assets
+          gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.AppImage' --pattern '*.deb' --pattern '*.rpm' \
+            --pattern 'release-channel.json' --dir release-assets --clobber
+          python3 - "release-assets/release-channel.json" "$version" <<'PY'
+          import json
+          import sys
+
+          metadata = json.load(open(sys.argv[1], encoding="utf-8"))
+          if metadata.get("channel") != "dev":
+              raise SystemExit("release-channel.json is not a dev release")
+          if str(metadata.get("version", "")) != sys.argv[2]:
+              raise SystemExit(
+                  f"release version {metadata.get('version')!r} does not match checkout {sys.argv[2]!r}"
+              )
+          if not metadata.get("commit"):
+              raise SystemExit("release-channel.json has no source commit")
+          PY
+          shopt -s nullglob
+          appimages=(release-assets/*.AppImage)
+          debs=(release-assets/*.deb)
+          rpms=(release-assets/*.rpm)
+          (( ${#appimages[@]} == 1 )) || { echo "Expected exactly one dev AppImage." >&2; exit 1; }
+          (( ${#debs[@]} == 1 )) || { echo "Expected exactly one dev .deb." >&2; exit 1; }
+          (( ${#rpms[@]} == 1 )) || { echo "Expected exactly one dev .rpm." >&2; exit 1; }
+          mv -- "${appimages[0]}" release-assets/silicium-node-linux-dev.AppImage
+          mv -- "${debs[0]}" release-assets/silicium-node-linux-dev.deb
+          mv -- "${rpms[0]}" release-assets/silicium-node-linux-dev.rpm
+          release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' release-assets/release-channel.json)"
+          release_build="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["commit"])' release-assets/release-channel.json)"
+          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          {
+            echo "release_tag=$release_tag"
+            echo "release_version=$release_version"
+            echo "release_build=$release_build"
+            echo "release_staging=$release_staging"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Stage validated dev installers on VPS
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ github.event.inputs.vps_port || '22' }}
+          RELEASE_STAGING: ${{ steps.release.outputs.release_staging }}
+        run: |
+          set -euo pipefail
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -i "$HOME/.ssh/id_ed25519" -p "$vps_port" \
+            "$vps_user@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            -i "$HOME/.ssh/id_ed25519" -P "$vps_port" \
+            release-assets/silicium-node-linux-dev.AppImage \
+            release-assets/silicium-node-linux-dev.deb \
+            release-assets/silicium-node-linux-dev.rpm \
+            "$vps_user@$VPS_HOST:$RELEASE_STAGING/"
+
       - name: Pull and deploy the dev channel
         shell: bash
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER }}
-          VPS_PORT: ${{ github.event.inputs.vps_port }}
+          VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ github.event.inputs.vps_port || '22' }}
           VPS_ROOT: ${{ github.event.inputs.vps_root }}
           VPS_GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           DEPLOY_REF: ${{ github.event.inputs.ref || 'dev' }}
-          RELEASE_BUILD: ${{ github.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+          RELEASE_VERSION: ${{ steps.release.outputs.release_version }}
+          RELEASE_BUILD: ${{ steps.release.outputs.release_build }}
+          RELEASE_STAGING: ${{ steps.release.outputs.release_staging }}
+          NODE_ARTIFACTS_STAGED: true
+          RUN_E2E: ${{ github.event.inputs.run_e2e || 'false' }}
         run: |
           set -euo pipefail
-          vps_user="${VPS_USER:-ubuntu}"
+          vps_user="${VPS_USER:-luis}"
           vps_port="${VPS_PORT:-22}"
           vps_root="${VPS_ROOT:-/opt/silicium-dev}"
           [[ "$vps_root" == "/opt/silicium-dev" ]] || { echo "Invalid dev root." >&2; exit 1; }
@@ -152,12 +261,14 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
             -o IdentitiesOnly=yes -i "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519")
           ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
-            "VPS_ROOT='$vps_root' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' DEPLOY_REF='$DEPLOY_REF' RELEASE_BUILD='$RELEASE_BUILD' bash -s" <<'REMOTE'
+            "VPS_ROOT='$vps_root' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_BUILD='$RELEASE_BUILD' RELEASE_STAGING='$RELEASE_STAGING' NODE_ARTIFACTS_STAGED='$NODE_ARTIFACTS_STAGED' RUN_E2E='$RUN_E2E' bash -s" <<'REMOTE'
           set -euo pipefail
           VPS_ROOT="${VPS_ROOT:?}"
           VPS_GITHUB_TOKEN="${VPS_GITHUB_TOKEN:?}"
           DEPLOY_REF="${DEPLOY_REF:?}"
+          RELEASE_VERSION="${RELEASE_VERSION:?}"
           RELEASE_BUILD="${RELEASE_BUILD:?}"
+          RELEASE_STAGING="${RELEASE_STAGING:?}"
           GIT_AUTH="$(printf 'x-access-token:%s' "$VPS_GITHUB_TOKEN" | base64 -w 0)"
           git_auth() {
             sudo env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader \
@@ -172,32 +283,48 @@ jobs:
           fi
           sudo git config --system --add safe.directory "$VPS_ROOT"
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
+          sudo git -C "$VPS_ROOT" reset --hard --quiet || true
+          sudo git -C "$VPS_ROOT" clean -ffd || true
+          sudo git -C "$VPS_ROOT" submodule foreach --recursive 'git reset --hard --quiet && git clean -ffd' || true
           git_auth -C "$VPS_ROOT" fetch --no-tags --prune origin dev
           sudo git -C "$VPS_ROOT" checkout dev
           sudo git -C "$VPS_ROOT" reset --hard origin/dev
           sudo git -C "$VPS_ROOT" submodule sync -- BackEnd FrontEnd Network
           git_auth -C "$VPS_ROOT" submodule update --init --force --recursive -- BackEnd FrontEnd Network
+          sudo git -C "$VPS_ROOT" clean -ffd
+          sudo git -C "$VPS_ROOT" submodule foreach --recursive 'git clean -ffd'
+          sudo SILICIUM_PRUNE_DOCKER=auto bash "$VPS_ROOT/deploy/linux/cleanup-vps.sh"
           unset GIT_AUTH VPS_GITHUB_TOKEN
 
-          release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$VPS_ROOT/apps/silicium-node/package.json")"
+          if [[ "$NODE_ARTIFACTS_STAGED" == "true" ]]; then
+            sudo install -d -m 0755 /var/lib/silicium-dev/downloads
+            sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.deb" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.deb
+            sudo install -m 0755 "$RELEASE_STAGING/silicium-node-linux-dev.AppImage" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.AppImage
+            sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.rpm" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.rpm
+          fi
           sudo install -d -m 0755 /var/lib/silicium-dev/releases
           cat <<EOF | sudo tee /var/lib/silicium-dev/releases/current.env >/dev/null
-          SILICIUM_RELEASE_VERSION=$release_version
+          SILICIUM_RELEASE_VERSION=$RELEASE_VERSION
           SILICIUM_RELEASE_CHANNEL=dev
           SILICIUM_RELEASE_BUILD=$RELEASE_BUILD
           SILICIUM_DEPLOY_REF=$DEPLOY_REF
           SILICIUM_DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           EOF
-          sudo SILICIUM_RELEASE_VERSION="$release_version" SILICIUM_RELEASE_CHANNEL=dev \
+          rm -rf -- "$RELEASE_STAGING"
+          sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL=dev \
             SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/linux/prepare-dev-config.sh" "$VPS_ROOT"
-          sudo SILICIUM_RELEASE_VERSION="$release_version" SILICIUM_RELEASE_CHANNEL=dev \
+          sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL=dev \
             SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
-          sudo SILICIUM_RELEASE_VERSION="$release_version" SILICIUM_RELEASE_CHANNEL=dev \
+          sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL=dev \
             SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
           sudo systemctl start silicium-update-manifest-dev.service
           sudo SILICIUM_RELEASE_CHANNEL=dev bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
-          sudo SILICIUM_RELEASE_CHANNEL=dev \
-            E2E_TIMEOUT_S=1200 E2E_WAIT_S=600 \
-            bash "$VPS_ROOT/deploy/compose/e2e.sh" "$VPS_ROOT"
-          echo "Development channel deployed: $release_version ($RELEASE_BUILD)"
+          if [[ "$RUN_E2E" == "true" ]]; then
+            sudo SILICIUM_RELEASE_CHANNEL=dev \
+              E2E_TIMEOUT_S=1200 E2E_WAIT_S=600 \
+              bash "$VPS_ROOT/deploy/compose/e2e.sh" "$VPS_ROOT"
+          else
+            echo "Skipping optional long dev E2E suite (run_e2e=false)."
+          fi
+          echo "Development channel deployed: $RELEASE_VERSION ($RELEASE_BUILD)"
           REMOTE

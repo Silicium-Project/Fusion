@@ -2,10 +2,18 @@ name: Sync submodule gitlinks
 
 on:
   workflow_dispatch:
+    inputs:
+      channel:
+        description: "Channel whose submodule gitlinks should be synchronized."
+        required: true
+        type: choice
+        options: [dev, prod]
+        default: prod
   repository_dispatch:
-    types: [submodule-main-updated]
+    types: [submodule-main-updated, submodule-dev-updated]
   schedule:
-    # Development cadence. Raise this interval before the production channel is enabled.
+    # Production cadence. Development syncs can be launched explicitly with
+    # channel=dev or through submodule-dev-updated.
     - cron: "*/5 * * * *"
 
 permissions:
@@ -21,6 +29,8 @@ jobs:
     runs-on: [self-hosted, fusion-linux]
     outputs:
       changed: ${{ steps.detect.outputs.changed }}
+      channel: ${{ steps.detect.outputs.channel }}
+      target_branch: ${{ steps.detect.outputs.target_branch }}
     steps:
       - name: Create short-lived GitHub App token
         id: app-token
@@ -49,8 +59,21 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
+          RELEASE_CHANNEL_INPUT: ${{ github.event.inputs.channel || '' }}
+          DISPATCH_ACTION: ${{ github.event.action || '' }}
         run: |
           set -euo pipefail
+          channel="${RELEASE_CHANNEL_INPUT:-prod}"
+          if [[ "$DISPATCH_ACTION" == "submodule-dev-updated" ]]; then
+            channel=dev
+          fi
+          case "$channel" in
+            dev) target_branch=dev ;;
+            prod) target_branch=main ;;
+            *) echo "Unsupported release channel: $channel" >&2; exit 1 ;;
+          esac
+          git fetch --no-tags --depth=1 origin "$target_branch"
+          git checkout --detach "origin/$target_branch"
           changed=false
           while read -r name path; do
             url="$(git config --file .gitmodules --get "submodule.${name}.url")"
@@ -59,11 +82,11 @@ jobs:
             repo="${repo%.git}"
             pinned="$(git rev-parse "HEAD:${path}")"
             remote="$(node .github/scripts/check-submodule-ci.mjs \
-              --repo "$repo" --latest-green --label "$path" \
+              --repo "$repo" --ref "$target_branch" --latest-green --label "$path" \
               | sed -nE 's/^LATEST_GREEN_SHA=([0-9a-f]{40})$/\1/p' \
               | tail -n 1)"
             if [[ -z "$remote" ]]; then
-              echo "::error title=GitHub API response missing SHA::Unable to resolve ${repo}:main."
+              echo "::error title=GitHub API response missing SHA::Unable to resolve ${repo}:${target_branch}."
               exit 1
             fi
             printf '%s: pinned=%s remote=%s\n' "$path" "${pinned:0:12}" "${remote:0:12}"
@@ -71,12 +94,16 @@ jobs:
               changed=true
             fi
           done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | sed -E 's/^submodule\.([^ ]+)\.path[[:space:]]+([^ ]+)$/\1 \2/')
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "target_branch=$target_branch" >> "$GITHUB_OUTPUT"
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
 
   submodule-ci-gate:
     needs: [detect]
     if: ${{ needs.detect.outputs.changed == 'true' }}
     uses: ./.github/workflows/submodule-ci-gate.yml
+    with:
+      release_channel: ${{ needs.detect.outputs.channel }}
     secrets: inherit
 
   sync:
@@ -123,11 +150,14 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
+          RELEASE_CHANNEL: ${{ needs.detect.outputs.channel }}
+          TARGET_BRANCH: ${{ needs.detect.outputs.target_branch }}
         run: |
           set -euo pipefail
           git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
 
-          git switch --detach origin/main
+          git fetch --no-tags origin "$TARGET_BRANCH"
+          git switch --detach "origin/$TARGET_BRANCH"
           summary_file="$RUNNER_TEMP/submodule-summary.md"
           : > "$summary_file"
           changed=0
@@ -136,18 +166,20 @@ jobs:
           while read -r path_key path; do
             name="${path_key#submodule.}"
             name="${name%.path}"
-            branch="$(git config --file .gitmodules --get "submodule.${name}.branch" || true)"
-            branch="${branch:-main}"
-            if [[ "$branch" != "main" ]]; then
-              echo "::error title=Unsupported submodule branch::${name} is configured on '${branch}', expected 'main'."
+            configured_branch="$(git config --file .gitmodules --get "submodule.${name}.branch" || true)"
+            if [[ -n "$configured_branch" && "$configured_branch" != "main" && "$configured_branch" != "dev" ]]; then
+              echo "::error title=Unsupported submodule branch::${name} is configured on '${configured_branch}'."
               exit 1
             fi
-            branch="main"
+            # Keep .gitmodules stable so a dev -> main promotion cannot
+            # accidentally change the production tracking branch. The channel
+            # contract, not the optional git-submodule hint, selects the ref.
+            branch="$TARGET_BRANCH"
             url="$(git config --file .gitmodules --get "submodule.${name}.url")"
             repo="${url#https://github.com/}"
             repo="${repo#git@github.com:}"
             repo="${repo%.git}"
-            old_sha="$(git rev-parse "origin/main:${path}")"
+            old_sha="$(git rev-parse "origin/${TARGET_BRANCH}:${path}")"
 
             new_sha="$(node .github/scripts/check-submodule-ci.mjs \
               --repo "$repo" --ref "$branch" --latest-green --label "$path" \
@@ -187,6 +219,7 @@ jobs:
           SILICIUM_SYNC_DEPLOY_KEY: ${{ secrets.SILICIUM_SYNC_DEPLOY_KEY }}
           SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS: ${{ secrets.SILICIUM_SYNC_DEPLOY_KNOWN_HOSTS }}
           SILICIUM_SYNC_PUSH_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN }}
+          TARGET_BRANCH: ${{ needs.detect.outputs.target_branch }}
         run: |
           set -euo pipefail
 
@@ -204,7 +237,7 @@ jobs:
 
           if [[ -n "${SILICIUM_SYNC_PUSH_TOKEN:-}" ]]; then
             git push "https://x-access-token:${SILICIUM_SYNC_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-              HEAD:main
+              "HEAD:${TARGET_BRANCH}"
           else
             install -d -m 700 "$HOME/.ssh"
             printf '%s\n' "$SILICIUM_SYNC_DEPLOY_KEY" > "$HOME/.ssh/id_ed25519"
@@ -215,7 +248,7 @@ jobs:
             fi
             chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
             export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
-            git push "git@github.com:${GITHUB_REPOSITORY}.git" HEAD:main
+            git push "git@github.com:${GITHUB_REPOSITORY}.git" "HEAD:${TARGET_BRANCH}"
           fi
 
       - name: Report current composition
@@ -228,4 +261,4 @@ jobs:
     runs-on: [self-hosted, fusion-linux]
     steps:
       - name: Report unchanged composition
-        run: echo "No newer green submodule composition is available; skipped the expensive gate and gitlink sync."
+        run: echo "No newer green submodule composition is available for ${{ needs.detect.outputs.channel }}; skipped the expensive gate and gitlink sync."

@@ -3,30 +3,50 @@ set -euo pipefail
 
 SILICIUM_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export SILICIUM_ROOT
-CONFIG_PATH="${SILICIUM_UPDATE_CHANNELS_CONFIG:-/etc/silicium/update-channels.env}"
+RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-prod}"
+CHANNEL_TOOL="$SILICIUM_ROOT/deploy/release/channel.py"
+python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
+channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
+channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
+channel_orchestrator_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field orchestrator_port)"
+channel_public_base_url="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field public_base_url)"
+CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
+DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
+CONFIG_PATH="${SILICIUM_UPDATE_CHANNELS_CONFIG:-$CONFIG_DIR/update-channels.env}"
+export SILICIUM_CONFIG_DIR="$CONFIG_DIR"
+export SILICIUM_DATA_ROOT="$DATA_ROOT"
 if [[ -f "$CONFIG_PATH" ]]; then
   set -a
   # shellcheck disable=SC1090
   source "$CONFIG_PATH"
   set +a
 fi
+CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$CONFIG_DIR}"
+DATA_ROOT="${SILICIUM_DATA_ROOT:-$DATA_ROOT}"
 
-export SILICIUM_DOWNLOADS_DIR="${SILICIUM_DOWNLOADS_DIR:-/var/lib/silicium/downloads}"
-export SILICIUM_DOWNLOAD_BASE_URL="${SILICIUM_DOWNLOAD_BASE_URL:-https://vps-910c1dbc.vps.ovh.net/downloads}"
+export SILICIUM_DOWNLOADS_DIR="${SILICIUM_DOWNLOADS_DIR:-$DATA_ROOT/downloads}"
+if [[ -z "${SILICIUM_DOWNLOAD_BASE_URL:-}" || "$SILICIUM_DOWNLOAD_BASE_URL" == "https://vps-910c1dbc.vps.ovh.net/downloads" ]]; then
+  export SILICIUM_DOWNLOAD_BASE_URL="$channel_public_base_url/downloads"
+fi
 DEFAULT_DEV_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$SILICIUM_ROOT/apps/silicium-node/package.json")"
+DEFAULT_PROD_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$SILICIUM_ROOT/apps/silicium-node/src-tauri/tauri.prod.conf.json")"
 export SILICIUM_DEV_VERSION="${SILICIUM_DEV_VERSION:-$DEFAULT_DEV_VERSION}"
-export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-0.2.17}"
+export SILICIUM_PROD_VERSION="${SILICIUM_PROD_VERSION:-$DEFAULT_PROD_VERSION}"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-}"
 export SILICIUM_DEV_RELEASE_BUILD="${SILICIUM_DEV_RELEASE_BUILD:-$SILICIUM_RELEASE_BUILD}"
 export SILICIUM_PROD_RELEASE_BUILD="${SILICIUM_PROD_RELEASE_BUILD:-$SILICIUM_RELEASE_BUILD}"
 export SILICIUM_DEV_CHECK_INTERVAL_SECONDS="${SILICIUM_DEV_CHECK_INTERVAL_SECONDS:-30}"
 export SILICIUM_PROD_CHECK_INTERVAL_SECONDS="${SILICIUM_PROD_CHECK_INTERVAL_SECONDS:-21600}"
-export SILICIUM_UPDATE_SIGNING_KEY="${SILICIUM_UPDATE_SIGNING_KEY:-/etc/silicium/update-signing-key.pem}"
-export SILICIUM_UPDATE_P2P_DIR="${SILICIUM_UPDATE_P2P_DIR:-/var/lib/silicium/network/orchestrator/export/p2p}"
-export SILICIUM_UPDATE_GOSSIP_URL="${SILICIUM_UPDATE_GOSSIP_URL:-http://127.0.0.1:46100/gossip/publish}"
+export SILICIUM_UPDATE_SIGNING_KEY="${SILICIUM_UPDATE_SIGNING_KEY:-$CONFIG_DIR/update-signing-key.pem}"
+export SILICIUM_UPDATE_P2P_DIR="${SILICIUM_UPDATE_P2P_DIR:-$DATA_ROOT/network/orchestrator/export/p2p}"
+if [[ -z "${SILICIUM_UPDATE_GOSSIP_URL:-}" || "$SILICIUM_UPDATE_GOSSIP_URL" == "http://127.0.0.1:46100/gossip/publish" ]]; then
+  export SILICIUM_UPDATE_GOSSIP_URL="http://127.0.0.1:${channel_orchestrator_port}/gossip/publish"
+fi
 export SILICIUM_MESH_KEY="${SILICIUM_MESH_KEY:-demo-mesh}"
-export SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY="${SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY:-/var/lib/silicium/update-publisher/peer_identity_ed25519.pem}"
+export SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY="${SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY:-$DATA_ROOT/update-publisher/peer_identity_ed25519.pem}"
 export SILICIUM_UPDATE_GOSSIP_REQUIRED="${SILICIUM_UPDATE_GOSSIP_REQUIRED:-0}"
+export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
+python3 "$SILICIUM_ROOT/deploy/release/channel.py" "$SILICIUM_RELEASE_CHANNEL" >/dev/null
 
 mkdir -p "$SILICIUM_DOWNLOADS_DIR"
 
@@ -90,11 +110,24 @@ definitions = {
         ],
     },
 }
+require_all_artifacts = os.environ.get("SILICIUM_UPDATE_REQUIRE_ALL_ARTIFACTS", "") == "1"
+published_channel = os.environ.get("SILICIUM_RELEASE_CHANNEL", "")
+if published_channel not in definitions:
+    raise SystemExit(f"unsupported release channel: {published_channel}")
+required_definitions = list(definitions.values()) if require_all_artifacts else [definitions[published_channel]]
+# Development releases currently publish the Linux AppImage as the updater
+# target; native .deb/.rpm packages remain direct-install assets. Production
+# must always contain all three Linux bundles plus the Windows installer.
+required_artifacts = [
+    (platform, filename)
+    for definition in required_definitions
+    for platform, filename in definition["artifacts"]
+    if published_channel == "prod" or filename.endswith(".AppImage")
+]
 missing_artifacts = [
     str(downloads / filename)
-    for definition in definitions.values()
-    for platform, filename in definition["artifacts"]
-    if platform.startswith("windows") and not (downloads / filename).is_file()
+    for _platform, filename in required_artifacts
+    if not (downloads / filename).is_file()
 ]
 if missing_artifacts:
     raise SystemExit("required node artifacts are missing: " + ", ".join(missing_artifacts))
@@ -255,6 +288,8 @@ for channel, definition in definitions.items():
 payload = {
     "schema_version": 1,
     "generated_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    "publisher_channel": os.environ["SILICIUM_RELEASE_CHANNEL"],
+    "publisher_build": os.environ.get("SILICIUM_RELEASE_BUILD", ""),
     "channels": channels,
     "releases": releases,
 }

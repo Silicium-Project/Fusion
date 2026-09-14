@@ -5,6 +5,9 @@ The public site exposes these VPS download paths:
 ```text
 /downloads/silicium-node-windows.exe
 /downloads/silicium-node-windows-dev.exe
+/downloads/silicium-node-linux.AppImage
+/downloads/silicium-node-linux.deb
+/downloads/silicium-node-linux.rpm
 /downloads/silicium-node-linux-dev.AppImage
 /downloads/silicium-node-linux-dev.deb
 /downloads/silicium-node-linux-dev.rpm
@@ -88,10 +91,16 @@ The status must be `Valid`. Keep the Tauri identifier
 `network.silicium.node` stable and increment the application version for every
 published installer so NSIS can repair or upgrade an existing installation.
 
-5. Let the Fusion deployment workflow publish the four generated artifacts to
+5. Let the Fusion deployment workflow publish the generated artifacts to
 the GitHub Release and stage them under the persistent VPS downloads path. The
 public site uses the VPS paths above, so the web links and the updater use the
 same files.
+
+Production package repositories are generated beside the direct downloads. The
+APT repository is signed with the channel key published at
+`/downloads/apt/silicium-packages.asc`; the DNF repository definition is at
+`/downloads/rpm/silicium-node.repo`. The dev repository uses the private
+WireGuard URL and the suite `dev`.
 
 For local site testing, copy the installer to:
 
