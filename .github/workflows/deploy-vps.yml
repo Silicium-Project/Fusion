@@ -745,13 +745,22 @@ jobs:
           cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux.deb
           cp src-tauri/target/release/bundle/appimage/*.AppImage ci-artifacts/silicium-node-linux.AppImage
           cp src-tauri/target/release/bundle/rpm/*.rpm ci-artifacts/silicium-node-linux.rpm
+          for artifact in \
+            ci-artifacts/silicium-node-linux.deb \
+            ci-artifacts/silicium-node-linux.AppImage \
+            ci-artifacts/silicium-node-linux.rpm; do
+            test -s "$artifact" || { echo "Missing Linux installer: $artifact" >&2; exit 1; }
+          done
           sha256sum ci-artifacts/*
 
       - name: Upload Linux installers
         uses: actions/upload-artifact@v4
         with:
           name: silicium-node-linux-installers
-          path: apps/silicium-node/ci-artifacts/*
+          path: |
+            apps/silicium-node/ci-artifacts/silicium-node-linux.deb
+            apps/silicium-node/ci-artifacts/silicium-node-linux.AppImage
+            apps/silicium-node/ci-artifacts/silicium-node-linux.rpm
           if-no-files-found: error
           retention-days: 7
 
