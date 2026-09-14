@@ -402,6 +402,24 @@ def test_seed_url_preserves_reverse_proxy_path(tmp_path: Path) -> None:
     assert peer._normalize_http_target("https://vps.example/emitter/") == "https://vps.example/emitter"
 
 
+def test_peer_registration_does_not_rewrite_unchanged_score_on_claim_hot_path(tmp_path: Path) -> None:
+    peer = network_node.PeerNetwork(_config(tmp_path / "peer-score", "node-a"), tmp_path / "peer-score")
+    updates: list[tuple[str, float]] = []
+    peer.set_peer_score_sink(lambda node_id, score: updates.append((str(node_id), float(score))))
+    message = {
+        "node_id": "worker-a",
+        "roles": ["compute"],
+        "reputation_score": 50.0,
+        "release_channel": "dev",
+        "last_seen_unix": int(time.time()),
+    }
+
+    peer._record_peer(message, persist_snapshot=False)
+    peer._record_peer(message, persist_snapshot=False)
+
+    assert updates == [("worker-a", 50.0)]
+
+
 def test_network_node_health_identifies_integrated_daemon(tmp_path: Path) -> None:
     peer = network_node.PeerNetwork(_config(tmp_path / "health", "node-health"), tmp_path / "health")
     peer.start()

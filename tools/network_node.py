@@ -2938,12 +2938,16 @@ class PeerNetwork:
                 "last_seen_unix": last_seen_unix,
                 "self": node_id == self.node_id,
             }
+            try:
+                score_changed = current.get("reputation_score") is None or float(current.get("reputation_score", 0.0) or 0.0) != float(merged["reputation_score"])
+            except (TypeError, ValueError):
+                score_changed = True
             changed = any(current.get(key) != value for key, value in merged.items() if key not in {"updated_utc", "last_seen_unix"})
             current.update(merged)
             self._peers[node_id] = current
         if persist_snapshot:
             self.peers_snapshot()
-        if node_id != self.node_id and self._peer_score_sink is not None:
+        if node_id != self.node_id and score_changed and self._peer_score_sink is not None:
             try:
                 self._peer_score_sink(node_id, float(merged.get("reputation_score", 0.0) or 0.0))
             except Exception:
