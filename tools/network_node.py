@@ -4847,7 +4847,13 @@ class PeerNetwork:
             block_on_close = False
 
             def __init__(self, *args: Any, max_workers: int, **kwargs: Any) -> None:
-                self._request_slots = threading.BoundedSemaphore(max(1, min(256, int(max_workers))))
+                worker_limit = max(1, min(256, int(max_workers)))
+                # The default TCP listen backlog is five on many Linux
+                # systems. That is enough for a single desktop node but
+                # drops synchronized claim/heartbeat bursts before the
+                # bounded handler pool can accept them.
+                self.request_queue_size = max(64, min(1024, worker_limit * 4))
+                self._request_slots = threading.BoundedSemaphore(worker_limit)
                 super().__init__(*args, **kwargs)
 
             def process_request(self, request: Any, client_address: Any) -> None:
@@ -6759,11 +6765,31 @@ class NetworkNode:
 
         def _loop() -> None:
             interval = max(0.25, float(self.config.pull_tasks_interval_s))
+            # Workers are often started in waves. A deterministic phase keeps
+            # those waves from producing a synchronized claim burst against a
+            # scheduler, while remaining stable across restarts of the same
+            # node identity. The cap prevents a slow first claim on a busy
+            # scheduler from delaying a worker indefinitely.
+            phase_window = max(interval, min(5.0, interval * 5.0))
+            phase_seed = hashlib.sha256(str(self.config.node_id).encode("utf-8")).digest()
+            phase_ratio = int.from_bytes(phase_seed[:8], "big") / float(1 << 64)
+            if self._pull_stop_event.wait(phase_ratio * phase_window):
+                return
             while not self._pull_stop_event.wait(interval):
                 try:
                     self._poll_and_claim_tasks_once()
                 except Exception:
                     pass
+                # Empty/error polls should yield to the scheduler instead of
+                # forming a permanent hot loop when many idle workers share a
+                # broker. A successful claim immediately returns to the
+                # configured cadence so queued work stays responsive.
+                if self._last_claim_result == "claimed":
+                    next_interval = interval
+                else:
+                    next_interval = min(5.0, max(interval * 2.0, interval + 0.25))
+                if self._pull_stop_event.wait(next_interval):
+                    return
 
         self._pull_thread = threading.Thread(target=_loop, name=f"silicium-pull-tasks-{self.config.node_id}", daemon=True)
         self._pull_thread.start()

@@ -406,6 +406,8 @@ def test_network_node_health_identifies_integrated_daemon(tmp_path: Path) -> Non
     peer = network_node.PeerNetwork(_config(tmp_path / "health", "node-health"), tmp_path / "health")
     peer.start()
     try:
+        assert peer._http_server is not None
+        assert peer._http_server.request_queue_size >= 64
         with urllib.request.urlopen(peer.http_base_url + "/healthz", timeout=2) as response:
             payload = json.loads(response.read().decode("utf-8"))
         assert payload["ok"] is True
