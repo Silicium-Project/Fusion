@@ -570,6 +570,10 @@ jobs:
           Assert-ValidAuthenticodeSignature $prodInstaller.FullName "Production installer"
           Copy-Item $prodInstaller.FullName (Join-Path $artifacts "silicium-node-windows.exe") -Force
 
+          $packagedInstallers = @(Get-ChildItem -LiteralPath $artifacts -Filter "*.exe" -File)
+          if ($packagedInstallers.Count -ne 2) {
+            throw "Expected exactly two Windows installers in $artifacts, found $($packagedInstallers.Count)"
+          }
           Get-FileHash (Join-Path $artifacts "*.exe") -Algorithm SHA256
 
       - name: Remove temporary Windows certificate
@@ -585,7 +589,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: silicium-node-windows-installers
-          path: apps/silicium-node/ci-artifacts/*.exe
+          path: |
+            apps/silicium-node/ci-artifacts/silicium-node-windows-dev.exe
+            apps/silicium-node/ci-artifacts/silicium-node-windows.exe
           if-no-files-found: error
           retention-days: 7
 
