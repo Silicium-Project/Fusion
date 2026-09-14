@@ -525,6 +525,71 @@ def _write_report(path: Path, report: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+def _cleanup_compose_project(
+    compose_prefix: list[str],
+    compose_file: Path,
+    project_name: str,
+) -> str:
+    """Stop one load-test project without leaving a detached Podman pod."""
+    errors: list[str] = []
+    try:
+        down = _run_compose(
+            compose_prefix,
+            compose_file,
+            project_name,
+            ["down", "--remove-orphans"],
+            timeout_s=30,
+        )
+        if down.returncode != 0:
+            errors.append((down.stderr or down.stdout or "compose_down_failed")[-2000:])
+    except subprocess.TimeoutExpired:
+        errors.append("compose_down_timeout")
+
+    # podman-compose creates a project pod.  Removing that exact pod is both
+    # faster and safer than waiting for one stop subprocess per worker; the
+    # label fallback handles containers created just after a compose timeout.
+    if any("podman" in part for part in compose_prefix):
+        pod_name = f"pod_{project_name}"
+        try:
+            subprocess.run(
+                ["podman", "pod", "rm", "-f", pod_name],
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"pod_cleanup:{type(exc).__name__}:{exc}")
+        try:
+            listed = subprocess.run(
+                [
+                    "podman",
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"label=io.podman.compose.project={project_name}",
+                    "--format",
+                    "{{{{.Names}}}}",
+                ],
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            names = [line.strip() for line in listed.stdout.splitlines() if line.strip()]
+            for offset in range(0, len(names), 32):
+                subprocess.run(
+                    ["podman", "rm", "-f", "--time", "0", "--depend", *names[offset : offset + 32]],
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"container_cleanup:{type(exc).__name__}:{exc}")
+    return ";".join(error for error in errors if error)
+
+
 def run_load_test(args: argparse.Namespace) -> dict[str, Any]:
     worker_count = max(1, min(MAX_WORKERS, int(args.workers)))
     task_count = max(1, min(MAX_TASKS, int(args.tasks)))
@@ -637,15 +702,9 @@ def run_load_test(args: argparse.Namespace) -> dict[str, Any]:
         return report
     finally:
         if not args.keep:
-            down = _run_compose(
-                compose_prefix,
-                compose_file,
-                project_name,
-                ["down", "--remove-orphans"],
-                timeout_s=120,
-            )
-            if down.returncode != 0 and not compose_error:
-                compose_error = (down.stderr or down.stdout)[-2000:]
+            cleanup_error = _cleanup_compose_project(compose_prefix, compose_file, project_name)
+            if cleanup_error and not compose_error:
+                compose_error = cleanup_error
             shutil.rmtree(state_dir, ignore_errors=True)
 
 

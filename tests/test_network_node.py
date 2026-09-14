@@ -2662,6 +2662,28 @@ def test_peer_sync_fanout_keeps_seed_and_bounds_transitive_targets(tmp_path: Pat
     ]
 
 
+def test_gossip_broadcast_bounds_peer_fanout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    node = network_node.PeerNetwork(
+        _config(tmp_path / "gossip-fanout", "node-a", gossip_enable=False),
+        tmp_path / "gossip-fanout",
+    )
+    node.config.peer_sync_fanout = 2
+    node.advertised_http_base_url = "http://node-a:46001"
+    node._peers.update(
+        {
+            f"peer-{index}": {"node_id": f"peer-{index}", "http_base_url": f"http://peer-{index}:46001"}
+            for index in range(6)
+        }
+    )
+    targets: list[str] = []
+    monkeypatch.setattr(node, "_send_http", lambda base_url, _message: targets.append(base_url))
+
+    node._broadcast({"message_type": "gossip_event", "event_id": "event-1"})
+
+    assert len(targets) == 2
+    assert set(targets).issubset({f"http://peer-{index}:46001" for index in range(6)})
+
+
 def test_worker_claim_respects_excluded_peer_ids(tmp_path: Path) -> None:
     export_seed = tmp_path / "excluded-seed"
     seed_node = network_node.NetworkNode(_config(export_seed, "seed-orchestrator", roles="storage"))

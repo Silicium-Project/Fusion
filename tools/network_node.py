@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 import heapq
 import hashlib
@@ -1263,6 +1264,8 @@ class PeerNetwork:
         self._sync_thread: threading.Thread | None = None
         self._announce_schedule_lock = threading.Lock()
         self._announce_scheduled = False
+        self._gossip_forward_lock = threading.Lock()
+        self._gossip_forward_executor: ThreadPoolExecutor | None = None
         self._stop_event = threading.Event()
         self._peer_score_sink: Any = None
         self.http_base_url = ""
@@ -1380,6 +1383,11 @@ class PeerNetwork:
         if self._sync_thread is not None:
             self._sync_thread.join(timeout=1)
             self._sync_thread = None
+        with self._gossip_forward_lock:
+            gossip_executor = self._gossip_forward_executor
+            self._gossip_forward_executor = None
+        if gossip_executor is not None:
+            gossip_executor.shutdown(wait=False, cancel_futures=True)
 
     def peers_snapshot(self, *, persist: bool = True, include_routes: bool = True) -> dict[str, Any]:
         self._prune_stale_peers()
@@ -2336,7 +2344,10 @@ class PeerNetwork:
             self.local_activity = dict(activity)
         if task_queue is not None:
             self.local_task_queue = [dict(item) for item in task_queue[:64] if isinstance(item, dict)]
-        self._record_self_peer()
+        # Heartbeats update the in-memory local peer profile on every idle
+        # cycle. Durable peer snapshots are owned by announce/sync paths;
+        # writing the full peer-book here serializes the node under load.
+        self._record_self_peer(persist_snapshot=False)
 
     def set_peer_score_sink(self, callback: Any) -> None:
         self._peer_score_sink = callback
@@ -2366,12 +2377,7 @@ class PeerNetwork:
         self._sign_message(message)
         self._record_event(message)
         if background:
-            threading.Thread(
-                target=self._broadcast,
-                args=(message,),
-                name=f"silicium-gossip-publish-{safe_path_id(topic)}",
-                daemon=True,
-            ).start()
+            self._schedule_gossip_broadcast(message)
         else:
             self._broadcast(message)
 
@@ -2825,7 +2831,7 @@ class PeerNetwork:
         except OSError:
             return False, b"", "content_read_failed"
 
-    def _record_self_peer(self) -> None:
+    def _record_self_peer(self, *, persist_snapshot: bool = True) -> None:
         candidates = self.local_candidates_snapshot()
         transport_attestations = self.recent_transport_attestations(4)
         with self._lock:
@@ -2863,7 +2869,8 @@ class PeerNetwork:
                 "updated_utc": utc_now(),
                 "self": True,
             }
-        self.peers_snapshot()
+        if persist_snapshot:
+            self.peers_snapshot()
 
     @staticmethod
     def _peer_seen_unix(message: Mapping[str, Any]) -> int:
@@ -3037,26 +3044,59 @@ class PeerNetwork:
             append_jsonl(self.task_control_events_path, message)
         return True
 
+    def _schedule_gossip_broadcast(self, message: dict[str, Any], exclude: str = "") -> None:
+        """Queue best-effort gossip without consuming request-handler threads."""
+        with self._gossip_forward_lock:
+            if self._gossip_forward_executor is None:
+                self._gossip_forward_executor = ThreadPoolExecutor(
+                    max_workers=2,
+                    thread_name_prefix=f"silicium-gossip-{self.node_id}",
+                )
+            executor = self._gossip_forward_executor
+        try:
+            executor.submit(self._broadcast, dict(message), exclude)
+        except RuntimeError:
+            # Shutdown races are harmless; anti-entropy will retry durable
+            # announcements and task results remain authoritative locally.
+            return
+
     def _broadcast(self, message: dict[str, Any], exclude: str = "") -> None:
-        udp_targets: set[str] = set()
-        http_targets: set[str] = set()
+        seed_udp_targets: set[str] = set()
+        seed_http_targets: set[str] = set()
         for seed in self.config.seed_peers:
             host, port = self._parse_udp_target(seed)
             if host and port > 0:
-                udp_targets.add(f"{host}:{port}")
+                seed_udp_targets.add(f"{host}:{port}")
                 continue
             http_base = self._normalize_http_target(seed)
             if http_base:
-                http_targets.add(http_base)
+                seed_http_targets.add(http_base)
+        peer_udp_targets: set[str] = set()
+        peer_http_targets: set[str] = set()
         with self._lock:
             for peer in self._peers.values():
                 bind = str(peer.get("gossip_bind", "")).strip()
                 port = int(peer.get("gossip_port", 0) or 0)
                 if bind and port:
-                    udp_targets.add(f"{bind}:{port}")
+                    peer_udp_targets.add(f"{bind}:{port}")
                 http_base = str(peer.get("http_base_url", "")).strip()
                 if http_base:
-                    http_targets.add(http_base)
+                    peer_http_targets.add(http_base)
+
+        def bounded_targets(targets: set[str]) -> set[str]:
+            candidates = sorted(target for target in targets if target and target != exclude)
+            fanout = int(self.config.peer_sync_fanout)
+            if fanout <= 0 or len(candidates) <= fanout:
+                return set(candidates)
+            # Rotate a deterministic window per event/node so a bounded mesh
+            # still reaches the whole world over successive announcements.
+            event_key = str(message.get("event_id") or message.get("node_id") or message.get("message_type") or "")
+            digest = sha256_bytes(f"{self.node_id}|{event_key}".encode("utf-8"))
+            offset = int(digest[:16], 16) % len(candidates)
+            return {candidates[(offset + index) % len(candidates)] for index in range(fanout)}
+
+        udp_targets = seed_udp_targets | bounded_targets(peer_udp_targets)
+        http_targets = seed_http_targets | bounded_targets(peer_http_targets)
         for target in sorted(udp_targets):
             host, _, port_raw = target.partition(":")
             try:
@@ -3100,7 +3140,7 @@ class PeerNetwork:
         data = json.dumps(message, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
         req = urllib.request.Request(url, data=data, method="POST", headers=self._signed_headers("POST", "/mesh", data, {"Content-Type": "application/json"}))
         try:
-            with urllib.request.urlopen(req, timeout=5):
+            with urllib.request.urlopen(req, timeout=1):
                 return
         except (urllib.error.URLError, TimeoutError, OSError):
             return
@@ -3639,7 +3679,7 @@ class PeerNetwork:
             return
         forwarded = dict(message)
         forwarded["hops"] = hops + 1
-        self._broadcast(forwarded, exclude=sender)
+        self._schedule_gossip_broadcast(forwarded, exclude=sender)
 
     def _handle_udp_message(self, message: dict[str, Any], sender: str) -> None:
         self._handle_network_message(message, sender)
