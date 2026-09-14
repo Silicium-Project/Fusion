@@ -147,7 +147,10 @@ jobs:
           vps_port="${VPS_PORT:-22}"
           vps_root="${VPS_ROOT:-/opt/silicium-dev}"
           [[ "$vps_root" == "/opt/silicium-dev" ]] || { echo "Invalid dev root." >&2; exit 1; }
-          [[ "$DEPLOY_REF" == "dev" ]] || { echo "The dev workflow only deploys the dev ref." >&2; exit 1; }
+          case "$DEPLOY_REF" in
+            dev|codex/test-connect-workload-ia) ;;
+            *) echo "The dev workflow only allows the dev ref or the AI integration test branch." >&2; exit 1 ;;
+          esac
           ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
             -o UserKnownHostsFile="$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
             -o IdentitiesOnly=yes -i "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519")
@@ -167,14 +170,14 @@ jobs:
           if [[ ! -d "$VPS_ROOT/.git" ]]; then
             sudo install -d -m 0755 "$VPS_ROOT"
             sudo chown "$(id -u):$(id -g)" "$VPS_ROOT"
-            git_auth clone --branch dev --recurse-submodules \
+            git_auth clone --branch "$DEPLOY_REF" --recurse-submodules \
               https://github.com/Silicium-Project/Fusion.git "$VPS_ROOT"
           fi
           sudo git config --system --add safe.directory "$VPS_ROOT"
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
-          git_auth -C "$VPS_ROOT" fetch --no-tags --prune origin dev
-          sudo git -C "$VPS_ROOT" checkout dev
-          sudo git -C "$VPS_ROOT" reset --hard origin/dev
+          git_auth -C "$VPS_ROOT" fetch --no-tags --prune origin "$DEPLOY_REF"
+          sudo git -C "$VPS_ROOT" checkout "$DEPLOY_REF"
+          sudo git -C "$VPS_ROOT" reset --hard "origin/$DEPLOY_REF"
           sudo git -C "$VPS_ROOT" submodule sync -- BackEnd FrontEnd Network
           git_auth -C "$VPS_ROOT" submodule update --init --force --recursive -- BackEnd FrontEnd Network
           unset GIT_AUTH VPS_GITHUB_TOKEN
