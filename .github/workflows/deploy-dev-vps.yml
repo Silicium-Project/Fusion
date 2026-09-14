@@ -81,6 +81,11 @@ jobs:
           if systemctl is-active --quiet silicium-orchestrator.service 2>/dev/null; then
             echo "Production orchestrator is active; channel isolation will preserve it."
           fi
+          if command -v wg >/dev/null 2>&1 && systemctl is-active --quiet wg-quick@wg0.service 2>/dev/null; then
+            echo "Development WireGuard is already active; the deploy will converge its configuration."
+          else
+            echo "Development WireGuard is not provisioned yet; the deploy bootstrap will install it."
+          fi
           if docker ps --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | grep -Fxq silicium; then
             echo "Production Compose project is active; channel isolation will preserve it."
           fi
@@ -103,6 +108,7 @@ jobs:
     needs: [preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    environment: development
     steps:
       - name: Configure SSH
         shell: bash
