@@ -201,9 +201,15 @@ jobs:
           (( ${#appimages[@]} == 1 )) || { echo "Expected exactly one dev AppImage." >&2; exit 1; }
           (( ${#debs[@]} == 1 )) || { echo "Expected exactly one dev .deb." >&2; exit 1; }
           (( ${#rpms[@]} == 1 )) || { echo "Expected exactly one dev .rpm." >&2; exit 1; }
-          mv -- "${appimages[0]}" release-assets/silicium-node-linux-dev.AppImage
-          mv -- "${debs[0]}" release-assets/silicium-node-linux-dev.deb
-          mv -- "${rpms[0]}" release-assets/silicium-node-linux-dev.rpm
+          if [[ "${appimages[0]}" != "release-assets/silicium-node-linux-dev.AppImage" ]]; then
+            mv -- "${appimages[0]}" release-assets/silicium-node-linux-dev.AppImage
+          fi
+          if [[ "${debs[0]}" != "release-assets/silicium-node-linux-dev.deb" ]]; then
+            mv -- "${debs[0]}" release-assets/silicium-node-linux-dev.deb
+          fi
+          if [[ "${rpms[0]}" != "release-assets/silicium-node-linux-dev.rpm" ]]; then
+            mv -- "${rpms[0]}" release-assets/silicium-node-linux-dev.rpm
+          fi
           release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' release-assets/release-channel.json)"
           release_build="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["commit"])' release-assets/release-channel.json)"
           release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
