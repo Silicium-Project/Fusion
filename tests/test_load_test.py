@@ -55,3 +55,10 @@ def test_load_task_mix_is_hashable_and_role_specific() -> None:
     assert verify["required_roles"] == ["verify"]
     assert verify["task"]["workload"] == "verification/hash-audit/sha256"
     assert len(verify["task"]["expected_hash"]) == 64
+
+
+def test_load_start_batch_size_is_bounded_by_the_harness_defaults() -> None:
+    parser = __import__("tools.load_test", fromlist=["build_arg_parser"]).build_arg_parser()
+    args = parser.parse_args([])
+    assert args.start_batch_size == 8
+    assert args.start_delay_s == 0.1

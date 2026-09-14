@@ -365,6 +365,92 @@ def _run_compose(
     )
 
 
+def _run_compose_checked(
+    compose_prefix: list[str],
+    compose_file: Path,
+    project_name: str,
+    args: list[str],
+    *,
+    timeout_s: float,
+    phase: str,
+) -> subprocess.CompletedProcess[str]:
+    completed = _run_compose(
+        compose_prefix,
+        compose_file,
+        project_name,
+        args,
+        timeout_s=timeout_s,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "compose returned a non-zero status")[-4000:]
+        raise RuntimeError(f"{phase}_failed:{detail}")
+    return completed
+
+
+def _start_compose_services(
+    compose_prefix: list[str],
+    compose_file: Path,
+    project_name: str,
+    *,
+    worker_ids: list[str],
+    scheduler_port: int,
+    startup_timeout_s: float,
+    compose_timeout_s: float,
+    no_build: bool,
+    start_batch_size: int,
+    start_delay_s: float,
+) -> None:
+    """Build once and start the topology in bounded waves.
+
+    Starting hundreds of Python containers in one Compose transaction creates
+    an avoidable CPU/RAM thundering herd on small qualification hosts. The
+    scheduler is made healthy first, then the MCP ingress and workers are
+    started in bounded batches so the test measures the network rather than
+    the container runtime's startup burst.
+    """
+    if not no_build:
+        _run_compose_checked(
+            compose_prefix,
+            compose_file,
+            project_name,
+            ["build"],
+            timeout_s=compose_timeout_s,
+            phase="compose_build",
+        )
+
+    _run_compose_checked(
+        compose_prefix,
+        compose_file,
+        project_name,
+        ["up", "-d", "scheduler"],
+        timeout_s=compose_timeout_s,
+        phase="scheduler_start",
+    )
+    _wait_http(f"http://127.0.0.1:{scheduler_port}/health", startup_timeout_s)
+
+    _run_compose_checked(
+        compose_prefix,
+        compose_file,
+        project_name,
+        ["up", "-d", "mcp"],
+        timeout_s=compose_timeout_s,
+        phase="mcp_start",
+    )
+    batch_size = max(1, int(start_batch_size))
+    for offset in range(0, len(worker_ids), batch_size):
+        batch = worker_ids[offset : offset + batch_size]
+        _run_compose_checked(
+            compose_prefix,
+            compose_file,
+            project_name,
+            ["up", "-d", *batch],
+            timeout_s=compose_timeout_s,
+            phase=f"worker_start_{offset + 1}_{offset + len(batch)}",
+        )
+        if start_delay_s > 0 and offset + len(batch) < len(worker_ids):
+            time.sleep(float(start_delay_s))
+
+
 def _read_json(path: Path, default: Any = None) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -470,11 +556,18 @@ def run_load_test(args: argparse.Namespace) -> dict[str, Any]:
     final: dict[str, dict[str, Any]] = {}
     compose_error = ""
     try:
-        up_args = ["up", "-d"] if args.no_build else ["up", "-d", "--build"]
-        up = _run_compose(compose_prefix, compose_file, project_name, up_args, timeout_s=float(args.compose_timeout_s))
-        if up.returncode != 0:
-            compose_error = (up.stderr or up.stdout)[-4000:]
-            raise RuntimeError(f"compose_up_failed:{compose_error}")
+        _start_compose_services(
+            compose_prefix,
+            compose_file,
+            project_name,
+            worker_ids=worker_ids,
+            scheduler_port=scheduler_port,
+            startup_timeout_s=float(args.startup_timeout_s),
+            compose_timeout_s=float(args.compose_timeout_s),
+            no_build=bool(args.no_build),
+            start_batch_size=int(args.start_batch_size),
+            start_delay_s=float(args.start_delay_s),
+        )
         _wait_http(mcp_url + "/healthz", float(args.startup_timeout_s))
 
         def submit(spec: dict[str, Any]) -> tuple[str, Any, float]:
@@ -561,6 +654,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-s", type=float, default=300.0, help="Result convergence timeout.")
     parser.add_argument("--startup-timeout-s", type=float, default=90.0, help="MCP startup timeout.")
     parser.add_argument("--compose-timeout-s", type=float, default=600.0, help="Docker build/start timeout.")
+    parser.add_argument(
+        "--start-batch-size",
+        type=int,
+        default=8,
+        help="Workers to start per Compose wave (default: 8; lower this on small hosts).",
+    )
+    parser.add_argument(
+        "--start-delay-s",
+        type=float,
+        default=0.1,
+        help="Delay between worker startup waves (default: 0.1).",
+    )
     parser.add_argument("--report", default="", help="JSON report path.")
     parser.add_argument("--project-name", default="", help="Docker Compose project name.")
     parser.add_argument("--compose-command", default="", help="Compose executable, e.g. 'docker compose' or 'podman-compose'.")
