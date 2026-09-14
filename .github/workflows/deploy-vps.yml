@@ -593,7 +593,7 @@ jobs:
             apps/silicium-node/ci-artifacts/silicium-node-windows-dev.exe
             apps/silicium-node/ci-artifacts/silicium-node-windows.exe
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
       - name: Stage desktop installers on VPS
         if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full' }}
@@ -762,7 +762,7 @@ jobs:
             apps/silicium-node/ci-artifacts/silicium-node-linux.AppImage
             apps/silicium-node/ci-artifacts/silicium-node-linux.rpm
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
       - name: Stage Linux bundle on VPS
         if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full' }}

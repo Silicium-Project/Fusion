@@ -162,7 +162,7 @@ jobs:
             apps/silicium-node/src-tauri/target/release/bundle/deb/*.deb
             apps/silicium-node/src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
       - name: Reclaim Linux build artifacts
         if: always()
