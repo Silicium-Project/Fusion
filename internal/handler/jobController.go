@@ -483,6 +483,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"fragments":        summary["fragments"],
 			"nodeRuns":         summary["node_runs"],
 			"splitTree":        summary["split_tree"],
+			"performance":      summary["performance"],
 		},
 		"devnet": map[string]any{
 			"enabled":    devnetTrace["enabled"],
@@ -548,6 +549,13 @@ func (h *Handler) networkJobSummary(rootID string, fallback map[string]any) map[
 			}
 			failure := networkTaskFailureDetails(dir, item)
 			fragment := map[string]any{"taskId": stringValue(item["task_id"]), "status": status, "handledBy": stringValue(item["handled_by"]), "stage": stringValue(task["kind"]), "fragmentIndex": task["fragment_index"], "fragmentCount": task["fragment_count"]}
+			if taskID := stringValue(item["task_id"]); taskID != "" {
+				resultName := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(taskID)
+				result := readJSONMap(filepath.Join(dir, "..", "result."+resultName+".json"))
+				if performance, ok := result["performance"]; ok {
+					fragment["performance"] = performance
+				}
+			}
 			if detail := networkFailureDetail(failure); detail != "" {
 				fragment["failureDetail"] = detail
 				if networkTaskFailed(status) {
