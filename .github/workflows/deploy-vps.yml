@@ -160,7 +160,7 @@ jobs:
 
             if matches '^(BackEnd|FrontEnd|Network)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$|^\.gitmodules$'; then web=true; fi
             if matches '^(BackEnd|Network)(/|$)|^deploy/(compose|linux)/'; then network=true; fi
-            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/(build-linux-client|verify-linux-bundles)\.sh$|^deploy/release/|^\.gitmodules$'; then node_build=true; fi
+            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/(build-linux-client|verify-linux-bundles)\.sh$|^deploy/release/|^deploy/linux/(post-deploy-check|publish-package-repositories)\.sh$|^\.github/workflows/(build|deploy-vps)\.yml$|^\.gitmodules$'; then node_build=true; fi
             if matches '^BackEnd$|^FrontEnd$|^Network$|^\.gitmodules$'; then submodules=true; fi
             if matches '^(BackEnd|FrontEnd|Network|apps/silicium-node|deploy/|\.gitmodules$|\.github/workflows/)'; then validate=true; fi
             if [[ "$web" == true || "$network" == true || "$node_build" == true ]]; then deployable=true; fi
