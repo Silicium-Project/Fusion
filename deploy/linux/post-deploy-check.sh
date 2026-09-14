@@ -241,6 +241,14 @@ curl -fsS --max-time 8 "http://127.0.0.1:${reputation_port}/health" >/dev/null
 
 downloads_dir="${SILICIUM_DOWNLOADS_DIR:-$DATA_ROOT/downloads}"
 download_base_url="${SILICIUM_DOWNLOAD_BASE_URL:-$channel_public_base_url/downloads}"
+download_tls_args=()
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  # The dev channel is exposed through the private WireGuard endpoint and its
+  # local CA is intentionally not installed in every caller's trust store.
+  # The route is still authenticated by the private network; do not let a
+  # CA trust-store difference make a healthy deployment fail its postcheck.
+  download_tls_args=(-k)
+fi
 [[ -s "$downloads_dir/update-manifest.json" ]] || {
   echo "Missing update manifest: $downloads_dir/update-manifest.json" >&2
   exit 1
@@ -264,7 +272,7 @@ for artifact in "${required_artifacts[@]}"; do
       echo "Missing published node artifact: $downloads_dir/$artifact" >&2
       exit 1
     fi
-    curl -fsSIL --max-time 8 "$download_base_url/$artifact" >/dev/null
+    curl -fsSIL --max-time 8 "${download_tls_args[@]}" "$download_base_url/$artifact" >/dev/null
 done
 package_suite=stable
 if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
@@ -273,7 +281,7 @@ fi
 for repository_metadata in \
   "apt/dists/${package_suite}/InRelease" \
   "rpm/repodata/repomd.xml"; do
-  curl -fsSIL --max-time 8 "$download_base_url/$repository_metadata" >/dev/null || {
+  curl -fsSIL --max-time 8 "${download_tls_args[@]}" "$download_base_url/$repository_metadata" >/dev/null || {
     echo "Missing published package repository metadata: $download_base_url/$repository_metadata" >&2
     exit 1
   }
