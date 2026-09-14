@@ -587,6 +587,7 @@ jobs:
 
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: silicium-node-windows-installers
           path: |
@@ -596,7 +597,7 @@ jobs:
           retention-days: 1
 
       - name: Stage desktop installers on VPS
-        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full') }}
         working-directory: apps/silicium-node
         shell: powershell
         env:
@@ -755,6 +756,7 @@ jobs:
 
       - name: Upload Linux installers
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: silicium-node-linux-installers
           path: |
@@ -765,7 +767,7 @@ jobs:
           retention-days: 1
 
       - name: Stage Linux bundle on VPS
-        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full') }}
         working-directory: apps/silicium-node
         shell: bash
         env:
@@ -823,12 +825,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download release installers
-        uses: actions/download-artifact@v4
-        with:
-          pattern: silicium-node-*-installers
-          path: release-assets
-          merge-multiple: true
+      - name: Retrieve release installers from VPS staging
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+          [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST" >&2; exit 1; }
+          [[ -n "${VPS_SSH_KEY:-}" ]] || { echo "Missing VPS_SSH_KEY" >&2; exit 1; }
+          [[ -n "${VPS_KNOWN_HOSTS:-}" ]] || { echo "Missing VPS_KNOWN_HOSTS" >&2; exit 1; }
+          install -d -m 700 "$HOME/.ssh" release-assets
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
+          remote_files=(
+            silicium-node-windows-dev.exe
+            silicium-node-windows.exe
+            silicium-node-linux.deb
+            silicium-node-linux.AppImage
+            silicium-node-linux.rpm
+          )
+          for remote_file in "${remote_files[@]}"; do
+            ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+              "test -s '$release_staging/$remote_file'"
+            scp "${ssh_opts[@]}" -P "$vps_port" \
+              "$vps_user@$VPS_HOST:$release_staging/$remote_file" release-assets/
+          done
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
 
       - name: Prepare release metadata
         id: meta

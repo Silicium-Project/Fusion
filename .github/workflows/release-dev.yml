@@ -22,6 +22,7 @@ jobs:
     uses: ./.github/workflows/build.yml
     with:
       release_channel: dev
+      stage_release: true
     secrets: inherit
 
   publish:
@@ -35,11 +36,42 @@ jobs:
           sparse-checkout: apps/silicium-node/package.json
           sparse-checkout-cone-mode: false
 
-      - name: Download validated development bundles
-        uses: actions/download-artifact@v4
-        with:
-          name: silicium-node-linux-build
-          path: release-assets
+      - name: Configure SSH for release handoff
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_SSH_KEY:-}" ]] || { echo "Missing VPS_SSH_KEY" >&2; exit 1; }
+          [[ -n "${VPS_KNOWN_HOSTS:-}" ]] || { echo "Missing VPS_KNOWN_HOSTS" >&2; exit 1; }
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Retrieve staged development bundles
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+          [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST" >&2; exit 1; }
+          install -d -m 0755 release-assets
+          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
+          for remote_file in silicium-node-linux-dev.AppImage silicium-node-linux-dev.deb silicium-node-linux-dev.rpm; do
+            ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+              "test -s '$release_staging/$remote_file'"
+            scp "${ssh_opts[@]}" -P "$vps_port" \
+              "$vps_user@$VPS_HOST:$release_staging/$remote_file" release-assets/
+          done
 
       - name: Prepare development release identity
         id: meta
