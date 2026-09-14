@@ -28,6 +28,12 @@ backend_network_name="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field backe
 frontend_network_name="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field frontend_network_name)"
 channel_tls_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field tls_root)"
 public_base_url="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field public_base_url)"
+vpn_interface=""
+vpn_server_address=""
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  vpn_interface="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field vpn_interface)"
+  vpn_server_address="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field vpn_server_address)"
+fi
 COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
 APP_PACKAGE_JSON="$ROOT/apps/silicium-node/package.json"
 initial_config_dir="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
@@ -89,6 +95,21 @@ export SILICIUM_PUBLIC_API_BASE="${SILICIUM_PUBLIC_API_BASE:-/api}"
 export SILICIUM_CORS_ALLOWED_ORIGINS="${SILICIUM_CORS_ALLOWED_ORIGINS:-$public_base_url}"
 export SILICIUM_NGINX_CONFIG="$SILICIUM_CONFIG_DIR/nginx.conf"
 unset -f channel_or_legacy_default
+
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  command -v wg >/dev/null || { echo "WireGuard is not installed; run prepare-dev-config.sh first." >&2; exit 1; }
+  command -v ip >/dev/null || { echo "iproute2 is required for the dev VPN ingress." >&2; exit 1; }
+  if ! ip -4 addr show dev "$vpn_interface" | grep -Eq "inet[[:space:]]+${vpn_server_address}/"; then
+    echo "The dev VPN address ${vpn_server_address} is not active on ${vpn_interface}." >&2
+    exit 1
+  fi
+  # A dev deployment must never silently fall back to a loopback or public
+  # bind. The WireGuard bootstrap creates the address before Compose starts.
+  export SILICIUM_VPN_INTERFACE="$vpn_interface"
+  export SILICIUM_VPN_SERVER_ADDRESS="$vpn_server_address"
+  export SILICIUM_PROXY_BIND_ADDRESS="$vpn_server_address"
+  export SILICIUM_TURN_EXTERNAL_IP="${SILICIUM_TURN_EXTERNAL_IP:-$vpn_server_address}"
+fi
 
 install -d -m 0750 "$SILICIUM_CONFIG_DIR"
 sed \

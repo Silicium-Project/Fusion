@@ -42,6 +42,10 @@ Il ne faut pas remplacer ce mecanisme par un `git submodule update --remote`
 pendant le deploiement: le contenu deploye ne correspondrait alors plus au
 commit Fusion audite.
 
+Le canal `dev` est prive par WireGuard sur le VPS (`10.77.0.1:8443`) ; la
+production reste l'unique ingress web publique. Voir [deploy/README.md](deploy/README.md)
+pour creer ou revoquer les pairs de l'equipe.
+
 Le workflow utilise la GitHub App Silicium en lecture seule pour cloner les
 depots prives. La publication du gitlink sur `main` peut utiliser soit un token
 ecriture configure dans `SILICIUM_SYNC_PUSH_TOKEN`, soit une deploy key SSH

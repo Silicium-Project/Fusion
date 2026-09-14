@@ -16,6 +16,16 @@ channel_frontend_http_port="$(channel_field frontend_http_port)"
 channel_reputation_http_port="$(channel_field reputation_http_port)"
 channel_proxy_http_port="$(channel_field proxy_http_port)"
 channel_public_base_url="$(channel_field public_base_url)"
+channel_vpn_interface=""
+channel_vpn_network=""
+channel_vpn_server_address=""
+channel_vpn_listen_port=""
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  channel_vpn_interface="$(channel_field vpn_interface)"
+  channel_vpn_network="$(channel_field vpn_network)"
+  channel_vpn_server_address="$(channel_field vpn_server_address)"
+  channel_vpn_listen_port="$(channel_field vpn_listen_port)"
+fi
 CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
 DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
 COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
@@ -98,6 +108,26 @@ export SILICIUM_BACKEND_HTTP_PORT="$backend_port"
 export SILICIUM_FRONTEND_HTTP_PORT="$frontend_port"
 export SILICIUM_REPUTATION_HTTP_PORT="$reputation_port"
 export SILICIUM_ORCHESTRATOR_PORT="$orchestrator_port"
+
+public_route_target=127.0.0.1
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  command -v wg >/dev/null || { echo "WireGuard is missing on the dev VPS." >&2; exit 1; }
+  command -v ip >/dev/null || { echo "iproute2 is missing on the dev VPS." >&2; exit 1; }
+  systemctl is-active --quiet "wg-quick@${channel_vpn_interface}.service" || {
+    echo "The dev WireGuard service is not active." >&2
+    systemctl status --no-pager -l "wg-quick@${channel_vpn_interface}.service" >&2 || true
+    exit 1
+  }
+  ip -4 addr show dev "$channel_vpn_interface" | grep -Eq "inet[[:space:]]+${channel_vpn_server_address}/" || {
+    echo "The dev VPN address ${channel_vpn_server_address} is not active on ${channel_vpn_interface}." >&2
+    exit 1
+  }
+  [[ "$(wg show "$channel_vpn_interface" listen-port)" == "$channel_vpn_listen_port" ]] || {
+    echo "The dev WireGuard listen port is not ${channel_vpn_listen_port}." >&2
+    exit 1
+  }
+  public_route_target="$channel_vpn_server_address"
+fi
 
 echo "Checking Docker Compose services for channel $RELEASE_CHANNEL..."
 docker compose --env-file "$COMPOSE_ENV" -f "$COMPOSE_FILE" ps
@@ -253,7 +283,7 @@ print(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
 PY
 )
 EOF
-public_route_args=(--resolve "${public_route_host}:${public_route_port}:127.0.0.1")
+public_route_args=(--resolve "${public_route_host}:${public_route_port}:${public_route_target}")
 public_tls_args=()
 if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
   public_tls_args=(-k)

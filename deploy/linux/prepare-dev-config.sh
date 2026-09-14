@@ -32,6 +32,19 @@ TURN_PORT="$(channel_field turn_port)"
 TURN_TLS_PORT="$(channel_field turn_tls_port)"
 TURN_RELAY_MIN_PORT="$(channel_field turn_relay_min_port)"
 TURN_RELAY_MAX_PORT="$(channel_field turn_relay_max_port)"
+VPN_INTERFACE="$(channel_field vpn_interface)"
+VPN_NETWORK="$(channel_field vpn_network)"
+VPN_SERVER_ADDRESS="$(channel_field vpn_server_address)"
+VPN_LISTEN_PORT="$(channel_field vpn_listen_port)"
+VPN_ENDPOINT="$(channel_field vpn_endpoint)"
+VPN_PROXY_BIND_ADDRESS="$(channel_field vpn_proxy_bind_address)"
+
+# Provision the private dev ingress before Compose is configured to bind to its
+# VPN address. The script is idempotent and refuses to claim an unmanaged
+# WireGuard interface or overwrite an unrelated configuration.
+if [[ "${SILICIUM_SKIP_VPN_BOOTSTRAP:-0}" != "1" ]]; then
+  bash "$ROOT/deploy/vpn/install-server.sh" "$ROOT"
+fi
 
 release_version="${SILICIUM_RELEASE_VERSION:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")}"
 release_build="${SILICIUM_RELEASE_BUILD:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf local)}"
@@ -108,12 +121,18 @@ set_env_value "$compose_env" SILICIUM_TURN_PORT "$TURN_PORT"
 set_env_value "$compose_env" SILICIUM_TURN_TLS_PORT "$TURN_TLS_PORT"
 set_env_value "$compose_env" SILICIUM_TURN_RELAY_MIN_PORT "$TURN_RELAY_MIN_PORT"
 set_env_value "$compose_env" SILICIUM_TURN_RELAY_MAX_PORT "$TURN_RELAY_MAX_PORT"
-set_env_value "$compose_env" SILICIUM_PROXY_BIND_ADDRESS 127.0.0.1
+set_env_value "$compose_env" SILICIUM_VPN_INTERFACE "$VPN_INTERFACE"
+set_env_value "$compose_env" SILICIUM_VPN_NETWORK "$VPN_NETWORK"
+set_env_value "$compose_env" SILICIUM_VPN_SERVER_ADDRESS "$VPN_SERVER_ADDRESS"
+set_env_value "$compose_env" SILICIUM_VPN_LISTEN_PORT "$VPN_LISTEN_PORT"
+set_env_value "$compose_env" SILICIUM_VPN_ENDPOINT "$VPN_ENDPOINT"
+set_env_value "$compose_env" SILICIUM_PROXY_BIND_ADDRESS "$VPN_PROXY_BIND_ADDRESS"
 set_env_value "$compose_env" SILICIUM_PROXY_HTTP_PORT 8081
 set_env_value "$compose_env" SILICIUM_PROXY_HTTPS_PORT 8443
 set_env_value "$compose_env" SILICIUM_BACKEND_NETWORK_NAME silicium-dev-backend
 set_env_value "$compose_env" SILICIUM_FRONTEND_NETWORK_NAME silicium-dev-frontend
 set_env_value "$compose_env" SILICIUM_TLS_ROOT "$DATA_ROOT/tls"
+set_env_value "$compose_env" SILICIUM_TURN_EXTERNAL_IP "$VPN_SERVER_ADDRESS"
 set_env_value "$compose_env" SILICIUM_PUBLIC_ORCHESTRATOR_URL "$PUBLIC_BASE_URL/orchestrator"
 set_env_value "$compose_env" SILICIUM_CORS_ALLOWED_ORIGINS "$PUBLIC_BASE_URL"
 
@@ -130,7 +149,7 @@ set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_EXPORT_DIR /var/lib/silicium/
 set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_NODE_ID orchestrator-dev-1
 set_env_value "$backend_env" SILICIUM_SITE_STORAGE_DIR /var/lib/silicium/site/jobs
 set_env_value "$backend_env" SILICIUM_WORKLOAD_STORAGE_DIR /var/lib/silicium/site/runtime
-set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_HOST vps-910c1dbc.vps.ovh.net
+set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_HOST "$VPN_SERVER_ADDRESS"
 set_env_value "$backend_env" SILICIUM_SEED_PEERS "http://127.0.0.1:${ORCHESTRATOR_PORT}"
 set_env_value "$backend_env" SILICIUM_CONTROL_URL "http://127.0.0.1:${ORCHESTRATOR_PORT}/gossip/publish"
 set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_IDENTITY_KEY /var/lib/silicium/network/orchestrator/backend-identity/peer_identity_ed25519.pem
@@ -161,7 +180,7 @@ set_env_value "$orchestrator_env" SILICIUM_NODE_PORT "$ORCHESTRATOR_PORT"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_CHANNEL dev
 set_env_value "$orchestrator_env" SILICIUM_APP_VERSION "$release_version"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_BUILD "$release_build"
-set_env_value "$orchestrator_env" SILICIUM_NODE_ADVERTISE_HOST vps-910c1dbc.vps.ovh.net
+set_env_value "$orchestrator_env" SILICIUM_NODE_ADVERTISE_HOST "$VPN_SERVER_ADDRESS"
 set_env_value "$orchestrator_env" SILICIUM_NODE_ADVERTISE_URL "$PUBLIC_BASE_URL/orchestrator"
 set_env_value "$orchestrator_env" SILICIUM_MESH_KEY "$mesh_key"
 set_env_value "$orchestrator_env" SILICIUM_EXPORT_DIR "$DATA_ROOT/network/orchestrator/export"
@@ -187,12 +206,48 @@ if [[ ! -s "$CONFIG_DIR/update-signing-key.pem" ]]; then
 fi
 chmod 0600 "$CONFIG_DIR/update-signing-key.pem"
 
+tls_ca_key="$CONFIG_DIR/dev-ca.key.pem"
+tls_ca_cert="$DATA_ROOT/tls/dev-ca.crt.pem"
 tls_cert="$DATA_ROOT/tls/live/vps-910c1dbc.vps.ovh.net/fullchain.pem"
 tls_key="$DATA_ROOT/tls/live/vps-910c1dbc.vps.ovh.net/privkey.pem"
+if [[ ! -s "$tls_ca_key" || ! -s "$tls_ca_cert" ]]; then
+  umask 077
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$tls_ca_key" >/dev/null 2>&1
+  openssl req -x509 -new -sha256 -days 3650 \
+    -key "$tls_ca_key" -out "$tls_ca_cert" \
+    -subj "/CN=Silicium Development CA" \
+    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign" >/dev/null 2>&1
+fi
+chmod 0600 "$tls_ca_key"
+chmod 0644 "$tls_ca_cert"
+
+server_cert_needs_refresh=0
 if [[ ! -s "$tls_cert" || ! -s "$tls_key" ]]; then
-  openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
-    -keyout "$tls_key" -out "$tls_cert" \
-    -subj "/CN=vps-910c1dbc.vps.ovh.net" >/dev/null 2>&1
+  server_cert_needs_refresh=1
+elif ! openssl x509 -in "$tls_cert" -noout -text 2>/dev/null | grep -q "IP Address:${VPN_SERVER_ADDRESS}"; then
+  server_cert_needs_refresh=1
+fi
+if [[ "$server_cert_needs_refresh" -eq 1 ]]; then
+  csr_file="$(mktemp)"
+  ext_file="$(mktemp)"
+  serial_file="${tls_ca_cert%.*}.srl"
+  trap 'rm -f "$csr_file" "$ext_file" "$serial_file"' EXIT
+  umask 077
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tls_key" >/dev/null 2>&1
+  openssl req -new -sha256 -key "$tls_key" -out "$csr_file" \
+    -subj "/CN=$VPN_SERVER_ADDRESS" >/dev/null 2>&1
+  printf '%s\n' \
+    "basicConstraints=critical,CA:FALSE" \
+    "keyUsage=critical,digitalSignature,keyEncipherment" \
+    "extendedKeyUsage=serverAuth" \
+    "subjectAltName=IP:${VPN_SERVER_ADDRESS},DNS:vps-910c1dbc.vps.ovh.net" > "$ext_file"
+  openssl x509 -req -sha256 -days 825 \
+    -in "$csr_file" -CA "$tls_ca_cert" -CAkey "$tls_ca_key" \
+    -CAcreateserial -CAserial "$serial_file" -out "$tls_cert" \
+    -extfile "$ext_file" >/dev/null 2>&1
+  rm -f "$csr_file" "$ext_file" "$serial_file"
+  trap - EXIT
 fi
 chmod 0600 "$tls_key"
 chmod 0644 "$tls_cert"

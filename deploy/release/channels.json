@@ -24,13 +24,19 @@
       "turn_tls_port": 6349,
       "turn_relay_min_port": 49260,
       "turn_relay_max_port": 49300,
-      "proxy_bind_address": "127.0.0.1",
+      "vpn_interface": "wg0",
+      "vpn_network": "10.77.0.0/24",
+      "vpn_server_address": "10.77.0.1",
+      "vpn_listen_port": 51820,
+      "vpn_endpoint": "vps-910c1dbc.vps.ovh.net:51820",
+      "vpn_proxy_bind_address": "10.77.0.1",
+      "proxy_bind_address": "10.77.0.1",
       "proxy_http_port": 8081,
       "proxy_https_port": 8443,
       "backend_network_name": "silicium-dev-backend",
       "frontend_network_name": "silicium-dev-frontend",
       "tls_root": "/var/lib/silicium-dev/tls",
-      "public_base_url": "https://vps-910c1dbc.vps.ovh.net:8443"
+      "public_base_url": "https://10.77.0.1:8443"
     },
     "prod": {
       "branch": "main",

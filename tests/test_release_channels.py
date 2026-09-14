@@ -21,6 +21,13 @@ def test_release_channels_are_explicit_and_isolated() -> None:
     assert dev["orchestrator_port"] != prod["orchestrator_port"]
     assert dev["proxy_https_port"] != prod["proxy_https_port"]
     assert dev["backend_network_name"] != prod["backend_network_name"]
+    assert dev["vpn_interface"] == "wg0"
+    assert dev["vpn_network"] == "10.77.0.0/24"
+    assert dev["vpn_server_address"] == "10.77.0.1"
+    assert dev["vpn_listen_port"] == 51820
+    assert dev["vpn_proxy_bind_address"] == dev["proxy_bind_address"]
+    assert dev["public_base_url"] == "https://10.77.0.1:8443"
+    assert "vpn_interface" not in prod
 
 
 def test_channel_inference_keeps_main_and_tags_production_only() -> None:

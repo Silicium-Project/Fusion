@@ -69,8 +69,9 @@ The Network peer table rejects peers from the other release channel, preventing
 development workers from claiming production tasks and vice versa. The
 deployment roots, Compose project names, data roots, ports and systemd unit
 names in the contract are separate. Dev and prod can therefore run on the same
-VPS; dev is bound to local HTTPS port `8443` and does not replace the
-production ingress on `80/443`.
+VPS; dev is bound to the WireGuard address `10.77.0.1:8443` and does not
+replace the production ingress on `80/443`. The dev web/API surface is private
+to the `10.77.0.0/24` VPN and is not a public Internet endpoint.
 
 ## Canonical flow
 
@@ -96,8 +97,9 @@ production ingress on `80/443`.
    on the VPS runners, builds Windows installers on `windows-latest`, publishes
    release metadata, deploys, and runs post-deploy checks.
 6. `deploy-dev-vps.yml` is the explicit development deployment path. It pulls
-   only `dev`, prepares isolated development configuration, deploys to
-   `/opt/silicium-dev`, and never stops or rewrites production units.
+   only `dev`, provisions the isolated WireGuard ingress, prepares isolated
+   development configuration, deploys to `/opt/silicium-dev`, and never stops
+   or rewrites production units.
 7. `deploy/compose/e2e.sh` validates the real container path on the VPS.
 8. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.

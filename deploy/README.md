@@ -14,16 +14,17 @@ The channel contract lives in `deploy/release/channels.json`:
 - `dev` follows the `dev` branch, uses `/opt/silicium-dev`,
   `/etc/silicium-dev`, `/var/lib/silicium-dev` and Compose project
   `silicium-dev` by default. On a shared VPS it uses host ports `46200`,
-  `8180`, `3300`, `5274`, `9191` and local HTTPS ingress `8443`, with
-  channel-suffixed systemd units such as `silicium-orchestrator-dev.service`;
+  `8180`, `3300`, `5274`, `9191` and the private WireGuard ingress
+  `10.77.0.1:8443`, with channel-suffixed systemd units such as
+  `silicium-orchestrator-dev.service`;
 - `prod` follows `main` and `v*` tags and keeps the legacy production paths
   `/opt/silicium`, `/etc/silicium`, `/var/lib/silicium` and project `silicium`.
 
 Use an explicit channel for a development deployment. The bootstrap creates
-isolated dev secrets, PostgreSQL credentials and a self-signed local TLS
-certificate without reading production configuration. The installer and
-Compose scripts then propagate the channel to the FrontEnd, BackEnd,
-orchestrator, update manifest and Network peer identity:
+the isolated WireGuard server, dev secrets, PostgreSQL credentials and a TLS
+certificate signed by the dev CA without reading production configuration. The
+installer and Compose scripts then propagate the channel to the FrontEnd,
+BackEnd, orchestrator, update manifest and Network peer identity:
 
 ```bash
 sudo SILICIUM_RELEASE_CHANNEL=dev \
@@ -35,10 +36,33 @@ sudo SILICIUM_RELEASE_CHANNEL=dev \
 ```
 
 The guarded `.github/workflows/deploy-dev-vps.yml` workflow runs the same
-sequence over the configured VPS SSH connection. Its dev ingress is
-`https://vps-910c1dbc.vps.ovh.net:8443`; the certificate is intentionally
-self-signed for development, so use `curl -k` or install the generated cert
-when testing from another machine.
+sequence over the configured VPS SSH connection. Its dev ingress is private to
+the WireGuard network: `https://10.77.0.1:8443`. The generated CA certificate
+is at `/var/lib/silicium-dev/tls/dev-ca.crt.pem`; install that certificate on
+an authorized team device before opening the site in a browser.
+
+### Development VPN
+
+The dev deployment provisions `wg0` with server address `10.77.0.1/24` and
+listens for WireGuard clients on UDP `51820`. UFW permits the VPN handshake,
+the dev web ingress and the orchestrator/worker control-plane ports only from
+`10.77.0.0/24`; the production ingress remains separate. If an OVH cloud
+firewall or security group is enabled, allow inbound UDP `51820` there too.
+
+Create and revoke named internal-team peers on the VPS without committing
+private keys to Git:
+
+```bash
+sudo bash deploy/vpn/manage-peer.sh /opt/silicium-dev add alice
+sudo cat /etc/wireguard/silicium-dev-peers/alice.conf
+sudo bash deploy/vpn/manage-peer.sh /opt/silicium-dev list
+sudo bash deploy/vpn/manage-peer.sh /opt/silicium-dev revoke alice
+```
+
+Copy a generated client configuration securely into the WireGuard application
+on the team device. `rotate <name>` revokes the old key and creates a new
+configuration for that peer. Client `AllowedIPs` is limited to `10.77.0.0/24`;
+the VPN is not used as an Internet gateway.
 
 Production remains explicit in CI and is also the safe default for the
 production paths:
@@ -217,12 +241,13 @@ the container PostgreSQL URL at runtime; do not replace the backend environment
 file with the example file.
 
 The backend reaches the host-side orchestrator and experiment/MCP RPC event
-socket through `host.docker.internal`; the Compose file maps that name to the
-`172.18.0.1` gateway of the named Docker network. The reverse proxy uses host
-network mode and reaches the host-side services through loopback. The HTTP
-experiment API and its control RPC remain
-private to the host; only the event socket needed by the backend is reachable
-from the backend container.
+socket through `host.docker.internal`; the Compose deployment resolves that
+name to the gateway of the channel-specific Docker network. The reverse proxy
+uses the same isolated bridge and reaches the host-side orchestrator through
+that gateway. The HTTP experiment API and its control RPC remain private to
+the host; only the event socket needed by the backend is reachable from the
+backend container. The dev proxy itself is bound to `10.77.0.1:8443`, and UFW
+permits it only to WireGuard clients in `10.77.0.0/24`.
 
 For the current legacy SQLite installation, the migration detects
 `/var/lib/silicium/site/silicium.db`, checks its integrity, backs it up, creates
