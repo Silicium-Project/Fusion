@@ -60,6 +60,32 @@ export function formatDuration(start?: string, end?: string): string {
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
+export function formatMilliseconds(value?: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const milliseconds = Number(value);
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return '—';
+  if (milliseconds < 1000) return `${milliseconds < 10 ? milliseconds.toFixed(1) : Math.round(milliseconds)} ms`;
+  const seconds = milliseconds / 1000;
+  if (seconds < 60) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} s`;
+  const wholeSeconds = Math.round(seconds);
+  const minutes = Math.floor(wholeSeconds / 60);
+  return `${minutes} min ${wholeSeconds % 60} s`;
+}
+
+export function formatPerformancePercent(value?: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const ratio = Number(value);
+  if (!Number.isFinite(ratio) || ratio < 0) return '—';
+  return `${(ratio * 100).toFixed(1)} %`;
+}
+
+export function formatPerformanceMultiple(value?: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const ratio = Number(value);
+  if (!Number.isFinite(ratio) || ratio < 0) return '—';
+  return `${ratio.toFixed(2)}×`;
+}
+
 export function compactIdentifier(value?: string, head = 7, tail = 5): string {
   if (!value) return '—';
   if (value.length <= head + tail + 3) return value;

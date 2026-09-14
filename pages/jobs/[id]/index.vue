@@ -10,6 +10,7 @@
         <MetricCard label="Parties" :value="fragmentTotal" :detail="`${fragmentDone} terminées`" icon="layers" tone="mint" />
         <MetricCard label="Machines mobilisées" :value="nodeCount" detail="calcul et vérification" icon="nodes" tone="ink" />
         <MetricCard label="Durée" :value="duration" detail="depuis le démarrage" icon="clock" tone="violet" />
+        <MetricCard label="Rendement calcul" :value="computeShare" :detail="performanceDetail" icon="activity" tone="mint" />
         <MetricCard label="Preuves" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? 'traçabilité active' : 'traçabilité inactive'" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
@@ -28,7 +29,7 @@
         </div>
       </div>
     </template>
-    <div v-else-if="loading" class="detail-loading"><div class="skeleton"></div><div class="metric-grid"><div v-for="n in 4" :key="n" class="skeleton"></div></div><div class="skeleton large"></div></div>
+    <div v-else-if="loading" class="detail-loading"><div class="skeleton"></div><div class="metric-grid"><div v-for="n in 5" :key="n" class="skeleton"></div></div><div class="skeleton large"></div></div>
     <UiCard v-else padded><UiEmptyState title="Projet introuvable" :description="error || 'Ce projet n’existe pas ou n’appartient pas à votre compte.'" icon="alert"><UiButton to="/jobs" variant="secondary" size="small">Retour aux projets</UiButton></UiEmptyState></UiCard>
     <UiModal :open="confirmOpen" title="Arrêter le calcul ?" @close="confirmOpen = false"><p class="modal-copy">Les parties encore en cours recevront une demande d’arrêt. Les résultats déjà vérifiés resteront enregistrés.</p><div class="modal-actions"><UiButton variant="ghost" @click="confirmOpen = false">Continuer le calcul</UiButton><UiButton variant="danger" :loading="cancelling" @click="cancel">Arrêter maintenant</UiButton></div></UiModal>
   </div>
@@ -36,7 +37,7 @@
 
 <script setup lang="ts">
 import type { JobDashboard, JobFragment } from '~/types/api';
-import { compactIdentifier, formatDuration } from '~/utils/format';
+import { compactIdentifier, formatDuration, formatPerformanceMultiple, formatPerformancePercent } from '~/utils/format';
 import { compactJobError, fragmentStateLabel, fragmentVisualState, isJobCancellable, shouldRefreshJob } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();
@@ -51,6 +52,10 @@ const fragmentActive = computed(() => fragments.value.filter(item => ['computing
 const fragmentFailed = computed(() => fragments.value.filter(item => fragmentVisualState(item.status) === 'failed').length);
 const nodeCount = computed(() => new Set(fragments.value.map(fragmentNode).filter(Boolean)).size || Number((dashboard.value?.job.network?.nodes as unknown[])?.length || 0));
 const duration = computed(() => dashboard.value ? formatDuration(dashboard.value.job.startedAt, dashboard.value.job.completedAt) : '—');
+const performance = computed(() => dashboard.value?.summary?.performance);
+const computeShare = computed(() => formatPerformancePercent(performance.value?.compute_to_total_ratio));
+const computeNetwork = computed(() => formatPerformanceMultiple(performance.value?.compute_to_network_ratio));
+const performanceDetail = computed(() => computeNetwork.value === '—' ? 'mesure réseau indisponible' : `${computeNetwork.value} calcul / réseau`);
 const cancellable = computed(() => Boolean(dashboard.value && isJobCancellable(dashboard.value.job.status)));
 const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || (dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
 function fragmentIndex(fragment: JobFragment, fallback: number) { return fragment.fragment_index ?? fragment.fragmentIndex ?? fallback; }

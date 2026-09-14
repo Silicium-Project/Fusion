@@ -191,6 +191,25 @@ export interface JobFragment {
   x_end?: number;
   y_start?: number;
   y_end?: number;
+  performance?: JobPerformance;
+  verify_performance?: JobPerformance;
+  [key: string]: unknown;
+}
+
+export interface JobPerformance {
+  schema?: string;
+  total_ms?: number;
+  compute_ms?: number;
+  compute_work_ms?: number;
+  verification_ms?: number;
+  network_ms?: number;
+  overhead_ms?: number;
+  worker_overhead_ms?: number;
+  compute_to_total_ratio?: number | null;
+  compute_to_network_ratio?: number | null;
+  parallelism_factor?: number | null;
+  measured_compute_tasks?: number;
+  measured_verify_tasks?: number;
   [key: string]: unknown;
 }
 
@@ -216,6 +235,7 @@ export interface JobDashboard {
     network?: Record<string, unknown>;
     fragments?: JobFragment[];
     nodeRuns?: Record<string, unknown>[];
+    performance?: JobPerformance;
     splitTree?: unknown;
     [key: string]: unknown;
   };
