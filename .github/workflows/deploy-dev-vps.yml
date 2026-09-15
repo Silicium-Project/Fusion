@@ -176,6 +176,10 @@ jobs:
           sudo git config --system --add safe.directory "$VPS_ROOT"
           sudo git -C "$VPS_ROOT" remote set-url origin https://github.com/Silicium-Project/Fusion.git
           git_auth -C "$VPS_ROOT" fetch --no-tags --prune origin "$DEPLOY_REF"
+          if [[ -n "$(sudo git -C "$VPS_ROOT" status --porcelain)" ]]; then
+            sudo git -C "$VPS_ROOT" stash push --include-untracked \
+              -m "codex pre-deploy $(date -u +%Y%m%dT%H%M%SZ)"
+          fi
           sudo git -C "$VPS_ROOT" checkout "$DEPLOY_REF"
           sudo git -C "$VPS_ROOT" reset --hard "origin/$DEPLOY_REF"
           sudo git -C "$VPS_ROOT" submodule sync -- BackEnd FrontEnd Network
