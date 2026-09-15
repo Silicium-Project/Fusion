@@ -2,6 +2,12 @@ name: Submodule CI gate
 
 on:
   workflow_call:
+    inputs:
+      release_channel:
+        description: "Submodule branch/channel to validate."
+        required: false
+        type: string
+        default: dev
 
 permissions:
   contents: read
@@ -69,8 +75,14 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
+          RELEASE_CHANNEL: ${{ inputs.release_channel || 'dev' }}
         run: |
           set -euo pipefail
+          case "$RELEASE_CHANNEL" in
+            dev) submodule_ref=dev ;;
+            prod) submodule_ref=main ;;
+            *) echo "Unsupported release channel: $RELEASE_CHANNEL" >&2; exit 1 ;;
+          esac
           deadline=$(( $(date +%s) + 2700 ))
           report="$RUNNER_TEMP/submodule-ci-gate.log"
           while true; do
@@ -82,7 +94,7 @@ jobs:
               repo="${repo#git@github.com:}"
               repo="${repo%.git}"
               if ! node .github/scripts/check-submodule-ci.mjs \
-                --repo "$repo" --latest-green --label "$path" >>"$report" 2>&1; then
+                --repo "$repo" --ref "$submodule_ref" --latest-green --label "$path" >>"$report" 2>&1; then
                 gate_failed=1
               fi
             done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | sed -E 's/^submodule\.([^ ]+)\.path[[:space:]]+([^ ]+)$/\1 \2/')

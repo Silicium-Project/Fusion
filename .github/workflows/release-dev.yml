@@ -1,0 +1,129 @@
+name: Development channel
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Development ref to validate and publish."
+        required: false
+        default: dev
+
+permissions:
+  contents: write
+
+concurrency:
+  group: silicium-dev-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      release_channel: dev
+      stage_release: true
+    secrets: inherit
+
+  publish:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out development metadata
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref_name }}
+          sparse-checkout: apps/silicium-node/package.json
+          sparse-checkout-cone-mode: false
+
+      - name: Configure SSH for release handoff
+        shell: bash
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_SSH_KEY:-}" ]] || { echo "Missing VPS_SSH_KEY" >&2; exit 1; }
+          [[ -n "${VPS_KNOWN_HOSTS:-}" ]] || { echo "Missing VPS_KNOWN_HOSTS" >&2; exit 1; }
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+
+      - name: Retrieve staged development bundles
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+        run: |
+          set -euo pipefail
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+          [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST" >&2; exit 1; }
+          install -d -m 0755 release-assets
+          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
+          for remote_file in silicium-node-linux-dev.AppImage silicium-node-linux-dev.deb silicium-node-linux-dev.rpm; do
+            ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+              "test -s '$release_staging/$remote_file'"
+            scp "${ssh_opts[@]}" -P "$vps_port" \
+              "$vps_user@$VPS_HOST:$release_staging/$remote_file" release-assets/
+          done
+
+      - name: Prepare development release identity
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/silicium-node/package.json').version")"
+          short_sha="${GITHUB_SHA:0:12}"
+          backend_sha="$(git ls-tree HEAD BackEnd | awk '{print $3}')"
+          frontend_sha="$(git ls-tree HEAD FrontEnd | awk '{print $3}')"
+          network_sha="$(git ls-tree HEAD Network | awk '{print $3}')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=dev-${version}-${short_sha}" >> "$GITHUB_OUTPUT"
+          python3 - "$GITHUB_SHA" "$version" "$backend_sha" "$frontend_sha" "$network_sha" > release-assets/release-channel.json <<'PY'
+          import json
+          import sys
+
+          commit, version, backend, frontend, network = sys.argv[1:]
+          json.dump(
+              {
+                  "schema_version": 1,
+                  "channel": "dev",
+                  "environment": "development",
+                  "commit": commit,
+                  "version": version,
+                  "components": {
+                      "BackEnd": backend,
+                      "FrontEnd": frontend,
+                      "Network": network,
+                  },
+              },
+              sys.stdout,
+              indent=2,
+          )
+          print()
+          PY
+
+      - name: Publish development release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "Silicium dev ${{ steps.meta.outputs.version }} (${{ github.sha }})"
+          prerelease: true
+          generate_release_notes: true
+          files: release-assets/**
+          fail_on_unmatched_files: true
+          body: |
+            Canal: `dev`
+            Version: `${{ steps.meta.outputs.version }}`
+            Commit: `${{ github.sha }}`
+            Composition: BackEnd/FrontEnd/Network SHA pinned in the artifact `release-channel.json`.
+
+            Cette release est destinée aux validations avant promotion vers `main`/`prod`.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

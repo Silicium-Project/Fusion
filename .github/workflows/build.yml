@@ -3,7 +3,25 @@ name: Build
 on:
   pull_request:
   workflow_call:
+    inputs:
+      release_channel:
+        description: "Release channel to build."
+        required: false
+        type: string
+        default: dev
+      stage_release:
+        description: "Stage the validated bundles on the VPS for a release handoff."
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Release channel to build."
+        required: false
+        type: choice
+        options: [dev, prod]
+        default: dev
 
 permissions:
   contents: read
@@ -15,12 +33,15 @@ concurrency:
 jobs:
   submodule-ci-gate:
     uses: ./.github/workflows/submodule-ci-gate.yml
+    with:
+      release_channel: ${{ inputs.release_channel || 'dev' }}
     secrets: inherit
 
   tests:
     needs: [submodule-ci-gate]
     uses: ./.github/workflows/test.yml
     with:
+      release_channel: ${{ inputs.release_channel || 'dev' }}
       skip_submodule_ci_gate: true
     secrets: inherit
 
@@ -127,16 +148,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-tauri-linux-bundler-
 
-      - name: Build Linux development bundles
+      - name: Build Linux bundles
         shell: bash
         env:
-          SILICIUM_RELEASE_CHANNEL: dev
+          SILICIUM_RELEASE_CHANNEL: ${{ inputs.release_channel || 'dev' }}
           SILICIUM_RELEASE_BUILD: ${{ github.event.pull_request.head.sha || github.sha }}
           SILICIUM_RECLAIM_RUNTIME_TARGETS: auto
+          SILICIUM_RUN_RELEASE_TESTS: "0"
         run: |
           bash "$GITHUB_WORKSPACE/deploy/ci/build-linux-client.sh" "$GITHUB_WORKSPACE"
 
       - name: Upload Linux bundles
+        if: ${{ !inputs.stage_release }}
         uses: actions/upload-artifact@v4
         with:
           name: silicium-node-linux-build
@@ -145,7 +168,47 @@ jobs:
             apps/silicium-node/src-tauri/target/release/bundle/deb/*.deb
             apps/silicium-node/src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
+
+      - name: Stage development bundles on VPS
+        if: ${{ inputs.stage_release }}
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+          [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST" >&2; exit 1; }
+          [[ -n "${VPS_SSH_KEY:-}" ]] || { echo "Missing VPS_SSH_KEY" >&2; exit 1; }
+          [[ -n "${VPS_KNOWN_HOSTS:-}" ]] || { echo "Missing VPS_KNOWN_HOSTS" >&2; exit 1; }
+          appimage="$(find apps/silicium-node/src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          deb="$(find apps/silicium-node/src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          rpm="$(find apps/silicium-node/src-tauri/target/release/bundle/rpm -maxdepth 1 -type f -name '*.rpm' -print -quit)"
+          [[ -s "$appimage" && -s "$deb" && -s "$rpm" ]] || {
+            echo "The three development bundles are required for release staging." >&2
+            exit 1
+          }
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+            "install -d -m 700 '$release_staging'"
+          scp "${ssh_opts[@]}" -P "$vps_port" "$appimage" \
+            "$vps_user@$VPS_HOST:$release_staging/silicium-node-linux-dev.AppImage"
+          scp "${ssh_opts[@]}" -P "$vps_port" "$deb" \
+            "$vps_user@$VPS_HOST:$release_staging/silicium-node-linux-dev.deb"
+          scp "${ssh_opts[@]}" -P "$vps_port" "$rpm" \
+            "$vps_user@$VPS_HOST:$release_staging/silicium-node-linux-dev.rpm"
 
       - name: Reclaim Linux build artifacts
         if: always()

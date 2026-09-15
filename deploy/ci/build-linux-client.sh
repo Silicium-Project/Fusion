@@ -34,9 +34,28 @@ export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 bash "$ROOT/deploy/ci/prepare-tauri-linux-tools.sh"
 
 pushd apps/silicium-node >/dev/null
-export SILICIUM_RELEASE_VERSION="${SILICIUM_RELEASE_VERSION:-$(node -p "require('./package.json').version")}"
 export SILICIUM_RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-local}"
+
+if [[ -z "${SILICIUM_RELEASE_VERSION:-}" ]]; then
+  if [[ "$SILICIUM_RELEASE_CHANNEL" == "prod" ]]; then
+    export SILICIUM_RELEASE_VERSION="$(node -p "require('./src-tauri/tauri.prod.conf.json').version")"
+  else
+    export SILICIUM_RELEASE_VERSION="$(node -p "require('./package.json').version")"
+  fi
+fi
+if [[ -z "${SILICIUM_UPDATE_MANIFEST_URL:-}" ]]; then
+  if [[ "$SILICIUM_RELEASE_CHANNEL" == "prod" ]]; then
+    export SILICIUM_UPDATE_MANIFEST_URL="https://vps-910c1dbc.vps.ovh.net/downloads/update-manifest.json"
+  else
+    export SILICIUM_UPDATE_MANIFEST_URL="https://10.77.0.1:8443/downloads/update-manifest.json"
+  fi
+fi
+
+tauri_config_args=()
+if [[ "$SILICIUM_RELEASE_CHANNEL" == "prod" ]]; then
+  tauri_config_args+=(--config src-tauri/tauri.prod.conf.json)
+fi
 
 npm ci
 npm run build
@@ -50,8 +69,12 @@ rm -rf -- \
   ../../Network/networked/compute_daemon/target/debug \
   ../../Network/workloads/raytracer/native/target/debug
 
-echo "Testing silicium-node in release mode..."
-cargo test --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path src-tauri/Cargo.toml
+if [[ "${SILICIUM_RUN_RELEASE_TESTS:-0}" == "1" ]]; then
+  echo "Testing silicium-node in release mode..."
+  cargo test --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path src-tauri/Cargo.toml
+else
+  echo "Skipping duplicate release tests; the node-fast lane owns this validation."
+fi
 rm -rf -- src-tauri/target/debug
 
 echo "Building p2p_node and compute_daemon..."
@@ -80,7 +103,7 @@ df -h "$ROOT"
 # The frontend was already built above; avoid invoking Vite a second time from
 # Tauri's beforeBuildCommand.
 export SILICIUM_SKIP_FRONTEND_BUILD="1"
-npx tauri build --bundles deb,appimage,rpm
+npx tauri build --bundles deb,appimage,rpm "${tauri_config_args[@]}"
 
 appimage_path="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
 deb_path="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"

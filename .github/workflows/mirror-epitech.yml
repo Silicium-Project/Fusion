@@ -17,6 +17,8 @@ jobs:
   submodule-ci-gate:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     uses: ./.github/workflows/submodule-ci-gate.yml
+    with:
+      release_channel: prod
     secrets: inherit
 
   mirror:

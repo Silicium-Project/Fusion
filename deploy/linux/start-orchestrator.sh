@@ -2,7 +2,13 @@
 set -euo pipefail
 
 ROOT="${1:-/opt/silicium}"
-ENV_FILE="/etc/silicium/orchestrator.env"
+RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-prod}"
+CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
+channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
+channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
+CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
+ENV_FILE="${SILICIUM_ORCHESTRATOR_ENV:-$CONFIG_DIR/orchestrator.env}"
 
 [[ -d "$ROOT/Network" ]] || { echo "Missing Network runtime under: $ROOT" >&2; exit 1; }
 [[ -f "$ENV_FILE" ]] || { echo "Missing orchestrator environment: $ENV_FILE" >&2; exit 1; }
@@ -14,8 +20,9 @@ set +a
 node_id="${SILICIUM_NODE_ID:-orchestrator-1}"
 roles="${SILICIUM_NODE_ROLES:-resource,storage}"
 port="${SILICIUM_NODE_PORT:-46100}"
-export_dir="${SILICIUM_EXPORT_DIR:-/var/lib/silicium/network/orchestrator/export}"
-state_dir="${SILICIUM_STATE_DIR:-/var/lib/silicium/network/orchestrator/state}"
+data_root="${SILICIUM_DATA_ROOT:-$channel_data_root}"
+export_dir="${SILICIUM_EXPORT_DIR:-$data_root/network/orchestrator/export}"
+state_dir="${SILICIUM_STATE_DIR:-$data_root/network/orchestrator/state}"
 mesh_key="${SILICIUM_MESH_KEY:-}"
 advertise_host="${SILICIUM_NODE_ADVERTISE_HOST:-}"
 
@@ -47,7 +54,7 @@ node_args=(
   --node-id "$node_id"
   --roles "$roles"
   --app-version "${SILICIUM_APP_VERSION:-unknown}"
-  --release-channel "${SILICIUM_RELEASE_CHANNEL:-dev}"
+  --release-channel "${SILICIUM_RELEASE_CHANNEL:-prod}"
   --release-build "${SILICIUM_RELEASE_BUILD:-}"
   --gossip-enable
   --gossip-bind 0.0.0.0
@@ -61,6 +68,8 @@ node_args=(
   --gossip-advertise-port "$port"
   --mesh-key "$mesh_key"
   --peer-sync-interval-s "${SILICIUM_PEER_SYNC_INTERVAL_S:-5}"
+  --peer-sync-fanout "${SILICIUM_PEER_SYNC_FANOUT:-8}"
+  --peer-http-max-workers "${SILICIUM_PEER_HTTP_MAX_WORKERS:-32}"
   --peer-stale-after-s "${SILICIUM_PEER_STALE_AFTER_S:-15}"
   --relay-enable
   --remote-dispatch-enable

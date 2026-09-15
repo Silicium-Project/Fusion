@@ -76,8 +76,12 @@ exec "$PYTHON_BIN" silicium node start \
   --mesh-key "$MESH_KEY" \
   --reputation-score "$REPUTATION" \
   --peer-sync-interval-s "${SILICIUM_PEER_SYNC_INTERVAL_S:-5}" \
+  --peer-sync-fanout "${SILICIUM_PEER_SYNC_FANOUT:-8}" \
   --peer-stale-after-s "${SILICIUM_PEER_STALE_AFTER_S:-15}" \
+  --peer-http-max-workers "${SILICIUM_PEER_HTTP_MAX_WORKERS:-16}" \
   --pull-tasks-enable \
+  --pull-tasks-interval-s "${SILICIUM_PULL_TASKS_INTERVAL_S:-0.25}" \
+  --pull-tasks-batch-size "${SILICIUM_PULL_TASKS_BATCH_SIZE:-4}" \
   --nat-punch-enable \
   --p2p-direct-transport-backend auto \
   "${EXTRA_ARGS[@]}"

@@ -4,8 +4,19 @@ set -euo pipefail
 ROOT="${1:-/opt/silicium}"
 E2E_COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.e2e.yml"
 MANIFEST_FILE="$ROOT/Network/ci/e2e-manifest.json"
-DATA_DIR="/var/lib/silicium/network/orchestrator/export"
-EXPERIMENT_API_ENV="/etc/silicium/experiment-api.env"
+CHANNEL_TOOL="$ROOT/deploy/release/channel.py"
+RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-prod}"
+python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
+channel_field() { python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field "$1"; }
+DATA_ROOT="${SILICIUM_DATA_ROOT:-$(channel_field data_dir)}"
+CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$(channel_field config_dir)}"
+DATA_DIR="$DATA_ROOT/network/orchestrator/export"
+EXPERIMENT_API_ENV="$CONFIG_DIR/experiment-api.env"
+ORCHESTRATOR_PORT="${SILICIUM_NODE_PORT:-$(channel_field orchestrator_port)}"
+EXPERIMENT_API_PORT="${SILICIUM_EXPERIMENT_API_PORT:-$(channel_field experiment_api_port)}"
+EXPERIMENT_RPC_PORT="${SILICIUM_EXPERIMENT_RPC_PORT:-$(channel_field experiment_rpc_port)}"
+BACKEND_HTTP_PORT="${SILICIUM_BACKEND_HTTP_PORT:-$(channel_field backend_http_port)}"
+FRONTEND_HTTP_PORT="${SILICIUM_FRONTEND_HTTP_PORT:-$(channel_field frontend_http_port)}"
 E2E_TIMEOUT_S="${E2E_TIMEOUT_S:-2400}"
 E2E_WAIT_S="${E2E_WAIT_S:-1200}"
 DOCKER_CLIENT_TIMEOUT="${DOCKER_CLIENT_TIMEOUT:-1200}"
@@ -31,6 +42,12 @@ fi
 healthz_headers=(-H "Authorization: Bearer ${SILICIUM_MCP_TOKEN}")
 export DOCKER_CLIENT_TIMEOUT
 export COMPOSE_HTTP_TIMEOUT
+export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
+export SILICIUM_E2E_ROOT="$ROOT"
+export SILICIUM_E2E_DATA_ROOT="$DATA_ROOT"
+export SILICIUM_E2E_COMPOSE_PROJECT_NAME="silicium-e2e-${RELEASE_CHANNEL}"
+
+compose=(docker compose --env-file "${SILICIUM_COMPOSE_ENV:-$CONFIG_DIR/compose.env}" -f "$E2E_COMPOSE_FILE")
 
 log() {
   printf '==> %s\n' "$*"
@@ -41,11 +58,11 @@ cleanup() {
   set +e
   if [ "$status" -ne 0 ]; then
     echo "---- docker compose ps"
-    docker compose -f "$E2E_COMPOSE_FILE" ps || true
+    "${compose[@]}" ps || true
     echo "---- docker compose logs (tail 200)"
-    docker compose -f "$E2E_COMPOSE_FILE" logs --no-color --timestamps --tail 200 || true
+    "${compose[@]}" logs --no-color --timestamps --tail 200 || true
   fi
-  docker compose -f "$E2E_COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
+  "${compose[@]}" down --remove-orphans >/dev/null 2>&1 || true
   exit "$status"
 }
 
@@ -61,7 +78,7 @@ TASK_PREFIX="vps-$(date -u +%Y%m%d%H%M%S)-$$"
 export E2E_TASK_PREFIX="$TASK_PREFIX"
 
 log "Starting VPS e2e worker overlay"
-docker compose -f "$E2E_COMPOSE_FILE" up -d --remove-orphans \
+"${compose[@]}" up -d --remove-orphans \
   e2e-worker-compute-a \
   e2e-worker-compute-b \
   e2e-worker-verify-a \
@@ -69,38 +86,38 @@ docker compose -f "$E2E_COMPOSE_FILE" up -d --remove-orphans \
 
 log "Waiting for local services"
 for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:46100/health" >/dev/null && \
-     curl -fsS "${healthz_headers[@]}" "http://127.0.0.1:46110/healthz" >/dev/null && \
-     curl -fsS "http://127.0.0.1:8080/health" >/dev/null && \
-     curl -fsS "http://127.0.0.1:3000" >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${ORCHESTRATOR_PORT}/health" >/dev/null && \
+     curl -fsS "${healthz_headers[@]}" "http://127.0.0.1:${EXPERIMENT_API_PORT}/healthz" >/dev/null && \
+     curl -fsS "http://127.0.0.1:${BACKEND_HTTP_PORT}/health" >/dev/null && \
+     curl -fsS "http://127.0.0.1:${FRONTEND_HTTP_PORT}" >/dev/null; then
     break
   fi
   sleep 2
 done
-curl -fsS "http://127.0.0.1:46100/health" >/dev/null
-curl -fsS "${healthz_headers[@]}" "http://127.0.0.1:46110/healthz" >/dev/null
-curl -fsS "http://127.0.0.1:8080/health" >/dev/null
-curl -fsS "http://127.0.0.1:3000" >/dev/null
+curl -fsS "http://127.0.0.1:${ORCHESTRATOR_PORT}/health" >/dev/null
+curl -fsS "${healthz_headers[@]}" "http://127.0.0.1:${EXPERIMENT_API_PORT}/healthz" >/dev/null
+curl -fsS "http://127.0.0.1:${BACKEND_HTTP_PORT}/health" >/dev/null
+curl -fsS "http://127.0.0.1:${FRONTEND_HTTP_PORT}" >/dev/null
 
 log "Probing orchestrator gossip"
 python3 "$ROOT/Network/tools/e2e_vps_probe.py" \
-  --control-url "http://127.0.0.1:46100/gossip/publish" \
-  --output /tmp/silicium-vps-backend-probe.json \
+  --control-url "http://127.0.0.1:${ORCHESTRATOR_PORT}/gossip/publish" \
+  --output "/tmp/silicium-vps-${RELEASE_CHANNEL}-backend-probe.json" \
   --probe-id "vps-e2e-backend" \
   --retries 120 \
   --delay-s 2
 
 log "Submitting tasks through web and RPC"
 python3 "$ROOT/Network/tools/e2e_scenario.py" \
-  --web-url "http://127.0.0.1:46110/tools" \
-  --rpc-url "tcp://127.0.0.1:9770" \
+  --web-url "http://127.0.0.1:${EXPERIMENT_API_PORT}/tools" \
+  --rpc-url "tcp://127.0.0.1:${EXPERIMENT_RPC_PORT}" \
   --auth-token "$SILICIUM_MCP_TOKEN" \
   --data-dir "$DATA_DIR" \
   --manifest "$MANIFEST_FILE" \
   --task-prefix "$TASK_PREFIX" \
   --expected-transport "vps-compose" \
   --timeout-s "$E2E_TIMEOUT_S" \
-  --report /tmp/silicium-vps-validation.json
+  --report "/tmp/silicium-vps-${RELEASE_CHANNEL}-validation.json"
 
 python3 - <<'PY'
 from __future__ import annotations
@@ -109,8 +126,8 @@ import json
 import os
 from pathlib import Path
 
-validation = json.loads(Path("/tmp/silicium-vps-validation.json").read_text(encoding="utf-8"))
-probe = json.loads(Path("/tmp/silicium-vps-backend-probe.json").read_text(encoding="utf-8"))
+validation = json.loads(Path(f"/tmp/silicium-vps-{os.environ['SILICIUM_RELEASE_CHANNEL']}-validation.json").read_text(encoding="utf-8"))
+probe = json.loads(Path(f"/tmp/silicium-vps-{os.environ['SILICIUM_RELEASE_CHANNEL']}-backend-probe.json").read_text(encoding="utf-8"))
 task_prefix = os.environ["E2E_TASK_PREFIX"]
 
 assert probe["ok"] is True, probe
@@ -148,6 +165,6 @@ for task_id, report in validation["tasks"].items():
 PY
 
 log "VPS e2e stack"
-docker compose -f "$E2E_COMPOSE_FILE" ps
+"${compose[@]}" ps
 
 log "VPS e2e completed successfully"
