@@ -50,14 +50,7 @@ Pour lancer en arrière-plan :
 docker compose up --build -d
 ```
 
-**3. Vérifier que l'API est en ligne**
-
-```bash
-curl http://localhost:8080/healthz
-# → ok
-```
-
-**4. Arrêter les services**
+**3. Arrêter les services**
 
 ```bash
 docker compose down
