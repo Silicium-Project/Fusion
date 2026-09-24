@@ -119,7 +119,6 @@ Le serveur écoute par défaut sur `0.0.0.0:8080`. Vous pouvez changer l'hôte e
 
 | Méthode | Route | Description |
 |---|---|---|
-| `GET` | `/health` | Health check simple |
 | `GET` | `/healthz` | Health check (utilisé par Docker) |
 | `GET` | `/status` | Snapshot d'état du système (mis en cache 5 s) |
 | `POST` | `/register` | Créer un compte utilisateur |
