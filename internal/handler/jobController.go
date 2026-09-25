@@ -180,27 +180,18 @@ type networkJobAggregate struct {
 }
 
 func (h *Handler) syncNetworkJobs(userID uint) error {
-	dir := filepath.Join(silicium.ConfigFromEnv().OrchestratorExportDir, "tasks")
+	cfg := silicium.ConfigFromEnv()
 	allowed, err := h.userNetworkJobIDs(userID)
 	if err != nil {
 		return err
 	}
-	entries, err := os.ReadDir(dir)
+	controlTasks, err := silicium.ListControlTasks(context.Background(), cfg, "")
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
 		return err
 	}
 	aggs := map[string]*networkJobAggregate{}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		item := readJSONMap(filepath.Join(dir, entry.Name()))
-		if len(item) == 0 {
-			continue
-		}
+	for _, controlTask := range controlTasks {
+		item := controlTaskMap(controlTask)
 		id := networkRootJobID(item)
 		if id == "" {
 			continue
@@ -208,12 +199,7 @@ func (h *Handler) syncNetworkJobs(userID uint) error {
 		if _, owned := allowed[id]; !owned {
 			continue
 		}
-		emitter := networkTaskEmitter(item)
-		if emitter != "" && emitter != silicium.ConfigFromEnv().OrchestratorNodeID {
-			continue
-		}
 		task, _ := item["task"].(map[string]any)
-		failure := networkTaskFailureDetails(dir, item)
 		status := strings.ToLower(stringValue(item["status"]))
 		a := aggs[id]
 		if a == nil {
@@ -221,7 +207,7 @@ func (h *Handler) syncNetworkJobs(userID uint) error {
 			aggs[id] = a
 		}
 		a.total++
-		if status == "completed" {
+		if status == "completed" || status == "verified" || status == "finalized" {
 			a.done++
 		}
 		if networkTaskFailed(status) {
@@ -231,21 +217,14 @@ func (h *Handler) syncNetworkJobs(userID uint) error {
 			a.status = status
 		}
 		if networkTaskFailed(status) {
-			a.errorMessage = networkFailureDetail(failure)
-			a.errorType = firstNetworkString(failure, "error_type")
-			a.traceback = firstNetworkString(failure, "traceback", "error_traceback")
+			a.errorMessage = strings.TrimSpace(controlTask.Error)
+			a.errorType = "node_task_failed"
 		}
-		role := stringValue(item["required_role"])
-		if role == "" {
-			role = stringValue(item["role"])
-		}
+		role := strings.Join(controlTask.RequiredRoles, ",")
 		if role != "" {
 			a.roles[role] = true
 		}
-		node := stringValue(item["handled_by"])
-		if node == "" {
-			node = stringValue(item["claimed_by"])
-		}
+		node := controlTask.HandledBy
 		if node != "" {
 			a.nodes[node] = true
 		}
@@ -256,38 +235,18 @@ func (h *Handler) syncNetworkJobs(userID uint) error {
 			a.kind = taskKind
 		}
 		if len(a.subtasks) < 512 {
-			timing := map[string]any{}
-			if taskID := stringValue(item["task_id"]); taskID != "" {
-				resultName := strings.NewReplacer("/", "_", "\\", "_", ":", "_").Replace(taskID)
-				result := readJSONMap(filepath.Join(dir, "..", "result."+resultName+".json"))
-				if value, ok := result["duration_ms"]; ok {
-					timing["durationMs"] = value
-				}
-				if value, ok := result["performance"]; ok {
-					timing["performance"] = value
-				}
-			}
-			subtask := map[string]any{"taskId": stringValue(item["task_id"]), "status": status, "role": role, "handledBy": node, "submittedUtc": stringValue(item["submitted_utc"]), "claimedUtc": stringValue(item["claimed_utc"]), "handledUtc": stringValue(item["handled_utc"]), "fragmentIndex": task["fragment_index"], "fragmentCount": task["fragment_count"], "transport": item["transport"]}
-			if detail := networkFailureDetail(failure); detail != "" {
+			subtask := map[string]any{"taskId": controlTask.TaskID, "status": status, "role": role, "handledBy": node, "handledUtc": stringValue(item["handled_utc"]), "fragmentIndex": task["fragment_index"], "fragmentCount": task["fragment_count"], "resultHash": controlTask.ResultHash}
+			if detail := strings.TrimSpace(controlTask.Error); detail != "" {
 				subtask["failureDetail"] = detail
-			}
-			if value := firstNetworkString(failure, "error", "error_message"); value != "" {
-				subtask["error"] = value
-			}
-			if value := firstNetworkString(failure, "error_type"); value != "" {
-				subtask["errorType"] = value
-			}
-			if value := firstNetworkString(failure, "traceback", "error_traceback"); value != "" {
-				subtask["traceback"] = value
-			}
-			for key, value := range timing {
-				subtask[key] = value
+				subtask["error"] = detail
+				subtask["errorType"] = "node_task_failed"
 			}
 			a.subtasks = append(a.subtasks, subtask)
 		}
-		if raw := stringValue(item["handled_utc"]); raw != "" {
-			if parsed, parseErr := time.Parse(time.RFC3339, raw); parseErr == nil && parsed.After(a.latest) {
-				a.latest = parsed
+		if controlTask.UpdatedUnix > 0 {
+			updated := time.Unix(controlTask.UpdatedUnix, 0).UTC()
+			if updated.After(a.latest) {
+				a.latest = updated
 			}
 		}
 	}

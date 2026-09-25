@@ -73,12 +73,12 @@ func terminalTaskControl(job models.Job, status, reason string, now time.Time, c
 		reason = "job entered terminal state: " + status
 	}
 	control := silicium.TaskControl{
-		ControlID:  fmt.Sprintf("%s-%s-terminal", job.SiliciumJobID, action),
-		RootJobID:  job.SiliciumJobID,
-		Action:     action,
-		Reason:     reason,
-		IssuerNode: cfg.OrchestratorNodeID,
-		IssuedUTC:  now.UTC().Format(time.RFC3339Nano),
+		ControlID:      fmt.Sprintf("%s-%s-terminal", job.SiliciumJobID, action),
+		RootJobID:      job.SiliciumJobID,
+		Action:         action,
+		Reason:         reason,
+		IssuerNode:     cfg.OrchestratorNodeID,
+		IssuedUTC:      now.UTC().Format(time.RFC3339Nano),
 		ReleaseChannel: cfg.ReleaseChannel,
 	}
 	if action == "expire" && job.DeadlineAt != nil {
@@ -95,7 +95,7 @@ func publishTerminalTaskControl(ctx context.Context, job models.Job, status, rea
 
 func (h *Handler) ReconcileTerminalJobControls(ctx context.Context) {
 	cfg := silicium.ConfigFromEnv()
-	roots, err := activeTaskRootIDs(cfg.OrchestratorExportDir)
+	roots, err := silicium.ActiveControlRootIDs(ctx, cfg)
 	if err != nil {
 		log.Printf("terminal task-control reconciliation skipped: %v", err)
 		return

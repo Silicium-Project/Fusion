@@ -30,7 +30,7 @@ func networkManifestFile() string {
 
 func networkTerminalStatus(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved":
+	case "completed", "verified", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved":
 		return true
 	default:
 		return false
@@ -66,6 +66,40 @@ func networkTaskEmitter(item map[string]any) string {
 	return emitter
 }
 
+func controlTaskMap(control silicium.ControlTask) map[string]any {
+	task := control.Task
+	if task == nil {
+		task = map[string]any{}
+	}
+	if _, exists := task["root_job_id"]; !exists {
+		task["root_job_id"] = control.RootJobID
+	}
+	if _, exists := task["workload"]; !exists {
+		task["workload"] = control.Workload
+	}
+	if _, exists := task["kind"]; !exists && len(control.RequiredRoles) > 0 {
+		task["kind"] = control.RequiredRoles[0]
+	}
+	item := map[string]any{
+		"task_id":     control.TaskID,
+		"root_job_id": control.RootJobID,
+		"status":      control.Status,
+		"handled_by":  control.HandledBy,
+		"task":        task,
+	}
+	if control.UpdatedUnix > 0 {
+		item["handled_utc"] = time.Unix(control.UpdatedUnix, 0).UTC().Format(time.RFC3339)
+	}
+	if strings.TrimSpace(control.Error) != "" {
+		item["error"] = control.Error
+		item["failure_detail"] = control.Error
+	}
+	if strings.TrimSpace(control.ResultHash) != "" {
+		item["result_hash"] = control.ResultHash
+	}
+	return item
+}
+
 func (h *Handler) userNetworkJobIDs(userID uint) (map[string]struct{}, error) {
 	var jobs []models.Job
 	if result := h.DB.Select("silicium_job_id").Where("user_id = ?", userID).Find(&jobs); result.Error != nil {
@@ -91,42 +125,17 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Could not scope network tasks", http.StatusInternalServerError)
 		return
 	}
-	tasksDir := networkTasksDirectory()
-	entries, err := os.ReadDir(tasksDir)
+	controlTasks, err := silicium.ListControlTasks(r.Context(), silicium.ConfigFromEnv(), "")
 	if err != nil {
-		if os.IsNotExist(err) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Cache-Control", "no-store")
-			_ = json.NewEncoder(w).Encode(map[string]any{"active": []map[string]any{}, "recent": []map[string]any{}, "workloads": []map[string]any{}, "emitter_node_id": silicium.ConfigFromEnv().OrchestratorNodeID})
-			return
-		}
-		http.Error(w, "Could not read network task registry: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Could not read Rust node task registry: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		left, leftErr := entries[i].Info()
-		right, rightErr := entries[j].Info()
-		if leftErr != nil || rightErr != nil {
-			return entries[i].Name() > entries[j].Name()
-		}
-		return left.ModTime().After(right.ModTime())
-	})
 	terminal := map[string]bool{"completed": true, "failed": true, "dead_lettered": true, "cancelled": true, "canceled": true, "expired": true, "finalized": true, "resolved": true}
 	emitterID := silicium.ConfigFromEnv().OrchestratorNodeID
 	active, recent := []map[string]any{}, []map[string]any{}
 	groups := map[string]map[string]any{}
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		raw, readErr := os.ReadFile(filepath.Join(tasksDir, entry.Name()))
-		if readErr != nil {
-			continue
-		}
-		var item map[string]any
-		if json.Unmarshal(raw, &item) != nil {
-			continue
-		}
+	for _, controlTask := range controlTasks {
+		item := controlTaskMap(controlTask)
 		rootID := networkRootJobID(item)
 		if _, owned := allowed[rootID]; !owned {
 			continue
@@ -134,9 +143,6 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 		emitter := networkTaskEmitter(item)
 		if emitter != "" && emitter != emitterID {
 			continue
-		}
-		for key, value := range networkTaskFailureDetails(tasksDir, item) {
-			item[key] = value
 		}
 		status := strings.ToLower(stringField(item, "status"))
 		if terminal[status] {
@@ -240,52 +246,19 @@ func (h *Handler) CancelNetworkTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Network task not found", http.StatusNotFound)
 		return
 	}
-	tasksDir := networkTasksDirectory()
-	entries, err := os.ReadDir(tasksDir)
+	changed, err := silicium.CancelControlWorkload(r.Context(), silicium.ConfigFromEnv(), rootID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Could not cancel Rust node tasks: "+err.Error(), http.StatusBadGateway)
 		return
-	}
-	changed := 0
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		path := filepath.Join(tasksDir, entry.Name())
-		raw, readErr := os.ReadFile(path)
-		if readErr != nil {
-			continue
-		}
-		var item map[string]any
-		if json.Unmarshal(raw, &item) != nil {
-			continue
-		}
-		if networkRootJobID(item) != rootID {
-			continue
-		}
-		emitter := networkTaskEmitter(item)
-		if emitter != "" && emitter != silicium.ConfigFromEnv().OrchestratorNodeID {
-			continue
-		}
-		status := strings.ToLower(stringField(item, "status"))
-		if networkTerminalStatus(status) {
-			continue
-		}
-		item["status"] = "cancelled"
-		item["cancelled_utc"] = time.Now().UTC().Format(time.RFC3339)
-		encoded, _ := json.Marshal(item)
-		if os.WriteFile(path, encoded, 0o600) == nil {
-			changed++
-		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "work_id": rootID, "cancelled": changed})
 }
 
 func (h *Handler) GetNetworkPeers(w http.ResponseWriter, r *http.Request) {
-	payload, err := loadNetworkPeers(networkPeersFile(), networkManifestFile())
+	payload, err := silicium.ListControlPeers(r.Context(), silicium.ConfigFromEnv())
 	if err != nil {
-		http.Error(w, "Could not read peers registry: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Could not read Rust node peers registry: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
