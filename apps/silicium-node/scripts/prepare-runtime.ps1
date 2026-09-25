@@ -273,12 +273,17 @@ $runtimeRoot = Join-Path $appRoot "src-tauri\resources\runtime"
 $runtimeNetwork = Join-Path $runtimeRoot "Network"
 $nativeRaytracerManifest = Join-Path $networkRoot "workloads\raytracer\native\Cargo.toml"
 $nativeRaytracerTarget = Join-Path $appRoot "src-tauri\target\raytracer-native"
+$p2pNodeManifest = Join-Path $networkRoot "networked\p2p_node\Cargo.toml"
+$computeDaemonManifest = Join-Path $networkRoot "networked\compute_daemon\Cargo.toml"
 
 if (-not (Test-Path -LiteralPath (Join-Path $networkRoot "silicium"))) {
     throw "Network runtime not found: $networkRoot"
 }
 if (-not (Test-Path -LiteralPath $nativeRaytracerManifest)) {
     throw "Native raytracer manifest not found: $nativeRaytracerManifest"
+}
+if (-not (Test-Path -LiteralPath $p2pNodeManifest) -or -not (Test-Path -LiteralPath $computeDaemonManifest)) {
+    throw "Rust node runtime manifests are missing under $networkRoot\networked"
 }
 
 $previousCargoTarget = $env:CARGO_TARGET_DIR
@@ -290,6 +295,15 @@ try {
     }
 } finally {
     $env:CARGO_TARGET_DIR = $previousCargoTarget
+}
+
+& cargo build --release --locked --manifest-path $p2pNodeManifest
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to build silicium-node."
+}
+& cargo build --release --locked --manifest-path $computeDaemonManifest
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to build compute_daemon."
 }
 
 if (Test-Path -LiteralPath $runtimeRoot) {
@@ -313,22 +327,10 @@ if (-not (Test-Path -LiteralPath $raytracerPath)) {
     throw "Bundled native raytracer runtime missing: $raytracerPath"
 }
 
-$networkedSource = Join-Path $networkRoot "networked"
-if (-not (Test-Path -LiteralPath $networkedSource -PathType Container)) {
-    $networkedSource = Join-Path $networkRoot "demo\networked"
-}
-if (Test-Path -LiteralPath $networkedSource -PathType Container) {
-    $networkedDestination = Join-Path $runtimeNetwork "networked"
-    New-Item -ItemType Directory -Force -Path $networkedDestination | Out-Null
-    foreach ($runtimeFile in @("__init__.py", "networked_runtime.py")) {
-        $sourceFile = Join-Path $networkedSource $runtimeFile
-        if (-not (Test-Path -LiteralPath $sourceFile -PathType Leaf)) {
-            throw "Missing networked runtime file: $sourceFile"
-        }
-        Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $networkedDestination $runtimeFile) -Force
-    }
-    Write-Host "[ok] Bundled minimal networked runtime -> $networkedDestination"
-}
+$runtimeBin = Join-Path $runtimeRoot "bin"
+New-Item -ItemType Directory -Force -Path $runtimeBin | Out-Null
+Copy-Item -LiteralPath (Join-Path $networkRoot "networked\p2p_node\target\release\silicium-node.exe") -Destination (Join-Path $runtimeBin "silicium-node.exe") -Force
+Copy-Item -LiteralPath (Join-Path $networkRoot "networked\compute_daemon\target\release\compute_daemon.exe") -Destination (Join-Path $runtimeBin "compute_daemon.exe") -Force
 
 $envDir = Join-Path $runtimeRoot ".silicium\env"
 New-Item -ItemType Directory -Force -Path $envDir | Out-Null
@@ -356,20 +358,5 @@ if (-not $pythonSource) {
 }
 $pythonDestination = Join-Path $runtimeRoot "tools\python"
 $null = Copy-PythonRuntime -Source $pythonSource -Destination $pythonDestination
-
-$p2pRequirements = Join-Path $networkRoot "requirements-p2p.txt"
-$p2pSitePackages = Join-Path $pythonDestination "Lib\site-packages"
-if (Test-Path -LiteralPath $p2pRequirements -PathType Leaf) {
-    New-Item -ItemType Directory -Force -Path $p2pSitePackages | Out-Null
-    $pythonInstaller = Join-Path $pythonSource "python.exe"
-    if (-not (Test-Path -LiteralPath $pythonInstaller)) {
-        throw "Python executable is required to bundle automatic ICE dependencies."
-    }
-    Write-Host "Installing automatic P2P dependencies into bundled runtime"
-    & $pythonInstaller -m pip install --disable-pip-version-check --upgrade --target $p2pSitePackages -r $p2pRequirements
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to bundle automatic P2P dependencies."
-    }
-}
 
 Write-Host "Runtime prepared: $runtimeRoot"

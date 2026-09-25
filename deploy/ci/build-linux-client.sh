@@ -77,12 +77,12 @@ else
 fi
 rm -rf -- src-tauri/target/debug
 
-echo "Building p2p_node and compute_daemon..."
+echo "Building silicium-node and compute_daemon..."
 cargo build --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/p2p_node/Cargo.toml
-cargo build --release --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/compute_daemon/Cargo.toml
+cargo build --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/compute_daemon/Cargo.toml
 
 mkdir -p src-tauri/resources/runtime/bin
-cp ../../Network/networked/p2p_node/target/release/p2p_node src-tauri/resources/runtime/bin/
+cp ../../Network/networked/p2p_node/target/release/silicium-node src-tauri/resources/runtime/bin/
 cp ../../Network/networked/compute_daemon/target/release/compute_daemon src-tauri/resources/runtime/bin/
 
 # Keep the runtime targets available to the next build when disk allows it.

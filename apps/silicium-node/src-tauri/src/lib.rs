@@ -44,6 +44,7 @@ const DEFAULT_ORCHESTRATOR_URL: &str = "https://vps-910c1dbc.vps.ovh.net/orchest
 // prevents a node from ever becoming available to claim work.
 const CLAIM_POLL_STALE_AFTER: Duration = Duration::from_secs(90);
 const NODE_READY_TIMEOUT: Duration = Duration::from_secs(45);
+const RUST_NODE_API_PORT: u16 = 9092;
 const UPDATE_SIGNING_PUBLIC_KEY_B64: &str = "px9didtoGftLilUX8iA1Yoj4PjNiCvZD47GK6/fdzX8=";
 const UPDATE_SIGNING_KEY_ID: &str =
     "f8d1c0149d9fcc171a39f96e5b9965a235500b7fe20cd2348912d38ca91e6d4c";
@@ -353,7 +354,7 @@ fn node_status(
         .and_then(|root| read_pid(root).ok().flatten())
         .map(process_is_running)
         .unwrap_or(false);
-    let node_ready = root.is_some() && local_network_node_ready(46101);
+    let node_ready = root.is_some() && local_network_node_ready(RUST_NODE_API_PORT);
     let running = node_ready;
     if !node_running {
         if let Some(root) = root.as_ref() {
@@ -383,14 +384,14 @@ fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<Stri
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
     cleanup_dead_pids(&repo_root);
-    if local_network_node_ready(46101) {
+    if local_network_node_ready(RUST_NODE_API_PORT) {
         return Ok("Silicium node already running in background".to_string());
     }
     let managed_process_starting = read_supervisor_pid(&repo_root)?
         .map(process_is_running)
         .unwrap_or(false)
         || read_pid(&repo_root)?.map(process_is_running).unwrap_or(false);
-    if managed_process_starting && wait_for_existing_node_start(&repo_root, 46101) {
+    if managed_process_starting && wait_for_existing_node_start(&repo_root, RUST_NODE_API_PORT) {
         return Ok("Silicium local service already running".to_string());
     }
     cleanup_previous_node_processes(&repo_root);
@@ -420,7 +421,7 @@ fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<Stri
         }
     };
     let mut child = spawn_supervisor(&repo_root)?;
-    wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
+    wait_for_supervised_node_start(&mut child, &repo_root, RUST_NODE_API_PORT)?;
     drop(child);
     *node = None;
     if let Some(warning) = autostart_warning {
@@ -447,14 +448,14 @@ fn start_configured_node_service() -> Result<String, String> {
         .map(process_is_running)
         .unwrap_or(false)
     {
-        if wait_for_existing_node_start(&repo_root, 46101) {
+        if wait_for_existing_node_start(&repo_root, RUST_NODE_API_PORT) {
             return Ok("Le service Silicium est deja demarre.".to_string());
         }
         cleanup_previous_node_processes(&repo_root);
     }
 
     let mut child = spawn_supervisor(&repo_root)?;
-    wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
+    wait_for_supervised_node_start(&mut child, &repo_root, RUST_NODE_API_PORT)?;
     drop(child);
     Ok("Le service Silicium est demarre.".to_string())
 }
@@ -490,7 +491,7 @@ fn configured_node_service_running() -> bool {
         return false;
     };
     cleanup_dead_pids(&repo_root);
-    local_network_node_ready(46101)
+    local_network_node_ready(RUST_NODE_API_PORT)
 }
 
 #[tauri::command]
@@ -627,7 +628,7 @@ fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
     let supervisor_pid = read_supervisor_pid(&root).ok().flatten();
     let node_running = node_pid.map(process_is_running).unwrap_or(false);
     let supervisor_running = supervisor_pid.map(process_is_running).unwrap_or(false);
-    let port_ready = local_network_node_ready(46101);
+    let port_ready = local_network_node_ready(RUST_NODE_API_PORT);
     let orchestrator_url = read_service_config(&root)
         .map(|config| config.orchestrator_url)
         .unwrap_or_else(|_| DEFAULT_ORCHESTRATOR_URL.to_string());
@@ -1784,10 +1785,9 @@ fn remove_legacy_runtime_assets(root: &Path) -> Result<(), String> {
             )
         })?;
     }
-    // The integrated Python daemon only needs networked_runtime.py. Older
-    // bundles copied the complete Rust workspaces, including Cargo targets,
-    // into the user profile. Besides wasting disk, that allowed the CLI to
-    // compile an experimental node during activation.
+    // Older bundles copied complete Rust workspaces, including Cargo targets,
+    // into the user profile. The runtime now ships only the supervised
+    // binaries under bin/, so source workspaces are removed on upgrade.
     let legacy_networked_crates = root.join("Network").join("networked");
     for crate_name in [
         "compute_daemon",
@@ -1962,119 +1962,53 @@ fn copy_dir_all(source: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
-    let advertise_host = if config.advertise_host.trim().is_empty() {
-        detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string())
+fn runtime_binary(repo_root: &Path, name: &str) -> Result<PathBuf, String> {
+    let file_name = if cfg!(target_os = "windows") {
+        format!("{name}.exe")
     } else {
-        config.advertise_host.trim().to_string()
+        name.to_string()
     };
-
-    if cfg!(target_os = "windows") {
-        let network_root = repo_root.join("Network");
-        let silicium_cli = network_root.join("silicium");
-        if !silicium_cli.exists() {
-            return Err(format!(
-                "silicium_cli_not_found: {}",
-                silicium_cli.display()
-            ));
-        }
-        let node_id = effective_node_id(&config.node_id);
-        let mut command = Command::new(python_launcher(repo_root));
-        command
-            .arg(&silicium_cli)
-            .arg("node")
-            .arg("start")
-            .arg("--roles")
-            .arg("compute,verify")
-            .arg("--node-id")
-            .arg(node_id)
-            .arg("--app-version")
-            .arg(release_version())
-            .arg("--release-channel")
-            .arg(release_channel())
-            .arg("--release-build")
-            .arg(release_build())
-            .arg("--export-dir")
-            .arg(".silicium\\networked\\silicium-desktop-node\\export")
-            .arg("--state-dir")
-            .arg(".silicium\\networked\\silicium-desktop-node\\state")
-            .arg("--peer-http-bind")
-            .arg("0.0.0.0")
-            .arg("--peer-http-port")
-            .arg("46101")
-            .arg("--gossip-bind")
-            .arg("0.0.0.0")
-            .arg("--gossip-port")
-            .arg("46101")
-            .arg("--peer-advertise-host")
-            .arg(&advertise_host)
-            .arg("--peer-advertise-port")
-            .arg("46101")
-            .arg("--gossip-advertise-host")
-            .arg(&advertise_host)
-            .arg("--gossip-advertise-port")
-            .arg("46101")
-            .arg("--seed-peers")
-            .arg(&config.orchestrator_url)
-            .arg("--mesh-key")
-            .arg("demo-mesh")
-            .arg("--reputation-score")
-            .arg(config.reputation_score.to_string())
-            .arg("--peer-sync-interval-s")
-            .arg("5")
-            .arg("--peer-sync-fanout")
-            .arg("8")
-            .arg("--peer-stale-after-s")
-            .arg("15")
-            .arg("--peer-http-max-workers")
-            .arg(env::var("SILICIUM_PEER_HTTP_MAX_WORKERS").unwrap_or_else(|_| "16".to_string()))
-            .arg("--idle-ms")
-            .arg("250")
-            .arg("--pull-tasks-enable")
-            .arg("--pull-tasks-interval-s")
-            .arg("0.25")
-            .arg("--pull-tasks-batch-size")
-            .arg(env::var("SILICIUM_PULL_TASKS_BATCH_SIZE").unwrap_or_else(|_| "4".to_string()))
-            .arg("--gossip-enable")
-            .arg("--nat-punch-enable")
-            .arg("--p2p-direct-transport-backend")
-            .arg("auto")
-            .current_dir(&network_root);
-        command.env("SILICIUM_IDENTITY_MODE", "hmac");
-        command.env("SILICIUM_FORCE_HMAC_IDENTITY", "1");
-        apply_raytracer_env(&mut command, repo_root);
-        apply_runtime_path(&mut command, repo_root);
-        spawn_detached(command, repo_root)
+    let path = repo_root.join("bin").join(file_name);
+    if path.exists() {
+        Ok(path)
     } else {
-        let script = repo_root.join("deploy").join("linux").join("start-node.sh");
-        if !script.exists() {
-            return Err(format!("script_not_found: {}", script.display()));
-        }
-        let mut command = Command::new("bash");
-        command
-            .arg(script)
-            .arg(effective_node_id(&config.node_id))
-            .arg("compute,verify")
-            .arg("46101")
-            .arg(&config.orchestrator_url)
-            .arg(&advertise_host)
-            .arg("demo-mesh")
-            .arg(config.reputation_score.to_string())
-            .arg("--app-version")
-            .arg(release_version())
-            .arg("--release-channel")
-            .arg(release_channel())
-            .arg("--release-build")
-            .arg(release_build())
-            .arg("--gossip-enable")
-            .arg("--nat-punch-enable")
-            .arg("--p2p-direct-transport-backend")
-            .arg("auto")
-            .current_dir(repo_root);
-        apply_raytracer_env(&mut command, repo_root);
-        apply_runtime_path(&mut command, repo_root);
-        spawn_detached(command, repo_root)
+        Err(format!("rust_runtime_binary_not_found:{}", path.display()))
     }
+}
+
+fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
+    let data_dir = repo_root
+        .join(".silicium")
+        .join("networked")
+        .join("silicium-desktop-node");
+    fs::create_dir_all(&data_dir).map_err(|error| error.to_string())?;
+
+    let mut compute = Command::new(runtime_binary(repo_root, "compute_daemon")?);
+    compute
+        .env("SILICIUM_COMPUTE_BIND", "127.0.0.1:9090")
+        .current_dir(repo_root);
+    let _ = spawn_detached_with_log(
+        compute,
+        repo_root,
+        "silicium-compute.out.log",
+        "silicium-compute.err.log",
+    )?;
+
+    let mut command = Command::new(runtime_binary(repo_root, "silicium-node")?);
+    command
+        .env("SILICIUM_NODE_ID", effective_node_id(&config.node_id))
+        .env("SILICIUM_NODE_ROLES", "compute,verify")
+        .env("SILICIUM_DATA_DIR", data_dir)
+        .env("SILICIUM_API_BIND", "127.0.0.1")
+        .env("API_PORT", RUST_NODE_API_PORT.to_string())
+        .env("SILICIUM_P2P_TCP_PORT", "4001")
+        .env("SILICIUM_P2P_QUIC_PORT", "4001")
+        .env("COMPUTE_DAEMON_URL", "http://127.0.0.1:9090")
+        .env("SILICIUM_APP_VERSION", release_version())
+        .env("SILICIUM_RELEASE_CHANNEL", release_channel())
+        .env("SILICIUM_RELEASE_BUILD", release_build())
+        .current_dir(repo_root);
+    spawn_detached(command, repo_root)
 }
 
 fn wait_for_supervised_node_start(
@@ -2152,7 +2086,7 @@ fn local_network_node_ready(port: u16) -> bool {
     let _ = stream.set_read_timeout(Some(Duration::from_millis(700)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(700)));
     if stream
-        .write_all(b"GET /healthz HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+        .write_all(b"GET /v1/health HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         .is_err()
     {
         return false;
@@ -2160,8 +2094,8 @@ fn local_network_node_ready(port: u16) -> bool {
     let mut response = String::new();
     let _ = stream.read_to_string(&mut response);
     (response.starts_with("HTTP/1.0 200") || response.starts_with("HTTP/1.1 200"))
-        && response.contains("\"service\":\"network_node\"")
-        && response.contains("\"ok\":true")
+        && response.contains("\"service\":\"silicium-node\"")
+        && response.contains("\"status\":\"ok\"")
 }
 
 fn wait_for_local_port_release(port: u16, timeout: Duration) -> bool {
@@ -2441,7 +2375,7 @@ pub fn run_supervisor_cli() -> i32 {
         let mut node_running = pid_running;
         if node_running
             && node_started_at.elapsed() >= CLAIM_POLL_STALE_AFTER
-            && !local_network_node_ready(46101)
+            && !local_network_node_ready(RUST_NODE_API_PORT)
             && !claim_poll_is_fresh(&repo_root, CLAIM_POLL_STALE_AFTER)
         {
             let _ = append_supervisor_log(
@@ -2457,7 +2391,7 @@ pub fn run_supervisor_cli() -> i32 {
             kill_known_silicium_processes(Some(&repo_root));
             remove_pid(&repo_root);
             node_running = false;
-            let _ = wait_for_local_port_release(46101, Duration::from_secs(2));
+            let _ = wait_for_local_port_release(RUST_NODE_API_PORT, Duration::from_secs(2));
         }
         if node_running {
             restart_attempts = 0;
@@ -2465,7 +2399,7 @@ pub fn run_supervisor_cli() -> i32 {
         if !node_running {
             remove_pid(&repo_root);
             kill_known_silicium_processes(Some(&repo_root));
-            if wait_for_local_port_release(46101, Duration::from_secs(2)) {
+            if wait_for_local_port_release(RUST_NODE_API_PORT, Duration::from_secs(2)) {
                 match spawn_node(&repo_root, &config) {
                     Ok(child) => {
                         restart_attempts = restart_attempts.saturating_add(1);
@@ -3262,7 +3196,7 @@ fn kill_managed_node_processes(repo_root: &Path) {
     {
     let escaped = repo_root.display().to_string().replace('\'', "''");
     let script = format!(
-        "$root = '{escaped}'; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and ($_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf('networked\\p2p_node', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.Name -ieq 'p2p_node.exe') }} | ForEach-Object {{ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null }}"
+        "$root = '{escaped}'; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and ($_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf('silicium-node', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf('compute_daemon', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.Name -ieq 'silicium-node.exe' -or $_.Name -ieq 'compute_daemon.exe') }} | ForEach-Object {{ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null }}"
     );
     let mut command = Command::new("powershell.exe");
     command
@@ -4492,7 +4426,7 @@ mod tests {
     }
 
     #[test]
-    fn readiness_requires_the_integrated_network_health_response() {
+    fn readiness_requires_the_rust_node_health_response() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let server = thread::spawn(move || {
@@ -4501,7 +4435,7 @@ mod tests {
             let _ = stream.read(&mut request);
             stream
                 .write_all(
-                    b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true,\"service\":\"network_node\"}",
+                    b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\",\"service\":\"silicium-node\"}",
                 )
                 .unwrap();
         });
@@ -4517,7 +4451,7 @@ mod tests {
             let _ = stream.read(&mut request);
             stream
                 .write_all(
-                    b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true,\"service\":\"p2p_node\"}",
+                    b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\",\"service\":\"other-service\"}",
                 )
                 .unwrap();
         });

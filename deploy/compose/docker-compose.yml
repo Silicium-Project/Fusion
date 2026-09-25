@@ -59,13 +59,12 @@ services:
       HOST: 0.0.0.0
       PORT: 8080
       CORS_ALLOWED_ORIGINS: ${SILICIUM_CORS_ALLOWED_ORIGINS:-https://vps-910c1dbc.vps.ovh.net}
-      SILICIUM_SEED_PEERS: http://host.docker.internal:${SILICIUM_ORCHESTRATOR_PORT:-46100}
-      SILICIUM_CONTROL_URL: http://host.docker.internal:${SILICIUM_ORCHESTRATOR_PORT:-46100}/gossip/publish
+      SILICIUM_NODE_API_URL: http://silicium-node:9092
+      SILICIUM_NODE_CONTROL_TOKEN: ${SILICIUM_NODE_CONTROL_TOKEN:?SILICIUM_NODE_CONTROL_TOKEN is required}
+      SILICIUM_NETWORK_ROOT: /opt/silicium/Network
       SILICIUM_RELEASE_CHANNEL: ${SILICIUM_RELEASE_CHANNEL:-prod}
       SILICIUM_RELEASE_VERSION: ${SILICIUM_RELEASE_VERSION:-unknown}
       SILICIUM_RELEASE_BUILD: ${SILICIUM_RELEASE_BUILD:-local}
-      SILICIUM_ORCHESTRATOR_IDENTITY_KEY: /var/lib/silicium/network/orchestrator/backend-identity/peer_identity_ed25519.pem
-      SILICIUM_ORCHESTRATOR_EXPORT_DIR: /var/lib/silicium/network/orchestrator/export
       SILICIUM_SITE_STORAGE_DIR: /var/lib/silicium/site/jobs
       SILICIUM_WORKLOAD_STORAGE_DIR: /var/lib/silicium/site/runtime
       SILICIUM_SOLANA_WALLET: /var/lib/silicium/solana/id.json
@@ -86,6 +85,54 @@ services:
     - host.docker.internal:${SILICIUM_HOST_GATEWAY:-host-gateway}
     volumes:
     - ${SILICIUM_RUNTIME_ROOT:-/opt/silicium}/Network:/opt/silicium/Network
+    - ${SILICIUM_DATA_ROOT:-/var/lib/silicium}:/var/lib/silicium
+    networks:
+    - backend
+  compute-daemon:
+    build:
+      context: ../../Network/networked
+      dockerfile: compute_daemon/Dockerfile
+    restart: unless-stopped
+    environment:
+      SILICIUM_COMPUTE_BIND: 0.0.0.0:9090
+      SILICIUM_RAYTRACER_BIN: ${SILICIUM_RAYTRACER_BIN:-/opt/silicium/Network/bin/raytracer/silicium-raytracer}
+    volumes:
+    - ${SILICIUM_RUNTIME_ROOT:-/opt/silicium}/Network:/opt/silicium/Network:ro
+    - ${SILICIUM_DATA_ROOT:-/var/lib/silicium}:/var/lib/silicium
+    networks:
+    - backend
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+  silicium-node:
+    build:
+      context: ../../Network/networked
+      dockerfile: p2p_node/Dockerfile
+    restart: unless-stopped
+    environment:
+      SILICIUM_API_BIND: 0.0.0.0
+      API_PORT: "9092"
+      SILICIUM_P2P_TCP_PORT: "4001"
+      SILICIUM_P2P_QUIC_PORT: "4001"
+      SILICIUM_NODE_CONTROL_TOKEN: ${SILICIUM_NODE_CONTROL_TOKEN:?SILICIUM_NODE_CONTROL_TOKEN is required}
+      SILICIUM_NODE_ID: ${SILICIUM_NODE_ID:-silicium-compose-node}
+      SILICIUM_NODE_ROLES: compute,verify
+      SILICIUM_DATA_DIR: /data
+      COMPUTE_DAEMON_URL: http://compute-daemon:9090
+      REPUTATION_BRIDGE_URL: http://reputation_bridge:9091
+    depends_on:
+      compute-daemon:
+        condition: service_healthy
+      reputation_bridge:
+        condition: service_started
+    ports:
+    - ${SILICIUM_NODE_API_PORT:-9092}:9092
+    - ${SILICIUM_NODE_P2P_PORT:-4001}:4001/tcp
+    - ${SILICIUM_NODE_P2P_PORT:-4001}:4001/udp
+    volumes:
+    - ${SILICIUM_DATA_ROOT:-/var/lib/silicium}/rust-node:/data
     - ${SILICIUM_DATA_ROOT:-/var/lib/silicium}:/var/lib/silicium
     networks:
     - backend
