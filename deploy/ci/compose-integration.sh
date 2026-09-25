@@ -11,17 +11,24 @@ PROJECT="silicium-integration-${RUN_ID//[^a-zA-Z0-9]/-}"
 cd "$ROOT"
 
 cleanup() {
-  status=$?
-  if [[ "$status" -ne 0 ]]; then
-    docker compose --project-name "$PROJECT" --file "$COMPOSE_FILE" logs --no-color || true
-  fi
   docker compose --project-name "$PROJECT" --file "$COMPOSE_FILE" down --volumes --remove-orphans || true
-  exit "$status"
 }
-trap cleanup EXIT
 
+set +e
 docker compose --project-name "$PROJECT" --file "$COMPOSE_FILE" up \
   --build \
   --abort-on-container-exit \
   --exit-code-from integration-gate \
   integration-gate
+status=$?
+set -e
+
+if [[ "$status" -ne 0 ]]; then
+  echo "::error title=Compose integration gate failed::integration-gate exited with status $status"
+  docker compose --project-name "$PROJECT" --file "$COMPOSE_FILE" ps --all || true
+  docker compose --project-name "$PROJECT" --file "$COMPOSE_FILE" logs --no-color --timestamps \
+    integration-gate proxy frontend backend silicium-node compute-daemon reputation-bridge || true
+fi
+
+cleanup
+exit "$status"
