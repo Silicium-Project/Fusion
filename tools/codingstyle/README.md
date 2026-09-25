@@ -22,4 +22,5 @@ This folder contains JSON-driven rules used by the coding style checker.
 - `py.function_snake_case`: Python function names should be snake_case.
 - `py.final_constant_upper_snake`: `Final`-annotated constants should be UPPER_SNAKE_CASE.
 
-Ownership gate policy and suppression workflow are documented in `docs/security/ownership-style-gate.md`.
+The C++ ownership rules are retained for the optional TUI helper only; they are
+not part of the production CI because the distributed runtime is Rust.

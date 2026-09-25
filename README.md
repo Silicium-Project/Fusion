@@ -1,674 +1,82 @@
 # Silicium Network
 
-Network is the distributed-runtime repository composed by [Fusion](https://github.com/Silicium-Project/Fusion). It provides the peer-to-peer node, the workload execution path, the Solana layer, and the operational tools consumed by the site and desktop node.
+`Network` contient le runtime distribué de Silicium. Le chemin de production
+est le nœud Rust `silicium-node`, accompagné de `compute_daemon` pour
+l'exécution et de `reputation_bridge` pour la réputation. Les anciens
+pipelines C++ (`splitter`, `executor`, `worker`, viewer Qt et démos associées)
+ne font pas partie du produit ; ils ne subsistent que dans l'historique Git.
 
-```mermaid
-flowchart LR
-  subgraph Entry["Entry Points"]
-    direction TB
-    CLI["silicium CLI"]
-    TUI["TUI (Textual)"]
-    Viewer["Viewer (Qt)"]
-    Web["Web UI (future)"]
-    Tests["CI ci.yml"]
-    CoreCheck["ci/core_check.sh"]
-    Tests --> CoreCheck
-  end
+## Composants actifs
 
-```text
-FrontEnd / BackEnd
-        │
-        ▼
-Fusion orchestrator ──► Network node
-                            ├── networked/p2p_node
-                            ├── networked/silicium_node_core
-                            ├── networked/compute_daemon
-                            ├── workloads/raytracer
-                            └── Solana layer / reputation bridge
-```
+- `networked/p2p_node/` : binaire Rust `silicium-node`, découverte des pairs,
+  persistance locale, gossip et API de contrôle versionnée.
+- `networked/compute_daemon/` : exécuteur Rust des workloads de calcul.
+- `networked/reputation_bridge/` : service de réputation consommé par le
+  nœud et la stack Fusion.
+- `networked/silicium_node_core/` : primitives de transport, planification et
+  registre des tâches du nœud.
+- `workloads/raytracer/` et `catalog/` : workload de référence et manifests.
+- `solana-layer/` : programme Anchor, SDK TypeScript, IDL et tests Solana.
+- `tools/` : outils de développement, migration et contrôle ; ils ne sont pas
+  le runtime de nœud par défaut.
 
-The active paths are:
+## Contrat de contrôle
 
-- `tools/network_node.py`: integrated production node used by the CLI, desktop
-  app, VPS orchestrator, task polling, peer registry, and telemetry;
-- `networked/`: Rust P2P/compute experiments and supporting transport bridges;
-  `p2p_node` is opt-in via `--experimental-p2p-node`;
-- `tools/`: orchestration, RPC, telemetry, receipts, update manifests, and E2E helpers;
-- `workloads/raytracer/`: the current workload and its native Rust implementation;
-- `solana-layer/`: Anchor program, SDK, migrations, IDL, and tests;
-- `silicium-layer-dashboard/`: network/Solana dashboard;
-- `catalog/`, `proto/`, `i18n/`, `tests/`, and `docs/`: contracts and validation;
-- `infra/`: local Network/Solana nodes, proxy, and optional world testbed.
+Fusion communique directement avec l'API HTTP du nœud Rust :
 
-The old C++ `splitter`/`executor`/`worker` chain, Qt viewer, assembler demos,
-PE fixture corpus, C++/DynamoRIO/GUI images, and generated coverage reports
-were removed from the active tree. Their history remains available in Git.
+- `GET /v1/health`
+- `GET` et `POST /v1/tasks`
+- `POST /v1/workloads/{root_job_id}/cancel`
+- `GET /v1/peers`
 
-  Direct --> FFI["FragmentApi / shared libs"]
-  Http --> HttpExec["POST /execute (JSON)"]
-  Dynamo --> Drrun["DynamoRunner -> drrun"]
+Les routes, l'authentification Bearer et la compatibilité sont décrites dans
+[docs/node-control-api.md](docs/node-control-api.md). Les routes non versionnées
+restantes sont de compatibilité interne et ne doivent pas servir à de nouveaux
+consommateurs.
 
-  FFI --> Exec["FragmentExecutor"]
-  Exec --> Result["ExecutionResult"]
-  Worker --> Report["TaskReport + telemetry"]
-```
+## Développement local
 
-## Zoom: Splitter -> Artifacts -> Execution
-
-```mermaid
-flowchart LR
-  Input["Input binary"] --> Splitter["splitter pipeline"]
-  Splitter --> Summary["summary.json"]
-  Splitter --> Frags["fragment files (.asm/.bin/wrapper)"]
-  Summary --> Worker["worker JobRunner"]
-  Frags --> Worker
-  Worker --> Executor["executor backends"]
-  Executor --> Log["fragment_executor.log"]
-  Executor --> Result["ExecutionResult"]
-```
-
-## Zoom: Infra and Networks
-
-```mermaid
-flowchart TB
-  CLI["silicium CLI"] --> Compose["docker compose"]
-  Compose --> Local["localnet"]
-  Compose --> Dev["devnet"]
-  Compose --> Test["testnet"]
-  Compose --> Main["mainnet"]
-  Compose --> Proxy["Caddy TLS proxy"]
-
-  Dev --> DevRpc["api.devnet.solana.com"]
-  Test --> TestRpc["api.testnet.solana.com"]
-  Main --> MainRpc["api.mainnet-beta.solana.com"]
-
-  VPN["WireGuard"] --> SecureRpc["isolated solana-rpc"]
-  Proxy --> Clients["RPC clients"]
-  VPN --> Clients
-```
-
-
-
-
-Cette base de code fournit une image Docker unique permettant de lancer un nœud **Silicium** (surcouche Solana) dans plusieurs contextes : localnet isolé, Devnet, Testnet ou Mainnet. Tout est orchestré via Docker Compose et un script d'entrée (`infra/docker/solana-entrypoint.sh`) qui gère les clés, la configuration Solana et le lancement du validateur ou du test validator.
-
----
-
-## Aperçu du dépôt
-
-| Élément | Rôle |
-| --- | --- |
-| `infra/Dockerfile` | Image basée sur `solanalabs/solana:stable`, ajout des CA TLS et du script d'entrée. |
-| `infra/docker-compose.yml` | Définit les services `silicium-localnet`, `silicium-node` (testnet), `silicium-devnet`, `silicium-mainnet` + le proxy TLS. |
-| `infra/.env` | Valeurs par défaut pour les chemins/ports utilisés par Compose (`WORKSPACE_ROOT`, `PROXY_*`, `SILICIUM_LEDGER_PREFIX`). |
-| `infra/docker/solana-entrypoint.sh` | Point d'entrée qui expose `solana`, `silicium-node` et configure automatiquement clés + RPC. |
-| `infra/docker/reverse-proxy/` | Scripts Caddy + emplacements TLS pour exposer l'API via un reverse proxy HTTPS. |
-| `infra/bin/run-with-proxy.sh` | Lance un service Silicium + le proxy TLS, génère un certificat auto-signé et attend `/healthz`. |
-| `infra/secure-stack/` | Docker Compose + scripts pour un RPC Solana confiné derrière un VPN WireGuard. |
-| `catalog/workloads/` | Catalogue des manifests calcul/vérification. |
-| `splitter/` | Partitionneur de fragments principal: pipeline d'analyse, découpage et generation des artefacts. |
-| `executor/` | Exécuteur de fragments principal: backends natif/emule et API C. |
-| `networked/p2p_node/` | Noeud P2P actuel du reseau, overlay libp2p/Kademlia et RPC reseau. |
-| `tools/network_node.py` | Pont Python de transition encore utilise par certains scripts d'orchestration. |
-| `viewer/` | Visualiseur Qt des fragments/partitions. |
-| `worker/` | Prototype de worker local qui consomme des partitions générées par `splitter`. |
-| `demo/` | Programmes de démonstration consommés par `splitter`/`worker`. |
-| `docker/` | Dockerfiles annexes (GUI runner, worker, etc.). |
-| Volumes Docker (`silicium-*-ledger`) | Persistences des ledgers/clépairs, gérées automatiquement via Compose. |
-| `README.md` | Ce document. |
-
----
-
-## Schema
-
-Voir docs/network-schema.md pour les diagrammes Mermaid (compute + network).
-Spec MCP (connecteur LLM) : `docs/mcp-connector-spec.md`.
-
-## Stack Docker headless (reseau + calcul)
-
-Pour executer uniquement les daemons reseau/calcul sous Docker (sans desktop/viewer), voir :
-
-- `docs/headless-network-compute-docker.md`
-
-Commande rapide depuis `infra/` :
+Lancer les deux services Rust dans deux terminaux :
 
 ```bash
-./bin/headless-compute-stack.sh up
+SILICIUM_COMPUTE_BIND=127.0.0.1:9090 \
+  cargo run --manifest-path networked/compute_daemon/Cargo.toml
+
+SILICIUM_NODE_ID=local-node \
+SILICIUM_NODE_ROLES=compute,verify \
+SILICIUM_NODE_CONTROL_TOKEN=local-dev-token \
+SILICIUM_API_BIND=127.0.0.1 \
+API_PORT=9092 \
+COMPUTE_DAEMON_URL=http://127.0.0.1:9090 \
+  cargo run --manifest-path networked/p2p_node/Cargo.toml
 ```
 
----
+La stack complète du site (FrontEnd, BackEnd, nœud, compute et proxy) est
+définie au niveau de Fusion, dans `deploy/compose/docker-compose.yml`.
 
-## Couverture (worker)
-
-Badge (local) : ![Badge](docs/coverage/worker/badge.svg)  
-Badge (Pages si public) : `https://silicium-project.github.io/Network/worker/badge.svg`
-
-<!-- worker-coverage:start -->
-- AperÃ§u : [![worker coverage](.\docs\coverage\worker\snapshot.svg "Lignes 86.7 %, fonctions 92.9 %, branches 50.2 %")](.\docs\coverage\worker\index.html)
-<!-- worker-coverage:end -->
-- Rapport HTML (dernière exécution CI) : `docs/coverage/worker/index.html` (ou Pages si accessible)
-- Résumé JSON : `docs/coverage/worker/coverage-summary.json` (ou Pages si accessible)
-- La CI (`tests` sur `main`) regénère l’aperçu via GitHub Pages (job `coverage-pages`) sans commit de couverture ; si le dépôt est privé, servez l’aperçu local.
-
----
-
-
-## Couverture (executor)
-
-Badge (local) : ![Badge](docs/coverage/executor/badge.svg)
-
-<!-- executor-coverage:start -->
-- Aper?u : [![executor coverage](.\docs\coverage\executor\snapshot.svg "Lignes 44.1 %, fonctions 48.0 %, branches 26.9 %")](.\docs\coverage\executor\index.html)
-<!-- executor-coverage:end -->
-- Rapport HTML (derni?re ex?cution CI) : `docs/coverage/executor/index.html`
-- R?sum? JSON : `docs/coverage/executor/coverage-summary.json`
-
----
-
-## Prérequis
-
-- [Docker Engine](https://docs.docker.com/get-docker/)
-- [Docker Compose v2](https://docs.docker.com/compose/install/)
-
-> Assurez-vous que votre utilisateur peut communiquer avec le daemon Docker (groupe `docker` ou exécution avec `sudo`).
-
-> Toutes les commandes `docker compose` supposent :
-> ```bash
-> export COMPOSE_FILE=infra/docker-compose.yml
-> ```
-> Personnalisez `infra/.env` si vous devez changer les ports ou chemins montés sans modifier le YAML.
-
----
-
-## CI
-
-Le workflow `Network CI` (fichier `.github/workflows/ci.yml`) orchestre directement les jobs de validation principaux.
-
-Le seul workflow sépare restant est `release.yml`, reserve aux tags de publication. Il consomme `ci.yml` pour verifier l'etat avant creation de release.
-
----
-
-## Silicium CLI
-
-Un utilitaire `./silicium` (alias `./silicium-cli`) simplifie les tâches courantes (tests, démos outils, nettoyage, gestion des volumes ledger) et fournit un shell interactif (`./silicium shell`). Les principales commandes :
+## Vérifications
 
 ```bash
-python3 -m pip install -r requirements-dev.txt
+python -m pytest
+cargo test --manifest-path networked/p2p_node/Cargo.toml --locked
+cargo test --manifest-path networked/compute_daemon/Cargo.toml --locked
+cd solana-layer/silicium-sdk && npm ci && npm run build && npm run verify:dist
 ```
 
-The local CLI is `./silicium` (or `./silicium-cli`). Useful commands:
-
-```bash
-./silicium workload list
-./silicium workload lint
-./silicium workload golden --strict
-./silicium node start --help
-```
-
-The Compose file in `infra/docker-compose.yml` starts localnet/devnet/testnet
-or mainnet profiles and the local proxy. Keep local credentials, ledgers, logs,
-and generated output outside Git; `.gitignore` covers the standard paths.
-
-## Validation
-
-```bash
-make check
-make test
-make raytracer-test
-make smoke
-```
-
-The canonical CI workflow is `.github/workflows/ci.yml`. It covers Python
-validation, Rust P2P crates, the Solana layer, the raytracer, Docker E2E, and
-proxy/P2P smoke checks. See [docs/core-stability.md](docs/core-stability.md) and
-[docs/repository-layout.md](docs/repository-layout.md) for the frozen scope.
-
-## Ownership boundaries
-
-| Mode | Service | Commande de démarrage | Ports host | RPC cible (dans le conteneur) | Usage typique |
-| --- | --- | --- | --- | --- | --- |
-| Localnet | `silicium-localnet` | `docker compose up -d silicium-localnet` | `8900:8899`, `8100-8120` | `http://127.0.0.1:8899` | Dév hors ligne, tests rapides |
-| Devnet | `silicium-devnet` (profil `devnet`) | `docker compose --profile devnet up -d silicium-devnet` | `8910:8899`, `8200-8220` | `https://api.devnet.solana.com` | Tests publics avec faucet |
-| Testnet | `silicium-node` | `docker compose up -d silicium-node` | `8899:8899`, `8000-8020` | `https://api.testnet.solana.com` | Pré-production |
-| Mainnet | `silicium-mainnet` (profil `mainnet`) | `docker compose --profile mainnet up -d silicium-mainnet` | `8920:8899`, `8300-8320` | `https://api.mainnet-beta.solana.com` | Production / observateur |
-| Reverse proxy TLS (Caddy) | `silicium-proxy` (profil `proxy`) | `docker compose --profile proxy up -d silicium-proxy` | `9443:443` (modifiable) | `https://<host>:9443` | Terminaison TLS + protections HTTP devant le RPC |
-| World mesh node | `infra/docker-compose.world.yml` | `docker compose -f infra/docker-compose.world.yml up --build` | `46000/udp`, `46001/tcp` | Mesh P2P + discovery | Tests inter-machines / world mode |
-
-> Activez un profil en ajoutant `--profile devnet` ou `--profile mainnet` à toutes les commandes Compose (ou définissez `COMPOSE_PROFILES=devnet` dans votre shell).
->
-> Pour le mesh inter-machines en mode `--world`, utilisez le compose dédié documenté dans [docs/world-mesh-docker.md](docs/world-mesh-docker.md).
-
-### Transport direct P2P
-
-Le nœud utilise `native-light` par défaut pour les essais UDP locaux, LAN et VPN.
-Pour activer le transport standardisé ICE avec STUN/TURN, installez la dépendance
-optionnelle puis démarrez chaque nœud avec la même configuration de transport :
-
-```bash
-python -m pip install -r requirements-p2p.txt
-python silicium node start --world \
-  --p2p-direct-transport-backend ice \
-  --p2p-stun-server stun.example.org:3478 \
-  --p2p-turn-server turn.example.org:3478 \
-  --p2p-turn-username "$SILICIUM_P2P_TURN_USERNAME" \
-  --p2p-turn-password "$SILICIUM_P2P_TURN_PASSWORD"
-```
-
-`silicium node start` now launches the Rust `p2p_node` binary directly. Set
-`SILICIUM_P2P_NODE_BIN` to override the executable used by the launcher.
-
-La signalisation reste nécessaire pour échanger les identités, les credentials
-ICE et les candidats. Elle ne transporte pas les payloads après l’établissement
-du chemin direct. Si ICE est indisponible ou échoue, le nœud expose une raison
-structurée et applique les transports de repli autorisés par la session.
-
----
-
-## Démarrage rapide (Localnet)
-
-```bash
-# 1. Lancer le réseau local
-docker compose up -d silicium-localnet
-
-# 2. Consulter l'état
-docker compose logs -f silicium-localnet
-
-# 3. Ouvrir un shell dans le conteneur (CLI Solana déjà configuré)
-docker compose exec silicium-localnet bash
-
-# 4. Vérifier / interagir
-solana config get
-solana address
-solana airdrop 100
-solana balance
-```
-
-Pour arrêter et nettoyer :
-
-```bash
-docker compose down         # stoppe les services en cours
-docker compose down -v      # supprime aussi les volumes Docker (silicium-*-ledger)
-```
-
----
-
-## Interagir avec Localnet, Devnet, Testnet ou Mainnet
-
-1. **Lancer le service correspondant** (cf. tableau ci-dessus).
-2. **Entrer dans le conteneur** en reprenant le même profil que lors du `up` :
-   ```bash
-   docker compose exec silicium-node bash                      # testnet
-   docker compose --profile devnet exec silicium-devnet bash   # devnet
-   docker compose --profile mainnet exec silicium-mainnet bash # mainnet
-   ```
-3. **Utiliser la CLI** (déjà pointée vers la bonne URL grâce au script d'entrée) :
-   ```bash
-   solana balance
-   solana airdrop 1 <PUBKEY>    # disponible sur devnet/localnet uniquement
-   solana transfer <DEST> 0.1
-   solana program deploy target/deploy/app.so
-   ```
-4. **Depuis votre machine hôte ou un autre PC**, ciblez l'URL exposée :
-   ```bash
-   solana config set --url http://<ip-publique>:8900   # localnet exposé
-   solana balance
-   ```
-
----
-
-## Gestion des clés et du CLI
-
-- Au premier démarrage, `infra/docker/solana-entrypoint.sh` génère un `validator-identity.json`, copie un signer par défaut dans `~/.config/solana/id.json` et alimente `solana config`.
-- Pour créer un portefeuille dédié :
-  ```bash
-  docker compose exec silicium-localnet solana-keygen new --outfile /workspace/wallet.json
-  docker compose exec silicium-localnet solana config set --keypair /workspace/wallet.json
-  ```
-- Pour récupérer la clé publique :
-  ```bash
-  solana-keygen pubkey /workspace/wallet.json
-  ```
-
-Les fichiers générés persistent désormais dans des volumes Docker nommés (`silicium-<network>-ledger`). Sauvegardez-les (`silicium-cli ledger list` + `docker run -v volume:/data ...`) avant toute suppression.
-
----
-
-## Variables d'environnement principales
-
-| Variable | Description |
-| --- | --- |
-| `SILICIUM_NETWORK` | `silicium`, `devnet`, `testnet`, `mainnet` (détermine RPC/entrypoints). |
-| `SILICIUM_RPC_PORT` | Port RPC interne du validateur (ex: `8899`). |
-| `SILICIUM_RPC_BIND_ADDRESS` | Adresse d'écoute (`0.0.0.0` pour accepter des clients distants). |
-| `SILICIUM_DYNAMIC_PORT_RANGE` | Plage des ports dynamiques (vote, TPU…). |
-| `SILICIUM_LEDGER_DIR` | Chemin du ledger dans le conteneur. |
-| `SILICIUM_IDENTITY_PATH` / `SILICIUM_VOTE_ACCOUNT_PATH` | Emplacements des keypairs. |
-| `SILICIUM_CLI_URL` | URL injectée dans `solana config set --url ...` à chaque démarrage. |
-| `SILICIUM_PUBLIC_RPC_ADDRESS` | `host:port` annoncé via `--public-rpc-address`. |
-| `SILICIUM_LOCAL_RESET` | `true` pour réinitialiser le ledger localnet au démarrage. |
-
-Toutes les variables définies dans `docker-compose.yml` peuvent être surchargées via un fichier `.env` ou la ligne de commande (`SILICIUM_RPC_PORT=9000 docker compose up ...`).
-
----
-
-## Exposer le réseau à d'autres machines
-
-1. **Écoute externe** : gardez `SILICIUM_RPC_BIND_ADDRESS=0.0.0.0` et mappez les ports (`8899`, `8000-8020`, etc.) vers l'hôte.
-2. **Pare-feu / Routeur** : ouvrez ou redirigez ces ports vers votre serveur.
-3. **Annonce publique** : définissez `SILICIUM_PUBLIC_RPC_ADDRESS=mon-domaine.example.com:8899` pour informer les pairs du bon endpoint.
-4. **Sécurité** : placez idéalement un reverse proxy TLS (Nginx, Caddy) ou un VPN (WireGuard) devant `8899` si l'accès doit être restreint.
-5. **Clients distants** : communiquez l'URL (ex: `https://mon-rpc.example.com`) et demandez-leur d'exécuter `solana config set --url ...`.
-
-## Reverse proxy TLS intégré
-
-`silicium-proxy` (profil `proxy`) embarque Caddy et sécurise l'accès RPC : terminaison TLS, en-têtes `X-Forwarded-*`, endpoint `/healthz` et persistance des certificats via les volumes `caddy-data` / `caddy-config`. Par défaut l'hôte publie `9443:443`, modifiez le mapping si vous exposez directement 443.
-
-1. **Choisissez votre mode TLS** (`PROXY_TLS_MODE`) :
-   | Mode | Usage recommandé | Prérequis |
-   | --- | --- | --- |
-   | `local` (défaut) | Certificats gérés à la main. | Déposer `tls.crt` / `tls.key` dans `infra/docker/reverse-proxy/certs/`. Exemple auto-signé :<br>`openssl req -x509 -nodes -newkey rsa:4096 -keyout infra/docker/reverse-proxy/certs/tls.key -out infra/docker/reverse-proxy/certs/tls.crt -subj "/CN=rpc.local.silicium"` |
-   | `acme` | Certificat Let's Encrypt automatique. | Un DNS public pointant vers votre serveur, ports 80/443 ouverts, variables `PROXY_SITE_ADDRESS=rpc.example.com` et `PROXY_TLS_EMAIL=ops@example.com`. |
-   | `internal` | Lab / réseau privé avec autorité interne. | Caddy émet un certificat autosigné ; distribuez la racine (`caddy trust` ou export depuis `caddy-data`). |
-2. **Désignez la cible RPC** : ajustez `PROXY_UPSTREAM_HOST` / `PROXY_UPSTREAM_PORT` pour pointer vers `silicium-localnet`, `silicium-node`, etc. (par défaut `silicium-localnet:8899`). Utilisez un fichier `.env` ou passez les variables inline :
-   ```bash
-   PROXY_UPSTREAM_HOST=silicium-node \
-   PROXY_SITE_ADDRESS=rpc.example.com \
-   PROXY_TLS_MODE=acme \
-   PROXY_TLS_EMAIL=ops@example.com \
-   docker compose --profile proxy up -d silicium-proxy
-   ```
-3. **Lancez le nœud visé puis le proxy** :
-   ```bash
-   docker compose up -d silicium-localnet
-   docker compose --profile proxy up -d silicium-proxy
-   ```
-   Pour un accès mondial, mappez les ports standards (`PROXY_HTTP_PORT=80`, `PROXY_HTTPS_PORT=443`) ou ajustez les règles de pare-feu en conséquence.
-4. **Vérifiez la publication** :
-   ```bash
-   curl -k https://localhost:9443/healthz
-   curl -k https://localhost:9443/
-   ```
-   Retirez `-k` lorsque vous utilisez un certificat de confiance publique.
-
-Variables clés :
-
-| Variable | Description |
-| --- | --- |
-| `PROXY_SITE_ADDRESS` | Hôte (et éventuellement port) servi par Caddy (`:443` par défaut, mettre `rpc.example.com` pour ACME). |
-| `PROXY_UPSTREAM_HOST` / `PROXY_UPSTREAM_PORT` | Service RPC à protéger (ex: `silicium-node:8899`). |
-| `PROXY_TLS_MODE` | `local`, `acme`, ou `internal`. |
-| `PROXY_TLS_EMAIL` | Email Let’s Encrypt (requis pour `acme`). |
-| `PROXY_TLS_CERT_PATH` / `PROXY_TLS_KEY_PATH` | Emplacements des fichiers utilisés en mode `local`. |
-| `PROXY_HTTP_PORT` / `PROXY_HTTPS_PORT` | Ports hôte mappés sur `80/443` du proxy (`9080` / `9443` par défaut, passez à `80` / `443` pour l'exposer publiquement). |
-| `PROXY_TEST_URL` | URL pingée par le script d'automatisation (défaut `https://localhost:${PROXY_HTTPS_PORT}/healthz`). |
-
-### Démarrage automatisé (script)
-
-Pour tester rapidement le proxy + SSL, utilisez `infra/bin/run-with-proxy.sh` :
-
-```bash
-infra/bin/run-with-proxy.sh                   # localnet + certificat auto-signé + proxy
-PROXY_COMPOSE_PROFILES=proxy,devnet \
-infra/bin/run-with-proxy.sh silicium-devnet   # active aussi le profil devnet
-PROXY_TLS_MODE=acme \
-PROXY_SITE_ADDRESS=rpc.example.com \
-PROXY_TLS_EMAIL=ops@example.com \
-infra/bin/run-with-proxy.sh silicium-node
-```
-
-Le script :
-
-- génère un certificat auto-signé si besoin (`PROXY_TLS_MODE=local`);
-- démarre le service demandé et `silicium-proxy` avec les profils fournis (`PROXY_COMPOSE_PROFILES`, par défaut `proxy`);
-- attend que `https://localhost:${PROXY_HTTPS_PORT}/healthz` (9443 par défaut, customisable via `PROXY_TEST_URL`) réponde avant de quitter.
-
-#### Exemple : exposer un RPC mondial (Let's Encrypt)
-
-```bash
-PROXY_TLS_MODE=acme \
-PROXY_SITE_ADDRESS=rpc.example.com \
-PROXY_TLS_EMAIL=ops@example.com \
-PROXY_HTTP_PORT=80 \
-PROXY_HTTPS_PORT=443 \
-infra/bin/run-with-proxy.sh silicium-node
-```
-
-Conditions :
-
-- `rpc.example.com` pointe sur l'IP publique de votre machine.
-- Les ports TCP 80 et 443 sont ouverts/redirigés jusqu'au serveur Docker.
-- Les clients distants ciblent ensuite `https://rpc.example.com` (`solana config set --url https://rpc.example.com`).
-- Si vous testez depuis une autre machine que le serveur, surchagez `PROXY_TEST_URL=https://rpc.example.com/healthz` pour éviter que le script ne ping `localhost`.
-
-Les secrets TLS demeurent hors Git grâce à `.gitignore`. Les artefacts ACME/internal sont conservés dans les volumes Docker, pensez à les sauvegarder si vous migrez le proxy.
-
----
-
-## RPC privé pour calculateurs / vérificateurs
-
-Le dossier `infra/secure-stack/` fournit un exemple minimal de déploiement sécurisé pour un réseau de calcul distribué :
-
-| Service | Rôle |
-| --- | --- |
-| `solana-rpc` | Lance un `solana-test-validator` (ou fork) avec RPC interne `10.42.0.2:8899`. Aucun port n'est publié sur Internet. |
-| `wireguard-hub` | Passerelle VPN (WireGuard) qui n'ouvre que `UDP/51820`. Seuls les peers autorisés (calculateurs/vérificateurs) peuvent atteindre le RPC via le sous-réseau `10.13.13.0/24`. |
-
-### Démarrage
-
-```bash
-cd infra/secure-stack
-./bootstrap.sh
-```
-
-Le script :
-
-1. Vérifie que le module WireGuard est chargé.
-2. Tire les images Docker et démarre les services (`docker-compose.yaml`).
-3. Liste les fichiers de configuration générés pour chaque peer (`wireguard/config/peer-*/peer.conf`).
-
-### Ajouter / retirer des peers
-
-Modifiez `PEERS` dans `infra/secure-stack/docker-compose.yaml` (ex: `PEERS=calculator01,calculator02,verifier01`) puis relancez :
-
-```bash
-docker compose -f infra/secure-stack/docker-compose.yaml down
-docker compose -f infra/secure-stack/docker-compose.yaml up -d
-```
-
-Chaque répertoire `wireguard/config/peer-<name>/` contient un `peer.conf` (clé privée, clé publique du hub, routes). Transférez ce fichier de manière sécurisée au noeud correspondant.
-
-### Connexion côté worker / verifier
-
-Sur un poste Linux :
-
-```bash
-sudo wg-quick up ./peer.conf   # tunnel chiffré (ChaCha20-Poly1305)
-export SOLANA_URL=http://10.42.0.2:8899
-solana balance                 # ou tout autre appel RPC
-curl -s http://10.42.0.2:8899 -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}' -H 'Content-Type: application/json'
-```
-
-- Les échanges passent uniquement par WireGuard, donc le RPC n'est jamais exposé au réseau public.
-- L'IP réelle du worker n'apparaît pas côté Solana : seule l'adresse virtuelle `10.13.13.x` est visible.
-- Les tâches calculées (transactions, programmes, résolutions) restent confidentielles car le trafic est chiffré et isolé.
-
-Pour les vérificateurs, utilisez la même procédure : importer la configuration `peer-verifierXX`, établir le tunnel, puis lire les comptes / publier des attestations via RPC. Vous pouvez également scinder les peers par rôles (ex: `ALLOWEDIPS` spécifiques) si vous voulez cloisonner calculateurs et vérificateurs.
-
-> Aucune intégration Let’s Encrypt / DNS public n’est nécessaire : l’authentification repose sur les clés WireGuard, et seul le port UDP 51820 doit être exposé.
-
----
-
-## Troubleshooting de base
-
-- `service "<name>" is not running` : relancez la commande avec le profil actif (`docker compose --profile devnet exec ...`) ou vérifiez `docker compose --profile devnet ps`.
-- `certificate verify failed` : rebuild l'image (les CA sont installés dans le Dockerfile) et assurez-vous que la machine a accès au réseau.
-- `airdrop request failed` sur testnet/mainnet : normal, seuls Devnet/Localnet disposent d'une faucet intégrée.
-- Pour réinitialiser totalement la localnet : `./silicium-cli ledger wipe --network localnet` puis relancez `docker compose up -d silicium-localnet`.
-
----
-
-## Tests
-
-Une suite Pytest couvre la logique du script d'entrée (sélection des réseaux, configuration du CLI, génération des clés) et valide les manifests (`catalog/workloads/**/manifest.yaml`).
-
-```bash
-pip install -r requirements-dev.txt
-pytest
-```
-
-Les tests créent des stubs pour les binaires Solana, ils s'exécutent donc sans dépendances externes ni accès réseau, tout en validant les commandes critiques (lancement des nœuds, `solana balance`, `solana airdrop`, `solana transfer`, etc.).
-
-### Smoke test proxy
-
-`tests/smoke/run_proxy_smoke.sh` démarre un service factice (`proxy-smoke-target`, profil `smoke`) plus `silicium-proxy` pour vérifier que la génération TLS + l'endpoint `/healthz` fonctionnent. Le script s'appuie sur `infra/bin/run-with-proxy.sh` et arrête ensuite les services.
-
----
-
-## DSL de tests Silicium
-
-La suite `tests/test_entrypoint.py` ne contient plus de valeurs en dur : elle lit `tests/testdata.txt`, un fichier texte facile à éditer ligne par ligne.
-
-### Syntaxe
-
-| Mot-clé | Rôle |
-| --- | --- |
-| `var <nom> <valeur>` | Définit un placeholder référencé par `${nom}` ailleurs dans le fichier. |
-| `scenario <id>` / `end` | Début/fin d'un scénario. |
-| `desc <texte>` | Description libre (affichée dans les logs Pytest). |
-| `env <KEY> <value>` | Ajoute/écrase une variable d'environnement pour ce scénario. |
-| `op ...` | Décrit l'opération lancée par l'entrypoint. Types disponibles : `start_network [network] [extra args...]`, `cli_command <program> [args...]`, `airdrop <amount> <dest> [flags...]`, `transfer <dest> <amount> [flags...]`. |
-| `rule ...` | Assertion exécutée côté test (`expect_success`, `expect_failure`, `stderr_contains <txt>`, `log_contains <log> <snippet>`, `log_requires_entries <log>`, `file_exists <relative_path>`). |
-
-### Exemple minimal
-
-```txt
-var urls.localnet http://127.0.0.1:8899
-
-scenario localnet_uses_test_validator
-desc Vérifie que le CLI pointe sur le RPC local
-op start_network silicium
-rule expect_success
-rule log_contains solana config set --url ${urls.localnet}
-end
-```
-
-Ajouter un scénario = copier/coller ce bloc, adapter `op` et les `rule`. Aucun changement Python nécessaire.
-
----
-
-## Catalogue de calculs (`catalog/workloads/`)
-
-Le dossier `catalog/workloads/` décrit les types de calcul que le réseau peut dispatcher.  
-Pour chaque profil (encodage vidéo, simulation mathématique, inference IA, rendu, data processing) on fournit :
-
-- un `manifest.yaml` machine-lisible (commande à exécuter, ressources nécessaires, artefacts attendus, règles de validation) ;
-- un `README.md` expliquant le format des entrées/sorties et les recommandations matérielles.
-
-Les devices téléchargent le manifest correspondant au job pour sélectionner le bon exécutable et reporter les preuves (hash, logs). Ajoutez vos propres profils en créant un nouveau sous-dossier dans `catalog/workloads/` puis en complétant les deux fichiers de référence.
-
-Chaque manifest de calcul référence au moins une opération de vérification (`catalog/workloads/verification/...`). Lors du scheduling, seuls des noeuds n'ayant pas participé au calcul peuvent exécuter la vérification correspondante, garantissant une séparation stricte entre production et audit.
-
-Voir aussi la matrice de couverture workloads/features:
-`docs/workloads-coverage-matrix.md`
-
-### Bibliothèques dynamiques requises
-
-Le `summary.json` contient deux niveaux d'information :
-
-- `required_libraries` (racine) : l'équivalent de `DT_NEEDED`, détecté via `ldd`.
-- Pour chaque partition, les champs `external_calls` et `required_libraries`
-  listent respectivement les symboles externes détectés pendant le partitionnement
-  et les bibliothèques minimales associées (résolution via `nm -D` sur chaque lib).
-
-Le backend peut donc charger uniquement les bibliothèques réellement nécessaires
-à un fragment donné (libm pour `sqrt`, libc pour `printf`, etc.), sans multiplieur
-tout le binaire complet.
-
-### Fragments nécessitant une GUI (CSFML, SDL, …)
-
-Lorsque `splitter` détecte des appels `sfRenderWindow_*` (ou assimilés), le
-`summary.json` marque le fragment comme `requires_display`. Si vous lancez ces
-fragments en mode `--native`, configurez un wrapper Docker headless :
-
-1. Construire l'image VNC/Xvfb fournie :
-   ```bash
-   docker build -t silicium/gui-runner docker/gui-runner
-   ```
-2. Exporter le wrapper (montre le repo courant dans le conteneur et démarre un
-   serveur VNC/Xvfb) :
-   ```bash
-   export FRAGMENT_GUI_WRAPPER=worker/scripts/gui_wrapper.sh
-   export FRAGMENT_GUI_DOCKER_IMAGE=silicium/gui-runner
-   # Optionnel : exposer le serveur VNC local sur 5901
-   export FRAGMENT_GUI_VNC_PORT=5901
-   ```
-3. Lancer `fragment_executor --native` (ou `make run-native …`). Sans variable
-   particulière, l’outil utilise automatiquement
-   `worker/scripts/gui_wrapper.sh` si Docker est disponible dans le dépôt ;
-   configurez `FRAGMENT_GUI_WRAPPER` / `FRAGMENT_GUI_DOCKER_IMAGE` pour
-   personnaliser l’image. Les fragments `requires_display` sont rejoués dans ce
-   conteneur headless + VNC (`RUNNING_IN_GUI_CONTAINER=1` évite toute récursion).
-
-Vous pouvez vous connecter au serveur VNC (`localhost:${FRAGMENT_GUI_VNC_PORT}`)
-pour observer la fenêtre si nécessaire. Les workers dépourvus de GUI continueront
-à repasser en mode émulation.
-
----
-
-## Architecture on-chain Silicium (briques prévues)
-
-| Programme | Responsabilité principale | Comptes clés |
-| --- | --- | --- |
-| **JobRegistry** | Enregistrement des jobs soumis via l'UI, escrow des SPL payés par les clients, suivi des fragments émis/réceptionnés. | PDA Job, coffre SPL, compte client. |
-| **FragmentCertifier** | Enregistre chaque fragment calculé, stocke le hash/proof fournie par le node, valide la cohérence via un quorum ou une preuve externe. | PDA Fragment, compte du compute node (stake), références vers JobRegistry. |
-| **ResultAssembler** | Agrège les fragments certifiés, publie le hash final et signale que le job est terminé (déblocage du paiement). | PDA Result, JobRegistry, comptes outputs (URI/IPFS). |
-| **StakeManager** | Gestion du staking / réputation des compute nodes (collatéral en SPL, slashing en cas de fraude). | PDA Node, coffre staking, compte admin/gouvernance. |
-| **Governance** | Paramètres protocolaires (frais, listes blanches de Program IDs custom, gestion des mises à jour). | Realm (p.ex. SPL Governance), comptes de votes. |
-
-Flux simplifié : l'UI appelle JobRegistry pour créer un job + escrow SPL → les compute nodes réclament des fragments, les soumettent à FragmentCertifier → ResultAssembler valide que tous les fragments sont présents et signés → JobRegistry règle les nodes via StakeManager (bonus/malus). Cette découpe garde l'économie sous contrôle tout en permettant d'ajouter des “plugins” (programmes clients) via une liste blanche de Program IDs autorisés dans les CPI.
-
----
-
-RÃ©fÃ©rence JobRegistry (spec + threat model) : `docs/job-registry-contract-spec.md`.
-RÃ©fÃ©rence Payment contract (token/credit accounting) : `docs/payment-contract-accounting-spec.md`.
-RÃ©fÃ©rence JupiterNotebook (flow + blockchain integration) : `docs/notebook-blockchain-integration-plan.md`.
-RÃ©fÃ©rence splitter extension seams (interfaces + factories) : `docs/architecture/splitter-extension-seams.md`.
-RÃ©fÃ©rence executor extension seams (backend/runner/hash boundaries) : `docs/architecture/executor-extension-seams.md`.
-
-## Interface web & API (esquisse)
-
-### Écrans principaux
-1. **Dashboard client** : dépôt d'un job (upload artefacts, choisir ressources, budget SPL).  
-2. **Suivi de job** : timeline des fragments, statut (file d'attente, en cours, agrégé), lien vers résultat final.  
-3. **Compute node console** : enregistrement/staking, liste des tâches assignées, preuves soumises, récompenses.  
-4. **Gouvernance** : votes sur mises à jour, limites économiques, programmes autorisés.
-
-### API backend (REST/GraphQL minimal)
-| Endpoint | Description |
-| --- | --- |
-| `POST /jobs` | Crée un job, renvoie l'instruction Solana à signer pour JobRegistry + métadonnées IPFS/S3. |
-| `GET /jobs/:id` | Statut agrégé (on-chain + off-chain). |
-| `POST /nodes/register` | Fournit l'instruction StakeManager à signer (stake, KYC éventuel). |
-| `POST /fragments/:id/proof` | Upload de la preuve + signature qui seront ensuite poussées on-chain via FragmentCertifier. |
-| `GET /governance/proposals` | Liste synchrone avec le programme de gouvernance. |
-
-Le backend agit comme “indexeur” : il surveille les programmes Solana (via WebSocket RPC ou service type Helius), stocke les évènements pour l'UI, et prépare les transactions que les utilisateurs signeront dans leur wallet.
-
----
-
-## Checklist exploitation Mainnet
-
-1. **Clés & secrets** : générer les keypairs validator/vote sur une machine hors-ligne, les injecter via volumes chiffrés, conserver des sauvegardes scellées.  
-2. **Monitoring** : activer Prometheus/Grafana ou au minimum `solana-validator --log` + alertes (RAM, vote distance, skipped slots).  
-3. **Réseau** : ouvrir uniquement les ports nécessaires (8899 + plage TPU), placer un reverse proxy TLS pour le RPC public, limiter les IP si besoin.  
-4. **Mises à jour** : script de rolling upgrade (arrêt propre, sauvegarde ledger, mise à jour Docker image, redémarrage, vérification `solana-validator monitor`).  
-5. **Sécurité applicative** : valider chaque nouvelle version des programmes on-chain (audit interne ou externe), publier les Program IDs et procédures de migration.  
-6. **Plan de reprise** : documenter la restauration à partir des backups (keypairs, snapshot Solana, configuration Docker), tester régulièrement.
-
----
-
-## Aller plus loin
-
-- Automatisez vos déploiements prod en injectant vos clés validator/vote via des volumes chiffrés.
-- Ajoutez un observateur ou un RPC privé en passant les flags Solana supplémentaires après `--` dans `command`.
-- Contribuez au script d'entrée pour gérer d'autres profils (clusters internes, entrypoints custom).
+La CI exécute aussi les tests du bridge de réputation et vérifie que le `dist`
+du SDK est régénéré. La gate Compose de Fusion ouvre réellement le FrontEnd
+dans un navigateur et contrôle le chemin FrontEnd → BackEnd → nœud Rust.
+
+## Documentation utile
+
+- [Contrat HTTP du nœud](docs/node-control-api.md)
+- [Transport P2P direct](docs/p2p-direct-transport-contract.md)
+- [Organisation du dépôt](docs/repository-layout.md)
+- [Workloads et fixtures](docs/workload-fixtures.md)
+- [Intégration Solana Devnet](docs/solana-devnet.md)
+
+## État généré
+
+Les caches, ledgers, sorties Cargo, `node_modules`, clés et journaux sont
+ignorés par Git. Ne les ajoutez pas au dépôt et utilisez les scripts CI qui
+nettoient leur propre espace de travail entre les builds.
