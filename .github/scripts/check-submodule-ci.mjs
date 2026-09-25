@@ -13,6 +13,7 @@ function usage() {
     "  node .github/scripts/check-submodule-ci.mjs --all",
     "  node .github/scripts/check-submodule-ci.mjs --repo owner/repo --ref main",
     "  node .github/scripts/check-submodule-ci.mjs --repo owner/repo --sha <commit-sha>",
+    "  node .github/scripts/check-submodule-ci.mjs --repo owner/repo --sha <commit-sha> --allow-missing-runs",
     "  node .github/scripts/check-submodule-ci.mjs --repo owner/repo --latest-green",
     "",
     "Environment:",
@@ -36,6 +37,8 @@ function parseArgs(argv) {
       out.label = argv[++i];
     } else if (arg === "--latest-green") {
       out.latestGreen = true;
+    } else if (arg === "--allow-missing-runs") {
+      out.allowMissingRuns = true;
     } else if (arg === "--help" || arg === "-h") {
       out.help = true;
     } else {
@@ -115,13 +118,17 @@ async function resolveCommitSha(repo, refOrSha) {
   return branch.commit.sha;
 }
 
-async function checkRepo(repo, refOrSha, label) {
+async function checkRepo(repo, refOrSha, label, { allowMissingRuns = false } = {}) {
   const sha = await resolveCommitSha(repo, refOrSha);
   const display = label || repo;
 
   const runs = await api(`/repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`);
   const workflowRuns = runs.workflow_runs || [];
   if (workflowRuns.length === 0) {
+    if (allowMissingRuns) {
+      console.log(`${display}@${sha.slice(0, 12)} has no visible Actions workflow runs; validation is delegated to Fusion CI.`);
+      return sha;
+    }
     throw new Error(`${display}@${sha.slice(0, 12)} has no visible Actions workflow runs.`);
   }
 
@@ -229,7 +236,9 @@ async function main() {
     process.exit(1);
   }
 
-  await checkRepo(args.repo, args.sha || args.ref, args.label || args.repo);
+  await checkRepo(args.repo, args.sha || args.ref, args.label || args.repo, {
+    allowMissingRuns: args.allowMissingRuns === true,
+  });
 }
 
 main().catch((error) => {

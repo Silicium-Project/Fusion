@@ -94,7 +94,7 @@ jobs:
                 continue
               fi
               if ! node .github/scripts/check-submodule-ci.mjs \
-                --repo "$repo" --sha "$sha" --label "$path" >>"$report" 2>&1; then
+                --repo "$repo" --sha "$sha" --allow-missing-runs --label "$path" >>"$report" 2>&1; then
                 gate_failed=1
               fi
             done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | sed -E 's/^submodule\.([^ ]+)\.path[[:space:]]+([^ ]+)$/\1 \2/')
