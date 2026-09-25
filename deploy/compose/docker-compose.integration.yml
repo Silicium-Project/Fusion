@@ -1,0 +1,142 @@
+name: silicium-integration
+
+# This stack is deliberately self-contained: it is the CI contract for the
+# browser-facing FrontEnd -> proxy -> BackEnd -> Rust node status path.  It
+# does not reuse production env files, certificates, ports or data volumes.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: silicium
+      POSTGRES_USER: silicium
+      POSTGRES_PASSWORD: silicium-integration-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U silicium -d silicium"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [integration]
+
+  compute-daemon:
+    build:
+      context: ../../Network/networked
+      dockerfile: compute_daemon/Dockerfile
+    environment:
+      SILICIUM_COMPUTE_BIND: 0.0.0.0:9090
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9090/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [integration]
+
+  reputation-bridge:
+    build:
+      context: ../../Network/networked/reputation_bridge
+      dockerfile: Dockerfile
+    environment:
+      LISTEN_ADDR: 0.0.0.0:9091
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9091/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [integration]
+
+  silicium-node:
+    build:
+      context: ../../Network/networked
+      dockerfile: p2p_node/Dockerfile
+    environment:
+      SILICIUM_API_BIND: 0.0.0.0
+      API_PORT: "9092"
+      SILICIUM_P2P_TCP_PORT: "4001"
+      SILICIUM_P2P_QUIC_PORT: "4001"
+      SILICIUM_NODE_ID: integration-node
+      SILICIUM_NODE_ROLES: compute,verify
+      SILICIUM_NODE_CONTROL_TOKEN: integration-control-token
+      SILICIUM_DATA_DIR: /data
+      COMPUTE_DAEMON_URL: http://compute-daemon:9090
+      REPUTATION_BRIDGE_URL: http://reputation-bridge:9091
+    depends_on:
+      compute-daemon:
+        condition: service_healthy
+      reputation-bridge:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9092/v1/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - node-data:/data
+    networks: [integration]
+
+  backend:
+    build:
+      context: ../../BackEnd
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: host=postgres user=silicium password=silicium-integration-only dbname=silicium port=5432 sslmode=disable
+      HOST: 0.0.0.0
+      PORT: "8080"
+      JWT_SECRET_KEY: integration-only-secret
+      CORS_ALLOWED_ORIGINS: http://proxy
+      SILICIUM_NODE_API_URL: http://silicium-node:9092
+      SILICIUM_NODE_CONTROL_TOKEN: integration-control-token
+      SILICIUM_NETWORK_ROOT: /opt/silicium/Network
+      SILICIUM_RELEASE_CHANNEL: dev
+      SILICIUM_RELEASE_VERSION: integration
+      SILICIUM_RELEASE_BUILD: local
+      SILICIUM_WORKLOAD_STORAGE_DIR: /var/lib/silicium/site/runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      silicium-node:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [integration]
+
+  frontend:
+    build:
+      context: ../../FrontEnd
+      dockerfile: Dockerfile
+    environment:
+      NUXT_PUBLIC_API_BASE: /api
+      NUXT_PUBLIC_STATUS_REFRESH_SECONDS: "30"
+      NUXT_PUBLIC_RELEASE_CHANNEL: dev
+      NUXT_PUBLIC_RELEASE_VERSION: integration
+      NUXT_PUBLIC_RELEASE_BUILD: local
+    networks: [integration]
+
+  proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    volumes:
+      - ./integration/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks: [integration]
+
+  integration-gate:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/integration/playwright.Dockerfile
+    environment:
+      SILICIUM_INTEGRATION_URL: http://proxy
+    depends_on:
+      proxy:
+        condition: service_started
+    networks: [integration]
+
+volumes:
+  node-data:
+
+networks:
+  integration:

@@ -43,6 +43,11 @@ on:
         required: false
         type: boolean
         default: false
+      run_compose_integration:
+        description: "Run the real FrontEnd -> BackEnd -> Rust node Compose gate."
+        required: false
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
       release_channel:
@@ -86,6 +91,11 @@ on:
         required: false
         type: boolean
         default: false
+      run_compose_integration:
+        description: "Run the real FrontEnd -> BackEnd -> Rust node Compose gate."
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -152,6 +162,60 @@ jobs:
       - name: Validate web stack
         shell: bash
         run: bash deploy/ci/validate-web-stack.sh "$GITHUB_WORKSPACE"
+
+  compose-integration:
+    needs: [submodule-ci-gate]
+    if: ${{ always() && inputs.run_compose_integration && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
+    runs-on: [self-hosted, fusion-linux]
+    timeout-minutes: 90
+    steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,BackEnd,FrontEnd,Network
+
+      - name: Check out sources
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Sync declared submodules
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          git submodule sync -- BackEnd FrontEnd Network
+          git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force --recursive -- BackEnd FrontEnd Network
+
+      - name: Prepare Docker access
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker_path="$(command -v docker)"
+          if docker info >/dev/null 2>&1; then
+            exit 0
+          fi
+          if ! sudo -n "$docker_path" info >/dev/null 2>&1; then
+            echo "Docker is unavailable and passwordless sudo cannot access it." >&2
+            exit 1
+          fi
+          wrapper_dir="$RUNNER_TEMP/docker-bin"
+          mkdir -p "$wrapper_dir"
+          printf '%s\n' '#!/usr/bin/env bash' "exec sudo -n \"$docker_path\" \"\$@\"" > "$wrapper_dir/docker"
+          chmod +x "$wrapper_dir/docker"
+          echo "$wrapper_dir" >> "$GITHUB_PATH"
+
+      - name: Run browser-to-node integration gate
+        shell: bash
+        run: bash deploy/ci/compose-integration.sh "$GITHUB_WORKSPACE"
 
   node-fast:
     needs: [submodule-ci-gate]

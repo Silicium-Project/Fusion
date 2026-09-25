@@ -108,4 +108,5 @@ jobs:
       run_network_e2e: false
       run_network_smoke: false
       run_node_fast: ${{ needs.changes.outputs.node_fast == 'true' }}
+      run_compose_integration: ${{ needs.changes.outputs.network_core == 'true' }}
     secrets: inherit
