@@ -61,11 +61,11 @@ jobs:
           validate=false
           submodule_change=false
 
-          if matches '^(BackEnd|FrontEnd)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$'; then
+          if matches '^(BackEnd|FrontEnd)(/|$)|^deploy/(compose|linux)/|^deploy/ci/(validate-web-stack|compose-integration)\.sh$'; then
             web=true
             validate=true
           fi
-          if matches '^Network(/|$)|^(BackEnd|Network)$|^deploy/(compose|linux)/'; then
+          if matches '^Network(/|$)|^(BackEnd|Network)$|^deploy/(compose|linux)/|^deploy/ci/compose-integration\.sh$'; then
             network_core=true
             validate=true
           fi
