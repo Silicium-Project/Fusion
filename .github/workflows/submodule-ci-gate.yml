@@ -71,18 +71,12 @@ jobs:
           fi
           echo "Required BackEnd and FrontEnd runner services are already active."
 
-      - name: Require healthy submodule mains
+      - name: Require healthy pinned submodule commits
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
-          RELEASE_CHANNEL: ${{ inputs.release_channel || 'dev' }}
         run: |
           set -euo pipefail
-          case "$RELEASE_CHANNEL" in
-            dev) submodule_ref=dev ;;
-            prod) submodule_ref=main ;;
-            *) echo "Unsupported release channel: $RELEASE_CHANNEL" >&2; exit 1 ;;
-          esac
           deadline=$(( $(date +%s) + 2700 ))
           report="$RUNNER_TEMP/submodule-ci-gate.log"
           while true; do
@@ -93,8 +87,14 @@ jobs:
               repo="${url#https://github.com/}"
               repo="${repo#git@github.com:}"
               repo="${repo%.git}"
+              sha="$(git ls-tree HEAD "$path" | awk '{print $3}')"
+              if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "Unable to resolve pinned commit for $path." >>"$report"
+                gate_failed=1
+                continue
+              fi
               if ! node .github/scripts/check-submodule-ci.mjs \
-                --repo "$repo" --ref "$submodule_ref" --latest-green --label "$path" >>"$report" 2>&1; then
+                --repo "$repo" --sha "$sha" --label "$path" >>"$report" 2>&1; then
                 gate_failed=1
               fi
             done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | sed -E 's/^submodule\.([^ ]+)\.path[[:space:]]+([^ ]+)$/\1 \2/')
@@ -103,8 +103,8 @@ jobs:
               exit 0
             fi
             cat "$report"
-            if grep -Eqi 'has no green commit candidate|has no visible Actions workflow runs|Cannot resolve |GitHub API .* failed' "$report"; then
-              echo "No green submodule commit candidate is currently available." >&2
+            if grep -Eqi 'Unable to resolve pinned commit|Cannot resolve |GitHub API .* failed' "$report"; then
+              echo "A pinned submodule commit could not be resolved." >&2
               exit 1
             fi
             if [[ "$(date +%s)" -ge "$deadline" ]]; then
