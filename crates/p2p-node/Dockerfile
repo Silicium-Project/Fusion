@@ -2,16 +2,13 @@
 
 FROM rust:1.94-bookworm AS builder
 
+# Build context = Network/ (workspace root). See Dockerfile.dockerignore.
 WORKDIR /work
-COPY node-core/Cargo.toml ./node-core/Cargo.toml
-COPY node-core/src ./node-core/src
-COPY p2p-node/Cargo.toml p2p-node/Cargo.lock ./p2p-node/
-COPY p2p-node/src ./p2p-node/src
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
 
-RUN cargo fetch --locked --manifest-path /work/p2p-node/Cargo.toml
-
-WORKDIR /work/p2p-node
-RUN cargo build --release --locked
+RUN cargo fetch --locked
+RUN cargo build --release --locked -p p2p_node
 
 FROM debian:bookworm-slim AS runtime
 
@@ -23,7 +20,7 @@ RUN apt-get update \
 RUN useradd --uid 65532 --create-home --shell /usr/sbin/nologin silicium
 WORKDIR /app
 
-COPY --from=builder /work/p2p-node/target/release/p2p_node /usr/local/bin/p2p_node
+COPY --from=builder /work/target/release/p2p_node /usr/local/bin/p2p_node
 
 EXPOSE 4001/tcp
 EXPOSE 4001/udp

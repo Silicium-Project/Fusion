@@ -1,9 +1,8 @@
 SHELL := /bin/bash
 
 PYTHON ?= python3
-RAYTRACER_MANIFEST := crates/raytracer/Cargo.toml
 
-.PHONY: all test check lint golden smoke raytracer-test clean re
+.PHONY: all test check lint golden smoke raytracer-test rust-test rust-lint clean re
 
 all: check
 
@@ -23,7 +22,14 @@ smoke:
 	$(PYTHON) ./silicium smoke
 
 raytracer-test:
-	cargo test --manifest-path $(RAYTRACER_MANIFEST)
+	cargo test -p silicium-raytracer
+
+rust-test:
+	cargo test --workspace --locked
+
+rust-lint:
+	cargo fmt --all --check
+	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
 clean:
 	$(PYTHON) ./silicium clean cache

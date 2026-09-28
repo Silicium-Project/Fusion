@@ -4,15 +4,11 @@
 //! rendered pixels; `POST /verify` re-checks a sample of milestone hashes, the
 //! sample rate decreasing with the worker's reputation. Listens on 127.0.0.1:9090.
 
-use axum::{
-    routing::post,
-    Router,
-    Json,
-};
+use axum::{Json, Router, routing::post};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::process::Command;
 use std::{env, fs, path::Path};
-use sha2::{Sha256, Digest};
 use tokio::net::TcpListener;
 
 #[derive(Deserialize)]
@@ -112,20 +108,23 @@ fn parse_ppm_pixels(data: &[u8]) -> Result<(u32, u32, &[u8]), String> {
         return Err("Unsupported magic".to_string());
     }
 
-    let width_str = std::str::from_utf8(token(data, &mut idx)?).map_err(|_| "Invalid width format")?;
+    let width_str =
+        std::str::from_utf8(token(data, &mut idx)?).map_err(|_| "Invalid width format")?;
     let width: u32 = width_str.parse().map_err(|_| "Invalid width")?;
 
-    let height_str = std::str::from_utf8(token(data, &mut idx)?).map_err(|_| "Invalid height format")?;
+    let height_str =
+        std::str::from_utf8(token(data, &mut idx)?).map_err(|_| "Invalid height format")?;
     let height: u32 = height_str.parse().map_err(|_| "Invalid height")?;
 
-    let max_val_str = std::str::from_utf8(token(data, &mut idx)?).map_err(|_| "Invalid max_val format")?;
+    let max_val_str =
+        std::str::from_utf8(token(data, &mut idx)?).map_err(|_| "Invalid max_val format")?;
     let max_val: u32 = max_val_str.parse().map_err(|_| "Invalid max_val")?;
     if max_val != 255 {
         return Err("Unsupported max_val".to_string());
     }
 
     if idx < data.len() {
-        if data[idx] == b'\r' && idx + 1 < data.len() && data[idx+1] == b'\n' {
+        if data[idx] == b'\r' && idx + 1 < data.len() && data[idx + 1] == b'\n' {
             idx += 2;
         } else {
             idx += 1;
@@ -135,7 +134,11 @@ fn parse_ppm_pixels(data: &[u8]) -> Result<(u32, u32, &[u8]), String> {
     let pixels = &data[idx..];
     let expected = (width * height * 3) as usize;
     if pixels.len() != expected {
-        return Err(format!("Invalid payload size: expected {}, actual {}", expected, pixels.len()));
+        return Err(format!(
+            "Invalid payload size: expected {}, actual {}",
+            expected,
+            pixels.len()
+        ));
     }
 
     Ok((width, height, pixels))
@@ -151,22 +154,32 @@ fn ppm_pixel_sha256(data: &[u8]) -> Result<String, String> {
 async fn handle_compute(Json(req): Json<ComputeRequest>) -> Json<ComputeResponse> {
     let binary = match env::var("SILICIUM_RAYTRACER_BIN") {
         Ok(val) => val,
-        Err(_) => return Json(ComputeResponse {
-            status: "error".to_string(),
-            hash: None,
-            error: Some("SILICIUM_RAYTRACER_BIN not set".to_string()),
-        }),
+        Err(_) => {
+            return Json(ComputeResponse {
+                status: "error".to_string(),
+                hash: None,
+                error: Some("SILICIUM_RAYTRACER_BIN not set".to_string()),
+            });
+        }
     };
 
     let mut cmd = Command::new(&binary);
     cmd.arg(&req.scene_path)
-       .arg("--output")
-       .arg(&req.output_path);
+        .arg("--output")
+        .arg(&req.output_path);
 
-    if let Some(y_s) = req.y_start { cmd.arg("--y-start").arg(y_s.to_string()); }
-    if let Some(y_e) = req.y_end { cmd.arg("--y-end").arg(y_e.to_string()); }
-    if let Some(x_s) = req.x_start { cmd.arg("--x-start").arg(x_s.to_string()); }
-    if let Some(x_e) = req.x_end { cmd.arg("--x-end").arg(x_e.to_string()); }
+    if let Some(y_s) = req.y_start {
+        cmd.arg("--y-start").arg(y_s.to_string());
+    }
+    if let Some(y_e) = req.y_end {
+        cmd.arg("--y-end").arg(y_e.to_string());
+    }
+    if let Some(x_s) = req.x_start {
+        cmd.arg("--x-start").arg(x_s.to_string());
+    }
+    if let Some(x_e) = req.x_end {
+        cmd.arg("--x-end").arg(x_e.to_string());
+    }
 
     let output = cmd.output();
     match output {
@@ -178,7 +191,7 @@ async fn handle_compute(Json(req): Json<ComputeRequest>) -> Json<ComputeResponse
                     error: Some(String::from_utf8_lossy(&out.stderr).to_string()),
                 });
             }
-        },
+        }
         Err(e) => {
             return Json(ComputeResponse {
                 status: "error".to_string(),
@@ -190,11 +203,13 @@ async fn handle_compute(Json(req): Json<ComputeRequest>) -> Json<ComputeResponse
 
     let ppm_bytes = match fs::read(Path::new(&req.output_path)) {
         Ok(b) => b,
-        Err(e) => return Json(ComputeResponse {
-            status: "error".to_string(),
-            hash: None,
-            error: Some(e.to_string()),
-        }),
+        Err(e) => {
+            return Json(ComputeResponse {
+                status: "error".to_string(),
+                hash: None,
+                error: Some(e.to_string()),
+            });
+        }
     };
 
     match ppm_pixel_sha256(&ppm_bytes) {
@@ -207,35 +222,39 @@ async fn handle_compute(Json(req): Json<ComputeRequest>) -> Json<ComputeResponse
             status: "error".to_string(),
             hash: None,
             error: Some(e),
-        })
+        }),
     }
 }
 
 async fn handle_verify(Json(req): Json<VerifyRequest>) -> Json<VerifyResponse> {
     let ppm_bytes = match fs::read(&req.ppm_path) {
         Ok(b) => b,
-        Err(e) => return Json(VerifyResponse {
-            verified: false,
-            escalated_to_full: true,
-            sample_rate: 0.0,
-            sampled_count: 0,
-            total_milestones: 0,
-            failed_milestones: vec![],
-            reason: format!("Failed to read ppm: {}", e),
-        })
+        Err(e) => {
+            return Json(VerifyResponse {
+                verified: false,
+                escalated_to_full: true,
+                sample_rate: 0.0,
+                sampled_count: 0,
+                total_milestones: 0,
+                failed_milestones: vec![],
+                reason: format!("Failed to read ppm: {}", e),
+            });
+        }
     };
 
     let (width, _, pixels) = match parse_ppm_pixels(&ppm_bytes) {
         Ok(r) => r,
-        Err(e) => return Json(VerifyResponse {
-            verified: false,
-            escalated_to_full: true,
-            sample_rate: 0.0,
-            sampled_count: 0,
-            total_milestones: 0,
-            failed_milestones: vec![],
-            reason: format!("Invalid ppm: {}", e),
-        })
+        Err(e) => {
+            return Json(VerifyResponse {
+                verified: false,
+                escalated_to_full: true,
+                sample_rate: 0.0,
+                sampled_count: 0,
+                total_milestones: 0,
+                failed_milestones: vec![],
+                reason: format!("Invalid ppm: {}", e),
+            });
+        }
     };
 
     let row_stride = (width * 3) as usize;
@@ -275,10 +294,10 @@ async fn handle_verify(Json(req): Json<VerifyRequest>) -> Json<VerifyResponse> {
     for ms in &sampled {
         let local_y_start = (ms.y_start.saturating_sub(fragment_y_start)) as usize;
         let local_y_end = (ms.y_end.saturating_sub(fragment_y_start)) as usize;
-        
+
         let start_idx = local_y_start * row_stride;
         let end_idx = local_y_end * row_stride;
-        
+
         if end_idx > pixels.len() {
             failed_milestones.push(FailedMilestone {
                 index: ms.index,
@@ -292,7 +311,7 @@ async fn handle_verify(Json(req): Json<VerifyRequest>) -> Json<VerifyResponse> {
         let mut hasher = Sha256::new();
         hasher.update(slice);
         let actual = hex::encode(hasher.finalize());
-        
+
         if actual != ms.pixel_sha256 {
             failed_milestones.push(FailedMilestone {
                 index: ms.index,
@@ -311,7 +330,10 @@ async fn handle_verify(Json(req): Json<VerifyRequest>) -> Json<VerifyResponse> {
             sampled_count: sampled.len(),
             total_milestones: req.manifest.milestone_count.unwrap_or(total_milestones),
             failed_milestones,
-            reason: format!("probabilistic_milestone_verification_failed:{}_mismatches", len),
+            reason: format!(
+                "probabilistic_milestone_verification_failed:{}_mismatches",
+                len
+            ),
         });
     }
 

@@ -46,12 +46,9 @@ python3 -m pip install -r requirements-dev.txt
 # Tests Python
 python3 -m pytest
 
-# Tests Rust (chaque crate a son propre Cargo.toml)
-cargo test --manifest-path crates/node-core/Cargo.toml
-cargo test --manifest-path crates/p2p-node/Cargo.toml --locked
-cargo test --manifest-path crates/compute-daemon/Cargo.toml
-cargo test --manifest-path crates/reputation-bridge/Cargo.toml --locked
-cargo test --manifest-path crates/raytracer/Cargo.toml
+# Tests Rust (workspace Cargo unique : Cargo.toml + Cargo.lock à la racine)
+cargo test --workspace --locked
+make rust-lint        # cargo fmt --check + clippy -D warnings
 
 # Contrôle rapide utilisé par la CI
 make check

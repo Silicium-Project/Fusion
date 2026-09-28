@@ -24,8 +24,8 @@ elle-même.
 ## Tests
 
 ```bash
-cargo test --manifest-path crates/node-core/Cargo.toml
-cargo test --manifest-path crates/node-core/Cargo.toml --features runtime-wasm
+cargo test -p silicium_node_core
+cargo test -p silicium_node_core --features runtime-wasm
 ```
 
 ## Limites connues
@@ -34,4 +34,3 @@ cargo test --manifest-path crates/node-core/Cargo.toml --features runtime-wasm
   reçus du réseau (`runtime_image`, `runtime_workdir`, `runtime_env`) sans liste
   blanche : **à corriger avant toute utilisation en production** (voir
   `docs/architecture/rust-migration.md`, bloquant n°1).
-- Pas de `Cargo.lock` versionné pour cette crate.

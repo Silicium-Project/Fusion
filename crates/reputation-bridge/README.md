@@ -26,8 +26,8 @@ JSON-RPC en HTTP (`src/solana_bridge.rs`), sans OpenSSL.
 ## Tests et conteneur
 
 ```bash
-cargo test --manifest-path crates/reputation-bridge/Cargo.toml --locked
-docker build crates/reputation-bridge
+cargo test -p reputation_bridge --locked
+docker build -f crates/reputation-bridge/Dockerfile .   # depuis Network/
 ```
 
 ## Limites connues

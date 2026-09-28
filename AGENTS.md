@@ -38,7 +38,7 @@ Fusion (`deploy/`), pas à ce dépôt.
 ```bash
 make check                                             # contrôle rapide (CI)
 python3 -m pytest                                      # tests Python
-cargo test --manifest-path crates/<crate>/Cargo.toml   # tests Rust
+cargo test --workspace --locked                        # tests Rust (workspace)
 ```
 
 La CI de référence est `.github/workflows/ci.yml`.

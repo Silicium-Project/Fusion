@@ -24,8 +24,8 @@ pour qu'une vérification par un autre pair fonctionne.
 ## Construire et tester
 
 ```bash
-cargo build --release --manifest-path crates/raytracer/Cargo.toml
-cargo test --manifest-path crates/raytracer/Cargo.toml
+cargo build --release -p silicium-raytracer   # binaire dans Network/target/release/
+cargo test -p silicium-raytracer
 ```
 
 L'app desktop (`Fusion/apps/silicium-node/scripts/prepare-runtime*`) construit ce

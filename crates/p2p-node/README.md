@@ -39,8 +39,8 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
 ## Construire, tester, conteneur
 
 ```bash
-cargo test --manifest-path crates/p2p-node/Cargo.toml --locked
-docker build -f crates/p2p-node/Dockerfile crates/   # contexte = crates/
+cargo test -p p2p_node --locked
+docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = racine du workspace
 ```
 
 ## Limites connues

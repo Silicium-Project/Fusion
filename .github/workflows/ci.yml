@@ -104,8 +104,8 @@ jobs:
             fi
           }
           if matches '^crates/|(^|/)Cargo\.(toml|lock)$'; then
-            add_rust_crate crates/node-core
-            add_rust_crate crates/p2p-node
+            # Single Cargo workspace (Network/Cargo.toml): one job checks every crate.
+            add_rust_crate workspace
           fi
           codeql='[]'
           if [[ "$javascript" == true && "$python" == true ]]; then
@@ -233,24 +233,19 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            crates/node-core
-            crates/p2p-node
+          workspaces: .
 
       - name: Format check
-        working-directory: ${{ matrix.crate }}
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
       - name: Clippy
-        working-directory: ${{ matrix.crate }}
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Tests
-        working-directory: ${{ matrix.crate }}
-        run: cargo test
+        run: cargo test --workspace --all-features --locked
 
       - name: P2P Kademlia smoke
-        if: matrix.crate == 'crates/p2p-node'
+        if: matrix.crate == 'workspace'
         run: bash ./ci/p2p_kademlia_smoke.sh
 
   solana-layer:
@@ -445,7 +440,7 @@ jobs:
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: crates/raytracer
+          workspaces: .
 
       - name: Set up Python
         if: matrix.job == 'pytest' || matrix.job == 'docker-e2e' || matrix.job == 'pytest-hosted' || matrix.job == 'smoke' || matrix.job == 'perf-budget'
@@ -488,7 +483,7 @@ jobs:
 
       - name: Test native raytracer
         if: matrix.job == 'raytracer-rust'
-        run: cargo test --manifest-path crates/raytracer/Cargo.toml
+        run: cargo test --locked -p silicium-raytracer
 
       - name: Install dev dependencies
         if: matrix.job == 'pytest' || matrix.job == 'perf-budget'

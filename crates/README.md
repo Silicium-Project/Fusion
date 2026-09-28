@@ -18,16 +18,21 @@ par chemin). Les autres crates sont indépendantes et communiquent en HTTP local
 
 ## Construire et tester
 
-Chaque crate a pour l'instant son propre `Cargo.toml` :
+Toutes les crates font partie d'un **workspace Cargo unique** (`Network/Cargo.toml`) :
+un seul `Cargo.lock` versionné, un seul dossier `Network/target/`, des versions de
+dépendances partagées (`[workspace.dependencies]`) et des profils communs. Depuis
+`Network/` :
 
 ```bash
-cargo test --manifest-path crates/<crate>/Cargo.toml
-cargo clippy --manifest-path crates/<crate>/Cargo.toml --all-targets -- -D warnings
-cargo fmt --manifest-path crates/<crate>/Cargo.toml --check
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --all --check
+cargo test -p <paquet>          # une seule crate (nom du paquet, cf. tableau)
 ```
 
-Étape suivante prévue : un workspace Cargo unique (`Network/Cargo.toml`) avec un
-seul `Cargo.lock`, une toolchain épinglée et des profils communs.
+Les Dockerfiles de `p2p-node` et `reputation-bridge` se construisent avec
+`Network/` comme contexte (voir leur `Dockerfile.dockerignore`).
+`solana-layer/` reste un workspace Anchor séparé.
 
 ## Conventions
 

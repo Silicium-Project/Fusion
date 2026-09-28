@@ -24,11 +24,10 @@ en cas d'échec.
 ## Tests
 
 ```bash
-cargo test --manifest-path crates/compute-daemon/Cargo.toml
+cargo test -p compute_daemon
 ```
 
 ## Limites connues
 
 - Chemins de fichiers acceptés tels quels depuis la requête.
 - Pas de timeout sur le processus du raytracer, pas d'authentification.
-- Pas de `Cargo.lock` versionné.

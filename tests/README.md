@@ -19,4 +19,4 @@ python3 -m pytest tests/test_network_node.py -q
 | `smoke/` | Smoke test du reverse proxy |
 | `fixtures/python_raytracer.py` | Raytracer Python de référence **pour les tests uniquement** (pixels non identiques au binaire natif) |
 
-Les tests Rust sont dans chaque crate (`cargo test --manifest-path crates/<crate>/Cargo.toml`).
+Les tests Rust sont dans chaque crate ; on les lance depuis la racine du workspace (`cargo test --workspace`, ou `cargo test -p <paquet>`).

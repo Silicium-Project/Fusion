@@ -43,7 +43,7 @@ log "Python tests"
 
 log "Raytracer native tests"
 if command -v cargo >/dev/null 2>&1; then
-  cargo test --manifest-path crates/raytracer/Cargo.toml
+  cargo test --locked -p silicium-raytracer
 else
   echo "Cargo unavailable; native raytracer tests skipped."
 fi

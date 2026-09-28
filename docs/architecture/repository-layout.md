@@ -2,6 +2,7 @@
 
 ```text
 Network/
+├── Cargo.toml, Cargo.lock     # workspace Cargo unique (toutes les crates de crates/)
 ├── crates/                    # Rust — runtime cible (s'exécute chez l'utilisateur / sur le serveur)
 │   ├── node-core/             #   types, journal de tâches signé, réputation, matériel, runtime WASM/OCI
 │   ├── p2p-node/              #   binaire du nœud : libp2p, API HTTP locale, traitement des tâches
@@ -35,7 +36,7 @@ Network/
 ├── ci/                        # scripts de CI
 ├── docs/                      # documentation, rangée par partie
 ├── silicium, silicium-cli     # CLI développeur et lanceur de nœud
-└── Makefile                   # raccourcis : check, test, raytracer-test
+└── Makefile                   # raccourcis : check, test, rust-test, rust-lint, raytracer-test
 ```
 
 ## Règles

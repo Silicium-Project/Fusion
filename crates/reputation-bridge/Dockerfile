@@ -1,4 +1,4 @@
-FROM rust:1.89-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 
 WORKDIR /work
 
@@ -6,10 +6,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends pkg-config libssl-dev gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# Build context = Network/ (workspace root). See Dockerfile.dockerignore.
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
+COPY crates ./crates
 
-RUN cargo build --release --locked
+RUN cargo build --release --locked -p reputation_bridge
 
 FROM debian:bookworm-slim AS runtime
 
