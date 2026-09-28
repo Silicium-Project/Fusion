@@ -8,10 +8,10 @@ import os
 from pathlib import Path
 import queue
 import shlex
-import shutil
 import subprocess
 import threading
 import time
+from typing import TextIO
 from urllib import error as url_error
 from urllib import parse as url_parse
 from urllib import request as url_request
@@ -94,8 +94,7 @@ class StdIoConnector(ITuiConnector):
             self._resolved_default = True
         if not self._core_command:
             raise RuntimeError(
-                "StdIO core is unavailable. Set SILICIUM_TUI_STDIO_CORE_CMD "
-                "or build tools/dev/tui/stdio_core.cpp."
+                "StdIO core is unavailable. Set SILICIUM_TUI_STDIO_CORE_CMD."  # i18n:ignore -- developer error
             )
 
         command = action.command(runner_mode)
@@ -335,12 +334,10 @@ def _extract_exit_code(payload: dict[str, object], state: str) -> int:
 
 
 def _write_http_logs(
-    handle: "typing.TextIO",
+    handle: TextIO,
     payload: dict[str, object],
     cursor: int,
 ) -> int:
-    import typing
-
     lines_obj = payload.get("lines", payload.get("logs", []))
     items: list[tuple[int | None, str]] = []
     if isinstance(lines_obj, list):
@@ -376,43 +373,11 @@ def _write_http_logs(
 
 
 def _resolve_stdio_core_command() -> list[str] | None:
+    """External JSON-line core given by SILICIUM_TUI_STDIO_CORE_CMD, if any."""
     env = os.environ.get("SILICIUM_TUI_STDIO_CORE_CMD", "").strip()
     if env:
         return shlex.split(env, posix=(os.name != "nt"))
-
-    binary_name = "stdio_core.exe" if os.name == "nt" else "stdio_core"
-    binary = REPO_ROOT / "tools" / "dev" / "tui" / binary_name
-    source = REPO_ROOT / "tools" / "dev" / "tui" / "stdio_core.cpp"
-    if binary.exists():
-        return [str(binary)]
-    if not source.exists():
-        return None
-    if _try_build_stdio_core(source, binary):
-        return [str(binary)]
     return None
-
-
-def _try_build_stdio_core(source: Path, output: Path) -> bool:
-    compiler = (
-        os.environ.get("SILICIUM_TUI_STDIO_CXX", "").strip()
-        or shutil.which("g++")
-        or shutil.which("clang++")
-        or shutil.which("c++")
-    )
-    if not compiler:
-        return False
-    output.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [compiler, "-std=c++17", "-O2", str(source), "-o", str(output)]
-    completed = subprocess.run(
-        cmd,
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        return False
-    return output.exists()
 
 
 def build_connector_registry() -> dict[str, ITuiConnector]:

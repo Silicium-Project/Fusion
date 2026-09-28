@@ -22,7 +22,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from tools.i18n import tr
-from tools.dev.tui.actions import ActionSpec, CLI, LOG_DIR, REPO_ROOT, build_actions
+from tools.dev.tui.actions import ActionSpec, LOG_DIR, build_actions
 from tools.dev.tui.connectors import ITuiConnector, InProcessConnector
 from tools.dev.tui.structured_logs import StructuredProgress, StructuredProgressTracker
 

@@ -1,6 +1,6 @@
 """Legacy ZeroMQ RPC client for the local control plane (see proto/silicium_rpc.proto)."""
 from __future__ import annotations
-import time, uuid
+import uuid
 import zmq
 try:  # Works both as ``tools.rpc_client`` and as the legacy script module.
     from .rpc_protocol import decode_response, encode_request

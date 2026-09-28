@@ -26,8 +26,7 @@ python -m pip install -r requirements-tui.txt
 - Headless script run: `./silicium tui --tui-frontend headless --headless-script <path.json>`
 - Precedence: CLI argument first, then env var, then default `textual`
 - Connector default: `inprocess` when not specified
-- `stdio` uses the optional local JSON-line helper over stdin/stdout
-- For `stdio`, override core launch command with `SILICIUM_TUI_STDIO_CORE_CMD`
+- `stdio` talks JSON lines over stdin/stdout to an external core, launched by the command in `SILICIUM_TUI_STDIO_CORE_CMD` (required for this connector)
 - `http` uses an optional local HTTP companion (default endpoint: `http://127.0.0.1:8765`)
 - Fallback policy:
   - invalid value -> warning -> fallback to `textual`

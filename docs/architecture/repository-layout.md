@@ -35,7 +35,7 @@ Network/
 ├── infra/                     # Docker (Solana local, bootstrap, world), systemd
 ├── ci/                        # scripts de CI
 ├── docs/                      # documentation, rangée par partie
-├── silicium, silicium-cli     # CLI développeur et lanceur de nœud (point d'entrée de tools/cli/)
+├── silicium                   # CLI développeur et lanceur de nœud (point d'entrée de tools/cli/)
 └── Makefile                   # raccourcis : check, test, rust-test, rust-lint, raytracer-test
 ```
 

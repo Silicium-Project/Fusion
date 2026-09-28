@@ -16,6 +16,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 import tools.cli  # noqa: E402
+from tools import node_defaults  # noqa: E402
 
 
 def _cli_modules() -> list:
@@ -271,7 +272,7 @@ def test_node_start_enables_default_stun_with_nat_punch() -> None:
 
     resolved = cli._apply_nat_traversal_defaults(args)
 
-    assert resolved.p2p_stun_server == cli.DEFAULT_PUBLIC_STUN_SERVER
+    assert resolved.p2p_stun_server == node_defaults.DEFAULT_PUBLIC_STUN_SERVER
 
 
 def test_node_start_forwards_release_telemetry(monkeypatch) -> None:

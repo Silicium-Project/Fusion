@@ -264,78 +264,6 @@ class McpExportStore:
         return path.read_text(encoding="utf-8")
 
 
-class McpTaskStore:
-    """Durable local task ingress shared by MCP, RPC, and raytracer jobs."""
-
-    _TERMINAL = {"completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved"}
-
-    def __init__(self, export_dir: Path) -> None:
-        self._export_dir = export_dir
-
-    def submit(self, payload: Any) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise ValueError("payload_not_object")
-        task_id = _sanitize_task_id(str(payload.get("task_id", "")))
-        if not task_id:
-            raise ValueError("missing_task_id")
-
-        task = dict(payload)
-        priority = str(task.get("priority", "normal")).strip().lower() or "normal"
-        task.update(
-            {
-                "task_id": task_id,
-                "envelope_kind": "task",
-                "status": "queued",
-                "submitted_utc": _utc_now(),
-                "priority": priority,
-                "priority_rank": _priority_rank(priority),
-            }
-        )
-        encoded = json.dumps(task, separators=(",", ":"), ensure_ascii=True)
-        tasks_dir = self._export_dir / "tasks"
-        tasks_dir.mkdir(parents=True, exist_ok=True)
-        path = tasks_dir / f"{task_id}.json"
-        temporary = path.with_suffix(path.suffix + ".tmp")
-        temporary.write_text(encoded, encoding="utf-8")
-        temporary.replace(path)
-        with (self._export_dir / "tasks.queue.ndjson").open("a", encoding="utf-8") as queue:
-            queue.write(encoded + "\n")
-        roles = task.get("required_roles", ["compute"])
-        if isinstance(roles, list) and roles:
-            role = str(roles[0]).strip().lower()
-            if role:
-                with (self._export_dir / f"tasks.{role}.queue.ndjson").open("a", encoding="utf-8") as queue:
-                    queue.write(encoded + "\n")
-        self._append_event("task.queued", task_id, required_roles=roles)
-        return {"status": "queued", "task_id": task_id}
-
-    def cancel(self, task_id: str) -> dict[str, Any]:
-        safe_task_id = _sanitize_task_id(task_id)
-        if not safe_task_id:
-            raise ValueError("missing_task_id")
-        path = self._export_dir / "tasks" / f"{safe_task_id}.json"
-        try:
-            task = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            raise FileNotFoundError("task_not_found") from None
-        if not isinstance(task, dict):
-            raise ValueError("task_invalid")
-        if str(task.get("status", "")).lower() not in self._TERMINAL:
-            task["status"] = "cancelled"
-            task["cancel_reason"] = "operator_requested"
-            task["cancelled_utc"] = _utc_now()
-            encoded = json.dumps(task, separators=(",", ":"), ensure_ascii=True)
-            temporary = path.with_suffix(path.suffix + ".tmp")
-            temporary.write_text(encoded, encoding="utf-8")
-            temporary.replace(path)
-            self._append_event("task.cancelled", safe_task_id)
-        return task
-
-
-def _priority_rank(priority: str) -> int:
-    return {"low": 10, "normal": 50, "high": 80, "urgent": 100}.get(priority, 50)
-
-
 def _normalized_priority(value: Any) -> str:
     priority = str(value or "normal").strip().lower()
     if priority not in _PRIORITIES:
@@ -849,15 +777,6 @@ class McpControlPlane:
             tmp = self._path.with_suffix(self._path.suffix + ".tmp")
             tmp.write_text(json.dumps(payload, separators=(",", ":"), ensure_ascii=True), encoding="utf-8")
             tmp.replace(self._path)
-
-
-def _utc_now() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
-def _prom_escape(value: str) -> str:
-    # Prometheus label escaping.
-    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 
 
 class McpMetrics:

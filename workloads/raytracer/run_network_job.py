@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import secrets
 import shutil
@@ -21,7 +20,6 @@ from typing import Any, Callable, Iterable
 
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(NETWORK_ROOT))
-sys.path.insert(0, str(NETWORK_ROOT / "demo"))
 
 from networked.networked_runtime import (  # noqa: E402
     LocalNetworkEmitter,
@@ -39,6 +37,8 @@ from workloads.common import (  # noqa: E402
     default_solana_wallet_path,
     output_ref_from_compute,
     p2p_file_path,
+    performance_duration,
+    performance_ratio,
     resolve_solana_wallet,
     result_hash_from_compute,
     sha256_bytes,
@@ -66,20 +66,6 @@ def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
 RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/raytracer-fragment"
 RAYTRACER_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/raytracer-fragment"
 RAYTRACER_PERFORMANCE_SCHEMA = "silicium.raytracer-performance.v1"
-
-
-def performance_duration(value: Any) -> float:
-    try:
-        duration = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    return round(duration, 3) if math.isfinite(duration) and duration >= 0 else 0.0
-
-
-def performance_ratio(numerator: float, denominator: float) -> float | None:
-    if denominator <= 0:
-        return None
-    return round(max(0.0, numerator) / denominator, 4)
 
 
 def merge_compute_intervals(records: Iterable[dict[str, Any]]) -> float:

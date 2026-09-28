@@ -8,79 +8,23 @@ import argparse
 import hashlib
 import os
 import secrets
-import socket
 import subprocess
 from typing import Any, Mapping
 
-from tools.cli.constants import (
+from tools.cli.constants import LOCAL_STATE_DIR, REPO_ROOT
+from tools.cli.context import Context, _resolve_mcp_settings
+from tools.node_defaults import (
     DEFAULT_PEER_STALE_AFTER_S,
     DEFAULT_PEER_SYNC_INTERVAL_S,
-    DEFAULT_PUBLIC_STUN_SERVER,
-    LOCAL_STATE_DIR,
-    REPO_ROOT,
     WORLD_DEFAULT_DISCOVERY_SYNC_INTERVAL_S,
     WORLD_DEFAULT_GOSSIP_PORT,
     WORLD_DEFAULT_PEER_HTTP_PORT,
     WORLD_DEFAULT_PEER_SYNC_INTERVAL_S,
 )
-from tools.cli.context import Context, _resolve_mcp_settings
-
-
-def _split_csv(value: str) -> list[str]:
-    return [item.strip() for item in str(value or "").split(",") if item.strip()]
-
-
-def _merge_csv(*values: str) -> str:
-    merged: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        for item in _split_csv(value):
-            if item in seen:
-                continue
-            seen.add(item)
-            merged.append(item)
-    return ",".join(merged)
-
-
-def _guess_world_advertise_host() -> str:
-    for env_name in ("SILICIUM_WORLD_ADVERTISE_HOST", "TAILSCALE_IP", "TS_IP"):
-        candidate = os.environ.get(env_name, "").strip()
-        if candidate:
-            return candidate
-    try:
-        for family, _, _, _, sockaddr in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            if family != socket.AF_INET:
-                continue
-            host = str(sockaddr[0]).strip()
-            if host and not host.startswith("127."):
-                return host
-    except OSError:
-        pass
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-            sock.connect(("192.0.2.1", 80))
-            host = str(sock.getsockname()[0]).strip()
-            if host and not host.startswith("127."):
-                return host
-    except OSError:
-        pass
-    return "127.0.0.1"
-
-
-def _derive_world_mesh_key(world_name: str) -> str:
-    normalized = str(world_name or "").strip().lower()
-    if not normalized:
-        return ""
-    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:32]
-    return f"world:{normalized}:{digest}"
-
-
-def _apply_nat_traversal_defaults(args: argparse.Namespace) -> argparse.Namespace:
-    backend = str(getattr(args, "p2p_direct_transport_backend", "auto") or "auto").strip().lower()
-    stun_server = str(getattr(args, "p2p_stun_server", "") or "").strip()
-    if bool(getattr(args, "nat_punch_enable", False)) and backend not in {"native", "native-light", "native_light"} and not stun_server:
-        args.p2p_stun_server = DEFAULT_PUBLIC_STUN_SERVER
-    return args
+from tools.node_defaults import apply_nat_traversal_defaults as _apply_nat_traversal_defaults
+from tools.node_defaults import derive_world_mesh_key as _derive_world_mesh_key
+from tools.node_defaults import guess_world_advertise_host as _guess_world_advertise_host
+from tools.node_defaults import merge_csv as _merge_csv
 
 
 def _apply_world_mode_defaults(args: argparse.Namespace, *, node_id: str) -> argparse.Namespace:
