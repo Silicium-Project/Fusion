@@ -85,7 +85,7 @@ jobs:
           p2p=false
           raytracer=false
           if matches '^(tools|workloads|tests|silicium|proto|i18n|ci)/|^(pyproject\.toml|requirements.*\.txt|Makefile)$'; then python=true; fi
-          if matches '^(solana-layer|silicium-layer-dashboard)/|\.(js|jsx|ts|tsx)$|(^|/)(package|yarn)\.json$'; then javascript=true; fi
+          if matches '^solana-layer/|\.(js|jsx|ts|tsx)$|(^|/)(package|yarn)\.json$'; then javascript=true; fi
           if matches '^crates/|(^|/)Cargo\.(toml|lock)$'; then rust=true; fi
           if matches '^solana-layer/'; then solana=true; fi
           if matches '^(infra|ci/|tests/smoke/|crates/.*/Dockerfile)|docker-compose'; then docker=true; fi
@@ -160,9 +160,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: |
-            solana-layer/silicium-sdk/package-lock.json
-            silicium-layer-dashboard/yarn.lock
+          cache-dependency-path: solana-layer/silicium-sdk/package-lock.json
 
       - name: Set up Python
         if: matrix.language == 'python'
@@ -179,11 +177,6 @@ jobs:
           set -euo pipefail
           pushd solana-layer/silicium-sdk >/dev/null
           npm ci
-          npm run build
-          popd >/dev/null
-          pushd silicium-layer-dashboard >/dev/null
-          corepack enable
-          yarn install --frozen-lockfile
           npm run build
           popd >/dev/null
 

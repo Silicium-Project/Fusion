@@ -10,7 +10,6 @@ Network/
 │   ├── reputation-bridge/     #   scores de réputation et vérification de stake Solana
 │   └── raytracer/             #   moteur de rendu natif déterministe (binaire silicium-raytracer)
 ├── solana-layer/              # Anchor (Rust) + SDK TypeScript + tests — workspace séparé
-├── silicium-layer-dashboard/  # tableau de bord web (Vite)
 │
 ├── tools/                     # Python LEGACY — runtime de production encore actif
 │   ├── network_node.py        #   le nœud Python (orchestrateur VPS + nœuds utilisateurs)

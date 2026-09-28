@@ -21,7 +21,6 @@ Le plan de migration est décrit dans
 | --- | --- | --- | --- |
 | [`crates/`](crates/) | Rust | Nœud P2P, cœur du nœud, daemon de calcul, pont de réputation, raytracer | Cible ; nœud P2P encore prototype |
 | [`solana-layer/`](solana-layer/) | Rust (Anchor) + TypeScript | Programme on-chain, SDK, tests Anchor | Actif |
-| [`silicium-layer-dashboard/`](silicium-layer-dashboard/) | TypeScript (Vite) | Tableau de bord réseau / Solana | Actif |
 | [`tools/`](tools/) | Python | Runtime Python de production (nœud, RPC, télémétrie, transport, API MCP) | **Legacy** — à remplacer par `crates/` |
 | [`networked/`](networked/) | Python | Paquet `networked` (blobs de contenu partagés par le runtime) | **Legacy** |
 | [`workloads/`](workloads/) | YAML + Python | Tous les workloads : manifestes, registre, handlers, fixtures, golden data | Actif ; handlers Python **legacy** (le rendu est dans `crates/raytracer`) |

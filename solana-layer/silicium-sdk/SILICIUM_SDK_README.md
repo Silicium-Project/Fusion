@@ -8,13 +8,13 @@ Current Devnet Program ID:
 A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
 ```
 
-Keep this value aligned between `Anchor.toml`, `programs/solana-layer/src/lib.rs`, the generated IDL, SDK configuration, smoke tests and dashboard configuration.
+Keep this value aligned between `Anchor.toml`, `programs/solana-layer/src/lib.rs`, the generated IDL, SDK configuration and smoke tests.
 
 ---
 
 ## 1. Purpose
 
-The SDK wraps the Anchor program instructions, PDA derivation helpers, account fetch helpers and event listeners. It gives the backend, frontend, worker nodes, verifier nodes, dashboard and future indexers a stable TypeScript interface for the Solana layer.
+The SDK wraps the Anchor program instructions, PDA derivation helpers, account fetch helpers and event listeners. It gives the backend, frontend, worker nodes, verifier nodes and future indexers a stable TypeScript interface for the Solana layer.
 
 The SDK supports:
 
@@ -52,7 +52,7 @@ import { SiliciumLayerSdk } from "./src";
 The SDK is the integration layer between applications and the on-chain program.
 
 ```txt
-Frontend / Dashboard / Backend / Worker node / Verifier node
+Frontend / Backend / Worker node / Verifier node
         ↓
 Silicium TypeScript SDK
         ↓
