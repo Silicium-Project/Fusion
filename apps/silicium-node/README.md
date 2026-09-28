@@ -23,6 +23,32 @@ open the dashboard, or quit the desktop shell without stopping the worker.
 The notification-area shell and supervisor are restored when the Windows
 session starts.
 
+## Rust backend layout (`src-tauri/src/`)
+
+| Module | Role |
+| --- | --- |
+| `main.rs` | Entry point: desktop app, `--supervisor` or `--cleanup` |
+| `lib.rs` | Shared imports, module list, `run()` (Tauri builder, command registration) |
+| `commands.rs` | Tauri commands called by the frontend |
+| `types.rs` | Data types sent to the frontend and persisted on disk |
+| `config.rs` | Constants, node id, orchestrator URL, service configuration file |
+| `runtime.rs` | Repository root, managed / packaged runtime, child process environment |
+| `node.rs` | Starting the node process and waiting for it to be ready |
+| `supervisor.rs` | Supervisor mode (restart on stale claim poll) |
+| `process.rs` | Stopping nodes, `--cleanup`, process trees |
+| `service.rs` | Windows service / Run key and Linux autostart |
+| `paths.rs` | PID files and application state directory |
+| `checks.rs` | Environment checks shown in the UI |
+| `activity/` | Logs, task history, per-machine activity (`machine.rs`) |
+| `update/` | Self-update: status and locks (`mod.rs`), manifest and signature (`manifest.rs`), download and install (`install.rs`) |
+| `http.rs`, `logging.rs` | `curl` helpers, hashing, app error log |
+| `tray.rs` | Windows notification-area menu |
+| `tests.rs` | Unit tests |
+
+Every module starts with `use crate::*;`: `lib.rs` holds the shared imports and
+glob-imports each module, so items only need `pub(crate)` to be visible across
+modules.
+
 ## Development
 
 Requirements:
