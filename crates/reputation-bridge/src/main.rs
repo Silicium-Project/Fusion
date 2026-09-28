@@ -1,3 +1,6 @@
+//! `reputation_bridge`: HTTP service holding peer reputation scores and checking
+//! Solana stakes. Configuration and API: `crates/reputation-bridge/README.md`.
+
 mod reputation;
 mod solana_bridge;
 

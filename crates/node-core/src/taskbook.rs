@@ -1,3 +1,9 @@
+//! Append-only task event log.
+//!
+//! Every event is signed with the author's Ed25519 key and chained to the
+//! author's previous event (sequence number + previous hash), so gaps and forks
+//! are detected when merging logs received from other peers.
+
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};

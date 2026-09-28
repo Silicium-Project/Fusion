@@ -1,3 +1,9 @@
+//! Wire envelopes shared between peers: tasks and DHT records.
+//!
+//! WARNING: `TaskEnvelope::runtime_envelope` trusts runtime fields received from
+//! the network (image, working directory, environment). They must be validated
+//! against an allow-list before this is used outside of tests.
+
 use crate::{
     affinity::AffinityRecord,
     beta::BetaPosterior,

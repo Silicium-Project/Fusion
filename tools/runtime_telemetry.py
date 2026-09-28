@@ -1,3 +1,4 @@
+"""Legacy: sample CPU and memory usage of the node process for heartbeats."""
 from __future__ import annotations
 
 import ctypes

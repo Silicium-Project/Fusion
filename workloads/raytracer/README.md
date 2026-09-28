@@ -1,7 +1,7 @@
 # Raytracer workload
 
-This folder contains the Silicium raytracer workload and its native renderer.
-`native/` is a deterministic Rust engine with recursive reflections, shadows,
+This folder contains the Python orchestration of the raytracer workload. The
+native renderer lives in `crates/raytracer/`: a deterministic Rust engine with recursive reflections, shadows,
 Phong highlights and row-parallel CPU execution. The desktop packaging scripts
 build it for the target platform. `SILICIUM_RAYTRACER_THREADS` or `--threads`
 can cap its worker count; otherwise it uses the logical CPU count.

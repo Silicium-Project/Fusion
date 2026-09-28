@@ -1,3 +1,5 @@
+//! Picks the node that should run a task by sampling each candidate's posterior.
+
 use crate::{
     affinity::{AffinityKey, AffinityRecord, TaskScale, sparse_affinity_prior},
     beta::BetaPosterior,

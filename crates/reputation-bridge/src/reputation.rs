@@ -1,3 +1,5 @@
+//! Per-peer reputation with short- and long-term memory (two Beta posteriors with different half-lives).
+
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;

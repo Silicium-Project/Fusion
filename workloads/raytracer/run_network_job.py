@@ -1,3 +1,9 @@
+"""Legacy orchestration of a full raytracer job on the network.
+
+Called by the BackEnd (internal/silicium/runner.go): splits the scene, dispatches
+fragments, challenges milestones, reassembles the image and writes the progress,
+fragment previews and receipts that the BackEnd reads (docs/contracts/backend-files.md).
+"""
 from __future__ import annotations
 
 import argparse

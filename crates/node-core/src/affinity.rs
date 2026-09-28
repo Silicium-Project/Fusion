@@ -1,3 +1,5 @@
+//! Affinity between a hardware bucket and a task, used to rank candidate nodes.
+
 use crate::{beta::BetaPosterior, hardware::HardwareBucket};
 use serde::{Deserialize, Serialize};
 

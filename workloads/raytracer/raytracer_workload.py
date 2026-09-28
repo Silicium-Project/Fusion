@@ -1,3 +1,7 @@
+"""Legacy raytracer pipeline: split, compute, verify, reassemble and validate PPM tiles.
+
+Rendering itself is done by the native crates/raytracer binary (SILICIUM_RAYTRACER_BIN).
+"""
 from __future__ import annotations
 
 import argparse

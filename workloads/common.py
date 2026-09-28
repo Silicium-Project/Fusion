@@ -1,3 +1,4 @@
+"""Legacy helpers shared by workloads: hashing, task submission to an export dir, P2P refs, Solana wallet, PPM to PNG."""
 from __future__ import annotations
 
 import hashlib

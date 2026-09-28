@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""File-queue worker used by the Docker E2E scenario to claim and complete tasks (dev only)."""
 from __future__ import annotations
 
 import argparse

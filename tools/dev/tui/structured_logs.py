@@ -1,3 +1,4 @@
+"""Parse structured NDJSON log lines into progress updates for the TUI."""
 from __future__ import annotations
 
 from dataclasses import dataclass

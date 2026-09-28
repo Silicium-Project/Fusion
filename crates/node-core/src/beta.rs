@@ -1,3 +1,5 @@
+//! Beta posterior used to model the success rate of a node (reputation, affinity).
+
 use rand::Rng;
 use rand_distr::{Beta, Distribution};
 use serde::{Deserialize, Serialize};

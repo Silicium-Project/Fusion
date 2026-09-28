@@ -1,3 +1,4 @@
+"""Legacy: verify signed compute/verify receipts attached to raytracer fragments."""
 from __future__ import annotations
 
 import base64

@@ -1,3 +1,7 @@
+"""Legacy NAT traversal and direct peer transfer (ICE via aioice, or a native light backend).
+
+To be replaced by libp2p relay + DCUtR in crates/p2p-node.
+"""
 from __future__ import annotations
 
 import asyncio

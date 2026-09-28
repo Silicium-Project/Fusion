@@ -1,3 +1,4 @@
+"""Legacy ZeroMQ RPC client for the local control plane (see proto/silicium_rpc.proto)."""
 from __future__ import annotations
 import time, uuid
 import zmq

@@ -1,29 +1,12 @@
-# Runtime réseau Rust
+# networked/ — paquet Python `networked` (legacy)
 
-Ce répertoire contient les services déployés du runtime Silicium :
+> **Legacy.** Ce dossier fait partie du runtime Python de production qui sera
+> remplacé par `crates/` (voir `docs/architecture/rust-migration.md`). Ne pas y
+> ajouter de fonctionnalités ; les correctifs restent possibles.
 
-- `p2p_node/` produit le binaire `silicium-node` ;
-- `compute_daemon/` exécute et vérifie les workloads ;
-- `reputation_bridge/` expose la réputation au nœud ;
-- `silicium_node_core/` contient les primitives partagées.
+| Fichier | Rôle | Utilisé par |
+| --- | --- | --- |
+| `networked_runtime.py` | Gestion des blobs de contenu attachés aux tâches (`attach_network_content_blobs`) et lancement d'un nœud de ressources local | `tools/network_node.py`, `workloads/raytracer/run_network_job.py`, app desktop (copié dans le runtime installé) |
+| `start-node.cmd` | Lanceur Windows de développement d'un nœud Python | `Fusion/start-silicium-local.ps1` |
 
-`silicium-node` est le point d'entrée officiel. Il expose une API de contrôle
-HTTP versionnée sur le port `9092` par défaut et utilise `compute_daemon` sur
-le port `9090`. La configuration de production se fait dans Fusion ; voir
-[`../docs/node-control-api.md`](../docs/node-control-api.md) et
-`Fusion/deploy/compose/docker-compose.yml`.
-
-Pour les tests locaux, lancer `compute_daemon` avant le nœud :
-
-```bash
-SILICIUM_COMPUTE_BIND=127.0.0.1:9090 \
-  cargo run --manifest-path compute_daemon/Cargo.toml
-
-SILICIUM_NODE_ID=local-node \
-SILICIUM_NODE_CONTROL_TOKEN=local-dev-token \
-COMPUTE_DAEMON_URL=http://127.0.0.1:9090 \
-  cargo run --manifest-path p2p_node/Cargo.toml
-```
-
-Les anciens scripts de démo Python ne constituent plus une procédure de
-démarrage ou de déploiement supportée.
+Le code Rust qui se trouvait ici a été déplacé dans [`../crates/`](../crates/).

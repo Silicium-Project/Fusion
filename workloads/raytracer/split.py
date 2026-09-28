@@ -1,3 +1,4 @@
+"""Entry point: split a scene into tiles (delegates to raytracer_workload)."""
 from __future__ import annotations
 
 import sys

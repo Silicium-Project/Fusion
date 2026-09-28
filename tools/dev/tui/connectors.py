@@ -1,3 +1,4 @@
+"""Connectors that execute TUI actions: in-process, stdio core, or HTTP endpoint."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

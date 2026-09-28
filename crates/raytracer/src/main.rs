@@ -1,3 +1,10 @@
+//! `silicium-raytracer`: deterministic CPU raytracer used by every compute node.
+//!
+//! Renders a `.cfg` scene (spheres, planes, point lights, recursive reflections,
+//! shadows, Phong highlights) to a binary PPM, optionally only a rectangular tile.
+//! Output must be byte-identical across machines so that another peer can verify it.
+//! Usage: `silicium-raytracer <scene.cfg> --output <out.ppm> [--x-start ..] [--threads N]`.
+
 use std::{
     env, fs,
     io::Write,

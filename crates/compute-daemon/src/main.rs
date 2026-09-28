@@ -1,3 +1,9 @@
+//! `compute_daemon`: local HTTP service that renders and verifies raytracer tiles.
+//!
+//! `POST /compute` runs `SILICIUM_RAYTRACER_BIN` and returns the SHA-256 of the
+//! rendered pixels; `POST /verify` re-checks a sample of milestone hashes, the
+//! sample rate decreasing with the worker's reputation. Listens on 127.0.0.1:9090.
+
 use axum::{
     routing::post,
     Router,

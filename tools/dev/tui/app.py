@@ -1,3 +1,4 @@
+"""Textual frontend of the operator TUI."""
 from __future__ import annotations
 
 import asyncio

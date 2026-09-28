@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""E2E probe that checks a deployed orchestrator is reachable and answers its control endpoints (dev only)."""
 from __future__ import annotations
 
 import argparse

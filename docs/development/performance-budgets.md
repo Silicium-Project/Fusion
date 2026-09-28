@@ -1,6 +1,6 @@
 # Performance and resource budgets
 
-`docs/performance-budgets.json` contains guardrails for the active Network
+`docs/development/performance-budgets.json` contains guardrails for the active Network
 runtime. It intentionally does not contain profiles for the removed C++
 fragment pipeline.
 

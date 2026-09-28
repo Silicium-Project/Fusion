@@ -1,3 +1,5 @@
+//! Minimal Solana JSON-RPC client (HTTP + rustls, no OpenSSL) used to check stakes.
+
 use serde::{Deserialize, Serialize};
 
 /// Calls the Solana JSON-RPC API directly — no OpenSSL dependency.

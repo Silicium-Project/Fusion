@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""CLI for the world-mesh Docker demo: start nodes, inspect peers, run chain smoke tests (dev only)."""
 from __future__ import annotations
 
 import argparse

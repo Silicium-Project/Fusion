@@ -1,3 +1,4 @@
+"""Entry point: reassemble rendered tiles into the final image (delegates to raytracer_workload)."""
 from __future__ import annotations
 
 import sys

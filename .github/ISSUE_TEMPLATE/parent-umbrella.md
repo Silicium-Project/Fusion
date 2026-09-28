@@ -29,4 +29,4 @@ Describe the high-level goal and why this parent issue exists.
 
 ## Policy
 
-Follow: `docs/backlog-hygiene.md`
+Follow: `docs/development/backlog-hygiene.md`

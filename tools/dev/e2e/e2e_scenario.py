@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Docker E2E scenario: submits tasks through the web API or RPC and waits for verified results (dev only)."""
 from __future__ import annotations
 
 import argparse

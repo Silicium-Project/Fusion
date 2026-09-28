@@ -1,3 +1,4 @@
+"""Catalog of actions the operator TUI can run (compose status, localnet, logs...)."""
 from __future__ import annotations
 
 from dataclasses import dataclass

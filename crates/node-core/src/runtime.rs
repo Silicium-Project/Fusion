@@ -1,3 +1,5 @@
+//! Executes a task in a sandbox: a WASM module (feature `runtime-wasm`) or an OCI image via Docker.
+
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf, process::Command};
 use thiserror::Error;

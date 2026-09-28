@@ -1,3 +1,7 @@
+"""Legacy runtime helpers: attach P2P content blobs to task envelopes and run a local resource node.
+
+Part of the Python runtime that crates/ replaces; see docs/architecture/rust-migration.md.
+"""
 from __future__ import annotations
 
 import base64

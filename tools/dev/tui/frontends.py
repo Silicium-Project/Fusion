@@ -1,3 +1,4 @@
+"""Selection of the TUI frontend: textual, curses or headless."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

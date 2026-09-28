@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Minimal gossip orchestrator used by the Docker E2E scenario (dev only)."""
 from __future__ import annotations
 
 import argparse

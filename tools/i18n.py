@@ -1,3 +1,4 @@
+"""Translation lookup (tr) shared by the CLI, the TUI and the i18n checks."""
 from __future__ import annotations
 
 import json

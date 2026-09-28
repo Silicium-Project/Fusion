@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Local web GUI that drives the world-mesh Docker demo (dev only)."""
 from __future__ import annotations
 
 import html

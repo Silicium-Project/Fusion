@@ -1,3 +1,4 @@
+"""Curses frontend of the operator TUI (fallback when Textual is unavailable)."""
 from __future__ import annotations
 
 from dataclasses import dataclass

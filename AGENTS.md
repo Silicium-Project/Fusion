@@ -1,52 +1,54 @@
-# Network repository guide
+# Guide du dépôt Network (pour les contributeurs et les agents)
 
-Network is the distributed-runtime repository composed by Fusion. It contains
-the peer-to-peer node, the Solana integration, the workload catalog, the
-developer CLI, and the local/test infrastructure used by those components.
+Network est le dépôt du runtime réseau de Silicium, intégré dans Fusion comme
+sous-module. Carte détaillée : `docs/architecture/repository-layout.md`.
 
-## Canonical components
+## Règle de langage
 
-- `crates/p2p-node/`: peer discovery, authenticated peer HTTP, content
-  transfer, task dispatch, and gossip.
-- `crates/node-core/`: Rust node runtime and transport primitives.
-- `crates/compute-daemon/`: compute-role daemon used by the node stack.
-- `crates/reputation-bridge/`: bridge consumed by Fusion's production
-  Compose stack.
-- `tools/network_node.py`, `tools/dev/e2e/bootstrap_orchestrator.py`, and the RPC,
-  telemetry, receipt, and update-manifest tools: Python control-plane helpers.
-- `solana-layer/`: Anchor program, SDK, migrations, IDL generation, and tests.
-- `silicium-layer-dashboard/`: Vite dashboard for network/Solana inspection.
-- `workloads/raytracer/`: the current end-to-end workload, including its Rust
-  native implementation.
-- `catalog/`, `proto/`, `i18n/`, `tests/`, and `docs/`: contracts, fixtures,
-  localization, validation, and project documentation.
+- **Rust** pour tout ce qui s'exécute chez un utilisateur ou sur le serveur →
+  `crates/`.
+- **Python** uniquement pour l'outillage développeur → `tools/dev/`, `tests/`.
+- Le runtime Python encore en production (`tools/*.py`, `networked/`,
+  `workloads/`) est **legacy** : correctifs oui, nouvelles fonctionnalités non.
+  Plan : `docs/architecture/rust-migration.md`.
 
-The former C++ `splitter`/`executor`/`worker` chain, Qt viewer, assembler demos,
-PE corpus, and generated coverage reports are intentionally absent. They are
-historical material in Git history, not part of the active Network product.
+## Où mettre quoi
 
-## Infrastructure ownership
+| Besoin | Emplacement |
+| --- | --- |
+| Code du nœud, du calcul, de la réputation | `crates/<crate>/` |
+| Programme on-chain, SDK | `solana-layer/` |
+| Script de test, de démo, de contrôle qualité, de release | `tools/dev/<domaine>/` |
+| Test Python | `tests/` (fixtures dans `tests/fixtures/`) |
+| Manifeste ou golden data de workload | `catalog/workloads/` |
+| Conteneur ou service local | `infra/` |
+| Documentation | `docs/<architecture|contracts|operations|development>/` + `README.md` du dossier concerné |
 
-`infra/docker-compose.yml` owns local Network/Solana nodes and the local proxy.
-`infra/docker-compose.world.yml` owns the optional world/Solana integration
-testbed. `infra/bootstrap/` contains bootstrap fixtures for that testbed.
-Production site deployment belongs to Fusion (`deploy/compose`), not this
-repository. Keep credentials in local env files; commit only
-`infra/.env.example`-style templates.
+Le déploiement de production (serveur, Compose du site, systemd) appartient à
+Fusion (`deploy/`), pas à ce dépôt.
 
-## Common checks
+## Contrats à ne pas casser
 
-**Tests et CI**
-- Tests Python: `tests/test_entrypoint.py`, `tests/test_manifests.py`.
-- CI GitHub Actions: `.github/workflows/ci.yml`, `release.yml`.
-- Scripts locaux: `ci/e2e.sh`, `ci/test_images.sh`.
+- Fichiers lus par le BackEnd : `docs/contracts/backend-files.md`.
+- Chemin `workloads/raytracer/run_network_job.py`, appelé par le BackEnd.
+- Programme Solana, son IDL et ses tests (`solana-layer/`).
 
-The canonical GitHub workflow is `.github/workflows/ci.yml`. It validates the
-Python/runtime path, Rust P2P crates, Solana layer, raytracer, Docker E2E, and
-proxy/P2P smoke checks. It must not reintroduce the removed C++ jobs.
+## Contrôles
 
-## Generated state
+```bash
+make check                                             # contrôle rapide (CI)
+python3 -m pytest                                      # tests Python
+cargo test --manifest-path crates/<crate>/Cargo.toml   # tests Rust
+```
 
-Builds, ledgers, caches, logs, validator output, and native Cargo targets are
-ignored by `.gitignore`. Do not add generated runtime state, secrets, or local
-wallets to the repository.
+La CI de référence est `.github/workflows/ci.yml`.
+
+## Hygiène
+
+- Pas d'état généré dans Git (cibles Cargo, ledgers, caches, journaux, wallets,
+  secrets).
+- Fichiers courts et lisibles : au-delà de ~400 lignes, découper en modules.
+- Chaque dossier a un `README.md` à jour ; chaque module a un en-tête qui dit
+  ce qu'il fait.
+- Les composants supprimés (chaîne C++, viewer Qt, démos d'assembleur, corpus PE,
+  fallback Python du raytracer) ne doivent pas revenir.

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""CI check: every locale file defines the same keys as the reference locale."""
 from __future__ import annotations
 
 import argparse

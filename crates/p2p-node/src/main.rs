@@ -1,3 +1,13 @@
+//! `p2p_node`: prototype of the Rust Silicium node.
+//!
+//! Runs a libp2p swarm (TCP/QUIC, Noise, Yamux, Gossipsub, Kademlia, mDNS,
+//! Identify, AutoNAT, relay server), exposes a local HTTP API (`/publish`,
+//! `/tasks/{id}`, `/health`) and processes every task it receives by calling the
+//! local compute daemon and reputation bridge.
+//!
+//! Status: prototype, not used in production. Configuration, API and known
+//! limitations are documented in `crates/p2p-node/README.md`.
+
 use axum::{
     Router,
     extract::{Json, Path as AxumPath, State},

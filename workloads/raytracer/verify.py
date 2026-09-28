@@ -1,3 +1,4 @@
+"""Entry point: verify a rendered tile (delegates to raytracer_workload)."""
 from __future__ import annotations
 
 import sys

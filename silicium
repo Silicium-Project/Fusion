@@ -44,7 +44,7 @@ WORKLOAD_FIXTURES_DIR = WORKLOAD_ROOT / "fixtures"
 WORKLOAD_FIXTURES_INDEX = WORKLOAD_FIXTURES_DIR / "fixtures.json"
 WORKLOAD_ALIGNMENT_POLICY = WORKLOAD_FIXTURES_DIR / "alignment-policy.json"
 WORKLOAD_GOLDEN_CORPUS_FILE = WORKLOAD_ROOT / "golden" / "golden-corpus.json"
-PERF_BUDGET_FILE = REPO_ROOT / "docs" / "performance-budgets.json"
+PERF_BUDGET_FILE = REPO_ROOT / "docs" / "development" / "performance-budgets.json"
 POSIX_PYTEST_IMAGE_DEFAULT = "python:3.12-bookworm"
 LEDGER_SUFFIX = {
     "localnet": "local-ledger",

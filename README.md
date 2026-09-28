@@ -1,82 +1,69 @@
 # Silicium Network
 
-`Network` contient le runtime distribué de Silicium. Le chemin de production
-est le nœud Rust `silicium-node`, accompagné de `compute_daemon` pour
-l'exécution et de `reputation_bridge` pour la réputation. Les anciens
-pipelines C++ (`splitter`, `executor`, `worker`, viewer Qt et démos associées)
-ne font pas partie du produit ; ils ne subsistent que dans l'historique Git.
+Réseau de calcul distribué de Silicium : des nœuds installés chez des
+particuliers reçoivent des fragments de travail, les calculent, les font
+vérifier par d'autres nœuds, puis le résultat est réassemblé. La couche
+Solana assure la transparence (jobs, réputation, staking, récompenses).
 
-## Composants actifs
+## État actuel en une phrase
 
-- `crates/p2p-node/` : binaire Rust `silicium-node`, découverte des pairs,
-  persistance locale, gossip et API de contrôle versionnée.
-- `crates/compute-daemon/` : exécuteur Rust des workloads de calcul.
-- `crates/reputation-bridge/` : service de réputation consommé par le
-  nœud et la stack Fusion.
-- `crates/node-core/` : primitives de transport, planification et
-  registre des tâches du nœud.
-- `workloads/raytracer/` et `catalog/` : workload de référence et manifests.
-- `solana-layer/` : programme Anchor, SDK TypeScript, IDL et tests Solana.
-- `tools/` : outils de développement, migration et contrôle ; ils ne sont pas
-  le runtime de nœud par défaut.
+Le runtime réseau **en production est encore en Python** (`tools/network_node.py`).
+Le runtime **cible est en Rust** (`crates/`) et le remplace progressivement.
+Règle du projet : *Rust pour tout ce qui s'exécute chez un utilisateur ou sur
+le serveur, Python uniquement pour l'outillage des développeurs.*
 
-## Contrat de contrôle
+Le plan de migration est décrit dans
+[`docs/architecture/rust-migration.md`](docs/architecture/rust-migration.md).
 
-Fusion communique directement avec l'API HTTP du nœud Rust :
+## Carte du dépôt
 
-- `GET /v1/health`
-- `GET` et `POST /v1/tasks`
-- `POST /v1/workloads/{root_job_id}/cancel`
-- `GET /v1/peers`
+| Dossier | Langage | Rôle | Statut |
+| --- | --- | --- | --- |
+| [`crates/`](crates/) | Rust | Nœud P2P, cœur du nœud, daemon de calcul, pont de réputation, raytracer | Cible ; nœud P2P encore prototype |
+| [`solana-layer/`](solana-layer/) | Rust (Anchor) + TypeScript | Programme on-chain, SDK, tests Anchor | Actif |
+| [`silicium-layer-dashboard/`](silicium-layer-dashboard/) | TypeScript (Vite) | Tableau de bord réseau / Solana | Actif |
+| [`tools/`](tools/) | Python | Runtime Python de production (nœud, RPC, télémétrie, transport, API MCP) | **Legacy** — à remplacer par `crates/` |
+| [`networked/`](networked/) | Python | Paquet `networked` (blobs de contenu partagés par le runtime) | **Legacy** |
+| [`workloads/`](workloads/) | Python | Orchestration des workloads (découpage, vérification, réassemblage du raytracer) | **Legacy** — le rendu lui-même est dans `crates/raytracer` |
+| [`tools/dev/`](tools/dev/) | Python | Outillage développeur : E2E, démo « world », contrôles qualité, release, TUI | Outil dev (reste en Python) |
+| [`tests/`](tests/) | Python | Tests pytest du runtime Python et des outils | Actif |
+| [`catalog/`](catalog/) | JSON | Manifestes, schémas, fixtures et golden data des workloads | Actif |
+| [`proto/`](proto/) | Protobuf | Contrat RPC du runtime Python | Legacy |
+| [`i18n/`](i18n/) | JSON / shell | Traductions de la CLI et des scripts | Actif |
+| [`infra/`](infra/) | Docker, systemd | Conteneurs locaux (Solana, bootstrap, world), unités systemd | Actif |
+| [`ci/`](ci/) | Shell | Contrôles CI, E2E Docker, smoke Kademlia | Actif |
+| [`docs/`](docs/) | Markdown | Documentation technique, rangée par partie | — |
+| `silicium`, `silicium-cli` | Python | CLI développeur et lanceur du nœud | Actif |
 
-Les routes, l'authentification Bearer et la compatibilité sont décrites dans
-[docs/node-control-api.md](docs/node-control-api.md). Les routes non versionnées
-restantes sont de compatibilité interne et ne doivent pas servir à de nouveaux
-consommateurs.
+Chaque dossier contient un `README.md` qui détaille son contenu.
 
-## Développement local
-
-Lancer les deux services Rust dans deux terminaux :
-
-```bash
-SILICIUM_COMPUTE_BIND=127.0.0.1:9090 \
-  cargo run --manifest-path crates/compute-daemon/Cargo.toml
-
-SILICIUM_NODE_ID=local-node \
-SILICIUM_NODE_ROLES=compute,verify \
-SILICIUM_NODE_CONTROL_TOKEN=local-dev-token \
-SILICIUM_API_BIND=127.0.0.1 \
-API_PORT=9092 \
-COMPUTE_DAEMON_URL=http://127.0.0.1:9090 \
-  cargo run --manifest-path crates/p2p-node/Cargo.toml
-```
-
-La stack complète du site (FrontEnd, BackEnd, nœud, compute et proxy) est
-définie au niveau de Fusion, dans `deploy/compose/docker-compose.yml`.
-
-## Vérifications
+## Démarrage rapide (développement)
 
 ```bash
-python -m pytest
+# Dépendances Python des outils et tests
+python3 -m pip install -r requirements-dev.txt
+
+# Tests Python
+python3 -m pytest
+
+# Tests Rust (chaque crate a son propre Cargo.toml)
+cargo test --manifest-path crates/node-core/Cargo.toml
 cargo test --manifest-path crates/p2p-node/Cargo.toml --locked
-cargo test --manifest-path crates/compute-daemon/Cargo.toml --locked
-cd solana-layer/silicium-sdk && npm ci && npm run build && npm run verify:dist
+cargo test --manifest-path crates/compute-daemon/Cargo.toml
+cargo test --manifest-path crates/reputation-bridge/Cargo.toml --locked
+cargo test --manifest-path crates/raytracer/Cargo.toml
+
+# Contrôle rapide utilisé par la CI
+make check
 ```
 
-La CI exécute aussi les tests du bridge de réputation et vérifie que le `dist`
-du SDK est régénéré. La gate Compose de Fusion ouvre réellement le FrontEnd
-dans un navigateur et contrôle le chemin FrontEnd → BackEnd → nœud Rust.
+Le détail des prérequis et des contrôles est dans
+[`docs/development/core-stability.md`](docs/development/core-stability.md).
 
-## Documentation utile
+## Documentation
 
-- [Contrat HTTP du nœud](docs/node-control-api.md)
-- [Transport P2P direct](docs/p2p-direct-transport-contract.md)
-- [Organisation du dépôt](docs/repository-layout.md)
-- [Workloads et fixtures](docs/workload-fixtures.md)
-- [Intégration Solana Devnet](docs/solana-devnet.md)
+L'index complet est dans [`docs/README.md`](docs/README.md).
 
-## État généré
+## Licence et sécurité
 
-Les caches, ledgers, sorties Cargo, `node_modules`, clés et journaux sont
-ignorés par Git. Ne les ajoutez pas au dépôt et utilisez les scripts CI qui
-nettoient leur propre espace de travail entre les builds.
+Voir [`LICENSE`](LICENSE) et [`SECURITY.md`](SECURITY.md).

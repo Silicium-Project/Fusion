@@ -1,3 +1,5 @@
+//! Directed acyclic graph of task dependencies (parents, children, runtime hint).
+
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use thiserror::Error;

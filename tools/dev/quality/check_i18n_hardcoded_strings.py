@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""CI check: reject user-facing strings that bypass the i18n catalog."""
 from __future__ import annotations
 
 import argparse

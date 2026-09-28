@@ -1,3 +1,4 @@
+"""Headless TUI scheduler used for scripted runs and tests."""
 from __future__ import annotations
 
 import json

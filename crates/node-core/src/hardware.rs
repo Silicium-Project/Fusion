@@ -1,3 +1,5 @@
+//! Detection and bucketing of the local hardware profile (CPU, memory, GPU hints).
+
 use serde::{Deserialize, Serialize};
 
 pub const VRAM_SHIFT: u32 = 0;

@@ -62,8 +62,8 @@ Schéma de référence versionné:
 - `resources.budget` fournit l'enveloppe attendue (wall/cpu/memory) pour planifier.
 - `presets` fournit des variables d'exemple pour `workload show --dry-run`.
 - `catalog/workloads/fixtures/fixtures.json` référence les fixtures versionnées.
-- Politique d'alignement workloads/golden corpus: `docs/workload-alignment-policy.md`
-- Politique golden corpus: `docs/golden-corpus.md`
+- Politique d'alignement workloads/golden corpus: `docs/contracts/workload-alignment-policy.md`
+- Politique golden corpus: `docs/development/golden-corpus.md`
 
 Les devices téléchargent le manifest correspondant au job pour savoir quel binaire lancer et comment reporter la preuve (hash, logs, temps).
 

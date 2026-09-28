@@ -19,7 +19,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_BUDGET_FILE = REPO_ROOT / "docs" / "performance-budgets.json"
+DEFAULT_BUDGET_FILE = REPO_ROOT / "docs" / "development" / "performance-budgets.json"
 TIME_MARKER = "__SILICIUM_PERF__"
 
 
