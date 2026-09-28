@@ -4,7 +4,7 @@ Le programme de référence est `A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2`.
 Le contrôle sans écriture est reproductible depuis la racine de Network :
 
 ```bash
-python3 tools/solana_devnet_preflight.py --json
+python3 tools/dev/release/solana_devnet_preflight.py --json
 ```
 
 Il vérifie via RPC que le compte du programme existe et est exécutable. Le

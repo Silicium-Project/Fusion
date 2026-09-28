@@ -596,7 +596,7 @@ def run_load_test(args: argparse.Namespace) -> dict[str, Any]:
     batch_size = max(1, min(32, int(args.batch_size)))
     compose_prefix = _resolve_compose_prefix(str(args.compose_command))
 
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[3]
     report_path = Path(args.report).expanduser().resolve() if args.report else repo_root / ".silicium" / "load-tests" / f"load-{int(time.time())}.json"
     project_name = safe_id(args.project_name or f"silicium-load-{int(time.time())}-{uuid.uuid4().hex[:6]}")[:50]
     state_dir = Path(tempfile.mkdtemp(prefix="silicium-load-"))

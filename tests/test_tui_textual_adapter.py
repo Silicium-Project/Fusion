@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tools.tui.frontends import FrontendRunConfig, TextualFrontend
+from tools.dev.tui.frontends import FrontendRunConfig, TextualFrontend
 
 
 def test_textual_adapter_uses_injected_run() -> None:

@@ -13,12 +13,12 @@ viewer are no longer translation targets.
 5. Run the checks below.
 
 ```bash
-python tools/check_utf8.py
-python tools/check_i18n_locales.py --strict
-python tools/check_i18n_hardcoded_strings.py --strict
+python tools/dev/quality/check_utf8.py
+python tools/dev/quality/check_i18n_locales.py --strict
+python tools/dev/quality/check_i18n_hardcoded_strings.py --strict
 python -m pytest tests/test_i18n_contract.py tests/test_i18n_locales.py
 ```
 
-Covered paths are `silicium`, `tools/tui`, `networked`, `workloads`, and
+Covered paths are `silicium`, `tools/dev/tui`, `networked`, `workloads`, and
 `infra`. Machine-readable output, secrets, and protocol payloads must stay
 stable and must not be translated.

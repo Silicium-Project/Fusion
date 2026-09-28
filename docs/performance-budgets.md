@@ -9,7 +9,7 @@ memory (`max_rss_kib`). Profiles can restrict supported platforms and can be
 run individually or together:
 
 ```bash
-python3 tools/perf_budget.py --list
+python3 tools/dev/quality/perf_budget.py --list
 ./silicium budget --all --strict --output /tmp/network-budget.json
 ./silicium budget --profile network_check --strict
 ```

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = REPO_ROOT / "tools" / "world_gui.py"
+MODULE_PATH = REPO_ROOT / "tools" / "dev" / "world" / "world_gui.py"
 
 
 def _load_module():

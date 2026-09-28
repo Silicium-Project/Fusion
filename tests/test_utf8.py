@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from tools.check_utf8 import check_utf8
+from tools.dev.quality.check_utf8 import check_utf8
 
 
 def test_repo_files_are_utf8():

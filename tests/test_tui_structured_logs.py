@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tools.tui.structured_logs import StructuredProgressTracker, parse_structured_event_line
+from tools.dev.tui.structured_logs import StructuredProgressTracker, parse_structured_event_line
 
 
 def test_parse_structured_event_line_accepts_schema_v1() -> None:

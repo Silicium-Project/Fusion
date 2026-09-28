@@ -7,10 +7,10 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
-from tools.tui.headless_app import run_script as default_headless_script_runner
+from tools.dev.tui.headless_app import run_script as default_headless_script_runner
 
 if TYPE_CHECKING:
-    from tools.tui.connectors import ITuiConnector
+    from tools.dev.tui.connectors import ITuiConnector
 
 
 @dataclass(frozen=True)
@@ -77,7 +77,7 @@ class CursesFrontend(ITuiFrontend):
 
     def probe(self) -> tuple[bool, str]:
         try:
-            from tools.tui.curses_app import _load_curses  # type: ignore[attr-defined]
+            from tools.dev.tui.curses_app import _load_curses  # type: ignore[attr-defined]
         except ImportError:
             return False, "curses frontend module unavailable."
         except Exception as exc:  # pragma: no cover - defensive
@@ -94,7 +94,7 @@ class CursesFrontend(ITuiFrontend):
         ok, reason = self.probe()
         if not ok:
             return FrontendRunResult(False, reason)
-        from tools.tui.curses_app import run as run_curses
+        from tools.dev.tui.curses_app import run as run_curses
 
         try:
             run_curses()
@@ -157,14 +157,14 @@ def build_frontend_registry() -> dict[str, ITuiFrontend]:
 
 def _default_textual_probe() -> tuple[bool, str]:
     try:
-        from tools.tui.app import run as _run_textual  # noqa: F401
+        from tools.dev.tui.app import run as _run_textual  # noqa: F401
     except ImportError:
         return False, "Textual dependencies missing."
     return True, ""
 
 
 def _default_textual_run(config: FrontendRunConfig) -> None:
-    from tools.tui.app import run as run_textual
+    from tools.dev.tui.app import run as run_textual
 
     run_textual(connector=config.connector)
 

@@ -14,9 +14,9 @@ from typing import Sequence
 from urllib.parse import parse_qs
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-WORLD_NODE = REPO_ROOT / "tools" / "world_node.py"
-WORLD_SOLANA = REPO_ROOT / "tools" / "world_solana_docker.py"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+WORLD_NODE = REPO_ROOT / "tools" / "dev" / "world" / "world_node.py"
+WORLD_SOLANA = REPO_ROOT / "tools" / "dev" / "world" / "world_solana_docker.py"
 DEFAULT_PORT = 8765
 DEFAULT_STATE_DIR = REPO_ROOT / ".silicium-world" / "export"
 DEFAULT_TASK_JSON = '{"task_id":"demo-tile-0","kind":"compute","payload":"hello-chain","tile_index":0,"tile_region":{"x":0,"y":0,"width":1,"height":1}}'

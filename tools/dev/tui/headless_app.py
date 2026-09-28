@@ -9,8 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
 
-from tools.tui.actions import ActionSpec, LOG_DIR, build_actions
-from tools.tui.connectors import ITuiConnector, InProcessConnector
+from tools.dev.tui.actions import ActionSpec, LOG_DIR, build_actions
+from tools.dev.tui.connectors import ITuiConnector, InProcessConnector
 
 RunStatus = str
 CommandRunner = Callable[[ActionSpec, str, Path, threading.Event], int]

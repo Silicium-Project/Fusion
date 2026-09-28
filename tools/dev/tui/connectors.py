@@ -15,7 +15,7 @@ from urllib import error as url_error
 from urllib import parse as url_parse
 from urllib import request as url_request
 
-from tools.tui.actions import ActionSpec, REPO_ROOT
+from tools.dev.tui.actions import ActionSpec, REPO_ROOT
 
 
 class ITuiConnector(ABC):
@@ -94,7 +94,7 @@ class StdIoConnector(ITuiConnector):
         if not self._core_command:
             raise RuntimeError(
                 "StdIO core is unavailable. Set SILICIUM_TUI_STDIO_CORE_CMD "
-                "or build tools/tui/stdio_core.cpp."
+                "or build tools/dev/tui/stdio_core.cpp."
             )
 
         command = action.command(runner_mode)
@@ -380,8 +380,8 @@ def _resolve_stdio_core_command() -> list[str] | None:
         return shlex.split(env, posix=(os.name != "nt"))
 
     binary_name = "stdio_core.exe" if os.name == "nt" else "stdio_core"
-    binary = REPO_ROOT / "tools" / "tui" / binary_name
-    source = REPO_ROOT / "tools" / "tui" / "stdio_core.cpp"
+    binary = REPO_ROOT / "tools" / "dev" / "tui" / binary_name
+    source = REPO_ROOT / "tools" / "dev" / "tui" / "stdio_core.cpp"
     if binary.exists():
         return [str(binary)]
     if not source.exists():

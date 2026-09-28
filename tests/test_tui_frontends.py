@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tools.tui.frontends import (
+from tools.dev.tui.frontends import (
     FrontendRunConfig,
     HeadlessFrontend,
     ITuiFrontend,
     build_frontend_registry,
 )
-from tools.tui.connectors import ITuiConnector
+from tools.dev.tui.connectors import ITuiConnector
 
 
 def test_frontend_registry_exposes_all_adapters() -> None:

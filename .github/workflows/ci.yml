@@ -496,11 +496,11 @@ jobs:
 
       - name: Validate UTF-8 files
         if: matrix.job == 'pytest'
-        run: python tools/check_utf8.py
+        run: python tools/dev/quality/check_utf8.py
 
       - name: Validate i18n locale packs
         if: matrix.job == 'pytest'
-        run: python tools/check_i18n_locales.py --strict
+        run: python tools/dev/quality/check_i18n_locales.py --strict
 
       - name: Validate hard-coded i18n strings (changed lines)
         if: matrix.job == 'pytest'
@@ -513,7 +513,7 @@ jobs:
           if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
             BASE_SHA="HEAD~1"
           fi
-          python tools/check_i18n_hardcoded_strings.py --base "$BASE_SHA" --head "$HEAD_SHA" --strict
+          python tools/dev/quality/check_i18n_hardcoded_strings.py --base "$BASE_SHA" --head "$HEAD_SHA" --strict
 
       - name: Lint workload manifests
         if: matrix.job == 'pytest'
@@ -548,7 +548,7 @@ jobs:
       - name: Run budget checks
         if: matrix.job == 'perf-budget'
         run: |
-          python tools/perf_budget.py \
+          python tools/dev/quality/perf_budget.py \
             --all \
             --strict \
             --output /tmp/perf-budget-report.json

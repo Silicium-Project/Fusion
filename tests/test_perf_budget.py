@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tools import perf_budget
+from tools.dev.quality import perf_budget
 
 
 def test_parse_time_marker() -> None:

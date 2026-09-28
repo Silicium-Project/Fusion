@@ -22,7 +22,7 @@ perf-budget-report.json
 Network-*.ndjson
 solana-validator-*.log
 tools/__pycache__/
-tools/tui/__pycache__/
+tools/dev/tui/__pycache__/
 tests/__pycache__/
 workloads/raytracer/**/*.ppm
 workloads/raytracer/**/*.out

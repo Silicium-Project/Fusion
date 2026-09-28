@@ -70,5 +70,5 @@ Resolve in this order:
 
 ## Validation
 
-Run `python tools/check_i18n_locales.py --strict` and
-`python tools/check_i18n_hardcoded_strings.py --strict` before merging changes.
+Run `python tools/dev/quality/check_i18n_locales.py --strict` and
+`python tools/dev/quality/check_i18n_hardcoded_strings.py --strict` before merging changes.

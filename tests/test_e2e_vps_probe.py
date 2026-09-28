@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from tools import e2e_vps_probe
+from tools.dev.e2e import e2e_vps_probe
 
 
 def test_control_host_uses_url_hostname() -> None:

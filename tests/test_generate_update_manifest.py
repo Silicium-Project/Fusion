@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from tools import generate_update_manifest
+from tools.dev.release import generate_update_manifest
 from tools.network_node import NodeIdentity, stable_json
 
 

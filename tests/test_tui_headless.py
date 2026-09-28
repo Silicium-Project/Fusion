@@ -7,8 +7,8 @@ import threading
 import time
 from pathlib import Path
 
-from tools.tui.actions import ActionSpec
-from tools.tui.headless_app import HeadlessScheduler, run_script
+from tools.dev.tui.actions import ActionSpec
+from tools.dev.tui.headless_app import HeadlessScheduler, run_script
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

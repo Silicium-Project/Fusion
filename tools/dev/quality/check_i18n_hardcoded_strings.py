@@ -12,7 +12,7 @@ from typing import Any
 
 DEFAULT_PATHS = [
     "silicium",
-    "tools/tui",
+    "tools/dev/tui",
     "infra",
     "networked",
     "workloads",
@@ -22,7 +22,7 @@ DEFAULT_EXCLUDES = (
     "tests/",
     "docs/",
     "i18n/locales/",
-    "tools/check_i18n_hardcoded_strings.py",
+    "tools/dev/quality/check_i18n_hardcoded_strings.py",
 )
 
 STRING_LITERAL_RE = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'')

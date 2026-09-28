@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = REPO_ROOT / "tools" / "world_solana_docker.py"
+MODULE_PATH = REPO_ROOT / "tools" / "dev" / "world" / "world_solana_docker.py"
 BRIDGE_PATH = REPO_ROOT / "tools" / "solana_layer_bridge.cjs"
 UUID_SHIM_PATH = REPO_ROOT / "tools" / "node_uuid_cjs_shim.cjs"
 

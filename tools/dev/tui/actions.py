@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import sys
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 CLI = [sys.executable, str(REPO_ROOT / "silicium")]
 LOG_DIR = REPO_ROOT / ".silicium" / "logs"
 

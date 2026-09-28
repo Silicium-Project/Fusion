@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CHECKER = REPO_ROOT / "tools" / "check_i18n_hardcoded_strings.py"
+CHECKER = REPO_ROOT / "tools" / "dev" / "quality" / "check_i18n_hardcoded_strings.py"
 
 
 def _run_checker(diff_text: str, strict: bool) -> subprocess.CompletedProcess[str]:

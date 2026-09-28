@@ -10,7 +10,7 @@ from collections import deque
 from types import ModuleType
 import os
 
-from tools.tui.actions import ActionSpec, LOG_DIR, REPO_ROOT, build_actions
+from tools.dev.tui.actions import ActionSpec, LOG_DIR, REPO_ROOT, build_actions
 
 
 @dataclass

@@ -9,9 +9,9 @@ import threading
 from pathlib import Path
 from urllib import parse as url_parse
 
-from tools.tui.actions import ActionSpec
-from tools.tui.connectors import HttpConnector, ITuiConnector, StdIoConnector, build_connector_registry
-from tools.tui.headless_app import run_script
+from tools.dev.tui.actions import ActionSpec
+from tools.dev.tui.connectors import HttpConnector, ITuiConnector, StdIoConnector, build_connector_registry
+from tools.dev.tui.headless_app import run_script
 
 
 def _action(key: str) -> ActionSpec:

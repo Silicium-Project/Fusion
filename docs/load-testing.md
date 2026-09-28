@@ -1,6 +1,6 @@
 # Test de charge multi-instances
 
-`tools/load_test.py` démarre le chemin de production complet : un scheduler
+`tools/dev/e2e/load_test.py` démarre le chemin de production complet : un scheduler
 `network_node.py`, un serveur MCP, puis une instance conteneurisée par worker.
 Les workers s’enregistrent sur le scheduler, réclament les tâches avec des
 requêtes signées groupées, exécutent des workloads CPU intégrés et renvoient le
@@ -10,25 +10,25 @@ Le test nominal demandé (plusieurs dizaines d’instances) est :
 
 ```bash
 cd Network
-python3 tools/load_test.py --workers 32 --tasks 256 --batch-size 4 \
+python3 tools/dev/e2e/load_test.py --workers 32 --tasks 256 --batch-size 4 \
   --report .silicium/load-tests/32-workers.json
 ```
 
 Progression recommandée :
 
 ```bash
-python3 tools/load_test.py --workers 8  --tasks 64  --batch-size 4
-python3 tools/load_test.py --workers 16 --tasks 128 --batch-size 4
-python3 tools/load_test.py --workers 32 --tasks 256 --batch-size 4
-python3 tools/load_test.py --workers 64 --tasks 512 --batch-size 8
+python3 tools/dev/e2e/load_test.py --workers 8  --tasks 64  --batch-size 4
+python3 tools/dev/e2e/load_test.py --workers 16 --tasks 128 --batch-size 4
+python3 tools/dev/e2e/load_test.py --workers 32 --tasks 256 --batch-size 4
+python3 tools/dev/e2e/load_test.py --workers 64 --tasks 512 --batch-size 8
 ```
 
 Qualification de montée en charge sur le profil hétérogène :
 
 ```bash
-python3 tools/load_test.py --workers 100 --tasks 400 --batch-size 8 --start-batch-size 8 \
+python3 tools/dev/e2e/load_test.py --workers 100 --tasks 400 --batch-size 8 --start-batch-size 8 \
   --report .silicium/load-tests/100-workers.json
-python3 tools/load_test.py --workers 300 --tasks 1200 --batch-size 8 --start-batch-size 8 --no-build \
+python3 tools/dev/e2e/load_test.py --workers 300 --tasks 1200 --batch-size 8 --start-batch-size 8 --no-build \
   --report .silicium/load-tests/300-workers.json
 ```
 

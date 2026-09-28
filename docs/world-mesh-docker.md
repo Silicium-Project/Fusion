@@ -22,7 +22,7 @@ place.
 France node:
 
 ```bash
-python3 tools/world_node.py up \
+python3 tools/dev/world/world_node.py up \
   --node-id france-1 \
   --seed http://100.112.48.71:46001 \
   --advertise-host 100.112.48.71 \
@@ -33,7 +33,7 @@ python3 tools/world_node.py up \
 Croatia node on Windows PowerShell:
 
 ```powershell
-py tools\world_node.py up `
+py tools\dev\world\world_node.py up `
   --node-id croatia-1 `
   --seed http://100.112.48.71:46001 `
   --advertise-host 100.100.81.27 `
@@ -44,12 +44,12 @@ py tools\world_node.py up `
 Useful follow-up commands:
 
 ```bash
-python3 tools/world_solana_docker.py pubkey
-python3 tools/world_solana_docker.py balance
-python3 tools/world_node.py bootstrap-worker --node-id france-1 --solana
-python3 tools/world_node.py peers --node-id france-1 --solana
-python3 tools/world_node.py chain-smoke --node-id france-1 --solana
-python3 tools/world_node.py run-chain-task \
+python3 tools/dev/world/world_solana_docker.py pubkey
+python3 tools/dev/world/world_solana_docker.py balance
+python3 tools/dev/world/world_node.py bootstrap-worker --node-id france-1 --solana
+python3 tools/dev/world/world_node.py peers --node-id france-1 --solana
+python3 tools/dev/world/world_node.py chain-smoke --node-id france-1 --solana
+python3 tools/dev/world/world_node.py run-chain-task \
   --node-id france-1 \
   --solana \
   --task-id demo-tile-0 \
@@ -59,12 +59,12 @@ python3 tools/world_node.py run-chain-task \
 Windows PowerShell equivalents:
 
 ```powershell
-py tools\world_solana_docker.py pubkey
-py tools\world_solana_docker.py balance
-py tools\world_node.py bootstrap-worker --node-id croatia-1 --solana
-py tools\world_node.py peers --node-id croatia-1 --solana
-py tools\world_node.py chain-smoke --node-id croatia-1 --solana
-py tools\world_node.py run-chain-task --node-id croatia-1 --solana --task-id demo-tile-0 --task '{"task_id":"demo-tile-0","kind":"compute","payload":"hello-chain","tile_index":0,"tile_region":{"x":0,"y":0,"width":1,"height":1}}'
+py tools\dev\world\world_solana_docker.py pubkey
+py tools\dev\world\world_solana_docker.py balance
+py tools\dev\world\world_node.py bootstrap-worker --node-id croatia-1 --solana
+py tools\dev\world\world_node.py peers --node-id croatia-1 --solana
+py tools\dev\world\world_node.py chain-smoke --node-id croatia-1 --solana
+py tools\dev\world\world_node.py run-chain-task --node-id croatia-1 --solana --task-id demo-tile-0 --task '{"task_id":"demo-tile-0","kind":"compute","payload":"hello-chain","tile_index":0,"tile_region":{"x":0,"y":0,"width":1,"height":1}}'
 ```
 
 `chain-smoke` runs the Devnet minimal compute flow inside the world container,
@@ -77,13 +77,13 @@ for the normal demo path.
 For a small button-based interface, start:
 
 ```bash
-python3 tools/world_gui.py
+python3 tools/dev/world/world_gui.py
 ```
 
 On Windows PowerShell:
 
 ```powershell
-py tools\world_gui.py --profile croatia
+py tools\dev\world\world_gui.py --profile croatia
 ```
 
 It opens a local page at `http://127.0.0.1:8765` with buttons for starting the
@@ -167,11 +167,11 @@ Tailscale is the easiest way to make this reliable across countries.
 The easiest path is to use the helper wrapper:
 
 ```bash
-python3 tools/world_solana_docker.py init-wallet --force
-python3 tools/world_solana_docker.py pubkey
-python3 tools/world_solana_docker.py balance
-python3 tools/world_solana_docker.py airdrop 2
-python3 tools/world_solana_docker.py bootstrap-worker
+python3 tools/dev/world/world_solana_docker.py init-wallet --force
+python3 tools/dev/world/world_solana_docker.py pubkey
+python3 tools/dev/world/world_solana_docker.py balance
+python3 tools/dev/world/world_solana_docker.py airdrop 2
+python3 tools/dev/world/world_solana_docker.py bootstrap-worker
 ```
 
 All of those commands run through Docker Compose and keep the keypair under the world state volume.

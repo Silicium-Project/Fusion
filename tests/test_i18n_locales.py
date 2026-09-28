@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_i18n_locale_report_strict() -> None:
     result = subprocess.run(
-        [sys.executable, "tools/check_i18n_locales.py", "--strict", "--json"],
+        [sys.executable, "tools/dev/quality/check_i18n_locales.py", "--strict", "--json"],
         cwd=REPO_ROOT,
         text=True,
         capture_output=True,

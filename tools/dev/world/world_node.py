@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 WORLD_COMPOSE = REPO_ROOT / "infra" / "docker-compose.world.yml"
 DEFAULT_WORLD = "team-europe"
 DEFAULT_RPC = "https://api.devnet.solana.com"

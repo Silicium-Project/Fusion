@@ -12,7 +12,7 @@ developer CLI, and the local/test infrastructure used by those components.
 - `networked/compute_daemon/`: compute-role daemon used by the node stack.
 - `networked/reputation_bridge/`: bridge consumed by Fusion's production
   Compose stack.
-- `tools/network_node.py`, `tools/bootstrap_orchestrator.py`, and the RPC,
+- `tools/network_node.py`, `tools/dev/e2e/bootstrap_orchestrator.py`, and the RPC,
   telemetry, receipt, and update-manifest tools: Python control-plane helpers.
 - `solana-layer/`: Anchor program, SDK, migrations, IDL generation, and tests.
 - `silicium-layer-dashboard/`: Vite dashboard for network/Solana inspection.

@@ -2503,8 +2503,8 @@ def run_tui_frontend(
     headless_timeout: float = 120.0,
     headless_json: str | None = None,
 ) -> None:
-    from tools.tui.connectors import build_connector_registry
-    from tools.tui.frontends import FrontendRunConfig, build_frontend_registry
+    from tools.dev.tui.connectors import build_connector_registry
+    from tools.dev.tui.frontends import FrontendRunConfig, build_frontend_registry
 
     frontend, warnings = resolve_tui_frontend(requested)
     connector_name, connector_warnings = resolve_tui_connector(requested_connector)
@@ -3321,7 +3321,7 @@ def cmd_node_create_job(args: argparse.Namespace, ctx: Context) -> None:
 
 
 def cmd_budget(args: argparse.Namespace, ctx: Context) -> None:
-    script = REPO_ROOT / "tools" / "perf_budget.py"
+    script = REPO_ROOT / "tools" / "dev" / "quality" / "perf_budget.py"
     if not script.exists():
         print(f"Budget script not found: {script}")
         sys.exit(1)

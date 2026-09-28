@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools import e2e_scenario
+from tools.dev.e2e import e2e_scenario
 
 
 def test_submit_web_attaches_bearer_token(monkeypatch):

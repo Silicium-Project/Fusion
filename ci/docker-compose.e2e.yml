@@ -18,7 +18,7 @@ services:
     working_dir: /workspace
     command:
       - python3
-      - /workspace/tools/bootstrap_orchestrator.py
+      - /workspace/tools/dev/e2e/bootstrap_orchestrator.py
       - --bind
       - 0.0.0.0
       - --port
@@ -44,7 +44,7 @@ services:
       - sh
       - -lc
       - >-
-        python3 /workspace/tools/e2e_vps_probe.py
+        python3 /workspace/tools/dev/e2e/e2e_vps_probe.py
         --control-url http://orchestrator:46100/gossip/publish
         --output /state/backend-probe.json
         --probe-id backend-e2e
@@ -92,7 +92,7 @@ services:
       context: ..
       dockerfile: infra/docker/world-node.Dockerfile
     command:
-      - /workspace/tools/e2e_worker.py
+      - /workspace/tools/dev/e2e/e2e_worker.py
       - --export-dir
       - /state/mcp
       - --worker-id
@@ -112,7 +112,7 @@ services:
       context: ..
       dockerfile: infra/docker/world-node.Dockerfile
     command:
-      - /workspace/tools/e2e_worker.py
+      - /workspace/tools/dev/e2e/e2e_worker.py
       - --export-dir
       - /state/mcp
       - --worker-id
@@ -132,7 +132,7 @@ services:
       context: ..
       dockerfile: infra/docker/world-node.Dockerfile
     command:
-      - /workspace/tools/e2e_worker.py
+      - /workspace/tools/dev/e2e/e2e_worker.py
       - --export-dir
       - /state/mcp
       - --worker-id
@@ -152,7 +152,7 @@ services:
       context: ..
       dockerfile: infra/docker/world-node.Dockerfile
     command:
-      - /workspace/tools/e2e_worker.py
+      - /workspace/tools/dev/e2e/e2e_worker.py
       - --export-dir
       - /state/mcp
       - --worker-id
