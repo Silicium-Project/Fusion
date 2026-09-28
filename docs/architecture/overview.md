@@ -18,7 +18,6 @@ flowchart LR
 | API expérimentale MCP | `Network/tools/mcp_server.py` | `deploy/systemd/silicium-experiment-api.service` |
 | Pont de réputation | `Network/crates/reputation-bridge` | `deploy/compose/docker-compose.yml` |
 | Nœuds de calcul | `Network/` via l'app desktop | installeurs publiés par `deploy/` (Windows, AppImage, .deb, .rpm) |
-| Dashboard réseau | `Network/silicium-layer-dashboard` | `deploy/compose/dashboard.Dockerfile` |
 | Reverse proxy, TURN, VPN dev | `deploy/nginx`, Compose, `deploy/vpn` | `deploy/` |
 
 Le fonctionnement détaillé du réseau (ce qui tourne aujourd'hui, la cible Rust,

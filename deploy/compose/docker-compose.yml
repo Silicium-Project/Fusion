@@ -98,7 +98,6 @@ services:
     - ${SILICIUM_CONFIG_DIR:-/etc/silicium}/frontend.env
     environment:
       NUXT_PUBLIC_API_BASE: /api
-      NUXT_PUBLIC_DEVNET_DASHBOARD_URL: /dashboard/
       NUXT_PUBLIC_UPDATE_MANIFEST_URL: /downloads/update-manifest.json
       NUXT_PUBLIC_ORCHESTRATOR_URL: ${SILICIUM_PUBLIC_ORCHESTRATOR_URL:-https://vps-910c1dbc.vps.ovh.net/orchestrator}
       NUXT_PUBLIC_STATUS_REFRESH_SECONDS: "30"
@@ -107,15 +106,6 @@ services:
       NUXT_PUBLIC_RELEASE_BUILD: ${SILICIUM_RELEASE_BUILD:-local}
     ports:
     - 127.0.0.1:${SILICIUM_FRONTEND_HTTP_PORT:-3000}:3000
-    networks:
-    - frontend
-  dashboard:
-    build:
-      context: ../..
-      dockerfile: deploy/compose/dashboard.Dockerfile
-    restart: unless-stopped
-    ports:
-    - 127.0.0.1:${SILICIUM_DASHBOARD_HTTP_PORT:-5174}:5174
     networks:
     - frontend
   reputation_bridge:
@@ -136,7 +126,6 @@ services:
     - backend
     - reputation_bridge
     - frontend
-    - dashboard
     ports:
     - ${SILICIUM_PROXY_BIND_ADDRESS:-0.0.0.0}:${SILICIUM_PROXY_HTTP_PORT:-80}:80
     - ${SILICIUM_PROXY_BIND_ADDRESS:-0.0.0.0}:${SILICIUM_PROXY_HTTPS_PORT:-443}:443

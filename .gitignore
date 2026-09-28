@@ -27,7 +27,6 @@ FrontEnd/public/downloads/*.exe
 .data/
 .temp/
 *.tsbuildinfo
-Network/silicium-layer-dashboard/package-lock.json
 
 # Imported repository metadata
 BackEnd/.github/

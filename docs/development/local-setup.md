@@ -15,7 +15,7 @@ Si le repository a ete clone sans recurse-submodules, lancez d'abord:
 git submodule update --init --recursive
 ```
 
-Ce script verifie/installe les outils systeme principaux, puis installe les dependances npm du dashboard Devnet, du layer Solana et du site.
+Ce script verifie/installe les outils systeme principaux, puis installe les dependances npm du layer Solana et du site.
 
 ## Raytracer natif
 
@@ -42,7 +42,6 @@ Le script demarre:
 
 - un noeud de calcul et un noeud de verification via le launcher Network;
 - une base SQLite locale dans `.silicium\site\silicium.db` par defaut;
-- le dashboard Devnet local sur `http://localhost:5174/`;
 - le service BackEnd sur `http://localhost:8080`;
 - le service FrontEnd sur `http://localhost:3000/dashboard`.
 
@@ -69,7 +68,6 @@ Le backend lit notamment:
 - `JWT_SECRET_KEY`, avec une valeur locale de developpement si absente;
 - `SILICIUM_NETWORK_ROOT`;
 - `SILICIUM_SEED_PEERS`;
-- `SILICIUM_MESH_KEY`;
-- `SILICIUM_DASHBOARD_URL`.
+- `SILICIUM_MESH_KEY`.
 
 Pour un deploiement reel, ces valeurs devront etre fournies par l'environnement de production et non par les valeurs par defaut de developpement.

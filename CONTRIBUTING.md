@@ -152,7 +152,6 @@ The local services default to:
 |---|---|
 | FrontEnd | `http://localhost:3000` |
 | BackEnd API | `http://localhost:8080` |
-| Devnet Dashboard | `http://localhost:5174` |
 
 ---
 

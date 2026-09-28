@@ -11,7 +11,7 @@ Ce dépôt, **Fusion**, assemble tous les composants et contient le déploiement
 
 | Chemin | Type | Contenu |
 | --- | --- | --- |
-| [`Network/`](Network/) | sous-module | Runtime réseau (Rust cible, Python legacy), programme Solana, dashboard. Voir `Network/README.md` |
+| [`Network/`](Network/) | sous-module | Runtime réseau (Rust cible, Python legacy), programme Solana. Voir `Network/README.md` |
 | [`BackEnd/`](BackEnd/) | sous-module | API Go : comptes, sessions JWT, jobs, pilotage du réseau |
 | [`FrontEnd/`](FrontEnd/) | sous-module | Site Nuxt 3 : création et suivi des calculs |
 | [`apps/silicium-node/`](apps/silicium-node/) | dossier | Application desktop Tauri qui installe et supervise un nœud chez l'utilisateur |

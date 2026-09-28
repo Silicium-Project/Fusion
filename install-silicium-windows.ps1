@@ -321,7 +321,6 @@ Show-Version "solana" @("--version")
 
 Write-Step "Installing JavaScript dependencies"
 Install-P2PDependencies
-Invoke-NpmInstall (Join-Path $Root "Network\silicium-layer-dashboard") "Network Devnet dashboard"
 Invoke-NpmInstall (Join-Path $Root "Network\solana-layer") "Solana layer scripts"
 Invoke-NpmInstall (Join-Path $Root "FrontEnd") "FrontEnd"
 Invoke-NpmInstall (Join-Path $Root "apps\silicium-node") "Silicium Node desktop app"
