@@ -13,7 +13,7 @@ services:
   e2e-worker-compute-a:
     <<: *worker-base
     command:
-      - /workspace/Network/tools/e2e_worker.py
+      - /workspace/Network/tools/dev/e2e/e2e_worker.py
       - --export-dir
       - /var/lib/silicium/network/orchestrator/export
       - --worker-id
@@ -30,7 +30,7 @@ services:
   e2e-worker-compute-b:
     <<: *worker-base
     command:
-      - /workspace/Network/tools/e2e_worker.py
+      - /workspace/Network/tools/dev/e2e/e2e_worker.py
       - --export-dir
       - /var/lib/silicium/network/orchestrator/export
       - --worker-id
@@ -47,7 +47,7 @@ services:
   e2e-worker-verify-a:
     <<: *worker-base
     command:
-      - /workspace/Network/tools/e2e_worker.py
+      - /workspace/Network/tools/dev/e2e/e2e_worker.py
       - --export-dir
       - /var/lib/silicium/network/orchestrator/export
       - --worker-id
@@ -64,7 +64,7 @@ services:
   e2e-worker-verify-b:
     <<: *worker-base
     command:
-      - /workspace/Network/tools/e2e_worker.py
+      - /workspace/Network/tools/dev/e2e/e2e_worker.py
       - --export-dir
       - /var/lib/silicium/network/orchestrator/export
       - --worker-id

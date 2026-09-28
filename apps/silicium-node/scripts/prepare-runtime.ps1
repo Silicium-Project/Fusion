@@ -271,7 +271,7 @@ $repoRoot = Resolve-Path (Join-Path $appRoot "..\..")
 $networkRoot = Join-Path $repoRoot "Network"
 $runtimeRoot = Join-Path $appRoot "src-tauri\resources\runtime"
 $runtimeNetwork = Join-Path $runtimeRoot "Network"
-$nativeRaytracerManifest = Join-Path $networkRoot "workloads\raytracer\native\Cargo.toml"
+$nativeRaytracerManifest = Join-Path $networkRoot "crates\raytracer\Cargo.toml"
 $nativeRaytracerTarget = Join-Path $appRoot "src-tauri\target\raytracer-native"
 
 if (-not (Test-Path -LiteralPath (Join-Path $networkRoot "silicium"))) {
@@ -301,9 +301,10 @@ Copy-Item -LiteralPath (Join-Path $networkRoot "silicium") -Destination (Join-Pa
 Copy-Directory -Source (Join-Path $networkRoot "tools") -Destination (Join-Path $runtimeNetwork "tools")
 $null = Copy-OptionalDirectory -Source (Join-Path $networkRoot "workloads") -Destination (Join-Path $runtimeNetwork "workloads") -Label "optional workloads"
 $null = Copy-OptionalDirectory -Source (Join-Path $networkRoot "bin") -Destination (Join-Path $runtimeNetwork "bin") -Label "optional workload binaries"
-$copiedNativeTarget = Join-Path $runtimeNetwork "workloads\raytracer\native\target"
-if (Test-Path -LiteralPath $copiedNativeTarget) {
-    Remove-Item -LiteralPath $copiedNativeTarget -Recurse -Force
+# Developer tooling (tests, demos, CI helpers) never ships to users.
+$copiedDevTools = Join-Path $runtimeNetwork "tools\dev"
+if (Test-Path -LiteralPath $copiedDevTools) {
+    Remove-Item -LiteralPath $copiedDevTools -Recurse -Force
 }
 $raytracerDirectory = Join-Path $runtimeNetwork "bin\raytracer"
 New-Item -ItemType Directory -Force -Path $raytracerDirectory | Out-Null
@@ -314,9 +315,6 @@ if (-not (Test-Path -LiteralPath $raytracerPath)) {
 }
 
 $networkedSource = Join-Path $networkRoot "networked"
-if (-not (Test-Path -LiteralPath $networkedSource -PathType Container)) {
-    $networkedSource = Join-Path $networkRoot "demo\networked"
-}
 if (Test-Path -LiteralPath $networkedSource -PathType Container) {
     $networkedDestination = Join-Path $runtimeNetwork "networked"
     New-Item -ItemType Directory -Force -Path $networkedDestination | Out-Null

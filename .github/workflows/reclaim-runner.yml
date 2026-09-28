@@ -77,7 +77,7 @@ jobs:
             /opt/silicium/Network/.silicium/logs \
             /opt/silicium/Network/.pytest_cache \
             /opt/silicium/Network/.cache \
-            /opt/silicium/Network/workloads/raytracer/native/target \
+            /opt/silicium/Network/crates/raytracer/target \
             /opt/silicium/apps/silicium-node/src-tauri/target; do
             if [[ -e "$local_state" ]]; then
               rm -rf -- "$local_state"
