@@ -101,8 +101,10 @@ from tools.cli.workload.golden import (
 )
 from tools.cli.workload.lint import (
     cmd_workload_fixtures,
+    cmd_workload_index,
     cmd_workload_lint,
     configure_workload_fixtures,
+    configure_workload_index,
     configure_workload_lint,
 )
 from tools.i18n import set_runtime_locale, tr
@@ -194,6 +196,12 @@ def build_registry() -> CommandRegistry:
                 CommandSpec("show", "Show a workload manifest", configure_workload_show, cmd_workload_show),
                 CommandSpec("queue", "Generate a queue file from a summary.json", configure_workload_queue, cmd_workload_queue),
                 CommandSpec("lint", "Validate workload manifests against schema", configure_workload_lint, cmd_workload_lint),
+                CommandSpec(
+                    "index",
+                    "Regenerate workloads/index.json from the manifests",  # i18n:ignore -- developer command
+                    configure_workload_index,
+                    cmd_workload_index,
+                ),
                 CommandSpec(
                     "fixtures",
                     "Validate workload fixture integrity",

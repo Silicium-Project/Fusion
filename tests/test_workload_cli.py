@@ -10,7 +10,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SILICIUM = REPO_ROOT / "silicium"
-MANIFEST_ROOT = REPO_ROOT / "catalog" / "workloads"
+MANIFEST_ROOT = REPO_ROOT / "workloads"
 
 
 def _run_workload_command(*args: str) -> subprocess.CompletedProcess[str]:

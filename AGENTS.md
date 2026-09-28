@@ -20,7 +20,7 @@ sous-module. Carte détaillée : `docs/architecture/repository-layout.md`.
 | Programme on-chain, SDK | `solana-layer/` |
 | Script de test, de démo, de contrôle qualité, de release | `tools/dev/<domaine>/` |
 | Test Python | `tests/` (fixtures dans `tests/fixtures/`) |
-| Manifeste ou golden data de workload | `catalog/workloads/` |
+| Workload (manifeste, handler, fixtures, golden data) | `workloads/` (voir `workloads/README.md`) |
 | Conteneur ou service local | `infra/` |
 | Documentation | `docs/<architecture|contracts|operations|development>/` + `README.md` du dossier concerné |
 

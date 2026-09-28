@@ -24,10 +24,9 @@ Le plan de migration est décrit dans
 | [`silicium-layer-dashboard/`](silicium-layer-dashboard/) | TypeScript (Vite) | Tableau de bord réseau / Solana | Actif |
 | [`tools/`](tools/) | Python | Runtime Python de production (nœud, RPC, télémétrie, transport, API MCP) | **Legacy** — à remplacer par `crates/` |
 | [`networked/`](networked/) | Python | Paquet `networked` (blobs de contenu partagés par le runtime) | **Legacy** |
-| [`workloads/`](workloads/) | Python | Orchestration des workloads (découpage, vérification, réassemblage du raytracer) | **Legacy** — le rendu lui-même est dans `crates/raytracer` |
+| [`workloads/`](workloads/) | YAML + Python | Tous les workloads : manifestes, registre, handlers, fixtures, golden data | Actif ; handlers Python **legacy** (le rendu est dans `crates/raytracer`) |
 | [`tools/dev/`](tools/dev/) | Python | Outillage développeur : E2E, démo « world », contrôles qualité, release, TUI | Outil dev (reste en Python) |
 | [`tests/`](tests/) | Python | Tests pytest du runtime Python et des outils | Actif |
-| [`catalog/`](catalog/) | JSON | Manifestes, schémas, fixtures et golden data des workloads | Actif |
 | [`proto/`](proto/) | Protobuf | Contrat RPC du runtime Python | Legacy |
 | [`i18n/`](i18n/) | JSON / shell | Traductions de la CLI et des scripts | Actif |
 | [`infra/`](infra/) | Docker, systemd | Conteneurs locaux (Solana, bootstrap, world), unités systemd | Actif |

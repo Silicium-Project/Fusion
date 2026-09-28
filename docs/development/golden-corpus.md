@@ -4,9 +4,9 @@ This document defines deterministic reference cases for workload regression chec
 
 ## Files
 
-- `catalog/workloads/golden/golden-corpus.json`: canonical case list.
-- `catalog/workloads/fixtures/fixtures.json`: fixture integrity index.
-- `catalog/workloads/fixtures/alignment-policy.json`: critical family coverage rules.
+- `workloads/golden/golden-corpus.json`: canonical case list.
+- `workloads/fixtures/fixtures.json`: fixture integrity index.
+- `workloads/fixtures/alignment-policy.json`: critical family coverage rules.
 
 ## Case contract
 

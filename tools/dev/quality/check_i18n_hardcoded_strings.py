@@ -29,6 +29,10 @@ DEFAULT_EXCLUDES = (
 
 STRING_LITERAL_RE = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'')
 KEY_LIKE_RE = re.compile(r"^[a-z0-9_.:/-]+$")
+IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+PLACEHOLDER_RE = re.compile(r"\{[^{}]*\}")
+# Data files (schemas, manifests, docs) are not user-facing program output.
+UNCHECKED_SUFFIXES = (".md", ".json", ".yaml", ".yml")
 WORD_RE = re.compile(r"[A-Za-z]")
 
 
@@ -44,8 +48,7 @@ def _run_git_diff(base: str, head: str) -> str:
 
 
 def _is_checked_path(file_path: str, paths: list[str]) -> bool:
-    if file_path.endswith(".md"):
-        # Documentation is written in prose on purpose.
+    if file_path.endswith(UNCHECKED_SUFFIXES):
         return False
     return any(file_path == path or file_path.startswith(path + "/") for path in paths)
 
@@ -109,6 +112,13 @@ def _looks_user_facing(content: str) -> bool:
     if not WORD_RE.search(content):
         return False
     if KEY_LIKE_RE.fullmatch(content):
+        return False
+    # Machine codes with f-string fields, e.g. "workload_id_duplicate:{name}".
+    without_fields = PLACEHOLDER_RE.sub("", content)
+    if without_fields != content and KEY_LIKE_RE.fullmatch(without_fields):
+        return False
+    # A bare identifier (type name in a forward reference, enum value...).
+    if IDENTIFIER_RE.fullmatch(content):
         return False
     if content.startswith("--") or content.startswith("-"):
         return False
@@ -196,7 +206,7 @@ def filter_violations(
     filtered: list[dict[str, Any]] = []
     for item in violations:
         file_path = str(item["file"])
-        if any(file_path.startswith(prefix) for prefix in excludes):
+        if any(file_path.startswith(prefix) for prefix in excludes) or file_path.endswith(UNCHECKED_SUFFIXES):
             continue
         exempt, reason = _is_exception(file_path, str(item["literal"]), exceptions)
         if exempt:

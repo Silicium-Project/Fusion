@@ -1,12 +1,12 @@
 # Workload and Golden Corpus Alignment Policy
 
-This policy defines how catalog workloads align with golden corpus fixtures.
+This policy defines how workloads align with golden corpus fixtures.
 
 ## Scope
 
-- Catalog manifests in `catalog/workloads/**/manifest.yaml`
-- Golden fixtures index in `catalog/workloads/fixtures/fixtures.json`
-- Critical family policy in `catalog/workloads/fixtures/alignment-policy.json`
+- Manifests in `workloads/**/manifest.yaml`
+- Golden fixtures index in `workloads/fixtures/fixtures.json`
+- Critical family policy in `workloads/fixtures/alignment-policy.json`
 
 ## Family mapping rule
 

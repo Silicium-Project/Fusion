@@ -1,0 +1,63 @@
+id: calcul/rendering/raytracer-fragment
+schema_version: 2
+version: 2.0.0
+runtime:
+  kind: python
+  handler: workloads.raytracer.node_tasks:compute_fragment
+engine: native
+command: >
+  python workloads/raytracer/compute.py --scene {scene} --output {output}
+  --x-start {x_start} --x-end {x_end} --y-start {y_start} --y-end {y_end}
+resources:
+  cpu: 1
+  gpu: none
+  memory: 512Mi
+  budget:
+    wall_sec: 300
+    cpu_sec: 600
+    memory: 512Mi
+taxonomy:
+  category: calcul
+  domain: rendering
+  complexity: medium
+  resource_profile: cpu_heavy
+  determinism: deterministic
+  tags:
+    - rendering
+    - cpu
+    - deterministic
+artifacts:
+  input:
+    - name: scene
+      type: text/plain
+    - name: fragment_spec
+      type: application/json
+  output:
+    - name: fragment
+      type: image/x-portable-pixmap
+    - name: verification_milestones
+      type: application/json
+validation:
+  default_verifier:
+    - verification/rendering/raytracer-fragment
+payment:
+  unit: pixel
+  estimated_cost: 0.000001
+parameters:
+  orchestrator: workloads/raytracer/run_network_job.py
+  split_policy:
+    kind: center-out-neighbour-grid
+    target_pixels_per_fragment: 120000
+    max_fragments: 32
+  verification_batch_rows: 20
+  timeout_s: 300
+presets:
+  - name: default
+    description: One tile of the demo scene.
+    vars:
+      scene: workloads/raytracer/examples/demo-scene.cfg
+      output: fragment.ppm
+      x_start: 0
+      x_end: 160
+      y_start: 0
+      y_end: 100

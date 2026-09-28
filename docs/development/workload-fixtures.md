@@ -13,7 +13,7 @@ Alignment rules are defined in `docs/contracts/workload-alignment-policy.md`.
 ## Storage layout
 
 ```
-catalog/workloads/fixtures/
+workloads/fixtures/
   fixtures.json
   <workload-family>/
     <workload-name>/
@@ -24,18 +24,18 @@ catalog/workloads/fixtures/
 Example:
 
 ```
-catalog/workloads/fixtures/verification/hash-audit/v1/sample.txt
+workloads/fixtures/verification/hash-audit/v1/sample.txt
 ```
 
 ## Index format
 
-The canonical index is `catalog/workloads/fixtures/fixtures.json`.
+The canonical index is `workloads/fixtures/fixtures.json`.
 
 Fields per entry:
 
 - `id`: workload id (matches `manifest.yaml` `id`).
 - `version`: workload version.
-- `path`: path relative to `catalog/workloads/fixtures/`.
+- `path`: path relative to `workloads/fixtures/`.
 - `sha256`: lowercase SHA-256 hash.
 
 ## Validation

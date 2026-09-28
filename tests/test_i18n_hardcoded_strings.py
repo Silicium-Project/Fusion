@@ -107,3 +107,24 @@ def test_moved_line_is_not_reported() -> None:
     assert result.returncode != 0
     report = json.loads(result.stdout)
     assert [item["literal"] for item in report["violations"]] == ["A brand new sentence here"]
+
+
+def test_error_codes_identifiers_and_data_files_are_not_reported() -> None:
+    diff = "\n".join(
+        [
+            "diff --git a/tools/cli/x.py b/tools/cli/x.py",
+            "--- a/tools/cli/x.py",
+            "+++ b/tools/cli/x.py",
+            "@@ -0,0 +1,2 @@",
+            '+raise Error(f"workload_id_duplicate:{spec.id}")',
+            '+def load() -> "WorkloadRegistry":',
+            "diff --git a/workloads/schema/s.json b/workloads/schema/s.json",
+            "--- a/workloads/schema/s.json",
+            "+++ b/workloads/schema/s.json",
+            "@@ -0,0 +1,1 @@",
+            '+  "description": "How a node executes this workload."',
+            "",
+        ]
+    )
+    result = _run_checker(diff, strict=True)
+    assert result.returncode == 0, result.stdout

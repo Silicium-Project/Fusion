@@ -1,0 +1,47 @@
+id: calcul/math/matrix-multiply
+schema_version: 2
+version: 1.0.0
+runtime:
+  kind: python
+  handler: workloads.standard.handlers:matrix_multiply
+engine: python
+command: python -m workloads.standard.run --workload calcul/math/matrix-multiply --input {input} --output {output}
+resources:
+  cpu: 2
+  gpu: optional
+  memory: 512Mi
+  budget:
+    wall_sec: 120
+    cpu_sec: 120
+    memory: 512Mi
+taxonomy:
+  category: calcul
+  domain: math
+  complexity: medium
+  resource_profile: cpu_heavy
+  determinism: deterministic
+  tags:
+    - math
+    - cpu
+    - deterministic
+artifacts:
+  input:
+    - name: input
+      type: application/json
+  output:
+    - name: output
+      type: application/json
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier: verification/hash-audit/sha256
+  hash: sha256
+payment:
+  unit: multiply-add
+  estimated_cost: 0.00001
+presets:
+  - name: default
+    description: Multiply two bounded dense matrices.
+    vars:
+      input: matrices.json
+      output: matrix-result.json

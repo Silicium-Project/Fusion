@@ -1,0 +1,161 @@
+{
+  "schema": "silicium.workload-index.v1",
+  "workloads": [
+    {
+      "id": "calcul/data-compression/zstd",
+      "path": "calcul/data-compression/zstd",
+      "runtime": {
+        "kind": "planned"
+      },
+      "version": "0.1.0"
+    },
+    {
+      "aliases": [
+        "calcul/hash/sha256"
+      ],
+      "id": "calcul/integrity/sha256",
+      "path": "calcul/integrity/sha256",
+      "runtime": {
+        "handler": "workloads.standard.handlers:sha256",
+        "kind": "python"
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "calcul/libm/exp",
+      "path": "calcul/libm/exp",
+      "runtime": {
+        "handler": "workloads.standard.handlers:libm",
+        "kind": "python"
+      },
+      "version": "0.1.0"
+    },
+    {
+      "id": "calcul/libm/sin",
+      "path": "calcul/libm/sin",
+      "runtime": {
+        "handler": "workloads.standard.handlers:libm",
+        "kind": "python"
+      },
+      "version": "0.1.0"
+    },
+    {
+      "id": "calcul/math-simulation/generic",
+      "path": "calcul/math-simulation/generic",
+      "runtime": {
+        "kind": "planned"
+      },
+      "version": "0.1.0"
+    },
+    {
+      "id": "calcul/math/matrix-multiply",
+      "path": "calcul/math/matrix-multiply",
+      "runtime": {
+        "handler": "workloads.standard.handlers:matrix_multiply",
+        "kind": "python"
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "calcul/ml-inference/embeddings",
+      "path": "calcul/ml-inference/embeddings",
+      "runtime": {
+        "kind": "planned"
+      },
+      "version": "0.2.0"
+    },
+    {
+      "id": "calcul/monte-carlo/payoff",
+      "path": "calcul/monte-carlo/payoff",
+      "runtime": {
+        "kind": "planned"
+      },
+      "version": "0.1.0"
+    },
+    {
+      "id": "calcul/rendering/blender",
+      "path": "calcul/rendering/blender",
+      "runtime": {
+        "kind": "planned"
+      },
+      "version": "0.2.0"
+    },
+    {
+      "id": "calcul/rendering/raytracer-fragment",
+      "parameters": {
+        "orchestrator": "workloads/raytracer/run_network_job.py",
+        "split_policy": {
+          "kind": "center-out-neighbour-grid",
+          "max_fragments": 32,
+          "target_pixels_per_fragment": 120000
+        },
+        "timeout_s": 300,
+        "verification_batch_rows": 20
+      },
+      "path": "calcul/rendering/raytracer-fragment",
+      "runtime": {
+        "handler": "workloads.raytracer.node_tasks:compute_fragment",
+        "kind": "python"
+      },
+      "version": "2.0.0"
+    },
+    {
+      "id": "calcul/simulation/monte-carlo-pi",
+      "path": "calcul/simulation/monte-carlo-pi",
+      "runtime": {
+        "handler": "workloads.standard.handlers:monte_carlo_pi",
+        "kind": "python"
+      },
+      "version": "1.0.0"
+    },
+    {
+      "id": "calcul/video-encoding/h265-segment",
+      "path": "calcul/video-encoding/h265-segment",
+      "runtime": {
+        "kind": "planned"
+      },
+      "version": "0.2.0"
+    },
+    {
+      "id": "verification/hash-audit/sha256",
+      "path": "verification/hash-audit/sha256",
+      "runtime": {
+        "handler": "workloads.standard.handlers:hash_audit",
+        "kind": "python"
+      },
+      "version": "0.1.0"
+    },
+    {
+      "id": "verification/rendering-spotcheck/blender",
+      "path": "verification/rendering-spotcheck/blender",
+      "runtime": {
+        "kind": "planned"
+      },
+      "version": "0.1.0"
+    },
+    {
+      "id": "verification/rendering/raytracer-fragment",
+      "parameters": {
+        "default_batch_rows": 20,
+        "exclude_compute_worker": true,
+        "max_sample_rows": 256,
+        "samples_per_fragment": 1,
+        "strategy": "random-tile-row-milestone-v2"
+      },
+      "path": "verification/rendering/raytracer-fragment",
+      "runtime": {
+        "handler": "workloads.raytracer.node_tasks:verify_fragment_milestone",
+        "kind": "python"
+      },
+      "version": "2.0.0"
+    },
+    {
+      "id": "verification/statistical-consistency/subsample",
+      "path": "verification/statistical-consistency/subsample",
+      "runtime": {
+        "kind": "planned"
+      },
+      "version": "0.1.0"
+    }
+  ]
+}

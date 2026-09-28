@@ -1,0 +1,51 @@
+id: calcul/monte-carlo/payoff
+schema_version: 2
+version: 0.1.0
+runtime:
+  kind: planned
+engine: python
+command: python montecarlo.py --config {config} --seed {seed} --iterations {iterations} --out {output}
+resources:
+  cpu: 4
+  gpu: optional
+  memory: 4Gi
+  budget:
+    wall_sec: 240
+    cpu_sec: 480
+    memory: 4Gi
+taxonomy:
+  category: calcul
+  domain: simulation
+  complexity: high
+  resource_profile: gpu_optional
+  determinism: stochastic
+  tags:
+    - simulation
+    - monte_carlo
+    - cpu
+    - stochastic
+    - non_deterministic
+artifacts:
+  input:
+    - name: config
+      type: application/json
+  output:
+    - name: chunk
+      type: application/json
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier:
+    - verification/statistical-consistency
+    - verification/hash-audit
+payment:
+  unit: chunk
+  estimated_cost: 0.002
+presets:
+  - name: default
+    description: Moderate iteration sample.
+    vars:
+      config: config.json
+      seed: 42
+      iterations: 100000
+      output: chunk.json

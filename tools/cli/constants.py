@@ -9,10 +9,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
+WORKLOAD_ROOT = REPO_ROOT / "workloads"
 
 
-WORKLOAD_SCHEMA_FILE = WORKLOAD_ROOT / "schema" / "workload-manifest-v1.schema.json"
+WORKLOAD_SCHEMA_FILE = WORKLOAD_ROOT / "schema" / "workload-manifest-v2.schema.json"
 
 
 WORKLOAD_FIXTURES_DIR = WORKLOAD_ROOT / "fixtures"
@@ -131,7 +131,7 @@ SUBCOMMANDS = {
     "ledger": ["list", "wipe", "export", "import"],
     "history": ["show", "clear"],
     "clean": ["cache", "ledgers", "all"],
-    "workload": ["list", "show", "queue", "lint", "fixtures", "alignment", "golden"],
+    "workload": ["list", "show", "queue", "lint", "index", "fixtures", "alignment", "golden"],
     "mcp": ["serve", "print-config"],
     "node": ["start", "submit-task", "get-task", "get-result", "submit-request", "get-request", "create-job", "fetch-job", "fetch-fragment", "bootstrap-worker", "get-heartbeat", "get-metrics", "get-peers"],
 }

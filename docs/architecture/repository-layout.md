@@ -27,10 +27,9 @@ Network/
 │       ├── release/           #     manifeste de mise à jour, preflight Solana devnet
 │       └── tui/               #     interface terminal opérateur
 ├── networked/                 # Python LEGACY — paquet networked (blobs de contenu)
-├── workloads/                 # Python LEGACY — orchestration des workloads (raytracer, standard)
+├── workloads/                 # workloads : manifestes, registre, handlers (Python legacy), fixtures, golden
 │
 ├── tests/                     # tests pytest (+ fixtures/)
-├── catalog/workloads/         # manifestes, schémas, fixtures, golden data
 ├── proto/                     # contrat RPC protobuf (legacy)
 ├── i18n/                      # traductions CLI et shell
 ├── infra/                     # Docker (Solana local, bootstrap, world), systemd

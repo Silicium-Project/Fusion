@@ -1,0 +1,52 @@
+id: calcul/ml-inference/embeddings
+schema_version: 2
+version: 0.2.0
+runtime:
+  kind: planned
+engine: python
+command: python infer.py --model {model} --batch {batch} --out {output} --dtype {dtype}
+resources:
+  cpu: 4
+  gpu: optional
+  memory: 6Gi
+  budget:
+    wall_sec: 120
+    cpu_sec: 240
+    memory: 6Gi
+taxonomy:
+  category: calcul
+  domain: ml
+  complexity: medium
+  resource_profile: gpu_optional
+  determinism: deterministic
+  tags:
+    - ml
+    - embeddings
+    - gpu
+    - deterministic
+artifacts:
+  input:
+    - name: model
+      type: application/octet-stream
+    - name: batch
+      type: application/json
+  output:
+    - name: embeddings
+      type: application/json
+    - name: hash
+      type: text/plain
+validation:
+  default_verifier:
+    - verification/hash-audit
+    - verification/statistical-consistency
+payment:
+  unit: batch
+  estimated_cost: 0.002
+presets:
+  - name: default
+    description: Baseline batch inference.
+    vars:
+      model: model.bin
+      batch: batch.json
+      output: embeddings.json
+      dtype: fp16

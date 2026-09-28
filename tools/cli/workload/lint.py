@@ -18,11 +18,24 @@ from tools.cli.constants import (
     WORKLOAD_SCHEMA_FILE,
 )
 from tools.cli.context import Context
+from workloads.registry import INDEX_NAME
 
 
 def _schema_error_path(error: Any) -> str:
     path = getattr(error, "absolute_path", [])
     return "/".join(str(part) for part in path) or "<root>"
+
+
+def _handler_error(reference: str) -> str:
+    """Empty when `module:function` imports and is callable, else the reason."""
+    import importlib
+
+    module_name, _, attribute = reference.partition(":")
+    try:
+        handler = getattr(importlib.import_module(module_name), attribute)
+    except (ImportError, AttributeError) as exc:
+        return f"cannot load {reference}: {exc}"  # i18n:ignore -- lint detail
+    return "" if callable(handler) else f"{reference} is not callable"  # i18n:ignore -- lint detail
 
 
 def lint_workload_manifests(root: Path, schema_path: Path) -> tuple[int, list[dict[str, str]]]:
@@ -79,13 +92,36 @@ def lint_workload_manifests(root: Path, schema_path: Path) -> tuple[int, list[di
                 {
                     "file": str(manifest_path),
                     "field": _schema_error_path(error),
-                    "rule": "schema_v1",
+                    "rule": "schema",
                     "message": error.message,
                 }
             )
 
         relative = manifest_path.parent.relative_to(root)
-        category = str(relative).replace("\\", "/").split("/", 1)[0]
+        relative_id = str(relative).replace("\\", "/")
+        category = relative_id.split("/", 1)[0]
+        if data.get("id") != relative_id:
+            errors.append(
+                {
+                    "file": str(manifest_path),
+                    "field": "id",
+                    "rule": "id_matches_folder",
+                    "message": f"expected '{relative_id}', got '{data.get('id')}'",  # i18n:ignore -- lint detail
+                }
+            )
+        runtime = data.get("runtime")
+        handler_ref = runtime.get("handler") if isinstance(runtime, dict) else None
+        if isinstance(handler_ref, str) and handler_ref:
+            handler_error = _handler_error(handler_ref)
+            if handler_error:
+                errors.append(
+                    {
+                        "file": str(manifest_path),
+                        "field": "runtime/handler",
+                        "rule": "handler_importable",
+                        "message": handler_error,
+                    }
+                )
         taxonomy = data.get("taxonomy", {})
         if isinstance(taxonomy, dict):
             taxonomy_category = taxonomy.get("category")
@@ -99,7 +135,35 @@ def lint_workload_manifests(root: Path, schema_path: Path) -> tuple[int, list[di
                     }
                 )
 
+    if manifests and (root == WORKLOAD_ROOT.resolve() or (root / INDEX_NAME).exists()) and not errors:
+        from workloads.registry import index_is_current
+
+        if not index_is_current(root):
+            errors.append(
+                {
+                    "file": str(root / INDEX_NAME),
+                    "field": "<root>",
+                    "rule": "index_up_to_date",
+                    "message": "run ./silicium workload index",  # i18n:ignore -- command to run
+                }
+            )
+
     return len(manifests), errors
+
+
+def cmd_workload_index(args: argparse.Namespace, ctx: Context) -> None:
+    from workloads.registry import write_index
+
+    path = write_index(Path(args.root).resolve())
+    print(f"Wrote {path}")  # i18n:ignore -- developer command output
+
+
+def configure_workload_index(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--root",
+        default=str(WORKLOAD_ROOT),
+        help="Workload root directory (default: workloads).",  # i18n:ignore -- developer option
+    )
 
 
 def cmd_workload_lint(args: argparse.Namespace, ctx: Context) -> None:
@@ -137,7 +201,7 @@ def configure_workload_lint(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--root",
         default=str(WORKLOAD_ROOT),
-        help="Workload root directory (default: catalog/workloads).",
+        help="Workload root directory (default: workloads).",  # i18n:ignore -- developer option
     )
     parser.add_argument(
         "--schema",

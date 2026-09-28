@@ -1,8 +1,10 @@
-"""Legacy helpers shared by workloads: hashing, task submission to an export dir, P2P refs, Solana wallet, PPM to PNG."""
+"""Helpers shared by workloads: hashing, stable JSON, performance figures,
+task submission to an export dir, P2P refs, Solana wallet, PPM to PNG."""
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import struct
 import sys
 import zlib
@@ -15,6 +17,50 @@ NETWORK_ROOT = Path(__file__).resolve().parents[1]
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def stable_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def sha256_json(value: Any) -> str:
+    return sha256_bytes(stable_json(value).encode("utf-8"))
+
+
+RAYTRACER_PERFORMANCE_SCHEMA = "silicium.raytracer-performance.v1"
+
+
+def performance_duration(value: Any) -> float:
+    try:
+        duration = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return round(duration, 3) if math.isfinite(duration) and duration >= 0 else 0.0
+
+
+def performance_ratio(numerator: float, denominator: float) -> float | None:
+    if denominator <= 0:
+        return None
+    return round(max(0.0, numerator) / denominator, 4)
+
+
+def last_json_object(text: str) -> dict[str, Any]:
+    """Extract the last JSON object from a renderer's stdout."""
+    decoder = json.JSONDecoder()
+    best: dict[str, Any] = {}
+    best_end = -1
+    for index in range(len(text)):
+        if text[index] != "{":
+            continue
+        try:
+            candidate, end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        absolute_end = index + end
+        if isinstance(candidate, dict) and absolute_end > best_end:
+            best = candidate
+            best_end = absolute_end
+    return best
 
 
 def sha256_file(path: Path) -> str:

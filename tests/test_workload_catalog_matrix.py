@@ -10,7 +10,7 @@ import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WORKLOAD_ROOT = REPO_ROOT / "catalog" / "workloads"
+WORKLOAD_ROOT = REPO_ROOT / "workloads"
 MANIFESTS = sorted(WORKLOAD_ROOT.rglob("manifest.yaml"))
 
 
@@ -54,5 +54,5 @@ def test_every_catalog_workload_has_a_resolved_default_plan(manifest_path: Path)
 
     manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
     assert isinstance(manifest, dict)
-    assert manifest.get("engine") in {"python", "container"}
+    assert manifest.get("engine") in {"python", "container", "native"}
     assert (manifest_path.parent / "README.md").is_file()

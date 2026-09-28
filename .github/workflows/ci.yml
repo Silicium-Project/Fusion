@@ -84,7 +84,7 @@ jobs:
           docker=false
           p2p=false
           raytracer=false
-          if matches '^(tools|workloads|tests|silicium|catalog|proto|i18n|ci)/|^(pyproject\.toml|requirements.*\.txt|Makefile)$'; then python=true; fi
+          if matches '^(tools|workloads|tests|silicium|proto|i18n|ci)/|^(pyproject\.toml|requirements.*\.txt|Makefile)$'; then python=true; fi
           if matches '^(solana-layer|silicium-layer-dashboard)/|\.(js|jsx|ts|tsx)$|(^|/)(package|yarn)\.json$'; then javascript=true; fi
           if matches '^crates/|(^|/)Cargo\.(toml|lock)$'; then rust=true; fi
           if matches '^solana-layer/'; then solana=true; fi

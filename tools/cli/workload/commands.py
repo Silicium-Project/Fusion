@@ -183,7 +183,7 @@ def cmd_workload_show(args: argparse.Namespace, ctx: Context) -> None:
 def configure_workload_show(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "path",
-        help="Workload path (e.g., calcul/math-simulation).",
+        help="Workload ID (e.g., calcul/libm/sin).",
     )
     add_workload_filter_args(parser)
     parser.add_argument(

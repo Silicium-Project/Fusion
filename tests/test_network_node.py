@@ -2987,8 +2987,10 @@ def test_terminal_tasks_are_excluded_from_queue_and_claims(tmp_path: Path, statu
 
 
 def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from workloads.raytracer import node_tasks
+
     sample_ppm = b"P6\n2 2\n255\n" + bytes(range(12))
-    expected = network_node.ppm_pixel_sha256(sample_ppm)
+    expected = node_tasks.ppm_pixel_sha256(sample_ppm)
     challenge = {
         "strategy": "random-tile-row-milestone-v2",
         "challenge_nonce": "nonce-test",
@@ -3019,9 +3021,14 @@ def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monk
         return {"stdout": "", "stderr": "", "renderer_telemetry": {"renderer": "test"}}
 
     runtime = network_node.RoleRuntime(_config(tmp_path / "verify", "verifier", roles="verify"), FakeP2P())
-    monkeypatch.setattr(network_node, "run_raytracer", fake_raytracer)
-    result = runtime.run_raytracer_milestone_verification(
-        {"scene_p2p_ref": {"protocol": "test"}, "max_sample_rows": 20},
+    monkeypatch.setattr(node_tasks, "run_raytracer", fake_raytracer)
+    result = runtime.run_verify_task(
+        {},
+        {
+            "workload": "verification/rendering/raytracer-fragment",
+            "scene_p2p_ref": {"protocol": "test"},
+            "max_sample_rows": 20,
+        },
         json.dumps(challenge).encode("utf-8"),
         {"source": "test-challenge"},
     )

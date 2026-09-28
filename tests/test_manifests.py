@@ -9,8 +9,8 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_ROOT = REPO_ROOT / "catalog" / "workloads"
-SCHEMA_PATH = REPO_ROOT / "catalog" / "workloads" / "schema" / "workload-manifest-v1.schema.json"
+MANIFEST_ROOT = REPO_ROOT / "workloads"
+SCHEMA_PATH = REPO_ROOT / "workloads" / "schema" / "workload-manifest-v2.schema.json"
 MANIFEST_FILES = sorted(MANIFEST_ROOT.rglob("manifest.yaml"))
 SCHEMA = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
 VALIDATOR = Draft202012Validator(SCHEMA)

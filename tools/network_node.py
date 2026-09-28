@@ -21,15 +21,12 @@ import http.server
 import importlib.util
 import ipaddress
 import json
-import math
 import os
 import platform
 import shutil
 import socket
 import socketserver
 import subprocess
-import sys
-import tempfile
 import threading
 import time
 import traceback
@@ -48,8 +45,9 @@ from networked.networked_runtime import attach_network_content_blobs
 from tools.direct_transport import DirectTransportBackend, IceDirectTransport, NativeLightDirectTransport
 from tools.resource_intelligence import DualMemoryBayes, build_resource_profile, resource_baselines
 from tools.runtime_telemetry import RuntimeTelemetrySampler
-from workloads.raytracer.raytracer_workload import build_verification_milestones, ppm_pixel_sha256, run_raytracer, scene_resolution
-from workloads.standard.standard_workloads import run_standard_workload
+from workloads.common import performance_duration, performance_ratio
+from workloads.registry import WorkloadContext, run_workload, unsupported_reason
+from workloads.standard.handlers import hash_audit
 
 
 DEFAULT_EXPORT_DIR = Path(".silicium/mcp/export")
@@ -147,42 +145,6 @@ def sha256_bytes(data: bytes) -> str:
 
 def sha256_json(value: Any) -> str:
     return sha256_bytes(stable_json(value).encode("utf-8"))
-
-
-RAYTRACER_PERFORMANCE_SCHEMA = "silicium.raytracer-performance.v1"
-
-
-def performance_duration(value: Any) -> float:
-    try:
-        duration = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    return round(duration, 3) if math.isfinite(duration) and duration >= 0 else 0.0
-
-
-def performance_ratio(numerator: float, denominator: float) -> float | None:
-    if denominator <= 0:
-        return None
-    return round(max(0.0, numerator) / denominator, 4)
-
-
-def last_json_object(text: str) -> dict[str, Any]:
-    """Extract the last JSON object from a renderer's stdout."""
-    decoder = json.JSONDecoder()
-    best: dict[str, Any] = {}
-    best_end = -1
-    for index in range(len(text)):
-        if text[index] != "{":
-            continue
-        try:
-            candidate, end = decoder.raw_decode(text[index:])
-        except json.JSONDecodeError:
-            continue
-        absolute_end = index + end
-        if isinstance(candidate, dict) and absolute_end > best_end:
-            best = candidate
-            best_end = absolute_end
-    return best
 
 
 def guess_world_advertise_host() -> str:
@@ -862,22 +824,28 @@ class RoleRuntime:
             return self.run_resource_task(envelope, task, p2p_data, p2p_meta)
         return self.run_compute_task(envelope, task, p2p_data, p2p_meta)
 
+    def _workload_context(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "task": task,
+            "p2p_data": p2p_data,
+            "p2p_meta": p2p_meta,
+            "put_output": lambda data: self.p2p.put_local(data),
+            "envelope": envelope,
+            "fetch": lambda ref: self.p2p.fetch(ref),
+            "run_process": self.run_process,
+        }
+
     def run_compute_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
-        if str(task.get("workload", "")).strip().lower() == "calcul/rendering/raytracer-fragment":
-            return self.run_raytracer_fragment(task, p2p_data, p2p_meta)
-        standard_result = run_standard_workload(
-            str(task.get("workload", "")),
-            task,
-            p2p_data,
-            p2p_meta,
-            self.p2p.put_local,
-        )
-        if standard_result is not None:
-            return standard_result
+        # Which workloads exist and how they run is declared by their manifests
+        # (workloads/<category>/.../manifest.yaml, `runtime.handler`).
+        workload = task.get("workload", "")
+        result = run_workload(workload, "compute", self._workload_context(envelope, task, p2p_data, p2p_meta))
+        if result is not None:
+            return result
         compute_result = {
             "mode": "network-workload",
             "executed": False,
-            "reason": "unsupported_workload",
+            "reason": unsupported_reason(workload),
         }
         material = {
             "task": task,
@@ -890,235 +858,6 @@ class RoleRuntime:
             "input_hash": sha256_bytes(p2p_data),
             "compute": compute_result,
             "result_hash": sha256_json(material),
-        }
-
-    def run_raytracer_fragment(self, task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
-        fragment_started = time.perf_counter()
-        try:
-            spec = json.loads(p2p_data.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"raytracer_fragment_spec_invalid:{exc}") from exc
-        if not isinstance(spec, dict):
-            raise RuntimeError("raytracer_fragment_spec_invalid")
-        scene_ref = task.get("scene_p2p_ref") or spec.get("scene_p2p_ref")
-        if not isinstance(scene_ref, dict):
-            raise RuntimeError("raytracer_scene_ref_missing")
-        scene_fetch_started = time.perf_counter()
-        scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
-        scene_fetch_ms = performance_duration((time.perf_counter() - scene_fetch_started) * 1000.0)
-        root = Path(__file__).resolve().parents[1]
-        compute_script = root / "workloads" / "raytracer" / "compute.py"
-        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-fragment-") as temp_dir:
-            temp_path = Path(temp_dir)
-            scene_path = temp_path / "scene.cfg"
-            output_path = temp_path / "fragment.ppm"
-            staging_started = time.perf_counter()
-            scene_path.write_bytes(scene_bytes)
-            staging_ms = performance_duration((time.perf_counter() - staging_started) * 1000.0)
-            x_start = int(task.get("x_start", spec.get("x_start", 0)) or 0)
-            x_end = int(task.get("x_end", spec.get("x_end", 0)) or 0)
-            if x_end <= x_start:
-                x_end = scene_resolution(scene_path)[0]
-            command = [
-                sys.executable,
-                str(compute_script),
-                "--scene", str(scene_path),
-                "--output", str(output_path),
-                "--x-start", str(x_start),
-                "--x-end", str(x_end),
-                "--y-start", str(int(task.get("y_start", spec.get("y_start", 0)) or 0)),
-                "--y-end", str(int(task.get("y_end", spec.get("y_end", 0)) or 0)),
-                "--verification-batch-rows", str(int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20)),
-                "--timeout-s", str(int(task.get("timeout_s", 300) or 300)),
-            ]
-            progress_file = str(task.get("_runtime_progress_path", "")).strip()
-            if progress_file:
-                command.extend(["--progress-file", progress_file])
-            compute_started_unix_ms = int(time.time() * 1000)
-            compute_started = time.perf_counter()
-            completed = self.run_process(command, timeout=int(task.get("timeout_s", 300) or 300) + 15)
-            compute_process_ms = performance_duration((time.perf_counter() - compute_started) * 1000.0)
-            compute_finished_unix_ms = int(time.time() * 1000)
-            if completed.returncode != 0 or not output_path.exists():
-                raise RuntimeError(f"raytracer_fragment_failed:exit={completed.returncode}:stderr={completed.stderr[-2048:]}")
-            output = output_path.read_bytes()
-            renderer_result = last_json_object(completed.stdout)
-        if not output.startswith(b"P6\n"):
-            raise RuntimeError("raytracer_fragment_invalid_ppm")
-        renderer_performance = renderer_result.get("performance") if isinstance(renderer_result.get("performance"), dict) else {}
-        compute_ms = performance_duration(renderer_performance.get("compute_ms"))
-        if compute_ms <= 0:
-            compute_ms = performance_duration(renderer_result.get("renderer_duration_ms")) or compute_process_ms
-        output_store_started = time.perf_counter()
-        output_ref = self.p2p.put_local(output)
-        output_store_ms = performance_duration((time.perf_counter() - output_store_started) * 1000.0)
-        fragment_total_ms = performance_duration((time.perf_counter() - fragment_started) * 1000.0)
-        overhead_ms = performance_duration(max(0.0, fragment_total_ms - compute_ms))
-        fragment_performance = {
-            "schema": RAYTRACER_PERFORMANCE_SCHEMA,
-            "total_ms": fragment_total_ms,
-            "compute_ms": compute_ms,
-            "network_ms": scene_fetch_ms,
-            "overhead_ms": overhead_ms,
-            "compute_to_total_ratio": performance_ratio(compute_ms, fragment_total_ms),
-            "compute_to_network_ratio": performance_ratio(compute_ms, scene_fetch_ms),
-            "compute_started_unix_ms": compute_started_unix_ms,
-            "compute_finished_unix_ms": compute_finished_unix_ms,
-            "stages_ms": {
-                "scene_fetch": scene_fetch_ms,
-                "input_staging": staging_ms,
-                "compute_process": compute_process_ms,
-                "output_store": output_store_ms,
-            },
-            "scene_fetch_source": str(scene_meta.get("source", "")),
-        }
-        result_hash = sha256_bytes(output)
-        milestone_manifest = build_verification_milestones(
-            output,
-            int(task.get("y_start", spec.get("y_start", 0)) or 0),
-            int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20),
-            int(task.get("x_start", spec.get("x_start", 0)) or 0),
-        )
-        return {
-            "role_result": "compute",
-            "input": p2p_meta,
-            "scene": scene_meta,
-            "input_hash": sha256_bytes(p2p_data),
-            "compute": {"mode": "raytracer-fragment", "executed": True, "stdout": completed.stdout[-2048:], "stderr": completed.stderr[-2048:]},
-            "performance": fragment_performance,
-            "output_ref": output_ref,
-            "proof_ref": output_ref,
-            "result_hash": result_hash,
-            "verification_milestones": milestone_manifest,
-        }
-
-    def run_raytracer_milestone_verification(
-        self,
-        task: dict[str, Any],
-        p2p_data: bytes,
-        p2p_meta: dict[str, Any],
-    ) -> dict[str, Any]:
-        verification_started = time.perf_counter()
-        try:
-            challenge = json.loads(p2p_data.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"raytracer_verification_challenge_invalid:{exc}") from exc
-        supported_strategies = {"random-row-milestone-v1", "random-tile-row-milestone-v2"}
-        if not isinstance(challenge, dict) or challenge.get("strategy") not in supported_strategies:
-            raise RuntimeError("raytracer_verification_challenge_invalid")
-
-        sample = challenge.get("milestone")
-        if not isinstance(sample, dict):
-            raise RuntimeError("raytracer_verification_milestone_missing")
-        y_start = int(sample.get("y_start", -1))
-        y_end = int(sample.get("y_end", -1))
-        x_start = int(sample.get("x_start", 0))
-        x_end = int(sample.get("x_end", 0))
-        sample_rows = y_end - y_start
-        max_sample_rows = max(1, int(task.get("max_sample_rows", 256) or 256))
-        if y_start < 0 or x_start < 0 or sample_rows <= 0 or sample_rows > max_sample_rows:
-            raise RuntimeError("raytracer_verification_milestone_range_invalid")
-        expected = str(sample.get("pixel_sha256", "")).removeprefix("sha256:").lower()
-        if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
-            raise RuntimeError("raytracer_verification_milestone_hash_invalid")
-
-        scene_ref = task.get("scene_p2p_ref") or challenge.get("scene_p2p_ref")
-        if not isinstance(scene_ref, dict):
-            raise RuntimeError("raytracer_scene_ref_missing")
-        scene_fetch_started = time.perf_counter()
-        scene_bytes, scene_meta = self.p2p.fetch(scene_ref)
-        scene_fetch_ms = performance_duration((time.perf_counter() - scene_fetch_started) * 1000.0)
-        source_output_ref = task.get("source_output_ref")
-        handoff_meta: dict[str, Any] = {}
-        source_handoff_ms = 0.0
-        if isinstance(source_output_ref, dict):
-            source_handoff_started = time.perf_counter()
-            source_output, handoff_meta = self.p2p.fetch(source_output_ref)
-            source_handoff_ms = performance_duration((time.perf_counter() - source_handoff_started) * 1000.0)
-            source_manifest = build_verification_milestones(
-                source_output,
-                int(task.get("y_start", 0) or 0),
-                max(1, int(task.get("max_sample_rows", 20) or 20)),
-                int(task.get("x_start", 0) or 0),
-            )
-            if str(source_manifest.get("commitment_hash", "")) != str(challenge.get("commitment_hash", "")):
-                raise RuntimeError("raytracer_source_handoff_commitment_invalid")
-        with tempfile.TemporaryDirectory(prefix="silicium-raytracer-milestone-verify-") as temp_dir:
-            temp_path = Path(temp_dir)
-            scene_path = temp_path / "scene.cfg"
-            output_path = temp_path / "sample.ppm"
-            scene_path.write_bytes(scene_bytes)
-            if x_end <= x_start and challenge.get("strategy") == "random-row-milestone-v1":
-                x_end = scene_resolution(scene_path)[0]
-            if x_end <= x_start:
-                raise RuntimeError("raytracer_verification_milestone_range_invalid")
-            recomputed = run_raytracer(
-                scene_path,
-                output_path,
-                int(task.get("timeout_s", 300) or 300),
-                y_start,
-                y_end,
-                x_start,
-                x_end,
-            )
-            recomputed_hash = ppm_pixel_sha256(output_path.read_bytes())
-
-        passed = recomputed_hash == expected
-        recompute_performance = recomputed.get("performance") if isinstance(recomputed.get("performance"), dict) else {}
-        compute_ms = performance_duration(recompute_performance.get("compute_ms"))
-        total_ms = performance_duration((time.perf_counter() - verification_started) * 1000.0)
-        network_ms = performance_duration(scene_fetch_ms + source_handoff_ms)
-        overhead_ms = performance_duration(max(0.0, total_ms - compute_ms))
-        fragment_rows = max(sample_rows, int(challenge.get("fragment_rows", sample_rows) or sample_rows))
-        verification = {
-            "mode": str(challenge.get("strategy")),
-            "challenge_nonce": str(challenge.get("challenge_nonce", "")),
-            "commitment_hash": str(challenge.get("commitment_hash", "")),
-            "milestone_index": int(sample.get("index", 0) or 0),
-            "milestone_count": int(challenge.get("milestone_count", 1) or 1),
-            "sample_y_start": y_start,
-            "sample_y_end": y_end,
-            "sample_x_start": x_start,
-            "sample_x_end": x_end,
-            "sample_rows": sample_rows,
-            "fragment_rows": fragment_rows,
-            "sample_ratio": sample_rows / fragment_rows,
-            "expected_pixel_hash": expected,
-            "recomputed_pixel_hash": recomputed_hash,
-        }
-        return {
-            "role_result": "verify",
-            "input": p2p_meta,
-            "scene": scene_meta,
-            "source_handoff": {
-                **handoff_meta,
-                "source_node_id": str(task.get("source_node_id", "")),
-                "direct": bool(handoff_meta),
-            },
-            "input_hash": sha256_bytes(p2p_data),
-            "expected_hash": expected,
-            "recomputed_hash": recomputed_hash,
-            "verification_mode": str(challenge.get("strategy")),
-            "verification": verification,
-            "verified": passed,
-            "choice": passed,
-            "result_hash": sha256_json({"verified": passed, **verification}),
-            "performance": {
-                "schema": RAYTRACER_PERFORMANCE_SCHEMA,
-                "total_ms": total_ms,
-                "compute_ms": compute_ms,
-                "network_ms": network_ms,
-                "overhead_ms": overhead_ms,
-                "compute_to_total_ratio": performance_ratio(compute_ms, total_ms),
-                "compute_to_network_ratio": performance_ratio(compute_ms, network_ms),
-                "stages_ms": {
-                    "scene_fetch": scene_fetch_ms,
-                    "source_handoff_fetch": source_handoff_ms,
-                    "compute_process": performance_duration(recompute_performance.get("process_ms")),
-                },
-                "scene_fetch_source": str(scene_meta.get("source", "")),
-                "source_handoff_source": str(handoff_meta.get("source", "")),
-            },
         }
 
     def run_storage_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
@@ -1152,28 +891,12 @@ class RoleRuntime:
         }
 
     def run_verify_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
-        if str(task.get("workload", "")).strip().lower() == "verification/rendering/raytracer-fragment":
-            return self.run_raytracer_milestone_verification(task, p2p_data, p2p_meta)
-        actual = sha256_bytes(p2p_data)
-        expected = str(task.get("expected_hash") or envelope.get("expected_hash") or "").removeprefix("sha256:")
-        embedded_hash = ""
-        try:
-            parsed = json.loads(p2p_data.decode("utf-8"))
-            if isinstance(parsed, dict):
-                embedded_hash = str(parsed.get("result_hash") or parsed.get("compute_result_hash") or "").removeprefix("sha256:")
-        except Exception:
-            pass
-        passed = not expected or expected == actual or (bool(embedded_hash) and expected == embedded_hash)
-        return {
-            "role_result": "verify",
-            "input": p2p_meta,
-            "input_hash": actual,
-            "expected_hash": expected,
-            "recomputed_hash": embedded_hash or actual,
-            "verified": passed,
-            "choice": passed,
-            "result_hash": sha256_json({"verified": passed, "actual": actual, "expected": expected, "embedded": embedded_hash}),
-        }
+        context = self._workload_context(envelope, task, p2p_data, p2p_meta)
+        result = run_workload(task.get("workload", ""), "verify", context)
+        if result is not None:
+            return result
+        # No dedicated verifier: compare hashes (verification/hash-audit/sha256).
+        return hash_audit(WorkloadContext(workload="verification/hash-audit/sha256", **context))
 
     def run_resource_task(self, envelope: dict[str, Any], task: dict[str, Any], p2p_data: bytes, p2p_meta: dict[str, Any]) -> dict[str, Any]:
         capacity = self.capacity()
