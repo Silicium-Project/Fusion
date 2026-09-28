@@ -36,6 +36,18 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
 | `GET` | `/tasks/{task_id}` | État dérivé du journal de tâches |
 | `GET` | `/health` | Santé |
 
+## Organisation du code
+
+| Module | Contenu |
+| --- | --- |
+| `src/main.rs` | Démarrage et boucle d'événements (API → réseau, gossipsub → traitement) |
+| `src/config.rs` | Options CLI, variables d'environnement, catégorie matérielle |
+| `src/storage.rs` | Clé d'identité et journal de tâches signé sur disque |
+| `src/swarm.rs` | Comportement libp2p, construction du swarm, publication DHT/gossipsub |
+| `src/api.rs` | API HTTP locale |
+| `src/processing.rs` | Traitement d'une tâche (runtime, compute, vérification, réputation) |
+| `src/task.rs` | Charges utiles réseau (`NetworkTask`, `GossipMessage`) |
+
 ## Construire, tester, conteneur
 
 ```bash
@@ -45,8 +57,6 @@ docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = ra
 
 ## Limites connues
 
-- `src/main.rs` fait ~1 300 lignes : à découper en modules (config, swarm, API,
-  traitement des tâches).
 - Chaque nœud qui reçoit une tâche la calcule ; le résultat du sélecteur est ignoré.
 - Pas de découpage en fragments, pas de transfert de fichiers entre pairs,
   auto-vérification seulement.

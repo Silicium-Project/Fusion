@@ -1,0 +1,304 @@
+//! Node configuration: command-line flags, environment variables and the
+//! local hardware bucket. CLI flags win over environment variables.
+
+use libp2p::Multiaddr;
+use silicium_node_core::hardware::{
+    GpuAcceleration, HardwareBucket, HardwareProfile, OperatingSystem, SimdWidth, VramClass,
+};
+use std::{env, path::PathBuf};
+
+#[derive(Debug, Clone)]
+pub(crate) struct NodeConfig {
+    pub(crate) bootstrap_peers: Vec<Multiaddr>,
+    pub(crate) data_dir: PathBuf,
+    pub(crate) api_port: u16,
+    pub(crate) enable_quic_listener: bool,
+    pub(crate) dispatcher_seed: u64,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct NodeCliOverrides {
+    pub(crate) bootstrap_peers: Vec<Multiaddr>,
+    pub(crate) data_dir: Option<PathBuf>,
+    pub(crate) api_port: Option<u16>,
+    pub(crate) enable_quic_listener: Option<bool>,
+    pub(crate) dispatcher_seed: Option<u64>,
+}
+
+pub(crate) fn parse_bootstrap_peer(value: &str) -> Vec<Multiaddr> {
+    value
+        .split(',')
+        .filter_map(|item| item.trim().parse::<Multiaddr>().ok())
+        .collect()
+}
+
+pub(crate) fn parse_node_cli_args<I>(args: I) -> NodeCliOverrides
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut overrides = NodeCliOverrides::default();
+    let mut args = args.into_iter().peekable();
+
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--bootstrap-peer" => {
+                if let Some(value) = args.next() {
+                    overrides
+                        .bootstrap_peers
+                        .extend(parse_bootstrap_peer(&value));
+                }
+            }
+            "--bootstrap-peers" => {
+                if let Some(value) = args.next() {
+                    overrides
+                        .bootstrap_peers
+                        .extend(parse_bootstrap_peer(&value));
+                }
+            }
+            "--api-port" => {
+                if let Some(value) = args.next() {
+                    overrides.api_port = value.parse::<u16>().ok();
+                }
+            }
+            "--data-dir" => {
+                if let Some(value) = args.next() {
+                    overrides.data_dir = Some(PathBuf::from(value));
+                }
+            }
+            "--dispatcher-seed" => {
+                if let Some(value) = args.next() {
+                    overrides.dispatcher_seed = value.parse::<u64>().ok();
+                }
+            }
+            "--disable-quic" => {
+                overrides.enable_quic_listener = Some(false);
+            }
+            "--enable-quic" => {
+                overrides.enable_quic_listener = Some(true);
+            }
+            "--help" | "-h" => {
+                println!(
+                    "Usage: p2p_node [--bootstrap-peer <multiaddr>] [--api-port <port>] [--data-dir <path>] [--dispatcher-seed <seed>] [--enable-quic|--disable-quic]"
+                );
+                std::process::exit(0);
+            }
+            _ if arg.starts_with("--bootstrap-peer=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides
+                        .bootstrap_peers
+                        .extend(parse_bootstrap_peer(value));
+                }
+            }
+            _ if arg.starts_with("--bootstrap-peers=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides
+                        .bootstrap_peers
+                        .extend(parse_bootstrap_peer(value));
+                }
+            }
+            _ if arg.starts_with("--api-port=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides.api_port = value.parse::<u16>().ok();
+                }
+            }
+            _ if arg.starts_with("--data-dir=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides.data_dir = Some(PathBuf::from(value));
+                }
+            }
+            _ if arg.starts_with("--dispatcher-seed=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides.dispatcher_seed = value.parse::<u64>().ok();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    overrides
+}
+
+pub(crate) fn read_bootstrap_peers_from_env() -> Vec<Multiaddr> {
+    env::var("SILICIUM_BOOTSTRAP_PEERS")
+        .ok()
+        .map(|value| parse_bootstrap_peer(&value))
+        .unwrap_or_default()
+}
+
+pub(crate) fn read_data_dir_from_env() -> PathBuf {
+    env::var("SILICIUM_DATA_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/data"))
+}
+
+pub(crate) fn read_api_port_from_env() -> u16 {
+    env::var("API_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(9092)
+}
+
+pub(crate) fn read_dispatcher_seed_from_env() -> u64 {
+    env::var("SILICIUM_DISPATCH_SEED")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(7)
+}
+
+pub(crate) fn read_enable_quic_listener_from_env() -> bool {
+    env::var("SILICIUM_ENABLE_QUIC_LISTENER")
+        .ok()
+        .as_deref()
+        .map(|value| value != "0")
+        .unwrap_or(true)
+}
+
+pub(crate) fn merge_bootstrap_peers(
+    mut bootstrap_peers: Vec<Multiaddr>,
+    additional_peers: Vec<Multiaddr>,
+) -> Vec<Multiaddr> {
+    bootstrap_peers.extend(additional_peers);
+    bootstrap_peers.sort_by_key(|addr| addr.to_string());
+    bootstrap_peers.dedup_by(|left, right| left.to_string() == right.to_string());
+    bootstrap_peers
+}
+
+impl NodeConfig {
+    pub(crate) fn from_env_and_args() -> Self {
+        let overrides = parse_node_cli_args(env::args().skip(1));
+        let bootstrap_peers =
+            merge_bootstrap_peers(read_bootstrap_peers_from_env(), overrides.bootstrap_peers);
+
+        Self {
+            bootstrap_peers,
+            data_dir: overrides.data_dir.unwrap_or_else(read_data_dir_from_env),
+            api_port: overrides.api_port.unwrap_or_else(read_api_port_from_env),
+            enable_quic_listener: overrides
+                .enable_quic_listener
+                .unwrap_or_else(read_enable_quic_listener_from_env),
+            dispatcher_seed: overrides
+                .dispatcher_seed
+                .unwrap_or_else(read_dispatcher_seed_from_env),
+        }
+    }
+}
+
+pub(crate) fn default_hardware_profile() -> HardwareBucket {
+    let profile = HardwareProfile::new(
+        VramClass::Vram4096,
+        GpuAcceleration {
+            cuda: false,
+            metal: false,
+            rocm: false,
+            vulkan: false,
+            opencl: false,
+        },
+        SimdWidth::Avx2,
+        OperatingSystem::Linux,
+    );
+    HardwareBucket::from_profile(profile)
+}
+
+pub(crate) fn read_hardware_bucket() -> HardwareBucket {
+    env::var("SILICIUM_HW_BUCKET")
+        .ok()
+        .and_then(|raw| raw.parse::<u32>().ok())
+        .map(HardwareBucket::new)
+        .unwrap_or_else(default_hardware_profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env test lock")
+    }
+
+    #[test]
+    fn parse_bootstrap_peer_filters_invalid_entries() {
+        let peers = parse_bootstrap_peer(
+            "/ip4/127.0.0.1/tcp/4001,not-a-multiaddr,/ip4/127.0.0.1/udp/4002/quic-v1",
+        );
+        assert_eq!(peers.len(), 2);
+        assert!(
+            peers
+                .iter()
+                .any(|addr| addr.to_string() == "/ip4/127.0.0.1/tcp/4001")
+        );
+        assert!(
+            peers
+                .iter()
+                .any(|addr| addr.to_string() == "/ip4/127.0.0.1/udp/4002/quic-v1")
+        );
+    }
+
+    #[test]
+    fn merge_bootstrap_peers_sorts_and_deduplicates() {
+        let first = vec![
+            "/ip4/127.0.0.1/tcp/4002".parse().expect("addr"),
+            "/ip4/127.0.0.1/tcp/4001".parse().expect("addr"),
+        ];
+        let second = vec![
+            "/ip4/127.0.0.1/tcp/4001".parse().expect("addr"),
+            "/ip4/127.0.0.1/tcp/4003".parse().expect("addr"),
+        ];
+
+        let merged = merge_bootstrap_peers(first, second)
+            .into_iter()
+            .map(|addr| addr.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            merged,
+            vec![
+                "/ip4/127.0.0.1/tcp/4001".to_string(),
+                "/ip4/127.0.0.1/tcp/4002".to_string(),
+                "/ip4/127.0.0.1/tcp/4003".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn read_enable_quic_listener_from_env_accepts_zero_as_false() {
+        let _guard = env_lock();
+        let original = std::env::var("SILICIUM_ENABLE_QUIC_LISTENER").ok();
+
+        // Rust 2024 marks environment mutation as unsafe because it is
+        // process-global; the test lock keeps this deterministic.
+        unsafe { std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", "0") };
+        assert!(!read_enable_quic_listener_from_env());
+
+        unsafe { std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", "1") };
+        assert!(read_enable_quic_listener_from_env());
+
+        match original {
+            Some(value) => unsafe { std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", value) },
+            None => unsafe { std::env::remove_var("SILICIUM_ENABLE_QUIC_LISTENER") },
+        }
+    }
+
+    #[test]
+    fn parse_node_cli_args_supports_aliases_and_flags() {
+        let overrides = parse_node_cli_args(vec![
+            "--bootstrap-peer".to_string(),
+            "/ip4/127.0.0.1/tcp/4001".to_string(),
+            "--bootstrap-peers=/ip4/127.0.0.1/tcp/4002,/ip4/127.0.0.1/tcp/4003".to_string(),
+            "--api-port=1337".to_string(),
+            "--data-dir".to_string(),
+            "C:/tmp/silicium".to_string(),
+            "--dispatcher-seed".to_string(),
+            "42".to_string(),
+            "--disable-quic".to_string(),
+        ]);
+
+        assert_eq!(overrides.bootstrap_peers.len(), 3);
+        assert_eq!(overrides.api_port, Some(1337));
+        assert_eq!(overrides.data_dir, Some(PathBuf::from("C:/tmp/silicium")));
+        assert_eq!(overrides.dispatcher_seed, Some(42));
+        assert_eq!(overrides.enable_quic_listener, Some(false));
+    }
+}
