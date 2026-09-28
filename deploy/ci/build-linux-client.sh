@@ -15,9 +15,7 @@ if [[ -n "$free_kb" && "$free_kb" -lt "$minimum_free_kb" ]]; then
   echo "Low disk space (${free_kb} KiB free); reclaiming stale Rust build targets."
   rm -rf -- \
     apps/silicium-node/src-tauri/target \
-    Network/crates/p2p-node/target \
-    Network/crates/compute-daemon/target \
-    Network/crates/raytracer/target
+    Network/target
 fi
 
 if [[ ! -d "apps/silicium-node" || ! -d "Network/crates/p2p-node" ]]; then
@@ -65,9 +63,7 @@ npm run prepare:runtime:linux
 # release profile is reused by the tests and by the Tauri bundle below.
 rm -rf -- \
   src-tauri/target/debug \
-  ../../Network/crates/p2p-node/target/debug \
-  ../../Network/crates/compute-daemon/target/debug \
-  ../../Network/crates/raytracer/target/debug
+  ../../Network/target/debug
 
 if [[ "${SILICIUM_RUN_RELEASE_TESTS:-0}" == "1" ]]; then
   echo "Testing silicium-node in release mode..."
@@ -78,12 +74,13 @@ fi
 rm -rf -- src-tauri/target/debug
 
 echo "Building p2p_node and compute_daemon..."
-cargo build --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/crates/p2p-node/Cargo.toml
-cargo build --release --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/crates/compute-daemon/Cargo.toml
+# Network/ is a single Cargo workspace: one Cargo.lock, one target/ directory.
+cargo build --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/Cargo.toml \
+  -p p2p_node -p compute_daemon
 
 mkdir -p src-tauri/resources/runtime/bin
-cp ../../Network/crates/p2p-node/target/release/p2p_node src-tauri/resources/runtime/bin/
-cp ../../Network/crates/compute-daemon/target/release/compute_daemon src-tauri/resources/runtime/bin/
+cp ../../Network/target/release/p2p_node src-tauri/resources/runtime/bin/
+cp ../../Network/target/release/compute_daemon src-tauri/resources/runtime/bin/
 
 # Keep the runtime targets available to the next build when disk allows it.
 # The CI lanes use `auto`: after copying the runtime binaries, reclaim the
@@ -94,8 +91,7 @@ if [[ "$reclaim_runtime_targets" == "1" ]] || \
    [[ "$reclaim_runtime_targets" == "auto" && -n "$runtime_free_kb" && "$runtime_free_kb" -lt "$minimum_free_kb" ]]; then
   rm -rf -- \
     src-tauri/target/raytracer-native \
-    ../../Network/crates/p2p-node/target \
-    ../../Network/crates/compute-daemon/target
+    ../../Network/target
 fi
 
 df -h "$ROOT"

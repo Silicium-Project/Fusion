@@ -137,8 +137,7 @@ jobs:
           shared-key: fusion-linux
           workspaces: |
             apps/silicium-node/src-tauri
-            Network/crates/p2p-node
-            Network/crates/compute-daemon
+            Network
 
       - name: Cache Tauri Linux bundler tools
         uses: actions/cache@v4

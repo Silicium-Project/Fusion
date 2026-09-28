@@ -120,8 +120,8 @@ services:
     - frontend
   reputation_bridge:
     build:
-      context: ../../Network/crates/reputation-bridge
-      dockerfile: Dockerfile
+      context: ../../Network
+      dockerfile: crates/reputation-bridge/Dockerfile
     restart: unless-stopped
     environment:
       - LISTEN_ADDR=0.0.0.0:9091
