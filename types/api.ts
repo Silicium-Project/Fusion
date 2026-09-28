@@ -26,7 +26,6 @@ export interface Job {
   fragmentCount?: number;
   status: JobStatus;
   siliciumJobId: string;
-  dashboardUrl?: string;
   devnetJob?: string;
   errorMessage?: string;
   deadlineAt?: string;
