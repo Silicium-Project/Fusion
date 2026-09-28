@@ -1,29 +1,55 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
+import importlib
 import json
 import os
+import pkgutil
 import sys
-from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SILICIUM_PATH = REPO_ROOT / "silicium"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import tools.cli  # noqa: E402
 
 
-def _load_silicium_module():
-    module_name = "silicium_cli_test"
-    loader = SourceFileLoader(module_name, str(SILICIUM_PATH))
-    spec = importlib.util.spec_from_loader(module_name, loader)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    loader.exec_module(module)
-    return module
+def _cli_modules() -> list:
+    modules = [tools.cli]
+    for info in pkgutil.walk_packages(tools.cli.__path__, "tools.cli."):
+        if info.name != "tools.cli.__main__":
+            modules.append(importlib.import_module(info.name))
+    return modules
+
+
+class _Cli:
+    """Flat view of the `tools.cli` package (the CLI used to be one file)."""
+
+    def __init__(self) -> None:
+        self._modules = _cli_modules()
+
+    def __getattr__(self, name: str):
+        for module in self._modules:
+            if hasattr(module, name):
+                return getattr(module, name)
+        raise AttributeError(name)
+
+    def patch(self, monkeypatch, name: str, value) -> None:
+        """Replace `name` in every CLI module that defines or imports it."""
+        patched = False
+        for module in self._modules:
+            if name in vars(module):
+                monkeypatch.setattr(module, name, value)
+                patched = True
+        assert patched, name
+
+
+def _load_silicium_module() -> _Cli:
+    return _Cli()
 
 
 def _make_ctx(cli):
@@ -65,9 +91,9 @@ def test_cmd_test_entrypoint_docker_ignores_host_entrypoint(monkeypatch) -> None
     def fake_posix(args, ctx):
         posix_called["value"] = True
 
-    monkeypatch.setattr(cli, "run", fake_run)
-    monkeypatch.setattr(cli, "cmd_workload_lint", fake_workload_lint)
-    monkeypatch.setattr(cli, "_run_entrypoint_posix_tests_in_docker", fake_posix)
+    cli.patch(monkeypatch, "run", fake_run)
+    cli.patch(monkeypatch, "cmd_workload_lint", fake_workload_lint)
+    cli.patch(monkeypatch, "_run_entrypoint_posix_tests_in_docker", fake_posix)
 
     ctx = _make_ctx(cli)
     args = argparse.Namespace(entrypoint_docker=True, posix_pytest_image=cli.POSIX_PYTEST_IMAGE_DEFAULT)
@@ -94,9 +120,9 @@ def test_cmd_test_default_runs_host_pytest(monkeypatch) -> None:
     def fake_posix(args, ctx):
         posix_called["value"] = True
 
-    monkeypatch.setattr(cli, "run", fake_run)
-    monkeypatch.setattr(cli, "cmd_workload_lint", fake_workload_lint)
-    monkeypatch.setattr(cli, "_run_entrypoint_posix_tests_in_docker", fake_posix)
+    cli.patch(monkeypatch, "run", fake_run)
+    cli.patch(monkeypatch, "cmd_workload_lint", fake_workload_lint)
+    cli.patch(monkeypatch, "_run_entrypoint_posix_tests_in_docker", fake_posix)
 
     ctx = _make_ctx(cli)
     args = argparse.Namespace(entrypoint_docker=False, posix_pytest_image=cli.POSIX_PYTEST_IMAGE_DEFAULT)
@@ -124,9 +150,9 @@ def test_configure_check_exposes_active_scope() -> None:
 def test_ensure_docker_healthy_fails_on_low_memory(monkeypatch, capsys) -> None:
     cli = _load_silicium_module()
 
-    monkeypatch.setattr(cli, "docker_health", lambda ctx, retries, timeout_s: cli.DockerHealth(True, "", "ok"))
-    monkeypatch.setattr(cli, "docker_memory_bytes", lambda ctx, timeout_s=8.0: 512 * 1024 * 1024)
-    monkeypatch.setattr(cli, "host_os_name", lambda: "nt")
+    cli.patch(monkeypatch, "docker_health", lambda ctx, retries, timeout_s: cli.DockerHealth(True, "", "ok"))
+    cli.patch(monkeypatch, "docker_memory_bytes", lambda ctx, timeout_s=8.0: 512 * 1024 * 1024)
+    cli.patch(monkeypatch, "host_os_name", lambda: "nt")
 
     with pytest.raises(SystemExit) as exc:
         cli.ensure_docker_healthy(_make_ctx(cli), min_memory_bytes=2 * 1024 * 1024 * 1024)
@@ -140,8 +166,8 @@ def test_ensure_docker_healthy_fails_on_low_memory(monkeypatch, capsys) -> None:
 def test_ensure_docker_healthy_ignores_memory_when_probe_missing(monkeypatch) -> None:
     cli = _load_silicium_module()
 
-    monkeypatch.setattr(cli, "docker_health", lambda ctx, retries, timeout_s: cli.DockerHealth(True, "", "ok"))
-    monkeypatch.setattr(cli, "docker_memory_bytes", lambda ctx, timeout_s=8.0: None)
+    cli.patch(monkeypatch, "docker_health", lambda ctx, retries, timeout_s: cli.DockerHealth(True, "", "ok"))
+    cli.patch(monkeypatch, "docker_memory_bytes", lambda ctx, timeout_s=8.0: None)
 
     cli.ensure_docker_healthy(_make_ctx(cli), min_memory_bytes=2 * 1024 * 1024 * 1024)
 
@@ -198,8 +224,8 @@ def test_cmd_start_emits_dispatch_target_event(monkeypatch, tmp_path: Path) -> N
     ctx = _make_ctx(cli)
     log_path = tmp_path / "cli-dispatch.ndjson"
     monkeypatch.setenv("SILICIUM_CLI_STRUCTURED_LOG", str(log_path))
-    monkeypatch.setattr(cli, "compose_base", lambda _ctx: ["docker", "compose"])
-    monkeypatch.setattr(cli, "run", lambda cmd, **kwargs: 0)
+    cli.patch(monkeypatch, "compose_base", lambda _ctx: ["docker", "compose"])
+    cli.patch(monkeypatch, "run", lambda cmd, **kwargs: 0)
 
     wrapped = cli.CommandRegistry._wrap(cli.cmd_start, ctx)
     wrapped(argparse.Namespace(command="start", target="localnet"))
@@ -219,7 +245,7 @@ def test_world_mode_defaults_enable_mesh_bootstrap(monkeypatch) -> None:
     cli.configure_node_start(parser)
     args = parser.parse_args(["--world", "--world-name", "team-eu"])
 
-    monkeypatch.setattr(cli, "_guess_world_advertise_host", lambda: "100.70.0.12")
+    cli.patch(monkeypatch, "_guess_world_advertise_host", lambda: "100.70.0.12")
     resolved = cli._apply_world_mode_defaults(args, node_id="france-1")
 
     assert resolved.gossip_enable is True
@@ -268,8 +294,8 @@ def test_node_start_forwards_release_telemetry(monkeypatch) -> None:
             "46001",
         ]
     )
-    monkeypatch.setattr(
-        cli,
+    cli.patch(
+        monkeypatch,
         "_resolve_mcp_settings",
         lambda _args: {"export_dir": ".silicium/test-export"},
     )
@@ -280,7 +306,7 @@ def test_node_start_forwards_release_telemetry(monkeypatch) -> None:
         captured["command"] = list(cli._network_node_args(args, settings, node_id))
         return 0
 
-    monkeypatch.setattr(cli, "_run_network_node", fake_run_network_node)
+    cli.patch(monkeypatch, "_run_network_node", fake_run_network_node)
 
     with pytest.raises(SystemExit) as exited:
         cli.cmd_node_start(args, _make_ctx(cli))
@@ -305,7 +331,7 @@ def test_node_start_uses_explicit_p2p_node_binary(monkeypatch) -> None:
 def test_node_start_never_builds_p2p_node_implicitly(monkeypatch, tmp_path: Path) -> None:
     cli = _load_silicium_module()
     monkeypatch.delenv("SILICIUM_P2P_NODE_BIN", raising=False)
-    monkeypatch.setattr(cli, "REPO_ROOT", tmp_path)
+    cli.patch(monkeypatch, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(cli.shutil, "which", lambda _name: r"C:\\cargo.exe")
 
     with pytest.raises(RuntimeError, match="set_SILICIUM_P2P_NODE_BIN"):
@@ -326,7 +352,7 @@ def test_world_mode_merges_discovery_seeds(monkeypatch) -> None:
         ]
     )
 
-    monkeypatch.setattr(cli, "_guess_world_advertise_host", lambda: "100.70.0.12")
+    cli.patch(monkeypatch, "_guess_world_advertise_host", lambda: "100.70.0.12")
     resolved = cli._apply_world_mode_defaults(args, node_id="croatia-1")
 
     assert resolved.discovery_seeds == "https://seed-a.example,http://seed-c.example,http://seed-b.example"

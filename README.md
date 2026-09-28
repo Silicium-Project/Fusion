@@ -33,7 +33,7 @@ Le plan de migration est décrit dans
 | [`infra/`](infra/) | Docker, systemd | Conteneurs locaux (Solana, bootstrap, world), unités systemd | Actif |
 | [`ci/`](ci/) | Shell | Contrôles CI, E2E Docker, smoke Kademlia | Actif |
 | [`docs/`](docs/) | Markdown | Documentation technique, rangée par partie | — |
-| `silicium`, `silicium-cli` | Python | CLI développeur et lanceur du nœud | Actif |
+| `silicium`, `silicium-cli` | Python | CLI développeur et lanceur du nœud (code : [`tools/cli/`](tools/cli/)) | Actif |
 
 Chaque dossier contient un `README.md` qui détaille son contenu.
 

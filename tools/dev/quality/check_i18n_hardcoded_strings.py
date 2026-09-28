@@ -13,6 +13,7 @@ from typing import Any
 
 DEFAULT_PATHS = [
     "silicium",
+    "tools/cli",
     "tools/dev/tui",
     "infra",
     "networked",
@@ -43,6 +44,9 @@ def _run_git_diff(base: str, head: str) -> str:
 
 
 def _is_checked_path(file_path: str, paths: list[str]) -> bool:
+    if file_path.endswith(".md"):
+        # Documentation is written in prose on purpose.
+        return False
     return any(file_path == path or file_path.startswith(path + "/") for path in paths)
 
 
@@ -125,10 +129,21 @@ def _is_exception(
     return False, ""
 
 
+def _removed_lines(diff_text: str) -> set[str]:
+    return {
+        line[1:].strip()
+        for line in diff_text.splitlines()
+        if line.startswith("-") and not line.startswith("---")
+    }
+
+
 def parse_added_lines(diff_text: str) -> list[dict[str, Any]]:
     violations: list[dict[str, Any]] = []
     current_file: str | None = None
     new_line = 0
+    # A line removed somewhere in the same diff and added elsewhere is moved
+    # code (e.g. a module split), not a newly introduced string.
+    moved = _removed_lines(diff_text)
 
     for line in diff_text.splitlines():
         if line.startswith("+++ b/"):
@@ -143,7 +158,7 @@ def parse_added_lines(diff_text: str) -> list[dict[str, Any]]:
             continue
         if line.startswith("+") and not line.startswith("+++"):
             content_line = line[1:]
-            if "i18n:ignore" in content_line:
+            if "i18n:ignore" in content_line or content_line.strip() in moved:
                 new_line += 1
                 continue
             if content_line.lstrip().startswith(('"""', "'''")):

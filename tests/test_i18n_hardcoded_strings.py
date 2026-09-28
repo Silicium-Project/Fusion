@@ -84,3 +84,26 @@ def test_inline_ignore_suppresses_violation() -> None:
     assert result.returncode == 0
     report = json.loads(result.stdout)
     assert report["violations"] == []
+
+
+def test_moved_line_is_not_reported() -> None:
+    diff = "\n".join(
+        [
+            "diff --git a/silicium b/silicium",
+            "--- a/silicium",
+            "+++ b/silicium",
+            "@@ -1,1 +0,0 @@",
+            '-    print("Hello world from runtime")',
+            "diff --git a/tools/cli/main.py b/tools/cli/main.py",
+            "--- /dev/null",
+            "+++ b/tools/cli/main.py",
+            "@@ -0,0 +1,2 @@",
+            '+print("Hello world from runtime")',
+            '+print("A brand new sentence here")',
+            "",
+        ]
+    )
+    result = _run_checker(diff, strict=True)
+    assert result.returncode != 0
+    report = json.loads(result.stdout)
+    assert [item["literal"] for item in report["violations"]] == ["A brand new sentence here"]

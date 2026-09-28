@@ -22,6 +22,7 @@ Ce dossier contient deux choses bien séparées :
 | `receipt_verification.py` | Vérification des reçus de calcul | `workloads/raytracer/run_network_job.py` |
 | `solana_layer_bridge.cjs`, `node_uuid_cjs_shim.cjs` | Pont Node.js vers le programme Solana | `network_node.py`, CLI `silicium` |
 | `i18n.py` | Traductions de la CLI et des outils | CLI, TUI, contrôles i18n |
+| [`cli/`](cli/) | Implémentation de la CLI `silicium` (livrée avec l'app desktop) | `Network/silicium`, `python -m tools.cli` |
 
 ## Outillage développeur
 

@@ -19,6 +19,7 @@ Network/
 │   ├── rpc_*.py               #   RPC ZeroMQ
 │   ├── runtime_telemetry.py, resource_intelligence.py, receipt_verification.py, i18n.py
 │   ├── solana_layer_bridge.cjs#   pont Node.js vers le programme Solana
+│   ├── cli/                   #   implémentation de la CLI `silicium` (livrée avec l'app)
 │   └── dev/                   # Python OUTILLAGE — ne part jamais en production
 │       ├── e2e/               #     scénarios Docker E2E, workers de test, test de charge
 │       ├── world/             #     démo « world mesh » et son interface
@@ -35,7 +36,7 @@ Network/
 ├── infra/                     # Docker (Solana local, bootstrap, world), systemd
 ├── ci/                        # scripts de CI
 ├── docs/                      # documentation, rangée par partie
-├── silicium, silicium-cli     # CLI développeur et lanceur de nœud
+├── silicium, silicium-cli     # CLI développeur et lanceur de nœud (point d'entrée de tools/cli/)
 └── Makefile                   # raccourcis : check, test, rust-test, rust-lint, raytracer-test
 ```
 
