@@ -21,6 +21,21 @@ silicium-raytracer <scene.cfg> --output <rendu.ppm> \
 Le déterminisme est une exigence : deux nœuds doivent produire les mêmes octets
 pour qu'une vérification par un autre pair fonctionne.
 
+## Organisation du code
+
+La crate fournit une bibliothèque (`silicium_raytracer`) et le binaire
+`silicium-raytracer` qui l'utilise.
+
+| Fichier | Contenu |
+| --- | --- |
+| `src/lib.rs` | Constantes (`EPSILON`, `MAX_DEPTH`) et liste des modules |
+| `src/math.rs` | `Vec3`, `Ray` |
+| `src/scene.rs` | `Scene`, `Primitive`, `Material`, `Light`, intersections |
+| `src/parser.rs` | Lecture des fichiers `.cfg` |
+| `src/trace.rs` | Lancer de rayons (ombres, Phong, réflexions) |
+| `src/render.rs` | `RenderOptions`, rendu multi-thread d'une tuile, progression |
+| `src/main.rs` | Binaire : arguments, écriture du PPM |
+
 ## Construire et tester
 
 ```bash
@@ -33,6 +48,6 @@ binaire et l'installe dans `Network/bin/raytracer/`.
 
 ## Évolution prévue
 
-Devenir aussi une bibliothèque (découpage en tuiles, hash des jalons,
-vérification, réassemblage, PNG) pour remplacer `workloads/raytracer/*.py`.
-`src/main.rs` (~670 lignes) sera alors découpé en modules.
+Ajouter à la bibliothèque le découpage en tuiles, le hash des jalons, la
+vérification, le réassemblage et l'export PNG, pour remplacer
+`workloads/raytracer/*.py`.
