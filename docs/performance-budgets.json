@@ -36,7 +36,7 @@
     "raytracer_native": {
       "description": "Native Rust raytracer workload tests.",
       "platforms": ["linux", "darwin", "windows"],
-      "command": ["cargo", "test", "--manifest-path", "workloads/raytracer/native/Cargo.toml"],
+      "command": ["cargo", "test", "--manifest-path", "crates/raytracer/Cargo.toml"],
       "timeout_sec": 600.0,
       "budgets": {
         "wall_sec": 300.0,

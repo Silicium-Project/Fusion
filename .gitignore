@@ -41,8 +41,8 @@ infra/docker/reverse-proxy/certs/*.csr
 **/target/
 .target/
 Cargo.lock
-!networked/reputation_bridge/Cargo.lock
-!networked/p2p_node/Cargo.lock
+!crates/reputation-bridge/Cargo.lock
+!crates/p2p-node/Cargo.lock
 .anchor/
 node_modules/
 .yarn/

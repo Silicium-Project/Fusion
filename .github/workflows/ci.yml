@@ -86,10 +86,10 @@ jobs:
           raytracer=false
           if matches '^(tools|workloads|tests|silicium|catalog|proto|i18n|ci)/|^(pyproject\.toml|requirements.*\.txt|Makefile)$'; then python=true; fi
           if matches '^(solana-layer|silicium-layer-dashboard)/|\.(js|jsx|ts|tsx)$|(^|/)(package|yarn)\.json$'; then javascript=true; fi
-          if matches '^(networked|workloads/raytracer/native)/|(^|/)Cargo\.(toml|lock)$'; then rust=true; fi
+          if matches '^crates/|(^|/)Cargo\.(toml|lock)$'; then rust=true; fi
           if matches '^solana-layer/'; then solana=true; fi
-          if matches '^(infra|ci/|tests/smoke/|networked/.*/Dockerfile)|docker-compose'; then docker=true; fi
-          if matches '^networked/(p2p_node|silicium_node_core)/|^ci/p2p_kademlia_smoke\.sh$'; then p2p=true; fi
+          if matches '^(infra|ci/|tests/smoke/|crates/.*/Dockerfile)|docker-compose'; then docker=true; fi
+          if matches '^crates/(p2p-node|node-core)/|^ci/p2p_kademlia_smoke\.sh$'; then p2p=true; fi
           if matches '^workloads/raytracer/|^tests/fixtures/python_raytracer'; then raytracer=true; fi
           if matches '^\.github/workflows/'; then
             python=true; javascript=true; rust=true; solana=true; docker=true; p2p=true; raytracer=true
@@ -103,9 +103,9 @@ jobs:
               rust_crates="${rust_crates%]},\"$crate\"]"
             fi
           }
-          if matches '^networked/|(^|/)Cargo\.(toml|lock)$'; then
-            add_rust_crate networked/silicium_node_core
-            add_rust_crate networked/p2p_node
+          if matches '^crates/|(^|/)Cargo\.(toml|lock)$'; then
+            add_rust_crate crates/node-core
+            add_rust_crate crates/p2p-node
           fi
           codeql='[]'
           if [[ "$javascript" == true && "$python" == true ]]; then
@@ -234,8 +234,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            networked/silicium_node_core
-            networked/p2p_node
+            crates/node-core
+            crates/p2p-node
 
       - name: Format check
         working-directory: ${{ matrix.crate }}
@@ -250,7 +250,7 @@ jobs:
         run: cargo test
 
       - name: P2P Kademlia smoke
-        if: matrix.crate == 'networked/p2p_node'
+        if: matrix.crate == 'crates/p2p-node'
         run: bash ./ci/p2p_kademlia_smoke.sh
 
   solana-layer:
@@ -445,7 +445,7 @@ jobs:
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: workloads/raytracer/native
+          workspaces: crates/raytracer
 
       - name: Set up Python
         if: matrix.job == 'pytest' || matrix.job == 'docker-e2e' || matrix.job == 'pytest-hosted' || matrix.job == 'smoke' || matrix.job == 'perf-budget'
@@ -488,7 +488,7 @@ jobs:
 
       - name: Test native raytracer
         if: matrix.job == 'raytracer-rust'
-        run: cargo test --manifest-path workloads/raytracer/native/Cargo.toml
+        run: cargo test --manifest-path crates/raytracer/Cargo.toml
 
       - name: Install dev dependencies
         if: matrix.job == 'pytest' || matrix.job == 'perf-budget'

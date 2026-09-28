@@ -1,8 +1,8 @@
 services:
   silicium-bootstrap:
     build:
-      context: ../../networked
-      dockerfile: p2p_node/Dockerfile
+      context: ../../crates
+      dockerfile: p2p-node/Dockerfile
     image: ghcr.io/silicium-project/silicium-node:bootstrap
     container_name: silicium-bootstrap
     restart: unless-stopped

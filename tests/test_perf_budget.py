@@ -143,7 +143,7 @@ def test_normalize_cargo_command_uses_rustup_when_proxy_is_missing(
     monkeypatch.setenv("RUSTUP_TOOLCHAIN", "stable")
 
     command = perf_budget.normalize_command_for_platform(
-        ["cargo", "test", "--manifest-path", "workloads/raytracer/native/Cargo.toml"],
+        ["cargo", "test", "--manifest-path", "crates/raytracer/Cargo.toml"],
         tmp_path,
     )
 
@@ -154,7 +154,7 @@ def test_normalize_cargo_command_uses_rustup_when_proxy_is_missing(
         "cargo",
         "test",
         "--manifest-path",
-        "workloads/raytracer/native/Cargo.toml",
+        "crates/raytracer/Cargo.toml",
     ]
 
 

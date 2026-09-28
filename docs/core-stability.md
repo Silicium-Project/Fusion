@@ -7,7 +7,7 @@ longer an acceptance target.
 ## Baseline
 
 - Python 3.11 or newer with `requirements-dev.txt` installed.
-- Rust toolchain for `networked/*` and `workloads/raytracer/native`.
+- Rust toolchain for `networked/*` and `crates/raytracer`.
 - Docker only for the Compose proxy, world testbed, and E2E checks.
 - Solana and Anchor toolchains for the on-chain workflow.
 

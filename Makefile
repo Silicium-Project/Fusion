@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 
 PYTHON ?= python3
-RAYTRACER_MANIFEST := workloads/raytracer/native/Cargo.toml
+RAYTRACER_MANIFEST := crates/raytracer/Cargo.toml
 
 .PHONY: all test check lint golden smoke raytracer-test clean re
 

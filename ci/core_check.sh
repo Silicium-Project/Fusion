@@ -43,7 +43,7 @@ log "Python tests"
 
 log "Raytracer native tests"
 if command -v cargo >/dev/null 2>&1; then
-  cargo test --manifest-path workloads/raytracer/native/Cargo.toml
+  cargo test --manifest-path crates/raytracer/Cargo.toml
 else
   echo "Cargo unavailable; native raytracer tests skipped."
 fi

@@ -6,11 +6,11 @@ developer CLI, and the local/test infrastructure used by those components.
 
 ## Canonical components
 
-- `networked/p2p_node/`: peer discovery, authenticated peer HTTP, content
+- `crates/p2p-node/`: peer discovery, authenticated peer HTTP, content
   transfer, task dispatch, and gossip.
-- `networked/silicium_node_core/`: Rust node runtime and transport primitives.
-- `networked/compute_daemon/`: compute-role daemon used by the node stack.
-- `networked/reputation_bridge/`: bridge consumed by Fusion's production
+- `crates/node-core/`: Rust node runtime and transport primitives.
+- `crates/compute-daemon/`: compute-role daemon used by the node stack.
+- `crates/reputation-bridge/`: bridge consumed by Fusion's production
   Compose stack.
 - `tools/network_node.py`, `tools/dev/e2e/bootstrap_orchestrator.py`, and the RPC,
   telemetry, receipt, and update-manifest tools: Python control-plane helpers.

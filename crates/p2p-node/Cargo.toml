@@ -13,4 +13,4 @@ axum = { version = "0.8.9", features = ["json"] }
 ed25519-dalek = "2.1.1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 sha2 = "0.10.9"
-silicium_node_core = { path = "../silicium_node_core" }
+silicium_node_core = { path = "../node-core" }

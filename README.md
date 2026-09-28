@@ -8,12 +8,12 @@ ne font pas partie du produit ; ils ne subsistent que dans l'historique Git.
 
 ## Composants actifs
 
-- `networked/p2p_node/` : binaire Rust `silicium-node`, découverte des pairs,
+- `crates/p2p-node/` : binaire Rust `silicium-node`, découverte des pairs,
   persistance locale, gossip et API de contrôle versionnée.
-- `networked/compute_daemon/` : exécuteur Rust des workloads de calcul.
-- `networked/reputation_bridge/` : service de réputation consommé par le
+- `crates/compute-daemon/` : exécuteur Rust des workloads de calcul.
+- `crates/reputation-bridge/` : service de réputation consommé par le
   nœud et la stack Fusion.
-- `networked/silicium_node_core/` : primitives de transport, planification et
+- `crates/node-core/` : primitives de transport, planification et
   registre des tâches du nœud.
 - `workloads/raytracer/` et `catalog/` : workload de référence et manifests.
 - `solana-layer/` : programme Anchor, SDK TypeScript, IDL et tests Solana.
@@ -40,7 +40,7 @@ Lancer les deux services Rust dans deux terminaux :
 
 ```bash
 SILICIUM_COMPUTE_BIND=127.0.0.1:9090 \
-  cargo run --manifest-path networked/compute_daemon/Cargo.toml
+  cargo run --manifest-path crates/compute-daemon/Cargo.toml
 
 SILICIUM_NODE_ID=local-node \
 SILICIUM_NODE_ROLES=compute,verify \
@@ -48,7 +48,7 @@ SILICIUM_NODE_CONTROL_TOKEN=local-dev-token \
 SILICIUM_API_BIND=127.0.0.1 \
 API_PORT=9092 \
 COMPUTE_DAEMON_URL=http://127.0.0.1:9090 \
-  cargo run --manifest-path networked/p2p_node/Cargo.toml
+  cargo run --manifest-path crates/p2p-node/Cargo.toml
 ```
 
 La stack complète du site (FrontEnd, BackEnd, nœud, compute et proxy) est
@@ -58,8 +58,8 @@ définie au niveau de Fusion, dans `deploy/compose/docker-compose.yml`.
 
 ```bash
 python -m pytest
-cargo test --manifest-path networked/p2p_node/Cargo.toml --locked
-cargo test --manifest-path networked/compute_daemon/Cargo.toml --locked
+cargo test --manifest-path crates/p2p-node/Cargo.toml --locked
+cargo test --manifest-path crates/compute-daemon/Cargo.toml --locked
 cd solana-layer/silicium-sdk && npm ci && npm run build && npm run verify:dist
 ```
 
