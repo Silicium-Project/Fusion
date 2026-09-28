@@ -1,6 +1,6 @@
 @echo off
 setlocal
-set "ROOT=%~dp0..\.."
+set "ROOT=%~dp0.."
 pushd "%ROOT%"
 
 if exist ".silicium\env\raytracer.env" (
@@ -11,9 +11,9 @@ if exist ".silicium\env\raytracer.env" (
 )
 
 if "%~1"=="" (
-  echo Usage: demo\networked\start-node.cmd ^<node-id^> ^<roles^> ^<port^> ^<seed-url^> [advertise-host] [mesh-key] [reputation-score]
-  echo Example worker: demo\networked\start-node.cmd worker-1 compute 46101 https://vps-910c1dbc.vps.ovh.net/orchestrator 192.168.1.11 demo-mesh 120
-  echo Example verifier: demo\networked\start-node.cmd verifier-1 verify 46102 https://vps-910c1dbc.vps.ovh.net/orchestrator 192.168.1.12 demo-mesh 90
+  echo Usage: networked\start-node.cmd ^<node-id^> ^<roles^> ^<port^> ^<seed-url^> [advertise-host] [mesh-key] [reputation-score]
+  echo Example worker: networked\start-node.cmd worker-1 compute 46101 https://vps-910c1dbc.vps.ovh.net/orchestrator 192.168.1.11 demo-mesh 120
+  echo Example verifier: networked\start-node.cmd verifier-1 verify 46102 https://vps-910c1dbc.vps.ovh.net/orchestrator 192.168.1.12 demo-mesh 90
   exit /b 2
 )
 
