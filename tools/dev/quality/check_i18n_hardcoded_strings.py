@@ -31,12 +31,19 @@ KEY_LIKE_RE = re.compile(r"^[a-z0-9_.:/-]+$")
 WORD_RE = re.compile(r"[A-Za-z]")
 
 
-def _run_git_diff(base: str, head: str, paths: list[str]) -> str:
-    cmd = ["git", "diff", "--no-color", "--unified=0", base, head, "--", *paths]
+def _run_git_diff(base: str, head: str) -> str:
+    # No pathspec here: limiting the diff to DEFAULT_PATHS would hide the source
+    # side of a move into those paths, so a pure rename would look like a brand
+    # new file. Rename detection runs on the whole tree; paths are filtered later.
+    cmd = ["git", "diff", "--no-color", "--unified=0", "-M", base, head]
     result = subprocess.run(cmd, text=True, capture_output=True, timeout=60, check=False)
     if result.returncode not in (0, 1):
         raise RuntimeError(result.stderr.strip() or "git diff failed")
     return result.stdout
+
+
+def _is_checked_path(file_path: str, paths: list[str]) -> bool:
+    return any(file_path == path or file_path.startswith(path + "/") for path in paths)
 
 
 def _resolve_base(base: str | None) -> str | None:
@@ -139,6 +146,10 @@ def parse_added_lines(diff_text: str) -> list[dict[str, Any]]:
             if "i18n:ignore" in content_line:
                 new_line += 1
                 continue
+            if content_line.lstrip().startswith(('"""', "'''")):
+                # Docstrings document the code; they are never shown to users.
+                new_line += 1
+                continue
             for match in STRING_LITERAL_RE.finditer(content_line):
                 raw = match.group(0)
                 if not raw:
@@ -209,9 +220,11 @@ def main() -> None:
             else:
                 print("No valid base ref; hardcoded-string check skipped.")
             return
-        diff_text = _run_git_diff(base, args.head, DEFAULT_PATHS)
+        diff_text = _run_git_diff(base, args.head)
 
     violations = parse_added_lines(diff_text)
+    if not args.diff_file:
+        violations = [item for item in violations if _is_checked_path(str(item["file"]), DEFAULT_PATHS)]
     violations = filter_violations(violations, exceptions, DEFAULT_EXCLUDES)
     report = {"checked": len(violations), "violations": violations}
 
