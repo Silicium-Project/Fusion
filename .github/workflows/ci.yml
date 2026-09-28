@@ -90,7 +90,7 @@ jobs:
           if matches '^solana-layer/'; then solana=true; fi
           if matches '^(infra|ci/|tests/smoke/|networked/.*/Dockerfile)|docker-compose'; then docker=true; fi
           if matches '^networked/(p2p_node|silicium_node_core)/|^ci/p2p_kademlia_smoke\.sh$'; then p2p=true; fi
-          if matches '^workloads/raytracer/|^bin/raytracer/'; then raytracer=true; fi
+          if matches '^workloads/raytracer/|^tests/fixtures/python_raytracer'; then raytracer=true; fi
           if matches '^\.github/workflows/'; then
             python=true; javascript=true; rust=true; solana=true; docker=true; p2p=true; raytracer=true
           fi

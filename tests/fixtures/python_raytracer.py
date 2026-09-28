@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""
-Silicium Native Python Raytracer Fallback
-Renders .cfg scene files to binary PPM (P6) format with support for raytraced spheres, planes, and point lights.
+"""Pure-Python reference raytracer used only by the test suite.
+
+It renders ``.cfg`` scenes to binary PPM (P6) so tests can exercise the
+tile/crop pipeline without building the native Rust binary. It is NOT a
+runtime fallback: its pixels are not byte-identical to ``silicium-raytracer``,
+so verification between the two would fail. Production must always set
+``SILICIUM_RAYTRACER_BIN`` to the native executable.
 """
 
 from __future__ import annotations

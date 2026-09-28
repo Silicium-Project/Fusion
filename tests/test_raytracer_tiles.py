@@ -51,7 +51,7 @@ def test_split_tiles_handles_more_rows_than_image_width() -> None:
 
 def test_raytracer_rectangular_crop_matches_full_render(tmp_path, monkeypatch) -> None:
     root = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv("SILICIUM_RAYTRACER_BIN", str(root / "bin" / "raytracer" / "raytracer.py"))
+    monkeypatch.setenv("SILICIUM_RAYTRACER_BIN", str(root / "tests" / "fixtures" / "python_raytracer.py"))
     scene = root / "workloads" / "raytracer" / "examples" / "demo-scene.cfg"
     full_path = tmp_path / "full.ppm"
     tile_path = tmp_path / "tile.ppm"
@@ -72,7 +72,7 @@ def test_raytracer_rectangular_crop_matches_full_render(tmp_path, monkeypatch) -
 def test_uploaded_scene_file_runs_through_compute_path(tmp_path, monkeypatch) -> None:
     """Exercise the same file-backed path used by a site-created job."""
     root = Path(__file__).resolve().parents[1]
-    monkeypatch.setenv("SILICIUM_RAYTRACER_BIN", str(root / "bin" / "raytracer" / "raytracer.py"))
+    monkeypatch.setenv("SILICIUM_RAYTRACER_BIN", str(root / "tests" / "fixtures" / "python_raytracer.py"))
     source = root / "workloads" / "raytracer" / "examples" / "demo-scene.cfg"
     submitted_scene = tmp_path / "site-render-42" / "input" / "demo-scene.cfg"
     submitted_scene.parent.mkdir(parents=True)
