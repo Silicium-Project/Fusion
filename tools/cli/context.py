@@ -71,7 +71,10 @@ def _ensure_token_file(path: Path) -> str:
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
     token = secrets.token_urlsafe(32)
-    path.write_text(token, encoding="utf-8")
+    # Atomic write: a concurrent reader never sees an empty token file.
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(token, encoding="utf-8")
+    os.replace(tmp, path)
     return token
 
 

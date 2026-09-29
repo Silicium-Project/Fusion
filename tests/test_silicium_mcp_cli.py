@@ -20,8 +20,8 @@ def _find_free_port() -> int:
     return port
 
 
-def _wait_health(url: str, token: str) -> None:
-    deadline = time.time() + 10.0
+def _wait_health(url: str, token: str, timeout: float = 10.0) -> None:
+    deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
         req = urllib.request.Request(url + "/healthz", headers={"Authorization": f"Bearer {token}"})
@@ -130,11 +130,19 @@ def test_silicium_mcp_serve_starts_server(tmp_path: Path) -> None:
         text=True,
     )
     try:
-        deadline = time.time() + 5.0
-        while not token_file.exists() and time.time() < deadline:
+        # Under a loaded full test run the CLI can take several seconds to start.
+        deadline = time.time() + 30.0
+        token = ""
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                raise AssertionError(f"mcp serve exited early: {proc.stderr.read()}")
+            if token_file.exists():
+                token = token_file.read_text(encoding="utf-8").strip()
+                if token:
+                    break
             time.sleep(0.05)
-        token = token_file.read_text(encoding="utf-8").strip()
-        _wait_health(f"http://127.0.0.1:{port}", token)
+        assert token, "mcp serve did not write its token file"
+        _wait_health(f"http://127.0.0.1:{port}", token, timeout=30.0)
     finally:
         proc.terminate()
         try:
