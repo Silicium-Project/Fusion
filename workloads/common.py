@@ -119,43 +119,42 @@ def resolve_solana_wallet(raw: str) -> Path:
     return default_solana_wallet_path()
 
 
-def parse_ppm_bytes(ppm: bytes) -> tuple[int, int, bytes]:
-    offset = 0
+def parse_ppm_bytes(data: bytes, source: str = "<bytes>") -> tuple[int, int, bytes]:
+    """Parse a binary 8-bit PPM (P6); errors are stable `ValueError` codes."""
+    idx = 0
 
-    def read_token() -> bytes:
-        nonlocal offset
-        while offset < len(ppm) and ppm[offset] in b" \t\r\n":
-            offset += 1
-        if offset < len(ppm) and ppm[offset] == ord("#"):
-            while offset < len(ppm) and ppm[offset] not in b"\r\n":
-                offset += 1
-            return read_token()
-        start = offset
-        while offset < len(ppm) and ppm[offset] not in b" \t\r\n":
-            offset += 1
-        return ppm[start:offset]
+    def token() -> bytes:
+        nonlocal idx
+        while idx < len(data) and chr(data[idx]).isspace():
+            idx += 1
+        if idx < len(data) and data[idx] == ord("#"):
+            while idx < len(data) and data[idx] not in b"\r\n":
+                idx += 1
+            return token()
+        start = idx
+        while idx < len(data) and not chr(data[idx]).isspace():
+            idx += 1
+        return data[start:idx]
 
-    magic = read_token()
+    magic = token()
     if magic != b"P6":
-        raise ValueError("only binary P6 PPM files are supported")
-    width = int(read_token())
-    height = int(read_token())
-    max_value = int(read_token())
+        raise ValueError(f"unsupported_ppm_magic:{source}")
+    width = int(token())
+    height = int(token())
+    max_value = int(token())
     if max_value != 255:
-        raise ValueError("only 8-bit PPM files are supported")
-    if offset >= len(ppm) or ppm[offset] not in b" \t\r\n":
-        raise ValueError("PPM header is missing its raster separator")
-    # The separator belongs to the header, but the next byte already belongs
-    # to the binary raster and may itself be whitespace (for example 0x0a).
-    if ppm[offset : offset + 2] == b"\r\n":
-        offset += 2
+        raise ValueError(f"unsupported_ppm_max_value:{max_value}")
+    if idx >= len(data) or data[idx] not in b" \t\r\n":
+        raise ValueError(f"missing_ppm_raster_separator:{source}")
+    if data[idx : idx + 2] == b"\r\n":
+        idx += 2
     else:
-        offset += 1
-    rgb = ppm[offset:]
+        idx += 1
+    pixels = data[idx:]
     expected = width * height * 3
-    if len(rgb) != expected:
-        raise ValueError(f"invalid PPM payload size: expected {expected}, got {len(rgb)}")
-    return width, height, rgb
+    if len(pixels) != expected:
+        raise ValueError(f"invalid_ppm_payload_size:{source}:expected={expected}:actual={len(pixels)}")
+    return width, height, pixels
 
 
 def ppm_to_png_bytes(ppm: bytes) -> bytes:

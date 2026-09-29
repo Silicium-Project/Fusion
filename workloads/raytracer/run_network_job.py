@@ -30,7 +30,6 @@ from networked.networked_runtime import (  # noqa: E402
     RpcTaskEventListener,
     store_network_content,
     store_network_file,
-    wait_for_result as wait_for_network_result,
 )
 from workloads.common import (  # noqa: E402
     clear_previous_result,
@@ -48,8 +47,8 @@ from workloads.common import (  # noqa: E402
 )
 from workloads.raytracer.raytracer_workload import (  # noqa: E402
     build_verification_milestones,
-    parse_ppm_bytes,
     scene_resolution,
+    validate_fragment_ppm,
     write_optional_png,
 )
 from tools.receipt_verification import (  # noqa: E402
@@ -59,9 +58,6 @@ from tools.receipt_verification import (  # noqa: E402
     verify_ed25519_signature,
 )
 
-
-def run_node_until_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-    raise RuntimeError("local node sweeps are not supported by the raytracer workload; use --node-mode network")
 
 RAYTRACER_FRAGMENT_COMPUTE_WORKLOAD = "calcul/rendering/raytracer-fragment"
 RAYTRACER_FRAGMENT_VERIFY_WORKLOAD = "verification/rendering/raytracer-fragment"
@@ -252,25 +248,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--solana-program-id", default=os.environ.get("SILICIUM_SOLANA_PROGRAM_ID", "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2"))
     parser.add_argument("--devnet-tx-delay-ms", type=int, default=int(os.environ.get("SILICIUM_DEVNET_TX_DELAY_MS", "1200")))
     return parser
-
-
-def wait_for_task_result(args: argparse.Namespace, role: str, task_id: str, node_runs: list[dict[str, Any]]) -> dict[str, Any]:
-    if args.node_mode == "network" and (
-        int(args.max_compute_in_flight) <= 0 or int(args.max_verify_in_flight) <= 0
-    ):
-        export_dir = Path(args.export_dir).resolve()
-        result = wait_for_network_result(export_dir, task_id, args.result_timeout_s)
-        node_runs.append(
-            {
-                "role": role,
-                "mode": "network",
-                "target_task_id": task_id,
-                "target_result_ready": True,
-                "handled_by": result.get("node_id", ""),
-            }
-        )
-        return result
-    return run_node_until_result(args, role, task_id, node_runs)
 
 
 def task_input_ref(args: argparse.Namespace, export_dir: Path, path: Path) -> dict[str, Any]:
@@ -480,34 +457,6 @@ def run_bounded_fragment_pipeline(
             idle()
 
 
-def poll_task_result(export_dir: Path, task_id: str, deadline: float) -> dict[str, Any] | None:
-    result_path = export_dir / f"result.{task_id}.json"
-    if result_path.exists():
-        try:
-            payload = json.loads(result_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            payload = None
-        if isinstance(payload, dict):
-            return payload
-
-    dead_letters_path = export_dir / "dead_letters.ndjson"
-    if dead_letters_path.exists():
-        for line in dead_letters_path.read_text(encoding="utf-8").splitlines():
-            try:
-                item = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(item, dict) and str(item.get("task_id", "")) == task_id:
-                raise RuntimeError(
-                    "network task dead-lettered: "
-                    + str(item.get("last_error", "unknown_error"))
-                    + f" ({task_id})"
-                )
-    if time.monotonic() > deadline:
-        raise TimeoutError(f"missing network result after deadline: {result_path}")
-    return None
-
-
 def poll_task_result_attempts(
     export_dir: Path,
     task_id: str,
@@ -646,33 +595,6 @@ def ensure_raytracer_compute_contract(result: dict[str, Any], task_id: str) -> N
             "raytracer_compute_contract_invalid:"
             f"task={task_id}:node={node_id}:mode={mode or 'missing'}:executed={str(executed).lower()}"
         )
-
-
-def validate_fragment_ppm(
-    fragment_bytes: bytes,
-    *,
-    task_id: str,
-    expected_width: int,
-    expected_height: int,
-    expected_hash: str,
-) -> dict[str, Any]:
-    try:
-        actual_width, actual_height, _ = parse_ppm_bytes(fragment_bytes, task_id)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError(f"raytracer_fragment_invalid_ppm:task={task_id}:{exc}") from exc
-    if actual_width != expected_width or actual_height != expected_height:
-        raise RuntimeError(
-            "raytracer_fragment_dimensions_mismatch:"
-            f"task={task_id}:expected={expected_width}x{expected_height}:actual={actual_width}x{actual_height}"
-        )
-    actual_hash = sha256_bytes(fragment_bytes)
-    normalized_expected_hash = str(expected_hash).removeprefix("sha256:").lower()
-    if actual_hash != normalized_expected_hash:
-        raise RuntimeError(
-            "raytracer_fragment_hash_mismatch:"
-            f"task={task_id}:expected={normalized_expected_hash}:actual={actual_hash}"
-        )
-    return {"width": actual_width, "height": actual_height, "sha256": actual_hash}
 
 
 def wait_for_network_role(export_dir: Path, node_id: str, role: str, timeout_s: float = 20.0) -> None:

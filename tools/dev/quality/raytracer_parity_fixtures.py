@@ -145,6 +145,25 @@ def main() -> int:
         except ValueError as exc:
             parse_errors.append({"label": label, "data": list(data), "error": str(exc)})
 
+    validate_cases = []
+    tile = pattern_ppm(4, 3, 1)
+    tile_hash = hashlib.sha256(tile).hexdigest()
+    for label, data, width, height, expected in [
+        ("ok", tile, 4, 3, tile_hash),
+        ("ok-prefixed-hash", tile, None, None, "sha256:" + tile_hash.upper()),
+        ("dimensions", tile, 5, 3, None),
+        ("width-only", tile, 5, None, None),
+        ("height-only", tile, None, 9, None),
+        ("hash", tile, None, None, "0" * 64),
+        ("invalid", b"not a ppm", None, None, None),
+    ]:
+        case = {"label": label, "data": list(data), "width": width, "height": height, "expected_hash": expected}
+        try:
+            case["ok"] = rw.validate_fragment_ppm(data, task_id=label, expected_width=width, expected_height=height, expected_hash=expected)
+        except RuntimeError as exc:
+            case["error"] = str(exc)
+        validate_cases.append(case)
+
     payload = {
         "generator": "tools/dev/quality/raytracer_parity_fixtures.py",
         "split": split_cases,
@@ -158,6 +177,7 @@ def main() -> int:
         "verify": verify_cases,
         "reassembly": reassembly,
         "parse": parse_errors,
+        "validate": validate_cases,
     }
     OUTPUT.write_text(json.dumps(payload, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(f"Wrote {OUTPUT.relative_to(ROOT)}")  # i18n:ignore -- developer tool output

@@ -21,44 +21,27 @@ from pathlib import Path
 from typing import Any
 
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
+
+try:
+    from workloads.common import parse_ppm_bytes, performance_duration, ppm_to_png_bytes, sha256_bytes, sha256_file, write_json
+except ImportError:  # run as a script from workloads/raytracer/ (compute.py, verify.py...)
+    sys.path.insert(0, str(NETWORK_ROOT))
+    from workloads.common import parse_ppm_bytes, performance_duration, ppm_to_png_bytes, sha256_bytes, sha256_file, write_json
+
+__all__ = ["parse_ppm_bytes", "sha256_bytes", "sha256_file"]  # re-exported for callers and tests
 DEFAULT_TARGET_PIXELS_PER_FRAGMENT = 120_000
 DEFAULT_MAX_FRAGMENTS = 32
 DEFAULT_VERIFICATION_BATCH_ROWS = 20
 
 
-def sha256_bytes(data: bytes) -> str:
-    import hashlib
-
-    return hashlib.sha256(data).hexdigest()
 
 
-def sha256_file(path: Path) -> str:
-    return sha256_bytes(path.read_bytes())
 
 
-def _duration_value(value: Any) -> float:
-    """Return a finite, non-negative duration value from renderer telemetry."""
-    try:
-        duration = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    return round(duration, 3) if math.isfinite(duration) and duration >= 0 else 0.0
 
 
-def write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def ppm_to_png_bytes(ppm_bytes: bytes) -> bytes:
-    try:
-        from workloads.common import ppm_to_png_bytes as convert
-    except ImportError:
-        parent = Path(__file__).resolve().parents[1]
-        sys.path.insert(0, str(parent.parent))
-        from workloads.common import ppm_to_png_bytes as convert
-
-    return convert(ppm_bytes)
 
 
 def write_optional_png(ppm_bytes: bytes, path: Path) -> dict[str, Any]:
@@ -257,41 +240,6 @@ def split_tiles(width: int, height: int, fragment_count: int) -> list[dict[str, 
     return ordered
 
 
-def parse_ppm_bytes(data: bytes, source: str = "<bytes>") -> tuple[int, int, bytes]:
-    idx = 0
-
-    def token() -> bytes:
-        nonlocal idx
-        while idx < len(data) and chr(data[idx]).isspace():
-            idx += 1
-        if idx < len(data) and data[idx] == ord("#"):
-            while idx < len(data) and data[idx] not in b"\r\n":
-                idx += 1
-            return token()
-        start = idx
-        while idx < len(data) and not chr(data[idx]).isspace():
-            idx += 1
-        return data[start:idx]
-
-    magic = token()
-    if magic != b"P6":
-        raise ValueError(f"unsupported_ppm_magic:{source}")
-    width = int(token())
-    height = int(token())
-    max_value = int(token())
-    if max_value != 255:
-        raise ValueError(f"unsupported_ppm_max_value:{max_value}")
-    if idx >= len(data) or data[idx] not in b" \t\r\n":
-        raise ValueError(f"missing_ppm_raster_separator:{source}")
-    if data[idx : idx + 2] == b"\r\n":
-        idx += 2
-    else:
-        idx += 1
-    pixels = data[idx:]
-    expected = width * height * 3
-    if len(pixels) != expected:
-        raise ValueError(f"invalid_ppm_payload_size:{source}:expected={expected}:actual={len(pixels)}")
-    return width, height, pixels
 
 
 def read_ppm(path: Path) -> tuple[int, int, bytes]:
@@ -492,7 +440,7 @@ def run_raytracer(
             timeout=timeout_s,
             check=False,
         )
-        execution_duration_ms = _duration_value((time.perf_counter() - process_started) * 1000.0)
+        execution_duration_ms = performance_duration((time.perf_counter() - process_started) * 1000.0)
         if completed.returncode != 0:
             raise RuntimeError(
                 "raytracer_failed:"
@@ -515,7 +463,7 @@ def run_raytracer(
         if isinstance(candidate, dict) and candidate.get("renderer"):
             renderer_telemetry = candidate
             break
-    renderer_duration_ms = _duration_value(renderer_telemetry.get("duration_ms"))
+    renderer_duration_ms = performance_duration(renderer_telemetry.get("duration_ms"))
     compute_duration_ms = renderer_duration_ms or execution_duration_ms
     return {
         "binary": str(binary),
@@ -546,20 +494,28 @@ def validate_fragment_ppm(
     expected_height: int | None = None,
     expected_hash: str | None = None,
 ) -> dict[str, Any]:
-    """Validate a P6 PPM binary fragment for correctness and optional hash match.
+    """Validate a P6 PPM fragment: format, then the expected size and hash.
 
-    Raises RuntimeError on any validation failure so callers can propagate
-    the error without catching generic exceptions.
+    Raises RuntimeError with a stable code: `raytracer_fragment_invalid_ppm`,
+    `raytracer_fragment_dimensions_mismatch` (both sizes given),
+    `raytracer_fragment_width_mismatch` / `..._height_mismatch` (one size
+    given), `raytracer_fragment_hash_mismatch`.
     """
     try:
         actual_width, actual_height, _ = parse_ppm_bytes(fragment_bytes, task_id)
     except (TypeError, ValueError) as exc:
         raise RuntimeError(f"raytracer_fragment_invalid_ppm:task={task_id}:{exc}") from exc
-    if expected_width is not None and actual_width != expected_width:
+    if expected_width is not None and expected_height is not None:
+        if (actual_width, actual_height) != (expected_width, expected_height):
+            raise RuntimeError(
+                "raytracer_fragment_dimensions_mismatch:"
+                f"task={task_id}:expected={expected_width}x{expected_height}:actual={actual_width}x{actual_height}"
+            )
+    elif expected_width is not None and actual_width != expected_width:
         raise RuntimeError(
             f"raytracer_fragment_width_mismatch:task={task_id}:expected={expected_width}:actual={actual_width}"
         )
-    if expected_height is not None and actual_height != expected_height:
+    elif expected_height is not None and actual_height != expected_height:
         raise RuntimeError(
             f"raytracer_fragment_height_mismatch:task={task_id}:expected={expected_height}:actual={actual_height}"
         )

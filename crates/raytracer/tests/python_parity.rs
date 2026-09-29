@@ -216,3 +216,30 @@ fn png_round_trips_the_pixels() {
     let rows: Vec<u8> = raw.chunks(16).flat_map(|row| row[1..].to_vec()).collect();
     assert_eq!(rows, decoded.pixels);
 }
+
+#[test]
+fn fragment_validation_matches_python() {
+    let data = fixtures();
+    for case in data["validate"].as_array().unwrap() {
+        let bytes: Vec<u8> = serde_json::from_value(case["data"].clone()).unwrap();
+        let label = case["label"].as_str().unwrap();
+        let got = ppm::validate_fragment(
+            &bytes,
+            label,
+            case["width"].as_u64().map(|value| value as usize),
+            case["height"].as_u64().map(|value| value as usize),
+            case["expected_hash"].as_str(),
+        );
+        match (got, case.get("error")) {
+            (Err(error), Some(expected)) => {
+                assert_eq!(error, expected.as_str().unwrap(), "{label}")
+            }
+            (Ok((width, height, sha256)), None) => {
+                assert_eq!(width, as_usize(&case["ok"]["width"]));
+                assert_eq!(height, as_usize(&case["ok"]["height"]));
+                assert_eq!(sha256, case["ok"]["sha256"].as_str().unwrap());
+            }
+            (got, expected) => panic!("{label}: got {got:?}, expected {expected:?}"),
+        }
+    }
+}

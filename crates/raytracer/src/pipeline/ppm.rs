@@ -115,13 +115,19 @@ pub fn validate_fragment(
 ) -> Result<(usize, usize, String), String> {
     let image = parse(data, task_id)
         .map_err(|error| format!("raytracer_fragment_invalid_ppm:task={task_id}:{error}"))?;
-    if let Some(width) = expected_width.filter(|width| *width != image.width) {
+    if let (Some(width), Some(height)) = (expected_width, expected_height) {
+        if (width, height) != (image.width, image.height) {
+            return Err(format!(
+                "raytracer_fragment_dimensions_mismatch:task={task_id}:expected={width}x{height}:actual={}x{}",
+                image.width, image.height
+            ));
+        }
+    } else if let Some(width) = expected_width.filter(|width| *width != image.width) {
         return Err(format!(
             "raytracer_fragment_width_mismatch:task={task_id}:expected={width}:actual={}",
             image.width
         ));
-    }
-    if let Some(height) = expected_height.filter(|height| *height != image.height) {
+    } else if let Some(height) = expected_height.filter(|height| *height != image.height) {
         return Err(format!(
             "raytracer_fragment_height_mismatch:task={task_id}:expected={height}:actual={}",
             image.height
@@ -129,7 +135,10 @@ pub fn validate_fragment(
     }
     let actual = super::sha256_hex(data);
     if let Some(expected) = expected_hash {
-        let normalized = expected.trim_start_matches("sha256:").to_lowercase();
+        let normalized = expected
+            .strip_prefix("sha256:")
+            .unwrap_or(expected)
+            .to_lowercase();
         if actual != normalized {
             return Err(format!(
                 "raytracer_fragment_hash_mismatch:task={task_id}:expected={normalized}:actual={actual}"

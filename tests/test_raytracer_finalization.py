@@ -374,7 +374,7 @@ def test_fragment_validation_checks_format_dimensions_and_hash() -> None:
         expected_hash=sha256_bytes(ppm),
     )
 
-    assert metadata == {"width": 2, "height": 1, "sha256": sha256_bytes(ppm)}
+    assert metadata == {"width": 2, "height": 1, "sha256": sha256_bytes(ppm), "valid_p6": True}
     with pytest.raises(RuntimeError, match="raytracer_fragment_invalid_ppm"):
         validate_fragment_ppm(
             b'{"role_result":"compute"}',
