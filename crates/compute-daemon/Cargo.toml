@@ -5,8 +5,11 @@ edition = "2024"
 
 [dependencies]
 axum.workspace = true
-hex = "0.4.3"
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "0.11.0"
+silicium-raytracer = { path = "../raytracer" }
+silicium_node_core.workspace = true
 tokio.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

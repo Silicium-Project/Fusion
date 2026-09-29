@@ -6,6 +6,7 @@
 //! - [`dispatch`], [`beta`], [`affinity`]: node selection and reputation priors.
 //! - [`hardware`]: coarse hardware profile of the local machine.
 //! - [`runtime`]: execution of a task as WASM (feature `runtime-wasm`) or OCI.
+//! - [`sandbox`]: confinement of file paths received from peers or APIs.
 //!
 //! See `crates/node-core/README.md` for known limitations.
 
@@ -16,4 +17,5 @@ pub mod dispatch;
 pub mod hardware;
 pub mod p2p;
 pub mod runtime;
+pub mod sandbox;
 pub mod taskbook;

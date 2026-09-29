@@ -1,7 +1,8 @@
 //! Node configuration: command-line flags, environment variables and the
 //! local hardware bucket. CLI flags win over environment variables.
 
-use libp2p::Multiaddr;
+use crate::admission::SecurityConfig;
+use libp2p::{Multiaddr, PeerId};
 use silicium_node_core::hardware::{
     GpuAcceleration, HardwareBucket, HardwareProfile, OperatingSystem, SimdWidth, VramClass,
 };
@@ -14,6 +15,7 @@ pub(crate) struct NodeConfig {
     pub(crate) api_port: u16,
     pub(crate) enable_quic_listener: bool,
     pub(crate) dispatcher_seed: u64,
+    pub(crate) security: SecurityConfig,
 }
 
 #[derive(Debug, Default)]
@@ -23,6 +25,23 @@ pub(crate) struct NodeCliOverrides {
     pub(crate) api_port: Option<u16>,
     pub(crate) enable_quic_listener: Option<bool>,
     pub(crate) dispatcher_seed: Option<u64>,
+    pub(crate) trusted_publishers: Vec<PeerId>,
+}
+
+/// Comma-separated peer ids; invalid entries are reported and skipped.
+pub(crate) fn parse_peer_ids(value: &str) -> Vec<PeerId> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .filter_map(|item| match item.parse::<PeerId>() {
+            Ok(peer) => Some(peer),
+            Err(_) => {
+                eprintln!(" Ignoring invalid trusted publisher peer id: {item}"); // i18n:ignore -- operator log
+                None
+            }
+        })
+        .collect()
 }
 
 pub(crate) fn parse_bootstrap_peer(value: &str) -> Vec<Multiaddr> {
@@ -55,6 +74,18 @@ where
                         .extend(parse_bootstrap_peer(&value));
                 }
             }
+            "--trusted-publisher" | "--trusted-publishers" => {
+                if let Some(value) = args.next() {
+                    overrides.trusted_publishers.extend(parse_peer_ids(&value));
+                }
+            }
+            _ if arg.starts_with("--trusted-publisher=")
+                || arg.starts_with("--trusted-publishers=") =>
+            {
+                if let Some((_, value)) = arg.split_once('=') {
+                    overrides.trusted_publishers.extend(parse_peer_ids(value));
+                }
+            }
             "--api-port" => {
                 if let Some(value) = args.next() {
                     overrides.api_port = value.parse::<u16>().ok();
@@ -78,7 +109,7 @@ where
             }
             "--help" | "-h" => {
                 println!(
-                    "Usage: p2p_node [--bootstrap-peer <multiaddr>] [--api-port <port>] [--data-dir <path>] [--dispatcher-seed <seed>] [--enable-quic|--disable-quic]"
+                    "Usage: p2p_node [--bootstrap-peer <multiaddr>] [--api-port <port>] [--data-dir <path>] [--dispatcher-seed <seed>] [--enable-quic|--disable-quic] [--trusted-publisher <peer-id>]"
                 );
                 std::process::exit(0);
             }
@@ -179,6 +210,7 @@ impl NodeConfig {
             dispatcher_seed: overrides
                 .dispatcher_seed
                 .unwrap_or_else(read_dispatcher_seed_from_env),
+            security: SecurityConfig::from_env(overrides.trusted_publishers),
         }
     }
 }

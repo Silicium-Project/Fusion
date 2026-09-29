@@ -20,6 +20,25 @@ pub(crate) struct NodeContext {
     pub(crate) dispatcher_seed: u64,
     pub(crate) taskbook: TaskBookState,
     pub(crate) tx_events: mpsc::Sender<TaskEvent>,
+    /// Upper bound of one compute call, in seconds.
+    pub(crate) compute_timeout_s: u64,
+}
+
+/// HTTP client for the local daemons: every call is bounded in time, and the
+/// compute daemon token (`SILICIUM_COMPUTE_TOKEN`) is sent when configured.
+fn daemon_client(timeout_s: u64) -> Result<reqwest::Client, reqwest::Error> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Ok(token) = env::var("SILICIUM_COMPUTE_TOKEN")
+        && let Ok(value) =
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token.trim()))
+    {
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+    }
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(timeout_s.saturating_add(30)))
+        .default_headers(headers)
+        .build()
 }
 
 pub(crate) fn compute_score_context(context: &NodeContext, task: &NetworkTask) -> BetaPosterior {
@@ -65,7 +84,13 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
     )
     .await;
 
-    let client = reqwest::Client::new();
+    let client = match daemon_client(context.compute_timeout_s) {
+        Ok(client) => client,
+        Err(error) => {
+            println!(" Cannot build the daemon HTTP client: {error}");
+            return;
+        }
+    };
     let compute_url =
         env::var("COMPUTE_DAEMON_URL").unwrap_or_else(|_| "http://127.0.0.1:9090".to_string());
     let reputation_url =
@@ -119,6 +144,8 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
         );
     }
 
+    // Both paths are relative to the compute daemon's work directory
+    // (the task was sanitized on admission).
     let compute_payload = serde_json::json!({
         "scene_path": task.scene_path,
         "output_path": task.output_path,
@@ -167,19 +194,19 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
     )
     .await;
 
+    // Check the tile against the milestone commitment returned by the
+    // compute daemon (still a self-check: cross-verification by another peer
+    // is not implemented in the Rust node yet).
+    let Some(manifest) = compute_data.get("milestones").cloned() else {
+        println!(
+            " Compute response has no milestone commitment: {:?}",
+            compute_data
+        );
+        return;
+    };
     let verify_payload = serde_json::json!({
         "ppm_path": task.output_path,
-        "manifest": {
-            "milestone_count": 1,
-            "milestones": [
-                {
-                    "index": 0,
-                    "y_start": 0,
-                    "y_end": 2,
-                    "pixel_sha256": hash
-                }
-            ]
-        },
+        "manifest": manifest,
         "seed": task.seed,
         "reputation": 50.0
     });

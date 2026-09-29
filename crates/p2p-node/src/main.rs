@@ -13,6 +13,7 @@
 //! (local HTTP API), [`processing`] (task execution pipeline), [`task`]
 //! (network payloads).
 
+mod admission;
 mod api;
 mod config;
 mod processing;
@@ -51,6 +52,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let enable_quic_listener = config.enable_quic_listener;
     let dispatcher_seed = config.dispatcher_seed;
     let data_dir = config.data_dir.clone();
+    let security = std::sync::Arc::new(config.security.clone());
+    security.check_api_exposure()?;
+    if security.trusted_publishers.is_empty() && !security.accept_untrusted_tasks {
+        println!(" No trusted publisher configured: tasks from other peers will be ignored"); // i18n:ignore -- operator log
+    }
     let local_key = load_or_generate_identity(&data_dir)?;
     let local_peer_id = PeerId::from(local_key.public());
     let taskbook = load_taskbook_state(&data_dir, &local_key)?;
@@ -66,6 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dispatcher_seed,
         taskbook: taskbook.clone(),
         tx_events,
+        compute_timeout_s: security.compute_timeout_s,
     };
 
     let mut swarm = build_swarm(local_key.clone(), local_peer_id)?;
@@ -88,10 +95,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_state = ApiState {
         tx_publish,
         taskbook: taskbook.clone(),
+        security: security.clone(),
     };
     let app = api::router(api_state);
 
-    let api_addr = format!("127.0.0.1:{}", api_port);
+    let api_addr = std::net::SocketAddr::new(security.api_bind, api_port);
     let api_listener = TcpListener::bind(&api_addr).await?;
     println!(" API for P2P injection listening on {}", api_port); // i18n:ignore -- operator log with the bound port
     tokio::spawn(async move {
@@ -168,19 +176,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                             GossipMessage::Task(task_envelope) => {
-                                let task: NetworkTask = task_envelope.into();
+                                match security.admit_remote(message.source, local_peer_id, task_envelope) {
+                                    Ok(task) => {
+                                        let context_clone = context.clone();
+                                        tokio::spawn(async move {
+                                            process_task(context_clone, task).await;
+                                        });
+                                    }
+                                    Err(reason) => println!(" Ignored task from {peer_id}: {reason}"),
+                                }
+                            }
+                        }
+                    } else if let Ok(task_envelope) = serde_json::from_slice::<TaskEnvelope>(&message.data) {
+                        match security.admit_remote(message.source, local_peer_id, task_envelope) {
+                            Ok(task) => {
                                 let context_clone = context.clone();
                                 tokio::spawn(async move {
                                     process_task(context_clone, task).await;
                                 });
                             }
+                            Err(reason) => println!(" Ignored task from {peer_id}: {reason}"),
                         }
-                    } else if let Ok(task_envelope) = serde_json::from_slice::<TaskEnvelope>(&message.data) {
-                        let task: NetworkTask = task_envelope.into();
-                        let context_clone = context.clone();
-                        tokio::spawn(async move {
-                            process_task(context_clone, task).await;
-                        });
                     } else {
                         println!(" Could not parse task book or NetworkTask message");
                     }
