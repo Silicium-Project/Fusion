@@ -178,7 +178,7 @@ jobs:
           rm -rf -- release-assets
           install -d -m 0755 release-assets
           gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" \
-            --pattern '*.AppImage' --pattern '*.deb' --pattern '*.rpm' \
+            --pattern '*.AppImage' --pattern '*.deb' --pattern '*.rpm' --pattern '*.exe' \
             --pattern 'release-channel.json' --dir release-assets --clobber
           python3 - "release-assets/release-channel.json" "$version" <<'PY'
           import json
@@ -210,6 +210,13 @@ jobs:
           if [[ "${rpms[0]}" != "release-assets/silicium-node-linux-dev.rpm" ]]; then
             mv -- "${rpms[0]}" release-assets/silicium-node-linux-dev.rpm
           fi
+          # Releases built before the Windows dev lane have no installer: deploy them anyway.
+          exes=(release-assets/*.exe)
+          (( ${#exes[@]} <= 1 )) || { echo "Expected at most one dev Windows installer." >&2; exit 1; }
+          if (( ${#exes[@]} == 1 )) && [[ "${exes[0]}" != "release-assets/silicium-node-windows-dev.exe" ]]; then
+            mv -- "${exes[0]}" release-assets/silicium-node-windows-dev.exe
+          fi
+          (( ${#exes[@]} == 1 )) || echo "::warning::This dev release has no Windows installer."
           release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' release-assets/release-channel.json)"
           release_build="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["commit"])' release-assets/release-channel.json)"
           release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -242,6 +249,11 @@ jobs:
             release-assets/silicium-node-linux-dev.deb \
             release-assets/silicium-node-linux-dev.rpm \
             "$vps_user@$VPS_HOST:$RELEASE_STAGING/"
+          if [[ -f release-assets/silicium-node-windows-dev.exe ]]; then
+            scp "${ssh_opts[@]}" -P "$vps_port" \
+              release-assets/silicium-node-windows-dev.exe \
+              "$vps_user@$VPS_HOST:$RELEASE_STAGING/"
+          fi
 
       - name: Pull and deploy the dev channel
         shell: bash
@@ -309,6 +321,9 @@ jobs:
             sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.deb" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.deb
             sudo install -m 0755 "$RELEASE_STAGING/silicium-node-linux-dev.AppImage" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.AppImage
             sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.rpm" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.rpm
+            if [[ -f "$RELEASE_STAGING/silicium-node-windows-dev.exe" ]]; then
+              sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium-dev/downloads/silicium-node-windows-dev.exe
+            fi
           fi
           sudo install -d -m 0755 /var/lib/silicium-dev/releases
           cat <<EOF | sudo tee /var/lib/silicium-dev/releases/current.env >/dev/null
