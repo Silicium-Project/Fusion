@@ -28,8 +28,8 @@ func version(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"service":        "backend",
-		"version":        metadata.Version,
+		"service":         "backend",
+		"version":         metadata.Version,
 		"release_channel": metadata.Channel,
 		"release_build":   metadata.Build,
 	})

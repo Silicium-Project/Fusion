@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/glebarez/sqlite"
 	"github.com/silicium/internal/models" // Import the models package
 	"github.com/silicium/internal/utils"
 	"gorm.io/driver/postgres"
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 

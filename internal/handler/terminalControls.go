@@ -73,12 +73,12 @@ func terminalTaskControl(job models.Job, status, reason string, now time.Time, c
 		reason = "job entered terminal state: " + status
 	}
 	control := silicium.TaskControl{
-		ControlID:  fmt.Sprintf("%s-%s-terminal", job.SiliciumJobID, action),
-		RootJobID:  job.SiliciumJobID,
-		Action:     action,
-		Reason:     reason,
-		IssuerNode: cfg.OrchestratorNodeID,
-		IssuedUTC:  now.UTC().Format(time.RFC3339Nano),
+		ControlID:      fmt.Sprintf("%s-%s-terminal", job.SiliciumJobID, action),
+		RootJobID:      job.SiliciumJobID,
+		Action:         action,
+		Reason:         reason,
+		IssuerNode:     cfg.OrchestratorNodeID,
+		IssuedUTC:      now.UTC().Format(time.RFC3339Nano),
 		ReleaseChannel: cfg.ReleaseChannel,
 	}
 	if action == "expire" && job.DeadlineAt != nil {
