@@ -161,7 +161,7 @@ function Find-RaytracerBinary {
     }
     $candidates += @(
         (Join-Path $Root "Network\bin\raytracer\silicium-raytracer.exe"),
-        (Join-Path $Root "Network\crates\raytracer\target\release\silicium-raytracer.exe"),
+        (Join-Path $Root "Network\target\release\silicium-raytracer.exe"),
         (Join-Path $Root "Network\bin\raytracer\raytracer.exe"),
         (Join-Path $Root "Network\bin\raytracer\raytracer"),
         (Join-Path $Root "raytracer.exe"),
