@@ -160,7 +160,7 @@ jobs:
 
             if matches '^(BackEnd|FrontEnd|Network)(/|$)|^deploy/(compose|linux)/|^deploy/ci/validate-web-stack\.sh$|^\.gitmodules$'; then web=true; fi
             if matches '^(BackEnd|Network)(/|$)|^deploy/(compose|linux)/'; then network=true; fi
-            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/(build-linux-client|verify-linux-bundles)\.sh$|^deploy/release/|^\.gitmodules$'; then node_build=true; fi
+            if matches '^Network(/|$)|^apps/silicium-node/|^deploy/ci/(build-linux-client|verify-linux-bundles)\.sh$|^deploy/release/|^deploy/linux/(post-deploy-check|publish-package-repositories)\.sh$|^\.github/workflows/(build|deploy-vps)\.yml$|^\.gitmodules$'; then node_build=true; fi
             if matches '^BackEnd$|^FrontEnd$|^Network$|^\.gitmodules$'; then submodules=true; fi
             if matches '^(BackEnd|FrontEnd|Network|apps/silicium-node|deploy/|\.gitmodules$|\.github/workflows/)'; then validate=true; fi
             if [[ "$web" == true || "$network" == true || "$node_build" == true ]]; then deployable=true; fi
@@ -224,22 +224,19 @@ jobs:
             -i "$ssh_dir/id_ed25519" -p "$vps_port" \
             "$vps_user@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
           set -euo pipefail
-          for checkout in /home/*/_work/Fusion /opt/github-runner*/_work/Fusion; do
-            if [[ -d "$checkout" ]]; then
-              git -C "$checkout" reset --hard --quiet || true
-              git -C "$checkout" clean -ffd || true
-              git -C "$checkout" submodule foreach --recursive 'git reset --hard --quiet && git clean -ffd' || true
-              find "$checkout" -type d -path '*/target/debug' -prune -exec rm -rf -- {} +
-            fi
-          done
+          # Do not mutate checkout directories here: self-hosted runners can
+          # execute the dev and prod workflows concurrently, and a checkout
+          # may belong to another live job. Each job owns and cleans its own
+          # workspace.
           for temp_root in /home/*/_work/_temp /opt/github-runner*/_work/_temp; do
             [[ -d "$temp_root" ]] || continue
             find "$temp_root" -mindepth 1 -maxdepth 1 -type d \
               \( -name 'silicium-e2e-*' -o -name 'silicium-raytracer-cache' \) \
+              -mmin +180 \
               -exec rm -rf -- {} +
           done
           for release_staging in /tmp/silicium-release-*; do
-            if [[ -d "$release_staging" ]]; then
+            if [[ -d "$release_staging" ]] && [[ -n "$(find "$release_staging" -maxdepth 0 -mmin +180 -print -quit)" ]]; then
               rm -rf -- "$release_staging"
             fi
           done
@@ -412,8 +409,7 @@ jobs:
           shared-key: fusion-desktop
           workspaces: |
             apps/silicium-node/src-tauri
-            Network/networked/p2p_node
-            Network/networked/compute_daemon
+            Network
 
       - name: Cache Tauri Windows bundler tools
         uses: actions/cache@v4
@@ -573,6 +569,10 @@ jobs:
           Assert-ValidAuthenticodeSignature $prodInstaller.FullName "Production installer"
           Copy-Item $prodInstaller.FullName (Join-Path $artifacts "silicium-node-windows.exe") -Force
 
+          $packagedInstallers = @(Get-ChildItem -LiteralPath $artifacts -Filter "*.exe" -File)
+          if ($packagedInstallers.Count -ne 2) {
+            throw "Expected exactly two Windows installers in $artifacts, found $($packagedInstallers.Count)"
+          }
           Get-FileHash (Join-Path $artifacts "*.exe") -Algorithm SHA256
 
       - name: Remove temporary Windows certificate
@@ -586,14 +586,17 @@ jobs:
 
       - name: Upload Windows installers
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: silicium-node-windows-installers
-          path: apps/silicium-node/ci-artifacts/*.exe
+          path: |
+            apps/silicium-node/ci-artifacts/silicium-node-windows-dev.exe
+            apps/silicium-node/ci-artifacts/silicium-node-windows.exe
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
       - name: Stage desktop installers on VPS
-        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full') }}
         working-directory: apps/silicium-node
         shell: powershell
         env:
@@ -716,8 +719,7 @@ jobs:
           shared-key: fusion-linux
           workspaces: |
             apps/silicium-node/src-tauri
-            Network/networked/p2p_node
-            Network/networked/compute_daemon
+            Network
 
       - name: Cache Tauri Linux bundler tools
         uses: actions/cache@v4
@@ -742,18 +744,28 @@ jobs:
           cp src-tauri/target/release/bundle/deb/*.deb ci-artifacts/silicium-node-linux.deb
           cp src-tauri/target/release/bundle/appimage/*.AppImage ci-artifacts/silicium-node-linux.AppImage
           cp src-tauri/target/release/bundle/rpm/*.rpm ci-artifacts/silicium-node-linux.rpm
+          for artifact in \
+            ci-artifacts/silicium-node-linux.deb \
+            ci-artifacts/silicium-node-linux.AppImage \
+            ci-artifacts/silicium-node-linux.rpm; do
+            test -s "$artifact" || { echo "Missing Linux installer: $artifact" >&2; exit 1; }
+          done
           sha256sum ci-artifacts/*
 
       - name: Upload Linux installers
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: silicium-node-linux-installers
-          path: apps/silicium-node/ci-artifacts/*
+          path: |
+            apps/silicium-node/ci-artifacts/silicium-node-linux.deb
+            apps/silicium-node/ci-artifacts/silicium-node-linux.AppImage
+            apps/silicium-node/ci-artifacts/silicium-node-linux.rpm
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
 
       - name: Stage Linux bundle on VPS
-        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full' }}
+        if: ${{ always() && (github.event_name != 'workflow_dispatch' || github.event.inputs.lane == 'full') }}
         working-directory: apps/silicium-node
         shell: bash
         env:
@@ -811,12 +823,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download release installers
-        uses: actions/download-artifact@v4
-        with:
-          pattern: silicium-node-*-installers
-          path: release-assets
-          merge-multiple: true
+      - name: Retrieve release installers from VPS staging
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+          [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST" >&2; exit 1; }
+          [[ -n "${VPS_SSH_KEY:-}" ]] || { echo "Missing VPS_SSH_KEY" >&2; exit 1; }
+          [[ -n "${VPS_KNOWN_HOSTS:-}" ]] || { echo "Missing VPS_KNOWN_HOSTS" >&2; exit 1; }
+          install -d -m 700 "$HOME/.ssh" release-assets
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
+          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
+          remote_files=(
+            silicium-node-windows-dev.exe
+            silicium-node-windows.exe
+            silicium-node-linux.deb
+            silicium-node-linux.AppImage
+            silicium-node-linux.rpm
+          )
+          for remote_file in "${remote_files[@]}"; do
+            ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+              "test -s '$release_staging/$remote_file'"
+            scp "${ssh_opts[@]}" -P "$vps_port" \
+              "$vps_user@$VPS_HOST:$release_staging/$remote_file" release-assets/
+          done
+          find release-assets -maxdepth 1 -type f -printf '%f\n' | sort
 
       - name: Prepare release metadata
         id: meta

@@ -100,7 +100,7 @@ curl -fsS "http://127.0.0.1:${BACKEND_HTTP_PORT}/health" >/dev/null
 curl -fsS "http://127.0.0.1:${FRONTEND_HTTP_PORT}" >/dev/null
 
 log "Probing orchestrator gossip"
-python3 "$ROOT/Network/tools/e2e_vps_probe.py" \
+python3 "$ROOT/Network/tools/dev/e2e/e2e_vps_probe.py" \
   --control-url "http://127.0.0.1:${ORCHESTRATOR_PORT}/gossip/publish" \
   --output "/tmp/silicium-vps-${RELEASE_CHANNEL}-backend-probe.json" \
   --probe-id "vps-e2e-backend" \
@@ -108,7 +108,7 @@ python3 "$ROOT/Network/tools/e2e_vps_probe.py" \
   --delay-s 2
 
 log "Submitting tasks through web and RPC"
-python3 "$ROOT/Network/tools/e2e_scenario.py" \
+python3 "$ROOT/Network/tools/dev/e2e/e2e_scenario.py" \
   --web-url "http://127.0.0.1:${EXPERIMENT_API_PORT}/tools" \
   --rpc-url "tcp://127.0.0.1:${EXPERIMENT_RPC_PORT}" \
   --auth-token "$SILICIUM_MCP_TOKEN" \

@@ -7,7 +7,7 @@ REPO_ROOT="$(cd "$APP_ROOT/../.." && pwd)"
 NETWORK_ROOT="$REPO_ROOT/Network"
 RUNTIME_ROOT="$APP_ROOT/src-tauri/resources/runtime"
 RUNTIME_NETWORK="$RUNTIME_ROOT/Network"
-NATIVE_RAYTRACER_MANIFEST="$NETWORK_ROOT/workloads/raytracer/native/Cargo.toml"
+NATIVE_RAYTRACER_MANIFEST="$NETWORK_ROOT/crates/raytracer/Cargo.toml"
 NATIVE_RAYTRACER_TARGET="$APP_ROOT/src-tauri/target/raytracer-native"
 
 [[ -f "$NETWORK_ROOT/silicium" ]] || { echo "Network runtime not found: $NETWORK_ROOT" >&2; exit 1; }
@@ -26,15 +26,13 @@ for optional in workloads bin; do
     cp -a "$NETWORK_ROOT/$optional" "$RUNTIME_NETWORK/$optional"
   fi
 done
-rm -rf -- "$RUNTIME_NETWORK/workloads/raytracer/native/target"
+# Developer tooling (tests, demos, CI helpers) never ships to users.
+rm -rf -- "$RUNTIME_NETWORK/tools/dev"
 install -d "$RUNTIME_NETWORK/bin/raytracer"
 install -m 0755 "$NATIVE_RAYTRACER_TARGET/release/silicium-raytracer" "$RUNTIME_NETWORK/bin/raytracer/silicium-raytracer"
+networked_source=""
 if [[ -d "$NETWORK_ROOT/networked" ]]; then
   networked_source="$NETWORK_ROOT/networked"
-elif [[ -d "$NETWORK_ROOT/demo/networked" ]]; then
-  networked_source="$NETWORK_ROOT/demo/networked"
-else
-  networked_source=""
 fi
 if [[ -n "$networked_source" ]]; then
   install -d "$RUNTIME_NETWORK/networked"

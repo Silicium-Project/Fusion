@@ -1,6 +1,6 @@
 # Containerized production stack
 
-This stack runs PostgreSQL, the Go backend, the Nuxt frontend, the dashboard,
+This stack runs PostgreSQL, the Go backend, the Nuxt frontend,
 the reputation bridge, TURN, and the reverse proxy in containers. The network
 orchestrator and authenticated experiment/MCP API remain host-side systemd
 services.

@@ -160,6 +160,8 @@ function Find-RaytracerBinary {
         $candidates += $env:SILICIUM_RAYTRACER_BIN
     }
     $candidates += @(
+        (Join-Path $Root "Network\bin\raytracer\silicium-raytracer.exe"),
+        (Join-Path $Root "Network\crates\raytracer\target\release\silicium-raytracer.exe"),
         (Join-Path $Root "Network\bin\raytracer\raytracer.exe"),
         (Join-Path $Root "Network\bin\raytracer\raytracer"),
         (Join-Path $Root "raytracer.exe"),
@@ -319,7 +321,6 @@ Show-Version "solana" @("--version")
 
 Write-Step "Installing JavaScript dependencies"
 Install-P2PDependencies
-Invoke-NpmInstall (Join-Path $Root "Network\silicium-layer-dashboard") "Network Devnet dashboard"
 Invoke-NpmInstall (Join-Path $Root "Network\solana-layer") "Solana layer scripts"
 Invoke-NpmInstall (Join-Path $Root "FrontEnd") "FrontEnd"
 Invoke-NpmInstall (Join-Path $Root "apps\silicium-node") "Silicium Node desktop app"
@@ -333,7 +334,7 @@ if ($detectedRaytracerBin) {
     Write-RaytracerEnv $installedRaytracerBin (Join-Path (Split-Path -Parent $installedRaytracerBin) "assets")
 } else {
     Write-Warning "Raytracer executable not found. Raytracer jobs need a packaged binary."
-    Write-Warning "Expected default path: Network\bin\raytracer\raytracer.exe"
+    Write-Warning "Build it with: cargo build --release --manifest-path Network\crates\raytracer\Cargo.toml"
     Write-Warning "Or run once: .\install-silicium-windows.cmd -RaytracerBin C:\path\to\raytracer.exe"
 }
 
@@ -344,7 +345,7 @@ if (Test-Command "py") {
         py -m py_compile `
             Network\tools\network_node.py `
             Network\tools\mcp_server.py `
-            Network\demo\networked\networked_runtime.py `
+            Network\networked\networked_runtime.py `
             Network\workloads\common.py `
             Network\workloads\raytracer\run_network_job.py `
             Network\workloads\raytracer\raytracer_workload.py

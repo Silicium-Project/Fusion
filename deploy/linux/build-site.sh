@@ -21,10 +21,6 @@ npm run build
 cd "$ROOT/BackEnd"
 go build -o "$ROOT/bin/silicium-backend" ./cmd
 
-cd "$ROOT/Network/silicium-layer-dashboard"
-install_js_dependencies
-npm run build
-
 cd "$ROOT/Network/solana-layer"
 install_js_dependencies
 

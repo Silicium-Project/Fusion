@@ -88,14 +88,11 @@ Recommended first public setup:
 1. One Linux VPS hosts:
    - Nuxt frontend on `127.0.0.1:3000`
    - Go backend on `127.0.0.1:8080`
-   - Devnet dashboard on `127.0.0.1:5174` for local/admin inspection only
    - Silicium orchestrator on host port `46100`, behind the HTTPS `/orchestrator/` route
 2. Remote worker/verifier machines connect to the HTTPS orchestrator rendezvous URL.
 3. Nginx exposes:
    - `https://silicium.example.com`
    - `https://api.silicium.example.com`
-4. The Devnet dashboard is not exposed publicly by default. Keep it local or put
-   it behind authentication before exposing it.
 
 ## VPS install
 
@@ -151,7 +148,7 @@ sudo bash deploy/linux/build-site.sh /opt/silicium
 sudo bash deploy/linux/install-services.sh /opt/silicium
 ```
 
-The public web/API/dashboard processes are owned only by Docker Compose:
+The public web/API processes are owned only by Docker Compose:
 
 ```bash
 sudo systemctl enable --now silicium-orchestrator silicium-experiment-api silicium-update-manifest.timer
@@ -160,7 +157,7 @@ sudo bash deploy/compose/deploy.sh /opt/silicium
 
 Do not reinstall or enable the removed `silicium-backend`,
 `silicium-frontend`, or `silicium-dashboard` systemd units. They are legacy
-duplicates and would compete with Compose for ports 8080, 3000, and 5174.
+duplicates and would compete with Compose for ports 8080 and 3000.
 
 Install Nginx config after replacing domains:
 

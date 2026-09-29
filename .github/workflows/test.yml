@@ -281,7 +281,7 @@ jobs:
       - name: Cache Network Rust target
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: Network/workloads/raytracer/native
+          workspaces: Network
 
       - name: Isolate raytracer runtime cache
         shell: bash

@@ -26,7 +26,6 @@ EXPERIMENT_EVENTS_PORT="$(channel_field experiment_events_port)"
 BACKEND_HTTP_PORT="$(channel_field backend_http_port)"
 BACKEND_P2P_PORT="$(channel_field backend_p2p_port)"
 FRONTEND_HTTP_PORT="$(channel_field frontend_http_port)"
-DASHBOARD_HTTP_PORT="$(channel_field dashboard_http_port)"
 REPUTATION_HTTP_PORT="$(channel_field reputation_http_port)"
 TURN_PORT="$(channel_field turn_port)"
 TURN_TLS_PORT="$(channel_field turn_tls_port)"
@@ -113,7 +112,6 @@ set_env_value "$compose_env" SILICIUM_CONFIG_DIR "$CONFIG_DIR"
 set_env_value "$compose_env" SILICIUM_BACKEND_HTTP_PORT "$BACKEND_HTTP_PORT"
 set_env_value "$compose_env" SILICIUM_BACKEND_P2P_PORT "$BACKEND_P2P_PORT"
 set_env_value "$compose_env" SILICIUM_FRONTEND_HTTP_PORT "$FRONTEND_HTTP_PORT"
-set_env_value "$compose_env" SILICIUM_DASHBOARD_HTTP_PORT "$DASHBOARD_HTTP_PORT"
 set_env_value "$compose_env" SILICIUM_REPUTATION_HTTP_PORT "$REPUTATION_HTTP_PORT"
 set_env_value "$compose_env" SILICIUM_ORCHESTRATOR_PORT "$ORCHESTRATOR_PORT"
 set_env_value "$compose_env" SILICIUM_EXPERIMENT_EVENTS_PORT "$EXPERIMENT_EVENTS_PORT"
@@ -164,7 +162,6 @@ set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_CHANNEL dev
 set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_VERSION "$release_version"
 set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_BUILD "$release_build"
 set_env_value "$frontend_env" NUXT_PUBLIC_API_BASE /api
-set_env_value "$frontend_env" NUXT_PUBLIC_DEVNET_DASHBOARD_URL /network/
 set_env_value "$frontend_env" NUXT_PUBLIC_UPDATE_MANIFEST_URL /downloads/update-manifest.json
 set_env_value "$frontend_env" NUXT_PUBLIC_ORCHESTRATOR_URL "$PUBLIC_BASE_URL/orchestrator"
 set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_WINDOWS_URL "$PUBLIC_BASE_URL/downloads/silicium-node-windows.exe"

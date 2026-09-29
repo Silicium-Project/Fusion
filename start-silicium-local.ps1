@@ -3,7 +3,6 @@ param(
     [switch]$NoBrowser,
     [switch]$DryRun,
     [switch]$SkipNetworkNodes,
-    [switch]$SkipDashboard,
     [switch]$SkipDatabase,
     [switch]$SkipBackend,
     [switch]$SkipFrontend,
@@ -12,7 +11,6 @@ param(
     [int]$WorkerPort = 46101,
     [int]$VerifierPort = 46102,
     [int]$DatabasePort = 15432,
-    [int]$DashboardPort = 5174,
     [int]$BackendPort = 8080,
     [int]$FrontendPort = 3000,
     [string]$MeshKey = "demo-mesh",
@@ -70,7 +68,6 @@ function Ensure-Submodules {
 Ensure-Submodules
 
 $NetworkRoot = Join-Path $Root "Network"
-$DashboardRoot = Join-Path $NetworkRoot "silicium-layer-dashboard"
 $BackendRoot = Join-Path $Root "BackEnd"
 $FrontendRoot = Join-Path $Root "FrontEnd"
 $LogRoot = Join-Path $Root ".silicium\logs\local-start"
@@ -230,7 +227,6 @@ function Start-LoggedProcess {
 }
 
 Assert-Directory $NetworkRoot "Network"
-Assert-Directory $DashboardRoot "Devnet dashboard"
 Assert-Directory $BackendRoot "BackEnd"
 Assert-Directory $FrontendRoot "FrontEnd"
 
@@ -241,11 +237,10 @@ Write-Host "Root:      $Root"
 Write-Host "Logs:      $LogRoot"
 Write-Host "Frontend:  http://localhost:$FrontendPort/"
 Write-Host "Backend:   http://localhost:$BackendPort"
-Write-Host "Devnet UI: http://localhost:$DashboardPort/"
 Write-Host "Database:  $DatabaseDriver"
 
 $npm = Get-Tool "npm.cmd"
-if (-not $npm -and (-not $SkipDashboard -or -not $SkipFrontend)) {
+if (-not $npm -and -not $SkipFrontend) {
     throw "npm.cmd was not found. Run .\install-silicium-windows.cmd -InstallSystemDeps first."
 }
 
@@ -268,16 +263,6 @@ if (-not $SkipNetworkNodes) {
     Start-LoggedProcess -Name "network-verifier" -CommandFile $verifierCmd -Port $VerifierPort
     Wait-ListeningPort -Port $WorkerPort -Name "network-worker" -TimeoutSeconds 20
     Wait-ListeningPort -Port $VerifierPort -Name "network-verifier" -TimeoutSeconds 20
-}
-
-if (-not $SkipDashboard) {
-    $dashboardCmd = Write-CmdLauncher `
-        -Name "devnet-dashboard" `
-        -WorkingDirectory $DashboardRoot `
-        -Environment @() `
-        -Command "npm.cmd run dev -- --host 127.0.0.1 --port $DashboardPort"
-    Start-LoggedProcess -Name "devnet-dashboard" -CommandFile $dashboardCmd -Port $DashboardPort
-    Wait-ListeningPort -Port $DashboardPort -Name "devnet-dashboard" -TimeoutSeconds 30
 }
 
 if (-not $SkipBackend -and -not $SkipDatabase -and $DatabaseDriver -eq "postgres") {
@@ -305,7 +290,6 @@ if (-not $SkipBackend -and -not $SkipDatabase -and $DatabaseDriver -eq "postgres
                 "set `"SILICIUM_SEED_PEERS=http://${HostAddress}:$WorkerPort,http://${HostAddress}:$VerifierPort`"",
                 "set `"SILICIUM_MESH_KEY=$MeshKey`"",
                 "set `"SILICIUM_ORCHESTRATOR_HOST=$HostAddress`"",
-                "set `"SILICIUM_DASHBOARD_URL=http://localhost:$DashboardPort/`"",
                 "set `"SILICIUM_DEVNET_TRACE=1`"",
                 "set `"SILICIUM_DEVNET_TX_DELAY_MS=2500`""
             ) `
@@ -334,7 +318,6 @@ if (-not $SkipBackend) {
         "set `"SILICIUM_SEED_PEERS=$seedPeers`"",
         "set `"SILICIUM_MESH_KEY=$MeshKey`"",
         "set `"SILICIUM_ORCHESTRATOR_HOST=$HostAddress`"",
-        "set `"SILICIUM_DASHBOARD_URL=http://localhost:$DashboardPort/`"",
         "set `"SILICIUM_DEVNET_TRACE=1`"",
         "set `"SILICIUM_DEVNET_TX_DELAY_MS=2500`"",
         "set `"SILICIUM_MIN_COMPUTE_REPUTATION=$MinComputeReputation`"",
@@ -354,8 +337,7 @@ if (-not $SkipFrontend) {
         -Name "site-frontend" `
         -WorkingDirectory $FrontendRoot `
         -Environment @(
-            "set `"NUXT_PUBLIC_API_BASE=http://localhost:$BackendPort`"",
-            "set `"NUXT_PUBLIC_DEVNET_DASHBOARD_URL=http://localhost:$DashboardPort/`""
+            "set `"NUXT_PUBLIC_API_BASE=http://localhost:$BackendPort`""
         ) `
         -Command "npm.cmd run dev -- --host 127.0.0.1 --port $FrontendPort"
     Start-LoggedProcess -Name "site-frontend" -CommandFile $frontendCmd -Port $FrontendPort
@@ -369,7 +351,6 @@ if (-not $NoBrowser -and -not $DryRun) {
 Write-Host ""
 Write-Host "Local stack requested."
 Write-Host "Open site:      http://localhost:$FrontendPort/"
-Write-Host "Open dashboard: http://localhost:$DashboardPort/"
 Write-Host "Logs:           $LogRoot"
 Write-Host ""
 Write-Host "Use -Visible to keep each service in an interactive terminal."
