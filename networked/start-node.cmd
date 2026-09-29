@@ -1,6 +1,6 @@
 @echo off
 setlocal
-set "ROOT=%~dp0.."
+set "ROOT=%~dp0.." & rem i18n:ignore (path, not a user-facing string)
 pushd "%ROOT%"
 
 if exist ".silicium\env\raytracer.env" (
