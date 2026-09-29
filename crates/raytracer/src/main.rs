@@ -5,8 +5,14 @@
 //! Output must be byte-identical across machines so that another peer can verify it.
 //! Usage: `silicium-raytracer <scene.cfg> --output <out.ppm> [--x-start ..] [--threads N]`.
 //!
-//! The rendering engine lives in the `silicium_raytracer` library (`src/lib.rs`);
-//! this binary only parses arguments and writes the PPM file.
+//! Pipeline steps (JSON on stdout, see `commands.rs`):
+//! `split <scene.cfg>`, `milestones <tile.ppm>`, `verify <tile.ppm> --manifest ..`,
+//! `reassemble --fragment .. --output ..`, `validate <tile.ppm>`.
+//!
+//! The engine lives in the `silicium_raytracer` library (`src/lib.rs`); this
+//! binary only parses arguments and writes files.
+
+mod commands;
 
 use silicium_raytracer::{
     parser::parse_scene,
@@ -75,6 +81,25 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
+    let args: Vec<String> = env::args().skip(1).collect();
+    if let Some(name) = args
+        .first()
+        .filter(|name| commands::NAMES.contains(&name.as_str()))
+    {
+        match commands::run(name, &args[1..]) {
+            Ok((payload, code)) => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&payload).unwrap_or_default()
+                );
+                std::process::exit(code);
+            }
+            Err(error) => {
+                eprintln!("silicium_raytracer_error:{error}");
+                std::process::exit(1);
+            }
+        }
+    }
     if let Err(error) = run() {
         eprintln!("silicium_raytracer_error:{error}");
         std::process::exit(2);

@@ -3,3 +3,12 @@ name = "silicium-raytracer"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+flate2 = "1"
+regex = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+
+[dev-dependencies]
+flate2 = "1"

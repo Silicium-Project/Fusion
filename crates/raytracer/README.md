@@ -34,7 +34,24 @@ La crate fournit une bibliothèque (`silicium_raytracer`) et le binaire
 | `src/parser.rs` | Lecture des fichiers `.cfg` |
 | `src/trace.rs` | Lancer de rayons (ombres, Phong, réflexions) |
 | `src/render.rs` | `RenderOptions`, rendu multi-thread d'une tuile, progression |
-| `src/main.rs` | Binaire : arguments, écriture du PPM |
+| `src/pipeline/` | Chaîne des tuiles : `tiles` (découpage centre → bords), `milestones` (engagement par blocs de lignes), `sampling` (vérification probabiliste), `reassemble`, `png`, `ppm` |
+| `src/main.rs`, `src/commands.rs` | Binaire : rendu, ou une étape de la chaîne (sortie JSON) |
+
+## Étapes de la chaîne (binaire)
+
+```bash
+silicium-raytracer split scene.cfg [--fragments N] [--target-pixels N] [--max-fragments N] [--output plan.json]
+silicium-raytracer milestones tuile.ppm --x-start X --y-start Y [--batch-rows 20]
+silicium-raytracer verify tuile.ppm --manifest jalons.json --seed S [--reputation 50]   # code 2 si échec
+silicium-raytracer reassemble --fragment a.ppm --x-start 0 --y-start 0 --fragment b.ppm ... --output rendu.ppm [--png rendu.png]
+silicium-raytracer validate tuile.ppm [--width W] [--height H] [--expected-hash H]
+```
+
+Chaque étape donne exactement les résultats de `workloads/raytracer/raytracer_workload.py`
+(même plan de tuiles, mêmes hash de jalons et d'engagement, même image
+réassemblée ; le PNG contient les mêmes pixels, la compression peut différer).
+Les tests `tests/python_parity.rs` lisent `tests/fixtures/python_parity.json`,
+régénéré par `python3 tools/dev/quality/raytracer_parity_fixtures.py`.
 
 ## Construire et tester
 
@@ -48,6 +65,6 @@ binaire et l'installe dans `Network/bin/raytracer/`.
 
 ## Évolution prévue
 
-Ajouter à la bibliothèque le découpage en tuiles, le hash des jalons, la
-vérification, le réassemblage et l'export PNG, pour remplacer
-`workloads/raytracer/*.py`.
+Brancher cette chaîne dans le nœud Rust (découpage et réassemblage côté
+émetteur) ; la copie Python de `workloads/raytracer/` sera alors supprimée.
+Les reçus signés (`tools/receipt_verification.py`) restent à porter.

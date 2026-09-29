@@ -4,11 +4,17 @@
 //! shadows, Phong highlights) to RGB bytes, optionally only a rectangular tile.
 //! Output must be byte-identical across machines so that another peer can verify it.
 //!
-//! The `silicium-raytracer` binary (`src/main.rs`) is a thin command-line wrapper:
-//! parse arguments, [`parser::parse_scene`], [`render::render`], write a PPM.
+//! [`pipeline`] holds the rest of the tile workflow: splitting a job into tiles,
+//! row-milestone commitments and their probabilistic verification, reassembly
+//! and PNG export.
+//!
+//! The `silicium-raytracer` binary (`src/main.rs`) renders a scene (default) or
+//! runs one pipeline step (`split`, `milestones`, `verify`, `reassemble`,
+//! `validate`) and prints JSON.
 
 pub mod math;
 pub mod parser;
+pub mod pipeline;
 pub mod render;
 pub mod scene;
 pub mod trace;
