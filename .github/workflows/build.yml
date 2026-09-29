@@ -196,7 +196,7 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
           printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
-          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}"
           ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
             -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")

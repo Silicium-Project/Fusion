@@ -243,13 +243,39 @@ jobs:
             Remove-Item -LiteralPath $env:SILICIUM_WINDOWS_CERTIFICATE_PATH -Force
           }
 
-      - name: Upload Windows development installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: silicium-node-windows-dev
-          path: apps/silicium-node/ci-artifacts/silicium-node-windows-dev.exe
-          if-no-files-found: error
-          retention-days: 1
+      - name: Stage Windows development installer on VPS
+        working-directory: apps/silicium-node
+        shell: powershell
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          # Handed off through the VPS like the Linux bundles (no Actions artifact storage).
+          $ErrorActionPreference = "Stop"
+          if (-not $env:VPS_HOST) { throw "Missing VPS_HOST secret" }
+          if (-not $env:VPS_SSH_KEY) { throw "Missing VPS_SSH_KEY secret" }
+          if (-not $env:VPS_KNOWN_HOSTS) { throw "Missing VPS_KNOWN_HOSTS secret" }
+          $vpsUser = if ([string]::IsNullOrWhiteSpace($env:VPS_USER)) { "luis" } else { $env:VPS_USER }
+          $vpsPort = if ([string]::IsNullOrWhiteSpace($env:VPS_PORT)) { "22" } else { $env:VPS_PORT }
+          $vpsHost = $env:VPS_HOST
+          $releaseStaging = "/tmp/silicium-release-${{ github.run_id }}"
+          $sshDir = Join-Path $HOME ".ssh"
+          New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+          $sshKey = Join-Path $sshDir "id_ed25519"
+          $knownHosts = Join-Path $sshDir "known_hosts"
+          [System.IO.File]::WriteAllText($sshKey, (($env:VPS_SSH_KEY -replace "`r", "") + "`n"), [System.Text.UTF8Encoding]::new($false))
+          [System.IO.File]::WriteAllText($knownHosts, (($env:VPS_KNOWN_HOSTS -replace "`r", "") + "`n"), [System.Text.UTF8Encoding]::new($false))
+          & icacls $sshKey /inheritance:r /grant:r "$($env:USERNAME):F" | Out-Null
+          & ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$knownHosts" -o IdentitiesOnly=yes -i $sshKey -p $vpsPort "$vpsUser@$vpsHost" "install -d -m 700 '$releaseStaging'"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to create the release staging directory on VPS" }
+          & scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$knownHosts" -o IdentitiesOnly=yes -i $sshKey -P $vpsPort `
+            "ci-artifacts/silicium-node-windows-dev.exe" `
+            "$vpsUser@${vpsHost}:$releaseStaging/"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to stage the Windows installer on VPS" }
+          Remove-Item -LiteralPath $sshKey -Force
 
   publish:
     needs: [build, build-windows]
@@ -288,22 +314,16 @@ jobs:
           vps_port="${VPS_PORT:-22}"
           [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST" >&2; exit 1; }
           install -d -m 0755 release-assets
-          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}"
           ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts"
             -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
-          for remote_file in silicium-node-linux-dev.AppImage silicium-node-linux-dev.deb silicium-node-linux-dev.rpm; do
+          for remote_file in silicium-node-linux-dev.AppImage silicium-node-linux-dev.deb silicium-node-linux-dev.rpm silicium-node-windows-dev.exe; do
             ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
               "test -s '$release_staging/$remote_file'"
             scp "${ssh_opts[@]}" -P "$vps_port" \
               "$vps_user@$VPS_HOST:$release_staging/$remote_file" release-assets/
           done
-
-      - name: Retrieve Windows development installer
-        uses: actions/download-artifact@v4
-        with:
-          name: silicium-node-windows-dev
-          path: release-assets
 
       - name: Prepare development release identity
         id: meta
