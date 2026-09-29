@@ -287,7 +287,7 @@ def clean_artifacts() -> None:
         REPO_ROOT / ".tmp2",
         REPO_ROOT / "build",
         REPO_ROOT / "perf-budget-report.json",
-        REPO_ROOT / "crates" / "raytracer" / "target",
+        REPO_ROOT / "target",  # single Cargo workspace build dir
     ]
     for path in paths:
         remove_path(path)
