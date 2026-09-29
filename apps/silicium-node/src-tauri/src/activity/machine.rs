@@ -141,34 +141,32 @@ pub(crate) fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
-                .filter_map(|candidate| {
-                    Some(MachineCandidate {
-                        candidate_type: candidate
-                            .get("candidate_type")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .to_string(),
-                        transport: candidate
-                            .get("transport")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .to_string(),
-                        ip: candidate
-                            .get("ip")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .to_string(),
-                        port: candidate.get("port").and_then(Value::as_u64).unwrap_or(0),
-                        internet_routable: candidate
-                            .get("internet_routable")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
-                        source: candidate
-                            .get("source")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .to_string(),
-                    })
+                .map(|candidate| MachineCandidate {
+                    candidate_type: candidate
+                        .get("candidate_type")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    transport: candidate
+                        .get("transport")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    ip: candidate
+                        .get("ip")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
+                    port: candidate.get("port").and_then(Value::as_u64).unwrap_or(0),
+                    internet_routable: candidate
+                        .get("internet_routable")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    source: candidate
+                        .get("source")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .to_string(),
                 })
                 .collect::<Vec<_>>();
             let transport_attestations = peer

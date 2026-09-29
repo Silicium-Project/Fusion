@@ -211,7 +211,7 @@ pub fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
         &mut history,
     );
     collect_history(&networked_dir, &mut history);
-    history.sort_by(|left, right| right.modified_at.cmp(&left.modified_at));
+    history.sort_by_key(|entry| std::cmp::Reverse(entry.modified_at));
     history
         .dedup_by(|left, right| left.name == right.name && left.modified_at == right.modified_at);
     let known_results = history

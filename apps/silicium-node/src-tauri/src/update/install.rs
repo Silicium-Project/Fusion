@@ -92,7 +92,7 @@ pub(crate) fn schedule_update_install(
 ) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
-        return schedule_linux_appimage_install(installer, release);
+        schedule_linux_appimage_install(installer, release)
     }
     #[cfg(not(target_os = "linux"))]
     {

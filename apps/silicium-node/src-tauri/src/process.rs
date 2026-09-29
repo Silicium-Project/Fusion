@@ -134,7 +134,6 @@ pub(crate) fn kill_known_silicium_processes(repo_root: Option<&Path>) {
         for pid in linux_managed_node_pids(repo_root) {
             let _ = kill_process_tree(pid);
         }
-        return;
     }
     #[cfg(target_os = "windows")]
     {
@@ -173,7 +172,6 @@ pub(crate) fn kill_managed_node_processes(repo_root: &Path) {
             let _ = kill_process_tree(pid);
         }
         kill_known_silicium_processes(Some(repo_root));
-        return;
     }
     #[cfg(target_os = "windows")]
     {

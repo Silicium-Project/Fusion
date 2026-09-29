@@ -87,7 +87,7 @@ pub(crate) fn validate_update_release(release: &UpdateRelease) -> Result<(), Str
     if hash.len() != 64 || !hash.chars().all(|character| character.is_ascii_hexdigit()) {
         return Err("update_sha256_invalid".to_string());
     }
-    if release.content_id.trim().to_ascii_lowercase() != hash.to_ascii_lowercase() {
+    if !release.content_id.trim().eq_ignore_ascii_case(hash) {
         return Err("update_content_id_mismatch".to_string());
     }
     if release.signing_key_id.trim() != UPDATE_SIGNING_KEY_ID {
