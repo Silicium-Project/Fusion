@@ -231,11 +231,13 @@ jobs:
           set -euo pipefail
           vps_user="${VPS_USER:-luis}"
           vps_port="${VPS_PORT:-22}"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-            -i "$HOME/.ssh/id_ed25519" -p "$vps_port" \
+          # Same key and known_hosts as the other steps (written by "Configure SSH").
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "$vps_port" \
             "$vps_user@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-            -i "$HOME/.ssh/id_ed25519" -P "$vps_port" \
+          scp "${ssh_opts[@]}" -P "$vps_port" \
             release-assets/silicium-node-linux-dev.AppImage \
             release-assets/silicium-node-linux-dev.deb \
             release-assets/silicium-node-linux-dev.rpm \
