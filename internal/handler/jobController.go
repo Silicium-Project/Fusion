@@ -110,7 +110,6 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		Status:        "queued",
 		SiliciumJobID: jobID,
 		InputPath:     absoluteInput,
-		DashboardURL:  silicium.ConfigFromEnv().DashboardURL,
 		DeadlineAt:    &deadline,
 	}
 	if result := h.DB.Create(&job); result.Error != nil {
@@ -265,7 +264,6 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 		"devnet_trace_path":    runResult.DevnetTracePath,
 		"devnet_job":           runResult.DevnetJob,
 		"error_message":        runResult.ErrorMessage,
-		"dashboard_url":        silicium.ConfigFromEnv().DashboardURL,
 		"billable_work_units":  runResult.BillableWorkUnits,
 		"compute_receipt_hash": runResult.ComputeReceiptHash,
 		"completed_at":         completedAt,

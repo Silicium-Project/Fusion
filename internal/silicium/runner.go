@@ -36,7 +36,6 @@ type RunnerConfig struct {
 	EmitterPort           string
 	OrchestratorExportDir string
 	WorkloadStorageDir    string
-	DashboardURL          string
 	DevnetTrace           bool
 	DevnetTxDelayMS       string
 	MinComputeReputation  string
@@ -73,17 +72,16 @@ func ConfigFromEnv() RunnerConfig {
 		EmitterPort:           envDefault("SILICIUM_EMITTER_PORT", "46102"),
 		OrchestratorExportDir: envDefault("SILICIUM_ORCHESTRATOR_EXPORT_DIR", filepath.Join(networkRoot, ".silicium", "networked", "orchestrator", "export")),
 		WorkloadStorageDir:    envDefault("SILICIUM_WORKLOAD_STORAGE_DIR", filepath.Join(networkRoot, ".silicium", "jobs")),
-		DashboardURL:          envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
 		// Devnet settlement is an explicit write operation. Keep it opt-in so a
 		// backend without a funded wallet cannot accidentally publish or pay a
 		// trace during a normal render.
-		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "0") == "1",
-		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
-		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
-		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
-		ControlURL:            envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:46100/gossip/publish"),
-		IdentityKeyPath:       envDefault("SILICIUM_ORCHESTRATOR_IDENTITY_KEY", "/var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem"),
-		ReleaseChannel:        release.Current().Channel,
+		DevnetTrace:          envDefault("SILICIUM_DEVNET_TRACE", "0") == "1",
+		DevnetTxDelayMS:      envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
+		MinComputeReputation: envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
+		MinVerifyReputation:  envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
+		ControlURL:           envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:46100/gossip/publish"),
+		IdentityKeyPath:      envDefault("SILICIUM_ORCHESTRATOR_IDENTITY_KEY", "/var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem"),
+		ReleaseChannel:       release.Current().Channel,
 	}
 }
 

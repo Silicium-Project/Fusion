@@ -45,7 +45,6 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"status":             job.Status,
 			"siliciumJobId":      job.SiliciumJobID,
 			"devnetJob":          job.DevnetJob,
-			"dashboardUrl":       job.DashboardURL,
 			"errorMessage":       job.ErrorMessage,
 			"createdAt":          job.CreatedAt,
 			"startedAt":          job.StartedAt,
