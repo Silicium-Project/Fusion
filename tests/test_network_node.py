@@ -2288,6 +2288,12 @@ def test_network_node_ingests_remote_result_back_to_origin(tmp_path: Path) -> No
 def test_network_node_skips_canonical_queue_replays(tmp_path: Path, canonical_status: str) -> None:
     export_dir = tmp_path / f"replay-{canonical_status}"
     node = network_node.NetworkNode(_config(export_dir, "worker-a", roles="compute", gossip_enable=False))
+    # The constructor starts a background queue snapshot that reconciles
+    # orphaned tasks; let it finish so it cannot race the files written below.
+    deadline = time.time() + 10.0
+    while node._task_queue_cache_refreshing and time.time() < deadline:
+        time.sleep(0.01)
+    assert not node._task_queue_cache_refreshing
     queued = {
         "schema_version": 1,
         "envelope_kind": "task",
@@ -2305,6 +2311,23 @@ def test_network_node_skips_canonical_queue_replays(tmp_path: Path, canonical_st
     events = (export_dir / "node.events.ndjson").read_text(encoding="utf-8")
     assert '"kind":"queue_replay_skipped"' in events
     assert f'"status":"{canonical_status}"' in events
+
+
+def test_reconcile_keeps_running_task_without_known_worker(tmp_path: Path) -> None:
+    export_dir = tmp_path / "reconcile-unassigned"
+    node = network_node.NetworkNode(_config(export_dir, "worker-a", roles="compute", gossip_enable=False))
+    running = {
+        "schema_version": 1,
+        "envelope_kind": "task",
+        "task_id": "render-unassigned",
+        "status": "running",
+        "required_roles": ["compute"],
+        "task": {"kind": "compute"},
+    }
+    network_node.atomic_write_json(export_dir / "tasks" / "render-unassigned.json", running)
+    node.reconcile_orphaned_running_tasks()
+    stored = json.loads((export_dir / "tasks" / "render-unassigned.json").read_text(encoding="utf-8"))
+    assert stored["status"] == "running"
 
 
 def test_network_node_persists_reputation_updates(tmp_path: Path) -> None:

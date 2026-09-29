@@ -5483,14 +5483,14 @@ class NetworkNode:
                 item_id = safe_id(raw_item_id) if raw_item_id else ""
                 if not item_id or item_id in active_ids:
                     continue
-                handled_by = safe_id(str(envelope.get("handled_by", "")))
-                assigned_worker = safe_id(
-                    str(
-                        envelope.get("dispatched_to")
-                        or envelope.get("assigned_peer_id")
-                        or envelope.get("target_peer_id")
-                        or ""
-                    )
+                # optional_peer_id, not safe_id: safe_id("") returns a random
+                # id, which made an unassigned running task look like a lost
+                # remote worker and failed it.
+                handled_by = optional_peer_id(envelope.get("handled_by"))
+                assigned_worker = optional_peer_id(
+                    envelope.get("dispatched_to")
+                    or envelope.get("assigned_peer_id")
+                    or envelope.get("target_peer_id")
                 )
                 if status == "running":
                     worker_id = handled_by or assigned_worker
@@ -5515,7 +5515,7 @@ class NetworkNode:
                         envelope.get("dispatched_to") or envelope.get("assigned_peer_id") or ""
                     ).strip()
                     target_id = safe_id(target_raw) if target_raw else ""
-                    owner_id = handled_by or safe_id(str(envelope.get("dispatched_by", "")))
+                    owner_id = handled_by or optional_peer_id(envelope.get("dispatched_by"))
                     if not target_id:
                         result = {
                             "error": "task_dispatch_target_missing",
