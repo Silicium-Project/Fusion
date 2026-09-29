@@ -44,15 +44,6 @@ class _RunningTask:
     thread: threading.Thread
 
 
-def _default_command_runner(
-    action: ActionSpec,
-    runner_mode: str,
-    log_path: Path,
-    cancel_event: threading.Event,
-) -> int:
-    return InProcessConnector().run_action(action, runner_mode, log_path, cancel_event)
-
-
 class _RunnerConnector(ITuiConnector):
     def __init__(self, runner: CommandRunner) -> None:
         super().__init__("runner")

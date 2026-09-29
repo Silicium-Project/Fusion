@@ -148,10 +148,6 @@ def ensure_docker_healthy(
     sys.exit(1)
 
 
-def docker_available(ctx: Context) -> bool:
-    return docker_health(ctx, retries=0, timeout_s=4.0).ok
-
-
 def host_os_name() -> str:
     return os.name
 

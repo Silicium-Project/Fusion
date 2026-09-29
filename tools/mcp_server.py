@@ -805,8 +805,6 @@ class McpMetrics:
         with self._lock:
             self._jsonrpc_calls[key] = self._jsonrpc_calls.get(key, 0) + 1
 
-    def inc_tool_call(self, tool: str) -> None:
-        self.observe_tool_call(tool, ok=True, duration_s=0.0)
 
     def observe_tool_call(self, tool: str, ok: bool, duration_s: float) -> None:
         with self._lock:

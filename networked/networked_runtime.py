@@ -339,33 +339,6 @@ def dispatch_task_to_scheduler(
     return {"status": "dispatch_failed", "attempts": attempts}
 
 
-def wait_for_result(export_dir: Path, task_id: str, timeout_s: float) -> dict[str, Any]:
-    result_path = export_dir / f"result.{task_id}.json"
-    dead_letters_path = export_dir / "dead_letters.ndjson"
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() <= deadline:
-        payload = read_json(result_path)
-        if isinstance(payload, dict):
-            return payload
-        if dead_letters_path.exists():
-            try:
-                for line in dead_letters_path.read_text(encoding="utf-8").splitlines():
-                    try:
-                        item = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if isinstance(item, dict) and str(item.get("task_id", "")) == task_id:
-                        raise RuntimeError(
-                            "network task dead-lettered: "
-                            + str(item.get("last_error", "unknown_error"))
-                            + f" ({task_id})"
-                        )
-            except RuntimeError:
-                raise
-        time.sleep(0.25)
-    raise TimeoutError(f"missing network result after {timeout_s:.1f}s: {result_path}")
-
-
 class LocalNetworkEmitter:
     def __init__(
         self,
@@ -489,29 +462,6 @@ class LocalNetworkEmitter:
                 f"{detail or heartbeat_path}"
             )
 
-    def wait_for_heartbeat(self, timeout_s: float = 30.0) -> bool:
-        """Wait until the node's HTTP /healthz endpoint responds OK.
-
-        Complements the file-based startup poll in ``start()`` by confirming
-        that the peer HTTP server is actually accepting connections before
-        callers dispatch tasks.  Returns True when healthy, False on timeout.
-        """
-        base_url = self.public_url
-        deadline = time.monotonic() + max(0.0, timeout_s)
-        mesh_key = self.mesh_key
-        while time.monotonic() < deadline:
-            if self.process is not None and self.process.poll() is not None:
-                return False
-            try:
-                headers = {"Authorization": f"Bearer {mesh_key}"} if mesh_key else {}
-                req = urllib.request.Request(base_url + "/healthz", headers=headers)
-                with urllib.request.urlopen(req, timeout=2) as resp:
-                    if int(resp.status) in {200, 204}:
-                        return True
-            except Exception:
-                pass
-            time.sleep(0.1)
-        return False
 
     def stop(self) -> dict[str, Any]:
         if self.process is None:

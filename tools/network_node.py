@@ -479,12 +479,6 @@ class ReputationStore:
         with self._lock:
             return float(self._payload.get("local_score", 0.0) or 0.0)
 
-    def peer_score(self, node_id: str, default: float = 0.0) -> float:
-        with self._lock:
-            peers = self._payload.get("peer_scores", {})
-            if not isinstance(peers, dict):
-                return float(default)
-            return float(peers.get(node_id, default) or default)
 
     def adjust_local(self, delta: float, reason: str) -> float:
         with self._lock:
@@ -924,7 +918,6 @@ class PeerNetwork:
         self._started_direct_sessions: set[str] = set()
         self._local_candidates: list[dict[str, Any]] = []
         self._seen_events: set[str] = set()
-        self._update_fetches: set[str] = set()
         self._verified_transport_claims: set[str] = set()
         self._seen_handshake_nonces: dict[str, float] = {}
         self._seen_punch_nonces: set[str] = set()
@@ -942,7 +935,6 @@ class PeerNetwork:
         self._peer_score_sink: Any = None
         self.http_base_url = ""
         self.advertised_http_base_url = ""
-        self.gossip_target = ""
         self.mesh_post_url = ""
         self.local_capacity = build_capacity_snapshot(config)
         self.local_reputation_score = float(config.reputation_score)
@@ -4642,7 +4634,6 @@ class PeerNetwork:
             or f"http://{self._advertised_http_host()}:{self._advertised_http_port()}"
         )
         self.mesh_post_url = self.advertised_http_base_url.rstrip("/") + "/mesh"
-        self.gossip_target = f"{self._advertised_gossip_host()}:{self._advertised_gossip_port()}" if self._advertised_gossip_port() > 0 else ""
 
         self._http_thread = threading.Thread(target=server.serve_forever, name=f"silicium-peer-http-{self.node_id}", daemon=True)
         self._http_thread.start()

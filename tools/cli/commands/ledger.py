@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -110,45 +109,6 @@ def configure_ledger_wipe(parser: argparse.ArgumentParser) -> None:
         choices=LEDGER_NETWORKS,
         help="Network names to wipe (shortcut for repeated --network).",
     )
-
-
-def ledger_export(target: str, dest: Path, ctx: Context) -> None:
-    cmd = [
-        ctx.config.docker_bin,
-        "run",
-        "--rm",
-        "-v",
-        f"{target}:/data:ro",
-        "-v",
-        f"{dest.parent}:/backup",
-        "alpine",
-        "sh",
-        "-c",
-        "cd /data && tar czf /backup/ledger.tar.gz .",
-    ]
-    run(cmd)
-
-
-def ledger_import(target: str, src: Path, ctx: Context) -> None:
-    if not src.exists():
-        print(f"Archive not found: {src}")
-        sys.exit(1)
-    cmd = [
-        ctx.config.docker_bin,
-        "run",
-        "--rm",
-        "-v",
-        f"{target}:/data",
-        "-v",
-        f"{src.parent}:/backup",
-        "alpine",
-        "sh",
-        "-c",
-        "rm -rf /data/* && tar xzf /backup/ledger.tar.gz -C /data",
-    ]
-    env = os.environ.copy()
-    env["LEDGER_ARCHIVE"] = str(src)
-    run(cmd, env=env)
 
 
 def cmd_ledger_export(args: argparse.Namespace, ctx: Context) -> None:
