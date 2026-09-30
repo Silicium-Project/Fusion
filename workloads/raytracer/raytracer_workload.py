@@ -27,6 +27,8 @@ except ImportError:  # run as a script from workloads/raytracer/ (compute.py, ve
     sys.path.insert(0, str(NETWORK_ROOT))
     from workloads.common import parse_ppm_bytes, performance_duration, ppm_to_png_bytes, sha256_bytes, sha256_file, write_json
 
+from workloads.raytracer import native  # noqa: E402  (tile checks run in the Rust binary)
+
 __all__ = ["parse_ppm_bytes", "sha256_bytes", "sha256_file"]  # re-exported for callers and tests
 DEFAULT_VERIFICATION_BATCH_ROWS = 20
 
@@ -457,11 +459,11 @@ def command_compute(args: argparse.Namespace) -> int:
     # --- Issue #85: validate the binary P6 output before signing ---
     _ppm_bytes = output.read_bytes()
     try:
-        validate_fragment_ppm(_ppm_bytes, task_id=str(output))
+        native.validate_fragment(_ppm_bytes, task_id=str(output))
     except RuntimeError as exc:
         raise RuntimeError(f"raytracer_compute_invalid_output:{exc}") from exc
     result["p6_validated"] = True
-    result["verification_milestones"] = build_verification_milestones(
+    result["verification_milestones"] = native.build_milestones(
         _ppm_bytes,
         y_start or 0,
         int(args.verification_batch_rows),
@@ -533,11 +535,8 @@ def command_verify(args: argparse.Namespace) -> int:
     if args.manifest and hash_integrity_ok:
         manifest = json.loads(Path(args.manifest).read_text("utf-8"))
         ppm_bytes = result_path.read_bytes()
-        probabilistic_result = verify_probabilistic_milestones(
-            ppm_bytes,
-            manifest,
-            args.seed,
-            float(args.reputation_score)
+        probabilistic_result = native.verify_milestones(
+            ppm_bytes, manifest, str(args.seed), float(args.reputation_score)
         )
         if probabilistic_result["verified"]:
             verified = True
@@ -595,7 +594,7 @@ def command_validate(args: argparse.Namespace) -> int:
     expected_height = int(args.height) if args.height else None
     expected_hash = args.expected_hash or None
     try:
-        result = validate_fragment_ppm(
+        result = native.validate_fragment(
             fragment_bytes,
             task_id=str(fragment_path.name),
             expected_width=expected_width,

@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import types
 import threading
@@ -3012,8 +3013,11 @@ def test_terminal_tasks_are_excluded_from_queue_and_claims(tmp_path: Path, statu
 def test_raytracer_verifier_recomputes_only_challenged_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from workloads.raytracer import node_tasks
 
-    sample_ppm = b"P6\n2 2\n255\n" + bytes(range(12))
-    expected = node_tasks.ppm_pixel_sha256(sample_ppm)
+    header = b"P6\n2 2\n255\n"
+    sample_ppm = header + bytes(range(12))
+    expected = hashlib.sha256(bytes(range(12))).hexdigest()
+    # The pixel hash itself runs in the Rust binary (covered by test_raytracer_native).
+    monkeypatch.setattr(node_tasks.native, "pixel_sha256", lambda data: hashlib.sha256(data[len(header):]).hexdigest())
     challenge = {
         "strategy": "random-tile-row-milestone-v2",
         "challenge_nonce": "nonce-test",

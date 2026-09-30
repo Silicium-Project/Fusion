@@ -45,10 +45,10 @@ from workloads.common import (  # noqa: E402
     submit_task,
     write_json,
 )
+from workloads.raytracer import native  # noqa: E402
+from workloads.raytracer.native import pipeline_binary  # noqa: E402
 from workloads.raytracer.raytracer_workload import (  # noqa: E402
-    build_verification_milestones,
     scene_resolution,
-    validate_fragment_ppm,
     write_optional_png,
 )
 from tools.receipt_verification import (  # noqa: E402
@@ -617,23 +617,6 @@ def wait_for_network_role(export_dir: Path, node_id: str, role: str, timeout_s: 
     raise TimeoutError(f"missing network peer with role {role!r} after {timeout_s:.1f}s: {peers_path}")
 
 
-def pipeline_binary() -> str:
-    """Native tile pipeline (`silicium-raytracer split/reassemble`).
-
-    SILICIUM_PIPELINE_BIN points at the binary; SILICIUM_RAYTRACER_BIN (the
-    renderer, same binary) is used when it is not set. The Python split and
-    reassemble were removed once the Rust pipeline was validated in dev.
-    """
-    for variable in ("SILICIUM_PIPELINE_BIN", "SILICIUM_RAYTRACER_BIN"):
-        configured = os.environ.get(variable, "").strip()
-        if not configured:
-            continue
-        if not (os.path.isfile(configured) and os.access(configured, os.X_OK)):
-            raise RuntimeError(f"raytracer_pipeline_binary_unusable:{configured}")
-        return configured
-    raise RuntimeError("raytracer_pipeline_binary_missing")
-
-
 def make_split(args: argparse.Namespace, scene_path: Path, split_path: Path) -> dict[str, Any]:
     cmd = [
         pipeline_binary(),
@@ -1136,7 +1119,7 @@ def main(argv: list[str] | None = None) -> int:
                 artifact_fetch_started = time.perf_counter()
                 fragment_bytes = read_ref_bytes(args, export_dir, output_ref)
                 artifact_fetch_ms = performance_duration((time.perf_counter() - artifact_fetch_started) * 1000.0)
-                fragment_metadata = validate_fragment_ppm(
+                fragment_metadata = native.validate_fragment(
                     fragment_bytes,
                     task_id=resolved_task_id,
                     expected_width=x_end - x_start,
@@ -1144,7 +1127,7 @@ def main(argv: list[str] | None = None) -> int:
                     expected_hash=result_hash,
                 )
                 worker_milestones = compute_result.get("verification_milestones")
-                expected_milestones = build_verification_milestones(
+                expected_milestones = native.build_milestones(
                     fragment_bytes,
                     y_start,
                     max(1, int(args.verification_batch_rows)),

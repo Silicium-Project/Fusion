@@ -129,44 +129,63 @@ pub fn run(name: &str, args: &[String]) -> Result<(Value, i32), String> {
             ))
         }
         "reassemble" => reassemble_command(&options),
-        "validate" => {
-            let path = options.input("tile PPM")?;
-            let data = read(path)?;
-            let optional = |key: &str| -> Result<Option<usize>, String> {
-                options
-                    .one(key)
-                    .filter(|value| !value.is_empty())
-                    .map(|value| {
-                        value
-                            .parse()
-                            .map_err(|_| format!("invalid --{key}: {value}"))
-                    })
-                    .transpose()
-            };
-            let name = Path::new(path)
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_default();
-            match ppm::validate_fragment(
-                &data,
-                &name,
-                optional("width")?,
-                optional("height")?,
-                options
-                    .one("expected-hash")
-                    .filter(|value| !value.is_empty()),
-            ) {
-                Ok((width, height, sha256)) => Ok((
-                    json!({"width": width, "height": height, "sha256": sha256, "valid_p6": true, "fragment": absolute(path)}),
-                    0,
-                )),
-                Err(error) => Ok((
-                    json!({"valid": false, "error": error, "fragment": absolute(path)}),
-                    1,
-                )),
-            }
-        }
+        "validate" => validate_command(&options),
         other => Err(format!("unknown command {other}")),
+    }
+}
+
+/// `validate <tile.ppm> [--task-id ID] [--width W] [--height H] [--expected-hash H]`:
+/// checks a rendered tile (format, size, file hash). `--task-id` labels the
+/// error messages (default: the file name). On success the output also carries
+/// `pixel_sha256`, the hash of the raster alone used by milestone checks.
+fn validate_command(options: &Options) -> Result<(Value, i32), String> {
+    let path = options.input("tile PPM")?;
+    let data = read(path)?;
+    let optional = |key: &str| -> Result<Option<usize>, String> {
+        options
+            .one(key)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                value
+                    .parse()
+                    .map_err(|_| format!("invalid --{key}: {value}"))
+            })
+            .transpose()
+    };
+    let file_name = Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let task_id = options
+        .one("task-id")
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .unwrap_or(file_name);
+    let expected_hash = options
+        .one("expected-hash")
+        .filter(|value| !value.is_empty());
+    match ppm::validate_fragment(
+        &data,
+        &task_id,
+        optional("width")?,
+        optional("height")?,
+        expected_hash,
+    ) {
+        Ok((width, height, sha256)) => Ok((
+            json!({
+                "width": width,
+                "height": height,
+                "sha256": sha256,
+                "pixel_sha256": ppm::pixel_sha256(&data)?,
+                "valid_p6": true,
+                "fragment": absolute(path),
+            }),
+            0,
+        )),
+        Err(error) => Ok((
+            json!({"valid": false, "error": error, "fragment": absolute(path)}),
+            1,
+        )),
     }
 }
 
@@ -278,4 +297,44 @@ fn reassemble_command(options: &Options) -> Result<(Value, i32), String> {
         }
     }
     Ok((payload, 0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tile_file(name: &str, bytes: &[u8]) -> String {
+        let path =
+            std::env::temp_dir().join(format!("silicium-commands-{}-{name}", std::process::id()));
+        fs::write(&path, bytes).unwrap();
+        path.display().to_string()
+    }
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| value.to_string()).collect()
+    }
+
+    #[test]
+    fn validate_reports_both_hashes() {
+        let tile = ppm::encode(2, 1, &[1, 2, 3, 4, 5, 6]);
+        let path = tile_file("ok.ppm", &tile);
+        let (payload, code) =
+            run("validate", &args(&[&path, "--width", "2", "--height", "1"])).unwrap();
+        assert_eq!(code, 0);
+        assert_eq!(payload["sha256"], sha256_hex(&tile));
+        assert_eq!(payload["pixel_sha256"], sha256_hex(&[1, 2, 3, 4, 5, 6]));
+        assert_eq!(payload["valid_p6"], true);
+    }
+
+    #[test]
+    fn validate_labels_errors_with_the_task_id() {
+        let path = tile_file("bad.ppm", b"not a ppm");
+        let (payload, code) = run("validate", &args(&[&path, "--task-id", "task-7"])).unwrap();
+        assert_eq!(code, 1);
+        let error = payload["error"].as_str().unwrap();
+        assert!(
+            error.starts_with("raytracer_fragment_invalid_ppm:task=task-7:"),
+            "{error}"
+        );
+    }
 }

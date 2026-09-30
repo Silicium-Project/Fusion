@@ -22,9 +22,9 @@ from workloads.raytracer.run_network_job import (
     resolve_in_flight_limit,
     run_bounded_fragment_pipeline,
     submit_network_task,
-    validate_fragment_ppm,
     wait_for_network_role,
 )
+from workloads.raytracer.raytracer_workload import validate_fragment_ppm
 
 
 def _ppm(width: int, height: int, pixels: bytes) -> bytes:

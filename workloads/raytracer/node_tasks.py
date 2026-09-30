@@ -25,12 +25,8 @@ from workloads.common import (
     sha256_bytes,
     sha256_json,
 )
-from workloads.raytracer.raytracer_workload import (
-    build_verification_milestones,
-    ppm_pixel_sha256,
-    run_raytracer,
-    scene_resolution,
-)
+from workloads.raytracer import native
+from workloads.raytracer.raytracer_workload import run_raytracer, scene_resolution
 from workloads.registry import WorkloadContext
 
 
@@ -122,12 +118,10 @@ def compute_fragment(ctx: WorkloadContext) -> dict[str, Any]:
         "scene_fetch_source": str(scene_meta.get("source", "")),
     }
     result_hash = sha256_bytes(output)
-    milestone_manifest = build_verification_milestones(
-        output,
-        int(task.get("y_start", spec.get("y_start", 0)) or 0),
-        int(task.get("verification_batch_rows", spec.get("verification_batch_rows", 20)) or 20),
-        int(task.get("x_start", spec.get("x_start", 0)) or 0),
-    )
+    # compute.py already committed to the milestones of this exact output.
+    milestone_manifest = renderer_result.get("verification_milestones")
+    if not isinstance(milestone_manifest, dict):
+        raise RuntimeError("raytracer_fragment_milestones_missing")
     return {
         "role_result": "compute",
         "input": p2p_meta,
@@ -183,7 +177,7 @@ def verify_fragment_milestone(ctx: WorkloadContext) -> dict[str, Any]:
         source_handoff_started = time.perf_counter()
         source_output, handoff_meta = ctx.fetch(source_output_ref)
         source_handoff_ms = performance_duration((time.perf_counter() - source_handoff_started) * 1000.0)
-        source_manifest = build_verification_milestones(
+        source_manifest = native.build_milestones(
             source_output,
             int(task.get("y_start", 0) or 0),
             max(1, int(task.get("max_sample_rows", 20) or 20)),
@@ -209,7 +203,7 @@ def verify_fragment_milestone(ctx: WorkloadContext) -> dict[str, Any]:
             x_start,
             x_end,
         )
-        recomputed_hash = ppm_pixel_sha256(output_path.read_bytes())
+        recomputed_hash = native.pixel_sha256(output_path.read_bytes())
 
     passed = recomputed_hash == expected
     recompute_performance = recomputed.get("performance") if isinstance(recomputed.get("performance"), dict) else {}
