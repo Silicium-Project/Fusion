@@ -4,6 +4,7 @@ use crate::*;
 
 pub(crate) fn curl_get(url: &str, timeout_seconds: u64) -> Result<String, String> {
     let mut command = Command::new(curl_command());
+    apply_tls_options(&mut command);
     command
         .arg("-4")
         .arg("--fail")
@@ -29,6 +30,7 @@ pub(crate) fn curl_get(url: &str, timeout_seconds: u64) -> Result<String, String
 
 pub(crate) fn curl_download(url: &str, target: &Path, timeout_seconds: u64) -> Result<(), String> {
     let mut command = Command::new(curl_command());
+    apply_tls_options(&mut command);
     command
         .arg("-4")
         .arg("--fail")
@@ -52,6 +54,18 @@ pub(crate) fn curl_download(url: &str, target: &Path, timeout_seconds: u64) -> R
         ));
     }
     Ok(())
+}
+
+/// On Windows, curl uses Schannel, which fails when the certificate revocation
+/// status cannot be checked (CRYPT_E_NO_REVOCATION_CHECK); the dev channel
+/// certificate has no reachable revocation service. The certificate itself is
+/// still verified, and updates are authenticated by the signed manifest.
+/// `--ssl-no-revoke` (curl >= 7.44) is used rather than
+/// `--ssl-revoke-best-effort` (curl >= 7.70) so older Windows 10 curl works.
+pub(crate) fn apply_tls_options(command: &mut Command) {
+    if cfg!(target_os = "windows") {
+        command.arg("--ssl-no-revoke");
+    }
 }
 
 pub(crate) fn curl_command() -> &'static str {

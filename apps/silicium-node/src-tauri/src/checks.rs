@@ -21,6 +21,7 @@ pub(crate) fn orchestrator_check(url: &str) -> CheckItem {
         "curl"
     };
     let mut command = Command::new(curl);
+    crate::http::apply_tls_options(&mut command);
     command
         .args([
             "--fail",
