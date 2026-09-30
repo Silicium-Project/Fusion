@@ -147,8 +147,13 @@ pub(crate) fn kill_known_silicium_processes(repo_root: Option<&Path>) {
             filters.push(format!("$_.CommandLine -like '*{}*'", escaped));
         }
         let filter = filters.join(" -or ");
+        // The supervisor calls this before (re)starting the node, and its own
+        // command line matches the filters ("--supervisor", repo root): exclude
+        // the calling process, not only this PowerShell ($PID), or the
+        // supervisor kills itself and activation never completes.
+        let caller_pid = std::process::id();
         let script = format!(
-        "Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and ({filter}) }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
+        "Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.ProcessId -ne {caller_pid} -and $_.CommandLine -and ({filter}) }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}"
     );
         let mut command = Command::new("powershell.exe");
         command
