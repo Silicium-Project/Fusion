@@ -192,6 +192,28 @@ printf '%s\n' \
   'SILICIUM_DEVNET_TRACE=0' \
   'SILICIUM_DEVNET_TRACE_MODE=devnet' >> "$backend_env"
 
+# Rust tile pipeline for the orchestrator (split/reassemble in
+# run_network_job.py). Built for musl so it runs in the Alpine backend image,
+# into the git-ignored target/ of the mounted Network checkout (kept between
+# deployments as a build cache). If the build fails, the backend keeps the
+# Python pipeline: run_network_job.py falls back when SILICIUM_PIPELINE_BIN is
+# unset.
+pipeline_target="$SILICIUM_RUNTIME_ROOT/Network/target/pipeline-alpine"
+pipeline_container_bin="/opt/silicium/Network/target/pipeline-alpine/release/silicium-raytracer"
+sed -i -E '/^SILICIUM_PIPELINE_BIN=/d' "$backend_env"
+if docker run --rm \
+  -v "$SILICIUM_RUNTIME_ROOT/Network:/src" \
+  -v silicium-cargo-registry:/usr/local/cargo/registry \
+  -w /src \
+  rust:1-alpine \
+  sh -c 'apk add --no-cache musl-dev >/dev/null && cargo build --release --locked -p silicium-raytracer --target-dir /src/target/pipeline-alpine' \
+  && [[ -x "$pipeline_target/release/silicium-raytracer" ]]; then
+  printf 'SILICIUM_PIPELINE_BIN=%s\n' "$pipeline_container_bin" >> "$backend_env"
+  echo "Rust tile pipeline enabled for the orchestrator."
+else
+  echo "WARNING: Rust tile pipeline build failed; the orchestrator keeps the Python pipeline." >&2
+fi
+
 # The API submits task envelopes into the host-side orchestrator export. Keep
 # the shared control-plane directories writable by the container user while
 # leaving the rest of the export tree untouched.
