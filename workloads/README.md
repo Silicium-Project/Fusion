@@ -69,7 +69,7 @@ correspond au dossier, que le handler s'importe, et que `index.json` est à jour
 | `standard/standard_workloads.py`, `standard/run.py` | Fonctions communes ; exécution locale d'un workload intégré (`python -m workloads.standard.run`) |
 | `raytracer/node_tasks.py` | Handlers du raytracer : rendu d'une tuile, vérification d'un jalon |
 | `raytracer/run_network_job.py` | Orchestration d'un job de rendu complet (appelé par le BackEnd Go) |
-| `raytracer/raytracer_workload.py`, `split.py`, `compute.py`, `verify.py`, `reassemble.py` | Découpage, rendu natif, vérification, réassemblage |
+| `raytracer/raytracer_workload.py`, `compute.py`, `verify.py` | Rendu natif et vérification d'une tuile (le découpage et le réassemblage sont faits par le binaire `silicium-raytracer`) |
 | `raytracer/examples/` | Scènes `.cfg` d'exemple |
 | `fixtures/` | Fixtures versionnées (`fixtures.json`) et politique d'alignement |
 | `golden/golden-corpus.json` | Corpus golden des plans d'exécution |

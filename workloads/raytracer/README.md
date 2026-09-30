@@ -6,13 +6,19 @@ Phong highlights and row-parallel CPU execution. The desktop packaging scripts
 build it for the target platform. `SILICIUM_RAYTRACER_THREADS` or `--threads`
 can cap its worker count; otherwise it uses the logical CPU count.
 
+Splitting a scene into tiles and reassembling the rendered tiles are done by
+the native binary (`silicium-raytracer split` / `silicium-raytracer reassemble`,
+see `crates/raytracer/README.md`); `run_network_job.py` finds it through
+`SILICIUM_PIPELINE_BIN` (or `SILICIUM_RAYTRACER_BIN`). The Python entrypoints
+below cover the node side (render and verify a tile).
+
 Entrypoints:
 
 ```powershell
-py Network\workloads\raytracer\split.py Network\workloads\raytracer\examples\demo-scene.cfg --output .silicium\raytracer-split.json
+silicium-raytracer split Network\workloads\raytracer\examples\demo-scene.cfg --output .silicium\raytracer-split.json
 py Network\workloads\raytracer\compute.py --scene Network\workloads\raytracer\examples\demo-scene.cfg --output .silicium\fragment-0.ppm --y-start 0 --y-end 120
 py Network\workloads\raytracer\verify.py --scene Network\workloads\raytracer\examples\demo-scene.cfg --result .silicium\fragment-0.ppm --expected-hash sha256:<hash> --y-start 0 --y-end 120
-py Network\workloads\raytracer\reassemble.py --fragment .silicium\fragment-0.ppm --y-start 0 --fragment .silicium\fragment-1.ppm --y-start 120 --output .silicium\raytracer-final.ppm --png .silicium\raytracer-final.png
+silicium-raytracer reassemble --fragment .silicium\fragment-0.ppm --y-start 0 --fragment .silicium\fragment-1.ppm --y-start 120 --output .silicium\raytracer-final.ppm --png .silicium\raytracer-final.png
 ```
 
 The split policy uses rectangular center-out neighbour tiles. Each compute

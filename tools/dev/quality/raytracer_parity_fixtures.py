@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Generate the fixtures that keep the Rust tile pipeline (`crates/raytracer`)
-byte-for-byte aligned with the legacy Python one (`workloads/raytracer`).
+byte-for-byte aligned with the Python code still used by the nodes
+(`workloads/raytracer`: milestones, sampling, PPM parsing, fragment checks).
+
+The split, fragment-estimate and reassembly cases are frozen: their Python
+implementation was removed once the Rust pipeline became the only one, so the
+generator keeps the recorded cases from the existing fixture file.
 
 Run from Network/: `python3 tools/dev/quality/raytracer_parity_fixtures.py`.
 The Rust tests (`cargo test -p silicium-raytracer`) read the output.
@@ -28,15 +33,10 @@ def pattern_ppm(width: int, height: int, seed: int) -> bytes:
 
 
 def main() -> int:
-    split_cases = []
-    for width, height in [(320, 200), (1920, 1080), (7, 3), (1, 1), (640, 480), (100, 1000), (33, 17)]:
-        for count in [1, 2, 3, 4, 5, 7, 9, 12, 16, 17, 31, 32, 64]:
-            split_cases.append({"width": width, "height": height, "count": count, "tiles": rw.split_tiles(width, height, count)})
-
-    estimate_cases = []
-    for width, height, target, maximum in [(320, 200, 120_000, 32), (1920, 1080, 120_000, 32), (100, 3, 10, 32), (4000, 4000, 1, 16), (10, 10, 0, 0)]:
-        scene_text = f"camera : {{ resolution = {{ width = {width} height = {height} }} }}"
-        estimate_cases.append({"scene": scene_text, "target": target, "max": maximum})
+    frozen = json.loads(OUTPUT.read_text(encoding="utf-8"))
+    split_cases = frozen["split"]
+    estimate_cases = frozen["estimate"]
+    reassembly = frozen["reassembly"]
 
     resolution_texts = [
         "camera : { resolution = { width = 64 height = 32 } fieldOfView = 60 }",
@@ -52,9 +52,6 @@ def main() -> int:
     for text in resolution_texts:
         tmp.write_text(text, encoding="utf-8")
         resolution_cases.append({"scene": text, "resolution": list(rw.scene_resolution(tmp))})
-    for case in estimate_cases:
-        tmp.write_text(case["scene"], encoding="utf-8")
-        case["count"] = rw.estimate_fragment_count(tmp, case["target"], case["max"])
     tmp.unlink()
 
     milestone_cases = []
@@ -100,35 +97,6 @@ def main() -> int:
                     "result": rw.verify_probabilistic_milestones(ppm, base_manifest, seed, reputation),
                 }
             )
-
-    fragments = [(0, 0, pattern_ppm(4, 3, 1)), (4, 0, pattern_ppm(3, 3, 2)), (0, 3, pattern_ppm(7, 2, 3))]
-    width = max(x + int(p.split(b"\n")[1].split()[0]) for x, _, p in fragments)
-    reassembly = {"fragments": [{"x": x, "y": y, "width": int(p.split(b"\n")[1].split()[0]), "height": int(p.split(b"\n")[1].split()[1]), "seed": s} for (x, y, p), s in zip(fragments, [1, 2, 3])]}
-    out = ROOT / ".silicium" / "parity-reassembled.ppm"
-    args = type("A", (), {})()
-    args.output = str(out)
-    args.fragment = []
-    args.x_start = []
-    args.y_start = []
-    args.png = ""
-    args.result_json = ""
-    frag_paths = []
-    for index, (x, y, ppm) in enumerate(fragments):
-        path = ROOT / ".silicium" / f"parity-frag-{index}.ppm"
-        path.write_bytes(ppm)
-        frag_paths.append(path)
-        args.fragment.append(str(path))
-        args.x_start.append(str(x))
-        args.y_start.append(str(y))
-    import contextlib
-    import io
-
-    with contextlib.redirect_stdout(io.StringIO()):
-        rw.command_reassemble(args)
-    reassembly["sha256"] = hashlib.sha256(out.read_bytes()).hexdigest()
-    reassembly["width"] = width
-    for path in [out, *frag_paths]:
-        path.unlink()
 
     parse_errors = []
     for label, data in [

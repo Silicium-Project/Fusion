@@ -385,58 +385,6 @@ def test_fragment_validation_checks_format_dimensions_and_hash() -> None:
         )
 
 
-def test_reassembly_succeeds_when_optional_png_conversion_fails(tmp_path, monkeypatch) -> None:
-    fragment = tmp_path / "fragment.ppm"
-    fragment.write_bytes(_ppm(1, 1, bytes([1, 2, 3])))
-    output = tmp_path / "render.ppm"
-    png = tmp_path / "render.png"
-    result_json = tmp_path / "reassemble.json"
-    monkeypatch.setattr(
-        raytracer_workload,
-        "ppm_to_png_bytes",
-        lambda _ppm_bytes: (_ for _ in ()).throw(ValueError("synthetic PNG failure")),
-    )
-    args = argparse.Namespace(
-        output=str(output),
-        fragment=[str(fragment)],
-        x_start=["0"],
-        y_start=["0"],
-        png=str(png),
-        result_json=str(result_json),
-    )
-
-    assert raytracer_workload.command_reassemble(args) == 0
-
-    result = json.loads(result_json.read_text(encoding="utf-8"))
-    assert output.exists()
-    assert result["result_png_ready"] is False
-    assert "synthetic PNG failure" in result["result_png_error"]
-    assert result["result_png_path"] == ""
-    assert not png.exists()
-
-
-def test_reassembly_places_rectangular_tiles_without_ordering_them(tmp_path) -> None:
-    right = tmp_path / "right.ppm"
-    left = tmp_path / "left.ppm"
-    right.write_bytes(_ppm(1, 2, bytes([20, 21, 22, 23, 24, 25])))
-    left.write_bytes(_ppm(1, 2, bytes([1, 2, 3, 4, 5, 6])))
-    output = tmp_path / "render.ppm"
-
-    args = argparse.Namespace(
-        output=str(output),
-        fragment=[str(right), str(left)],
-        x_start=["1", "0"],
-        y_start=["0", "0"],
-        png="",
-        result_json="",
-    )
-
-    assert raytracer_workload.command_reassemble(args) == 0
-    width, height, pixels = raytracer_workload.read_ppm(output)
-    assert (width, height) == (2, 2)
-    assert pixels == bytes([1, 2, 3, 20, 21, 22, 4, 5, 6, 23, 24, 25])
-
-
 def test_ppm_parser_rejects_ascii_p3_and_corrupted_headers() -> None:
     # 1. ASCII P3 magic header rejection
     p3_ppm = b"P3\n1 1\n255\n255 0 0\n"

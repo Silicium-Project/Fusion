@@ -47,11 +47,17 @@ silicium-raytracer reassemble --fragment a.ppm --x-start 0 --y-start 0 --fragmen
 silicium-raytracer validate tuile.ppm [--width W] [--height H] [--expected-hash H]
 ```
 
-Chaque étape donne exactement les résultats de `workloads/raytracer/raytracer_workload.py`
-(même plan de tuiles, mêmes hash de jalons et d'engagement, même image
-réassemblée ; le PNG contient les mêmes pixels, la compression peut différer).
+`split` et `reassemble` sont la **seule** implémentation du découpage et du
+réassemblage : l'orchestrateur (`workloads/raytracer/run_network_job.py`) les
+appelle via `SILICIUM_PIPELINE_BIN`, et le déploiement construit le binaire
+(`Fusion/deploy/compose/deploy.sh`). Les autres étapes donnent exactement les
+résultats du code Python encore utilisé par les nœuds (mêmes hash de jalons et
+d'engagement, mêmes erreurs PPM, même validation de fragment).
+
 Les tests `tests/python_parity.rs` lisent `tests/fixtures/python_parity.json`,
-régénéré par `python3 tools/dev/quality/raytracer_parity_fixtures.py`.
+régénéré par `python3 tools/dev/quality/raytracer_parity_fixtures.py`. Les cas
+de découpage, d'estimation et de réassemblage y sont figés (le code Python qui
+les produisait a été supprimé).
 
 ## Construire et tester
 
@@ -65,6 +71,7 @@ binaire et l'installe dans `Network/bin/raytracer/`.
 
 ## Évolution prévue
 
-Brancher cette chaîne dans le nœud Rust (découpage et réassemblage côté
-émetteur) ; la copie Python de `workloads/raytracer/` sera alors supprimée.
-Les reçus signés (`tools/receipt_verification.py`) restent à porter.
+Passer aussi en Rust la vérification des fragments et des jalons côté
+orchestrateur, puis brancher la chaîne dans le nœud Rust ; les fonctions Python
+correspondantes de `workloads/raytracer/` seront alors supprimées. Les reçus
+signés (`tools/receipt_verification.py`) restent à porter.

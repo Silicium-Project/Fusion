@@ -617,30 +617,27 @@ def wait_for_network_role(export_dir: Path, node_id: str, role: str, timeout_s: 
     raise TimeoutError(f"missing network peer with role {role!r} after {timeout_s:.1f}s: {peers_path}")
 
 
-def pipeline_binary() -> str | None:
-    """Rust tile pipeline (`silicium-raytracer split/reassemble`), when available.
+def pipeline_binary() -> str:
+    """Native tile pipeline (`silicium-raytracer split/reassemble`).
 
-    SILICIUM_PIPELINE_BIN points at the native binary. Its outputs match the
-    Python pipeline (crates/raytracer/tests/python_parity.rs); the Python
-    scripts remain the fallback when the variable is unset.
+    SILICIUM_PIPELINE_BIN points at the binary; SILICIUM_RAYTRACER_BIN (the
+    renderer, same binary) is used when it is not set. The Python split and
+    reassemble were removed once the Rust pipeline was validated in dev.
     """
-    configured = os.environ.get("SILICIUM_PIPELINE_BIN", "").strip()
-    if not configured:
-        return None
-    if not (os.path.isfile(configured) and os.access(configured, os.X_OK)):
-        raise RuntimeError(f"raytracer_pipeline_binary_unusable:{configured}")
-    return configured
-
-
-def pipeline_backend() -> str:
-    return "rust" if pipeline_binary() else "python"
+    for variable in ("SILICIUM_PIPELINE_BIN", "SILICIUM_RAYTRACER_BIN"):
+        configured = os.environ.get(variable, "").strip()
+        if not configured:
+            continue
+        if not (os.path.isfile(configured) and os.access(configured, os.X_OK)):
+            raise RuntimeError(f"raytracer_pipeline_binary_unusable:{configured}")
+        return configured
+    raise RuntimeError("raytracer_pipeline_binary_missing")
 
 
 def make_split(args: argparse.Namespace, scene_path: Path, split_path: Path) -> dict[str, Any]:
-    binary = pipeline_binary()
-    script = NETWORK_ROOT / "workloads" / "raytracer" / "split.py"
-    cmd = [binary, "split"] if binary else [sys.executable, str(script)]
-    cmd += [
+    cmd = [
+        pipeline_binary(),
+        "split",
         str(scene_path),
         "--output",
         str(split_path),
@@ -658,9 +655,7 @@ def make_split(args: argparse.Namespace, scene_path: Path, split_path: Path) -> 
 
 
 def reassemble_fragments(fragment_files: list[tuple[int, int, Path]], output_ppm: Path, output_png: Path, result_json: Path) -> dict[str, Any]:
-    binary = pipeline_binary()
-    script = NETWORK_ROOT / "workloads" / "raytracer" / "reassemble.py"
-    cmd = [binary, "reassemble"] if binary else [sys.executable, str(script)]
+    cmd = [pipeline_binary(), "reassemble"]
     for x_start, y_start, fragment_file in fragment_files:
         cmd.extend(
             [
@@ -670,15 +665,12 @@ def reassemble_fragments(fragment_files: list[tuple[int, int, Path]], output_ppm
             ]
         )
     cmd.extend(["--output", str(output_ppm), "--png", str(output_png)])
-    if not binary:
-        cmd.extend(["--result-json", str(result_json)])
     completed = subprocess.run(cmd, text=True, capture_output=True, timeout=60, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"raytracer_reassemble_failed:{completed.stderr[-2048:]}")
-    if binary:
-        # The Rust CLI prints its result on stdout; keep the same file contract.
-        result_json.write_text(completed.stdout, encoding="utf-8")
-    return json.loads(result_json.read_text(encoding="utf-8"))
+    # The CLI prints its result on stdout; keep it next to the image as before.
+    result_json.write_text(completed.stdout, encoding="utf-8")
+    return json.loads(completed.stdout)
 
 
 def run_devnet_trace(args: argparse.Namespace, summary_path: Path) -> dict[str, Any]:
@@ -1477,7 +1469,6 @@ def main(argv: list[str] | None = None) -> int:
             "export_dir": str(export_dir),
             "image": {"width": width, "height": height},
             "split_policy": split.get("split_policy", {}),
-            "pipeline_backend": pipeline_backend(),
             "fragment_count": len(fragments),
             "fragments": [progress_fragments[index] for index in sorted(progress_fragments)],
             "submissions": submissions,

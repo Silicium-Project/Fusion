@@ -32,3 +32,39 @@ pub fn reassemble(tiles: &[PlacedTile<'_>]) -> Result<Vec<u8>, String> {
     }
     Ok(ppm::encode(width, height, &pixels))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn places_rectangular_tiles_whatever_their_order() {
+        let right = ppm::encode(1, 2, &[20, 21, 22, 23, 24, 25]);
+        let left = ppm::encode(1, 2, &[1, 2, 3, 4, 5, 6]);
+        let tiles = [
+            PlacedTile {
+                x_start: 1,
+                y_start: 0,
+                ppm: &right,
+            },
+            PlacedTile {
+                x_start: 0,
+                y_start: 0,
+                ppm: &left,
+            },
+        ];
+        let image = ppm::parse(&reassemble(&tiles).unwrap(), "render").unwrap();
+        assert_eq!((image.width, image.height), (2, 2));
+        assert_eq!(image.pixels, vec![1, 2, 3, 20, 21, 22, 4, 5, 6, 23, 24, 25]);
+    }
+
+    #[test]
+    fn rejects_an_invalid_tile() {
+        let tiles = [PlacedTile {
+            x_start: 0,
+            y_start: 0,
+            ppm: b"not a ppm",
+        }];
+        assert!(reassemble(&tiles).is_err());
+    }
+}

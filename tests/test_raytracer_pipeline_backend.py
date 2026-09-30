@@ -1,10 +1,8 @@
-"""run_network_job.py drives the same tile pipeline in Rust or Python."""
+"""run_network_job.py drives the native tile pipeline (silicium-raytracer)."""
 
 from __future__ import annotations
 
-import json
 import os
-import shutil
 import subprocess
 import types
 from pathlib import Path
@@ -32,14 +30,11 @@ RUST = _rust_binary()
 needs_rust = pytest.mark.skipif(RUST is None, reason="silicium-raytracer binary not built")
 
 
-def _split_args() -> types.SimpleNamespace:
-    return types.SimpleNamespace(target_pixels=65536, max_fragments=64, fragments=0)
-
-
-def test_pipeline_backend_defaults_to_python(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pipeline_binary_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SILICIUM_PIPELINE_BIN", raising=False)
-    assert run_network_job.pipeline_binary() is None
-    assert run_network_job.pipeline_backend() == "python"
+    monkeypatch.delenv("SILICIUM_RAYTRACER_BIN", raising=False)
+    with pytest.raises(RuntimeError, match="raytracer_pipeline_binary_missing"):
+        run_network_job.pipeline_binary()
 
 
 def test_pipeline_binary_must_be_executable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -48,41 +43,46 @@ def test_pipeline_binary_must_be_executable(monkeypatch: pytest.MonkeyPatch, tmp
         run_network_job.pipeline_binary()
 
 
-@needs_rust
-def test_rust_and_python_pipelines_agree(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    results = {}
-    for backend in ("python", "rust"):
-        work = tmp_path / backend
-        work.mkdir()
-        if backend == "rust":
-            monkeypatch.setenv("SILICIUM_PIPELINE_BIN", str(RUST))
-        else:
-            monkeypatch.delenv("SILICIUM_PIPELINE_BIN", raising=False)
-        assert run_network_job.pipeline_backend() == backend
-        plan = run_network_job.make_split(_split_args(), SCENE, work / "split.json")
-        fragments = []
-        for fragment in plan["fragments"]:
-            output = work / f"{fragment['fragment_id']}.ppm"
-            subprocess.run(
-                [
-                    str(RUST), str(SCENE), "--output", str(output),
-                    "--x-start", str(fragment["x_start"]), "--x-end", str(fragment["x_end"]),
-                    "--y-start", str(fragment["y_start"]), "--y-end", str(fragment["y_end"]),
-                ],
-                check=True,
-                capture_output=True,
-            )
-            fragments.append((fragment["x_start"], fragment["y_start"], output))
-        summary = run_network_job.reassemble_fragments(
-            fragments, work / "render.ppm", work / "render.png", work / "reassemble.json"
-        )
-        assert json.loads((work / "reassemble.json").read_text(encoding="utf-8")) == summary
-        results[backend] = (plan, summary, (work / "render.ppm").read_bytes())
+def test_renderer_binary_is_the_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    renderer = tmp_path / "silicium-raytracer"
+    renderer.write_text("#!/bin/sh\n", encoding="utf-8")
+    renderer.chmod(0o755)
+    monkeypatch.delenv("SILICIUM_PIPELINE_BIN", raising=False)
+    monkeypatch.setenv("SILICIUM_RAYTRACER_BIN", str(renderer))
+    assert run_network_job.pipeline_binary() == str(renderer)
 
-    python_plan, python_summary, python_ppm = results["python"]
-    rust_plan, rust_summary, rust_ppm = results["rust"]
-    assert rust_plan == python_plan
-    assert rust_ppm == python_ppm
-    assert rust_summary["result_sha256"] == python_summary["result_sha256"]
-    assert rust_summary["fragment_count"] == python_summary["fragment_count"]
-    assert rust_summary["result_png_ready"] is python_summary["result_png_ready"] is True
+
+@needs_rust
+def test_split_render_and_reassemble_a_job(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("SILICIUM_PIPELINE_BIN", str(RUST))
+    args = types.SimpleNamespace(target_pixels=65536, max_fragments=64, fragments=0)
+    plan = run_network_job.make_split(args, SCENE, tmp_path / "split.json")
+    assert plan["fragment_count"] == len(plan["fragments"]) > 1
+    width, height = plan["image"]["width"], plan["image"]["height"]
+    assert sum(
+        (f["x_end"] - f["x_start"]) * (f["y_end"] - f["y_start"]) for f in plan["fragments"]
+    ) == width * height
+
+    fragments = []
+    for fragment in plan["fragments"]:
+        output = tmp_path / f"{fragment['fragment_id']}.ppm"
+        subprocess.run(
+            [
+                str(RUST), str(SCENE), "--output", str(output),
+                "--x-start", str(fragment["x_start"]), "--x-end", str(fragment["x_end"]),
+                "--y-start", str(fragment["y_start"]), "--y-end", str(fragment["y_end"]),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        fragments.append((fragment["x_start"], fragment["y_start"], output))
+    full = tmp_path / "full.ppm"
+    subprocess.run([str(RUST), str(SCENE), "--output", str(full)], check=True, capture_output=True)
+
+    summary = run_network_job.reassemble_fragments(
+        fragments, tmp_path / "render.ppm", tmp_path / "render.png", tmp_path / "reassemble.json"
+    )
+    assert (tmp_path / "render.ppm").read_bytes() == full.read_bytes()
+    assert summary["fragment_count"] == len(fragments)
+    assert summary["result_png_ready"] is True
+    assert (tmp_path / "reassemble.json").is_file()

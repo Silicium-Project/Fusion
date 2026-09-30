@@ -149,3 +149,53 @@ pub fn split_tiles(
     }
     Ok(ordered)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn area(tile: &Tile) -> usize {
+        (tile.x_end - tile.x_start) * (tile.y_end - tile.y_start)
+    }
+
+    fn shares_an_edge(a: &Tile, b: &Tile) -> bool {
+        let side_by_side = (a.x_start == b.x_end || a.x_end == b.x_start)
+            && a.y_end.min(b.y_end) > a.y_start.max(b.y_start);
+        let stacked = (a.y_start == b.y_end || a.y_end == b.y_start)
+            && a.x_end.min(b.x_end) > a.x_start.max(b.x_start);
+        side_by_side || stacked
+    }
+
+    #[test]
+    fn tiles_cover_the_image_with_the_requested_count() {
+        let tiles = split_tiles(1920, 1080, 17).unwrap();
+        assert_eq!(tiles.len(), 17);
+        assert_eq!(tiles.iter().map(area).sum::<usize>(), 1920 * 1080);
+        assert!(tiles
+            .iter()
+            .all(|tile| tile.x_end > tile.x_start && tile.y_end > tile.y_start));
+    }
+
+    #[test]
+    fn order_starts_at_the_centre_and_walks_neighbours() {
+        let tiles = split_tiles(1200, 800, 12).unwrap();
+        let first = &tiles[0];
+        assert!(first.x_start <= 600 && 600 <= first.x_end);
+        assert!(first.y_start <= 400 && 400 <= first.y_end);
+        for (index, tile) in tiles.iter().enumerate().skip(1) {
+            assert!(
+                tiles[..index]
+                    .iter()
+                    .any(|other| shares_an_edge(tile, other)),
+                "tile {index} does not touch an earlier tile"
+            );
+        }
+    }
+
+    #[test]
+    fn more_rows_than_image_width_still_covers_every_pixel() {
+        let tiles = split_tiles(2, 7, 11).unwrap();
+        assert_eq!(tiles.len(), 11);
+        assert_eq!(tiles.iter().map(area).sum::<usize>(), 14);
+    }
+}

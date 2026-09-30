@@ -1,52 +1,8 @@
 import shutil
 from pathlib import Path
 
-from workloads.raytracer.raytracer_workload import parse_ppm_bytes, run_raytracer, split_tiles
+from workloads.raytracer.raytracer_workload import parse_ppm_bytes, run_raytracer
 from workloads.raytracer.run_network_job import build_performance_summary
-
-
-def test_split_tiles_covers_image_with_requested_count() -> None:
-    width, height, count = 1920, 1080, 17
-    tiles = split_tiles(width, height, count)
-
-    assert len(tiles) == count
-    covered = sum(
-        (tile["x_end"] - tile["x_start"]) * (tile["y_end"] - tile["y_start"])
-        for tile in tiles
-    )
-    assert covered == width * height
-    assert all(tile["x_end"] > tile["x_start"] for tile in tiles)
-    assert all(tile["y_end"] > tile["y_start"] for tile in tiles)
-
-
-def test_split_tiles_starts_near_centre_and_walks_neighbours() -> None:
-    tiles = split_tiles(1200, 800, 12)
-    first = tiles[0]
-
-    assert first["x_start"] <= 600 <= first["x_end"]
-    assert first["y_start"] <= 400 <= first["y_end"]
-    for index, tile in enumerate(tiles[1:], start=1):
-        predecessors = tiles[:index]
-        assert any(
-            (
-                (tile["x_start"] == other["x_end"] or tile["x_end"] == other["x_start"])
-                and min(tile["y_end"], other["y_end"]) > max(tile["y_start"], other["y_start"])
-            )
-            or (
-                (tile["y_start"] == other["y_end"] or tile["y_end"] == other["y_start"])
-                and min(tile["x_end"], other["x_end"]) > max(tile["x_start"], other["x_start"])
-            )
-            for other in predecessors
-        )
-
-
-def test_split_tiles_handles_more_rows_than_image_width() -> None:
-    tiles = split_tiles(2, 7, 11)
-    assert len(tiles) == 11
-    assert sum(
-        (tile["x_end"] - tile["x_start"]) * (tile["y_end"] - tile["y_start"])
-        for tile in tiles
-    ) == 14
 
 
 def test_raytracer_rectangular_crop_matches_full_render(tmp_path, monkeypatch) -> None:

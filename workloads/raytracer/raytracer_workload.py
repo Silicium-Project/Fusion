@@ -16,7 +16,6 @@ import sys
 import tempfile
 import time
 import hashlib
-from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -29,8 +28,6 @@ except ImportError:  # run as a script from workloads/raytracer/ (compute.py, ve
     from workloads.common import parse_ppm_bytes, performance_duration, ppm_to_png_bytes, sha256_bytes, sha256_file, write_json
 
 __all__ = ["parse_ppm_bytes", "sha256_bytes", "sha256_file"]  # re-exported for callers and tests
-DEFAULT_TARGET_PIXELS_PER_FRAGMENT = 120_000
-DEFAULT_MAX_FRAGMENTS = 32
 DEFAULT_VERIFICATION_BATCH_ROWS = 20
 
 
@@ -150,96 +147,6 @@ def scene_resolution(scene: Path) -> tuple[int, int]:
     if not match:
         return (1920, 1080)
     return (max(1, int(match.group(1))), max(1, int(match.group(2))))
-
-
-def estimate_fragment_count(scene: Path, target_pixels: int, max_fragments: int) -> int:
-    width, height = scene_resolution(scene)
-    pixels = width * height
-    fragments = max(1, math.ceil(pixels / max(1, target_pixels)))
-    return max(1, min(fragments, max(1, max_fragments), height))
-
-
-def split_tiles(width: int, height: int, fragment_count: int) -> list[dict[str, int]]:
-    """Cover the image with exactly N rectangular tiles in center-out BFS order.
-
-    Rows may have one more column than their neighbours, which supports arbitrary
-    fragment counts without leaving holes. Ordering walks edge-sharing neighbours
-    from the tile nearest the image centre; it never globally sorts by distance.
-    """
-    fragment_count = max(1, min(int(fragment_count), width * height))
-    ideal_rows = round(math.sqrt(fragment_count * height / width))
-    row_count = max(math.ceil(fragment_count / width), min(height, fragment_count, max(1, ideal_rows)))
-    base_columns, extra_columns = divmod(fragment_count, row_count)
-    columns_per_row = [base_columns + (1 if row < extra_columns else 0) for row in range(row_count)]
-
-    tiles: list[dict[str, int]] = []
-    rows: list[list[int]] = []
-    for row, column_count in enumerate(columns_per_row):
-        y_start = round(row * height / row_count)
-        y_end = round((row + 1) * height / row_count)
-        row_tiles: list[int] = []
-        for column in range(column_count):
-            x_start = round(column * width / column_count)
-            x_end = round((column + 1) * width / column_count)
-            if x_end <= x_start or y_end <= y_start:
-                continue
-            row_tiles.append(len(tiles))
-            tiles.append(
-                {
-                    "tile_row": row,
-                    "tile_column": column,
-                    "x_start": x_start,
-                    "x_end": x_end,
-                    "y_start": y_start,
-                    "y_end": y_end,
-                }
-            )
-        rows.append(row_tiles)
-
-    center_x = width / 2.0
-    center_y = height / 2.0
-    start = 0
-    best_distance = float("inf")
-    for tile_index, tile in enumerate(tiles):
-        tile_x = (tile["x_start"] + tile["x_end"]) / 2.0
-        tile_y = (tile["y_start"] + tile["y_end"]) / 2.0
-        distance = (tile_x - center_x) ** 2 + (tile_y - center_y) ** 2
-        if distance < best_distance:
-            start = tile_index
-            best_distance = distance
-
-    neighbours: list[list[int]] = [[] for _ in tiles]
-    for row, row_tiles in enumerate(rows):
-        for position, tile_index in enumerate(row_tiles):
-            if position + 1 < len(row_tiles):
-                right = row_tiles[position + 1]
-                neighbours[tile_index].append(right)
-                neighbours[right].append(tile_index)
-            for adjacent_row in (row - 1, row + 1):
-                if adjacent_row < 0 or adjacent_row >= len(rows):
-                    continue
-                tile = tiles[tile_index]
-                for candidate in rows[adjacent_row]:
-                    other = tiles[candidate]
-                    if min(tile["x_end"], other["x_end"]) > max(tile["x_start"], other["x_start"]):
-                        neighbours[tile_index].append(candidate)
-
-    ordered: list[dict[str, int]] = []
-    pending = deque([start])
-    visited = {start}
-    while pending:
-        tile_index = pending.popleft()
-        ordered.append(tiles[tile_index])
-        for neighbour in neighbours[tile_index]:
-            if neighbour not in visited:
-                visited.add(neighbour)
-                pending.append(neighbour)
-
-    if len(ordered) != len(tiles):
-        raise RuntimeError("raytracer_tile_graph_disconnected")
-    return ordered
-
-
 
 
 def read_ppm(path: Path) -> tuple[int, int, bytes]:
@@ -392,11 +299,6 @@ def verify_probabilistic_milestones(
         "reason": "",
     }
 
-
-
-def write_ppm(path: Path, width: int, height: int, pixels: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(f"P6\n{width} {height}\n255\n".encode("ascii") + pixels)
 
 
 def run_raytracer(
@@ -682,100 +584,6 @@ def command_verify(args: argparse.Namespace) -> int:
     return 0 if verified else 2
 
 
-def command_split(args: argparse.Namespace) -> int:
-    scene = Path(args.scene).resolve()
-    width, height = scene_resolution(scene)
-    fragment_count = int(args.fragments) if int(args.fragments) > 0 else estimate_fragment_count(
-        scene,
-        int(args.target_pixels),
-        int(args.max_fragments),
-    )
-    tiles = split_tiles(width, height, fragment_count)
-    fragments = []
-    for index, tile in enumerate(tiles):
-        x_start = tile["x_start"]
-        x_end = tile["x_end"]
-        y_start = tile["y_start"]
-        y_end = tile["y_end"]
-        fragments.append(
-            {
-                "fragment_index": index,
-                "fragment_id": f"fragment-{index:03d}",
-                "is_leaf": True,
-                "depth": 0,
-                "tile_row": tile["tile_row"],
-                "tile_column": tile["tile_column"],
-                "x_start": x_start,
-                "x_end": x_end,
-                "y_start": y_start,
-                "y_end": y_end,
-                "scene_path": str(scene),
-                "scene_sha256": sha256_file(scene),
-                "complexity_score": (x_end - x_start) * (y_end - y_start),
-            }
-        )
-    payload = {
-        "schema_version": 1,
-        "workload": "raytracer",
-        "image": {"width": width, "height": height},
-        "split_policy": {
-            "kind": "center-out-neighbour-grid",
-            "ordering": "breadth-first-edge-neighbours",
-            "target_pixels_per_fragment": int(args.target_pixels),
-            "max_fragments": int(args.max_fragments),
-        },
-        "fragment_count": len(fragments),
-        "fragments": fragments,
-    }
-    write_json(Path(args.output).resolve(), payload)
-    print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0
-
-
-def command_reassemble(args: argparse.Namespace) -> int:
-    output = Path(args.output).resolve()
-    fragments = [Path(value).resolve() for value in args.fragment]
-    placed: list[tuple[int, int, int, int, bytes]] = []
-    width = 0
-    height = 0
-    for index, fragment in enumerate(fragments):
-        fragment_width, fragment_height, fragment_pixels = read_ppm(fragment)
-        x_start = int(args.x_start[index]) if index < len(args.x_start) and args.x_start[index] != "" else 0
-        y_start = int(args.y_start[index]) if index < len(args.y_start) and args.y_start[index] != "" else 0
-        width = max(width, x_start + fragment_width)
-        height = max(height, y_start + fragment_height)
-        placed.append((x_start, y_start, fragment_width, fragment_height, fragment_pixels))
-    pixels = bytearray(width * height * 3)
-    for x_start, y_start, fragment_width, fragment_height, fragment_pixels in placed:
-        for local_y in range(fragment_height):
-            source_start = local_y * fragment_width * 3
-            target_start = ((y_start + local_y) * width + x_start) * 3
-            pixels[target_start : target_start + fragment_width * 3] = fragment_pixels[
-                source_start : source_start + fragment_width * 3
-            ]
-    write_ppm(output, width, height, bytes(pixels))
-    payload = {
-        "schema_version": 1,
-        "workload": "raytracer",
-        "entrypoint": "reassemble",
-        "fragment_count": len(fragments),
-        "result_path": str(output),
-        "result_sha256": sha256_file(output),
-        "result_format": "ppm/p6",
-    }
-    if args.png:
-        png_path = Path(args.png).resolve()
-        png = write_optional_png(output.read_bytes(), png_path)
-        payload["result_png_ready"] = png["ready"]
-        payload["result_png_path"] = png["path"]
-        payload["result_png_sha256"] = png["sha256"]
-        payload["result_png_error"] = png["error"]
-    if args.result_json:
-        write_json(Path(args.result_json).resolve(), payload)
-    print(json.dumps(payload, indent=2, sort_keys=True))
-    return 0
-
-
 def command_validate(args: argparse.Namespace) -> int:
     """Standalone CLI subcommand: validate a P6 PPM binary fragment."""
     fragment_path = Path(args.fragment).resolve()
@@ -806,14 +614,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Silicium raytracer workload entrypoints.")
     sub = parser.add_subparsers(dest="command")
 
-    split = sub.add_parser("split")
-    split.add_argument("scene")
-    split.add_argument("--output", required=True)
-    split.add_argument("--fragments", type=int, default=0)
-    split.add_argument("--target-pixels", default=str(DEFAULT_TARGET_PIXELS_PER_FRAGMENT))
-    split.add_argument("--max-fragments", default=str(DEFAULT_MAX_FRAGMENTS))
-    split.set_defaults(func=command_split)
-
     compute = sub.add_parser("compute")
     compute.add_argument("--scene", required=True)
     compute.add_argument("--output", required=True)
@@ -842,15 +642,6 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--seed", default="")
     verify.add_argument("--reputation-score", type=float, default=50.0)
     verify.set_defaults(func=command_verify)
-
-    reassemble = sub.add_parser("reassemble")
-    reassemble.add_argument("--fragment", action="append", required=True)
-    reassemble.add_argument("--y-start", action="append", default=[])
-    reassemble.add_argument("--x-start", action="append", default=[])
-    reassemble.add_argument("--output", required=True)
-    reassemble.add_argument("--png", default="")
-    reassemble.add_argument("--result-json", default="")
-    reassemble.set_defaults(func=command_reassemble)
 
     validate = sub.add_parser("validate", help="Validate a P6 PPM binary fragment (issue #85)")
     validate.add_argument("fragment", help="Path to the PPM file to validate")
