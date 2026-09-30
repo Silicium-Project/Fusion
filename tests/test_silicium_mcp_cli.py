@@ -20,22 +20,6 @@ def _find_free_port() -> int:
     return port
 
 
-def _wait_health(url: str, token: str, timeout: float = 10.0) -> None:
-    deadline = time.time() + timeout
-    last = None
-    while time.time() < deadline:
-        req = urllib.request.Request(url + "/healthz", headers={"Authorization": f"Bearer {token}"})
-        try:
-            with urllib.request.urlopen(req, timeout=1) as resp:
-                if resp.status == 200:
-                    return
-                last = resp.status
-        except Exception as exc:
-            last = str(exc)
-        time.sleep(0.05)
-    raise AssertionError(f"server not ready: {last}")
-
-
 def _fake_solana_bridge(path: Path) -> Path:
     path.write_text(
         """
@@ -99,50 +83,89 @@ def test_silicium_mcp_print_config_json(tmp_path: Path) -> None:
     assert token_file.exists()
 
 
-def test_silicium_mcp_serve_starts_server(tmp_path: Path) -> None:
+class _ServerExited(Exception):
+    """`silicium mcp serve` stopped before answering; carries its stderr."""
+
+    def __init__(self, stderr: str) -> None:
+        super().__init__(stderr)
+        self.stderr = stderr
+
+
+def _start_mcp_serve(workdir: Path) -> tuple[subprocess.Popen, int, str]:
+    """Start `silicium mcp serve` on a free port; return (process, port, token).
+
+    Output goes to files (a full pipe would block the server) and the process
+    is watched while waiting, so an early exit is reported with its stderr.
+    """
+    workdir.mkdir(parents=True, exist_ok=True)
     port = _find_free_port()
-    export_dir = tmp_path / "export"
-    token_file = tmp_path / "token"
-    cfg_path = tmp_path / "config.json"
+    token_file = workdir / "token"
+    cfg_path = workdir / "config.json"
     cfg_path.write_text(
         json.dumps(
             {
                 "mcp": {
                     "bind": "127.0.0.1",
                     "port": port,
-                    "export_dir": str(export_dir),
+                    "export_dir": str(workdir / "export"),
                     "token_file": str(token_file),
                 }
             }
         ),
         encoding="utf-8",
     )
-
     env = os.environ.copy()
     env["SILICIUM_CONFIG"] = str(cfg_path)
+    stderr_path = workdir / "stderr.log"
+    with open(workdir / "stdout.log", "wb") as stdout, open(stderr_path, "wb") as stderr:
+        proc = subprocess.Popen(
+            [sys.executable, str(SILICIUM), "mcp", "serve"],
+            cwd=REPO_ROOT,
+            env=env,
+            stdout=stdout,
+            stderr=stderr,
+        )
 
-    proc = subprocess.Popen(
-        [sys.executable, str(SILICIUM), "mcp", "serve"],
-        cwd=REPO_ROOT,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    def exited() -> bool:
+        return proc.poll() is not None
+
+    # Under a loaded full test run the CLI can take several seconds to start.
+    deadline = time.time() + 30.0
+    token = ""
+    while time.time() < deadline and not exited() and not token:
+        if token_file.exists():
+            token = token_file.read_text(encoding="utf-8").strip()
+        time.sleep(0.05)
+    while time.time() < deadline and not exited():
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/healthz", headers={"Authorization": f"Bearer {token}"}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=1) as response:
+                if response.status == 200 and token:
+                    return proc, port, token
+        except Exception:
+            pass
+        time.sleep(0.05)
+    if exited():
+        raise _ServerExited(stderr_path.read_text(encoding="utf-8", errors="replace"))
+    proc.kill()
+    raise AssertionError(f"mcp serve not ready after 30s: {stderr_path.read_text(errors='replace')[-2000:]}")
+
+
+def test_silicium_mcp_serve_starts_server(tmp_path: Path) -> None:
+    # Other test runs share the machine in CI: a port picked as free can be
+    # taken before the server binds it, so retry on "address already in use".
+    for attempt in range(3):
+        try:
+            proc, _port, token = _start_mcp_serve(tmp_path / f"attempt-{attempt}")
+        except _ServerExited as error:
+            if "Address already in use" in error.stderr and attempt < 2:
+                continue
+            raise AssertionError(f"mcp serve exited early: {error.stderr[-2000:]}") from None
+        break
     try:
-        # Under a loaded full test run the CLI can take several seconds to start.
-        deadline = time.time() + 30.0
-        token = ""
-        while time.time() < deadline:
-            if proc.poll() is not None:
-                raise AssertionError(f"mcp serve exited early: {proc.stderr.read()}")
-            if token_file.exists():
-                token = token_file.read_text(encoding="utf-8").strip()
-                if token:
-                    break
-            time.sleep(0.05)
-        assert token, "mcp serve did not write its token file"
-        _wait_health(f"http://127.0.0.1:{port}", token, timeout=30.0)
+        assert token
     finally:
         proc.terminate()
         try:
