@@ -62,6 +62,10 @@ résultats enregistrés depuis l'ancien code Python (supprimé) ; il est lu par
 `tests/python_parity.rs` et par `tests/test_raytracer_native.py` (pont Python).
 Ne pas le régénérer.
 
+`tests/milestone_rules.rs` teste les règles elles-mêmes : regroupement des
+lignes en jalons, jalon modifié par un pixel altéré, taux d'échantillonnage selon
+la réputation, escalade en cas d'échec.
+
 ## Construire et tester
 
 ```bash
