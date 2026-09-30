@@ -1,69 +1,36 @@
-"""Legacy raytracer pipeline: split, compute, verify, reassemble and validate PPM tiles.
+"""Raytracer node entry points: `compute`, `verify` and `validate` one tile.
 
-Rendering itself is done by the native crates/raytracer binary (SILICIUM_RAYTRACER_BIN).
+Rendering is done by the native binary (SILICIUM_RAYTRACER_BIN); tile checks
+(milestones, probabilistic verification, fragment validation, PNG previews)
+go through `workloads.raytracer.native`, which calls the same binary.
+Run as `compute.py` / `verify.py` or `raytracer_workload.py <command>`.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-import math
-import re
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import time
-import hashlib
 from pathlib import Path
 from typing import Any
 
 NETWORK_ROOT = Path(__file__).resolve().parents[2]
 
 try:
-    from workloads.common import parse_ppm_bytes, performance_duration, ppm_to_png_bytes, sha256_bytes, sha256_file, write_json
+    from workloads.common import performance_duration, sha256_bytes, sha256_file, write_json
 except ImportError:  # run as a script from workloads/raytracer/ (compute.py, verify.py...)
     sys.path.insert(0, str(NETWORK_ROOT))
-    from workloads.common import parse_ppm_bytes, performance_duration, ppm_to_png_bytes, sha256_bytes, sha256_file, write_json
+    from workloads.common import performance_duration, sha256_bytes, sha256_file, write_json
 
-from workloads.raytracer import native  # noqa: E402  (tile checks run in the Rust binary)
+from workloads.raytracer import native  # noqa: E402
 
-__all__ = ["parse_ppm_bytes", "sha256_bytes", "sha256_file"]  # re-exported for callers and tests
 DEFAULT_VERIFICATION_BATCH_ROWS = 20
-
-
-
-
-
-
-
-
-
-
-
-
-def write_optional_png(ppm_bytes: bytes, path: Path) -> dict[str, Any]:
-    path = path.resolve()
-    try:
-        png_bytes = ppm_to_png_bytes(ppm_bytes)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(png_bytes)
-    except Exception as exc:
-        if path.exists():
-            path.unlink()
-        return {
-            "ready": False,
-            "path": "",
-            "sha256": "",
-            "error": f"{type(exc).__name__}:{exc}",
-        }
-    return {
-        "ready": True,
-        "path": str(path),
-        "sha256": sha256_bytes(png_bytes),
-        "error": "",
-    }
 
 
 def raytracer_binary() -> Path:
@@ -141,166 +108,6 @@ def newest_ppm(directory: Path) -> Path:
     if not ppm_files:
         raise RuntimeError("raytracer_output_missing")
     return ppm_files[0]
-
-
-def scene_resolution(scene: Path) -> tuple[int, int]:
-    text = scene.read_text(encoding="utf-8", errors="ignore")
-    match = re.search(r"resolution\s*=\s*\{[^}]*width\s*=\s*(\d+)[^}]*height\s*=\s*(\d+)", text, re.IGNORECASE)
-    if not match:
-        return (1920, 1080)
-    return (max(1, int(match.group(1))), max(1, int(match.group(2))))
-
-
-def read_ppm(path: Path) -> tuple[int, int, bytes]:
-    return parse_ppm_bytes(path.read_bytes(), str(path))
-
-
-def ppm_pixel_sha256(ppm_bytes: bytes) -> str:
-    _, _, pixels = parse_ppm_bytes(ppm_bytes)
-    return sha256_bytes(pixels)
-
-
-def build_verification_milestones(
-    ppm_bytes: bytes,
-    fragment_y_start: int,
-    batch_rows: int = DEFAULT_VERIFICATION_BATCH_ROWS,
-    fragment_x_start: int = 0,
-) -> dict[str, Any]:
-    width, height, pixels = parse_ppm_bytes(ppm_bytes)
-    batch_rows = max(1, int(batch_rows))
-    fragment_y_start = int(fragment_y_start)
-    milestones: list[dict[str, Any]] = []
-    row_stride = width * 3
-    for index, local_y_start in enumerate(range(0, height, batch_rows)):
-        local_y_end = min(height, local_y_start + batch_rows)
-        pixel_slice = pixels[local_y_start * row_stride : local_y_end * row_stride]
-        milestones.append(
-            {
-                "index": index,
-                "x_start": fragment_x_start,
-                "x_end": fragment_x_start + width,
-                "y_start": fragment_y_start + local_y_start,
-                "y_end": fragment_y_start + local_y_end,
-                "row_count": local_y_end - local_y_start,
-                "pixel_sha256": sha256_bytes(pixel_slice),
-            }
-        )
-    commitment_material = json.dumps(milestones, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return {
-        "schema_version": 1,
-        "strategy": "random-tile-row-milestone-v2",
-        "image_width": width,
-        "fragment_x_start": fragment_x_start,
-        "fragment_x_end": fragment_x_start + width,
-        "fragment_y_start": fragment_y_start,
-        "fragment_y_end": fragment_y_start + height,
-        "fragment_rows": height,
-        "batch_rows": batch_rows,
-        "milestone_count": len(milestones),
-        "commitment_hash": sha256_bytes(commitment_material),
-        "milestones": milestones,
-    }
-
-
-def calculate_sampling_rate(reputation_score: float, min_rate: float = 0.2, max_rate: float = 1.0) -> float:
-    """Calculate sampling rate based on worker reputation.
-    
-    Low reputation workers require a higher verification sampling rate (up to 1.0 = 100%).
-    High reputation workers require a lower sampling rate (down to min_rate = 0.2).
-    """
-    rep = max(0.0, float(reputation_score))
-    if rep >= 100.0:
-        return min_rate
-    rate = max_rate - (rep / 100.0) * (max_rate - min_rate)
-    return round(max(min_rate, min(max_rate, rate)), 4)
-
-
-def select_probabilistic_milestones(
-    manifest: dict[str, Any],
-    seed: str,
-    sample_rate: float = 0.25,
-) -> list[dict[str, Any]]:
-    """Select an unpredictable subset of milestones using a post-commitment seed."""
-    milestones = manifest.get("milestones", [])
-    if not milestones:
-        return []
-
-    sample_rate = max(0.0, min(1.0, float(sample_rate)))
-    target_count = max(1, math.ceil(len(milestones) * sample_rate))
-
-    scored_milestones = []
-    for ms in milestones:
-        index_bytes = str(ms["index"]).encode("utf-8")
-        score = hashlib.sha256(f"{seed}:{index_bytes.decode()}".encode("utf-8")).hexdigest()
-        scored_milestones.append((score, ms))
-
-    scored_milestones.sort(key=lambda x: x[0])
-    return [ms for _, ms in scored_milestones[:target_count]]
-
-
-def detection_probability(total_milestones: int, tampered_milestones: int, sampled_count: int) -> float:
-    """Calculate theoretical detection probability for probabilistic milestone sampling."""
-    if total_milestones <= 0 or sampled_count <= 0 or tampered_milestones <= 0:
-        return 0.0
-    if tampered_milestones >= total_milestones or sampled_count >= total_milestones:
-        return 1.0
-
-    prob_miss = 1.0
-    n = total_milestones
-    m = tampered_milestones
-    for i in range(sampled_count):
-        prob_miss *= (n - m - i) / (n - i)
-    return round(1.0 - prob_miss, 4)
-
-
-def verify_probabilistic_milestones(
-    ppm_bytes: bytes,
-    manifest: dict[str, Any],
-    seed: str,
-    reputation_score: float = 50.0,
-) -> dict[str, Any]:
-    """Verify fragment milestones probabilistically with automatic escalation to full check upon failure."""
-    width, height, pixels = parse_ppm_bytes(ppm_bytes)
-    row_stride = width * 3
-    fragment_y_start = manifest.get("fragment_y_start", 0)
-
-    sample_rate = calculate_sampling_rate(reputation_score)
-    sampled = select_probabilistic_milestones(manifest, seed, sample_rate)
-
-    failed_milestones = []
-    for ms in sampled:
-        local_y_start = ms["y_start"] - fragment_y_start
-        local_y_end = ms["y_end"] - fragment_y_start
-        pixel_slice = pixels[local_y_start * row_stride : local_y_end * row_stride]
-        actual_sha256 = sha256_bytes(pixel_slice)
-        if actual_sha256 != ms["pixel_sha256"]:
-            failed_milestones.append({
-                "index": ms["index"],
-                "expected": ms["pixel_sha256"],
-                "actual": actual_sha256,
-            })
-
-    if failed_milestones:
-        return {
-            "verified": False,
-            "escalated_to_full": True,
-            "sample_rate": sample_rate,
-            "sampled_count": len(sampled),
-            "total_milestones": manifest.get("milestone_count", 0),
-            "failed_milestones": failed_milestones,
-            "reason": f"probabilistic_milestone_verification_failed:{len(failed_milestones)}_mismatches",
-        }
-
-    return {
-        "verified": True,
-        "escalated_to_full": False,
-        "sample_rate": sample_rate,
-        "sampled_count": len(sampled),
-        "total_milestones": manifest.get("milestone_count", 0),
-        "failed_milestones": [],
-        "reason": "",
-    }
-
 
 
 def run_raytracer(
@@ -389,55 +196,6 @@ def run_raytracer(
     }
 
 
-
-def validate_fragment_ppm(
-    fragment_bytes: bytes,
-    *,
-    task_id: str = "<unknown>",
-    expected_width: int | None = None,
-    expected_height: int | None = None,
-    expected_hash: str | None = None,
-) -> dict[str, Any]:
-    """Validate a P6 PPM fragment: format, then the expected size and hash.
-
-    Raises RuntimeError with a stable code: `raytracer_fragment_invalid_ppm`,
-    `raytracer_fragment_dimensions_mismatch` (both sizes given),
-    `raytracer_fragment_width_mismatch` / `..._height_mismatch` (one size
-    given), `raytracer_fragment_hash_mismatch`.
-    """
-    try:
-        actual_width, actual_height, _ = parse_ppm_bytes(fragment_bytes, task_id)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError(f"raytracer_fragment_invalid_ppm:task={task_id}:{exc}") from exc
-    if expected_width is not None and expected_height is not None:
-        if (actual_width, actual_height) != (expected_width, expected_height):
-            raise RuntimeError(
-                "raytracer_fragment_dimensions_mismatch:"
-                f"task={task_id}:expected={expected_width}x{expected_height}:actual={actual_width}x{actual_height}"
-            )
-    elif expected_width is not None and actual_width != expected_width:
-        raise RuntimeError(
-            f"raytracer_fragment_width_mismatch:task={task_id}:expected={expected_width}:actual={actual_width}"
-        )
-    elif expected_height is not None and actual_height != expected_height:
-        raise RuntimeError(
-            f"raytracer_fragment_height_mismatch:task={task_id}:expected={expected_height}:actual={actual_height}"
-        )
-    actual_hash = sha256_bytes(fragment_bytes)
-    if expected_hash is not None:
-        normalized = str(expected_hash).removeprefix("sha256:").lower()
-        if actual_hash != normalized:
-            raise RuntimeError(
-                f"raytracer_fragment_hash_mismatch:task={task_id}:expected={normalized}:actual={actual_hash}"
-            )
-    return {
-        "width": actual_width,
-        "height": actual_height,
-        "sha256": actual_hash,
-        "valid_p6": True,
-    }
-
-
 def command_compute(args: argparse.Namespace) -> int:
     scene = Path(args.scene).resolve()
     output = Path(args.output).resolve()
@@ -471,7 +229,7 @@ def command_compute(args: argparse.Namespace) -> int:
     )
     png_path = Path(args.png).resolve() if args.png else None
     if png_path:
-        png = write_optional_png(_ppm_bytes, png_path)
+        png = native.write_png(_ppm_bytes, png_path)
         result["result_png_ready"] = png["ready"]
         result["result_png_path"] = png["path"]
         result["result_png_sha256"] = png["sha256"]

@@ -90,7 +90,7 @@ jobs:
           if matches '^solana-layer/'; then solana=true; fi
           if matches '^(infra|ci/|tests/smoke/|crates/.*/Dockerfile)|docker-compose'; then docker=true; fi
           if matches '^crates/(p2p-node|node-core)/|^ci/p2p_kademlia_smoke\.sh$'; then p2p=true; fi
-          if matches '^workloads/raytracer/|^tests/fixtures/python_raytracer'; then raytracer=true; fi
+          if matches '^workloads/raytracer/|^crates/raytracer/|^tests/(fixtures/python_raytracer|test_raytracer_native)'; then raytracer=true; fi
           if matches '^\.github/workflows/'; then
             python=true; javascript=true; rust=true; solana=true; docker=true; p2p=true; raytracer=true
           fi
@@ -436,7 +436,7 @@ jobs:
           workspaces: .
 
       - name: Set up Python
-        if: matrix.job == 'pytest' || matrix.job == 'docker-e2e' || matrix.job == 'pytest-hosted' || matrix.job == 'smoke' || matrix.job == 'perf-budget'
+        if: matrix.job == 'pytest' || matrix.job == 'docker-e2e' || matrix.job == 'pytest-hosted' || matrix.job == 'smoke' || matrix.job == 'perf-budget' || matrix.job == 'raytracer-rust'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -477,6 +477,18 @@ jobs:
       - name: Test native raytracer
         if: matrix.job == 'raytracer-rust'
         run: cargo test --locked -p silicium-raytracer
+
+      # The Python orchestrator and nodes call the binary through
+      # workloads/raytracer/native.py; the pytest job has no Rust binary, so the
+      # bridge is tested here against a fresh build.
+      - name: Test the Python bridge to the native pipeline
+        if: matrix.job == 'raytracer-rust'
+        env:
+          SILICIUM_TEST_PIPELINE_BIN: target/debug/silicium-raytracer
+        run: |
+          cargo build --locked -p silicium-raytracer
+          python -m pip install -r requirements-dev.txt
+          python -m pytest -q tests/test_raytracer_native.py
 
       - name: Install dev dependencies
         if: matrix.job == 'pytest' || matrix.job == 'perf-budget'

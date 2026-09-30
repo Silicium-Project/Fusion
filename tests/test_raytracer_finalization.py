@@ -7,8 +7,6 @@ import json
 import pytest
 
 from networked.networked_runtime import attach_network_content_blobs, store_network_content
-from workloads.common import ppm_to_png_bytes, sha256_bytes
-from workloads.raytracer import raytracer_workload
 from workloads.raytracer.run_network_job import (
     discovered_role_capacity,
     ensure_submission_success,
@@ -24,21 +22,6 @@ from workloads.raytracer.run_network_job import (
     submit_network_task,
     wait_for_network_role,
 )
-from workloads.raytracer.raytracer_workload import validate_fragment_ppm
-
-
-def _ppm(width: int, height: int, pixels: bytes) -> bytes:
-    return f"P6\n{width} {height}\n255\n".encode("ascii") + pixels
-
-
-def test_ppm_parsers_preserve_whitespace_as_first_pixel_byte() -> None:
-    ppm = _ppm(1, 1, bytes([0x0A, 0x20, 0x23]))
-
-    width, height, pixels = raytracer_workload.parse_ppm_bytes(ppm)
-
-    assert (width, height) == (1, 1)
-    assert pixels == bytes([0x0A, 0x20, 0x23])
-    assert ppm_to_png_bytes(ppm).startswith(b"\x89PNG\r\n\x1a\n")
 
 
 def test_compute_contract_rejects_generic_worker_result() -> None:
@@ -361,67 +344,3 @@ def test_fragment_pipeline_overlaps_compute_and_verification() -> None:
     assert verify_zero[2] < compute_one[2]
     assert verify_zero[3]
     assert sorted(event[1] for event in events if event[0] == "verify_finished") == [0, 1, 2, 3]
-
-
-def test_fragment_validation_checks_format_dimensions_and_hash() -> None:
-    ppm = _ppm(2, 1, bytes(range(6)))
-
-    metadata = validate_fragment_ppm(
-        ppm,
-        task_id="fragment-000",
-        expected_width=2,
-        expected_height=1,
-        expected_hash=sha256_bytes(ppm),
-    )
-
-    assert metadata == {"width": 2, "height": 1, "sha256": sha256_bytes(ppm), "valid_p6": True}
-    with pytest.raises(RuntimeError, match="raytracer_fragment_invalid_ppm"):
-        validate_fragment_ppm(
-            b'{"role_result":"compute"}',
-            task_id="fragment-json",
-            expected_width=2,
-            expected_height=1,
-            expected_hash=sha256_bytes(b'{"role_result":"compute"}'),
-        )
-
-
-def test_ppm_parser_rejects_ascii_p3_and_corrupted_headers() -> None:
-    # 1. ASCII P3 magic header rejection
-    p3_ppm = b"P3\n1 1\n255\n255 0 0\n"
-    with pytest.raises(ValueError, match="unsupported_ppm_magic"):
-        raytracer_workload.parse_ppm_bytes(p3_ppm, "test-p3")
-
-    # 2. Unsupported max_value (e.g. 65535 16-bit PPM)
-    p6_16bit = b"P6\n1 1\n65535\n\x00\xff\x00\xff\x00\xff"
-    with pytest.raises(ValueError, match="unsupported_ppm_max_value:65535"):
-        raytracer_workload.parse_ppm_bytes(p6_16bit, "test-16bit")
-
-    # 3. Truncated / invalid raster payload size
-    truncated_ppm = b"P6\n2 2\n255\n" + bytes([1, 2, 3])
-    with pytest.raises(ValueError, match="invalid_ppm_payload_size"):
-        raytracer_workload.parse_ppm_bytes(truncated_ppm, "test-truncated")
-
-
-def test_fragment_validation_rejects_dimension_and_hash_mismatches() -> None:
-    ppm = _ppm(2, 2, bytes(range(12)))
-    actual_hash = sha256_bytes(ppm)
-
-    # 1. Dimension mismatch
-    with pytest.raises(RuntimeError, match="raytracer_fragment_dimensions_mismatch"):
-        validate_fragment_ppm(
-            ppm,
-            task_id="frag-dim-test",
-            expected_width=2,
-            expected_height=1,
-            expected_hash=actual_hash,
-        )
-
-    # 2. Hash mismatch
-    with pytest.raises(RuntimeError, match="raytracer_fragment_hash_mismatch"):
-        validate_fragment_ppm(
-            ppm,
-            task_id="frag-hash-test",
-            expected_width=2,
-            expected_height=2,
-            expected_hash="0" * 64,
-        )

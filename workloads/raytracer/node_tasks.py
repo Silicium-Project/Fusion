@@ -26,7 +26,7 @@ from workloads.common import (
     sha256_json,
 )
 from workloads.raytracer import native
-from workloads.raytracer.raytracer_workload import run_raytracer, scene_resolution
+from workloads.raytracer.raytracer_workload import run_raytracer
 from workloads.registry import WorkloadContext
 
 
@@ -63,7 +63,7 @@ def compute_fragment(ctx: WorkloadContext) -> dict[str, Any]:
         x_start = int(task.get("x_start", spec.get("x_start", 0)) or 0)
         x_end = int(task.get("x_end", spec.get("x_end", 0)) or 0)
         if x_end <= x_start:
-            x_end = scene_resolution(scene_path)[0]
+            x_end = native.scene_resolution(scene_path)[0]
         command = [
             sys.executable,
             str(compute_script),
@@ -191,7 +191,7 @@ def verify_fragment_milestone(ctx: WorkloadContext) -> dict[str, Any]:
         output_path = temp_path / "sample.ppm"
         scene_path.write_bytes(scene_bytes)
         if x_end <= x_start and challenge.get("strategy") == "random-row-milestone-v1":
-            x_end = scene_resolution(scene_path)[0]
+            x_end = native.scene_resolution(scene_path)[0]
         if x_end <= x_start:
             raise RuntimeError("raytracer_verification_milestone_range_invalid")
         recomputed = run_raytracer(

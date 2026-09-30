@@ -47,10 +47,6 @@ from workloads.common import (  # noqa: E402
 )
 from workloads.raytracer import native  # noqa: E402
 from workloads.raytracer.native import pipeline_binary  # noqa: E402
-from workloads.raytracer.raytracer_workload import (  # noqa: E402
-    scene_resolution,
-    write_optional_png,
-)
 from tools.receipt_verification import (  # noqa: E402
     identity_id_for_key,
     sha256_json,
@@ -709,7 +705,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     job_started = time.perf_counter()
     scene_path = Path(args.scene).resolve()
-    width, height = scene_resolution(scene_path)
+    width, height = native.scene_resolution(scene_path)
     job_id = args.job_id or f"raytracer-auto-{int(time.time())}"
     output_root = Path(args.output_root).resolve()
     job_dir = output_root / job_id
@@ -1152,7 +1148,7 @@ def main(argv: list[str] | None = None) -> int:
             fragment_file = fragments_dir / f"fragment-{index:03d}.ppm"
             fragment_png = fragments_dir / f"fragment-{index:03d}.png"
             fragment_file.write_bytes(fragment_bytes)
-            preview = write_optional_png(fragment_bytes, fragment_png)
+            preview = native.write_png(fragment_bytes, fragment_png)
             fragment_files.append((x_start, y_start, fragment_file))
             progress_fragments[index].update(
                 {

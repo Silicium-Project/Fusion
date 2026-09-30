@@ -2,10 +2,10 @@
 //! rendered tile is committed to (row milestones) and checked by another peer,
 //! and how tiles are put back together.
 //!
-//! Every function is a port of `workloads/raytracer/raytracer_workload.py` and
-//! must stay byte-for-byte compatible with it: the fixtures in
-//! `tests/fixtures/python_parity.json` are produced by the Python code
-//! (`tools/dev/quality/raytracer_parity_fixtures.py`).
+//! This is the only implementation of the pipeline (the Python one was
+//! removed). Its results must not change: mixed-version nodes compare
+//! milestone hashes, and `tests/fixtures/python_parity.json` freezes the
+//! outputs recorded from the former Python code.
 
 pub mod milestones;
 pub mod png;

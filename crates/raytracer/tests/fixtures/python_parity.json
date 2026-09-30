@@ -75,7 +75,7 @@
    "target": 0
   }
  ],
- "generator": "tools/dev/quality/raytracer_parity_fixtures.py",
+ "generator": "frozen: recorded from the former Python pipeline (removed in 2026-09)",
  "milestones": [
   {
    "batch_rows": 20,

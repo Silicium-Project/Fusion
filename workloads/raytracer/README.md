@@ -6,11 +6,19 @@ Phong highlights and row-parallel CPU execution. The desktop packaging scripts
 build it for the target platform. `SILICIUM_RAYTRACER_THREADS` or `--threads`
 can cap its worker count; otherwise it uses the logical CPU count.
 
-Splitting a scene into tiles and reassembling the rendered tiles are done by
-the native binary (`silicium-raytracer split` / `silicium-raytracer reassemble`,
-see `crates/raytracer/README.md`); `run_network_job.py` finds it through
-`SILICIUM_PIPELINE_BIN` (or `SILICIUM_RAYTRACER_BIN`). The Python entrypoints
-below cover the node side (render and verify a tile).
+The whole tile pipeline runs in the native binary (see
+`crates/raytracer/README.md`): scene size, splitting, milestone commitments,
+probabilistic verification, fragment validation, PNG previews and reassembly.
+The Python code here only orchestrates it and calls the binary through
+`native.py` (`SILICIUM_PIPELINE_BIN` on the orchestrator, else
+`SILICIUM_RAYTRACER_BIN`). There is no Python PPM parser or milestone code.
+
+| File | Role |
+| --- | --- |
+| `native.py` | Calls the `silicium-raytracer` pipeline sub-commands |
+| `run_network_job.py` | Orchestrator: split, dispatch, verify, reassemble a job |
+| `node_tasks.py` | Node handlers: compute a tile, verify a challenged milestone |
+| `raytracer_workload.py` (+ `compute.py`, `verify.py`) | Render / verify / validate one tile from the command line |
 
 Entrypoints:
 

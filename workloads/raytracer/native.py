@@ -1,9 +1,10 @@
 """Calls into the native tile pipeline (`silicium-raytracer` sub-commands).
 
-The Rust binary is the single implementation of the tile pipeline: splitting,
-reassembly, milestone commitments, probabilistic milestone checks and
-fragment validation. Python code (orchestrator and nodes) goes through the
-functions of this module instead of re-implementing them.
+The Rust binary is the single implementation of the tile pipeline: scene
+size, splitting, reassembly, milestone commitments, probabilistic milestone
+checks, fragment validation and PNG previews. Python code (orchestrator and
+nodes) goes through the functions of this module instead of re-implementing
+them; there is no Python PPM parser any more.
 
 The binary is the renderer itself: nodes find it through
 SILICIUM_RAYTRACER_BIN, the orchestrator through SILICIUM_PIPELINE_BIN.
@@ -155,3 +156,30 @@ def verify_milestones(ppm: bytes, manifest: dict[str, Any], seed: str, reputatio
             allowed_codes=(EXIT_OK, EXIT_VERIFICATION_FAILED),
         )
     return payload
+
+
+def write_png(ppm: bytes, path: Path) -> dict[str, Any]:
+    """PNG preview of a tile (`silicium-raytracer png`).
+
+    Never raises: a preview is optional, so a failure is reported as
+    `{"ready": False, "error": ...}` and no file is left at `path`.
+    """
+    path = path.resolve()
+
+    def convert(source: Path) -> dict[str, Any]:
+        payload, _ = run_command(
+            "png", [str(source), "--output", str(path)], allowed_codes=(EXIT_OK, EXIT_INVALID_INPUT)
+        )
+        return payload
+
+    try:
+        return _with_temp_file(ppm, ".ppm", convert)
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        path.unlink(missing_ok=True)
+        return {"ready": False, "path": "", "sha256": "", "error": str(exc)}
+
+
+def scene_resolution(scene: Path) -> tuple[int, int]:
+    """(width, height) declared by a scene file, 1920x1080 when it does not say."""
+    payload, _ = run_command("resolution", [str(scene)])
+    return int(payload["width"]), int(payload["height"])

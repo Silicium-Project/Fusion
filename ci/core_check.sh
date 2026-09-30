@@ -44,6 +44,8 @@ log "Python tests"
 log "Raytracer native tests"
 if command -v cargo >/dev/null 2>&1; then
   cargo test --locked -p silicium-raytracer
+  cargo build --locked -p silicium-raytracer
+  SILICIUM_TEST_PIPELINE_BIN=target/debug/silicium-raytracer "$PYTHON_BIN" -m pytest -q tests/test_raytracer_native.py
 else
   echo "Cargo unavailable; native raytracer tests skipped."
 fi

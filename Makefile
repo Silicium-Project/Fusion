@@ -23,6 +23,8 @@ smoke:
 
 raytracer-test:
 	cargo test -p silicium-raytracer
+	cargo build -p silicium-raytracer
+	SILICIUM_TEST_PIPELINE_BIN=target/debug/silicium-raytracer $(PYTHON) -m pytest -q tests/test_raytracer_native.py
 
 rust-test:
 	cargo test --workspace --locked

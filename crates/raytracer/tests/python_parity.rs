@@ -1,6 +1,7 @@
-//! The Rust tile pipeline must give exactly the results of the legacy Python
-//! one. `fixtures/python_parity.json` is produced by
-//! `tools/dev/quality/raytracer_parity_fixtures.py`.
+//! The Rust tile pipeline must keep giving exactly the results of the former
+//! Python one (nodes of different versions compare milestone hashes).
+//! `fixtures/python_parity.json` holds the outputs recorded from that Python
+//! code; it is frozen and must not be regenerated from Rust.
 
 use serde_json::Value;
 use silicium_raytracer::pipeline::{milestones, ppm, reassemble, sampling, sha256_hex, tiles};

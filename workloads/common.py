@@ -1,13 +1,11 @@
 """Helpers shared by workloads: hashing, stable JSON, performance figures,
-task submission to an export dir, P2P refs, Solana wallet, PPM to PNG."""
+task submission to an export dir, P2P refs, Solana wallet."""
 from __future__ import annotations
 
 import hashlib
 import json
 import math
-import struct
 import sys
-import zlib
 from pathlib import Path
 from typing import Any
 
@@ -117,62 +115,3 @@ def resolve_solana_wallet(raw: str) -> Path:
     if raw:
         return Path(raw).expanduser().resolve()
     return default_solana_wallet_path()
-
-
-def parse_ppm_bytes(data: bytes, source: str = "<bytes>") -> tuple[int, int, bytes]:
-    """Parse a binary 8-bit PPM (P6); errors are stable `ValueError` codes."""
-    idx = 0
-
-    def token() -> bytes:
-        nonlocal idx
-        while idx < len(data) and chr(data[idx]).isspace():
-            idx += 1
-        if idx < len(data) and data[idx] == ord("#"):
-            while idx < len(data) and data[idx] not in b"\r\n":
-                idx += 1
-            return token()
-        start = idx
-        while idx < len(data) and not chr(data[idx]).isspace():
-            idx += 1
-        return data[start:idx]
-
-    magic = token()
-    if magic != b"P6":
-        raise ValueError(f"unsupported_ppm_magic:{source}")
-    width = int(token())
-    height = int(token())
-    max_value = int(token())
-    if max_value != 255:
-        raise ValueError(f"unsupported_ppm_max_value:{max_value}")
-    if idx >= len(data) or data[idx] not in b" \t\r\n":
-        raise ValueError(f"missing_ppm_raster_separator:{source}")
-    if data[idx : idx + 2] == b"\r\n":
-        idx += 2
-    else:
-        idx += 1
-    pixels = data[idx:]
-    expected = width * height * 3
-    if len(pixels) != expected:
-        raise ValueError(f"invalid_ppm_payload_size:{source}:expected={expected}:actual={len(pixels)}")
-    return width, height, pixels
-
-
-def ppm_to_png_bytes(ppm: bytes) -> bytes:
-    width, height, rgb = parse_ppm_bytes(ppm)
-
-    def chunk(kind: bytes, data: bytes) -> bytes:
-        return (
-            struct.pack(">I", len(data))
-            + kind
-            + data
-            + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-        )
-
-    rows = bytearray()
-    stride = width * 3
-    for y in range(height):
-        rows.append(0)
-        rows.extend(rgb[y * stride : (y + 1) * stride])
-
-    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(bytes(rows))) + chunk(b"IEND", b"")

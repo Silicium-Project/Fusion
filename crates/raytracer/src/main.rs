@@ -5,9 +5,10 @@
 //! Output must be byte-identical across machines so that another peer can verify it.
 //! Usage: `silicium-raytracer <scene.cfg> --output <out.ppm> [--x-start ..] [--threads N]`.
 //!
-//! Pipeline steps (JSON on stdout, see `commands.rs`):
+//! Pipeline steps (JSON on stdout, see `commands/`):
 //! `split <scene.cfg>`, `milestones <tile.ppm>`, `verify <tile.ppm> --manifest ..`,
-//! `reassemble --fragment .. --output ..`, `validate <tile.ppm>`.
+//! `reassemble --fragment .. --output ..`, `validate <tile.ppm>`, `png <tile.ppm>`,
+//! `resolution <scene.cfg>`.
 //!
 //! The engine lives in the `silicium_raytracer` library (`src/lib.rs`); this
 //! binary only parses arguments and writes files.

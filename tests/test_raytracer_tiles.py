@@ -1,8 +1,16 @@
 import shutil
 from pathlib import Path
 
-from workloads.raytracer.raytracer_workload import parse_ppm_bytes, run_raytracer
+from workloads.raytracer.raytracer_workload import run_raytracer
 from workloads.raytracer.run_network_job import build_performance_summary
+
+
+def parse_ppm_bytes(data: bytes, _source: str = "") -> tuple[int, int, bytes]:
+    """Split a P6 image from the test renderer (three header lines, no comments)."""
+    magic, size, max_value, pixels = data.split(b"\n", 3)
+    assert (magic, max_value) == (b"P6", b"255")
+    width, height = (int(value) for value in size.split())
+    return width, height, pixels
 
 
 def test_raytracer_rectangular_crop_matches_full_render(tmp_path, monkeypatch) -> None:
