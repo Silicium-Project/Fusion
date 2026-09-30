@@ -223,6 +223,13 @@ jobs:
           rustup run stable rustc --version
           rustup run stable cargo --version
 
+      - name: Repair runner Rust state
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ci/runner/repair_rust_toolchains.sh
+          python3 ci/runner/repair_cargo_sources.py
+
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
@@ -232,14 +239,14 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: bash ci/runner/retry_on_corruption.sh -- cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Tests
-        run: cargo test --workspace --all-features --locked
+        run: bash ci/runner/retry_on_corruption.sh -- cargo test --workspace --all-features --locked
 
       - name: P2P Kademlia smoke
         if: matrix.crate == 'workspace'
-        run: bash ./ci/p2p_kademlia_smoke.sh
+        run: bash ci/runner/retry_on_corruption.sh -- bash ./ci/p2p_kademlia_smoke.sh
 
   solana-layer:
     needs: [changes]
@@ -288,21 +295,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-solana-layer-v2-
 
-      - name: Repair incomplete Cargo sources
+      - name: Repair runner Rust state
         shell: bash
         run: |
           set -euo pipefail
-          cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-          while IFS= read -r source_dir; do
-            generated_dir="$source_dir/aws-lc/generated-src/linux-x86_64/crypto/fipsmodule"
-            [[ -d "$source_dir/aws-lc/generated-src" ]] || continue
-            if [[ ! -f "$generated_dir/sha256-x86_64.S" ]]; then
-              crate_name="$(basename "$source_dir")"
-              echo "Removing incomplete Cargo source: $crate_name"
-              rm -rf -- "$source_dir"
-              find "$cargo_home/registry/cache" -type f -name "${crate_name}.crate" -delete 2>/dev/null || true
-            fi
-          done < <(find "$cargo_home/registry/src" -mindepth 1 -maxdepth 2 -type d -name 'aws-lc-sys-*' -print 2>/dev/null)
+          bash "$GITHUB_WORKSPACE/ci/runner/repair_rust_toolchains.sh"
+          python3 "$GITHUB_WORKSPACE/ci/runner/repair_cargo_sources.py"
 
       - name: Install Solana CLI
         run: |
@@ -313,10 +311,18 @@ jobs:
 
       - name: Install Anchor CLI
         run: |
-          export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
-          rustup run stable cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
-          avm install 0.32.1
+          export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$HOME/.avm/bin:$PATH"
+          retry="$GITHUB_WORKSPACE/ci/runner/retry_on_corruption.sh"
+          # avm and anchor are built from source (slow, and exposed to corrupted
+          # Cargo sources): keep the installed ones when the version is right.
+          if ! command -v avm >/dev/null 2>&1; then
+            bash "$retry" -- rustup run stable cargo install --git https://github.com/coral-xyz/anchor avm --locked
+          fi
+          if ! anchor --version 2>/dev/null | grep -q ' 0\.32\.1$'; then
+            bash "$retry" -- avm install 0.32.1 --force
+          fi
           avm use 0.32.1
+          anchor --version
           echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
 
       - name: Install JavaScript dependencies
@@ -345,7 +351,7 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup run 1.89.0 cargo --version
           rustup run 1.89.0 rustc --version
-          rustup run 1.89.0 anchor build --provider.cluster localnet
+          bash "$GITHUB_WORKSPACE/ci/runner/retry_on_corruption.sh" -- rustup run 1.89.0 anchor build --provider.cluster localnet
 
       - name: Run Anchor tests on localnet
         env:
@@ -354,7 +360,7 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup run 1.89.0 cargo --version
           rustup run 1.89.0 rustc --version
-          rustup run 1.89.0 anchor test --provider.cluster localnet
+          bash "$GITHUB_WORKSPACE/ci/runner/retry_on_corruption.sh" -- rustup run 1.89.0 anchor test --provider.cluster localnet
 
       - name: Upload IDL artifact
         continue-on-error: true
@@ -429,6 +435,14 @@ jobs:
           export PATH="$cargo_bin:$PATH"
           cargo --version
 
+      - name: Repair runner Rust state
+        if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ci/runner/repair_rust_toolchains.sh
+          python3 ci/runner/repair_cargo_sources.py
+
       - name: Cache Rust build
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
         uses: Swatinem/rust-cache@v2
@@ -476,7 +490,7 @@ jobs:
 
       - name: Test native raytracer
         if: matrix.job == 'raytracer-rust'
-        run: cargo test --locked -p silicium-raytracer
+        run: bash ci/runner/retry_on_corruption.sh -- cargo test --locked -p silicium-raytracer
 
       # The Python orchestrator and nodes call the binary through
       # workloads/raytracer/native.py; the pytest job has no Rust binary, so the
@@ -486,7 +500,7 @@ jobs:
         env:
           SILICIUM_TEST_PIPELINE_BIN: target/debug/silicium-raytracer
         run: |
-          cargo build --locked -p silicium-raytracer
+          bash ci/runner/retry_on_corruption.sh -- cargo build --locked -p silicium-raytracer
           python -m pip install -r requirements-dev.txt
           python -m pytest -q tests/test_raytracer_native.py
 
@@ -539,7 +553,7 @@ jobs:
 
       - name: Run Kademlia smoke test
         if: matrix.job == 'p2p-kademlia-smoke'
-        run: bash ./ci/p2p_kademlia_smoke.sh
+        run: bash ci/runner/retry_on_corruption.sh -- bash ./ci/p2p_kademlia_smoke.sh
 
       - name: Smoke test proxy + TLS
         if: matrix.job == 'smoke'
@@ -548,7 +562,7 @@ jobs:
       - name: Run budget checks
         if: matrix.job == 'perf-budget'
         run: |
-          python tools/dev/quality/perf_budget.py \
+          bash ci/runner/retry_on_corruption.sh -- python tools/dev/quality/perf_budget.py \
             --all \
             --strict \
             --output /tmp/perf-budget-report.json
