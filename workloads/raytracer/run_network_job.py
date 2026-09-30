@@ -617,11 +617,30 @@ def wait_for_network_role(export_dir: Path, node_id: str, role: str, timeout_s: 
     raise TimeoutError(f"missing network peer with role {role!r} after {timeout_s:.1f}s: {peers_path}")
 
 
+def pipeline_binary() -> str | None:
+    """Rust tile pipeline (`silicium-raytracer split/reassemble`), when available.
+
+    SILICIUM_PIPELINE_BIN points at the native binary. Its outputs match the
+    Python pipeline (crates/raytracer/tests/python_parity.rs); the Python
+    scripts remain the fallback when the variable is unset.
+    """
+    configured = os.environ.get("SILICIUM_PIPELINE_BIN", "").strip()
+    if not configured:
+        return None
+    if not (os.path.isfile(configured) and os.access(configured, os.X_OK)):
+        raise RuntimeError(f"raytracer_pipeline_binary_unusable:{configured}")
+    return configured
+
+
+def pipeline_backend() -> str:
+    return "rust" if pipeline_binary() else "python"
+
+
 def make_split(args: argparse.Namespace, scene_path: Path, split_path: Path) -> dict[str, Any]:
+    binary = pipeline_binary()
     script = NETWORK_ROOT / "workloads" / "raytracer" / "split.py"
-    cmd = [
-        sys.executable,
-        str(script),
+    cmd = [binary, "split"] if binary else [sys.executable, str(script)]
+    cmd += [
         str(scene_path),
         "--output",
         str(split_path),
@@ -639,8 +658,9 @@ def make_split(args: argparse.Namespace, scene_path: Path, split_path: Path) -> 
 
 
 def reassemble_fragments(fragment_files: list[tuple[int, int, Path]], output_ppm: Path, output_png: Path, result_json: Path) -> dict[str, Any]:
+    binary = pipeline_binary()
     script = NETWORK_ROOT / "workloads" / "raytracer" / "reassemble.py"
-    cmd = [sys.executable, str(script)]
+    cmd = [binary, "reassemble"] if binary else [sys.executable, str(script)]
     for x_start, y_start, fragment_file in fragment_files:
         cmd.extend(
             [
@@ -649,10 +669,15 @@ def reassemble_fragments(fragment_files: list[tuple[int, int, Path]], output_ppm
                 "--y-start", str(y_start),
             ]
         )
-    cmd.extend(["--output", str(output_ppm), "--png", str(output_png), "--result-json", str(result_json)])
+    cmd.extend(["--output", str(output_ppm), "--png", str(output_png)])
+    if not binary:
+        cmd.extend(["--result-json", str(result_json)])
     completed = subprocess.run(cmd, text=True, capture_output=True, timeout=60, check=False)
     if completed.returncode != 0:
         raise RuntimeError(f"raytracer_reassemble_failed:{completed.stderr[-2048:]}")
+    if binary:
+        # The Rust CLI prints its result on stdout; keep the same file contract.
+        result_json.write_text(completed.stdout, encoding="utf-8")
     return json.loads(result_json.read_text(encoding="utf-8"))
 
 
@@ -1452,6 +1477,7 @@ def main(argv: list[str] | None = None) -> int:
             "export_dir": str(export_dir),
             "image": {"width": width, "height": height},
             "split_policy": split.get("split_policy", {}),
+            "pipeline_backend": pipeline_backend(),
             "fragment_count": len(fragments),
             "fragments": [progress_fragments[index] for index in sorted(progress_fragments)],
             "submissions": submissions,
