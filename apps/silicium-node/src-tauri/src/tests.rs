@@ -48,6 +48,35 @@ fn orchestrator_url_requires_http_and_a_host() {
 }
 
 #[test]
+fn channel_defaults_follow_the_build_channel() {
+    // Prod and dev installs share their app data: a saved default of either
+    // channel is replaced by this build's own default.
+    for value in [
+        PROD_ORCHESTRATOR_URL,
+        DEV_ORCHESTRATOR_URL,
+        "https://10.77.0.1:8443/orchestrator/",
+    ] {
+        assert_eq!(
+            migrate_legacy_orchestrator_url(value),
+            default_orchestrator_url()
+        );
+    }
+    let expected = if release_channel() == "prod" {
+        PROD_ORCHESTRATOR_URL
+    } else {
+        DEV_ORCHESTRATOR_URL
+    };
+    if option_env!("SILICIUM_DEFAULT_ORCHESTRATOR_URL").is_none() {
+        assert_eq!(default_orchestrator_url(), expected);
+    }
+    // A custom orchestrator is kept as is.
+    assert_eq!(
+        migrate_legacy_orchestrator_url("https://example.org/orchestrator"),
+        "https://example.org/orchestrator"
+    );
+}
+
+#[test]
 fn legacy_public_orchestrator_urls_migrate_to_tls_proxy() {
     for value in [
         "http://213.32.68.67:46100",
@@ -56,7 +85,7 @@ fn legacy_public_orchestrator_urls_migrate_to_tls_proxy() {
     ] {
         assert_eq!(
             normalize_orchestrator_url(value).unwrap(),
-            DEFAULT_ORCHESTRATOR_URL
+            default_orchestrator_url()
         );
     }
     assert_eq!(

@@ -7,7 +7,22 @@ pub(crate) const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
 
 pub(crate) const SUPERVISOR_RUN_KEY_NAME: &str = "SiliciumNodeService";
 
-pub(crate) const DEFAULT_ORCHESTRATOR_URL: &str = "https://vps-910c1dbc.vps.ovh.net/orchestrator";
+pub(crate) const PROD_ORCHESTRATOR_URL: &str = "https://vps-910c1dbc.vps.ovh.net/orchestrator";
+
+/// Dev channel orchestrator, reachable through the WireGuard VPN
+/// (`public_base_url` of the dev channel in deploy/release/channels.json).
+pub(crate) const DEV_ORCHESTRATOR_URL: &str = "https://10.77.0.1:8443/orchestrator";
+
+/// Orchestrator of the network this build belongs to: a dev build joins the
+/// dev network, a prod build the prod network. `SILICIUM_DEFAULT_ORCHESTRATOR_URL`
+/// at build time overrides it.
+pub(crate) fn default_orchestrator_url() -> &'static str {
+    match option_env!("SILICIUM_DEFAULT_ORCHESTRATOR_URL") {
+        Some(url) if !url.trim().is_empty() => url,
+        _ if release_channel() == "prod" => PROD_ORCHESTRATOR_URL,
+        _ => DEV_ORCHESTRATOR_URL,
+    }
+}
 
 // NAT/ICE discovery and the first scheduler poll can legitimately take longer
 // than a short watchdog interval.  Restarting during that bootstrap period
@@ -117,7 +132,16 @@ pub(crate) fn migrate_legacy_orchestrator_url(value: &str) -> String {
         .iter()
         .any(|host| lower == *host || lower == format!("{host}/orchestrator"))
     {
-        return DEFAULT_ORCHESTRATOR_URL.to_string();
+        return default_orchestrator_url().to_string();
+    }
+    // Prod and dev installs share the same app data directory, so a saved
+    // configuration may hold the other channel's default: follow this build.
+    let channel_defaults = [PROD_ORCHESTRATOR_URL, DEV_ORCHESTRATOR_URL];
+    if channel_defaults
+        .iter()
+        .any(|default| lower == default.to_ascii_lowercase())
+    {
+        return default_orchestrator_url().to_string();
     }
     trimmed.to_string()
 }
@@ -144,7 +168,7 @@ pub(crate) fn read_service_config(repo_root: &Path) -> Result<NodeConfig, String
         fs::read_to_string(service_config_path(repo_root)).map_err(|error| error.to_string())?;
     let mut config = NodeConfig {
         repo_root: repo_root.display().to_string(),
-        orchestrator_url: DEFAULT_ORCHESTRATOR_URL.to_string(),
+        orchestrator_url: default_orchestrator_url().to_string(),
         advertise_host: String::new(),
         node_id: "silicium-desktop-node".to_string(),
         reputation_score: 100,

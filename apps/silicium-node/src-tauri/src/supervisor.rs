@@ -56,7 +56,7 @@ pub fn run_supervisor_cli() -> i32 {
     thread::spawn(run_background_update_loop);
     let config = read_service_config(&repo_root).unwrap_or_else(|_| NodeConfig {
         repo_root: repo_root.display().to_string(),
-        orchestrator_url: DEFAULT_ORCHESTRATOR_URL.to_string(),
+        orchestrator_url: default_orchestrator_url().to_string(),
         advertise_host: detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string()),
         node_id: "silicium-desktop-node".to_string(),
         reputation_score: 100,

@@ -60,6 +60,9 @@ pub fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<
     }
 
     config.node_id = effective_node_id(&config.node_id);
+    if config.orchestrator_url.trim().is_empty() {
+        config.orchestrator_url = default_orchestrator_url().to_string();
+    }
     config.orchestrator_url = migrate_legacy_orchestrator_url(&config.orchestrator_url);
     config.orchestrator_url = normalize_orchestrator_url(&config.orchestrator_url)?;
     let repo_root = resolve_repo_root(&config.repo_root)?;
@@ -253,7 +256,7 @@ pub fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
     let port_ready = local_network_node_ready(46101);
     let orchestrator_url = read_service_config(&root)
         .map(|config| config.orchestrator_url)
-        .unwrap_or_else(|_| DEFAULT_ORCHESTRATOR_URL.to_string());
+        .unwrap_or_else(|_| default_orchestrator_url().to_string());
     let log_dir = node_app_log_path(&root, "silicium-node.err.log")
         .parent()
         .map(|path| path.display().to_string())
@@ -290,7 +293,7 @@ pub fn app_defaults() -> AppDefaults {
         orchestrator_url: saved_config
             .as_ref()
             .map(|config| config.orchestrator_url.clone())
-            .unwrap_or_else(|| DEFAULT_ORCHESTRATOR_URL.to_string()),
+            .unwrap_or_else(|| default_orchestrator_url().to_string()),
         node_id: saved_config
             .map(|config| effective_node_id(&config.node_id))
             .unwrap_or_else(persistent_node_id),
