@@ -193,11 +193,10 @@ printf '%s\n' \
   'SILICIUM_DEVNET_TRACE_MODE=devnet' >> "$backend_env"
 
 # Rust tile pipeline for the orchestrator (split/reassemble in
-# run_network_job.py). Built for musl so it runs in the Alpine backend image,
-# into the git-ignored target/ of the mounted Network checkout (kept between
-# deployments as a build cache). If the build fails, the backend keeps the
-# Python pipeline: run_network_job.py falls back when SILICIUM_PIPELINE_BIN is
-# unset.
+# run_network_job.py, which has no other implementation). Built for musl so it
+# runs in the Alpine backend image, into the git-ignored target/ of the mounted
+# Network checkout (kept between deployments as a build cache). Without it the
+# orchestrator cannot split jobs, so a failed build stops the deployment.
 pipeline_target="$SILICIUM_RUNTIME_ROOT/Network/target/pipeline-alpine"
 pipeline_container_bin="/opt/silicium/Network/target/pipeline-alpine/release/silicium-raytracer"
 sed -i -E '/^SILICIUM_PIPELINE_BIN=/d' "$backend_env"
@@ -211,7 +210,8 @@ if docker run --rm \
   printf 'SILICIUM_PIPELINE_BIN=%s\n' "$pipeline_container_bin" >> "$backend_env"
   echo "Rust tile pipeline enabled for the orchestrator."
 else
-  echo "WARNING: Rust tile pipeline build failed; the orchestrator keeps the Python pipeline." >&2
+  echo "Rust tile pipeline build failed: the orchestrator cannot split jobs without it." >&2
+  exit 1
 fi
 
 # The API submits task envelopes into the host-side orchestrator export. Keep
