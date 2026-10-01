@@ -1,5 +1,6 @@
-"""Defaults shared by the network node (`tools/network_node.py`) and the CLI
-(`silicium node start`): world-mesh mode, peer synchronisation, NAT traversal.
+"""Defaults shared by the network node (`tools/network_node.py`, implemented in
+`tools/node/`) and the CLI (`silicium node start`): world-mesh mode, peer
+synchronisation, NAT traversal.
 """
 
 from __future__ import annotations

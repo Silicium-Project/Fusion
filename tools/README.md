@@ -13,17 +13,18 @@ Ce dossier contient deux choses bien séparées :
 
 | Fichier | Rôle | Lancé / importé par |
 | --- | --- | --- |
-| `network_node.py` | Le nœud Python : orchestrateur sur le VPS, nœud de calcul chez l'utilisateur | `silicium node start`, `Fusion/deploy/linux/start-orchestrator.sh`, app desktop |
+| `network_node.py` | Point d'entrée et façade de compatibilité du nœud Python (orchestrateur sur le VPS, nœud de calcul chez l'utilisateur) | `silicium node start`, `Fusion/deploy/linux/start-orchestrator.sh`, app desktop |
+| [`node/`](node/) | Implémentation du nœud, découpée par fonctionnalité (`peer/`, `daemon/`, `cli.py`…) | `network_node.py` |
 | `mcp_server.py` | Point d'entrée (compatibilité) de l'API expérimentale MCP authentifiée ; ré-exporte `tools/mcp/` | service systemd `silicium-experiment-api` (Fusion), `silicium mcp serve`, tests |
 | [`mcp/`](mcp/) | Implémentation du serveur MCP/HTTP : files de tâches et de requêtes, routes HTTP, transport MCP, authentification, snapshots, métriques | `mcp_server.py`, `workloads/common.py`, `tools/cli/node/api.py`, `rpc_server.py` (via `mcp_server`) |
-| `direct_transport.py` | Traversée de NAT et transfert direct entre pairs (ICE via `aioice`) | `network_node.py` |
+| `direct_transport.py` | Traversée de NAT et transfert direct entre pairs (ICE via `aioice`) | `node/` |
 | `rpc_server.py`, `rpc_client.py`, `rpc_protocol.py` | RPC ZeroMQ (contrat : `proto/silicium_rpc.proto`) | `mcp_server.py`, `run_network_job.py` |
-| `runtime_telemetry.py` | Échantillonnage CPU / mémoire du nœud | `network_node.py` |
-| `resource_intelligence.py` | Profil de ressources et réputation par ressource | `network_node.py` |
+| `runtime_telemetry.py` | Échantillonnage CPU / mémoire du nœud | `node/` |
+| `resource_intelligence.py` | Profil de ressources et réputation par ressource | `node/` |
 | `receipt_verification.py` | Vérification des reçus de calcul | `workloads/raytracer/run_network_job.py` |
-| `solana_layer_bridge.cjs`, `node_uuid_cjs_shim.cjs` | Pont Node.js vers le programme Solana | `network_node.py`, CLI `silicium` |
+| `solana_layer_bridge.cjs`, `node_uuid_cjs_shim.cjs` | Pont Node.js vers le programme Solana | `node/solana_bridge.py`, CLI `silicium` |
 | `i18n.py` | Traductions de la CLI et des outils | CLI, TUI, contrôles i18n |
-| `node_defaults.py` | Valeurs par défaut communes au nœud et à la CLI (mode world, synchro des pairs, STUN) | `network_node.py`, `silicium node start` |
+| `node_defaults.py` | Valeurs par défaut communes au nœud et à la CLI (mode world, synchro des pairs, STUN) | `node/`, `silicium node start` |
 | [`cli/`](cli/) | Implémentation de la CLI `silicium` (livrée avec l'app desktop) | `Network/silicium`, `python -m tools.cli` |
 
 ## Outillage développeur

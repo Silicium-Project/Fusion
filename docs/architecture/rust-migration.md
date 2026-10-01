@@ -53,7 +53,7 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 
 | Python (legacy) | Remplacé par |
 | --- | --- |
-| `tools/network_node.py` | `crates/p2p-node` + ordonnanceur + API `/v1` |
+| `tools/network_node.py` + `tools/node/` (`peer/`, `daemon/`, `cli.py`…) | `crates/p2p-node` + ordonnanceur + API `/v1` (correspondance par module : voir `tools/node/README.md`) |
 | `tools/direct_transport.py` | libp2p (Circuit Relay v2 + DCUtR) — pas de portage ligne à ligne |
 | `tools/runtime_telemetry.py` | crate `telemetry` (`tracing` + métriques) |
 | `tools/resource_intelligence.py` | `crates/node-core` (`hardware.rs`, `beta.rs`) |

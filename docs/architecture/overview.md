@@ -33,7 +33,8 @@ flowchart LR
 
 Points clés :
 
-- **Tout le plan réseau est en Python** : `tools/network_node.py` sert à la fois
+- **Tout le plan réseau est en Python** : `tools/network_node.py` (code dans
+  `tools/node/`) sert à la fois
   d'orchestrateur sur le VPS et de nœud de calcul chez les utilisateurs
   (lancé par l'app Tauri via `silicium node start`).
 - **Le calcul lui-même est déjà en Rust** : le rendu passe par le binaire

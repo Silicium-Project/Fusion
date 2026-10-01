@@ -12,7 +12,10 @@ Network/
 ├── solana-layer/              # Anchor (Rust) + SDK TypeScript + tests — workspace séparé
 │
 ├── tools/                     # Python LEGACY — runtime de production encore actif
-│   ├── network_node.py        #   le nœud Python (orchestrateur VPS + nœuds utilisateurs)
+│   ├── network_node.py        #   point d'entrée du nœud Python (façade de compatibilité)
+│   ├── node/                  #   le nœud Python (orchestrateur VPS + nœuds utilisateurs), par fonctionnalité
+│   │   ├── peer/              #     couche P2P : PeerNetwork (mixins) + serveur HTTP (http/)
+│   │   └── daemon/            #     démon : NetworkNode (mixins : files, claims, dispatch, on-chain…)
 │   ├── mcp_server.py          #   API expérimentale MCP (service systemd sur le VPS)
 │   ├── mcp/                   #   implémentation du serveur MCP (un module par responsabilité)
 │   ├── direct_transport.py    #   NAT traversal (ICE)
