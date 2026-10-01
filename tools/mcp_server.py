@@ -2,7 +2,7 @@
 """
 Minimal MCP HTTP server for external clients (compatibility entry point).
 
-The implementation lives in the ``tools/mcp/`` package (see its __init__.py
+The implementation lives in the ``tools/mcp_ingress/`` package (see its __init__.py
 for the module layout). This file is kept because it is:
 
 - run as a script: ``python3 tools/mcp_server.py --port ...`` (tests,
@@ -39,10 +39,10 @@ _REPO_ROOT = str(Path(__file__).resolve().parent.parent)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(1, _REPO_ROOT)
 
-from tools.mcp.access_policy import McpAccessPolicy  # noqa: E402
-from tools.mcp.app import McpHttpApp  # noqa: E402
-from tools.mcp.cli import build_arg_parser, main  # noqa: E402
-from tools.mcp.constants import (  # noqa: E402
+from tools.mcp_ingress.access_policy import McpAccessPolicy  # noqa: E402
+from tools.mcp_ingress.app import McpHttpApp  # noqa: E402
+from tools.mcp_ingress.cli import build_arg_parser, main  # noqa: E402
+from tools.mcp_ingress.constants import (  # noqa: E402
     MCP_DEFAULT_PROTOCOL_VERSION,
     MCP_JSONRPC_VERSION,
     METRICS_CONTENT_TYPE,
@@ -67,14 +67,14 @@ from tools.mcp.constants import (  # noqa: E402
     TOOL_SUBMIT_REQUEST,
     TOOL_SUBMIT_TASK,
 )
-from tools.mcp.control_plane import McpControlPlane  # noqa: E402
-from tools.mcp.export_store import McpExportStore  # noqa: E402
-from tools.mcp.handler import McpHttpHandler  # noqa: E402
-from tools.mcp.metrics import McpMetrics  # noqa: E402
-from tools.mcp.observability import McpLogger, McpObservability  # noqa: E402
-from tools.mcp.request_store import McpRequestStore  # noqa: E402
-from tools.mcp.snapshot_store import McpSnapshotStore  # noqa: E402
-from tools.mcp.task_store import McpTaskStore  # noqa: E402
+from tools.mcp_ingress.control_plane import McpControlPlane  # noqa: E402
+from tools.mcp_ingress.export_store import McpExportStore  # noqa: E402
+from tools.mcp_ingress.handler import McpHttpHandler  # noqa: E402
+from tools.mcp_ingress.metrics import McpMetrics  # noqa: E402
+from tools.mcp_ingress.observability import McpLogger, McpObservability  # noqa: E402
+from tools.mcp_ingress.request_store import McpRequestStore  # noqa: E402
+from tools.mcp_ingress.snapshot_store import McpSnapshotStore  # noqa: E402
+from tools.mcp_ingress.task_store import McpTaskStore  # noqa: E402
 
 __all__ = [
     "MCP_DEFAULT_PROTOCOL_VERSION",

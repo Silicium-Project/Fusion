@@ -15,8 +15,8 @@ Ce dossier contient deux choses bien séparées :
 | --- | --- | --- |
 | `network_node.py` | Point d'entrée et façade de compatibilité du nœud Python (orchestrateur sur le VPS, nœud de calcul chez l'utilisateur) | `silicium node start`, `Fusion/deploy/linux/start-orchestrator.sh`, app desktop |
 | [`node/`](node/) | Implémentation du nœud, découpée par fonctionnalité (`peer/`, `daemon/`, `cli.py`…) | `network_node.py` |
-| `mcp_server.py` | Point d'entrée (compatibilité) de l'API expérimentale MCP authentifiée ; ré-exporte `tools/mcp/` | service systemd `silicium-experiment-api` (Fusion), `silicium mcp serve`, tests |
-| [`mcp/`](mcp/) | Implémentation du serveur MCP/HTTP : files de tâches et de requêtes, routes HTTP, transport MCP, authentification, snapshots, métriques | `mcp_server.py`, `workloads/common.py`, `tools/cli/node/api.py`, `rpc_server.py` (via `mcp_server`) |
+| `mcp_server.py` | Point d'entrée (compatibilité) de l'API expérimentale MCP authentifiée ; ré-exporte `tools/mcp_ingress/` | service systemd `silicium-experiment-api` (Fusion), `silicium mcp serve`, tests |
+| [`mcp_ingress/`](mcp_ingress/) | Implémentation du serveur MCP/HTTP : files de tâches et de requêtes, routes HTTP, transport MCP, authentification, snapshots, métriques | `mcp_server.py`, `workloads/common.py`, `tools/cli/node/api.py`, `rpc_server.py` (via `mcp_server`) |
 | `direct_transport.py` | Traversée de NAT et transfert direct entre pairs (ICE via `aioice`) | `node/` |
 | `rpc_server.py`, `rpc_client.py`, `rpc_protocol.py` | RPC ZeroMQ (contrat : `proto/silicium_rpc.proto`) | `mcp_server.py`, `run_network_job.py` |
 | `runtime_telemetry.py` | Échantillonnage CPU / mémoire du nœud | `node/` |

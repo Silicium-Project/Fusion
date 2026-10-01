@@ -32,7 +32,7 @@ Layout (one module per responsibility):
 - handler.py          McpHttpHandler assembled from the mixins
 - cli.py              argument parser and main()
 
-Submodules are imported explicitly (``from tools.mcp.task_store import
+Submodules are imported explicitly (``from tools.mcp_ingress.task_store import
 McpTaskStore``); this file deliberately imports nothing so that light users
 such as the task store do not load the HTTP stack.
 """

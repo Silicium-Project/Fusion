@@ -1,4 +1,4 @@
-# tools/mcp/ — serveur MCP/HTTP (runtime Python legacy)
+# tools/mcp_ingress/ — serveur MCP/HTTP (runtime Python legacy)
 
 Implémentation de l'API expérimentale MCP : un serveur HTTP authentifié qui
 accepte des tâches et des requêtes post-job dans les files durables du
@@ -43,7 +43,7 @@ nouvelles fonctionnalités non (voir
 | `handler.py` | `McpHttpHandler`, assemblé à partir des mixins |
 | `cli.py` | Options de ligne de commande et `main()` |
 
-`__init__.py` n'importe rien : importer `tools.mcp.task_store` ne charge pas la
+`__init__.py` n'importe rien : importer `tools.mcp_ingress.task_store` ne charge pas la
 pile HTTP.
 
 ## Tests

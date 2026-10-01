@@ -17,7 +17,7 @@ Network/
 │   │   ├── peer/              #     couche P2P : PeerNetwork (mixins) + serveur HTTP (http/)
 │   │   └── daemon/            #     démon : NetworkNode (mixins : files, claims, dispatch, on-chain…)
 │   ├── mcp_server.py          #   API expérimentale MCP (service systemd sur le VPS)
-│   ├── mcp/                   #   implémentation du serveur MCP (un module par responsabilité)
+│   ├── mcp_ingress/           #   implémentation du serveur MCP (un module par responsabilité)
 │   ├── direct_transport.py    #   NAT traversal (ICE)
 │   ├── rpc_*.py               #   RPC ZeroMQ
 │   ├── runtime_telemetry.py, resource_intelligence.py, receipt_verification.py, i18n.py
