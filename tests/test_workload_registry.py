@@ -146,7 +146,7 @@ def test_duplicate_names_are_rejected(tmp_path: Path) -> None:
 
 
 def test_node_runs_compute_and_default_verification_through_the_registry(tmp_path: Path) -> None:
-    from tests.test_network_node import _config  # noqa: PLC0415 - shared node config helper
+    from tests.network_node_support import _config  # noqa: PLC0415 - shared node config helper
     from tools import network_node
 
     class FakeP2P:

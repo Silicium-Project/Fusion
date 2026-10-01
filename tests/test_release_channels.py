@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from tests.test_network_node import _config
+from tests.network_node_support import _config
 from tools import network_node
 
 
