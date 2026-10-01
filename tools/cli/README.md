@@ -21,11 +21,19 @@ fonctions, jamais au chargement.
 | `docker.py` | Santé Docker, WSL, `docker compose` |
 | `interactive.py` | Shell interactif (`silicium shell`), complétion |
 | `commands/checks.py` | `test`, `check`, `doctor`, `smoke`, `budget`, `clean` |
-| `commands/services.py` | `setup`, `start`, `stop`, `status`, `logs`, `exec`, `alias`, `history` |
+| `commands/services.py` | Ré-exporte les commandes de services locaux ci-dessous (point d'import de `registry.py`) |
+| `commands/setup.py` | `setup up`, `setup down` (étapes Compose : `setup_steps.py`, résumé : `setup_summary.py`) |
+| `commands/compose_services.py` | `start`, `stop`, `status`, `logs`, `exec` |
+| `commands/alias.py` | `alias` |
+| `commands/history.py` | `history show`, `history clear` |
 | `commands/ledger.py` | `ledger list/wipe/export/import` |
 | `commands/mcp.py` | `mcp serve`, `mcp print-config` |
 | `commands/tui.py` | `tui` |
 | `node/start.py` | `node start` (nœud Python, ou `p2p_node` expérimental) |
+| `node/start_options.py` | Options de `node start` (`configure_node_start`) |
+| `node/world_mode.py` | Valeurs par défaut du mode `--world` |
+| `node/network_args.py` | Arguments transmis au nœud Python (`_network_node_args`) |
+| `node/p2p_experiment.py` | Lancement du `p2p_node` Rust expérimental |
 | `node/api.py` | `node submit-*`, `node get-*`, Solana, jobs |
 | `workload/manifest.py` | Lecture des manifestes, filtres, presets |
 | `workload/commands.py` | `workload list/show/queue` |

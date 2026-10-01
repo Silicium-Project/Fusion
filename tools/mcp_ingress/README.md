@@ -48,4 +48,4 @@ pile HTTP.
 
 ## Tests
 
-`tests/test_mcp_server.py` et `tests/test_silicium_mcp_cli.py`.
+`tests/test_mcp_server_*.py` et `tests/test_silicium_mcp_cli.py`.
