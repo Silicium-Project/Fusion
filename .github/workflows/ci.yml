@@ -209,9 +209,8 @@ jobs:
           fetch-depth: 0
           clean: false
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+        shell: bash
+        run: bash ci/runner/install_rust_toolchain.sh stable clippy,rustfmt
 
       - name: Expose Rust toolchain to shell
         shell: bash
@@ -272,9 +271,8 @@ jobs:
           cache-dependency-path: solana-layer/yarn.lock
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.89.0"
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/ci/runner/install_rust_toolchain.sh" 1.89.0
 
       - name: Expose rustup cargo
         run: |
@@ -414,7 +412,8 @@ jobs:
 
       - name: Set up Rust
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
-        uses: dtolnay/rust-toolchain@stable
+        shell: bash
+        run: bash ci/runner/install_rust_toolchain.sh stable
 
       - name: Expose Rust toolchain to shell
         if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
