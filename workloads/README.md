@@ -68,7 +68,8 @@ correspond au dossier, que le handler s'importe, et que `index.json` est à jour
 | `standard/handlers.py` | Handlers des workloads intégrés (SHA-256, libm, matrices, Monte-Carlo π, audit de hash) |
 | `standard/standard_workloads.py`, `standard/run.py` | Fonctions communes ; exécution locale d'un workload intégré (`python -m workloads.standard.run`) |
 | `raytracer/node_tasks.py` | Handlers du raytracer : rendu d'une tuile, vérification d'un jalon |
-| `raytracer/run_network_job.py` | Orchestration d'un job de rendu complet (appelé par le BackEnd Go) |
+| `raytracer/run_network_job.py` | Point d'entrée de l'orchestration d'un job de rendu complet (appelé par le BackEnd Go) |
+| `raytracer/orchestrator/` | Implémentation de l'orchestrateur : découpage, dispatch, vérification, réassemblage (un module par étape) |
 | `raytracer/raytracer_workload.py`, `compute.py`, `verify.py` | Rendu natif et vérification d'une tuile (le découpage et le réassemblage sont faits par le binaire `silicium-raytracer`) |
 | `raytracer/examples/` | Scènes `.cfg` d'exemple |
 | `fixtures/` | Fixtures versionnées (`fixtures.json`) et politique d'alignement |

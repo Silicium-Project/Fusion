@@ -16,7 +16,8 @@ The Python code here only orchestrates it and calls the binary through
 | File | Role |
 | --- | --- |
 | `native.py` | Calls the `silicium-raytracer` pipeline sub-commands |
-| `run_network_job.py` | Orchestrator: split, dispatch, verify, reassemble a job |
+| `run_network_job.py` | Orchestrator entry point (script run by the BackEnd); re-exports `orchestrator/` |
+| `orchestrator/` | Orchestrator package: split, dispatch, verify, reassemble a job (one module per step, see `orchestrator/README.md`) |
 | `node_tasks.py` | Node handlers: compute a tile, verify a challenged milestone |
 | `raytracer_workload.py` (+ `compute.py`, `verify.py`) | Render / verify / validate one tile from the command line |
 

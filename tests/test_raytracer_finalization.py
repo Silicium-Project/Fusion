@@ -152,7 +152,7 @@ def test_claim_starts_a_fresh_execution_deadline(tmp_path, monkeypatch) -> None:
         encoding="utf-8",
     )
     token = {"task_id": task_id, "queue_deadline": 150.0}
-    monkeypatch.setattr("workloads.raytracer.run_network_job.time.monotonic", lambda: 125.0)
+    monkeypatch.setattr("workloads.raytracer.orchestrator.polling.time.monotonic", lambda: 125.0)
 
     assert refresh_attempt_deadline(tmp_path, token, 300.0) == 425.0
     assert token["execution_deadline"] == 425.0

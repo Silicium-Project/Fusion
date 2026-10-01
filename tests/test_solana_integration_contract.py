@@ -45,7 +45,7 @@ def test_solana_write_flow_reconciles_artifact_and_finalizes_job() -> None:
 def test_all_runtime_program_defaults_use_the_canonical_id() -> None:
     paths = [
         REPO_ROOT / "tools" / "network_node.py",
-        REPO_ROOT / "workloads" / "raytracer" / "run_network_job.py",
+        REPO_ROOT / "workloads" / "raytracer" / "orchestrator" / "constants.py",
         REPO_ROOT / "solana-layer" / "silicium-sdk" / "src" / "index.ts",
     ]
     for path in paths:
