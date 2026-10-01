@@ -12,7 +12,7 @@ around the removed C++ fragment runtime.
 
 ## Active implementation
 
-- Server: `tools/mcp_server.py`.
+- Server: `tools/mcp_server.py` (entry point; implementation in `tools/mcp/`).
 - Default local export: `.silicium/mcp/export/`.
 - Auth: bearer token supplied by the caller or the local token file.
 - Host deployment: `Fusion/deploy/systemd/silicium-experiment-api.service`.

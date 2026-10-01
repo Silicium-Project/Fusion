@@ -14,6 +14,7 @@ Network/
 ├── tools/                     # Python LEGACY — runtime de production encore actif
 │   ├── network_node.py        #   le nœud Python (orchestrateur VPS + nœuds utilisateurs)
 │   ├── mcp_server.py          #   API expérimentale MCP (service systemd sur le VPS)
+│   ├── mcp/                   #   implémentation du serveur MCP (un module par responsabilité)
 │   ├── direct_transport.py    #   NAT traversal (ICE)
 │   ├── rpc_*.py               #   RPC ZeroMQ
 │   ├── runtime_telemetry.py, resource_intelligence.py, receipt_verification.py, i18n.py
