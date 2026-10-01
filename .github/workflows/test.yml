@@ -247,7 +247,8 @@ jobs:
           git -C Network clean -ffdx
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        shell: bash
+        run: bash deploy/ci/install-rust-toolchain.sh stable
 
       - name: Set up Python dependencies
         uses: actions/setup-python@v5
@@ -434,7 +435,8 @@ jobs:
           git -C Network clean -ffdx
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        shell: bash
+        run: bash deploy/ci/install-rust-toolchain.sh stable
 
       - name: Verify pinned Network CI coverage
         shell: bash

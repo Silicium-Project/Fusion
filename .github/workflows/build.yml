@@ -129,7 +129,8 @@ jobs:
           cache-dependency-path: apps/silicium-node/package-lock.json
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        shell: bash
+        run: bash deploy/ci/install-rust-toolchain.sh stable
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
