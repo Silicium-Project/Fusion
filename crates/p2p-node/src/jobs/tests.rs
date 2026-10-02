@@ -11,6 +11,7 @@ const SCENE: &str = "camera : { resolution = { width = 64 height = 48 } }";
 fn task() -> NetworkTask {
     NetworkTask {
         task_id: format!("{}.job", "a".repeat(32)),
+        root_job_id: None,
         scene_path: "content/scene".into(),
         output_path: "x/output.ppm".into(),
         seed: "1".into(),
@@ -93,6 +94,7 @@ fn tasks_with_a_region_or_a_module_are_not_split() {
     assert!(
         split(
             &NetworkTask {
+                root_job_id: None,
                 region: Some(region),
                 ..task()
             },
@@ -102,6 +104,7 @@ fn tasks_with_a_region_or_a_module_are_not_split() {
         .is_none()
     );
     let module = NetworkTask {
+        root_job_id: None,
         runtime_module_path: Some("m.wasm".into()),
         ..task()
     };

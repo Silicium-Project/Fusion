@@ -1,7 +1,8 @@
 # p2p-node (`p2p_node`)
 
-Binaire du nœud Rust. **Prototype** : il n'est lancé en production par aucun
-chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
+Binaire du nœud Rust. Le canal dev l'utilise désormais comme runtime de
+référence pour le desktop et l'orchestrateur VPS ; le Python historique reste
+uniquement un outil de migration et de comparaison.
 
 ## Ce qu'il fait
 
@@ -71,6 +72,8 @@ finaliser ou annuler ces tâches.
 | Variable / option | Défaut | Rôle |
 | --- | --- | --- |
 | `API_PORT` / `--api-port` | `9092` | Port de l'API HTTP locale |
+| `SILICIUM_P2P_BIND` / `--p2p-bind` | `0.0.0.0` | Adresse d'écoute libp2p |
+| `SILICIUM_P2P_PORT` / `--p2p-port` | `0` | Port TCP/QUIC libp2p (`0` = éphémère) |
 | `SILICIUM_API_BIND` | `127.0.0.1` | Adresse d'écoute de l'API ; hors loopback, le jeton est obligatoire |
 | `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton `Authorization: Bearer` exigé par `/publish` et `/tasks` (pas `/health`) |
 | `SILICIUM_TRUSTED_PUBLISHERS` / `--trusted-publisher` | — | Peer ids dont les tâches sont exécutées ; sans liste, les tâches des autres pairs sont ignorées |
@@ -87,6 +90,9 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_COMPUTE_TOKEN` | — | Jeton envoyé au compute-daemon s'il en exige un |
 | `SILICIUM_DATA_DIR` / `--data-dir` | `/data` | Identité et journal de tâches |
 | `SILICIUM_BOOTSTRAP_PEERS` / `--bootstrap-peers` | — | Multiaddr des pairs d'amorçage, séparées par des virgules |
+| `SILICIUM_EXPORT_DIR` | — | Export des pairs, heartbeat et métriques du BackEnd |
+| `SILICIUM_WORKLOAD_STORAGE_DIR` | — | Projections `raytracer-progress.json` et résumé |
+| `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton de l'API `/v1` quand elle écoute hors loopback |
 | `SILICIUM_ENABLE_QUIC_LISTENER` / `--enable-quic`, `--disable-quic` | activé | Écoute QUIC |
 | `SILICIUM_DISPATCH_SEED` / `--dispatcher-seed` | `7` | Graine du sélecteur de nœuds |
 | `SILICIUM_HW_BUCKET` | détecté | Force la catégorie matérielle |
@@ -100,7 +106,10 @@ finaliser ou annuler ces tâches.
 | `POST` | `/publish` | Publie une tâche sur le réseau |
 | `GET` | `/tasks/{task_id}` | État dérivé du journal de tâches |
 | `GET` | `/jobs/{job_id}` | Job publié par ce nœud : tuiles (région, état, image), image finale et PNG une fois réassemblés |
-| `GET` | `/health` | Santé |
+| `POST` / `GET` | `/v1/tasks` | Soumission et suivi des tâches du BackEnd |
+| `POST` | `/v1/workloads/{root_job_id}/cancel` | Annulation d'un workload |
+| `GET` | `/v1/peers` | Pairs et métriques pour le BackEnd |
+| `GET` | `/health` ou `/healthz` | Santé |
 
 ## Organisation du code
 
@@ -150,8 +159,9 @@ docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = ra
 - L'image d'une tuile est contrôlée contre ses jalons après la
   finalisation : une image non conforme bloque le réassemblage du job au
   lieu de relancer la tuile.
-- Pas encore branché au site : le BackEnd lance toujours
-  `workloads/raytracer/run_network_job.py` (nœud Python).
+- Le BackEnd garde ses chemins et ses fichiers historiques : le nœud projette
+  maintenant directement la progression, le résumé, les PNG de fragments et
+  les heartbeats dans `SILICIUM_WORKLOAD_STORAGE_DIR` et `SILICIUM_EXPORT_DIR`.
 - Un contenu passe en une seule réponse : 64 Mio au plus (pas de reprise
   d'un transfert interrompu).
 - Ports P2P aléatoires (`tcp/0`, `udp/0`) : injoignable derrière un pare-feu.
