@@ -19,7 +19,7 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 | Capacité | Python (prod) | Rust (`crates/p2p-node`) |
 | --- | --- | --- |
 | Découpage d'un job en fragments | oui | logique portée (`silicium_raytracer::pipeline::tiles`), pas encore branchée dans le nœud |
-| Attribution d'une tâche à un seul nœud (claim, bail, retry) | oui | non : chaque nœud qui reçoit le gossip calcule |
+| Attribution d'une tâche à un seul nœud (claim, bail, retry) | oui | oui : journal de tâches v2 (`node-core::taskbook`) — l'éditeur accepte une proposition, bail renouvelable, nouvelles tentatives, facturation dérivée |
 | Transfert des entrées / résultats entre pairs | blobs par `content_id` | non : chemins de fichiers locaux |
 | Vérification par un autre pair | oui | non : vérification locale contre l'engagement de jalons (logique portée : `pipeline::milestones`, `pipeline::sampling`) |
 | Réassemblage, reçus, facturation | oui | réassemblage et PNG portés (`pipeline::reassemble`, `pipeline::png`) ; reçus et facturation non |

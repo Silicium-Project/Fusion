@@ -157,6 +157,23 @@ impl TaskBook {
             .collect()
     }
 
+    /// Identifiers of the tasks proposed by `author`, sorted.
+    pub fn tasks_published_by(&self, author: &str) -> Vec<String> {
+        let mut tasks: Vec<String> = self
+            .events
+            .values()
+            .filter(|event| {
+                event.author == author
+                    && event.body.kind() == super::TaskEventKind::TaskProposed
+                    && TaskEvent::owns_task(author, &event.task_id)
+            })
+            .map(|event| event.task_id.clone())
+            .collect();
+        tasks.sort();
+        tasks.dedup();
+        tasks
+    }
+
     /// All stored events, ordered by event hash.
     pub fn events(&self) -> impl Iterator<Item = &TaskEvent> {
         self.events.values()

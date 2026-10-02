@@ -75,6 +75,14 @@ impl TaskBookState {
         self.lock()?.receive_persisted(&self.path, event)
     }
 
+    /// Runs `read` on the task book under its lock.
+    pub(crate) fn with_book<T>(
+        &self,
+        read: impl FnOnce(&TaskBook) -> T,
+    ) -> Result<T, TaskBookError> {
+        Ok(read(&*self.lock()?))
+    }
+
     /// Derived state of `task_id` now.
     pub(crate) fn state(&self, task_id: &str) -> Result<Option<DerivedTaskState>, TaskBookError> {
         Ok(self.lock()?.task_state(task_id, now_ms()))

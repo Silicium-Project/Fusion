@@ -1,14 +1,12 @@
-//! Processing of a task received from the network: runtime execution (when the
-//! task carries one), then compute, verification and reputation calls to the
-//! local daemons, each step recorded as a signed task-book event.
+//! Execution of a task this node was accepted for: runtime execution (when
+//! the task carries one), then compute, self-check and reputation calls to
+//! the local daemons. Task-book bookkeeping (claim, lease, result) is in
+//! [`crate::worker`].
 
 use crate::{storage::TaskBookState, task::NetworkTask};
 use libp2p::PeerId;
 use silicium_node_core::{
-    beta::BetaPosterior,
-    hardware::HardwareBucket,
-    p2p::DhtRecordEnvelope,
-    taskbook::{PayloadRef, TaskEvent, TaskEventBody},
+    beta::BetaPosterior, hardware::HardwareBucket, p2p::DhtRecordEnvelope, taskbook::TaskEvent,
 };
 use std::{env, time::Duration};
 use tokio::sync::mpsc;
@@ -51,84 +49,20 @@ pub(crate) fn compute_score_context(context: &NodeContext, task: &NetworkTask) -
     BetaPosterior::with_scale_hint(task_scale)
 }
 
-pub(crate) async fn record_task_event(context: &NodeContext, task_id: &str, body: TaskEventBody) {
-    match context.taskbook.append_signed(task_id, body) {
-        Ok(event) => {
-            if context.tx_events.send(event).await.is_err() {
-                println!(" Task book event channel closed for {task_id}");
-            }
-        }
-        Err(err) => println!(" Failed to persist task book event for {task_id}: {err}"),
-    }
-}
-
-pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
-    record_task_event(
-        &context,
-        &task.task_id,
-        TaskEventBody::ClaimProposed { attempt: 1 },
-    )
-    .await;
-
-    let client = match daemon_client(context.compute_timeout_s) {
-        Ok(client) => client,
-        Err(error) => {
-            println!(" Cannot build the daemon HTTP client: {error}");
-            return;
-        }
-    };
+/// Runs the task and returns the hash of a result that passed the local
+/// milestone self-check, or `None` when anything failed (the caller then
+/// releases the attempt).
+pub(crate) async fn execute_task(context: &NodeContext, task: &NetworkTask) -> Option<String> {
+    let client = daemon_client(context.compute_timeout_s)
+        .map_err(|error| println!(" Cannot build the daemon HTTP client: {error}"))
+        .ok()?;
     let compute_url =
         env::var("COMPUTE_DAEMON_URL").unwrap_or_else(|_| "http://127.0.0.1:9090".to_string());
-    let reputation_url =
-        env::var("REPUTATION_BRIDGE_URL").unwrap_or_else(|_| "http://127.0.0.1:9091".to_string());
     println!(
         "  Processing task {} from {}",
         task.task_id, context.local_peer_id
     );
-
-    if let Some(runtime) = task.runtime_envelope(&context.local_peer_id.to_string()) {
-        let runtime_kind = runtime.kind;
-        let runtime_task_id = task.task_id.clone();
-        let timeout_ms = runtime.limits.cpu_timeout_ms;
-        match tokio::time::timeout(
-            Duration::from_millis(timeout_ms),
-            tokio::task::spawn_blocking(move || runtime.execute()),
-        )
-        .await
-        {
-            Ok(join_result) => match join_result {
-                Ok(Ok(outcome)) => {
-                    println!(
-                        " Runtime {:?} completed for {} with exit code {}",
-                        runtime_kind, runtime_task_id, outcome.exit_code
-                    );
-                }
-                Ok(Err(err)) => {
-                    println!(
-                        " Runtime {:?} failed for {}: {err}",
-                        runtime_kind, runtime_task_id
-                    );
-                    return;
-                }
-                Err(err) => {
-                    println!(" Runtime task join failed for {}: {err}", runtime_task_id);
-                    return;
-                }
-            },
-            Err(_) => {
-                println!(
-                    " Runtime {:?} timed out for {}",
-                    runtime_kind, runtime_task_id
-                );
-                return;
-            }
-        }
-    } else {
-        println!(
-            "  Task {} has no executable runtime payload; using compute fallback",
-            task.task_id
-        );
-    }
+    run_runtime(context, task).await?;
 
     // Both paths are relative to the compute daemon's work directory
     // (the task was sanitized on admission).
@@ -140,57 +74,106 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
         "x_start": null,
         "x_end": null
     });
-
-    let compute_res = match client
-        .post(format!("{compute_url}/compute"))
-        .json(&compute_payload)
-        .send()
-        .await
-    {
-        Ok(res) => res,
-        Err(e) => {
-            println!(" Compute call failed: {e}");
-            return;
-        }
+    let compute_data = post_json(
+        &client,
+        &format!("{compute_url}/compute"),
+        &compute_payload,
+        "Compute",
+    )
+    .await?;
+    let Some(hash) = compute_data.get("hash").and_then(|v| v.as_str()) else {
+        println!(" Compute failed: {:?}", compute_data);
+        return None;
     };
-
-    let compute_data: serde_json::Value = match compute_res.json().await {
-        Ok(d) => d,
-        Err(e) => {
-            println!(" Compute response parse failed: {e}");
-            return;
-        }
-    };
-
-    let hash = match compute_data.get("hash").and_then(|v| v.as_str()) {
-        Some(h) => h,
-        None => {
-            println!(" Compute failed: {:?}", compute_data);
-            return;
-        }
-    };
-
     println!(" Compute successful. Hash: {}", hash);
-    let result = PayloadRef {
-        uri: format!("result://{}", task.task_id),
-        sha256: TaskEvent::payload_hash(hash.as_bytes()),
+
+    let verified = self_check(&client, &compute_url, task, &compute_data).await;
+    report_reputation(context, &client, verified).await;
+    log_affinity(context, task);
+    verified.then(|| hash.to_string())
+}
+
+/// Executes the task's runtime payload, if any; `None` when it failed.
+async fn run_runtime(context: &NodeContext, task: &NetworkTask) -> Option<()> {
+    let Some(runtime) = task.runtime_envelope(&context.local_peer_id.to_string()) else {
+        println!(
+            "  Task {} has no executable runtime payload; using compute fallback",
+            task.task_id
+        );
+        return Some(());
     };
-    record_task_event(
-        &context,
-        &task.task_id,
-        TaskEventBody::ResultPublished { attempt: 1, result },
+    let runtime_kind = runtime.kind;
+    let timeout_ms = runtime.limits.cpu_timeout_ms;
+    let outcome = tokio::time::timeout(
+        Duration::from_millis(timeout_ms),
+        tokio::task::spawn_blocking(move || runtime.execute()),
     )
     .await;
+    match outcome {
+        Ok(Ok(Ok(outcome))) => {
+            println!(
+                " Runtime {:?} completed for {} with exit code {}",
+                runtime_kind, task.task_id, outcome.exit_code
+            );
+            Some(())
+        }
+        Ok(Ok(Err(err))) => {
+            println!(
+                " Runtime {:?} failed for {}: {err}",
+                runtime_kind, task.task_id
+            );
+            None
+        }
+        Ok(Err(err)) => {
+            println!(" Runtime task join failed for {}: {err}", task.task_id);
+            None
+        }
+        Err(_) => {
+            println!(" Runtime {:?} timed out for {}", runtime_kind, task.task_id);
+            None
+        }
+    }
+}
 
-    // Check the tile against the milestone commitment returned by the
-    // compute daemon (still a self-check: cross-verification by another peer
-    // is not implemented in the Rust node yet).
+/// POSTs `payload` and parses the JSON answer; logs and returns `None` on
+/// any failure (`label` names the call in the logs).
+async fn post_json(
+    client: &reqwest::Client,
+    url: &str,
+    payload: &serde_json::Value,
+    label: &str,
+) -> Option<serde_json::Value> {
+    let response = match client.post(url).json(payload).send().await {
+        Ok(response) => response,
+        Err(e) => {
+            println!(" {label} call failed: {e}");
+            return None;
+        }
+    };
+    match response.json().await {
+        Ok(data) => Some(data),
+        Err(e) => {
+            println!(" {label} response parse failed: {e}");
+            None
+        }
+    }
+}
+
+/// Checks the tile against the milestone commitment returned by the compute
+/// daemon. This is only a local self-check: verdicts that count in the task
+/// book come from other peers.
+async fn self_check(
+    client: &reqwest::Client,
+    compute_url: &str,
+    task: &NetworkTask,
+    compute_data: &serde_json::Value,
+) -> bool {
     let Some(manifest) = compute_data.get("milestones").cloned() else {
         println!(
             " Compute response has no milestone commitment: {:?}",
             compute_data
         );
-        return;
+        return false;
     };
     let verify_payload = serde_json::json!({
         "ppm_path": task.output_path,
@@ -198,65 +181,36 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
         "seed": task.seed,
         "reputation": 50.0
     });
+    let verified = post_json(
+        client,
+        &format!("{compute_url}/verify"),
+        &verify_payload,
+        "Verify",
+    )
+    .await
+    .and_then(|data| data.get("verified").and_then(|v| v.as_bool()))
+    .unwrap_or(false);
+    println!(" Verify result: {}", verified);
+    verified
+}
 
-    let verify_res = match client
-        .post(format!("{compute_url}/verify"))
-        .json(&verify_payload)
-        .send()
-        .await
-    {
-        Ok(res) => res,
-        Err(e) => {
-            println!(" Verify call failed: {e}");
-            return;
-        }
-    };
-
-    let verify_data: serde_json::Value = match verify_res.json().await {
-        Ok(d) => d,
-        Err(e) => {
-            println!(" Verify response parse failed: {e}");
-            return;
-        }
-    };
-
-    let success = verify_data
-        .get("verified")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    println!(" Verify result: {}", success);
-    // A self-check is not a verification: the task book only counts verdicts
-    // from peers other than the claimant, so none is recorded here.
-
+/// Best effort: reports the outcome to the reputation bridge.
+async fn report_reputation(context: &NodeContext, client: &reqwest::Client, success: bool) {
+    let reputation_url =
+        env::var("REPUTATION_BRIDGE_URL").unwrap_or_else(|_| "http://127.0.0.1:9091".to_string());
     let observe_payload = serde_json::json!({
         "peer_id": context.local_peer_id.to_string(),
         "success": success,
         "weight": 1.0
     });
+    let url = format!("{reputation_url}/reputation/observe");
+    if let Some(data) = post_json(client, &url, &observe_payload, "Reputation").await {
+        println!(" Reputation updated: {:?}", data);
+    }
+}
 
-    let rep_res = match client
-        .post(format!("{reputation_url}/reputation/observe"))
-        .json(&observe_payload)
-        .send()
-        .await
-    {
-        Ok(res) => res,
-        Err(e) => {
-            println!(" Reputation call failed: {e}");
-            return;
-        }
-    };
-
-    let rep_data: serde_json::Value = match rep_res.json().await {
-        Ok(d) => d,
-        Err(e) => {
-            println!(" Reputation response parse failed: {e}");
-            return;
-        }
-    };
-    println!(" Reputation updated: {:?}", rep_data);
-
-    let posterior = compute_score_context(&context, &task);
+fn log_affinity(context: &NodeContext, task: &NetworkTask) {
+    let posterior = compute_score_context(context, task);
     let affinity_key =
         silicium_node_core::affinity::AffinityKey::new(context.hardware, task.task_id.clone());
     let affinity_record =

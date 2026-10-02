@@ -11,9 +11,23 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
   en mode serveur ;
 - diffusion des tâches et des événements du journal de tâches sur le topic
   Gossipsub `silicium-network` ;
-- pour chaque tâche reçue : exécution via `node-core::runtime` si la tâche le
-  demande, sinon appel au `compute-daemon` (`/compute` puis `/verify`), puis
-  signalement au `reputation-bridge`.
+- journal de tâches partagé (`node-core::taskbook`, v2) :
+  - **worker** (`src/worker.rs`) : pour une tâche reçue, propose de la prendre
+    pour la tentative ouverte, attend que l'éditeur l'accepte (30 s), renouvelle
+    son bail pendant le calcul, puis publie le résultat ou se retire ;
+  - **éditeur** (`src/publisher.rs`, toutes les secondes) : accepte la
+    proposition la plus ancienne pour la tentative ouverte, réannonce la tâche
+    quand une nouvelle tentative s'ouvre (bail expiré, retrait), finalise le
+    résultat ;
+  - **rattrapage** (`src/backfill.rs`) : quand des événements attendent leurs
+    prédécesseurs, le nœud les redemande sur le topic ; les pairs répondent ;
+- calcul d'une tâche acceptée : exécution via `node-core::runtime` si la tâche
+  le demande, sinon appel au `compute-daemon` (`/compute` puis `/verify` en
+  auto-contrôle), puis signalement au `reputation-bridge`.
+
+Les identifiants de tâche publiés par l'API sont préfixés par la clé du
+journal du nœud (`<32 hex>/<nom>`) : seul ce nœud peut proposer, accepter,
+finaliser ou annuler ces tâches.
 
 ## Configuration
 
@@ -47,13 +61,17 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
 
 | Module | Contenu |
 | --- | --- |
-| `src/main.rs` | Démarrage et boucle d'événements (API → réseau, gossipsub → traitement) |
+| `src/main.rs` | Démarrage et boucle d'événements (API → réseau, minuterie de l'éditeur, gossipsub) |
+| `src/gossip.rs` | Messages reçus : événements du journal, demandes de rattrapage, tâches |
+| `src/worker.rs` | Rôle worker : proposition, attente d'acceptation, bail, résultat ou retrait |
+| `src/publisher.rs` | Rôle éditeur : acceptation, réannonce des nouvelles tentatives, finalisation |
+| `src/backfill.rs` | Demande et envoi des événements manquants |
 | `src/config.rs` | Options CLI, variables d'environnement, catégorie matérielle |
 | `src/storage.rs` | Clé d'identité et journal de tâches signé sur disque |
 | `src/swarm.rs` | Comportement libp2p, construction du swarm, publication DHT/gossipsub |
 | `src/admission.rs` | Tâches acceptées : éditeurs de confiance, assainissement, jeton de l'API |
 | `src/api.rs` | API HTTP locale |
-| `src/processing.rs` | Traitement d'une tâche (runtime, compute, vérification, réputation) |
+| `src/processing.rs` | Exécution d'une tâche acceptée (runtime, compute, auto-contrôle, réputation) |
 | `src/task.rs` | Charges utiles réseau (`NetworkTask`, `GossipMessage`) |
 
 ## Construire, tester, conteneur
@@ -77,10 +95,12 @@ docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = ra
 
 ## Limites connues
 
-- Chaque nœud de confiance qui reçoit une tâche la calcule ; le résultat du
-  sélecteur est ignoré.
+- L'éditeur choisit la proposition la plus ancienne (horodatage de son
+  auteur) ; la réputation n'est pas encore prise en compte. Le résultat du
+  sélecteur (`Dispatcher`) est ignoré.
 - Pas de découpage en fragments, pas de transfert de fichiers entre pairs : la
   scène doit déjà être dans le dossier de travail.
 - Vérification locale seulement (contre l'engagement de jalons renvoyé par le
-  compute-daemon), pas encore par un autre pair.
+  compute-daemon), pas encore par un autre pair : les tâches sont publiées avec
+  `verifications_required = 0`, un résultat publié est donc finalisé tel quel.
 - Ports P2P aléatoires (`tcp/0`, `udp/0`) : injoignable derrière un pare-feu.

@@ -170,6 +170,18 @@ pub(crate) fn publish_taskbook_event(
     }
 }
 
+/// Publishes any gossip message on the topic (logs a failure).
+pub(crate) fn publish_gossip(
+    swarm: &mut libp2p::Swarm<P2pBehaviour>,
+    topic: &gossipsub::IdentTopic,
+    message: &GossipMessage,
+) {
+    let data = serde_json::to_vec(message).expect("gossip message serializes");
+    if let Err(err) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), data) {
+        println!(" Failed to publish to gossipsub: {err:?}");
+    }
+}
+
 pub(crate) fn publish_hardware_record(
     swarm: &mut libp2p::Swarm<P2pBehaviour>,
     context: &NodeContext,

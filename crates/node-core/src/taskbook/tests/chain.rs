@@ -90,3 +90,20 @@ fn malformed_bodies_and_task_ids_are_refused() {
     let event = third.emit(&third.task("a"), proposed(zero_lease), 0);
     assert!(matches!(event.verify(), Err(TaskBookError::InvalidBody(_))));
 }
+
+#[test]
+fn tasks_published_by_lists_only_the_owner_proposals() {
+    let mut publisher = Actor::new(9);
+    let mut other = Actor::new(10);
+    let mut book = TaskBook::default();
+    let first = publisher.task("a");
+    let second = publisher.task("b");
+    book.append(publisher.emit(&second, proposed(terms()), 0))
+        .unwrap();
+    book.append(publisher.emit(&first, proposed(terms()), 0))
+        .unwrap();
+    book.append(other.emit(&first, TaskEventBody::ClaimProposed { attempt: 1 }, 0))
+        .unwrap();
+    assert_eq!(book.tasks_published_by(&publisher.id), vec![first, second]);
+    assert!(book.tasks_published_by(&other.id).is_empty());
+}

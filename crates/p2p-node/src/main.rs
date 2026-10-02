@@ -2,33 +2,40 @@
 //!
 //! Runs a libp2p swarm (TCP/QUIC, Noise, Yamux, Gossipsub, Kademlia, mDNS,
 //! Identify, AutoNAT, relay server), exposes a local HTTP API (`/publish`,
-//! `/tasks/{id}`, `/health`) and processes every task it receives by calling the
-//! local compute daemon and reputation bridge.
+//! `/tasks/{id}`, `/health`) and shares the signed task book with its peers:
+//! as a worker it claims tasks and runs them once the publisher accepts it
+//! ([`worker`]); as a publisher it accepts claims, announces retries and
+//! finalizes results ([`publisher`]); gaps are filled over gossip ([`backfill`]).
 //!
 //! Status: prototype, not used in production. Configuration, API and known
 //! limitations are documented in `crates/p2p-node/README.md`.
 //!
 //! Modules: [`config`] (CLI + environment), [`storage`] (identity key, task
 //! book), [`swarm`] (libp2p behaviour and DHT/gossipsub publishing), [`api`]
-//! (local HTTP API), [`processing`] (task execution pipeline), [`task`]
-//! (network payloads).
+//! (local HTTP API), [`worker`] / [`publisher`] / [`backfill`] (task book
+//! roles), [`processing`] (task execution), [`gossip`] (incoming messages),
+//! [`task`] (network payloads).
 
 mod admission;
 mod api;
+mod backfill;
 mod config;
+mod gossip;
 mod processing;
+mod publisher;
 mod storage;
 mod swarm;
 mod task;
+mod worker;
 
 use crate::{
     api::ApiState,
     config::{NodeConfig, read_hardware_bucket},
-    processing::{NodeContext, process_task},
+    processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
-        P2pBehaviourEvent, TOPIC, build_swarm, publish_hardware_record, publish_task_record,
-        publish_taskbook_event,
+        P2pBehaviourEvent, TOPIC, build_swarm, publish_gossip, publish_hardware_record,
+        publish_task_record, publish_taskbook_event,
     },
     task::{GossipMessage, NetworkTask},
 };
@@ -39,6 +46,10 @@ use silicium_node_core::{
     dispatch::{DispatchCandidate, Dispatcher},
     p2p::{DhtRecordEnvelope, TaskEnvelope},
     taskbook::{PayloadRef, TaskEvent, TaskEventBody, TaskTerms},
+};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
 };
 use tokio::{net::TcpListener, select, sync::mpsc};
 
@@ -110,9 +121,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let dispatcher = Dispatcher::with_seed(context.dispatcher_seed);
     let mut pending = Vec::<NetworkTask>::new();
+    let mut sweep_timer = tokio::time::interval(Duration::from_secs(1));
+    let mut regossiped = BTreeSet::new();
+    let mut gap_requests = BTreeMap::new();
 
     loop {
         select! {
+            _ = sweep_timer.tick() => {
+                let outcome = publisher::sweep(&taskbook, &mut regossiped);
+                for event in &outcome.events {
+                    publish_taskbook_event(&mut swarm, &topic, event);
+                }
+                for task in pending.iter().filter(|task| outcome.regossip.contains(&task.task_id)) {
+                    println!(" Announcing a retry of task {}", task.task_id);
+                    publish_gossip(&mut swarm, &topic, &GossipMessage::Task(task.clone().into()));
+                }
+                pending.retain(|task| !outcome.finished.contains(&task.task_id));
+                for (author, after_sequence) in backfill::requests_for_gaps(&taskbook, &mut gap_requests) {
+                    publish_gossip(&mut swarm, &topic, &GossipMessage::TaskEventsRequest { author, after_sequence });
+                }
+            }
             Some(event) = rx_events.recv() => {
                 publish_taskbook_event(&mut swarm, &topic, &event);
             }
@@ -124,7 +152,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         uri: DhtRecordEnvelope::task_record_key(&task.task_id),
                         sha256: TaskEvent::payload_hash(&task_bytes),
                     },
-                    terms: TaskTerms::default(),
+                    // No cross-peer verification in the Rust node yet: a
+                    // result is final once published (see the README).
+                    terms: TaskTerms { verifications_required: 0, ..TaskTerms::default() },
                 };
                 match taskbook.append_signed(&task.task_id, proposal) {
                     Ok(event) => publish_taskbook_event(&mut swarm, &topic, &event),
@@ -170,39 +200,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ..
                 })) => {
                     println!(" Received message from {peer_id}");
-                    if let Ok(gossip) = serde_json::from_slice::<GossipMessage>(&message.data) {
-                        match gossip {
-                            GossipMessage::TaskEvent(event) => {
-                                match taskbook.append_remote(event) {
-                                    Ok(received) if received.pending => println!(" Task book event from {peer_id} waits for its predecessors"),
-                                    Ok(received) => println!(" Accepted {} task book event(s) from {peer_id}", received.accepted.len()),
-                                    Err(err) => println!(" Rejected task book event from {peer_id}: {err}"),
-                                }
-                            }
-                            GossipMessage::Task(task_envelope) => {
-                                match security.admit_remote(message.source, local_peer_id, task_envelope) {
-                                    Ok(task) => {
-                                        let context_clone = context.clone();
-                                        tokio::spawn(async move {
-                                            process_task(context_clone, task).await;
-                                        });
-                                    }
-                                    Err(reason) => println!(" Ignored task from {peer_id}: {reason}"),
-                                }
-                            }
-                        }
-                    } else if let Ok(task_envelope) = serde_json::from_slice::<TaskEnvelope>(&message.data) {
-                        match security.admit_remote(message.source, local_peer_id, task_envelope) {
-                            Ok(task) => {
-                                let context_clone = context.clone();
-                                tokio::spawn(async move {
-                                    process_task(context_clone, task).await;
-                                });
-                            }
-                            Err(reason) => println!(" Ignored task from {peer_id}: {reason}"),
-                        }
-                    } else {
-                        println!(" Could not parse task book or NetworkTask message");
+                    let replies = gossip::handle(&context, &security, local_peer_id, peer_id, message);
+                    for event in &replies {
+                        publish_taskbook_event(&mut swarm, &topic, event);
                     }
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received {

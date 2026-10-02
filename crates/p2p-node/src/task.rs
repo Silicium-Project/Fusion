@@ -50,6 +50,11 @@ impl From<TaskEnvelope> for NetworkTask {
 pub(crate) enum GossipMessage {
     Task(TaskEnvelope),
     TaskEvent(TaskEvent),
+    /// Asks peers for the task-book events of `author` after `after_sequence`.
+    TaskEventsRequest {
+        author: String,
+        after_sequence: u64,
+    },
 }
 
 impl From<NetworkTask> for TaskEnvelope {
