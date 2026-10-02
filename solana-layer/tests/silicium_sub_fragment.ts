@@ -19,10 +19,6 @@ const VERIFIER_REWARD_BUDGET = new anchor.BN(2_000_000);
 const DEFAULT_REWARD_PER_FRAGMENT = new anchor.BN(100_000);
 const DEFAULT_FRAGMENT_QUORUM = 2;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function u32le(n: number): Buffer {
   const buf = Buffer.alloc(4);
   buf.writeUInt32LE(n, 0);
@@ -106,8 +102,8 @@ function resultPda(job: PublicKey): PublicKey {
 }
 
 async function airdrop(pubkey: PublicKey, lamports = 2_000_000_000) {
-  await provider.connection.requestAirdrop(pubkey, lamports);
-  await sleep(500);
+  const signature = await provider.connection.requestAirdrop(pubkey, lamports);
+  await provider.connection.confirmTransaction(signature, "confirmed");
 }
 
 function assertAnchorError(error: any, expectedCode: string) {
