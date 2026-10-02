@@ -1,43 +1,41 @@
-//! Content transfer between peers, addressed by SHA-256: the publisher stores
-//! a copy of each task's scene under `scenes/<sha256>.cfg` in the compute
-//! work directory and announces its hash in the task; a peer that lacks it
-//! asks the topic (`ContentRequest`) and any holder answers
-//! (`ContentResponse`). Received bytes are kept only when this node asked for
-//! them and they hash to the requested value.
-//!
-//! Content travels inside gossip messages, so it is capped at
-//! [`MAX_CONTENT_BYTES`] (scenes are small text files).
+//! Content-addressed store shared with peers: scenes and result images are
+//! kept as `content/<sha256>` inside the compute daemon's work directory (so
+//! the daemon can read a scene at that path), announced in the DHT, and
+//! served to peers that ask for them (see [`crate::fetch`]).
 
 use sha2::{Digest, Sha256};
-use std::{
-    collections::BTreeSet,
-    fs,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{fs, path::PathBuf};
+use tokio::sync::{mpsc, oneshot};
 
-/// Largest content exchanged over gossip (hex doubles it on the wire, which
-/// must stay under gossipsub's 64 KiB message limit).
-pub(crate) const MAX_CONTENT_BYTES: usize = 24 * 1024;
+/// Largest content a node stores or sends (a full-HD PPM is ~6 MiB).
+pub(crate) const MAX_CONTENT_BYTES: usize = 64 * 1024 * 1024;
 
-/// Content-addressed scene store inside the compute daemon's work directory.
+/// Requests from the node's tasks to the event loop, which owns the swarm.
+pub(crate) enum ContentCommand {
+    /// Find a peer holding `sha256`, download it, answer once stored.
+    Fetch {
+        sha256: String,
+        reply: oneshot::Sender<bool>,
+    },
+    /// Announce in the DHT that this node holds `sha256`.
+    Provide { sha256: String },
+}
+
+/// Content-addressed store inside the compute daemon's work directory.
 #[derive(Clone)]
 pub(crate) struct ContentStore {
     root: PathBuf,
-    wanted: Arc<Mutex<BTreeSet<String>>>,
+    commands: mpsc::Sender<ContentCommand>,
 }
 
 impl ContentStore {
-    pub(crate) fn new(root: PathBuf) -> Self {
-        Self {
-            root,
-            wanted: Arc::default(),
-        }
+    pub(crate) fn new(root: PathBuf, commands: mpsc::Sender<ContentCommand>) -> Self {
+        Self { root, commands }
     }
 
-    /// Path of a scene relative to the work directory (what tasks carry).
-    pub(crate) fn scene_path(sha256: &str) -> String {
-        format!("scenes/{sha256}.cfg")
+    /// Path of a content relative to the work directory (what tasks carry).
+    pub(crate) fn relative_path(sha256: &str) -> String {
+        format!("content/{sha256}")
     }
 
     /// Absolute path of a file given relative to the work directory.
@@ -45,59 +43,84 @@ impl ContentStore {
         self.root.join(relative)
     }
 
-    /// Stores the scene at `relative` (publisher side) and returns its hash
-    /// and its content-addressed path.
-    pub(crate) fn add_scene(&self, relative: &str) -> Result<(String, String), String> {
+    /// Copies the file at `relative` into the store, announces it, and
+    /// returns its hash.
+    pub(crate) async fn add_file(&self, relative: &str) -> Result<String, String> {
         let bytes =
-            fs::read(self.absolute(relative)).map_err(|err| format!("scene unreadable: {err}"))?;
+            fs::read(self.absolute(relative)).map_err(|err| format!("unreadable: {err}"))?;
         if bytes.len() > MAX_CONTENT_BYTES {
-            return Err(format!("scene larger than {MAX_CONTENT_BYTES} bytes"));
+            return Err(format!("larger than {MAX_CONTENT_BYTES} bytes"));
         }
         let sha256 = sha256_hex(&bytes);
         self.write(&sha256, &bytes)?;
-        Ok((sha256.clone(), Self::scene_path(&sha256)))
+        let _ = self
+            .commands
+            .send(ContentCommand::Provide {
+                sha256: sha256.clone(),
+            })
+            .await;
+        Ok(sha256)
     }
 
-    /// Bytes of a stored scene, when present and intact.
+    /// Bytes of a stored content, when present and intact.
     pub(crate) fn get(&self, sha256: &str) -> Option<Vec<u8>> {
         if !is_sha256(sha256) {
             return None;
         }
-        let bytes = fs::read(self.absolute(&Self::scene_path(sha256))).ok()?;
+        let bytes = fs::read(self.absolute(&Self::relative_path(sha256))).ok()?;
         (sha256_hex(&bytes) == sha256).then_some(bytes)
     }
 
-    /// Marks a hash as requested by this node.
-    pub(crate) fn want(&self, sha256: &str) {
-        if let Ok(mut wanted) = self.wanted.lock() {
-            wanted.insert(sha256.to_string());
-        }
+    /// True when the content is stored and intact.
+    pub(crate) fn has(&self, sha256: &str) -> bool {
+        self.get(sha256).is_some()
     }
 
-    /// Stores received bytes if this node asked for them and they match.
-    pub(crate) fn receive(&self, sha256: &str, bytes: &[u8]) -> bool {
-        let asked = self
-            .wanted
-            .lock()
-            .map(|mut wanted| wanted.remove(sha256))
-            .unwrap_or(false);
-        asked
-            && bytes.len() <= MAX_CONTENT_BYTES
+    /// Stores downloaded bytes when they hash to `sha256` (and announces them).
+    pub(crate) fn put_verified(&self, sha256: &str, bytes: &[u8]) -> bool {
+        bytes.len() <= MAX_CONTENT_BYTES
+            && is_sha256(sha256)
             && sha256_hex(bytes) == sha256
             && self.write(sha256, bytes).is_ok()
     }
 
+    /// Makes sure `sha256` is stored locally, downloading it from a peer
+    /// if needed; false when no peer delivered it in time.
+    pub(crate) async fn ensure(&self, sha256: &str) -> bool {
+        if self.has(sha256) {
+            return true;
+        }
+        let (reply, answer) = oneshot::channel();
+        let command = ContentCommand::Fetch {
+            sha256: sha256.to_string(),
+            reply,
+        };
+        if self.commands.send(command).await.is_err() {
+            return false;
+        }
+        matches!(
+            tokio::time::timeout(std::time::Duration::from_secs(120), answer).await,
+            Ok(Ok(true))
+        ) && self.has(sha256)
+    }
+
     fn write(&self, sha256: &str, bytes: &[u8]) -> Result<(), String> {
-        let path = self.absolute(&Self::scene_path(sha256));
+        let path = self.absolute(&Self::relative_path(sha256));
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|err| err.to_string())?;
         }
-        fs::write(path, bytes).map_err(|err| err.to_string())
+        // Write then rename, so a reader never sees a half-written file.
+        let partial = path.with_extension("partial");
+        fs::write(&partial, bytes).map_err(|err| err.to_string())?;
+        fs::rename(&partial, &path).map_err(|err| err.to_string())
     }
 }
 
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    hex_encode(&Sha256::digest(bytes))
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 pub(crate) fn is_sha256(value: &str) -> bool {
@@ -107,72 +130,32 @@ pub(crate) fn is_sha256(value: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// Lowercase hex of `bytes` (content is sent as hex in JSON gossip).
-pub(crate) fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-/// Inverse of [`hex_encode`]; `None` on odd length or invalid digits.
-pub(crate) fn hex_decode(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|index| u8::from_str_radix(text.get(index..index + 2)?, 16).ok())
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn store(name: &str) -> ContentStore {
+    fn store(name: &str) -> (ContentStore, mpsc::Receiver<ContentCommand>) {
         let root =
             std::env::temp_dir().join(format!("silicium-content-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
-        ContentStore::new(root)
+        let (tx, rx) = mpsc::channel(8);
+        (ContentStore::new(root, tx), rx)
     }
 
-    #[test]
-    fn a_published_scene_can_be_served_and_received_elsewhere() {
-        let publisher = store("pub");
+    #[tokio::test]
+    async fn added_files_are_announced_and_downloads_are_checked() {
+        let (publisher, mut announced) = store("pub");
         fs::write(publisher.absolute("demo.cfg"), b"camera : {}").unwrap();
-        let (sha256, path) = publisher.add_scene("demo.cfg").unwrap();
-        assert_eq!(path, format!("scenes/{sha256}.cfg"));
-        let served = publisher.get(&sha256).unwrap();
-
-        let worker = store("worker");
+        let sha256 = publisher.add_file("demo.cfg").await.unwrap();
         assert!(
-            !worker.receive(&sha256, &served),
-            "unsolicited content is dropped"
+            matches!(announced.recv().await, Some(ContentCommand::Provide { sha256: s }) if s == sha256)
         );
-        worker.want(&sha256);
-        assert!(!worker.receive(&sha256, b"tampered"));
-        worker.want(&sha256);
-        assert!(worker.receive(&sha256, &served));
-        assert_eq!(worker.get(&sha256).unwrap(), served);
-    }
+        let bytes = publisher.get(&sha256).unwrap();
 
-    #[test]
-    fn hex_round_trips_and_rejects_garbage() {
-        assert_eq!(
-            hex_decode(&hex_encode(&[0, 15, 255])).unwrap(),
-            vec![0, 15, 255]
-        );
-        assert!(hex_decode("abc").is_none());
-        assert!(hex_decode("zz").is_none());
-    }
-
-    #[test]
-    fn oversized_scenes_are_refused() {
-        let publisher = store("big");
-        fs::write(
-            publisher.absolute("big.cfg"),
-            vec![b'x'; MAX_CONTENT_BYTES + 1],
-        )
-        .unwrap();
-        assert!(publisher.add_scene("big.cfg").is_err());
+        let (worker, _commands) = store("worker");
+        assert!(!worker.put_verified(&sha256, b"tampered"));
+        assert!(worker.put_verified(&sha256, &bytes));
+        assert!(worker.ensure(&sha256).await, "already stored: no download");
     }
 }

@@ -13,9 +13,9 @@
 //! Modules: [`config`] (CLI + environment), [`storage`] (identity key, task
 //! book), [`swarm`] (libp2p behaviour and DHT/gossipsub publishing), [`api`]
 //! (local HTTP API), [`worker`] / [`publisher`] / [`backfill`] (task book
-//! roles), [`verifier`] (cross-peer verification), [`content`] (scenes
-//! shared by hash), [`processing`] (task execution), [`gossip`] (incoming
-//! messages),
+//! roles), [`verifier`] (cross-peer verification), [`content`] / [`fetch`]
+//! (scenes and results shared by hash), [`processing`] (task execution),
+//! [`results`] (finalized images), [`gossip`] (incoming messages),
 //! [`task`] (network payloads).
 
 mod admission;
@@ -23,9 +23,11 @@ mod api;
 mod backfill;
 mod config;
 mod content;
+mod fetch;
 mod gossip;
 mod processing;
 mod publisher;
+mod results;
 mod storage;
 mod swarm;
 mod task;
@@ -84,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(" Task book: {}", taskbook.path.display());
 
     let (tx_events, mut rx_events) = mpsc::channel(64);
-    let (tx_gossip, mut rx_gossip) = mpsc::channel(64);
+    let (tx_content, mut rx_content) = mpsc::channel(64);
 
     let context = NodeContext {
         local_peer_id,
@@ -94,8 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_events,
         compute_timeout_s: security.compute_timeout_s,
         known_tasks: Default::default(),
-        content: ContentStore::new(read_compute_root_from_env()),
-        tx_gossip,
+        content: ContentStore::new(read_compute_root_from_env(), tx_content),
         connected_peers: Default::default(),
     };
     let verifier_memory = verifier::VerifierMemory::default();
@@ -140,6 +141,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut sweep_timer = tokio::time::interval(Duration::from_secs(1));
     let mut regossiped = BTreeSet::new();
     let mut gap_requests = BTreeMap::new();
+    let mut fetcher = fetch::Fetcher::default();
+    let collector = results::Collector::default();
 
     loop {
         select! {
@@ -157,6 +160,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     publish_gossip(&mut swarm, &topic, &GossipMessage::Task(task.clone().into()));
                 }
                 pending.retain(|task| !outcome.finished.contains(&task.task_id));
+                collector.collect(&context, &outcome.finished);
                 for (author, after_sequence) in backfill::requests_for_gaps(&taskbook, &mut gap_requests) {
                     publish_gossip(&mut swarm, &topic, &GossipMessage::TaskEventsRequest { author, after_sequence });
                 }
@@ -164,15 +168,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(event) = rx_events.recv() => {
                 publish_taskbook_event(&mut swarm, &topic, &event);
             }
-            Some(message) = rx_gossip.recv() => {
-                publish_gossip(&mut swarm, &topic, &message);
+            Some(command) = rx_content.recv() => {
+                fetch::handle_command(&mut swarm, &mut fetcher, command);
             }
             Some(mut task) = rx_publish.recv() => {
                 // Share the scene by hash so that peers without it can fetch it.
-                match context.content.add_scene(&task.scene_path) {
-                    Ok((sha256, path)) => {
+                match context.content.add_file(&task.scene_path).await {
+                    Ok(sha256) => {
+                        task.scene_path = ContentStore::relative_path(&sha256);
                         task.scene_sha256 = Some(sha256);
-                        task.scene_path = path;
                     }
                     Err(err) => println!(" Scene of {} not shared: {err}", task.task_id),
                 }
@@ -219,6 +223,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                     for (peer_id, multiaddr) in list {
                         println!(" mDNS discovered peer: {peer_id}");
+                        swarm.behaviour_mut().kademlia.add_address(&peer_id, multiaddr.clone());
                         let _ = swarm.dial(multiaddr.clone());
                         swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
                     }
@@ -250,7 +255,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = swarm.behaviour_mut().kademlia.bootstrap();
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(event)) => {
-                    println!(" Kademlia event: {event:?}");
+                    fetch::handle_kademlia(&mut swarm, &mut fetcher, event);
+                }
+                SwarmEvent::Behaviour(P2pBehaviourEvent::Content(event)) => {
+                    fetch::handle_content(&mut swarm, &mut fetcher, &context.content, event);
                 }
                 _ => {}
             }

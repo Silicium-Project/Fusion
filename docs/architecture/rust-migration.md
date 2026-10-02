@@ -20,8 +20,8 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 | --- | --- | --- |
 | Découpage d'un job en fragments | oui | logique portée (`silicium_raytracer::pipeline::tiles`), pas encore branchée dans le nœud |
 | Attribution d'une tâche à un seul nœud (claim, bail, retry) | oui | oui : journal de tâches v2 (`node-core::taskbook`) — l'éditeur accepte une proposition, bail renouvelable, nouvelles tentatives, facturation dérivée |
-| Transfert des entrées / résultats entre pairs | blobs par `content_id` | non : chemins de fichiers locaux |
-| Vérification par un autre pair | oui | non : vérification locale contre l'engagement de jalons (logique portée : `pipeline::milestones`, `pipeline::sampling`) |
+| Transfert des entrées / résultats entre pairs | blobs par `content_id` | oui : contenus par SHA-256, fournisseurs DHT + requête-réponse libp2p (`p2p-node/src/fetch/`), image finale contrôlée contre les jalons |
+| Vérification par un autre pair | oui | oui : vérificateur accepté par l'éditeur, recalcul des jalons tirés au sort ; auto-vérification d'un nœud seul |
 | Réassemblage, reçus, facturation | oui | réassemblage et PNG portés (`pipeline::reassemble`, `pipeline::png`) ; reçus et facturation non |
 | NAT : connexion directe + relais | ICE, punch UDP, relais HTTP, TURN | AutoNAT + relais serveur seulement |
 | API de contrôle pour le BackEnd | `/gossip/publish` + fichiers | `/publish`, `/tasks/{id}` (sans authentification) |

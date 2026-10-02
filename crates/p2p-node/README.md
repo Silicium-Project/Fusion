@@ -30,9 +30,17 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
     son propre résultat (condition `allow_self_verification` signée par
     l'éditeur, active par défaut) ; c'est moins fort qu'une vérification
     indépendante, et jamais rémunéré ;
-  - **scènes** (`src/content.rs`) : l'éditeur copie la scène sous
-    `scenes/<sha256>.cfg` et annonce son hash dans la tâche ; un pair qui ne
-    l'a pas la demande sur le topic et la vérifie à la réception ;
+  - **contenus** (`src/content.rs`, `src/fetch/`) : scènes et images de
+    résultat sont rangées par hash sous `content/<sha256>` dans le dossier de
+    travail et annoncées dans la DHT (enregistrements de fournisseur) ; un
+    pair qui n'a pas un contenu cherche ses détenteurs (à défaut, tous les
+    pairs connectés), le demande à l'un après l'autre par le protocole
+    requête-réponse `/silicium/content/1` (64 Mio au plus) et ne garde que des
+    octets dont le hash correspond ;
+  - **résultats** (`src/results.rs`) : le worker publie son image sous
+    `content://<sha256>` ; une fois la tâche finalisée, l'éditeur la
+    télécharge, vérifie que chaque jalon approuvé par les vérificateurs
+    correspond à l'image, et la garde sous `results/<task_id>.ppm` ;
   - **rattrapage** (`src/backfill.rs`) : quand des événements attendent leurs
     prédécesseurs, le nœud les redemande sur le topic ; les pairs répondent ;
 - calcul d'une tâche acceptée : exécution via `node-core::runtime` si la tâche
@@ -52,7 +60,7 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_API_BIND` | `127.0.0.1` | Adresse d'écoute de l'API ; hors loopback, le jeton est obligatoire |
 | `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton `Authorization: Bearer` exigé par `/publish` et `/tasks` (pas `/health`) |
 | `SILICIUM_TRUSTED_PUBLISHERS` / `--trusted-publisher` | — | Peer ids dont les tâches sont exécutées ; sans liste, les tâches des autres pairs sont ignorées |
-| `SILICIUM_COMPUTE_ROOT` | `$SILICIUM_DATA_DIR/work` | Dossier de travail partagé avec le compute-daemon (scènes reçues) |
+| `SILICIUM_COMPUTE_ROOT` | `$SILICIUM_DATA_DIR/work` | Dossier de travail partagé avec le compute-daemon (`content/`, `results/`) |
 | `SILICIUM_ALLOW_SELF_VERIFICATION` | `1` | `0` : interdire l'auto-vérification d'un nœud seul sur les tâches publiées |
 | `SILICIUM_VERIFICATIONS_REQUIRED` | `1` | Vérifications par un autre pair exigées sur les tâches publiées par ce nœud (0 : résultat finalisé sans vérification) |
 | `SILICIUM_ACCEPT_UNTRUSTED_TASKS` | `0` | `1` : exécuter les tâches de n'importe quel pair (réseau de test uniquement) |
@@ -79,11 +87,13 @@ finaliser ou annuler ces tâches.
 
 | Module | Contenu |
 | --- | --- |
-| `src/main.rs` | Démarrage et boucle d'événements (API → réseau, minuterie de l'éditeur, gossipsub) |
+| `src/main.rs` | Démarrage et boucle d'événements (API → réseau, minuterie de l'éditeur, gossipsub, contenus) |
 | `src/gossip.rs` | Messages reçus : événements du journal, demandes de rattrapage, tâches |
 | `src/worker.rs` | Rôle worker : proposition, attente d'acceptation, bail, résultat ou retrait |
 | `src/publisher/` | Rôle éditeur : acceptation (réputation, ancienneté), auto-vérification d'un nœud seul, réannonce, finalisation ; tests dans `tests.rs` |
-| `src/content.rs` | Scènes partagées par hash (demande, réponse, contrôle) |
+| `src/content.rs` | Magasin de contenus par hash (scènes, images), commandes vers la boucle |
+| `src/fetch/` | Téléchargement entre pairs : fournisseurs DHT, requête-réponse, service ; test à deux nœuds dans `tests.rs` |
+| `src/results.rs` | Image finale d'une tâche finalisée : téléchargement, contrôle contre les jalons |
 | `src/verifier.rs` | Rôle vérificateur : offre, recalcul des blocs tirés au sort, verdict |
 | `src/backfill.rs` | Demande et envoi des événements manquants |
 | `src/config.rs` | Options CLI, variables d'environnement, catégorie matérielle |
@@ -117,6 +127,6 @@ docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = ra
 
 - Le résultat du sélecteur (`Dispatcher`) est ignoré.
 - Pas de découpage en fragments : une tâche est l'image entière.
-- Les scènes passent par le gossip : 24 Kio au plus. Les résultats (images)
-  ne sont pas transférés entre pairs.
+- Un contenu passe en une seule réponse : 64 Mio au plus (pas de reprise
+  d'un transfert interrompu).
 - Ports P2P aléatoires (`tcp/0`, `udp/0`) : injoignable derrière un pare-feu.

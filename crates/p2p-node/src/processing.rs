@@ -3,11 +3,7 @@
 //! the local daemons. Task-book bookkeeping (claim, lease, result) is in
 //! [`crate::worker`].
 
-use crate::{
-    content::ContentStore,
-    storage::TaskBookState,
-    task::{GossipMessage, NetworkTask},
-};
+use crate::{content::ContentStore, storage::TaskBookState, task::NetworkTask};
 use libp2p::PeerId;
 use silicium_node_core::{
     beta::BetaPosterior,
@@ -38,10 +34,9 @@ pub(crate) struct NodeContext {
     /// Tasks this node knows (received or published), by task id: what a
     /// verifier needs to re-render milestones.
     pub(crate) known_tasks: Arc<Mutex<BTreeMap<String, NetworkTask>>>,
-    /// Scenes shared with peers, inside the compute work directory.
+    /// Scenes and result images shared with peers, inside the compute work
+    /// directory.
     pub(crate) content: ContentStore,
-    /// Gossip messages to publish (content requests).
-    pub(crate) tx_gossip: mpsc::Sender<GossipMessage>,
     /// Peers currently connected (refreshed by the event loop).
     pub(crate) connected_peers: Arc<AtomicUsize>,
 }
@@ -62,7 +57,6 @@ impl NodeContext {
 
 /// A result that passed the local self-check, with its milestone commitment.
 pub(crate) struct ComputeOutcome {
-    pub(crate) hash: String,
     pub(crate) milestones: Vec<MilestoneSample>,
 }
 
@@ -141,10 +135,7 @@ pub(crate) async fn execute_task(
     report_reputation(context, &client, verified).await;
     log_affinity(context, task);
     let milestones = milestone_samples(&compute_data);
-    verified.then(|| ComputeOutcome {
-        hash: hash.to_string(),
-        milestones,
-    })
+    verified.then_some(ComputeOutcome { milestones })
 }
 
 /// Milestone commitment of a compute answer, in the task book format.

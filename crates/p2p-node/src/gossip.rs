@@ -1,19 +1,15 @@
-//! Incoming gossip messages: task-book events, backfill and content
-//! requests and answers, and tasks (admitted, then handed to the worker).
+//! Incoming gossip messages: task-book events, backfill requests, and tasks
+//! (admitted, then handed to the worker).
 
 use crate::{
-    admission::SecurityConfig,
-    backfill,
-    content::{MAX_CONTENT_BYTES, hex_decode, hex_encode},
-    processing::NodeContext,
-    task::GossipMessage,
+    admission::SecurityConfig, backfill, processing::NodeContext, task::GossipMessage,
     worker::process_task,
 };
 use libp2p::{PeerId, gossipsub};
 use silicium_node_core::{p2p::TaskEnvelope, taskbook::TaskEvent};
 
 /// Handles one gossip message; returns the messages to send back (stored
-/// events answering a backfill request, content answering a content request).
+/// events answering a backfill request).
 pub(crate) fn handle(
     context: &NodeContext,
     security: &SecurityConfig,
@@ -34,24 +30,6 @@ pub(crate) fn handle(
             .into_iter()
             .map(GossipMessage::TaskEvent)
             .collect(),
-        Ok(GossipMessage::ContentRequest { sha256 }) => context
-            .content
-            .get(&sha256)
-            .map(|bytes| GossipMessage::ContentResponse {
-                sha256,
-                data_hex: hex_encode(&bytes),
-            })
-            .into_iter()
-            .collect(),
-        Ok(GossipMessage::ContentResponse { sha256, data_hex }) => {
-            let stored = data_hex.len() <= 2 * MAX_CONTENT_BYTES
-                && hex_decode(&data_hex)
-                    .is_some_and(|bytes| context.content.receive(&sha256, &bytes));
-            if stored {
-                println!(" Received content {sha256} from {peer_id}");
-            }
-            Vec::new()
-        }
         Ok(GossipMessage::Task(envelope)) => {
             admit(
                 context,

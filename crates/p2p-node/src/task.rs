@@ -59,15 +59,6 @@ pub(crate) enum GossipMessage {
         author: String,
         after_sequence: u64,
     },
-    /// Asks peers for a content (scene) by SHA-256.
-    ContentRequest {
-        sha256: String,
-    },
-    /// Content answered to a request, hex-encoded.
-    ContentResponse {
-        sha256: String,
-        data_hex: String,
-    },
 }
 
 impl From<NetworkTask> for TaskEnvelope {
