@@ -213,9 +213,7 @@ fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
         error,
         result_hash,
         created_unix: entry.created_unix,
-        updated_unix: state
-            .map(|_| unix_seconds())
-            .unwrap_or(entry.updated_unix),
+        updated_unix: state.map(|_| unix_seconds()).unwrap_or(entry.updated_unix),
         task,
     }
 }
