@@ -1,94 +1,121 @@
-//! In-memory task book: validation of each author's chain, merging of remote
-//! events and read accessors.
+//! In-memory task book: validation of each author's chain, equivocation
+//! detection, per-task limits and read accessors.
 //!
-//! Persistence lives in `persistence.rs`, state derivation in `state.rs`;
-//! both are further `impl TaskBook` blocks on the type defined here.
+//! Out-of-order arrival and backfill live in `backfill.rs`, persistence in
+//! `persistence.rs`, state derivation in `state/`; they are further
+//! `impl TaskBook` blocks on the type defined here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use super::{TaskBookError, TaskEvent, hex::decode_fixed};
+use super::{TaskBookError, TaskEvent};
 
-/// Set of verified events indexed by event hash, plus the latest event hash
-/// (head) of every author.
+/// Most events one author may record about one task. An honest node needs a
+/// handful per attempt; the cap stops a peer from filling every disk.
+pub const MAX_EVENTS_PER_AUTHOR_PER_TASK: usize = 64;
+
+/// What [`TaskBook::check`] decided about an event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Check {
+    /// Already stored (same bytes): nothing to do.
+    Duplicate,
+    /// Next event of its author's chain: can be inserted.
+    Next,
+}
+
+/// Verified events indexed by event hash, the head of every author's chain,
+/// events waiting for a missing predecessor and the authors caught signing
+/// two versions of the same event.
 #[derive(Debug, Clone, Default)]
 pub struct TaskBook {
-    // `pub(super)`: the sibling modules `persistence` and `state` extend this
-    // type and need the raw maps; they stay invisible outside `taskbook`.
+    // `pub(super)`: sibling modules extend this type and need the raw maps;
+    // they stay invisible outside `taskbook`.
     pub(super) events: BTreeMap<String, TaskEvent>,
     pub(super) heads: BTreeMap<String, String>,
+    pub(super) by_sequence: BTreeMap<(String, u64), String>,
+    pub(super) per_task: BTreeMap<(String, String), usize>,
+    pub(super) pending: BTreeMap<String, BTreeMap<u64, TaskEvent>>,
+    pub(super) equivocators: BTreeSet<String>,
 }
 
 impl TaskBook {
     /// Verifies `event` and appends it to its author's chain; returns its
-    /// hash.
+    /// hash. The event must be the next one of its author (use
+    /// [`TaskBook::receive`] for events that may arrive out of order).
     ///
     /// Re-appending an identical event is a no-op that returns the same hash.
     pub fn append(&mut self, event: TaskEvent) -> Result<String, TaskBookError> {
-        event.verify_signature()?;
-        if decode_fixed::<32>(&event.payload_hash).is_none() {
-            return Err(TaskBookError::InvalidHash);
-        }
-
+        event.verify()?;
         let event_hash = event.event_hash();
-        if let Some(existing) = self.events.get(&event_hash) {
-            if existing == &event {
-                return Ok(event_hash);
-            }
-            return Err(TaskBookError::ConflictingEvent);
+        if self.check(&event, &event_hash)? == Check::Next {
+            self.insert(event, event_hash.clone());
         }
+        Ok(event_hash)
+    }
 
-        let current_head = self.heads.get(&event.author);
-        match (event.sequence, current_head) {
-            (1, None) if event.previous_event_hash.is_empty() => {}
-            (1, Some(_)) => return Err(TaskBookError::ConflictingEvent),
-            (1, None) => return Err(TaskBookError::InvalidInitialSequence),
-            (sequence, Some(head_hash)) => {
-                let head = self
-                    .events
-                    .get(head_hash)
-                    .ok_or(TaskBookError::PreviousEventMismatch)?;
-                if sequence != head.sequence + 1 {
+    /// Decides whether a verified event can be inserted, without changing
+    /// anything except recording an equivocating author.
+    pub(super) fn check(
+        &mut self,
+        event: &TaskEvent,
+        event_hash: &str,
+    ) -> Result<Check, TaskBookError> {
+        if self.events.contains_key(event_hash) {
+            return Ok(Check::Duplicate);
+        }
+        if self.equivocators.contains(&event.author) {
+            return Err(TaskBookError::Equivocation(event.author.clone()));
+        }
+        let key = (event.author.clone(), event.sequence);
+        if self.by_sequence.contains_key(&key) {
+            // Same author and sequence, different bytes: a fork.
+            self.equivocators.insert(event.author.clone());
+            return Err(TaskBookError::Equivocation(event.author.clone()));
+        }
+        self.check_chain_link(event)?;
+        let count_key = (event.author.clone(), event.task_id.clone());
+        if self.per_task.get(&count_key).copied().unwrap_or(0) >= MAX_EVENTS_PER_AUTHOR_PER_TASK {
+            return Err(TaskBookError::TooManyEvents);
+        }
+        Ok(Check::Next)
+    }
+
+    /// The event must follow its author's current head exactly.
+    fn check_chain_link(&self, event: &TaskEvent) -> Result<(), TaskBookError> {
+        match self.heads.get(&event.author) {
+            None if event.sequence == 1 && event.previous_event_hash.is_empty() => Ok(()),
+            None if event.sequence == 1 => Err(TaskBookError::InvalidInitialSequence),
+            None => Err(TaskBookError::SequenceGap {
+                author: event.author.clone(),
+                expected: 1,
+                actual: event.sequence,
+            }),
+            Some(head_hash) => {
+                let head_sequence = self.events[head_hash].sequence;
+                if event.sequence != head_sequence + 1 {
                     return Err(TaskBookError::SequenceGap {
                         author: event.author.clone(),
-                        expected: head.sequence + 1,
-                        actual: sequence,
+                        expected: head_sequence + 1,
+                        actual: event.sequence,
                     });
                 }
                 if event.previous_event_hash != *head_hash {
                     return Err(TaskBookError::PreviousEventMismatch);
                 }
-            }
-            (sequence, None) => {
-                return Err(TaskBookError::SequenceGap {
-                    author: event.author.clone(),
-                    expected: 1,
-                    actual: sequence,
-                });
+                Ok(())
             }
         }
-
-        self.events.insert(event_hash.clone(), event.clone());
-        self.heads.insert(event.author, event_hash.clone());
-        Ok(event_hash)
     }
 
-    /// Appends a batch of events (e.g. received from a peer); returns how many
-    /// were new.
-    ///
-    /// Events are sorted by (author, sequence, hash) first so that the result
-    /// does not depend on the order they arrived in. Stops at the first
-    /// invalid event; the events appended before it are kept.
-    pub fn merge(
-        &mut self,
-        events: impl IntoIterator<Item = TaskEvent>,
-    ) -> Result<usize, TaskBookError> {
-        let mut events: Vec<_> = events.into_iter().collect();
-        events.sort_by_key(|event| (event.author.clone(), event.sequence, event.event_hash()));
-        let before = self.events.len();
-        for event in events {
-            self.append(event)?;
-        }
-        Ok(self.events.len() - before)
+    /// Stores an event accepted by [`TaskBook::check`].
+    pub(super) fn insert(&mut self, event: TaskEvent, event_hash: String) {
+        *self
+            .per_task
+            .entry((event.author.clone(), event.task_id.clone()))
+            .or_default() += 1;
+        self.by_sequence
+            .insert((event.author.clone(), event.sequence), event_hash.clone());
+        self.heads.insert(event.author.clone(), event_hash.clone());
+        self.events.insert(event_hash, event);
     }
 
     /// Hash of the latest event of `author`, if any.
@@ -100,8 +127,7 @@ impl TaskBook {
     pub fn next_sequence(&self, author: &str) -> u64 {
         self.heads
             .get(author)
-            .and_then(|hash| self.events.get(hash))
-            .map(|event| event.sequence + 1)
+            .map(|hash| self.events[hash].sequence + 1)
             .unwrap_or(1)
     }
 
@@ -110,21 +136,38 @@ impl TaskBook {
         self.heads.clone()
     }
 
-    /// Events of `author` with a sequence strictly greater than `sequence`,
-    /// in sequence order.
-    pub fn events_for_author_after(&self, author: &str, sequence: u64) -> Vec<TaskEvent> {
-        let mut events: Vec<_> = self
-            .events
-            .values()
-            .filter(|event| event.author == author && event.sequence > sequence)
-            .cloned()
-            .collect();
-        events.sort_by_key(|event| event.sequence);
-        events
+    /// Event stored under `event_hash`, if any.
+    pub fn event(&self, event_hash: &str) -> Option<&TaskEvent> {
+        self.events.get(event_hash)
     }
 
-    /// All events, ordered by event hash.
+    /// Authors caught signing two different events with the same sequence;
+    /// their events are ignored when task states are derived.
+    pub fn equivocators(&self) -> &BTreeSet<String> {
+        &self.equivocators
+    }
+
+    /// Events of `author` with a sequence strictly greater than `sequence`,
+    /// in sequence order (what a peer asks for to fill a gap).
+    pub fn events_for_author_after(&self, author: &str, sequence: u64) -> Vec<TaskEvent> {
+        self.by_sequence
+            .range((author.to_string(), sequence + 1)..)
+            .take_while(|((event_author, _), _)| event_author == author)
+            .map(|(_, hash)| self.events[hash].clone())
+            .collect()
+    }
+
+    /// All stored events, ordered by event hash.
     pub fn events(&self) -> impl Iterator<Item = &TaskEvent> {
         self.events.values()
+    }
+
+    /// Stored events about `task_id` with their hashes, ordered by hash.
+    pub(super) fn task_events(&self, task_id: &str) -> Vec<(&str, &TaskEvent)> {
+        self.events
+            .iter()
+            .filter(|(_, event)| event.task_id == task_id)
+            .map(|(hash, event)| (hash.as_str(), event))
+            .collect()
     }
 }

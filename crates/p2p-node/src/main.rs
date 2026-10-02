@@ -38,7 +38,7 @@ use silicium_node_core::{
     beta::BetaPosterior,
     dispatch::{DispatchCandidate, Dispatcher},
     p2p::{DhtRecordEnvelope, TaskEnvelope},
-    taskbook::{TaskEvent, TaskEventKind},
+    taskbook::{PayloadRef, TaskEvent, TaskEventBody, TaskTerms},
 };
 use tokio::{net::TcpListener, select, sync::mpsc};
 
@@ -119,13 +119,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(task) = rx_publish.recv() => {
                 let task_envelope: TaskEnvelope = task.clone().into();
                 let task_bytes = serde_json::to_vec(&task_envelope).expect("task envelope serializes");
-                if let Ok(event) = taskbook.append_signed(
-                    TaskEventKind::TaskProposed,
-                    &task.task_id,
-                    DhtRecordEnvelope::task_record_key(&task.task_id),
-                    TaskEvent::payload_hash(&task_bytes),
-                ) {
-                    publish_taskbook_event(&mut swarm, &topic, &event);
+                let proposal = TaskEventBody::TaskProposed {
+                    spec: PayloadRef {
+                        uri: DhtRecordEnvelope::task_record_key(&task.task_id),
+                        sha256: TaskEvent::payload_hash(&task_bytes),
+                    },
+                    terms: TaskTerms::default(),
+                };
+                match taskbook.append_signed(&task.task_id, proposal) {
+                    Ok(event) => publish_taskbook_event(&mut swarm, &topic, &event),
+                    Err(err) => println!(" Task book refused task {}: {err}", task.task_id),
                 }
                 publish_task_record(&mut swarm, &task);
                 let data = serde_json::to_vec(&GossipMessage::Task(task_envelope)).unwrap();
@@ -171,7 +174,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match gossip {
                             GossipMessage::TaskEvent(event) => {
                                 match taskbook.append_remote(event) {
-                                    Ok(hash) => println!(" Accepted task book event {hash} from {peer_id}"),
+                                    Ok(received) if received.pending => println!(" Task book event from {peer_id} waits for its predecessors"),
+                                    Ok(received) => println!(" Accepted {} task book event(s) from {peer_id}", received.accepted.len()),
                                     Err(err) => println!(" Rejected task book event from {peer_id}: {err}"),
                                 }
                             }

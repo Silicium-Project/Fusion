@@ -14,6 +14,12 @@ pub enum TaskBookError {
     InvalidSignature,
     #[error("invalid event hash or payload hash")]
     InvalidHash,
+    #[error("invalid task identifier")]
+    InvalidTaskId,
+    #[error("only the publisher whose key prefixes the task identifier may propose it")]
+    NotTaskOwner,
+    #[error("invalid event body: {0}")]
+    InvalidBody(&'static str),
     #[error("event sequence must start at one")]
     InvalidInitialSequence,
     #[error("event sequence gap for author {author}: expected {expected}, got {actual}")]
@@ -24,8 +30,12 @@ pub enum TaskBookError {
     },
     #[error("event predecessor does not match the current author head")]
     PreviousEventMismatch,
-    #[error("event conflicts with an existing author chain")]
-    ConflictingEvent,
+    #[error("author {0} signed two different events with the same sequence")]
+    Equivocation(String),
+    #[error("too many events from one author for one task")]
+    TooManyEvents,
+    #[error("too many out-of-order events waiting for their predecessors")]
+    PendingFull,
     #[error("payload hash mismatch")]
     PayloadHashMismatch,
     #[error("event serialization failed: {0}")]

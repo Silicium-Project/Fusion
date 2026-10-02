@@ -7,8 +7,8 @@ use libp2p::PeerId;
 use silicium_node_core::{
     beta::BetaPosterior,
     hardware::HardwareBucket,
-    p2p::{DhtRecordEnvelope, TaskEnvelope},
-    taskbook::{TaskEvent, TaskEventKind},
+    p2p::DhtRecordEnvelope,
+    taskbook::{PayloadRef, TaskEvent, TaskEventBody},
 };
 use std::{env, time::Duration};
 use tokio::sync::mpsc;
@@ -51,17 +51,8 @@ pub(crate) fn compute_score_context(context: &NodeContext, task: &NetworkTask) -
     BetaPosterior::with_scale_hint(task_scale)
 }
 
-pub(crate) async fn record_task_event(
-    context: &NodeContext,
-    kind: TaskEventKind,
-    task_id: &str,
-    payload_ref: impl Into<String>,
-    payload_hash: impl Into<String>,
-) {
-    match context
-        .taskbook
-        .append_signed(kind, task_id, payload_ref, payload_hash)
-    {
+pub(crate) async fn record_task_event(context: &NodeContext, task_id: &str, body: TaskEventBody) {
+    match context.taskbook.append_signed(task_id, body) {
         Ok(event) => {
             if context.tx_events.send(event).await.is_err() {
                 println!(" Task book event channel closed for {task_id}");
@@ -72,15 +63,10 @@ pub(crate) async fn record_task_event(
 }
 
 pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
-    let task_bytes =
-        serde_json::to_vec(&TaskEnvelope::from(task.clone())).expect("task envelope serializes");
-    let task_payload_hash = TaskEvent::payload_hash(&task_bytes);
     record_task_event(
         &context,
-        TaskEventKind::ClaimProposed,
         &task.task_id,
-        DhtRecordEnvelope::task_record_key(&task.task_id),
-        task_payload_hash,
+        TaskEventBody::ClaimProposed { attempt: 1 },
     )
     .await;
 
@@ -185,12 +171,14 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
     };
 
     println!(" Compute successful. Hash: {}", hash);
+    let result = PayloadRef {
+        uri: format!("result://{}", task.task_id),
+        sha256: TaskEvent::payload_hash(hash.as_bytes()),
+    };
     record_task_event(
         &context,
-        TaskEventKind::ResultPublished,
         &task.task_id,
-        format!("result://{}", task.task_id),
-        TaskEvent::payload_hash(hash.as_bytes()),
+        TaskEventBody::ResultPublished { attempt: 1, result },
     )
     .await;
 
@@ -237,14 +225,8 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     println!(" Verify result: {}", success);
-    record_task_event(
-        &context,
-        TaskEventKind::VerificationPublished,
-        &task.task_id,
-        format!("verification://{}", task.task_id),
-        TaskEvent::payload_hash(success.to_string().as_bytes()),
-    )
-    .await;
+    // A self-check is not a verification: the task book only counts verdicts
+    // from peers other than the claimant, so none is recorded here.
 
     let observe_payload = serde_json::json!({
         "peer_id": context.local_peer_id.to_string(),

@@ -53,6 +53,10 @@ async fn publish_task(
     State(state): State<ApiState>,
     Json(task): Json<NetworkTask>,
 ) -> impl IntoResponse {
+    // Task book identifiers start with the publisher's key (nobody else can
+    // propose them); a plain name is prefixed with this node's key.
+    let mut task = task;
+    task.task_id = state.taskbook.owned_task_id(&task.task_id);
     let task = match state.security.admit_local(TaskEnvelope::from(task)) {
         Ok(task) => task,
         Err(reason) => return (StatusCode::BAD_REQUEST, reason).into_response(),

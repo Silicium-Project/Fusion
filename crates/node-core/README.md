@@ -8,7 +8,7 @@ elle-même.
 | Module | Contenu |
 | --- | --- |
 | `p2p` | `TaskEnvelope`, `DhtRecordEnvelope` : ce qui circule entre pairs (tâches, enregistrements DHT) |
-| `taskbook` | Journal d'événements de tâches signé Ed25519, chaîné par auteur, avec détection de trous et de forks (`taskbook/` : `event`, `book`, `persistence`, `state`, `error`, `hex`, `tests`) |
+| `taskbook` | Journal de tâches partagé (v2), signé Ed25519 et chaîné par auteur : rôles (seul l'éditeur accepte une proposition, finalise ou annule ; seul le nœud retenu publie le résultat ; pas d'auto-vérification), bail renouvelable et nouvelles tentatives, réception dans le désordre avec rattrapage, détection des forks, limites par auteur, facturation dérivée. Voir l'en-tête de `taskbook/mod.rs` |
 | `dag` | Graphe de dépendances entre tâches |
 | `dispatch` | Sélection d'un nœud pour une tâche (échantillonnage de Thompson) |
 | `beta` | Postérieure Beta utilisée pour la réputation / l'affinité |
