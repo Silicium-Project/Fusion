@@ -19,6 +19,12 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
     proposition la plus ancienne pour la tentative ouverte, réannonce la tâche
     quand une nouvelle tentative s'ouvre (bail expiré, retrait), finalise le
     résultat ;
+  - **vérificateur** (`src/verifier.rs`, toutes les secondes) : pour un
+    résultat d'un autre nœud en attente de vérification, propose de le
+    vérifier ; une fois accepté par l'éditeur, recalcule via le
+    compute-daemon les blocs de lignes tirés au sort à partir de
+    l'acceptation et publie son verdict (aucun verdict si le rendu local
+    échoue : le créneau se libère pour un autre vérificateur) ;
   - **rattrapage** (`src/backfill.rs`) : quand des événements attendent leurs
     prédécesseurs, le nœud les redemande sur le topic ; les pairs répondent ;
 - calcul d'une tâche acceptée : exécution via `node-core::runtime` si la tâche
@@ -37,6 +43,7 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_API_BIND` | `127.0.0.1` | Adresse d'écoute de l'API ; hors loopback, le jeton est obligatoire |
 | `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton `Authorization: Bearer` exigé par `/publish` et `/tasks` (pas `/health`) |
 | `SILICIUM_TRUSTED_PUBLISHERS` / `--trusted-publisher` | — | Peer ids dont les tâches sont exécutées ; sans liste, les tâches des autres pairs sont ignorées |
+| `SILICIUM_VERIFICATIONS_REQUIRED` | `1` | Vérifications par un autre pair exigées sur les tâches publiées par ce nœud (0 : résultat finalisé sans vérification) |
 | `SILICIUM_ACCEPT_UNTRUSTED_TASKS` | `0` | `1` : exécuter les tâches de n'importe quel pair (réseau de test uniquement) |
 | `SILICIUM_ALLOW_REMOTE_WASM` | `0` | `1` : autoriser une tâche à lancer un module WASM du dossier de travail (jamais d'image Docker) |
 | `SILICIUM_COMPUTE_TIMEOUT_S` | `300` | Borne d'un appel au compute-daemon (+ 30 s) |
@@ -65,6 +72,7 @@ finaliser ou annuler ces tâches.
 | `src/gossip.rs` | Messages reçus : événements du journal, demandes de rattrapage, tâches |
 | `src/worker.rs` | Rôle worker : proposition, attente d'acceptation, bail, résultat ou retrait |
 | `src/publisher.rs` | Rôle éditeur : acceptation, réannonce des nouvelles tentatives, finalisation |
+| `src/verifier.rs` | Rôle vérificateur : offre, recalcul des blocs tirés au sort, verdict |
 | `src/backfill.rs` | Demande et envoi des événements manquants |
 | `src/config.rs` | Options CLI, variables d'environnement, catégorie matérielle |
 | `src/storage.rs` | Clé d'identité et journal de tâches signé sur disque |
@@ -100,7 +108,8 @@ docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = ra
   sélecteur (`Dispatcher`) est ignoré.
 - Pas de découpage en fragments, pas de transfert de fichiers entre pairs : la
   scène doit déjà être dans le dossier de travail.
-- Vérification locale seulement (contre l'engagement de jalons renvoyé par le
-  compute-daemon), pas encore par un autre pair : les tâches sont publiées avec
-  `verifications_required = 0`, un résultat publié est donc finalisé tel quel.
+- La vérification croisée suppose que le vérificateur a la même scène dans le
+  dossier de travail de son compute-daemon (pas encore de transfert de
+  fichiers) ; sur un réseau d'un seul nœud, mettre
+  `SILICIUM_VERIFICATIONS_REQUIRED=0` pour que les résultats soient finalisés.
 - Ports P2P aléatoires (`tcp/0`, `udp/0`) : injoignable derrière un pare-feu.

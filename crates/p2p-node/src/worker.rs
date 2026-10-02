@@ -38,6 +38,7 @@ pub(crate) async fn record_task_event(context: &NodeContext, task_id: &str, body
 /// Handles a task received from the network (see the module documentation).
 pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
     let task_id = task.task_id.clone();
+    context.remember_task(&task);
     let Some((attempt, terms)) = open_attempt(&context, &task_id).await else {
         println!(" No open attempt for task {task_id}; not claiming it");
         return;
@@ -51,13 +52,13 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
     let outcome = execute_task(&context, &task).await;
     renewer.stop();
     let body = match outcome {
-        Some(hash) => TaskEventBody::ResultPublished {
+        Some(outcome) => TaskEventBody::ResultPublished {
             attempt,
             result: PayloadRef {
                 uri: format!("result://{task_id}"),
-                sha256: TaskEvent::payload_hash(hash.as_bytes()),
+                sha256: TaskEvent::payload_hash(outcome.hash.as_bytes()),
             },
-            milestones: Vec::new(),
+            milestones: outcome.milestones,
         },
         None => TaskEventBody::ClaimReleased { attempt },
     };

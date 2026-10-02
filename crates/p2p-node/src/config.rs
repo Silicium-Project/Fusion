@@ -176,6 +176,17 @@ pub(crate) fn read_dispatcher_seed_from_env() -> u64 {
         .unwrap_or(7)
 }
 
+/// Approvals required on the tasks this node publishes
+/// (`SILICIUM_VERIFICATIONS_REQUIRED`, default 1; 0 finalizes results
+/// without cross-verification, e.g. on a single-node test network).
+pub(crate) fn read_verifications_required_from_env() -> u32 {
+    env::var("SILICIUM_VERIFICATIONS_REQUIRED")
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(1)
+        .min(16)
+}
+
 pub(crate) fn read_enable_quic_listener_from_env() -> bool {
     env::var("SILICIUM_ENABLE_QUIC_LISTENER")
         .ok()

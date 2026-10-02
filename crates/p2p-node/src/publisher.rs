@@ -1,7 +1,8 @@
 //! Publisher side of the task book, run periodically: for every task this
-//! node proposed, accept a claim when an attempt is open (the earliest claim
-//! by its author's timestamp, then hash), ask workers again when a retry has
-//! no claim yet, and finalize verified results.
+//! node proposed, accept a claim when an attempt is open and a verifier when
+//! a result needs one (the earliest offer by its author's timestamp, then
+//! hash), ask workers again when a retry has no claim yet, and finalize
+//! verified results.
 
 use crate::storage::{TaskBookState, now_ms};
 use silicium_node_core::taskbook::{DerivedTaskStatus, TaskBook, TaskEventBody};
@@ -70,6 +71,9 @@ fn decide(book: &TaskBook, task_id: &str, now: u64) -> Option<Decision> {
         let attempt = state.attempts.last()?.attempt;
         return Some(Decision::Sign(TaskEventBody::TaskFinalized { attempt }));
     }
+    if state.status == DerivedTaskStatus::Completed {
+        return accept_verifier(book, task_id, now, state.attempts.last()?.attempt);
+    }
     let attempt = state.next_attempt?;
     let chosen = book
         .open_claims(task_id, now)
@@ -85,6 +89,23 @@ fn decide(book: &TaskBook, task_id: &str, now: u64) -> Option<Decision> {
         None if attempt > 1 => Some(Decision::Regossip(attempt)),
         None => None,
     }
+}
+
+/// Accepts the earliest verification offer while a verifier slot is open.
+fn accept_verifier(book: &TaskBook, task_id: &str, now: u64, attempt: u32) -> Option<Decision> {
+    if book.verification_slots_open(task_id, now) == 0 {
+        return None;
+    }
+    let offer = book
+        .open_verifications(task_id, now)
+        .into_iter()
+        .min_by(|left, right| {
+            (left.issued_at_ms, &left.event_hash).cmp(&(right.issued_at_ms, &right.event_hash))
+        })?;
+    Some(Decision::Sign(TaskEventBody::VerifierAccepted {
+        attempt,
+        claim: offer.event_hash,
+    }))
 }
 
 #[cfg(test)]
@@ -220,5 +241,96 @@ mod tests {
             decide(&book, &task, 1_500),
             Some(Decision::Regossip(2))
         ));
+    }
+
+    #[test]
+    fn a_result_waits_for_an_accepted_verifier_before_finalization() {
+        let publisher = SigningKey::from_bytes(&[6; 32]);
+        let worker = SigningKey::from_bytes(&[7; 32]);
+        let verifier = SigningKey::from_bytes(&[8; 32]);
+        let mut book = TaskBook::default();
+        let task = TaskEvent::task_id_for(&TaskEvent::author_id(&publisher), "checked");
+        let spec = PayloadRef {
+            uri: "silicium/task/v1/checked".to_string(),
+            sha256: TaskEvent::payload_hash(b"spec"),
+        };
+        let terms = TaskTerms {
+            lease_ms: 10_000,
+            verifications_required: 1,
+            ..TaskTerms::default()
+        };
+        emit(
+            &mut book,
+            &publisher,
+            &task,
+            TaskEventBody::TaskProposed { spec, terms },
+            0,
+        );
+        let claim = emit(
+            &mut book,
+            &worker,
+            &task,
+            TaskEventBody::ClaimProposed { attempt: 1 },
+            0,
+        );
+        emit(
+            &mut book,
+            &publisher,
+            &task,
+            TaskEventBody::ClaimAccepted { attempt: 1, claim },
+            0,
+        );
+        let result = PayloadRef {
+            uri: "result://checked".to_string(),
+            sha256: TaskEvent::payload_hash(b"r"),
+        };
+        let result_event = emit(
+            &mut book,
+            &worker,
+            &task,
+            TaskEventBody::ResultPublished {
+                attempt: 1,
+                result,
+                milestones: Vec::new(),
+            },
+            10,
+        );
+        assert!(decide(&book, &task, 20).is_none());
+
+        let offer = emit(
+            &mut book,
+            &verifier,
+            &task,
+            TaskEventBody::VerificationClaimed { attempt: 1 },
+            20,
+        );
+        let Some(Decision::Sign(accept)) = decide(&book, &task, 30) else {
+            panic!("expected a verifier acceptance");
+        };
+        assert_eq!(
+            accept,
+            TaskEventBody::VerifierAccepted {
+                attempt: 1,
+                claim: offer
+            }
+        );
+        emit(&mut book, &publisher, &task, accept, 30);
+        assert!(decide(&book, &task, 40).is_none());
+
+        emit(
+            &mut book,
+            &verifier,
+            &task,
+            TaskEventBody::VerificationPublished {
+                attempt: 1,
+                result_event,
+                approved: true,
+            },
+            50,
+        );
+        let Some(Decision::Sign(finalize)) = decide(&book, &task, 60) else {
+            panic!("expected a finalization");
+        };
+        assert_eq!(finalize, TaskEventBody::TaskFinalized { attempt: 1 });
     }
 }

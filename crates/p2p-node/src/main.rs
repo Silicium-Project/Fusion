@@ -13,7 +13,8 @@
 //! Modules: [`config`] (CLI + environment), [`storage`] (identity key, task
 //! book), [`swarm`] (libp2p behaviour and DHT/gossipsub publishing), [`api`]
 //! (local HTTP API), [`worker`] / [`publisher`] / [`backfill`] (task book
-//! roles), [`processing`] (task execution), [`gossip`] (incoming messages),
+//! roles), [`verifier`] (cross-peer verification), [`processing`] (task
+//! execution), [`gossip`] (incoming messages),
 //! [`task`] (network payloads).
 
 mod admission;
@@ -26,11 +27,12 @@ mod publisher;
 mod storage;
 mod swarm;
 mod task;
+mod verifier;
 mod worker;
 
 use crate::{
     api::ApiState,
-    config::{NodeConfig, read_hardware_bucket},
+    config::{NodeConfig, read_hardware_bucket, read_verifications_required_from_env},
     processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
@@ -84,7 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         taskbook: taskbook.clone(),
         tx_events,
         compute_timeout_s: security.compute_timeout_s,
+        known_tasks: Default::default(),
     };
+    let verifier_memory = verifier::VerifierMemory::default();
+    let verifications_required = read_verifications_required_from_env();
 
     let mut swarm = build_swarm(local_key.clone(), local_peer_id)?;
     let topic = gossipsub::IdentTopic::new(TOPIC);
@@ -128,6 +133,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         select! {
             _ = sweep_timer.tick() => {
+                verifier::sweep(&context, &verifier_memory).await;
                 let outcome = publisher::sweep(&taskbook, &mut regossiped);
                 for event in &outcome.events {
                     publish_taskbook_event(&mut swarm, &topic, event);
@@ -152,9 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         uri: DhtRecordEnvelope::task_record_key(&task.task_id),
                         sha256: TaskEvent::payload_hash(&task_bytes),
                     },
-                    // No cross-peer verification in the Rust node yet: a
-                    // result is final once published (see the README).
-                    terms: TaskTerms { verifications_required: 0, ..TaskTerms::default() },
+                    terms: TaskTerms { verifications_required, ..TaskTerms::default() },
                 };
                 match taskbook.append_signed(&task.task_id, proposal) {
                     Ok(event) => publish_taskbook_event(&mut swarm, &topic, &event),
@@ -167,6 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     println!(" Published task {} to gossipsub", task.task_id);
                 }
+                context.remember_task(&task);
                 pending.push(task);
                 if let Some(candidate) = pending.last() {
                     let candidate = DispatchCandidate {
