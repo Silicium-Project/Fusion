@@ -74,7 +74,7 @@ pub fn run_supervisor_cli() -> i32 {
         let mut node_running = pid_running;
         if node_running
             && node_started_at.elapsed() >= CLAIM_POLL_STALE_AFTER
-            && !local_network_node_ready(46101)
+            && !local_network_node_ready(NODE_API_PORT)
             && !claim_poll_is_fresh(&repo_root, CLAIM_POLL_STALE_AFTER)
         {
             let _ = append_supervisor_log(
@@ -90,7 +90,7 @@ pub fn run_supervisor_cli() -> i32 {
             kill_known_silicium_processes(Some(&repo_root));
             remove_pid(&repo_root);
             node_running = false;
-            let _ = wait_for_local_port_release(46101, Duration::from_secs(2));
+            let _ = wait_for_local_port_release(NODE_API_PORT, Duration::from_secs(2));
         }
         if node_running {
             restart_attempts = 0;
@@ -98,7 +98,7 @@ pub fn run_supervisor_cli() -> i32 {
         if !node_running {
             remove_pid(&repo_root);
             kill_known_silicium_processes(Some(&repo_root));
-            if wait_for_local_port_release(46101, Duration::from_secs(2)) {
+            if wait_for_local_port_release(NODE_API_PORT, Duration::from_secs(2)) {
                 match spawn_node(&repo_root, &config) {
                     Ok(child) => {
                         restart_attempts = restart_attempts.saturating_add(1);

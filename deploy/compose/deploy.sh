@@ -9,6 +9,7 @@ export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
 channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
 channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
 channel_compose_project="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field compose_project)"
+channel_service_suffix="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field service_suffix)"
 channel_runtime_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field deployment_root)"
 backend_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field backend_http_port)"
 backend_p2p_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field backend_p2p_port)"
@@ -54,6 +55,13 @@ COMPOSE_ENV="${SILICIUM_COMPOSE_ENV:-$initial_config_dir/compose.env}"
 set -a
 # shellcheck disable=SC1090
 . "$COMPOSE_ENV"
+orchestrator_env_dir="${SILICIUM_CONFIG_DIR:-$initial_config_dir}"
+if [[ -f "$orchestrator_env_dir/orchestrator.env" ]]; then
+  # Keep the BackEnd's Rust control client on the same bearer token as the
+  # host-side p2p_node service.
+  # shellcheck disable=SC1090
+  . "$orchestrator_env_dir/orchestrator.env"
+fi
 set +a
 
 channel_or_legacy_default() {
@@ -159,6 +167,13 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: 
     ufw allow from "$backend_network_subnet" to "$host_gateway" port "$firewall_port" proto tcp \
       comment "Silicium ${RELEASE_CHANNEL} container control plane" >/dev/null
   done
+  if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+    p2p_port="${SILICIUM_P2P_PORT:-$((SILICIUM_ORCHESTRATOR_PORT + 1))}"
+    for protocol in tcp udp; do
+      ufw allow from "${SILICIUM_VPN_NETWORK:-10.77.0.0/24}" to "$SILICIUM_VPN_SERVER_ADDRESS" \
+        port "$p2p_port" proto "$protocol" comment "Silicium dev Rust P2P" >/dev/null
+    done
+  fi
 fi
 
 # The backend image deliberately runs as an unprivileged user while the
@@ -212,6 +227,26 @@ if docker run --rm \
 else
   echo "Rust tile pipeline build failed: the orchestrator cannot split jobs without it." >&2
   exit 1
+fi
+
+# Build the Rust control/peer node in the same portable musl target used by
+# the host systemd service. The BackEnd container talks to its HTTP API on the
+# host; it no longer depends on the Python network daemon or queue files.
+node_target="$SILICIUM_RUNTIME_ROOT/Network/target/node-alpine"
+if ! docker run --rm \
+  -v "$SILICIUM_RUNTIME_ROOT/Network:/src" \
+  -v silicium-cargo-registry:/usr/local/cargo/registry \
+  -w /src \
+  rust:1-alpine \
+  sh -c 'apk add --no-cache musl-dev >/dev/null && cargo build --release --locked -p p2p_node -p compute_daemon --target-dir /src/target/node-alpine' \
+  || [[ ! -x "$node_target/release/p2p_node" ]]; then
+  echo "Rust p2p node build failed; refusing to deploy the Python fallback." >&2
+  exit 1
+fi
+
+orchestrator_unit="silicium-orchestrator${channel_service_suffix}.service"
+if command -v systemctl >/dev/null 2>&1 && systemctl cat "$orchestrator_unit" >/dev/null 2>&1; then
+  systemctl restart "$orchestrator_unit"
 fi
 
 # The API submits task envelopes into the host-side orchestrator export. Keep

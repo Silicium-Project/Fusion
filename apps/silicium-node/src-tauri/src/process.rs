@@ -106,8 +106,10 @@ pub(crate) fn linux_managed_node_pids(repo_root: Option<&Path>) -> Vec<u32> {
                     .join(" ")
             })
             .unwrap_or_default();
-        let is_node_launcher =
-            command_line.contains("start-node.sh") || command_line.contains("silicium node start");
+        let is_node_launcher = command_line.contains("start-node.sh")
+            || command_line.contains("silicium node start")
+            || command_line.contains("p2p_node")
+            || command_line.contains("compute_daemon");
         if !is_node_launcher {
             continue;
         }

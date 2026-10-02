@@ -35,7 +35,7 @@ pub fn node_status(
         .and_then(|root| read_pid(root).ok().flatten())
         .map(process_is_running)
         .unwrap_or(false);
-    let node_ready = root.is_some() && local_network_node_ready(46101);
+    let node_ready = root.is_some() && local_network_node_ready(NODE_API_PORT);
     let running = node_ready;
     if !node_running {
         if let Some(root) = root.as_ref() {
@@ -68,7 +68,7 @@ pub fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<
     let repo_root = resolve_repo_root(&config.repo_root)?;
     validate_repo_root(&repo_root)?;
     cleanup_dead_pids(&repo_root);
-    if local_network_node_ready(46101) {
+    if local_network_node_ready(NODE_API_PORT) {
         return Ok("Silicium node already running in background".to_string());
     }
     let managed_process_starting = read_supervisor_pid(&repo_root)?
@@ -77,7 +77,7 @@ pub fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<
         || read_pid(&repo_root)?
             .map(process_is_running)
             .unwrap_or(false);
-    if managed_process_starting && wait_for_existing_node_start(&repo_root, 46101) {
+    if managed_process_starting && wait_for_existing_node_start(&repo_root, NODE_API_PORT) {
         return Ok("Silicium local service already running".to_string());
     }
     cleanup_previous_node_processes(&repo_root);
@@ -107,7 +107,7 @@ pub fn start_node(mut config: NodeConfig, state: State<ProcessState>) -> Result<
         }
     };
     let mut child = spawn_supervisor(&repo_root)?;
-    wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
+    wait_for_supervised_node_start(&mut child, &repo_root, NODE_API_PORT)?;
     drop(child);
     *node = None;
     if let Some(warning) = autostart_warning {
@@ -253,7 +253,7 @@ pub fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
     let supervisor_pid = read_supervisor_pid(&root).ok().flatten();
     let node_running = node_pid.map(process_is_running).unwrap_or(false);
     let supervisor_running = supervisor_pid.map(process_is_running).unwrap_or(false);
-    let port_ready = local_network_node_ready(46101);
+    let port_ready = local_network_node_ready(NODE_API_PORT);
     let orchestrator_url = read_service_config(&root)
         .map(|config| config.orchestrator_url)
         .unwrap_or_else(|_| default_orchestrator_url().to_string());

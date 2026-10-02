@@ -15,14 +15,14 @@ pub(crate) fn start_configured_node_service() -> Result<String, String> {
         .map(process_is_running)
         .unwrap_or(false)
     {
-        if wait_for_existing_node_start(&repo_root, 46101) {
+        if wait_for_existing_node_start(&repo_root, NODE_API_PORT) {
             return Ok("Le service Silicium est deja demarre.".to_string());
         }
         cleanup_previous_node_processes(&repo_root);
     }
 
     let mut child = spawn_supervisor(&repo_root)?;
-    wait_for_supervised_node_start(&mut child, &repo_root, 46101)?;
+    wait_for_supervised_node_start(&mut child, &repo_root, NODE_API_PORT)?;
     drop(child);
     Ok("Le service Silicium est demarre.".to_string())
 }
@@ -58,7 +58,7 @@ pub(crate) fn configured_node_service_running() -> bool {
         return false;
     };
     cleanup_dead_pids(&repo_root);
-    local_network_node_ready(46101)
+    local_network_node_ready(NODE_API_PORT)
 }
 
 pub(crate) fn install_autostart_task(repo_root: &Path) -> Result<(), String> {
