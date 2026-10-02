@@ -23,8 +23,8 @@
 mod admission;
 mod api;
 mod backfill;
-mod config;
 mod compatibility;
+mod config;
 mod content;
 mod control;
 mod fetch;
@@ -42,6 +42,7 @@ mod worker;
 
 use crate::{
     api::ApiState,
+    compatibility::CompatibilityWriter,
     config::{
         NodeConfig, read_allow_self_verification_from_env, read_compute_root_from_env,
         read_hardware_bucket, read_parallel_tasks_from_env, read_verifications_required_from_env,
@@ -49,7 +50,6 @@ use crate::{
     },
     content::ContentStore,
     control::ControlRegistry,
-    compatibility::CompatibilityWriter,
     processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{

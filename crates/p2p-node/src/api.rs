@@ -25,7 +25,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use silicium_node_core::{p2p::TaskEnvelope, taskbook::TaskEvent};
-use std::{collections::BTreeSet, path::PathBuf, sync::{Arc, Mutex}};
+use std::{
+    collections::BTreeSet,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use tokio::sync::mpsc;
 
 #[derive(Clone)]
@@ -47,7 +51,10 @@ pub(crate) fn router(state: ApiState) -> Router {
         .route("/publish", post(publish_task))
         .route("/tasks/{task_id}", get(task_status))
         .route("/jobs/{job_id}", get(job_status))
-        .route("/v1/tasks", get(list_control_tasks).post(submit_control_task))
+        .route(
+            "/v1/tasks",
+            get(list_control_tasks).post(submit_control_task),
+        )
         .route(
             "/v1/workloads/{root_job_id}/cancel",
             post(cancel_control_workload),
@@ -144,7 +151,11 @@ async fn submit_control_task(
             Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
         }
     } else {
-        match state.content.add_file(source.to_string_lossy().as_ref()).await {
+        match state
+            .content
+            .add_file(source.to_string_lossy().as_ref())
+            .await
+        {
             Ok(hash) => (ContentStore::relative_path(&hash), Some(hash)),
             Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
         }
@@ -177,16 +188,19 @@ async fn submit_control_task(
     } else {
         submission.required_roles
     };
-    if let Err(error) = state.control.register_submission(
-        root_job_id.to_string(),
-        task.clone(),
-        required_roles,
-    ) {
+    if let Err(error) =
+        state
+            .control
+            .register_submission(root_job_id.to_string(), task.clone(), required_roles)
+    {
         return api_error(StatusCode::INTERNAL_SERVER_ERROR, &error);
     }
     if state.tx_publish.send(task.clone()).await.is_err() {
         state.control.remove_task(&task.task_id);
-        return api_error(StatusCode::INTERNAL_SERVER_ERROR, "publisher channel closed");
+        return api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "publisher channel closed",
+        );
     }
     let response = state
         .control
@@ -213,7 +227,11 @@ async fn list_control_tasks(
     Query(query): Query<ControlTaskQuery>,
     State(state): State<ApiState>,
 ) -> impl IntoResponse {
-    let root_job_id = query.root_job_id.as_deref().map(str::trim).filter(|id| !id.is_empty());
+    let root_job_id = query
+        .root_job_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
     (
         StatusCode::OK,
         Json(ControlTaskList {
@@ -232,10 +250,10 @@ async fn cancel_control_workload(
         .cancellable_task_ids(&state.taskbook, root_job_id.trim());
     let mut cancelled = 0;
     for task_id in task_ids {
-        match state
-            .taskbook
-            .append_signed(&task_id, silicium_node_core::taskbook::TaskEventBody::TaskCancelled)
-        {
+        match state.taskbook.append_signed(
+            &task_id,
+            silicium_node_core::taskbook::TaskEventBody::TaskCancelled,
+        ) {
             Ok(event) => {
                 cancelled += 1;
                 let _ = state.tx_events.send(event).await;

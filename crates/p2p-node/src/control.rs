@@ -168,7 +168,10 @@ impl ControlRegistry {
             .collect()
     }
 
-    fn with_entries(&self, update: impl FnOnce(&mut BTreeMap<String, Entry>)) -> Result<(), String> {
+    fn with_entries(
+        &self,
+        update: impl FnOnce(&mut BTreeMap<String, Entry>),
+    ) -> Result<(), String> {
         let mut entries = self
             .entries
             .lock()
@@ -219,7 +222,12 @@ fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
 
 fn state_summary(state: Option<&DerivedTaskState>) -> (String, String, String, String) {
     let Some(state) = state else {
-        return ("queued".to_string(), String::new(), String::new(), String::new());
+        return (
+            "queued".to_string(),
+            String::new(),
+            String::new(),
+            String::new(),
+        );
     };
     let handled_by = state.claimant().unwrap_or_default().to_string();
     let result_hash = state
@@ -229,16 +237,56 @@ fn state_summary(state: Option<&DerivedTaskState>) -> (String, String, String, S
         .map(|result| result.result.sha256.clone())
         .unwrap_or_default();
     match state.status {
-        DerivedTaskStatus::Open => ("proposed".to_string(), handled_by, result_hash, String::new()),
-        DerivedTaskStatus::Claimed => ("running".to_string(), handled_by, result_hash, String::new()),
+        DerivedTaskStatus::Open => (
+            "proposed".to_string(),
+            handled_by,
+            result_hash,
+            String::new(),
+        ),
+        DerivedTaskStatus::Claimed => (
+            "running".to_string(),
+            handled_by,
+            result_hash,
+            String::new(),
+        ),
         DerivedTaskStatus::LeaseExpired
         | DerivedTaskStatus::Released
-        | DerivedTaskStatus::Rejected => ("retrying".to_string(), handled_by, result_hash, String::new()),
-        DerivedTaskStatus::Completed => ("verifying".to_string(), handled_by, result_hash, String::new()),
-        DerivedTaskStatus::Verified => ("verifying".to_string(), handled_by, result_hash, String::new()),
-        DerivedTaskStatus::Finalized => ("completed".to_string(), handled_by, result_hash, String::new()),
-        DerivedTaskStatus::Cancelled => ("cancelled".to_string(), handled_by, result_hash, "cancelled".to_string()),
-        DerivedTaskStatus::Failed => ("failed".to_string(), handled_by, result_hash, "task_failed".to_string()),
+        | DerivedTaskStatus::Rejected => (
+            "retrying".to_string(),
+            handled_by,
+            result_hash,
+            String::new(),
+        ),
+        DerivedTaskStatus::Completed => (
+            "verifying".to_string(),
+            handled_by,
+            result_hash,
+            String::new(),
+        ),
+        DerivedTaskStatus::Verified => (
+            "verifying".to_string(),
+            handled_by,
+            result_hash,
+            String::new(),
+        ),
+        DerivedTaskStatus::Finalized => (
+            "completed".to_string(),
+            handled_by,
+            result_hash,
+            String::new(),
+        ),
+        DerivedTaskStatus::Cancelled => (
+            "cancelled".to_string(),
+            handled_by,
+            result_hash,
+            "cancelled".to_string(),
+        ),
+        DerivedTaskStatus::Failed => (
+            "failed".to_string(),
+            handled_by,
+            result_hash,
+            "task_failed".to_string(),
+        ),
     }
 }
 

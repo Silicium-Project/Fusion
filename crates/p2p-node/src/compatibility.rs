@@ -51,8 +51,10 @@ impl CompatibilityWriter {
                 .unwrap_or_else(|| peer_id.to_string()),
             roles: roles(),
             app_version: env_value("SILICIUM_APP_VERSION").unwrap_or_else(|| "unknown".to_string()),
-            release_channel: env_value("SILICIUM_RELEASE_CHANNEL").unwrap_or_else(|| "dev".to_string()),
-            release_build: env_value("SILICIUM_RELEASE_BUILD").unwrap_or_else(|| "local".to_string()),
+            release_channel: env_value("SILICIUM_RELEASE_CHANNEL")
+                .unwrap_or_else(|| "dev".to_string()),
+            release_build: env_value("SILICIUM_RELEASE_BUILD")
+                .unwrap_or_else(|| "local".to_string()),
         }
     }
 
@@ -104,7 +106,9 @@ impl CompatibilityWriter {
         });
         let payload = json!({"schema_version": 1, "node_id": self.node_id.clone(), "peers": peer_rows, "metrics": metrics});
         write_json(
-            &self.export_dir.join(format!("node.{}.peers.json", path_id(&self.node_id))),
+            &self
+                .export_dir
+                .join(format!("node.{}.peers.json", path_id(&self.node_id))),
             &payload,
         );
 
@@ -142,11 +146,15 @@ impl CompatibilityWriter {
             "updated_utc": utc_now(),
         });
         write_json(
-            &self.export_dir.join(format!("node.{}.heartbeat.json", path_id(&self.node_id))),
+            &self
+                .export_dir
+                .join(format!("node.{}.heartbeat.json", path_id(&self.node_id))),
             &heartbeat,
         );
         write_json(
-            &self.export_dir.join(format!("node.{}.metrics.json", path_id(&self.node_id))),
+            &self
+                .export_dir
+                .join(format!("node.{}.metrics.json", path_id(&self.node_id))),
             &json!({
                 "handled": tasks.iter().filter(|task| task.status == "completed").count(),
                 "failed": tasks.iter().filter(|task| task.status == "failed").count(),
@@ -157,11 +165,19 @@ impl CompatibilityWriter {
         );
     }
 
-    fn write_job_files(&self, control: &ControlRegistry, taskbook: &TaskBookState, jobs: &JobStore) {
+    fn write_job_files(
+        &self,
+        control: &ControlRegistry,
+        taskbook: &TaskBookState,
+        jobs: &JobStore,
+    ) {
         let tasks = control.tasks_for_root(taskbook, None);
         let mut grouped: BTreeMap<String, Vec<ControlTask>> = BTreeMap::new();
         for task in tasks {
-            grouped.entry(task.root_job_id.clone()).or_default().push(task);
+            grouped
+                .entry(task.root_job_id.clone())
+                .or_default()
+                .push(task);
         }
         for (root_id, tasks) in grouped {
             self.write_one_job(&root_id, &tasks, jobs);
@@ -183,7 +199,10 @@ impl CompatibilityWriter {
             .iter()
             .filter(|fragment| fragment["status"] == "completed")
             .count();
-        let failed = fragments.iter().filter(|fragment| fragment["status"] == "failed").count();
+        let failed = fragments
+            .iter()
+            .filter(|fragment| fragment["status"] == "failed")
+            .count();
         let complete = manifest
             .as_ref()
             .is_some_and(|job| jobs.is_assembled(&job.job_id));
@@ -223,8 +242,14 @@ impl CompatibilityWriter {
         });
         if complete {
             if let Some(job) = manifest {
-                let ppm = self.copy_final(jobs.root().join(crate::results::result_path(&job.job_id)), &job_dir.join("reassembled").join("render.ppm"));
-                let png = self.copy_final(jobs.root().join(JobStore::png_path(&job.job_id)), &job_dir.join("reassembled").join("render.png"));
+                let ppm = self.copy_final(
+                    jobs.root().join(crate::results::result_path(&job.job_id)),
+                    &job_dir.join("reassembled").join("render.ppm"),
+                );
+                let png = self.copy_final(
+                    jobs.root().join(JobStore::png_path(&job.job_id)),
+                    &job_dir.join("reassembled").join("render.png"),
+                );
                 summary["success"] = Value::Bool(ppm.is_some() && png.is_some());
                 if let Some(path) = ppm {
                     summary["reassembled_ppm"] = Value::String(path.display().to_string());
@@ -250,7 +275,10 @@ impl CompatibilityWriter {
         jobs: &JobStore,
         job_dir: &Path,
     ) -> Vec<Value> {
-        let by_id: BTreeMap<&str, &ControlTask> = tasks.iter().map(|task| (task.task_id.as_str(), task)).collect();
+        let by_id: BTreeMap<&str, &ControlTask> = tasks
+            .iter()
+            .map(|task| (task.task_id.as_str(), task))
+            .collect();
         job.fragments
             .iter()
             .enumerate()
@@ -301,9 +329,20 @@ impl CompatibilityWriter {
 
     fn write_fragment_preview(&self, index: usize, source: &Path, job_dir: &Path) {
         let Ok(bytes) = fs::read(source) else { return };
-        let Ok(image) = silicium_raytracer::pipeline::ppm::parse(&bytes, "fragment") else { return };
-        let Ok(png) = silicium_raytracer::pipeline::png::encode_rgb(image.width, image.height, &image.pixels) else { return };
-        write_bytes(&job_dir.join("fragments").join(format!("fragment-{index:03}.png")), &png);
+        let Ok(image) = silicium_raytracer::pipeline::ppm::parse(&bytes, "fragment") else {
+            return;
+        };
+        let Ok(png) =
+            silicium_raytracer::pipeline::png::encode_rgb(image.width, image.height, &image.pixels)
+        else {
+            return;
+        };
+        write_bytes(
+            &job_dir
+                .join("fragments")
+                .join(format!("fragment-{index:03}.png")),
+            &png,
+        );
     }
 
     fn copy_final(&self, source: PathBuf, target: &Path) -> Option<PathBuf> {
@@ -329,7 +368,11 @@ fn billing(tasks: &[ControlTask]) -> Value {
 }
 
 fn format_digest(bytes: impl AsRef<[u8]>) -> String {
-    bytes.as_ref().iter().map(|byte| format!("{byte:02x}")).collect()
+    bytes
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn write_json(path: &Path, payload: &Value) {
@@ -376,7 +419,10 @@ fn roles() -> Vec<String> {
 }
 
 fn env_value(key: &str) -> Option<String> {
-    env::var(key).ok().map(|value| value.trim().to_string()).filter(|value| !value.is_empty())
+    env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn unix_seconds() -> i64 {
@@ -403,7 +449,8 @@ fn civil_date(days_since_unix_epoch: i64) -> (i64, i64, i64) {
     let z = days_since_unix_epoch + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 }.div_euclid(146_097);
     let day_of_era = z - era * 146_097;
-    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096)
+    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524
+        - day_of_era / 146_096)
         .div_euclid(365);
     let year = year_of_era + era * 400;
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
