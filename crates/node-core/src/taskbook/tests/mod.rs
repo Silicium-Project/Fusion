@@ -7,3 +7,4 @@ mod persistence;
 mod security;
 mod settlement;
 mod support;
+mod verification;

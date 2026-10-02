@@ -57,6 +57,7 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
                 uri: format!("result://{task_id}"),
                 sha256: TaskEvent::payload_hash(hash.as_bytes()),
             },
+            milestones: Vec::new(),
         },
         None => TaskEventBody::ClaimReleased { attempt },
     };

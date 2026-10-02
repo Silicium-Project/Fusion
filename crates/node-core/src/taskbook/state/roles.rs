@@ -4,6 +4,7 @@
 
 use super::super::{PayloadRef, TaskBook, TaskEvent, TaskEventBody, TaskTerms};
 use super::attempts::{self, Draft};
+use super::verification;
 
 /// The events of one task as seen by the derivation, equivocators removed.
 pub(super) struct TaskView<'a> {
@@ -89,6 +90,16 @@ impl<'a> TaskView<'a> {
                         Acceptance::Waiting => break,
                     }
                 }
+                TaskEventBody::VerifierAccepted { attempt, claim } => {
+                    let Some(draft) = decisions.attempts.get_mut(*attempt as usize - 1) else {
+                        continue;
+                    };
+                    match verification::accept_verifier(self, draft, claim, event) {
+                        Acceptance::Accepted(verifier) => draft.verifiers.push(verifier),
+                        Acceptance::Invalid => {}
+                        Acceptance::Waiting => break,
+                    }
+                }
                 TaskEventBody::TaskFinalized { attempt } => {
                     match decisions.attempts.get(*attempt as usize - 1) {
                         Some(draft) if attempts::result_of(self, draft).is_some() => {
@@ -117,7 +128,7 @@ impl<'a> TaskView<'a> {
         attempt: u32,
         claim: &str,
         accepted_at_ms: u64,
-    ) -> Acceptance {
+    ) -> Acceptance<Draft> {
         let expected = decisions.attempts.len() as u32 + 1;
         if attempt != expected || attempt > self.terms.max_attempts {
             return Acceptance::Invalid;
@@ -136,12 +147,15 @@ impl<'a> TaskView<'a> {
             claimant: claim_event.author.clone(),
             claim_event: claim.to_string(),
             accepted_at_ms,
+            verifiers: Vec::new(),
         })
     }
 }
 
-enum Acceptance {
-    Accepted(Draft),
+/// Verdict on one publisher acceptance (of a claim or a verifier).
+pub(super) enum Acceptance<T> {
+    Accepted(T),
     Invalid,
+    /// The accepted offer has not arrived yet: later decisions wait.
     Waiting,
 }

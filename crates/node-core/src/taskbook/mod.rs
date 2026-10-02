@@ -9,7 +9,8 @@
 //!   propose it; only the publisher accepts a claim, finalizes or cancels;
 //! - claims are offers: the publisher picks one (no race won by hash);
 //! - only the accepted claimant renews its lease, releases or publishes the
-//!   result; nobody verifies its own result;
+//!   result; only verifiers accepted by the publisher give verdicts that
+//!   count (never the claimant), on milestones drawn after the result;
 //! - an attempt whose lease lapses, is released or rejected can be retried,
 //!   up to the publisher's `max_attempts`;
 //! - events arriving out of order wait for their predecessors; an author
@@ -38,14 +39,18 @@ mod state;
 
 pub use backfill::{MAX_PENDING_PER_AUTHOR, MAX_PENDING_TOTAL, MissingEvents, Received};
 pub use body::{
-    MAX_ATTEMPTS, MAX_PAYLOAD_REF_LEN, PayloadRef, TaskEventBody, TaskEventKind, TaskTerms,
+    MAX_ATTEMPTS, MAX_MILESTONES, MAX_PAYLOAD_REF_LEN, MilestoneSample, PayloadRef, TaskEventBody,
+    TaskEventKind, TaskTerms,
 };
 pub use book::{MAX_EVENTS_PER_AUTHOR_PER_TASK, TaskBook};
 pub use error::TaskBookError;
 pub use event::{EventHeader, MAX_TASK_NAME_LEN, TASK_BOOK_VERSION, TASK_ID_PREFIX_LEN, TaskEvent};
 pub use persistence::LoadReport;
 pub use settlement::{Settlement, SettlementRole};
-pub use state::{AttemptState, DerivedTaskState, DerivedTaskStatus, OpenClaim, ResultState};
+pub use state::{
+    AttemptState, DerivedTaskState, DerivedTaskStatus, OpenClaim, OpenVerification, ResultState,
+    VerifierState, sample_milestones, verification_sample_count,
+};
 
 #[cfg(test)]
 mod tests;

@@ -75,7 +75,54 @@ pub fn result(attempt: u32) -> TaskEventBody {
     TaskEventBody::ResultPublished {
         attempt,
         result: payload("result://tile"),
+        milestones: milestones(),
     }
+}
+
+/// Ten milestones of two rows each, 4 pixels wide.
+pub fn milestones() -> Vec<MilestoneSample> {
+    (0..10)
+        .map(|index| MilestoneSample {
+            index,
+            x_start: 0,
+            x_end: 4,
+            y_start: index * 2,
+            y_end: index * 2 + 2,
+            pixel_sha256: TaskEvent::payload_hash(format!("block-{index}").as_bytes()),
+        })
+        .collect()
+}
+
+/// `verifier` offers, `publisher` accepts it, `verifier` gives its verdict
+/// on `result_event` of `attempt`.
+pub fn verify(
+    book: &mut TaskBook,
+    publisher: &mut Actor,
+    verifier: &mut Actor,
+    task_id: &str,
+    attempt: u32,
+    result_event: &str,
+    approved: bool,
+) {
+    let offer = verifier.emit(task_id, TaskEventBody::VerificationClaimed { attempt }, 6);
+    let accept = publisher.emit(
+        task_id,
+        TaskEventBody::VerifierAccepted {
+            attempt,
+            claim: offer.event_hash(),
+        },
+        6,
+    );
+    let verdict = verifier.emit(
+        task_id,
+        TaskEventBody::VerificationPublished {
+            attempt,
+            result_event: result_event.to_string(),
+            approved,
+        },
+        7,
+    );
+    apply(book, [offer, accept, verdict]);
 }
 
 /// Appends every event to `book`, panicking on refusal.

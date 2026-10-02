@@ -2,14 +2,10 @@
 //! result, verdicts — counting only events from the authors allowed to send
 //! them, and the resulting task status.
 
-use std::collections::BTreeMap;
-
 use super::super::{TaskEvent, TaskEventBody};
 use super::roles::{Decisions, TaskView, Terminal};
+use super::verification::{self, VerifierDraft};
 use super::{AttemptState, DerivedTaskState, DerivedTaskStatus, ResultState};
-
-/// Verdicts as `(verification event hash, verifier)`.
-type Verdicts = Vec<(String, String)>;
 
 /// An attempt accepted by the publisher, before its details are read.
 #[derive(Debug, Clone)]
@@ -18,6 +14,7 @@ pub(super) struct Draft {
     pub(super) claimant: String,
     pub(super) claim_event: String,
     pub(super) accepted_at_ms: u64,
+    pub(super) verifiers: Vec<VerifierDraft>,
 }
 
 /// Builds the derived state from the publisher's decisions.
@@ -115,6 +112,7 @@ fn detail(view: &TaskView, draft: &Draft) -> AttemptState {
                     attempt: draft.attempt,
                 })
         }),
+        verifiers: verification::verifier_states(view, draft),
         result: result_of(view, draft),
     }
 }
@@ -130,7 +128,8 @@ fn claimant_events<'a>(
         .filter(move |event| event.author == draft.claimant)
 }
 
-/// The claimant's first result for the attempt, with the verdicts on it.
+/// The claimant's first result for the attempt, with the verdicts of its
+/// accepted verifiers.
 pub(super) fn result_of(view: &TaskView, draft: &Draft) -> Option<ResultState> {
     let (hash, event) = view
         .events
@@ -140,53 +139,18 @@ pub(super) fn result_of(view: &TaskView, draft: &Draft) -> Option<ResultState> {
                 && matches!(event.body, TaskEventBody::ResultPublished { attempt, .. } if attempt == draft.attempt)
         })
         .min_by_key(|(_, event)| event.sequence)?;
-    let TaskEventBody::ResultPublished { result, .. } = &event.body else {
+    let TaskEventBody::ResultPublished {
+        result, milestones, ..
+    } = &event.body
+    else {
         return None;
     };
-    let (approvals, rejections) = verdicts(view, draft, hash);
+    let (approvals, rejections) = verification::verdicts(view, draft, hash);
     Some(ResultState {
         event_hash: hash.to_string(),
         result: result.clone(),
+        milestones: milestones.clone(),
         approvals,
         rejections,
     })
-}
-
-/// One verdict per verifier (its earliest), never from the claimant itself.
-fn verdicts(view: &TaskView, draft: &Draft, result_hash: &str) -> (Verdicts, Verdicts) {
-    let mut first_by_author: BTreeMap<&str, (&str, &TaskEvent)> = BTreeMap::new();
-    for (hash, event) in &view.events {
-        let TaskEventBody::VerificationPublished {
-            attempt,
-            result_event,
-            ..
-        } = &event.body
-        else {
-            continue;
-        };
-        if *attempt != draft.attempt
-            || result_event != result_hash
-            || event.author == draft.claimant
-        {
-            continue;
-        }
-        let entry = first_by_author
-            .entry(&event.author)
-            .or_insert((hash, event));
-        if event.sequence < entry.1.sequence {
-            *entry = (hash, event);
-        }
-    }
-    let mut approvals = Vec::new();
-    let mut rejections = Vec::new();
-    for (author, (hash, event)) in first_by_author {
-        let pair = (hash.to_string(), author.to_string());
-        match event.body {
-            TaskEventBody::VerificationPublished { approved: true, .. } => approvals.push(pair),
-            _ => rejections.push(pair),
-        }
-    }
-    approvals.sort();
-    rejections.sort();
-    (approvals, rejections)
 }

@@ -82,16 +82,17 @@ fn a_rejected_result_fails_the_attempt_and_exhausted_attempts_fail_the_task() {
     let mut second = Actor::new(60);
     let (mut book, task) = accepted_task(&mut publisher, &mut worker);
     let first_result = worker.emit(&task, result(1), 5);
-    let verdict = verifier.emit(
+    let first_hash = first_result.event_hash();
+    book.append(first_result).unwrap();
+    verify(
+        &mut book,
+        &mut publisher,
+        &mut verifier,
         &task,
-        TaskEventBody::VerificationPublished {
-            attempt: 1,
-            result_event: first_result.event_hash(),
-            approved: false,
-        },
-        6,
+        1,
+        &first_hash,
+        false,
     );
-    apply(&mut book, [first_result, verdict]);
     let rejected = book.task_state(&task, 10).unwrap();
     assert_eq!(rejected.status, DerivedTaskStatus::Rejected);
     assert_eq!(rejected.next_attempt, Some(2));

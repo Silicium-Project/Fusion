@@ -13,6 +13,8 @@ use super::{TaskBookError, hex::decode_fixed};
 pub const MAX_PAYLOAD_REF_LEN: usize = 512;
 /// Highest number of attempts a publisher may allow for one task.
 pub const MAX_ATTEMPTS: u32 = 16;
+/// Most milestones a result may commit to.
+pub const MAX_MILESTONES: usize = 1_024;
 
 /// Conditions of a task, signed by its publisher in [`TaskEventBody::TaskProposed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +55,19 @@ pub struct PayloadRef {
     pub sha256: String,
 }
 
+/// One block of rows of a result, committed to by its pixel hash: a
+/// verifier re-renders the block and compares (coordinates in the full image).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MilestoneSample {
+    pub index: u32,
+    pub x_start: u32,
+    pub x_end: u32,
+    pub y_start: u32,
+    pub y_end: u32,
+    /// Lowercase hex SHA-256 of the block's raster.
+    pub pixel_sha256: String,
+}
+
 /// Lifecycle step recorded by an event; `attempt` numbers start at 1.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -67,9 +82,18 @@ pub enum TaskEventBody {
     LeaseRenewed { attempt: u32 },
     /// Accepted claimant: gives the attempt up.
     ClaimReleased { attempt: u32 },
-    /// Accepted claimant: result of `attempt`.
-    ResultPublished { attempt: u32, result: PayloadRef },
-    /// Any peer but the claimant: verdict on a result (by event hash).
+    /// Accepted claimant: result of `attempt` and its milestone commitment.
+    ResultPublished {
+        attempt: u32,
+        result: PayloadRef,
+        #[serde(default)]
+        milestones: Vec<MilestoneSample>,
+    },
+    /// Any peer but the claimant: offers to verify the result of `attempt`.
+    VerificationClaimed { attempt: u32 },
+    /// Publisher: picks one verification offer (by event hash) for `attempt`.
+    VerifierAccepted { attempt: u32, claim: String },
+    /// Accepted verifier: verdict on a result (by event hash).
     VerificationPublished {
         attempt: u32,
         result_event: String,
@@ -90,6 +114,8 @@ pub enum TaskEventKind {
     LeaseRenewed,
     ClaimReleased,
     ResultPublished,
+    VerificationClaimed,
+    VerifierAccepted,
     VerificationPublished,
     TaskFinalized,
     TaskCancelled,
@@ -105,6 +131,8 @@ impl TaskEventBody {
             Self::LeaseRenewed { .. } => TaskEventKind::LeaseRenewed,
             Self::ClaimReleased { .. } => TaskEventKind::ClaimReleased,
             Self::ResultPublished { .. } => TaskEventKind::ResultPublished,
+            Self::VerificationClaimed { .. } => TaskEventKind::VerificationClaimed,
+            Self::VerifierAccepted { .. } => TaskEventKind::VerifierAccepted,
             Self::VerificationPublished { .. } => TaskEventKind::VerificationPublished,
             Self::TaskFinalized { .. } => TaskEventKind::TaskFinalized,
             Self::TaskCancelled => TaskEventKind::TaskCancelled,
@@ -119,6 +147,8 @@ impl TaskEventBody {
             | Self::LeaseRenewed { attempt }
             | Self::ClaimReleased { attempt }
             | Self::ResultPublished { attempt, .. }
+            | Self::VerificationClaimed { attempt }
+            | Self::VerifierAccepted { attempt, .. }
             | Self::VerificationPublished { attempt, .. }
             | Self::TaskFinalized { attempt } => Some(*attempt),
             Self::TaskProposed { .. } | Self::TaskCancelled => None,
@@ -137,8 +167,14 @@ impl TaskEventBody {
                 validate_payload(spec)?;
                 validate_terms(terms)
             }
-            Self::ResultPublished { result, .. } => validate_payload(result),
+            Self::ResultPublished {
+                result, milestones, ..
+            } => {
+                validate_payload(result)?;
+                validate_milestones(milestones)
+            }
             Self::ClaimAccepted { claim: hash, .. }
+            | Self::VerifierAccepted { claim: hash, .. }
             | Self::VerificationPublished {
                 result_event: hash, ..
             } => match decode_fixed::<32>(hash) {
@@ -156,6 +192,21 @@ fn validate_payload(payload: &PayloadRef) -> Result<(), TaskBookError> {
     }
     if decode_fixed::<32>(&payload.sha256).is_none() {
         return Err(TaskBookError::InvalidHash);
+    }
+    Ok(())
+}
+
+fn validate_milestones(milestones: &[MilestoneSample]) -> Result<(), TaskBookError> {
+    if milestones.len() > MAX_MILESTONES {
+        return Err(TaskBookError::InvalidBody("too many milestones"));
+    }
+    for milestone in milestones {
+        if milestone.x_end <= milestone.x_start || milestone.y_end <= milestone.y_start {
+            return Err(TaskBookError::InvalidBody("empty milestone"));
+        }
+        if decode_fixed::<32>(&milestone.pixel_sha256).is_none() {
+            return Err(TaskBookError::InvalidHash);
+        }
     }
     Ok(())
 }

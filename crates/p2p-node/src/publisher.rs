@@ -180,7 +180,11 @@ mod tests {
             &mut book,
             &early,
             &task,
-            TaskEventBody::ResultPublished { attempt: 1, result },
+            TaskEventBody::ResultPublished {
+                attempt: 1,
+                result,
+                milestones: Vec::new(),
+            },
             50,
         );
         let Some(Decision::Sign(finalize)) = decide(&book, &task, 60) else {

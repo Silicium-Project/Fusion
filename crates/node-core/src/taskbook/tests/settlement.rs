@@ -13,16 +13,15 @@ fn finalized_task_pays_the_worker_and_the_counted_verifiers() {
     let result_hash = result_event.event_hash();
     book.append(result_event).unwrap();
     for verifier in &mut verifiers {
-        book.append(verifier.emit(
+        verify(
+            &mut book,
+            &mut publisher,
+            verifier,
             &task,
-            TaskEventBody::VerificationPublished {
-                attempt: 1,
-                result_event: result_hash.clone(),
-                approved: true,
-            },
-            6,
-        ))
-        .unwrap();
+            1,
+            &result_hash,
+            true,
+        );
     }
     assert!(book.settlements_for(&task).is_empty());
     book.append(publisher.emit(&task, TaskEventBody::TaskFinalized { attempt: 1 }, 7))

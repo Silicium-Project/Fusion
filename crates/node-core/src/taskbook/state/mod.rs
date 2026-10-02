@@ -6,7 +6,9 @@
 //!
 //! - only the publisher accepts a claim, finalizes or cancels (`roles.rs`);
 //! - only the accepted claimant renews its lease, releases or publishes the
-//!   result; a verifier may not verify its own result (`attempts.rs`);
+//!   result (`attempts.rs`);
+//! - only verifiers accepted by the publisher give verdicts that count, and
+//!   the claimant is never one of them (`verification.rs`);
 //! - the only clock-dependent input is `now_ms`, used to tell whether the
 //!   lease of the running attempt has expired (lease start = the publisher's
 //!   acceptance time, length = terms, extended by the claimant's renewals).
@@ -16,10 +18,11 @@
 mod attempts;
 mod claims;
 mod roles;
+mod verification;
 
 use serde::{Deserialize, Serialize};
 
-use super::{PayloadRef, TaskBook, TaskTerms};
+use super::{MilestoneSample, PayloadRef, TaskBook, TaskTerms};
 
 /// Status of a task as derived from its events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,6 +66,8 @@ impl DerivedTaskStatus {
 pub struct ResultState {
     pub event_hash: String,
     pub result: PayloadRef,
+    /// Milestone commitment published with the result.
+    pub milestones: Vec<MilestoneSample>,
     /// Approving verifiers as `(verification event hash, author)`, by hash.
     pub approvals: Vec<(String, String)>,
     /// Rejecting verifiers as `(verification event hash, author)`, by hash.
@@ -79,7 +84,21 @@ pub struct AttemptState {
     pub renewals: u32,
     pub lease_expires_at_ms: u64,
     pub released: bool,
+    /// Verifiers the publisher accepted for this attempt.
+    pub verifiers: Vec<VerifierState>,
     pub result: Option<ResultState>,
+}
+
+/// A verifier accepted by the publisher for an attempt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifierState {
+    pub author: String,
+    /// Hash of the publisher's `VerifierAccepted`: seed of the milestone
+    /// sample (unknown to the claimant when it published its result).
+    pub acceptance_event: String,
+    pub accepted_at_ms: u64,
+    /// The verifier's verdict on the current result, once given.
+    pub verdict: Option<bool>,
 }
 
 /// Derived state of one task.
@@ -119,3 +138,4 @@ impl TaskBook {
 }
 
 pub use claims::OpenClaim;
+pub use verification::{OpenVerification, sample_milestones, verification_sample_count};

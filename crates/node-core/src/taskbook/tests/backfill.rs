@@ -77,6 +77,15 @@ fn derived_state_does_not_depend_on_arrival_order() {
         0,
     );
     let result_event = worker.emit(&task, result(1), 5);
+    let offer = verifier.emit(&task, TaskEventBody::VerificationClaimed { attempt: 1 }, 6);
+    let accept_verifier = publisher.emit(
+        &task,
+        TaskEventBody::VerifierAccepted {
+            attempt: 1,
+            claim: offer.event_hash(),
+        },
+        6,
+    );
     let verdict = verifier.emit(
         &task,
         TaskEventBody::VerificationPublished {
@@ -84,10 +93,19 @@ fn derived_state_does_not_depend_on_arrival_order() {
             result_event: result_event.event_hash(),
             approved: true,
         },
-        6,
+        7,
     );
     let finalize = publisher.emit(&task, TaskEventBody::TaskFinalized { attempt: 1 }, 7);
-    let events = [proposal, claim, accept, result_event, verdict, finalize];
+    let events = [
+        proposal,
+        claim,
+        accept,
+        result_event,
+        offer,
+        accept_verifier,
+        verdict,
+        finalize,
+    ];
 
     let mut forward = TaskBook::default();
     for event in events.iter().cloned() {
