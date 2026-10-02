@@ -29,6 +29,7 @@ fn emit(
 fn view(book: &TaskBook, now: u64) -> SweepView<'_> {
     SweepView {
         book,
+        me: "observer",
         now,
         records: book.author_records(now),
         alone: false,
@@ -349,5 +350,56 @@ fn a_lone_node_may_verify_its_own_result() {
             attempt: 1,
             claim: offer
         }
+    );
+}
+
+#[test]
+fn the_publisher_takes_its_own_task_only_when_nobody_else_claims_it() {
+    let publisher = SigningKey::from_bytes(&[20; 32]);
+    let worker = SigningKey::from_bytes(&[21; 32]);
+    let me = TaskEvent::author_id(&publisher);
+    let mut book = TaskBook::default();
+    let task = proposed_task(&mut book, &publisher);
+    let own = emit(
+        &mut book,
+        &publisher,
+        &task,
+        TaskEventBody::ClaimProposed { attempt: 1 },
+        10,
+    );
+    let at = |book: &TaskBook, now: u64, alone: bool| {
+        let view = SweepView {
+            me: &me,
+            alone,
+            ..view(book, now)
+        };
+        match decide(&view, &task) {
+            Some(Decision::Sign(TaskEventBody::ClaimAccepted { claim, .. })) => Some(claim),
+            _ => None,
+        }
+    };
+    assert_eq!(at(&book, 20, false), None, "others get a chance first");
+    assert_eq!(
+        at(&book, 20, true),
+        Some(own.clone()),
+        "alone: no reason to wait"
+    );
+    assert_eq!(at(&book, 10 + OWN_CLAIM_GRACE_MS, false), Some(own));
+
+    let other = emit(
+        &mut book,
+        &worker,
+        &task,
+        TaskEventBody::ClaimProposed { attempt: 1 },
+        3_000,
+    );
+    assert_eq!(
+        at(&book, 10 + OWN_CLAIM_GRACE_MS, false),
+        Some(other.clone())
+    );
+    assert_eq!(
+        at(&book, 3_000, true),
+        Some(other),
+        "another node is preferred"
     );
 }

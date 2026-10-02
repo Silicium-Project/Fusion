@@ -1,19 +1,21 @@
 //! Result images: once one of this node's tasks is finalized, download the
 //! image the worker published (`content://<sha256>`), check it against the
-//! milestone commitment the verifiers approved, and keep it as
-//! `results/<task_id>.ppm` in the work directory.
+//! milestone commitment the verifiers approved (at the fragment's place in
+//! the image), and keep it as `results/<task_id>.ppm` in the work directory;
+//! the last fragment of a job triggers its reassembly ([`crate::jobs`]).
 //!
 //! The check matters: verifiers re-render milestones, not the uploaded file,
 //! so without it a worker could commit honest milestones and upload another
 //! image.
 
-use crate::processing::NodeContext;
+use crate::{
+    jobs::{JobStore, store::write_atomic},
+    processing::NodeContext,
+};
 use silicium_node_core::taskbook::{DerivedTaskStatus, MilestoneSample};
 use silicium_raytracer::pipeline::{ppm, sha256_hex};
 use std::{
     collections::BTreeMap,
-    fs,
-    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -23,9 +25,10 @@ pub(crate) const CONTENT_SCHEME: &str = "content://";
 const MAX_TRIES: u32 = 5;
 
 /// Collection state of finished tasks, by task id.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct Collector {
     tasks: Arc<Mutex<BTreeMap<String, Collection>>>,
+    jobs: JobStore,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -36,6 +39,13 @@ enum Collection {
 }
 
 impl Collector {
+    pub(crate) fn new(jobs: JobStore) -> Self {
+        Self {
+            tasks: Arc::default(),
+            jobs,
+        }
+    }
+
     /// Starts collecting the result of each finished task not yet collected
     /// (or whose previous try failed, up to [`MAX_TRIES`]).
     pub(crate) fn collect(&self, context: &NodeContext, finished: &[String]) {
@@ -47,8 +57,11 @@ impl Collector {
             let collector = self.clone();
             let task_id = task_id.clone();
             tokio::spawn(async move {
-                let collected = collect_one(&context, &task_id).await;
+                let collected = collect_one(&context, &collector.jobs, &task_id).await;
                 collector.end(&task_id, try_number, collected);
+                if collected == Some(true) {
+                    collector.assemble_job_of(&task_id);
+                }
             });
         }
     }
@@ -62,6 +75,18 @@ impl Collector {
         };
         tasks.insert(task_id.to_string(), Collection::Running(try_number));
         Some(try_number)
+    }
+
+    /// Reassembles the job of a fragment once its last image arrived.
+    fn assemble_job_of(&self, task_id: &str) {
+        let Some((job, _)) = self.jobs.fragment(task_id) else {
+            return;
+        };
+        match self.jobs.assemble(&job.job_id) {
+            Ok(Some(path)) => println!(" Job {} assembled into {}", job.job_id, path.display()),
+            Ok(None) => {}
+            Err(err) => println!(" Job {} not assembled: {err}", job.job_id),
+        }
     }
 
     fn end(&self, task_id: &str, try_number: u32, collected: Option<bool>) {
@@ -82,7 +107,7 @@ pub(crate) fn result_path(task_id: &str) -> String {
 
 /// Collects one task: `Some(true)` collected, `Some(false)` to retry,
 /// `None` nothing to collect (not finalized, or not a content result).
-async fn collect_one(context: &NodeContext, task_id: &str) -> Option<bool> {
+async fn collect_one(context: &NodeContext, jobs: &JobStore, task_id: &str) -> Option<bool> {
     let state = context.taskbook.state(task_id).ok().flatten()?;
     if state.status != DerivedTaskStatus::Finalized {
         return None;
@@ -96,7 +121,10 @@ async fn collect_one(context: &NodeContext, task_id: &str) -> Option<bool> {
         return Some(false);
     }
     let bytes = context.content.get(sha256)?;
-    if !image_matches_milestones(&bytes, &result.milestones, (0, 0)) {
+    let origin = jobs.fragment(task_id).map_or((0, 0), |(_, fragment)| {
+        (fragment.region.x_start, fragment.region.y_start)
+    });
+    if !image_matches_milestones(&bytes, &result.milestones, origin) {
         println!(" Result image of {task_id} does not match its verified milestones");
         return None;
     }
@@ -147,15 +175,6 @@ fn block_hash(image: &ppm::Ppm, milestone: &MilestoneSample, origin: (u32, u32))
         block.extend_from_slice(&image.pixels[offset + x_start * 3..offset + x_end * 3]);
     }
     Some(sha256_hex(&block))
-}
-
-fn write_atomic(path: &PathBuf, bytes: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|err| err.to_string())?;
-    }
-    let partial = path.with_extension("partial");
-    fs::write(&partial, bytes).map_err(|err| err.to_string())?;
-    fs::rename(&partial, path).map_err(|err| err.to_string())
 }
 
 #[cfg(test)]
@@ -209,7 +228,8 @@ mod tests {
 
     #[test]
     fn a_failed_collection_is_retried_a_bounded_number_of_times() {
-        let collector = Collector::default();
+        let root = std::env::temp_dir().join(format!("silicium-collector-{}", std::process::id()));
+        let collector = Collector::new(JobStore::open(root));
         for try_number in 1..=MAX_TRIES {
             assert_eq!(collector.begin("t"), Some(try_number));
             assert_eq!(collector.begin("t"), None, "already running");

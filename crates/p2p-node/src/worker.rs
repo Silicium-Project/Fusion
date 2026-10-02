@@ -43,6 +43,11 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
         return;
     }
     context.remember_task(&task);
+    // Claim only with a free compute slot: the other fragments stay open for
+    // other nodes meanwhile.
+    let Ok(_slot) = context.compute_slots.clone().acquire_owned().await else {
+        return;
+    };
     let Some((attempt, terms)) = open_attempt(&context, &task_id).await else {
         println!(" No open attempt for task {task_id}; not claiming it");
         return;

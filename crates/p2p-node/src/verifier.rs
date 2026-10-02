@@ -1,6 +1,6 @@
 //! Verifier role, run periodically: for every known task whose latest result
 //! awaits verification, offer to verify it; once the publisher accepts this
-//! node, check that the milestones cover the whole image, re-render the
+//! node, check that the milestones cover the task's region, re-render the
 //! milestones drawn from the acceptance hash and publish the verdict.
 //!
 //! A node offers to verify its own result only when it is alone on the
@@ -111,9 +111,16 @@ fn next_step(
     }
 }
 
-/// True when the result's milestones tile the whole image of the scene
-/// (tasks of this node render the full image).
+/// True when the result's milestones tile the task's region (a fragment),
+/// or the whole image of the scene when the task has no region.
 fn covers_scene(context: &NodeContext, job: &Job) -> bool {
+    if let Some(region) = job.task.region {
+        return milestones_cover_region(
+            &job.result.milestones,
+            (region.x_start, region.x_end),
+            (region.y_start, region.y_end),
+        );
+    }
     let Ok(text) = std::fs::read_to_string(context.content.absolute(&job.task.scene_path)) else {
         return false;
     };
@@ -128,7 +135,7 @@ fn covers_scene(context: &NodeContext, job: &Job) -> bool {
 async fn verify(context: &NodeContext, job: Job) {
     if !covers_scene(context, &job) {
         println!(
-            " Result of {} does not cover the whole image; rejecting it",
+            " Result of {} does not cover its region; rejecting it",
             job.task.task_id
         );
         publish_verdict(context, &job, false).await;

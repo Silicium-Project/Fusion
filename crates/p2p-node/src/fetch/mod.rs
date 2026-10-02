@@ -304,7 +304,10 @@ pub(crate) fn handle_kademlia(
         ..
     } = event
     else {
-        println!(" Kademlia event: {event:?}");
+        // Records carry whole tasks: keep the log line short.
+        let text = format!("{event:?}");
+        let end = text.char_indices().nth(240).map_or(text.len(), |(i, _)| i);
+        println!(" Kademlia event: {}", &text[..end]);
         return;
     };
     let connected: Vec<PeerId> = swarm.connected_peers().copied().collect();

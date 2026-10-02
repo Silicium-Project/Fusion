@@ -2,7 +2,11 @@
 //! and gossipsub carry) and [`GossipMessage`] (the gossipsub envelope).
 
 use serde::{Deserialize, Serialize};
-use silicium_node_core::{hardware::HardwareBucket, p2p::TaskEnvelope, taskbook::TaskEvent};
+use silicium_node_core::{
+    hardware::HardwareBucket,
+    p2p::{Region, TaskEnvelope},
+    taskbook::TaskEvent,
+};
 use std::{collections::BTreeMap, path::PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -28,6 +32,10 @@ pub(crate) struct NetworkTask {
     /// SHA-256 of the scene file, set by the publisher (see [`crate::content`]).
     #[serde(default)]
     pub(crate) scene_sha256: Option<String>,
+    /// Part of the image to render (a fragment of a job, see
+    /// [`crate::jobs`]); the whole image when absent.
+    #[serde(default)]
+    pub(crate) region: Option<Region>,
 }
 
 impl From<TaskEnvelope> for NetworkTask {
@@ -45,6 +53,7 @@ impl From<TaskEnvelope> for NetworkTask {
             runtime_module_path: value.runtime_module_path,
             runtime_image: value.runtime_image,
             scene_sha256: value.scene_sha256,
+            region: value.region,
         }
     }
 }
@@ -76,6 +85,7 @@ impl From<NetworkTask> for TaskEnvelope {
             runtime_module_path: value.runtime_module_path,
             runtime_image: value.runtime_image,
             scene_sha256: value.scene_sha256,
+            region: value.region,
         }
     }
 }

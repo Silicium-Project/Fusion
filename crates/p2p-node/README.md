@@ -37,10 +37,24 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
     pairs connectés), le demande à l'un après l'autre par le protocole
     requête-réponse `/silicium/content/1` (64 Mio au plus) et ne garde que des
     octets dont le hash correspond ;
+  - **jobs** (`src/jobs/`, `src/publishing.rs`) : une tâche publiée par
+    l'API qui rend une image entière est découpée en tuiles
+    (`silicium_raytracer::pipeline::tiles`, centre d'abord) ; chaque tuile est
+    une tâche `<job>.f<NNN>` avec sa région. Le manifeste du job est gardé
+    sous `results/<job>.job.json` ; quand toutes les images de tuiles sont
+    là, l'éditeur réassemble `results/<job>.ppm` et `results/<job>.png`.
+    Un nœud ne propose de prendre une tuile que s'il a un créneau de calcul
+    libre (`SILICIUM_PARALLEL_TASKS`) : les autres tuiles restent ouvertes
+    pour les autres nœuds ;
+  - **ses propres tâches** : l'éditeur calcule aussi ses tuiles
+    (`SILICIUM_WORK_OWN_TASKS`), mais n'accepte sa propre proposition que si
+    personne d'autre ne s'est proposé, et seulement s'il est seul ou après
+    5 s d'attente ;
   - **résultats** (`src/results.rs`) : le worker publie son image sous
     `content://<sha256>` ; une fois la tâche finalisée, l'éditeur la
     télécharge, vérifie que chaque jalon approuvé par les vérificateurs
-    correspond à l'image, et la garde sous `results/<task_id>.ppm` ;
+    correspond à l'image (à la place de la tuile), et la garde sous
+    `results/<task_id>.ppm` ;
   - **rattrapage** (`src/backfill.rs`) : quand des événements attendent leurs
     prédécesseurs, le nœud les redemande sur le topic ; les pairs répondent ;
 - calcul d'une tâche acceptée : exécution via `node-core::runtime` si la tâche
@@ -48,8 +62,8 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
   auto-contrôle), puis signalement au `reputation-bridge`.
 
 Les identifiants de tâche publiés par l'API sont préfixés par la clé du
-journal du nœud (`<32 hex>.<nom>`, nom de 95 caractères au plus parmi
-`[A-Za-z0-9._-]`) : seul ce nœud peut proposer, accepter,
+journal du nœud (`<32 hex>.<nom>`, nom de 90 caractères au plus parmi
+`[A-Za-z0-9._-]`, la place du suffixe de tuile `.f000` étant réservée) : seul ce nœud peut proposer, accepter,
 finaliser ou annuler ces tâches.
 
 ## Configuration
@@ -61,6 +75,10 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton `Authorization: Bearer` exigé par `/publish` et `/tasks` (pas `/health`) |
 | `SILICIUM_TRUSTED_PUBLISHERS` / `--trusted-publisher` | — | Peer ids dont les tâches sont exécutées ; sans liste, les tâches des autres pairs sont ignorées |
 | `SILICIUM_COMPUTE_ROOT` | `$SILICIUM_DATA_DIR/work` | Dossier de travail partagé avec le compute-daemon (`content/`, `results/`) |
+| `SILICIUM_MAX_FRAGMENTS` | `32` | Tuiles par job au plus (256 au maximum) |
+| `SILICIUM_TARGET_PIXELS_PER_FRAGMENT` | `120000` | Taille visée d'une tuile, en pixels |
+| `SILICIUM_PARALLEL_TASKS` | `1` | Tâches calculées en même temps par ce nœud |
+| `SILICIUM_WORK_OWN_TASKS` | `1` | `0` : ne pas calculer les tâches publiées par ce nœud (éditeur sans compute-daemon) |
 | `SILICIUM_ALLOW_SELF_VERIFICATION` | `1` | `0` : interdire l'auto-vérification d'un nœud seul sur les tâches publiées |
 | `SILICIUM_VERIFICATIONS_REQUIRED` | `1` | Vérifications par un autre pair exigées sur les tâches publiées par ce nœud (0 : résultat finalisé sans vérification) |
 | `SILICIUM_ACCEPT_UNTRUSTED_TASKS` | `0` | `1` : exécuter les tâches de n'importe quel pair (réseau de test uniquement) |
@@ -81,6 +99,7 @@ finaliser ou annuler ces tâches.
 | --- | --- | --- |
 | `POST` | `/publish` | Publie une tâche sur le réseau |
 | `GET` | `/tasks/{task_id}` | État dérivé du journal de tâches |
+| `GET` | `/jobs/{job_id}` | Job publié par ce nœud : tuiles (région, état, image), image finale et PNG une fois réassemblés |
 | `GET` | `/health` | Santé |
 
 ## Organisation du code
@@ -93,6 +112,8 @@ finaliser ou annuler ces tâches.
 | `src/publisher/` | Rôle éditeur : acceptation (réputation, ancienneté), auto-vérification d'un nœud seul, réannonce, finalisation ; tests dans `tests.rs` |
 | `src/content.rs` | Magasin de contenus par hash (scènes, images), commandes vers la boucle |
 | `src/fetch/` | Téléchargement entre pairs : fournisseurs DHT, requête-réponse, service ; test à deux nœuds dans `tests.rs` |
+| `src/jobs/` | Découpage d'un job en tuiles, manifestes sur disque, réassemblage ; tests dans `tests.rs` |
+| `src/publishing.rs` | Publication d'une tâche de l'API : scène partagée, découpage, proposition, DHT, gossip |
 | `src/results.rs` | Image finale d'une tâche finalisée : téléchargement, contrôle contre les jalons |
 | `src/verifier.rs` | Rôle vérificateur : offre, recalcul des blocs tirés au sort, verdict |
 | `src/backfill.rs` | Demande et envoi des événements manquants |
@@ -126,7 +147,11 @@ docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = ra
 ## Limites connues
 
 - Le résultat du sélecteur (`Dispatcher`) est ignoré.
-- Pas de découpage en fragments : une tâche est l'image entière.
+- L'image d'une tuile est contrôlée contre ses jalons après la
+  finalisation : une image non conforme bloque le réassemblage du job au
+  lieu de relancer la tuile.
+- Pas encore branché au site : le BackEnd lance toujours
+  `workloads/raytracer/run_network_job.py` (nœud Python).
 - Un contenu passe en une seule réponse : 64 Mio au plus (pas de reprise
   d'un transfert interrompu).
 - Ports P2P aléatoires (`tcp/0`, `udp/0`) : injoignable derrière un pare-feu.

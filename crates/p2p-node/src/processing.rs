@@ -39,6 +39,8 @@ pub(crate) struct NodeContext {
     pub(crate) content: ContentStore,
     /// Peers currently connected (refreshed by the event loop).
     pub(crate) connected_peers: Arc<AtomicUsize>,
+    /// Free compute slots: a worker claims a task only once it holds one.
+    pub(crate) compute_slots: Arc<tokio::sync::Semaphore>,
 }
 
 impl NodeContext {
@@ -110,13 +112,14 @@ pub(crate) async fn execute_task(
 
     // Both paths are relative to the compute daemon's work directory
     // (the task was sanitized on admission).
+    let region = task.region;
     let compute_payload = serde_json::json!({
         "scene_path": task.scene_path,
         "output_path": task.output_path,
-        "y_start": null,
-        "y_end": null,
-        "x_start": null,
-        "x_end": null
+        "y_start": region.map(|r| r.y_start),
+        "y_end": region.map(|r| r.y_end),
+        "x_start": region.map(|r| r.x_start),
+        "x_end": region.map(|r| r.x_end),
     });
     let compute_data = post_json(
         &client,

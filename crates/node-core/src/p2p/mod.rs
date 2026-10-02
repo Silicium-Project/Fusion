@@ -5,6 +5,7 @@
 //! fields a peer must not control (Docker image, working directory,
 //! environment, output path) and refuses paths that leave the node's sandbox.
 
+pub use crate::region::Region;
 use crate::{
     affinity::AffinityRecord,
     beta::BetaPosterior,
@@ -114,6 +115,10 @@ pub struct TaskEnvelope {
     /// SHA-256 of the scene file: peers that lack it fetch it by this hash.
     #[serde(default)]
     pub scene_sha256: Option<String>,
+    /// Part of the image to render (a fragment of a job); the whole image
+    /// when absent.
+    #[serde(default)]
+    pub region: Option<Region>,
 }
 
 /// What a node accepts from tasks published by other peers.
@@ -133,6 +138,8 @@ pub enum RemoteTaskError {
     InvalidPath(String),
     #[error("remote_task_oci_refused")]
     OciRefused,
+    #[error("remote_task_region_invalid")]
+    InvalidRegion,
     #[error("remote_task_wasm_refused")]
     WasmRefused,
 }
@@ -197,6 +204,10 @@ impl TaskEnvelope {
                 .scene_sha256
                 .clone()
                 .filter(|hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())),
+            region: match self.region {
+                Some(region) if !region.is_valid() => return Err(RemoteTaskError::InvalidRegion),
+                region => region,
+            },
         })
     }
 
@@ -252,118 +263,4 @@ impl TaskEnvelope {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hardware_record_key_is_versioned() {
-        assert_eq!(
-            DhtRecordEnvelope::hardware_record_key("peer-123"),
-            "silicium/hardware/v1/peer-123"
-        );
-    }
-
-    #[test]
-    fn task_record_key_is_versioned() {
-        assert_eq!(
-            DhtRecordEnvelope::task_record_key("task-456"),
-            "silicium/task/v1/task-456"
-        );
-    }
-
-    #[test]
-    fn task_event_record_key_is_content_addressed() {
-        let key = DhtRecordEnvelope::task_event_key(&"a".repeat(64));
-        assert_eq!(key, format!("silicium/taskbook/v1/{}", "a".repeat(64)));
-    }
-
-    fn remote_task() -> TaskEnvelope {
-        TaskEnvelope {
-            task_id: "job-1-frag-000".to_string(),
-            scene_path: "scenes/demo.cfg".to_string(),
-            output_path: "/etc/passwd".to_string(),
-            seed: "7".to_string(),
-            hardware_hint: None,
-            runtime_hint: None,
-            runtime_args: vec!["--flag".to_string()],
-            runtime_env: BTreeMap::from([("LD_PRELOAD".to_string(), "/tmp/evil.so".to_string())]),
-            runtime_workdir: Some(PathBuf::from("/")),
-            runtime_module_path: None,
-            runtime_image: None,
-            scene_sha256: Some("not-a-hash".to_string()),
-        }
-    }
-
-    #[test]
-    fn remote_tasks_lose_the_fields_a_peer_must_not_control() {
-        let clean = remote_task()
-            .sanitize_remote(&RemoteTaskPolicy::default())
-            .unwrap();
-        assert_eq!(clean.output_path, "job-1-frag-000/output.ppm");
-        assert!(clean.runtime_env.is_empty());
-        assert!(clean.runtime_workdir.is_none());
-        assert!(clean.runtime_args.is_empty());
-        assert!(clean.runtime_envelope("peer").is_none());
-        assert!(clean.scene_sha256.is_none(), "malformed scene hash dropped");
-    }
-
-    #[test]
-    fn remote_tasks_cannot_pick_host_paths_or_docker_images() {
-        let policy = RemoteTaskPolicy::default();
-        for scene in ["../secret.cfg", "/etc/passwd", "C:\\Windows\\win.ini", ""] {
-            let task = TaskEnvelope {
-                scene_path: scene.to_string(),
-                ..remote_task()
-            };
-            assert!(
-                matches!(
-                    task.sanitize_remote(&policy),
-                    Err(RemoteTaskError::InvalidPath(_))
-                ),
-                "{scene}"
-            );
-        }
-        let docker = TaskEnvelope {
-            runtime_image: Some("evil:latest".to_string()),
-            ..remote_task()
-        };
-        assert_eq!(
-            docker.sanitize_remote(&policy),
-            Err(RemoteTaskError::OciRefused)
-        );
-        let bad_id = TaskEnvelope {
-            task_id: "../x".to_string(),
-            ..remote_task()
-        };
-        assert_eq!(
-            bad_id.sanitize_remote(&policy),
-            Err(RemoteTaskError::InvalidTaskId)
-        );
-    }
-
-    #[test]
-    fn remote_wasm_needs_an_explicit_policy_and_a_sandboxed_module() {
-        let wasm = TaskEnvelope {
-            runtime_module_path: Some(PathBuf::from("modules/job.wasm")),
-            ..remote_task()
-        };
-        assert_eq!(
-            wasm.sanitize_remote(&RemoteTaskPolicy::default()),
-            Err(RemoteTaskError::WasmRefused)
-        );
-        let allowed = wasm
-            .sanitize_remote(&RemoteTaskPolicy { allow_wasm: true })
-            .unwrap();
-        assert_eq!(allowed.runtime_hint.as_deref(), Some("wasm"));
-        assert!(allowed.runtime_env.is_empty());
-        let escaping = TaskEnvelope {
-            runtime_module_path: Some(PathBuf::from("../x.wasm")),
-            ..remote_task()
-        };
-        assert!(
-            escaping
-                .sanitize_remote(&RemoteTaskPolicy { allow_wasm: true })
-                .is_err()
-        );
-    }
-}
+mod tests;

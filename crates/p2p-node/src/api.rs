@@ -1,11 +1,18 @@
-//! Local HTTP API: `POST /publish`, `GET /tasks/{id}`, `GET /health`.
+//! Local HTTP API: `POST /publish`, `GET /tasks/{id}`, `GET /jobs/{id}`,
+//! `GET /health`.
 //!
 //! Bound to `SILICIUM_API_BIND` (default 127.0.0.1). When
 //! `SILICIUM_NODE_CONTROL_TOKEN` is set, every route except `/health` needs
 //! `Authorization: Bearer <token>`. Published tasks are sanitized like tasks
 //! received from peers (see [`crate::admission`]).
 
-use crate::{admission::SecurityConfig, storage::TaskBookState, task::NetworkTask};
+use crate::{
+    admission::SecurityConfig,
+    jobs::{FRAGMENT_SUFFIX_EXAMPLE, JobStore},
+    results::result_path,
+    storage::TaskBookState,
+    task::NetworkTask,
+};
 use axum::{
     Router,
     extract::{Json, Path as AxumPath, Request, State},
@@ -22,6 +29,7 @@ use tokio::sync::mpsc;
 pub(crate) struct ApiState {
     pub(crate) tx_publish: mpsc::Sender<NetworkTask>,
     pub(crate) taskbook: TaskBookState,
+    pub(crate) jobs: JobStore,
     pub(crate) security: Arc<SecurityConfig>,
 }
 
@@ -30,6 +38,7 @@ pub(crate) fn router(state: ApiState) -> Router {
     Router::new()
         .route("/publish", post(publish_task))
         .route("/tasks/{task_id}", get(task_status))
+        .route("/jobs/{job_id}", get(job_status))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
         .route("/health", get(health))
         .with_state(state)
@@ -57,10 +66,11 @@ async fn publish_task(
     // propose them); a plain name is prefixed with this node's key.
     let mut task = task;
     task.task_id = state.taskbook.owned_task_id(&task.task_id);
-    if !TaskEvent::is_valid_task_id(&task.task_id) {
+    // Room is kept for the fragment suffix (`.f000`).
+    if !TaskEvent::is_valid_task_id(&format!("{}{FRAGMENT_SUFFIX_EXAMPLE}", task.task_id)) {
         return (
             StatusCode::BAD_REQUEST,
-            "invalid task id: up to 95 characters among A-Z a-z 0-9 . _ -",
+            "invalid task id: up to 90 characters among A-Z a-z 0-9 . _ -",
         )
             .into_response();
     }
@@ -87,6 +97,50 @@ async fn task_status(
         )
             .into_response(),
     }
+}
+
+/// A job of this node: its manifest, the status of each fragment, and the
+/// paths (relative to the work directory) of the images collected so far.
+async fn job_status(
+    AxumPath(job_id): AxumPath<String>,
+    State(state): State<ApiState>,
+) -> impl IntoResponse {
+    let Some(job) = state.jobs.manifest(&job_id) else {
+        return (StatusCode::NOT_FOUND, "Job not found").into_response();
+    };
+    let collected = state.jobs.collected(&job);
+    let fragments: Vec<_> = job
+        .fragments
+        .iter()
+        .map(|fragment| {
+            let status = state
+                .taskbook
+                .state(&fragment.task_id)
+                .ok()
+                .flatten()
+                .map(|task| task.status);
+            serde_json::json!({
+                "task_id": fragment.task_id,
+                "region": fragment.region,
+                "status": status,
+                "image": collected
+                    .contains(&fragment.task_id)
+                    .then(|| result_path(&fragment.task_id)),
+            })
+        })
+        .collect();
+    let complete = state.jobs.is_assembled(&job.job_id);
+    let body = serde_json::json!({
+        "job_id": job.job_id,
+        "width": job.width,
+        "height": job.height,
+        "fragments_total": job.fragments.len(),
+        "fragments_collected": collected.len(),
+        "fragments": fragments,
+        "image": complete.then(|| result_path(&job.job_id)),
+        "png": complete.then(|| JobStore::png_path(&job.job_id)),
+    });
+    (StatusCode::OK, Json(body)).into_response()
 }
 
 async fn health() -> impl IntoResponse {

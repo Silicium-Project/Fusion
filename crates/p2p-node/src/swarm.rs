@@ -277,6 +277,7 @@ mod tests {
             runtime_module_path: None,
             runtime_image: None,
             scene_sha256: None,
+            region: None,
         };
         let task_envelope: TaskEnvelope = task.clone().into();
         let task_record = task_envelope.to_dht_record();

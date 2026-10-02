@@ -14,7 +14,8 @@
 //! book), [`swarm`] (libp2p behaviour and DHT/gossipsub publishing), [`api`]
 //! (local HTTP API), [`worker`] / [`publisher`] / [`backfill`] (task book
 //! roles), [`verifier`] (cross-peer verification), [`content`] / [`fetch`]
-//! (scenes and results shared by hash), [`processing`] (task execution),
+//! (scenes and results shared by hash), [`jobs`] / [`publishing`] (jobs
+//! split into fragments, reassembled), [`processing`] (task execution),
 //! [`results`] (finalized images), [`gossip`] (incoming messages),
 //! [`task`] (network payloads).
 
@@ -25,8 +26,10 @@ mod config;
 mod content;
 mod fetch;
 mod gossip;
+mod jobs;
 mod processing;
 mod publisher;
+mod publishing;
 mod results;
 mod storage;
 mod swarm;
@@ -38,14 +41,15 @@ use crate::{
     api::ApiState,
     config::{
         NodeConfig, read_allow_self_verification_from_env, read_compute_root_from_env,
-        read_hardware_bucket, read_verifications_required_from_env,
+        read_hardware_bucket, read_parallel_tasks_from_env, read_verifications_required_from_env,
+        read_work_own_tasks_from_env,
     },
     content::ContentStore,
     processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
         P2pBehaviourEvent, TOPIC, build_swarm, publish_gossip, publish_hardware_record,
-        publish_task_record, publish_taskbook_event,
+        publish_taskbook_event,
     },
     task::{GossipMessage, NetworkTask},
 };
@@ -54,8 +58,7 @@ use libp2p::{PeerId, gossipsub, identify, mdns, swarm::SwarmEvent};
 use silicium_node_core::{
     beta::BetaPosterior,
     dispatch::{DispatchCandidate, Dispatcher},
-    p2p::{DhtRecordEnvelope, TaskEnvelope},
-    taskbook::{PayloadRef, TaskEvent, TaskEventBody, TaskTerms},
+    taskbook::TaskTerms,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -98,10 +101,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         known_tasks: Default::default(),
         content: ContentStore::new(read_compute_root_from_env(), tx_content),
         connected_peers: Default::default(),
+        compute_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
+            read_parallel_tasks_from_env(),
+        )),
     };
     let verifier_memory = verifier::VerifierMemory::default();
-    let verifications_required = read_verifications_required_from_env();
-    let allow_self_verification = read_allow_self_verification_from_env();
+    let jobs = jobs::JobStore::open(read_compute_root_from_env());
+    let publish_settings = publishing::PublishSettings {
+        terms: TaskTerms {
+            verifications_required: read_verifications_required_from_env(),
+            allow_self_verification: read_allow_self_verification_from_env(),
+            ..TaskTerms::default()
+        },
+        jobs: jobs::JobSettings::from_env(),
+        work_own_tasks: read_work_own_tasks_from_env(),
+    };
 
     let mut swarm = build_swarm(local_key.clone(), local_peer_id)?;
     let topic = gossipsub::IdentTopic::new(TOPIC);
@@ -123,6 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_state = ApiState {
         tx_publish,
         taskbook: taskbook.clone(),
+        jobs: jobs.clone(),
         security: security.clone(),
     };
     let app = api::router(api_state);
@@ -142,7 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut regossiped = BTreeSet::new();
     let mut gap_requests = BTreeMap::new();
     let mut fetcher = fetch::Fetcher::default();
-    let collector = results::Collector::default();
+    let collector = results::Collector::new(jobs.clone());
 
     loop {
         select! {
@@ -171,41 +186,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(command) = rx_content.recv() => {
                 fetch::handle_command(&mut swarm, &mut fetcher, command);
             }
-            Some(mut task) = rx_publish.recv() => {
-                // Share the scene by hash so that peers without it can fetch it.
-                match context.content.add_file(&task.scene_path).await {
-                    Ok(sha256) => {
-                        task.scene_path = ContentStore::relative_path(&sha256);
-                        task.scene_sha256 = Some(sha256);
-                    }
-                    Err(err) => println!(" Scene of {} not shared: {err}", task.task_id),
-                }
-                let task_envelope: TaskEnvelope = task.clone().into();
-                let task_bytes = serde_json::to_vec(&task_envelope).expect("task envelope serializes");
-                let proposal = TaskEventBody::TaskProposed {
-                    spec: PayloadRef {
-                        uri: DhtRecordEnvelope::task_record_key(&task.task_id),
-                        sha256: TaskEvent::payload_hash(&task_bytes),
-                    },
-                    terms: TaskTerms {
-                        verifications_required,
-                        allow_self_verification,
-                        ..TaskTerms::default()
-                    },
-                };
-                match taskbook.append_signed(&task.task_id, proposal) {
-                    Ok(event) => publish_taskbook_event(&mut swarm, &topic, &event),
-                    Err(err) => println!(" Task book refused task {}: {err}", task.task_id),
-                }
-                publish_task_record(&mut swarm, &task);
-                let data = serde_json::to_vec(&GossipMessage::Task(task_envelope)).unwrap();
-                if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), data) {
-                    println!(" Failed to publish to gossipsub: {e:?}");
-                } else {
-                    println!(" Published task {} to gossipsub", task.task_id);
-                }
-                context.remember_task(&task);
-                pending.push(task);
+            Some(task) = rx_publish.recv() => {
+                let published = publishing::publish_request(
+                    &mut swarm, &topic, &context, &jobs, &publish_settings, task,
+                ).await;
+                pending.extend(published);
                 if let Some(candidate) = pending.last() {
                     let candidate = DispatchCandidate {
                         peer_id: context.local_peer_id.to_string(),

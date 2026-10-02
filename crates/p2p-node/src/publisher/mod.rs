@@ -9,12 +9,18 @@
 //! (single-node network) and the task terms allow it.
 
 use crate::storage::{TaskBookState, now_ms};
-use silicium_node_core::taskbook::{AuthorRecord, DerivedTaskStatus, TaskBook, TaskEventBody};
+use silicium_node_core::taskbook::{
+    AuthorRecord, DerivedTaskStatus, OpenClaim, TaskBook, TaskEventBody,
+};
 use std::collections::{BTreeMap, BTreeSet};
+
+/// How long the publisher's own claim waits for other nodes' claims.
+const OWN_CLAIM_GRACE_MS: u64 = 5_000;
 
 /// Inputs shared by the decisions of one sweep.
 struct SweepView<'a> {
     book: &'a TaskBook,
+    me: &'a str,
     now: u64,
     records: BTreeMap<String, AuthorRecord>,
     alone: bool,
@@ -73,6 +79,7 @@ pub(crate) fn sweep(
         .with_book(|book| {
             let view = SweepView {
                 book,
+                me: &me,
                 now,
                 records: book.author_records(now),
                 alone,
@@ -116,7 +123,7 @@ fn decide(view: &SweepView, task_id: &str) -> Option<Decision> {
         return accept_verifier(view, task_id, state.attempts.last()?.attempt);
     }
     let attempt = state.next_attempt?;
-    let claims = view.book.open_claims(task_id, view.now);
+    let claims = eligible_claims(view, view.book.open_claims(task_id, view.now));
     let chosen = view.best(&claims, |c| (&c.author, c.issued_at_ms, &c.event_hash));
     match chosen {
         Some(claim) => Some(Decision::Sign(TaskEventBody::ClaimAccepted {
@@ -126,6 +133,20 @@ fn decide(view: &SweepView, task_id: &str) -> Option<Decision> {
         None if attempt > 1 => Some(Decision::Regossip(attempt)),
         None => None,
     }
+}
+
+/// Claims the publisher may accept now: its own claim (this node also works
+/// on its tasks) only when nobody else offered and either this node is alone
+/// or the claim waited [`OWN_CLAIM_GRACE_MS`], so that other nodes get the
+/// work first.
+fn eligible_claims(view: &SweepView, claims: Vec<OpenClaim>) -> Vec<OpenClaim> {
+    let (own, others): (Vec<_>, Vec<_>) = claims.into_iter().partition(|c| c.author == view.me);
+    if !others.is_empty() {
+        return others;
+    }
+    own.into_iter()
+        .filter(|c| view.alone || view.now.saturating_sub(c.issued_at_ms) >= OWN_CLAIM_GRACE_MS)
+        .collect()
 }
 
 /// Accepts the best verification offer while a verifier slot is open; the

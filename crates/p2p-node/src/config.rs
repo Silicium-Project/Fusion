@@ -215,6 +215,29 @@ pub(crate) fn read_verifications_required_from_env() -> u32 {
         .min(16)
 }
 
+/// Tasks computed at the same time (`SILICIUM_PARALLEL_TASKS`, default 1):
+/// a node only claims a fragment when a slot is free.
+pub(crate) fn read_parallel_tasks_from_env() -> usize {
+    env::var("SILICIUM_PARALLEL_TASKS")
+        .ok()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(1)
+        .clamp(1, 64)
+}
+
+/// Whether this node also computes the tasks it publishes
+/// (`SILICIUM_WORK_OWN_TASKS`, default on; off for a publisher without a
+/// compute daemon).
+pub(crate) fn read_work_own_tasks_from_env() -> bool {
+    !matches!(
+        env::var("SILICIUM_WORK_OWN_TASKS")
+            .ok()
+            .as_deref()
+            .map(str::trim),
+        Some("0" | "false" | "no" | "off")
+    )
+}
+
 pub(crate) fn read_enable_quic_listener_from_env() -> bool {
     env::var("SILICIUM_ENABLE_QUIC_LISTENER")
         .ok()
