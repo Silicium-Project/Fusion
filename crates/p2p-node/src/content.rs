@@ -63,8 +63,8 @@ impl ContentStore {
         if bytes.len() > MAX_CONTENT_BYTES {
             return Err(format!("larger than {MAX_CONTENT_BYTES} bytes"));
         }
-        let sha256 = sha256_hex(&bytes);
-        self.write(&sha256, &bytes)?;
+        let sha256 = sha256_hex(bytes);
+        self.write(&sha256, bytes)?;
         let _ = self
             .commands
             .send(ContentCommand::Provide {

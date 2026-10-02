@@ -214,7 +214,7 @@ fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
         result_hash,
         created_unix: entry.created_unix,
         updated_unix: state
-            .and_then(|_| Some(unix_seconds()))
+            .map(|_| unix_seconds())
             .unwrap_or(entry.updated_unix),
         task,
     }
