@@ -61,6 +61,7 @@ pub fn terms() -> TaskTerms {
         verifications_required: 1,
         reward: 100,
         verifier_reward: 10,
+        allow_self_verification: false,
     }
 }
 

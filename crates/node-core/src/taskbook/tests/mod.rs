@@ -4,6 +4,7 @@ mod backfill;
 mod chain;
 mod lease;
 mod persistence;
+mod reputation;
 mod security;
 mod settlement;
 mod support;

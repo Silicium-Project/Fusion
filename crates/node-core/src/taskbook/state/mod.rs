@@ -7,8 +7,9 @@
 //! - only the publisher accepts a claim, finalizes or cancels (`roles.rs`);
 //! - only the accepted claimant renews its lease, releases or publishes the
 //!   result (`attempts.rs`);
-//! - only verifiers accepted by the publisher give verdicts that count, and
-//!   the claimant is never one of them (`verification.rs`);
+//! - only verifiers accepted by the publisher give verdicts that count; the
+//!   claimant is one only when the terms allow self-verification
+//!   (`verification.rs`);
 //! - the only clock-dependent input is `now_ms`, used to tell whether the
 //!   lease of the running attempt has expired (lease start = the publisher's
 //!   acceptance time, length = terms, extended by the claimant's renewals).
@@ -17,6 +18,7 @@
 
 mod attempts;
 mod claims;
+mod reputation;
 mod roles;
 mod verification;
 
@@ -138,4 +140,7 @@ impl TaskBook {
 }
 
 pub use claims::OpenClaim;
-pub use verification::{OpenVerification, sample_milestones, verification_sample_count};
+pub use reputation::AuthorRecord;
+pub use verification::{
+    OpenVerification, milestones_cover_region, sample_milestones, verification_sample_count,
+};

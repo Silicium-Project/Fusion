@@ -2,7 +2,8 @@
 //! (`VerificationClaimed`), the publisher accepts it (`VerifierAccepted`), and
 //! only accepted verifiers' verdicts count. The milestones to re-render are
 //! drawn from the publisher's acceptance hash, which the claimant could not
-//! know when it committed to its result.
+//! know when it committed to its result. The claimant may verify itself only
+//! when the task terms allow it (`allow_self_verification`).
 
 use std::collections::BTreeMap;
 
@@ -41,7 +42,7 @@ pub(super) fn accept_verifier(
             == (TaskEventBody::VerificationClaimed {
                 attempt: draft.attempt,
             })
-        && offer.author != draft.claimant
+        && (offer.author != draft.claimant || view.terms.allow_self_verification)
         && !view.book.equivocators.contains(&offer.author)
         && !draft.verifiers.iter().any(|v| v.author == offer.author);
     if !valid {
@@ -128,6 +129,9 @@ pub struct OpenVerification {
     pub event_hash: String,
     pub author: String,
     pub issued_at_ms: u64,
+    /// The offer comes from the claimant itself (only listed when the terms
+    /// allow self-verification).
+    pub self_offer: bool,
 }
 
 impl TaskBook {
@@ -157,8 +161,9 @@ impl TaskBook {
     }
 
     /// Verification offers for the latest attempt of `task_id`: one per
-    /// author (its earliest), never the claimant or an accepted verifier,
-    /// ordered by event hash. Empty unless the attempt awaits verification.
+    /// author (its earliest), never an accepted verifier, and the claimant
+    /// only when self-verification is allowed; ordered by event hash. Empty
+    /// unless the attempt awaits verification.
     pub fn open_verifications(&self, task_id: &str, now_ms: u64) -> Vec<OpenVerification> {
         let Some(state) = self.task_state(task_id, now_ms) else {
             return Vec::new();
@@ -169,7 +174,10 @@ impl TaskBook {
         if state.status != DerivedTaskStatus::Completed {
             return Vec::new();
         }
-        let excluded: Vec<&str> = std::iter::once(attempt.claimant.as_str())
+        let claimant = attempt.claimant.as_str();
+        let excluded: Vec<&str> = (!state.terms.allow_self_verification)
+            .then_some(claimant)
+            .into_iter()
             .chain(attempt.verifiers.iter().map(|v| v.author.as_str()))
             .collect();
         let wanted = TaskEventBody::VerificationClaimed {
@@ -194,6 +202,7 @@ impl TaskBook {
                 event_hash: event.event_hash(),
                 author: event.author.clone(),
                 issued_at_ms: event.issued_at_ms,
+                self_offer: event.author == claimant,
             })
             .collect();
         offers.sort_by(|left, right| left.event_hash.cmp(&right.event_hash));
@@ -232,4 +241,27 @@ pub fn sample_milestones<'a>(
         .take(count)
         .map(|(_, milestone)| milestone)
         .collect()
+}
+
+/// True when `milestones` tile the region `[x_start, x_end) x [y_start,
+/// y_end)` exactly: full-width blocks, indexes 0..n in row order, each block
+/// starting where the previous one ended, from the first to the last row.
+/// A result that commits to fewer rows than asked is caught here.
+pub fn milestones_cover_region(
+    milestones: &[MilestoneSample],
+    (x_start, x_end): (u32, u32),
+    (y_start, y_end): (u32, u32),
+) -> bool {
+    let mut next_row = y_start;
+    for (position, milestone) in milestones.iter().enumerate() {
+        let aligned = milestone.index as usize == position
+            && milestone.x_start == x_start
+            && milestone.x_end == x_end
+            && milestone.y_start == next_row;
+        if !aligned {
+            return false;
+        }
+        next_row = milestone.y_end;
+    }
+    !milestones.is_empty() && next_row == y_end
 }

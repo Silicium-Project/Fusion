@@ -48,8 +48,9 @@ pub use event::{EventHeader, MAX_TASK_NAME_LEN, TASK_BOOK_VERSION, TASK_ID_PREFI
 pub use persistence::LoadReport;
 pub use settlement::{Settlement, SettlementRole};
 pub use state::{
-    AttemptState, DerivedTaskState, DerivedTaskStatus, OpenClaim, OpenVerification, ResultState,
-    VerifierState, sample_milestones, verification_sample_count,
+    AttemptState, AuthorRecord, DerivedTaskState, DerivedTaskStatus, OpenClaim, OpenVerification,
+    ResultState, VerifierState, milestones_cover_region, sample_milestones,
+    verification_sample_count,
 };
 
 #[cfg(test)]

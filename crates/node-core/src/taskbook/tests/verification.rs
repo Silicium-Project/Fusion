@@ -171,3 +171,89 @@ fn invalid_milestones_are_refused() {
     );
     assert!(matches!(event.verify(), Err(TaskBookError::InvalidBody(_))));
 }
+
+/// Like `accepted_task`, with self-verification allowed by the terms.
+fn self_verifiable(publisher: &mut Actor, worker: &mut Actor) -> (TaskBook, String, String) {
+    let task = publisher.task("solo");
+    let mut solo_terms = terms();
+    solo_terms.allow_self_verification = true;
+    let mut book = TaskBook::default();
+    let proposal = publisher.emit(&task, proposed(solo_terms), 0);
+    let claim = worker.emit(&task, TaskEventBody::ClaimProposed { attempt: 1 }, 0);
+    let accept = publisher.emit(
+        &task,
+        TaskEventBody::ClaimAccepted {
+            attempt: 1,
+            claim: claim.event_hash(),
+        },
+        0,
+    );
+    let result_event = worker.emit(&task, result(1), 5);
+    let hash = result_event.event_hash();
+    apply(&mut book, [proposal, claim, accept, result_event]);
+    (book, task, hash)
+}
+
+#[test]
+fn self_verification_counts_only_when_the_terms_allow_it_and_is_never_paid() {
+    let mut publisher = Actor::new(120);
+    let mut worker = Actor::new(121);
+    let (mut book, task, result_hash) = self_verifiable(&mut publisher, &mut worker);
+    let open_before = book.open_verifications(&task, 5);
+    assert!(open_before.is_empty());
+
+    let offer = worker.emit(&task, TaskEventBody::VerificationClaimed { attempt: 1 }, 6);
+    book.append(offer.clone()).unwrap();
+    let open = book.open_verifications(&task, 6);
+    assert_eq!(open.len(), 1);
+    assert!(open[0].self_offer);
+
+    let accept = publisher.emit(
+        &task,
+        TaskEventBody::VerifierAccepted {
+            attempt: 1,
+            claim: offer.event_hash(),
+        },
+        6,
+    );
+    let verdict = worker.emit(
+        &task,
+        TaskEventBody::VerificationPublished {
+            attempt: 1,
+            result_event: result_hash,
+            approved: true,
+        },
+        7,
+    );
+    let finalize = publisher.emit(&task, TaskEventBody::TaskFinalized { attempt: 1 }, 8);
+    apply(&mut book, [accept, verdict, finalize]);
+    assert_eq!(
+        book.task_state(&task, 10).unwrap().status,
+        DerivedTaskStatus::Finalized
+    );
+    let due = book.settlements_for(&task);
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].role, SettlementRole::Worker);
+}
+
+#[test]
+fn milestones_must_tile_the_whole_region() {
+    let all = milestones();
+    assert!(milestones_cover_region(&all, (0, 4), (0, 20)));
+    assert!(
+        !milestones_cover_region(&all, (0, 4), (0, 22)),
+        "missing rows"
+    );
+    assert!(
+        !milestones_cover_region(&all, (0, 8), (0, 20)),
+        "narrower blocks"
+    );
+    assert!(
+        !milestones_cover_region(&all[1..], (0, 4), (2, 20)),
+        "indexes must start at 0"
+    );
+    let mut gap = all.clone();
+    gap.remove(4);
+    assert!(!milestones_cover_region(&gap, (0, 4), (0, 20)), "hole");
+    assert!(!milestones_cover_region(&[], (0, 4), (0, 20)));
+}

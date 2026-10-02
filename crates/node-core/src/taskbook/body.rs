@@ -31,6 +31,11 @@ pub struct TaskTerms {
     pub reward: u64,
     /// Units paid to each counted verifier of the finalized attempt.
     pub verifier_reward: u64,
+    /// The claimant may be accepted as verifier of its own result (useful
+    /// when the publisher has no other peer; weaker than an independent
+    /// check, and never paid as a verification).
+    #[serde(default)]
+    pub allow_self_verification: bool,
 }
 
 impl Default for TaskTerms {
@@ -42,6 +47,7 @@ impl Default for TaskTerms {
             verifications_required: 1,
             reward: 0,
             verifier_reward: 0,
+            allow_self_verification: false,
         }
     }
 }

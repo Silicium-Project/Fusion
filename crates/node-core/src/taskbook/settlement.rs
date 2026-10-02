@@ -59,7 +59,8 @@ impl TaskBook {
                 .approvals
                 .iter()
                 .take(state.terms.verifications_required as usize);
-            for (_, verifier) in counted {
+            // Self-verification is allowed by some terms but never paid.
+            for (_, verifier) in counted.filter(|(_, v)| *v != finalized.claimant) {
                 due.push(payment(
                     verifier,
                     SettlementRole::Verifier,
