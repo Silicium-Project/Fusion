@@ -74,6 +74,21 @@ impl JobStore {
         self.jobs.lock().ok()?.get(job_id).cloned()
     }
 
+    /// Finds a job by the identifier used by the BackEnd control plane.
+    pub(crate) fn manifest_for_root(&self, root_job_id: &str) -> Option<JobManifest> {
+        self.jobs
+            .lock()
+            .ok()?
+            .values()
+            .find(|job| job.root_job_id == root_job_id || job.job_id == root_job_id)
+            .cloned()
+    }
+
+    /// Root directory used by the compatibility artifact writer.
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// The job a fragment task belongs to, and the fragment.
     pub(crate) fn fragment(&self, task_id: &str) -> Option<(JobManifest, FragmentRef)> {
         let jobs = self.jobs.lock().ok()?;
@@ -143,5 +158,9 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
     partial.push(".partial");
     let partial = PathBuf::from(partial);
     fs::write(&partial, bytes).map_err(|err| err.to_string())?;
+    #[cfg(windows)]
+    if path.exists() {
+        fs::remove_file(path).map_err(|err| err.to_string())?;
+    }
     fs::rename(&partial, path).map_err(|err| err.to_string())
 }

@@ -13,6 +13,8 @@ pub(crate) struct NodeConfig {
     pub(crate) bootstrap_peers: Vec<Multiaddr>,
     pub(crate) data_dir: PathBuf,
     pub(crate) api_port: u16,
+    pub(crate) p2p_bind: std::net::IpAddr,
+    pub(crate) p2p_port: u16,
     pub(crate) enable_quic_listener: bool,
     pub(crate) dispatcher_seed: u64,
     pub(crate) security: SecurityConfig,
@@ -23,6 +25,8 @@ pub(crate) struct NodeCliOverrides {
     pub(crate) bootstrap_peers: Vec<Multiaddr>,
     pub(crate) data_dir: Option<PathBuf>,
     pub(crate) api_port: Option<u16>,
+    pub(crate) p2p_bind: Option<std::net::IpAddr>,
+    pub(crate) p2p_port: Option<u16>,
     pub(crate) enable_quic_listener: Option<bool>,
     pub(crate) dispatcher_seed: Option<u64>,
     pub(crate) trusted_publishers: Vec<PeerId>,
@@ -91,6 +95,16 @@ where
                     overrides.api_port = value.parse::<u16>().ok();
                 }
             }
+            "--p2p-bind" => {
+                if let Some(value) = args.next() {
+                    overrides.p2p_bind = value.parse().ok();
+                }
+            }
+            "--p2p-port" => {
+                if let Some(value) = args.next() {
+                    overrides.p2p_port = value.parse::<u16>().ok();
+                }
+            }
             "--data-dir" => {
                 if let Some(value) = args.next() {
                     overrides.data_dir = Some(PathBuf::from(value));
@@ -109,7 +123,7 @@ where
             }
             "--help" | "-h" => {
                 println!(
-                    "Usage: p2p_node [--bootstrap-peer <multiaddr>] [--api-port <port>] [--data-dir <path>] [--dispatcher-seed <seed>] [--enable-quic|--disable-quic] [--trusted-publisher <peer-id>]"
+                    "Usage: p2p_node [--bootstrap-peer <multiaddr>] [--api-port <port>] [--p2p-bind <ip>] [--p2p-port <port>] [--data-dir <path>] [--dispatcher-seed <seed>] [--enable-quic|--disable-quic] [--trusted-publisher <peer-id>]"
                 );
                 std::process::exit(0);
             }
@@ -130,6 +144,16 @@ where
             _ if arg.starts_with("--api-port=") => {
                 if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
                     overrides.api_port = value.parse::<u16>().ok();
+                }
+            }
+            _ if arg.starts_with("--p2p-bind=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides.p2p_bind = value.parse().ok();
+                }
+            }
+            _ if arg.starts_with("--p2p-port=") => {
+                if let Some(value) = arg.split_once('=').map(|(_, value)| value) {
+                    overrides.p2p_port = value.parse::<u16>().ok();
                 }
             }
             _ if arg.starts_with("--data-dir=") => {
@@ -167,6 +191,20 @@ pub(crate) fn read_api_port_from_env() -> u16 {
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
         .unwrap_or(9092)
+}
+
+pub(crate) fn read_p2p_bind_from_env() -> std::net::IpAddr {
+    env::var("SILICIUM_P2P_BIND")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| std::net::IpAddr::from([0, 0, 0, 0]))
+}
+
+pub(crate) fn read_p2p_port_from_env() -> u16 {
+    env::var("SILICIUM_P2P_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(0)
 }
 
 pub(crate) fn read_dispatcher_seed_from_env() -> u64 {
@@ -266,6 +304,8 @@ impl NodeConfig {
             bootstrap_peers,
             data_dir: overrides.data_dir.unwrap_or_else(read_data_dir_from_env),
             api_port: overrides.api_port.unwrap_or_else(read_api_port_from_env),
+            p2p_bind: overrides.p2p_bind.unwrap_or_else(read_p2p_bind_from_env),
+            p2p_port: overrides.p2p_port.unwrap_or_else(read_p2p_port_from_env),
             enable_quic_listener: overrides
                 .enable_quic_listener
                 .unwrap_or_else(read_enable_quic_listener_from_env),

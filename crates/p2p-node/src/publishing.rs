@@ -5,6 +5,7 @@
 
 use crate::{
     content::ContentStore,
+    control::ControlRegistry,
     jobs::{self, JobSettings, JobStore},
     processing::NodeContext,
     swarm::{P2pBehaviour, publish_task_record, publish_taskbook_event},
@@ -22,6 +23,7 @@ pub(crate) struct PublishSettings {
     pub(crate) terms: TaskTerms,
     pub(crate) jobs: JobSettings,
     pub(crate) work_own_tasks: bool,
+    pub(crate) control: ControlRegistry,
 }
 
 /// Publishes `task` (one task, or the fragments of its job) and returns the
@@ -70,6 +72,10 @@ fn split_job(
     let count = fragments.len();
     match jobs.add(manifest) {
         Ok(()) => {
+            // The control-plane request represents the logical job. Once it
+            // is split, expose only its durable fragment tasks so callers do
+            // not wait forever on a parent that can never enter the taskbook.
+            settings.control.remove_task(&task.task_id);
             println!(" Job {} split into {count} fragment(s)", task.task_id);
             fragments
         }
@@ -107,6 +113,9 @@ fn publish_one(
             return;
         }
     }
+    settings
+        .control
+        .register_published(task, &settings.terms_roles());
     publish_task_record(swarm, task);
     let data = serde_json::to_vec(&GossipMessage::Task(envelope)).expect("task serializes");
     match swarm.behaviour_mut().gossipsub.publish(topic.clone(), data) {
@@ -118,5 +127,11 @@ fn publish_one(
         let context = context.clone();
         let task = task.clone();
         tokio::spawn(async move { process_task(context, task).await });
+    }
+}
+
+impl PublishSettings {
+    fn terms_roles(&self) -> Vec<String> {
+        vec!["compute".to_string(), "verify".to_string()]
     }
 }

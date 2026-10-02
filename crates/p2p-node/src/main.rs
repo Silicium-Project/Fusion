@@ -1,14 +1,15 @@
-//! `p2p_node`: prototype of the Rust Silicium node.
+//! `p2p_node`: Rust Silicium node used by the dev cutover.
 //!
 //! Runs a libp2p swarm (TCP/QUIC, Noise, Yamux, Gossipsub, Kademlia, mDNS,
-//! Identify, AutoNAT, relay server), exposes a local HTTP API (`/publish`,
-//! `/tasks/{id}`, `/health`) and shares the signed task book with its peers:
+//! Identify, AutoNAT, relay server), exposes the legacy task API plus the
+//! BackEnd control API (`/v1/tasks`, `/v1/peers`, `/v1/workloads/{id}/cancel`)
+//! and shares the signed task book with its peers:
 //! as a worker it claims tasks and runs them once the publisher accepts it
 //! ([`worker`]); as a publisher it accepts claims, announces retries and
 //! finalizes results ([`publisher`]); gaps are filled over gossip ([`backfill`]).
 //!
-//! Status: prototype, not used in production. Configuration, API and known
-//! limitations are documented in `crates/p2p-node/README.md`.
+//! Configuration, API and known limitations are documented in
+//! `crates/p2p-node/README.md`.
 //!
 //! Modules: [`config`] (CLI + environment), [`storage`] (identity key, task
 //! book), [`swarm`] (libp2p behaviour and DHT/gossipsub publishing), [`api`]
@@ -23,7 +24,9 @@ mod admission;
 mod api;
 mod backfill;
 mod config;
+mod compatibility;
 mod content;
+mod control;
 mod fetch;
 mod gossip;
 mod jobs;
@@ -45,6 +48,8 @@ use crate::{
         read_work_own_tasks_from_env,
     },
     content::ContentStore,
+    control::ControlRegistry,
+    compatibility::CompatibilityWriter,
     processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
@@ -105,6 +110,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             read_parallel_tasks_from_env(),
         )),
     };
+    let known_peers = std::sync::Arc::new(std::sync::Mutex::new(
+        std::iter::once(local_peer_id.to_string()).collect(),
+    ));
+    let control = ControlRegistry::open(data_dir.join("control.tasks.json"));
+    let compatibility = CompatibilityWriter::new(&local_peer_id.to_string());
     let verifier_memory = verifier::VerifierMemory::default();
     let jobs = jobs::JobStore::open(read_compute_root_from_env());
     let publish_settings = publishing::PublishSettings {
@@ -115,14 +125,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         jobs: jobs::JobSettings::from_env(),
         work_own_tasks: read_work_own_tasks_from_env(),
+        control: control.clone(),
     };
 
     let mut swarm = build_swarm(local_key.clone(), local_peer_id)?;
     let topic = gossipsub::IdentTopic::new(TOPIC);
 
-    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+    let p2p_protocol = match config.p2p_bind {
+        std::net::IpAddr::V4(_) => "ip4",
+        std::net::IpAddr::V6(_) => "ip6",
+    };
+    let p2p_addr = format!(
+        "/{p2p_protocol}/{}/tcp/{}",
+        config.p2p_bind, config.p2p_port
+    )
+    .parse()?;
+    swarm.listen_on(p2p_addr)?;
     if enable_quic_listener {
-        let _ = swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?);
+        let quic_addr = format!(
+            "/{p2p_protocol}/{}/udp/{}/quic-v1",
+            config.p2p_bind, config.p2p_port
+        )
+        .parse()?;
+        let _ = swarm.listen_on(quic_addr);
     }
 
     println!(" Silicium P2P Node running");
@@ -138,6 +163,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_publish,
         taskbook: taskbook.clone(),
         jobs: jobs.clone(),
+        content: context.content.clone(),
+        control: control.clone(),
+        tx_events: context.tx_events.clone(),
+        local_peer_id: local_peer_id.to_string(),
+        peers: known_peers.clone(),
         security: security.clone(),
     };
     let app = api::router(api_state);
@@ -165,6 +195,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 context
                     .connected_peers
                     .store(swarm.connected_peers().count(), std::sync::atomic::Ordering::Relaxed);
+                if let Ok(mut peers) = known_peers.lock() {
+                    peers.clear();
+                    peers.insert(local_peer_id.to_string());
+                    peers.extend(swarm.connected_peers().map(|peer| peer.to_string()));
+                }
                 verifier::sweep(&context, &verifier_memory).await;
                 let outcome = publisher::sweep(&taskbook, &mut regossiped, context.is_alone());
                 for event in &outcome.events {
@@ -176,6 +211,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 pending.retain(|task| !outcome.finished.contains(&task.task_id));
                 collector.collect(&context, &outcome.finished);
+                if let Ok(peers) = known_peers.lock() {
+                    compatibility.refresh(&control, &taskbook, &jobs, &peers);
+                }
                 for (author, after_sequence) in backfill::requests_for_gaps(&taskbook, &mut gap_requests) {
                     publish_gossip(&mut swarm, &topic, &GossipMessage::TaskEventsRequest { author, after_sequence });
                 }

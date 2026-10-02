@@ -266,6 +266,7 @@ mod tests {
 
         let task = NetworkTask {
             task_id: "kademlia-smoke-task".to_string(),
+            root_job_id: None,
             scene_path: "scene/smoke.blend".to_string(),
             output_path: "out/smoke.ppm".to_string(),
             seed: "1337".to_string(),

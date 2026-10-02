@@ -66,6 +66,9 @@ pub(crate) struct FragmentRef {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct JobManifest {
     pub(crate) job_id: String,
+    /// BackEnd-facing job id. Older manifests default to the network id.
+    #[serde(default)]
+    pub(crate) root_job_id: String,
     pub(crate) width: u32,
     pub(crate) height: u32,
     #[serde(default)]
@@ -120,6 +123,10 @@ pub(crate) fn split(
     }
     let manifest = JobManifest {
         job_id: task.task_id.clone(),
+        root_job_id: task
+            .root_job_id
+            .clone()
+            .unwrap_or_else(|| task.task_id.clone()),
         width: width as u32,
         height: height as u32,
         scene_sha256: task.scene_sha256.clone(),

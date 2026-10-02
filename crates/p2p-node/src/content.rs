@@ -48,6 +48,18 @@ impl ContentStore {
     pub(crate) async fn add_file(&self, relative: &str) -> Result<String, String> {
         let bytes =
             fs::read(self.absolute(relative)).map_err(|err| format!("unreadable: {err}"))?;
+        self.add_bytes(&bytes).await
+    }
+
+    /// Imports a BackEnd-uploaded file whose path is outside the compute root.
+    /// The path is read once and never sent to peers; only the resulting
+    /// content hash is carried in the signed task envelope.
+    pub(crate) async fn add_external_file(&self, path: &std::path::Path) -> Result<String, String> {
+        let bytes = fs::read(path).map_err(|err| format!("unreadable: {err}"))?;
+        self.add_bytes(&bytes).await
+    }
+
+    async fn add_bytes(&self, bytes: &[u8]) -> Result<String, String> {
         if bytes.len() > MAX_CONTENT_BYTES {
             return Err(format!("larger than {MAX_CONTENT_BYTES} bytes"));
         }
@@ -112,6 +124,10 @@ impl ContentStore {
         // Write then rename, so a reader never sees a half-written file.
         let partial = path.with_extension("partial");
         fs::write(&partial, bytes).map_err(|err| err.to_string())?;
+        #[cfg(windows)]
+        if path.exists() {
+            fs::remove_file(&path).map_err(|err| err.to_string())?;
+        }
         fs::rename(&partial, &path).map_err(|err| err.to_string())
     }
 }

@@ -12,6 +12,11 @@ use std::{collections::BTreeMap, path::PathBuf};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub(crate) struct NetworkTask {
     pub(crate) task_id: String,
+    /// Business identifier kept by the local BackEnd compatibility layer.
+    /// It is deliberately not sent to peers: the signed task id remains the
+    /// authoritative network identifier.
+    #[serde(skip)]
+    pub(crate) root_job_id: Option<String>,
     pub(crate) scene_path: String,
     pub(crate) output_path: String,
     pub(crate) seed: String,
@@ -42,6 +47,7 @@ impl From<TaskEnvelope> for NetworkTask {
     fn from(value: TaskEnvelope) -> Self {
         Self {
             task_id: value.task_id,
+            root_job_id: None,
             scene_path: value.scene_path,
             output_path: value.output_path,
             seed: value.seed,
