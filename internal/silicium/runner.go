@@ -143,16 +143,26 @@ func waitForControlTask(ctx context.Context, cfg RunnerConfig, rootJobID string)
 			return ControlTask{}, err
 		}
 		if len(tasks) > 0 {
-			task := tasks[0]
-			switch strings.ToLower(strings.TrimSpace(task.Status)) {
-			case "verified", "completed", "finalized":
-				return task, nil
-			case "failed", "cancelled", "expired":
-				message := strings.TrimSpace(task.Error)
-				if message == "" {
-					message = "rust_node_task_" + strings.ToLower(task.Status)
+			var firstCompleted ControlTask
+			allCompleted := true
+			for _, task := range tasks {
+				switch strings.ToLower(strings.TrimSpace(task.Status)) {
+				case "verified", "completed", "finalized":
+					if firstCompleted.TaskID == "" {
+						firstCompleted = task
+					}
+				case "failed", "cancelled", "expired":
+					message := strings.TrimSpace(task.Error)
+					if message == "" {
+						message = "rust_node_task_" + strings.ToLower(task.Status)
+					}
+					return ControlTask{}, fmt.Errorf("%s", message)
+				default:
+					allCompleted = false
 				}
-				return ControlTask{}, fmt.Errorf("%s", message)
+			}
+			if allCompleted && firstCompleted.TaskID != "" {
+				return firstCompleted, nil
 			}
 		}
 		select {
