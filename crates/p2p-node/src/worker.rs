@@ -3,8 +3,9 @@
 //! then publish the result or release the attempt.
 
 use crate::{
+    content::ContentStore,
     processing::{NodeContext, execute_task},
-    task::NetworkTask,
+    task::{GossipMessage, NetworkTask},
 };
 use silicium_node_core::taskbook::{
     DerivedTaskState, PayloadRef, TaskEvent, TaskEventBody, TaskTerms,
@@ -22,6 +23,9 @@ const PROPOSAL_WAIT: Duration = Duration::from_secs(10);
 /// How long to wait for the publisher's decision on this node's claim.
 const ACCEPT_WAIT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// How long to wait for a missing scene from peers, and how often to ask.
+const SCENE_WAIT: Duration = Duration::from_secs(15);
+const SCENE_REQUEST_EVERY: Duration = Duration::from_secs(3);
 
 /// Signs, stores and queues for gossip one event of this node.
 pub(crate) async fn record_task_event(context: &NodeContext, task_id: &str, body: TaskEventBody) {
@@ -36,8 +40,12 @@ pub(crate) async fn record_task_event(context: &NodeContext, task_id: &str, body
 }
 
 /// Handles a task received from the network (see the module documentation).
-pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
+pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
     let task_id = task.task_id.clone();
+    if !ensure_scene(&context, &mut task).await {
+        println!(" Scene of task {task_id} unavailable; not claiming it");
+        return;
+    }
     context.remember_task(&task);
     let Some((attempt, terms)) = open_attempt(&context, &task_id).await else {
         println!(" No open attempt for task {task_id}; not claiming it");
@@ -63,6 +71,35 @@ pub(crate) async fn process_task(context: NodeContext, task: NetworkTask) {
         None => TaskEventBody::ClaimReleased { attempt },
     };
     record_task_event(&context, &task_id, body).await;
+}
+
+/// Makes sure the task's scene is in the work directory, fetching it from
+/// peers by hash when needed, and points the task at the local copy. Tasks
+/// without a scene hash (older publishers) keep their path as is.
+async fn ensure_scene(context: &NodeContext, task: &mut NetworkTask) -> bool {
+    let Some(sha256) = task.scene_sha256.clone() else {
+        return true;
+    };
+    let deadline = Instant::now() + SCENE_WAIT;
+    let mut next_request = Instant::now();
+    while context.content.get(&sha256).is_none() {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        if Instant::now() >= next_request {
+            context.content.want(&sha256);
+            let request = GossipMessage::ContentRequest {
+                sha256: sha256.clone(),
+            };
+            if context.tx_gossip.send(request).await.is_err() {
+                return false;
+            }
+            next_request = Instant::now() + SCENE_REQUEST_EVERY;
+        }
+        tokio::time::sleep(POLL_INTERVAL).await;
+    }
+    task.scene_path = ContentStore::scene_path(&sha256);
+    true
 }
 
 /// Current derived state of `task_id`, `None` when unknown or unreadable.

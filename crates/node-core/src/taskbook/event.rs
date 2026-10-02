@@ -5,7 +5,7 @@
 //! [`TaskEvent::signing_bytes`]); the event hash covers the whole serialized
 //! event, signature included.
 //!
-//! A task identifier is `<first 32 hex chars of the publisher key>/<name>`:
+//! A task identifier is `<first 32 hex chars of the publisher key>.<name>`:
 //! nobody else can propose a task under that identifier (finding another key
 //! with the same 128-bit prefix is out of reach), so a task cannot be hijacked
 //! by a second, competing proposal.
@@ -23,8 +23,11 @@ use super::{
 pub const TASK_BOOK_VERSION: u8 = 2;
 /// Hex characters of the publisher key that prefix a task identifier.
 pub const TASK_ID_PREFIX_LEN: usize = 32;
-/// Longest accepted task name (the part after the prefix).
-pub const MAX_TASK_NAME_LEN: usize = 200;
+/// Longest accepted task name (the part after the prefix and the dot), so
+/// that a task identifier fits the 128 characters a node accepts.
+pub const MAX_TASK_NAME_LEN: usize = 95;
+/// Separator between the publisher prefix and the task name.
+pub const TASK_ID_SEPARATOR: char = '.';
 
 /// Fields every event carries, besides the signature: who, where in the
 /// author's chain, when (author clock, informational only) and about which task.
@@ -62,7 +65,7 @@ impl TaskEvent {
     /// Task identifier owned by `publisher` (hex key) for a task `name`.
     pub fn task_id_for(publisher: &str, name: &str) -> String {
         let prefix = &publisher[..TASK_ID_PREFIX_LEN.min(publisher.len())];
-        format!("{prefix}/{name}")
+        format!("{prefix}{TASK_ID_SEPARATOR}{name}")
     }
 
     /// Builds an event and signs it with `signing_key`.
@@ -91,11 +94,16 @@ impl TaskEvent {
         sha256_hex(&serde_json::to_vec(self).expect("task event is serializable"))
     }
 
+    /// True when `task_id` has the task identifier format.
+    pub fn is_valid_task_id(task_id: &str) -> bool {
+        validate_task_id(task_id).is_ok()
+    }
+
     /// True when `author` owns `task_id` (see the module documentation).
     pub fn owns_task(author: &str, task_id: &str) -> bool {
         author.len() >= TASK_ID_PREFIX_LEN
             && task_id.len() > TASK_ID_PREFIX_LEN + 1
-            && task_id.as_bytes()[TASK_ID_PREFIX_LEN] == b'/'
+            && task_id.as_bytes()[TASK_ID_PREFIX_LEN] == TASK_ID_SEPARATOR as u8
             && task_id[..TASK_ID_PREFIX_LEN] == author[..TASK_ID_PREFIX_LEN]
     }
 
@@ -157,21 +165,24 @@ impl TaskEvent {
     }
 }
 
-/// `<32 lowercase hex>/<name>` with a name of 1..=200 characters among
-/// `[A-Za-z0-9._:-]`.
+/// `<32 lowercase hex>.<name>` with a name of 1..=95 characters among
+/// `[A-Za-z0-9._-]` (the characters a node keeps in a task identifier).
 fn validate_task_id(task_id: &str) -> Result<(), TaskBookError> {
-    let Some((prefix, name)) = task_id.split_once('/') else {
+    if task_id.len() <= TASK_ID_PREFIX_LEN + 1 || !task_id.is_char_boundary(TASK_ID_PREFIX_LEN) {
+        return Err(TaskBookError::InvalidTaskId);
+    }
+    let (prefix, rest) = task_id.split_at(TASK_ID_PREFIX_LEN);
+    let Some(name) = rest.strip_prefix(TASK_ID_SEPARATOR) else {
         return Err(TaskBookError::InvalidTaskId);
     };
-    let prefix_ok = prefix.len() == TASK_ID_PREFIX_LEN
-        && prefix
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    let prefix_ok = prefix
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
     let name_ok = !name.is_empty()
         && name.len() <= MAX_TASK_NAME_LEN
         && name
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte));
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte));
     if prefix_ok && name_ok {
         Ok(())
     } else {

@@ -44,7 +44,10 @@ pub use body::{
 };
 pub use book::{MAX_EVENTS_PER_AUTHOR_PER_TASK, TaskBook};
 pub use error::TaskBookError;
-pub use event::{EventHeader, MAX_TASK_NAME_LEN, TASK_BOOK_VERSION, TASK_ID_PREFIX_LEN, TaskEvent};
+pub use event::{
+    EventHeader, MAX_TASK_NAME_LEN, TASK_BOOK_VERSION, TASK_ID_PREFIX_LEN, TASK_ID_SEPARATOR,
+    TaskEvent,
+};
 pub use persistence::LoadReport;
 pub use settlement::{Settlement, SettlementRole};
 pub use state::{

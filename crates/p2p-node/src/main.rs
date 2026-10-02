@@ -13,14 +13,16 @@
 //! Modules: [`config`] (CLI + environment), [`storage`] (identity key, task
 //! book), [`swarm`] (libp2p behaviour and DHT/gossipsub publishing), [`api`]
 //! (local HTTP API), [`worker`] / [`publisher`] / [`backfill`] (task book
-//! roles), [`verifier`] (cross-peer verification), [`processing`] (task
-//! execution), [`gossip`] (incoming messages),
+//! roles), [`verifier`] (cross-peer verification), [`content`] (scenes
+//! shared by hash), [`processing`] (task execution), [`gossip`] (incoming
+//! messages),
 //! [`task`] (network payloads).
 
 mod admission;
 mod api;
 mod backfill;
 mod config;
+mod content;
 mod gossip;
 mod processing;
 mod publisher;
@@ -32,7 +34,11 @@ mod worker;
 
 use crate::{
     api::ApiState,
-    config::{NodeConfig, read_hardware_bucket, read_verifications_required_from_env},
+    config::{
+        NodeConfig, read_allow_self_verification_from_env, read_compute_root_from_env,
+        read_hardware_bucket, read_verifications_required_from_env,
+    },
+    content::ContentStore,
     processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
@@ -78,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(" Task book: {}", taskbook.path.display());
 
     let (tx_events, mut rx_events) = mpsc::channel(64);
+    let (tx_gossip, mut rx_gossip) = mpsc::channel(64);
 
     let context = NodeContext {
         local_peer_id,
@@ -87,9 +94,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_events,
         compute_timeout_s: security.compute_timeout_s,
         known_tasks: Default::default(),
+        content: ContentStore::new(read_compute_root_from_env()),
+        tx_gossip,
+        connected_peers: Default::default(),
     };
     let verifier_memory = verifier::VerifierMemory::default();
     let verifications_required = read_verifications_required_from_env();
+    let allow_self_verification = read_allow_self_verification_from_env();
 
     let mut swarm = build_swarm(local_key.clone(), local_peer_id)?;
     let topic = gossipsub::IdentTopic::new(TOPIC);
@@ -133,8 +144,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         select! {
             _ = sweep_timer.tick() => {
+                context
+                    .connected_peers
+                    .store(swarm.connected_peers().count(), std::sync::atomic::Ordering::Relaxed);
                 verifier::sweep(&context, &verifier_memory).await;
-                let outcome = publisher::sweep(&taskbook, &mut regossiped);
+                let outcome = publisher::sweep(&taskbook, &mut regossiped, context.is_alone());
                 for event in &outcome.events {
                     publish_taskbook_event(&mut swarm, &topic, event);
                 }
@@ -150,7 +164,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(event) = rx_events.recv() => {
                 publish_taskbook_event(&mut swarm, &topic, &event);
             }
-            Some(task) = rx_publish.recv() => {
+            Some(message) = rx_gossip.recv() => {
+                publish_gossip(&mut swarm, &topic, &message);
+            }
+            Some(mut task) = rx_publish.recv() => {
+                // Share the scene by hash so that peers without it can fetch it.
+                match context.content.add_scene(&task.scene_path) {
+                    Ok((sha256, path)) => {
+                        task.scene_sha256 = Some(sha256);
+                        task.scene_path = path;
+                    }
+                    Err(err) => println!(" Scene of {} not shared: {err}", task.task_id),
+                }
                 let task_envelope: TaskEnvelope = task.clone().into();
                 let task_bytes = serde_json::to_vec(&task_envelope).expect("task envelope serializes");
                 let proposal = TaskEventBody::TaskProposed {
@@ -158,7 +183,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         uri: DhtRecordEnvelope::task_record_key(&task.task_id),
                         sha256: TaskEvent::payload_hash(&task_bytes),
                     },
-                    terms: TaskTerms { verifications_required, ..TaskTerms::default() },
+                    terms: TaskTerms {
+                        verifications_required,
+                        allow_self_verification,
+                        ..TaskTerms::default()
+                    },
                 };
                 match taskbook.append_signed(&task.task_id, proposal) {
                     Ok(event) => publish_taskbook_event(&mut swarm, &topic, &event),
@@ -206,8 +235,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 })) => {
                     println!(" Received message from {peer_id}");
                     let replies = gossip::handle(&context, &security, local_peer_id, peer_id, message);
-                    for event in &replies {
-                        publish_taskbook_event(&mut swarm, &topic, event);
+                    for reply in &replies {
+                        publish_gossip(&mut swarm, &topic, reply);
                     }
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Identify(identify::Event::Received {

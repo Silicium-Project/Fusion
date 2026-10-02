@@ -176,6 +176,34 @@ pub(crate) fn read_dispatcher_seed_from_env() -> u64 {
         .unwrap_or(7)
 }
 
+/// Work directory shared with the compute daemon (`SILICIUM_COMPUTE_ROOT`,
+/// else `$SILICIUM_DATA_DIR/work`, else `./work`, like the daemon).
+pub(crate) fn read_compute_root_from_env() -> PathBuf {
+    env::var("SILICIUM_COMPUTE_ROOT")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            env::var("SILICIUM_DATA_DIR")
+                .ok()
+                .map(|dir| PathBuf::from(dir).join("work"))
+        })
+        .unwrap_or_else(|| PathBuf::from("work"))
+}
+
+/// Whether tasks published by this node let a lone node verify its own
+/// results (`SILICIUM_ALLOW_SELF_VERIFICATION`, default on). The publisher
+/// only accepts a self-verification when it has no connected peer.
+pub(crate) fn read_allow_self_verification_from_env() -> bool {
+    !matches!(
+        env::var("SILICIUM_ALLOW_SELF_VERIFICATION")
+            .ok()
+            .as_deref()
+            .map(str::trim),
+        Some("0" | "false" | "no" | "off")
+    )
+}
+
 /// Approvals required on the tasks this node publishes
 /// (`SILICIUM_VERIFICATIONS_REQUIRED`, default 1; 0 finalizes results
 /// without cross-verification, e.g. on a single-node test network).

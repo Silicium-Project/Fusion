@@ -25,6 +25,9 @@ pub(crate) struct NetworkTask {
     pub(crate) runtime_module_path: Option<PathBuf>,
     #[serde(default)]
     pub(crate) runtime_image: Option<String>,
+    /// SHA-256 of the scene file, set by the publisher (see [`crate::content`]).
+    #[serde(default)]
+    pub(crate) scene_sha256: Option<String>,
 }
 
 impl From<TaskEnvelope> for NetworkTask {
@@ -41,6 +44,7 @@ impl From<TaskEnvelope> for NetworkTask {
             runtime_workdir: value.runtime_workdir,
             runtime_module_path: value.runtime_module_path,
             runtime_image: value.runtime_image,
+            scene_sha256: value.scene_sha256,
         }
     }
 }
@@ -54,6 +58,15 @@ pub(crate) enum GossipMessage {
     TaskEventsRequest {
         author: String,
         after_sequence: u64,
+    },
+    /// Asks peers for a content (scene) by SHA-256.
+    ContentRequest {
+        sha256: String,
+    },
+    /// Content answered to a request, hex-encoded.
+    ContentResponse {
+        sha256: String,
+        data_hex: String,
     },
 }
 
@@ -71,6 +84,7 @@ impl From<NetworkTask> for TaskEnvelope {
             runtime_workdir: value.runtime_workdir,
             runtime_module_path: value.runtime_module_path,
             runtime_image: value.runtime_image,
+            scene_sha256: value.scene_sha256,
         }
     }
 }

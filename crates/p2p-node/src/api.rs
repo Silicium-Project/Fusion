@@ -14,7 +14,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use silicium_node_core::p2p::TaskEnvelope;
+use silicium_node_core::{p2p::TaskEnvelope, taskbook::TaskEvent};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -57,6 +57,13 @@ async fn publish_task(
     // propose them); a plain name is prefixed with this node's key.
     let mut task = task;
     task.task_id = state.taskbook.owned_task_id(&task.task_id);
+    if !TaskEvent::is_valid_task_id(&task.task_id) {
+        return (
+            StatusCode::BAD_REQUEST,
+            "invalid task id: up to 95 characters among A-Z a-z 0-9 . _ -",
+        )
+            .into_response();
+    }
     let task = match state.security.admit_local(TaskEnvelope::from(task)) {
         Ok(task) => task,
         Err(reason) => return (StatusCode::BAD_REQUEST, reason).into_response(),

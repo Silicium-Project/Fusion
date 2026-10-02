@@ -15,16 +15,24 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
   - **worker** (`src/worker.rs`) : pour une tâche reçue, propose de la prendre
     pour la tentative ouverte, attend que l'éditeur l'accepte (30 s), renouvelle
     son bail pendant le calcul, puis publie le résultat ou se retire ;
-  - **éditeur** (`src/publisher.rs`, toutes les secondes) : accepte la
-    proposition la plus ancienne pour la tentative ouverte, réannonce la tâche
-    quand une nouvelle tentative s'ouvre (bail expiré, retrait), finalise le
-    résultat ;
+  - **éditeur** (`src/publisher/`, toutes les secondes) : accepte la
+    meilleure proposition pour la tentative ouverte et le meilleur
+    vérificateur (réputation dérivée du journal, puis ancienneté), réannonce
+    la tâche quand une nouvelle tentative s'ouvre (bail expiré, retrait,
+    rejet), finalise le résultat ;
   - **vérificateur** (`src/verifier.rs`, toutes les secondes) : pour un
     résultat d'un autre nœud en attente de vérification, propose de le
-    vérifier ; une fois accepté par l'éditeur, recalcule via le
-    compute-daemon les blocs de lignes tirés au sort à partir de
-    l'acceptation et publie son verdict (aucun verdict si le rendu local
-    échoue : le créneau se libère pour un autre vérificateur) ;
+    vérifier ; une fois accepté par l'éditeur, contrôle que les jalons
+    couvrent toute l'image, recalcule via le compute-daemon les blocs tirés
+    au sort à partir de l'acceptation et publie son verdict (aucun verdict si
+    le rendu local échoue : le créneau se libère pour un autre vérificateur) ;
+  - **nœud seul** : quand il n'a aucun pair connecté, un nœud peut vérifier
+    son propre résultat (condition `allow_self_verification` signée par
+    l'éditeur, active par défaut) ; c'est moins fort qu'une vérification
+    indépendante, et jamais rémunéré ;
+  - **scènes** (`src/content.rs`) : l'éditeur copie la scène sous
+    `scenes/<sha256>.cfg` et annonce son hash dans la tâche ; un pair qui ne
+    l'a pas la demande sur le topic et la vérifie à la réception ;
   - **rattrapage** (`src/backfill.rs`) : quand des événements attendent leurs
     prédécesseurs, le nœud les redemande sur le topic ; les pairs répondent ;
 - calcul d'une tâche acceptée : exécution via `node-core::runtime` si la tâche
@@ -32,7 +40,8 @@ chemin. On peut l'essayer via `./silicium node start --experimental-p2p-node`.
   auto-contrôle), puis signalement au `reputation-bridge`.
 
 Les identifiants de tâche publiés par l'API sont préfixés par la clé du
-journal du nœud (`<32 hex>/<nom>`) : seul ce nœud peut proposer, accepter,
+journal du nœud (`<32 hex>.<nom>`, nom de 95 caractères au plus parmi
+`[A-Za-z0-9._-]`) : seul ce nœud peut proposer, accepter,
 finaliser ou annuler ces tâches.
 
 ## Configuration
@@ -43,6 +52,8 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_API_BIND` | `127.0.0.1` | Adresse d'écoute de l'API ; hors loopback, le jeton est obligatoire |
 | `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton `Authorization: Bearer` exigé par `/publish` et `/tasks` (pas `/health`) |
 | `SILICIUM_TRUSTED_PUBLISHERS` / `--trusted-publisher` | — | Peer ids dont les tâches sont exécutées ; sans liste, les tâches des autres pairs sont ignorées |
+| `SILICIUM_COMPUTE_ROOT` | `$SILICIUM_DATA_DIR/work` | Dossier de travail partagé avec le compute-daemon (scènes reçues) |
+| `SILICIUM_ALLOW_SELF_VERIFICATION` | `1` | `0` : interdire l'auto-vérification d'un nœud seul sur les tâches publiées |
 | `SILICIUM_VERIFICATIONS_REQUIRED` | `1` | Vérifications par un autre pair exigées sur les tâches publiées par ce nœud (0 : résultat finalisé sans vérification) |
 | `SILICIUM_ACCEPT_UNTRUSTED_TASKS` | `0` | `1` : exécuter les tâches de n'importe quel pair (réseau de test uniquement) |
 | `SILICIUM_ALLOW_REMOTE_WASM` | `0` | `1` : autoriser une tâche à lancer un module WASM du dossier de travail (jamais d'image Docker) |
@@ -71,7 +82,8 @@ finaliser ou annuler ces tâches.
 | `src/main.rs` | Démarrage et boucle d'événements (API → réseau, minuterie de l'éditeur, gossipsub) |
 | `src/gossip.rs` | Messages reçus : événements du journal, demandes de rattrapage, tâches |
 | `src/worker.rs` | Rôle worker : proposition, attente d'acceptation, bail, résultat ou retrait |
-| `src/publisher.rs` | Rôle éditeur : acceptation, réannonce des nouvelles tentatives, finalisation |
+| `src/publisher/` | Rôle éditeur : acceptation (réputation, ancienneté), auto-vérification d'un nœud seul, réannonce, finalisation ; tests dans `tests.rs` |
+| `src/content.rs` | Scènes partagées par hash (demande, réponse, contrôle) |
 | `src/verifier.rs` | Rôle vérificateur : offre, recalcul des blocs tirés au sort, verdict |
 | `src/backfill.rs` | Demande et envoi des événements manquants |
 | `src/config.rs` | Options CLI, variables d'environnement, catégorie matérielle |
@@ -103,13 +115,8 @@ docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = ra
 
 ## Limites connues
 
-- L'éditeur choisit la proposition la plus ancienne (horodatage de son
-  auteur) ; la réputation n'est pas encore prise en compte. Le résultat du
-  sélecteur (`Dispatcher`) est ignoré.
-- Pas de découpage en fragments, pas de transfert de fichiers entre pairs : la
-  scène doit déjà être dans le dossier de travail.
-- La vérification croisée suppose que le vérificateur a la même scène dans le
-  dossier de travail de son compute-daemon (pas encore de transfert de
-  fichiers) ; sur un réseau d'un seul nœud, mettre
-  `SILICIUM_VERIFICATIONS_REQUIRED=0` pour que les résultats soient finalisés.
+- Le résultat du sélecteur (`Dispatcher`) est ignoré.
+- Pas de découpage en fragments : une tâche est l'image entière.
+- Les scènes passent par le gossip : 24 Kio au plus. Les résultats (images)
+  ne sont pas transférés entre pairs.
 - Ports P2P aléatoires (`tcp/0`, `udp/0`) : injoignable derrière un pare-feu.

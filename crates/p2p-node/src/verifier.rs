@@ -1,7 +1,10 @@
 //! Verifier role, run periodically: for every known task whose latest result
-//! awaits verification, offer to verify it (never for a result of this
-//! node); once the publisher accepts this node, re-render the milestones
-//! drawn from the acceptance hash and publish the verdict.
+//! awaits verification, offer to verify it; once the publisher accepts this
+//! node, check that the milestones cover the whole image, re-render the
+//! milestones drawn from the acceptance hash and publish the verdict.
+//!
+//! A node offers to verify its own result only when it is alone on the
+//! network and the task terms allow it (otherwise nobody could ever verify).
 //!
 //! A verdict is only published when every sampled block could be rendered:
 //! if the local compute daemon fails, nothing is published and the
@@ -14,8 +17,8 @@ use crate::{
     worker::record_task_event,
 };
 use silicium_node_core::taskbook::{
-    DerivedTaskState, DerivedTaskStatus, ResultState, TaskEventBody, sample_milestones,
-    verification_sample_count,
+    DerivedTaskState, DerivedTaskStatus, ResultState, TaskEventBody, milestones_cover_region,
+    sample_milestones, verification_sample_count,
 };
 use std::{
     collections::BTreeSet,
@@ -77,7 +80,10 @@ fn next_step(
 ) -> Option<Step> {
     let me = context.taskbook.author();
     let attempt = state.attempts.last()?;
-    if state.status != DerivedTaskStatus::Completed || attempt.claimant == me {
+    let self_check_allowed = state.terms.allow_self_verification && context.is_alone();
+    if state.status != DerivedTaskStatus::Completed
+        || (attempt.claimant == me && !self_check_allowed)
+    {
         return None;
     }
     let key = (state.task_id.clone(), attempt.attempt);
@@ -105,8 +111,29 @@ fn next_step(
     }
 }
 
+/// True when the result's milestones tile the whole image of the scene
+/// (tasks of this node render the full image).
+fn covers_scene(context: &NodeContext, job: &Job) -> bool {
+    let Ok(text) = std::fs::read_to_string(context.content.absolute(&job.task.scene_path)) else {
+        return false;
+    };
+    let (width, height) = silicium_raytracer::pipeline::tiles::scene_resolution(&text);
+    let (Ok(width), Ok(height)) = (u32::try_from(width), u32::try_from(height)) else {
+        return false;
+    };
+    milestones_cover_region(&job.result.milestones, (0, width), (0, height))
+}
+
 /// Re-renders the sampled milestones and publishes the verdict.
 async fn verify(context: &NodeContext, job: Job) {
+    if !covers_scene(context, &job) {
+        println!(
+            " Result of {} does not cover the whole image; rejecting it",
+            job.task.task_id
+        );
+        publish_verdict(context, &job, false).await;
+        return;
+    }
     let milestones = &job.result.milestones;
     let sample = sample_milestones(
         milestones,
@@ -118,9 +145,7 @@ async fn verify(context: &NodeContext, job: Job) {
     for milestone in sample {
         let output = format!(
             "verify/{}/attempt-{}-block-{}.ppm",
-            job.task.task_id.replace('/', "_"),
-            job.attempt,
-            milestone.index
+            job.task.task_id, job.attempt, milestone.index
         );
         match render_region(context, &job.task, &output, milestone).await {
             Some(hash) if hash == milestone.pixel_sha256 => {}
@@ -137,6 +162,10 @@ async fn verify(context: &NodeContext, job: Job) {
             }
         }
     }
+    publish_verdict(context, &job, approved).await;
+}
+
+async fn publish_verdict(context: &NodeContext, job: &Job, approved: bool) {
     println!(
         " Verdict on {} attempt {}: {approved}",
         job.task.task_id, job.attempt

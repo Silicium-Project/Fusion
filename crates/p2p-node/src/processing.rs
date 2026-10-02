@@ -3,7 +3,11 @@
 //! the local daemons. Task-book bookkeeping (claim, lease, result) is in
 //! [`crate::worker`].
 
-use crate::{storage::TaskBookState, task::NetworkTask};
+use crate::{
+    content::ContentStore,
+    storage::TaskBookState,
+    task::{GossipMessage, NetworkTask},
+};
 use libp2p::PeerId;
 use silicium_node_core::{
     beta::BetaPosterior,
@@ -14,7 +18,10 @@ use silicium_node_core::{
 use std::{
     collections::BTreeMap,
     env,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 use tokio::sync::mpsc;
@@ -31,9 +38,20 @@ pub(crate) struct NodeContext {
     /// Tasks this node knows (received or published), by task id: what a
     /// verifier needs to re-render milestones.
     pub(crate) known_tasks: Arc<Mutex<BTreeMap<String, NetworkTask>>>,
+    /// Scenes shared with peers, inside the compute work directory.
+    pub(crate) content: ContentStore,
+    /// Gossip messages to publish (content requests).
+    pub(crate) tx_gossip: mpsc::Sender<GossipMessage>,
+    /// Peers currently connected (refreshed by the event loop).
+    pub(crate) connected_peers: Arc<AtomicUsize>,
 }
 
 impl NodeContext {
+    /// True when this node has no connected peer.
+    pub(crate) fn is_alone(&self) -> bool {
+        self.connected_peers.load(Ordering::Relaxed) == 0
+    }
+
     /// Remembers a task for later verification.
     pub(crate) fn remember_task(&self, task: &NetworkTask) {
         if let Ok(mut known) = self.known_tasks.lock() {

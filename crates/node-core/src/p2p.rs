@@ -111,6 +111,9 @@ pub struct TaskEnvelope {
     pub runtime_module_path: Option<PathBuf>,
     #[serde(default)]
     pub runtime_image: Option<String>,
+    /// SHA-256 of the scene file: peers that lack it fetch it by this hash.
+    #[serde(default)]
+    pub scene_sha256: Option<String>,
 }
 
 /// What a node accepts from tasks published by other peers.
@@ -190,6 +193,10 @@ impl TaskEnvelope {
             runtime_workdir: None,
             runtime_module_path: module_path,
             runtime_image: None,
+            scene_sha256: self
+                .scene_sha256
+                .clone()
+                .filter(|hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit())),
         })
     }
 
@@ -283,6 +290,7 @@ mod tests {
             runtime_workdir: Some(PathBuf::from("/")),
             runtime_module_path: None,
             runtime_image: None,
+            scene_sha256: Some("not-a-hash".to_string()),
         }
     }
 
@@ -296,6 +304,7 @@ mod tests {
         assert!(clean.runtime_workdir.is_none());
         assert!(clean.runtime_args.is_empty());
         assert!(clean.runtime_envelope("peer").is_none());
+        assert!(clean.scene_sha256.is_none(), "malformed scene hash dropped");
     }
 
     #[test]

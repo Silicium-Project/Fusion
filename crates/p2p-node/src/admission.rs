@@ -134,6 +134,7 @@ mod tests {
             runtime_workdir: None,
             runtime_module_path: None,
             runtime_image: None,
+            scene_sha256: None,
         }
     }
 

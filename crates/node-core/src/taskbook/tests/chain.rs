@@ -107,3 +107,19 @@ fn tasks_published_by_lists_only_the_owner_proposals() {
     assert_eq!(book.tasks_published_by(&publisher.id), vec![first, second]);
     assert!(book.tasks_published_by(&other.id).is_empty());
 }
+
+#[test]
+fn task_ids_fit_what_nodes_accept_from_the_network() {
+    let publisher = Actor::new(11);
+    let longest = publisher.task(&"n".repeat(MAX_TASK_NAME_LEN));
+    assert_eq!(longest.len(), 128);
+    assert!(TaskEvent::is_valid_task_id(&longest));
+    assert_eq!(
+        crate::sandbox::safe_component(&longest).as_deref(),
+        Some(longest.as_str())
+    );
+    assert!(!TaskEvent::is_valid_task_id(
+        &publisher.task(&"n".repeat(MAX_TASK_NAME_LEN + 1))
+    ));
+    assert!(!TaskEvent::is_valid_task_id(&publisher.task("with/slash")));
+}
