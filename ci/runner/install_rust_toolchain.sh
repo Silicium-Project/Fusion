@@ -14,9 +14,7 @@ set -euo pipefail
 toolchain="${1:?toolchain required}"
 components="${2:-}"
 cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
-rustup="$cargo_bin/rustup"
 rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
-[[ -x "$rustup" ]] || rustup="$(command -v rustup)"
 
 args=(toolchain install "$toolchain" --profile minimal --no-self-update)
 if [[ -n "$components" ]]; then
@@ -29,6 +27,20 @@ if ! flock -w 900 9; then
   echo "Timed out waiting for another job to finish installing Rust." >&2
   exit 1
 fi
+
+# Some runners (other user accounts) have no rustup yet: install it the way
+# dtolnay/rust-toolchain did, without touching shell profiles.
+if [[ -x "$cargo_bin/rustup" ]]; then
+  rustup="$cargo_bin/rustup"
+elif command -v rustup >/dev/null 2>&1; then
+  rustup="$(command -v rustup)"
+else
+  echo "rustup not found for $(id -un) (HOME=$HOME); installing it."
+  curl --proto '=https' --tlsv1.2 --retry 3 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --default-toolchain none --profile minimal --no-modify-path
+  rustup="$cargo_bin/rustup"
+fi
+echo "Using $rustup for $(id -un)"
 
 for attempt in 1 2 3; do
   if "$rustup" "${args[@]}"; then
