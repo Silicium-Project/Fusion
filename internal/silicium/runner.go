@@ -30,6 +30,12 @@ type RunnerConfig struct {
 	DashboardURL          string
 	NodeAPIURL            string
 	NodeControlToken      string
+	// NodeContainerDataRoot is the path used by the BackEnd container for the
+	// shared data mount. NodeHostDataRoot is the corresponding path seen by the
+	// host-side Rust node. They differ on the dev channel because
+	// /var/lib/silicium-dev is mounted as /var/lib/silicium in the container.
+	NodeContainerDataRoot string
+	NodeHostDataRoot      string
 	ReleaseChannel        string
 }
 
@@ -59,16 +65,18 @@ func ConfigFromEnv() RunnerConfig {
 		// Devnet settlement is an explicit write operation. Keep it opt-in so a
 		// backend without a funded wallet cannot accidentally publish or pay a
 		// trace during a normal render.
-		DevnetTrace:          envDefault("SILICIUM_DEVNET_TRACE", "0") == "1",
-		DevnetTxDelayMS:      envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
-		MinComputeReputation: envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
-		MinVerifyReputation:  envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
-		ControlURL:           envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:46100/gossip/publish"),
-		IdentityKeyPath:      envDefault("SILICIUM_ORCHESTRATOR_IDENTITY_KEY", "/var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem"),
-		DashboardURL:         envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
-		NodeAPIURL:           envDefault("SILICIUM_NODE_API_URL", "http://127.0.0.1:9092"),
-		NodeControlToken:     os.Getenv("SILICIUM_NODE_CONTROL_TOKEN"),
-		ReleaseChannel:       release.Current().Channel,
+		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "0") == "1",
+		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
+		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
+		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
+		ControlURL:            envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:46100/gossip/publish"),
+		IdentityKeyPath:       envDefault("SILICIUM_ORCHESTRATOR_IDENTITY_KEY", "/var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem"),
+		DashboardURL:          envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
+		NodeAPIURL:            envDefault("SILICIUM_NODE_API_URL", "http://127.0.0.1:9092"),
+		NodeControlToken:      os.Getenv("SILICIUM_NODE_CONTROL_TOKEN"),
+		NodeContainerDataRoot: envDefault("SILICIUM_NODE_CONTAINER_DATA_ROOT", "/var/lib/silicium"),
+		NodeHostDataRoot:      os.Getenv("SILICIUM_NODE_HOST_DATA_ROOT"),
+		ReleaseChannel:        release.Current().Channel,
 	}
 }
 
@@ -125,12 +133,13 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o750); err != nil {
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
 	}
+	scenePath := nodeVisiblePath(job.InputPath, cfg)
 	_, err = SubmitControlTask(ctx, cfg, ControlTaskSubmission{
 		TaskID:        job.SiliciumJobID,
 		RootJobID:     job.SiliciumJobID,
 		Workload:      "raytracer",
 		RequiredRoles: []string{"compute", "verify"},
-		ScenePath:     job.InputPath,
+		ScenePath:     scenePath,
 		OutputPath:    outputPath,
 		Seed:          job.SiliciumJobID,
 	})
@@ -147,6 +156,31 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 	}
 	result := RunResult{Status: "completed", ResultPath: outputPath, ComputeReceiptHash: task.ResultHash}
 	return validateRaytracerCompletion(result)
+}
+
+// nodeVisiblePath translates a shared-volume path from the BackEnd container
+// namespace to the host namespace used by the Rust node. When both processes
+// run in the same namespace, or when the path is outside the configured mount,
+// it returns the original path unchanged.
+func nodeVisiblePath(inputPath string, cfg RunnerConfig) string {
+	containerRoot := strings.TrimRight(strings.TrimSpace(cfg.NodeContainerDataRoot), "/\\")
+	hostRoot := strings.TrimRight(strings.TrimSpace(cfg.NodeHostDataRoot), "/\\")
+	if containerRoot == "" || hostRoot == "" || containerRoot == hostRoot {
+		return inputPath
+	}
+
+	path := strings.TrimSpace(inputPath)
+	for _, separator := range []string{"/", "\\"} {
+		prefix := containerRoot + separator
+		if strings.HasPrefix(path, prefix) {
+			relative := strings.TrimLeft(strings.TrimPrefix(path, prefix), "/\\")
+			return filepath.Join(hostRoot, filepath.FromSlash(strings.ReplaceAll(relative, "\\", "/")))
+		}
+	}
+	if path == containerRoot {
+		return hostRoot
+	}
+	return inputPath
 }
 
 func waitForControlTask(ctx context.Context, cfg RunnerConfig, rootJobID string) (ControlTask, error) {

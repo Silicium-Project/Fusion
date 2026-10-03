@@ -29,8 +29,9 @@ type ControlTask struct {
 }
 
 // ControlTaskSubmission is the public request contract of POST /v1/tasks.
-// Paths are shared-volume paths in Compose and must therefore be valid from
-// both the BackEnd and compute-daemon containers.
+// ScenePath is translated to the host-visible shared-volume path before the
+// request when the BackEnd runs in Compose; OutputPath remains a compatibility
+// projection consumed by the BackEnd after the Rust node finishes.
 type ControlTaskSubmission struct {
 	TaskID        string   `json:"task_id"`
 	RootJobID     string   `json:"root_job_id"`

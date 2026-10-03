@@ -127,6 +127,30 @@ func TestRunRaytracerSubmitsAndWaitsForRustNodeTask(t *testing.T) {
 	}
 }
 
+func TestNodeVisiblePathMapsComposeDataRoot(t *testing.T) {
+	cfg := RunnerConfig{
+		NodeContainerDataRoot: "/var/lib/silicium",
+		NodeHostDataRoot:      "/var/lib/silicium-dev",
+	}
+
+	got := nodeVisiblePath("/var/lib/silicium/site/jobs/job-1/input/scene.cfg", cfg)
+	want := filepath.Join("/var/lib/silicium-dev", "site", "jobs", "job-1", "input", "scene.cfg")
+	if got != want {
+		t.Fatalf("node-visible path = %q, want %q", got, want)
+	}
+}
+
+func TestNodeVisiblePathLeavesUnrelatedPathsUnchanged(t *testing.T) {
+	input := "/var/lib/silicium-dev/site/jobs/job-1/input/scene.cfg"
+	got := nodeVisiblePath(input, RunnerConfig{
+		NodeContainerDataRoot: "/var/lib/silicium",
+		NodeHostDataRoot:      "/var/lib/silicium-dev",
+	})
+	if got != input {
+		t.Fatalf("unrelated path was rewritten: got %q", got)
+	}
+}
+
 func regularResultFile(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.Mode().IsRegular()
