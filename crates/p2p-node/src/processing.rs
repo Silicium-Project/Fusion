@@ -76,13 +76,9 @@ impl NodeContext {
 /// verify a result. Control-plane roles such as `resource` and `storage` do
 /// not count for the single-worker self-verification rule.
 pub(crate) fn profile_is_worker(profile: &PeerProfile) -> bool {
-    profile
-        .roles
-        .iter()
-        .any(|role| {
-            role.trim().eq_ignore_ascii_case("compute")
-                || role.trim().eq_ignore_ascii_case("verify")
-        })
+    profile.roles.iter().any(|role| {
+        role.trim().eq_ignore_ascii_case("compute") || role.trim().eq_ignore_ascii_case("verify")
+    })
 }
 
 #[cfg(test)]
