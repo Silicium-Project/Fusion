@@ -2,30 +2,27 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
 
 func TestSystemStatusAggregatesPeersAndConfiguration(t *testing.T) {
-	directory := t.TempDir()
-	peersPath := filepath.Join(directory, "peers.json")
-	manifestPath := filepath.Join(directory, "manifest.json")
-	writeStatusFixture(t, peersPath, map[string]any{"peers": []any{
-		map[string]any{"node_id": "orchestrator-1", "self": true, "online": true},
-		map[string]any{"node_id": "worker-current", "online": true, "app_version": "1.0.0", "release_channel": "prod", "release_build": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-		map[string]any{"node_id": "worker-old", "online": false, "app_version": "0.9.0", "release_channel": "prod"},
-	}})
-	writeStatusFixture(t, manifestPath, map[string]any{"channels": map[string]any{
-		"prod": map[string]any{"version": "1.0.0", "build": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
-	}})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/peers" {
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"peers":[{"node_id":"node-a","online":true},{"node_id":"node-b","online":true},{"node_id":"node-c","online":false}],"metrics":{"active_tasks":1,"known_tasks":2}}`))
+	}))
+	defer server.Close()
+	t.Setenv("SILICIUM_NODE_API_URL", server.URL)
 	t.Setenv("SILICIUM_SOLANA_RPC", "https://api.devnet.solana.com")
 	t.Setenv("SILICIUM_SOLANA_PROGRAM_ID", "program-id")
 
-	value := (&Handler{}).buildSystemStatus(context.Background(), peersPath, manifestPath, time.Now())
-	if value.Network.Peers != 3 || value.Network.ActivePeers != 2 || value.Network.OutdatedPeers != 1 {
+	value := (&Handler{}).buildSystemStatus(context.Background(), time.Now())
+	if value.Network.Peers != 3 || value.Network.ActivePeers != 2 || value.Network.ActiveTasks != 1 || value.Network.QueueDepth != 2 {
 		t.Fatalf("unexpected peer summary: %#v", value.Network)
 	}
 	if !value.Blockchain.Configured || value.Blockchain.Network != "devnet" {
@@ -52,16 +49,5 @@ func TestStatusCacheExpires(t *testing.T) {
 func TestSolanaNetworkIsUnknownWhenRPCIsNotConfigured(t *testing.T) {
 	if got := solanaNetwork(""); got != "unknown" {
 		t.Fatalf("expected unknown network without an RPC, got %q", got)
-	}
-}
-
-func writeStatusFixture(t *testing.T, path string, value any) {
-	t.Helper()
-	raw, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
-		t.Fatal(err)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/silicium/internal/release"
+	"github.com/silicium/internal/silicium"
 )
 
 const statusCacheLifetime = 5 * time.Second
@@ -78,7 +79,7 @@ func (h *Handler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	value := h.buildSystemStatus(r.Context(), networkPeersFile(), networkManifestFile(), now)
+	value := h.buildSystemStatus(r.Context(), now)
 	if h.status != nil {
 		h.status.put(value, now)
 	}
@@ -91,7 +92,7 @@ func writeStatus(w http.ResponseWriter, value systemStatus) {
 	writeJSON(w, http.StatusOK, value)
 }
 
-func (h *Handler) buildSystemStatus(ctx context.Context, peersPath, manifestPath string, now time.Time) systemStatus {
+func (h *Handler) buildSystemStatus(ctx context.Context, now time.Time) systemStatus {
 	value := systemStatus{
 		Status:    "operational",
 		CheckedAt: now.UTC(),
@@ -116,44 +117,27 @@ func (h *Handler) buildSystemStatus(ctx context.Context, peersPath, manifestPath
 		value.Status = "degraded"
 	}
 
-	payload, err := loadNetworkPeers(peersPath, manifestPath)
+	payload, err := silicium.ListControlPeers(ctx, silicium.ConfigFromEnv())
 	if err != nil {
 		value.Network.Status = "unavailable"
 		if value.Status == "operational" {
 			value.Status = "degraded"
 		}
 	} else {
-		peers, _ := payload["peers"].([]any)
+		peers, _ := payload["peers"].([]map[string]any)
 		value.Network.Peers = len(peers)
-		for _, raw := range peers {
-			peer, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
+		for _, peer := range peers {
 			status := strings.ToLower(stringField(peer, "status"))
 			online, hasOnline := peer["online"].(bool)
 			if status != "offline" && status != "disconnected" && (!hasOnline || online) {
 				value.Network.ActivePeers++
 			}
-			if outdated, _ := peer["outdated"].(bool); outdated {
-				value.Network.OutdatedPeers++
-			}
 		}
 		if metrics, ok := payload["metrics"].(map[string]any); ok {
-			value.Network.TelemetryNodes = int(networkInt64Value(metrics["telemetry_nodes"]))
+			value.Network.TelemetryNodes = value.Network.Peers
 			value.Network.ActiveTasks = int(networkInt64Value(metrics["active_tasks"]))
-			value.Network.QueueDepth = int(networkInt64Value(metrics["queue_depth"]))
-			value.Network.LogicalCPUCount = int(networkInt64Value(metrics["logical_cpu_count"]))
-			if metric, ok := networkFloatValue(metrics["system_cpu_percent"]); ok {
-				value.Network.SystemCPUPercent = metric
-			}
-			if metric, ok := networkFloatValue(metrics["system_memory_percent"]); ok {
-				value.Network.SystemMemoryPercent = metric
-			}
-			if metric, ok := networkFloatValue(metrics["storage_used_percent"]); ok {
-				value.Network.StorageUsedPercent = metric
-			}
-			value.Network.UpdatedAt = stringField(metrics, "updated_utc")
+			value.Network.QueueDepth = int(networkInt64Value(metrics["known_tasks"]))
+			value.Network.UpdatedAt = now.UTC().Format(time.RFC3339)
 		}
 		if value.Network.Peers == 0 || value.Network.ActivePeers == 0 {
 			value.Network.Status = "degraded"

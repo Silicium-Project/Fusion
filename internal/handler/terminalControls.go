@@ -95,7 +95,7 @@ func publishTerminalTaskControl(ctx context.Context, job models.Job, status, rea
 
 func (h *Handler) ReconcileTerminalJobControls(ctx context.Context) {
 	cfg := silicium.ConfigFromEnv()
-	roots, err := activeTaskRootIDs(cfg.OrchestratorExportDir)
+	roots, err := silicium.ActiveControlRootIDs(ctx, cfg)
 	if err != nil {
 		log.Printf("terminal task-control reconciliation skipped: %v", err)
 		return
