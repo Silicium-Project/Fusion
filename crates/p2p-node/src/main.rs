@@ -50,7 +50,7 @@ use crate::{
     },
     content::ContentStore,
     control::ControlRegistry,
-    processing::NodeContext,
+    processing::{NodeContext, profile_is_worker},
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
         P2pBehaviourEvent, TOPIC, build_swarm, publish_gossip, publish_hardware_record,
@@ -106,6 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         known_tasks: Default::default(),
         content: ContentStore::new(read_compute_root_from_env(), tx_content),
         connected_peers: Default::default(),
+        connected_workers: Default::default(),
         compute_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
             read_parallel_tasks_from_env(),
         )),
@@ -207,6 +208,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 context
                     .connected_peers
                     .store(swarm.connected_peers().count(), std::sync::atomic::Ordering::Relaxed);
+                let worker_count = peer_profiles
+                    .lock()
+                    .map(|profiles| {
+                        swarm
+                            .connected_peers()
+                            .filter(|peer_id| {
+                                profiles
+                                    .values()
+                                    .find(|profile| profile.peer_id == peer_id.to_string())
+                                    .map(profile_is_worker)
+                                    .unwrap_or(true)
+                            })
+                            .count()
+                    })
+                    .unwrap_or(0);
+                context.connected_workers.store(
+                    worker_count,
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 if let Ok(mut peers) = known_peers.lock() {
                     peers.clear();
                     peers.insert(local_peer_id.to_string());

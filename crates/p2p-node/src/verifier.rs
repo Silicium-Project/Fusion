@@ -3,8 +3,9 @@
 //! node, check that the milestones cover the task's region, re-render the
 //! milestones drawn from the acceptance hash and publish the verdict.
 //!
-//! A node offers to verify its own result only when it is alone on the
-//! network and the task terms allow it (otherwise nobody could ever verify).
+//! A node offers to verify its own result only when it is the only compute /
+//! verification peer on the network and the task terms allow it (the
+//! orchestrator/storage peer does not count as a worker).
 //!
 //! A verdict is only published when every sampled block could be rendered:
 //! if the local compute daemon fails, nothing is published and the
@@ -80,7 +81,7 @@ fn next_step(
 ) -> Option<Step> {
     let me = context.taskbook.author();
     let attempt = state.attempts.last()?;
-    let self_check_allowed = state.terms.allow_self_verification && context.is_alone();
+    let self_check_allowed = state.terms.allow_self_verification && context.is_only_worker();
     if state.status != DerivedTaskStatus::Completed
         || (attempt.claimant == me && !self_check_allowed)
     {

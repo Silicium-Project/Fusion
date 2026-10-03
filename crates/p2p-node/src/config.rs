@@ -229,9 +229,9 @@ pub(crate) fn read_compute_root_from_env() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("work"))
 }
 
-/// Whether tasks published by this node let a lone node verify its own
-/// results (`SILICIUM_ALLOW_SELF_VERIFICATION`, default on). The publisher
-/// only accepts a self-verification when it has no connected peer.
+/// Whether a lone compute/verification peer may verify its own result
+/// (`SILICIUM_ALLOW_SELF_VERIFICATION`, default on). Control-plane peers such
+/// as the orchestrator do not prevent this fallback.
 pub(crate) fn read_allow_self_verification_from_env() -> bool {
     !matches!(
         env::var("SILICIUM_ALLOW_SELF_VERIFICATION")
