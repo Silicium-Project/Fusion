@@ -94,7 +94,7 @@ func TestRunRaytracerSubmitsAndWaitsForRustNodeTask(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&submission); err != nil {
 				t.Fatal(err)
 			}
-			if submission.RootJobID != "render-1" || submission.ScenePath != inputPath {
+			if submission.RootJobID != "render-1" || submission.ScenePath != inputPath || submission.FragmentCount != 8 {
 				t.Fatalf("unexpected task submission %#v", submission)
 			}
 			if err := os.MkdirAll(filepath.Dir(submission.OutputPath), 0o750); err != nil {
@@ -117,6 +117,7 @@ func TestRunRaytracerSubmitsAndWaitsForRustNodeTask(t *testing.T) {
 	result := RunRaytracer(context.Background(), models.Job{
 		SiliciumJobID: "render-1",
 		InputPath:     inputPath,
+		FragmentCount: 8,
 	}, RunnerConfig{
 		NetworkRoot:        networkRoot,
 		WorkloadStorageDir: workloadRoot,

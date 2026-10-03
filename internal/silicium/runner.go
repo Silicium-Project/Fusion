@@ -142,6 +142,7 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 		ScenePath:     scenePath,
 		OutputPath:    outputPath,
 		Seed:          job.SiliciumJobID,
+		FragmentCount: job.FragmentCount,
 	})
 	if err != nil {
 		return RunResult{Status: "failed", ErrorMessage: "rust_node_submission_failed: " + err.Error()}

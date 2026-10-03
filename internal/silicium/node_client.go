@@ -40,6 +40,7 @@ type ControlTaskSubmission struct {
 	ScenePath     string   `json:"scene_path"`
 	OutputPath    string   `json:"output_path"`
 	Seed          string   `json:"seed"`
+	FragmentCount int      `json:"fragment_count,omitempty"`
 }
 
 type controlTasksResponse struct {
