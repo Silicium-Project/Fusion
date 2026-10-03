@@ -2,12 +2,12 @@
 //! and gossipsub carry) and [`GossipMessage`] (the gossipsub envelope).
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use silicium_node_core::{
     hardware::HardwareBucket,
     p2p::{Region, TaskEnvelope},
     taskbook::TaskEvent,
 };
-use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
     path::PathBuf,

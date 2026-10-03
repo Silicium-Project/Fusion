@@ -148,7 +148,7 @@ async fn submit_control_task(
             return api_error(
                 StatusCode::BAD_REQUEST,
                 "fragment_count must be between 1 and 256",
-            )
+            );
         }
         None => None,
     };
@@ -325,7 +325,10 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
         }));
         represented.insert(profile.peer_id.clone());
     }
-    for peer_id in connected.iter().filter(|peer_id| !represented.contains(*peer_id)) {
+    for peer_id in connected
+        .iter()
+        .filter(|peer_id| !represented.contains(*peer_id))
+    {
         peers.push(serde_json::json!({
             "node_id": peer_id,
             "peer_id": peer_id,

@@ -111,21 +111,26 @@ impl CompatibilityWriter {
                 })
             })
             .collect();
-        peer_rows.extend(peers.iter().filter(|peer| !represented.contains(*peer)).map(|peer| {
-            json!({
-                "node_id": peer,
-                "peer_id": peer,
-                "self": peer == &self.node_id,
-                "online": true,
-                "status": "connected",
-                "last_seen_unix": now,
-                "last_seen_utc": utc_now(),
-                "roles": self.roles.clone(),
-                "app_version": self.app_version.clone(),
-                "release_channel": self.release_channel.clone(),
-                "release_build": self.release_build.clone(),
-            })
-        }));
+        peer_rows.extend(
+            peers
+                .iter()
+                .filter(|peer| !represented.contains(*peer))
+                .map(|peer| {
+                    json!({
+                        "node_id": peer,
+                        "peer_id": peer,
+                        "self": peer == &self.node_id,
+                        "online": true,
+                        "status": "connected",
+                        "last_seen_unix": now,
+                        "last_seen_utc": utc_now(),
+                        "roles": self.roles.clone(),
+                        "app_version": self.app_version.clone(),
+                        "release_channel": self.release_channel.clone(),
+                        "release_build": self.release_build.clone(),
+                    })
+                }),
+        );
         let tasks = control.tasks_for_root(taskbook, None);
         let active = tasks.iter().filter(|task| is_active(&task.status)).count();
         let metrics = json!({
