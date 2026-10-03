@@ -114,9 +114,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::iter::once(local_peer_id.to_string()).collect(),
     ));
     let local_profile = local_peer_profile(&local_peer_id.to_string());
-    let peer_profiles = std::sync::Arc::new(std::sync::Mutex::new(BTreeMap::from([
-        (local_profile.node_id.clone(), local_profile),
-    ])));
+    let peer_profiles = std::sync::Arc::new(std::sync::Mutex::new(BTreeMap::from([(
+        local_profile.node_id.clone(),
+        local_profile,
+    )])));
     let control = ControlRegistry::open(data_dir.join("control.tasks.json"));
     let compatibility = CompatibilityWriter::new(&local_peer_id.to_string());
     let verifier_memory = verifier::VerifierMemory::default();
