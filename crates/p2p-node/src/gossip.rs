@@ -2,11 +2,21 @@
 //! (admitted, then handed to the worker).
 
 use crate::{
-    admission::SecurityConfig, backfill, processing::NodeContext, task::GossipMessage,
+    admission::SecurityConfig,
+    backfill,
+    processing::NodeContext,
+    task::{GossipMessage, PeerProfile, utc_now},
     worker::process_task,
 };
 use libp2p::{PeerId, gossipsub};
 use silicium_node_core::{p2p::TaskEnvelope, taskbook::TaskEvent};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+pub(crate) type PeerProfiles = Arc<Mutex<BTreeMap<String, PeerProfile>>>;
 
 /// Handles one gossip message; returns the messages to send back (stored
 /// events answering a backfill request).
@@ -16,11 +26,27 @@ pub(crate) fn handle(
     local_peer_id: PeerId,
     peer_id: PeerId,
     message: gossipsub::Message,
+    peer_profiles: &PeerProfiles,
 ) -> Vec<GossipMessage> {
     println!(" Received message from {peer_id}");
     match serde_json::from_slice::<GossipMessage>(&message.data) {
         Ok(GossipMessage::TaskEvent(event)) => {
             receive_event(context, peer_id, event);
+            Vec::new()
+        }
+        Ok(GossipMessage::PeerHeartbeat(mut profile)) => {
+            let expected_peer_id = peer_id.to_string();
+            if profile.peer_id.as_str() != expected_peer_id.as_str()
+                || profile.node_id.trim().is_empty()
+            {
+                println!(" Ignored invalid heartbeat from {peer_id}");
+                return Vec::new();
+            }
+            profile.last_seen_unix = unix_seconds();
+            profile.last_seen_utc = utc_now();
+            if let Ok(mut profiles) = peer_profiles.lock() {
+                profiles.insert(profile.node_id.clone(), profile);
+            }
             Vec::new()
         }
         Ok(GossipMessage::TaskEventsRequest {
@@ -57,6 +83,13 @@ pub(crate) fn handle(
             Vec::new()
         }
     }
+}
+
+fn unix_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
 }
 
 fn receive_event(context: &NodeContext, peer_id: PeerId, event: TaskEvent) {

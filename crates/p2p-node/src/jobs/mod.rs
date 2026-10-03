@@ -17,10 +17,10 @@ pub(crate) use store::JobStore;
 /// Suffix of a fragment task id; its width is reserved in job ids.
 pub(crate) const FRAGMENT_SUFFIX_EXAMPLE: &str = ".f000";
 /// Upper bound on fragments per job (three-digit suffix).
-const MAX_FRAGMENTS_LIMIT: usize = 256;
+pub(crate) const MAX_FRAGMENTS_LIMIT: usize = 256;
 
 /// How jobs are split (`SILICIUM_MAX_FRAGMENTS`,
-/// `SILICIUM_TARGET_PIXELS_PER_FRAGMENT`).
+/// `SILICIUM_TARGET_PIXELS_PER_FRAGMENT`, or a local requested count).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct JobSettings {
     pub(crate) max_fragments: usize,
@@ -97,12 +97,14 @@ pub(crate) fn split(
     if width > side || height > side {
         return None;
     }
-    let count = tiles::estimate_fragment_count(
-        width,
-        height,
-        settings.target_pixels,
-        settings.max_fragments.min(MAX_FRAGMENTS_LIMIT),
-    );
+    let count = task.requested_fragment_count.unwrap_or_else(|| {
+        tiles::estimate_fragment_count(
+            width,
+            height,
+            settings.target_pixels,
+            settings.max_fragments.min(MAX_FRAGMENTS_LIMIT),
+        )
+    });
     let tiles = tiles::split_tiles(width, height, count).ok()?;
     let mut fragments = Vec::with_capacity(tiles.len());
     let mut tasks = Vec::with_capacity(tiles.len());

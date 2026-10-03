@@ -8,6 +8,7 @@ use crate::{
     control::{ControlRegistry, ControlTask},
     jobs::{JobManifest, JobStore},
     storage::TaskBookState,
+    task::PeerProfile,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -65,8 +66,9 @@ impl CompatibilityWriter {
         taskbook: &TaskBookState,
         jobs: &JobStore,
         peers: &BTreeSet<String>,
+        profiles: &BTreeMap<String, PeerProfile>,
     ) {
-        self.write_peer_files(control, taskbook, peers);
+        self.write_peer_files(control, taskbook, peers, profiles);
         self.write_job_files(control, taskbook, jobs);
     }
 
@@ -75,26 +77,55 @@ impl CompatibilityWriter {
         control: &ControlRegistry,
         taskbook: &TaskBookState,
         peers: &BTreeSet<String>,
+        profiles: &BTreeMap<String, PeerProfile>,
     ) {
         let now = unix_seconds();
-        let peer_rows: Vec<Value> = peers
-            .iter()
-            .map(|peer| {
+        let mut represented = BTreeSet::new();
+        let mut peer_rows: Vec<Value> = profiles
+            .values()
+            .map(|profile| {
+                represented.insert(profile.peer_id.clone());
+                let is_self = profile.node_id == self.node_id;
+                let online = is_self || peers.contains(&profile.peer_id);
+                let telemetry = profile
+                    .activity
+                    .get("telemetry")
+                    .cloned()
+                    .unwrap_or(Value::Null);
                 json!({
-                    "node_id": peer,
-                    "peer_id": peer,
-                    "self": peer == &self.node_id,
-                    "online": true,
-                    "status": "connected",
-                    "last_seen_unix": now,
-                    "last_seen_utc": utc_now(),
-                    "roles": self.roles.clone(),
-                    "app_version": self.app_version.clone(),
-                    "release_channel": self.release_channel.clone(),
-                    "release_build": self.release_build.clone(),
+                    "node_id": profile.node_id,
+                    "peer_id": profile.peer_id,
+                    "self": is_self,
+                    "online": online,
+                    "status": if online { "connected" } else { "disconnected" },
+                    "last_seen_unix": profile.last_seen_unix,
+                    "last_seen_utc": profile.last_seen_utc,
+                    "roles": profile.roles,
+                    "app_version": profile.app_version,
+                    "release_channel": profile.release_channel,
+                    "release_build": profile.release_build,
+                    "capacity": profile.capacity,
+                    "activity": profile.activity,
+                    "task_queue": profile.task_queue,
+                    "telemetry": telemetry,
                 })
             })
             .collect();
+        peer_rows.extend(peers.iter().filter(|peer| !represented.contains(*peer)).map(|peer| {
+            json!({
+                "node_id": peer,
+                "peer_id": peer,
+                "self": peer == &self.node_id,
+                "online": true,
+                "status": "connected",
+                "last_seen_unix": now,
+                "last_seen_utc": utc_now(),
+                "roles": self.roles.clone(),
+                "app_version": self.app_version.clone(),
+                "release_channel": self.release_channel.clone(),
+                "release_build": self.release_build.clone(),
+            })
+        }));
         let tasks = control.tasks_for_root(taskbook, None);
         let active = tasks.iter().filter(|task| is_active(&task.status)).count();
         let metrics = json!({

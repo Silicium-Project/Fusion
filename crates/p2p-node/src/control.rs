@@ -39,6 +39,8 @@ pub(crate) struct Submission {
     pub(crate) output_path: String,
     #[serde(default)]
     pub(crate) seed: String,
+    #[serde(default)]
+    pub(crate) fragment_count: Option<usize>,
 }
 
 /// JSON-compatible task status returned to the BackEnd.

@@ -24,6 +24,7 @@ fn task() -> NetworkTask {
         runtime_image: None,
         scene_sha256: Some("b".repeat(64)),
         region: None,
+        requested_fragment_count: None,
     }
 }
 
@@ -81,6 +82,15 @@ fn a_whole_image_task_is_split_into_tiles_covering_the_image_once() {
         }
     }
     assert!(covered.iter().all(|count| *count == 1));
+}
+
+#[test]
+fn a_local_requested_fragment_count_overrides_estimation() {
+    let mut requested = task();
+    requested.requested_fragment_count = Some(8);
+    let (manifest, tasks) = split(&requested, SCENE, &settings()).unwrap();
+    assert_eq!(tasks.len(), 8);
+    assert_eq!(manifest.fragments.len(), 8);
 }
 
 #[test]

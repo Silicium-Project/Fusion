@@ -10,10 +10,10 @@ use crate::{
     admission::SecurityConfig,
     content::ContentStore,
     control::{ControlRegistry, ControlTask, Submission},
-    jobs::{FRAGMENT_SUFFIX_EXAMPLE, JobStore},
+    jobs::{FRAGMENT_SUFFIX_EXAMPLE, JobStore, MAX_FRAGMENTS_LIMIT},
     results::result_path,
     storage::TaskBookState,
-    task::NetworkTask,
+    task::{NetworkTask, PeerProfile, utc_now as task_utc_now},
 };
 use axum::{
     Router,
@@ -26,11 +26,13 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use silicium_node_core::{p2p::TaskEnvelope, taskbook::TaskEvent};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc;
+
+const PEER_STALE_AFTER_SECONDS: i64 = 15;
 
 #[derive(Clone)]
 pub(crate) struct ApiState {
@@ -42,6 +44,7 @@ pub(crate) struct ApiState {
     pub(crate) control: ControlRegistry,
     pub(crate) local_peer_id: String,
     pub(crate) peers: Arc<Mutex<BTreeSet<String>>>,
+    pub(crate) peer_profiles: Arc<Mutex<BTreeMap<String, PeerProfile>>>,
     pub(crate) security: Arc<SecurityConfig>,
 }
 
@@ -139,6 +142,16 @@ async fn submit_control_task(
     if !TaskEvent::is_valid_task_id(&format!("{}{FRAGMENT_SUFFIX_EXAMPLE}", owned_task_id)) {
         return api_error(StatusCode::BAD_REQUEST, "invalid task id");
     }
+    let requested_fragment_count = match submission.fragment_count {
+        Some(count) if (1..=MAX_FRAGMENTS_LIMIT).contains(&count) => Some(count),
+        Some(_) => {
+            return api_error(
+                StatusCode::BAD_REQUEST,
+                "fragment_count must be between 1 and 256",
+            )
+        }
+        None => None,
+    };
 
     let source = PathBuf::from(submission.scene_path.trim());
     // The node deliberately chooses a relative per-task output path during
@@ -183,6 +196,7 @@ async fn submit_control_task(
         return api_error(StatusCode::BAD_REQUEST, "invalid task envelope");
     };
     task.root_job_id = Some(root_job_id.to_string());
+    task.requested_fragment_count = requested_fragment_count;
     let required_roles = if submission.required_roles.is_empty() {
         vec!["compute".to_string(), "verify".to_string()]
     } else {
@@ -270,28 +284,64 @@ async fn cancel_control_workload(
 
 async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
     let now = unix_seconds();
-    let peers = state
+    let connected = state
         .peers
         .lock()
-        .map(|items| {
-            items
-                .iter()
-                .map(|peer_id| {
-                    serde_json::json!({
-                        "node_id": peer_id,
-                        "peer_id": peer_id,
-                        "self": peer_id == &state.local_peer_id,
-                        "online": true,
-                        "status": "connected",
-                        "last_seen_unix": now,
-                        "roles": roles(),
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
+        .map(|items| items.clone())
         .unwrap_or_default();
+    let profiles = state
+        .peer_profiles
+        .lock()
+        .map(|items| items.clone())
+        .unwrap_or_default();
+    let mut peers = Vec::new();
+    let mut represented = BTreeSet::new();
+    for profile in profiles.values() {
+        let is_self = profile.peer_id == state.local_peer_id;
+        let online = is_self
+            || (connected.contains(&profile.peer_id)
+                && now.saturating_sub(profile.last_seen_unix) <= PEER_STALE_AFTER_SECONDS);
+        let telemetry = profile
+            .activity
+            .get("telemetry")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        peers.push(serde_json::json!({
+            "node_id": profile.node_id,
+            "peer_id": profile.peer_id,
+            "self": is_self,
+            "online": online,
+            "status": if online { "connected" } else { "disconnected" },
+            "last_seen_unix": profile.last_seen_unix,
+            "last_seen_utc": profile.last_seen_utc,
+            "roles": profile.roles,
+            "app_version": profile.app_version,
+            "release_channel": profile.release_channel,
+            "release_build": profile.release_build,
+            "capacity": profile.capacity,
+            "activity": profile.activity,
+            "task_queue": profile.task_queue,
+            "telemetry": telemetry,
+        }));
+        represented.insert(profile.peer_id.clone());
+    }
+    for peer_id in connected.iter().filter(|peer_id| !represented.contains(*peer_id)) {
+        peers.push(serde_json::json!({
+            "node_id": peer_id,
+            "peer_id": peer_id,
+            "self": peer_id == &state.local_peer_id,
+            "online": true,
+            "status": "connected",
+            "last_seen_unix": now,
+            "last_seen_utc": task_utc_now(),
+            "roles": roles(),
+        }));
+    }
     let tasks = state.control.tasks_for_root(&state.taskbook, None);
-    let peer_count = peers.len();
+    let peer_count = peers
+        .iter()
+        .filter(|peer| peer["online"].as_bool().unwrap_or(false))
+        .count();
     (
         StatusCode::OK,
         Json(serde_json::json!({

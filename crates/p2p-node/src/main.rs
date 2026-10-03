@@ -56,7 +56,7 @@ use crate::{
         P2pBehaviourEvent, TOPIC, build_swarm, publish_gossip, publish_hardware_record,
         publish_taskbook_event,
     },
-    task::{GossipMessage, NetworkTask},
+    task::{GossipMessage, NetworkTask, local_peer_profile},
 };
 use futures::prelude::*;
 use libp2p::{PeerId, gossipsub, identify, mdns, swarm::SwarmEvent};
@@ -113,6 +113,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let known_peers = std::sync::Arc::new(std::sync::Mutex::new(
         std::iter::once(local_peer_id.to_string()).collect(),
     ));
+    let local_profile = local_peer_profile(&local_peer_id.to_string());
+    let peer_profiles = std::sync::Arc::new(std::sync::Mutex::new(
+        BTreeMap::from([(local_profile.node_id.clone(), local_profile)]),
+    ));
     let control = ControlRegistry::open(data_dir.join("control.tasks.json"));
     let compatibility = CompatibilityWriter::new(&local_peer_id.to_string());
     let verifier_memory = verifier::VerifierMemory::default();
@@ -157,6 +161,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     publish_hardware_record(&mut swarm, &context);
+    publish_gossip(
+        &mut swarm,
+        &topic,
+        &GossipMessage::PeerHeartbeat(local_peer_profile(&local_peer_id.to_string())),
+    );
 
     let (tx_publish, mut rx_publish) = mpsc::channel(32);
     let api_state = ApiState {
@@ -168,6 +177,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tx_events: context.tx_events.clone(),
         local_peer_id: local_peer_id.to_string(),
         peers: known_peers.clone(),
+        peer_profiles: peer_profiles.clone(),
         security: security.clone(),
     };
     let app = api::router(api_state);
@@ -184,6 +194,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dispatcher = Dispatcher::with_seed(context.dispatcher_seed);
     let mut pending = Vec::<NetworkTask>::new();
     let mut sweep_timer = tokio::time::interval(Duration::from_secs(1));
+    let mut presence_timer = tokio::time::interval(Duration::from_secs(5));
     let mut regossiped = BTreeSet::new();
     let mut gap_requests = BTreeMap::new();
     let mut fetcher = fetch::Fetcher::default();
@@ -212,11 +223,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pending.retain(|task| !outcome.finished.contains(&task.task_id));
                 collector.collect(&context, &outcome.finished);
                 if let Ok(peers) = known_peers.lock() {
-                    compatibility.refresh(&control, &taskbook, &jobs, &peers);
+                    let profiles = peer_profiles
+                        .lock()
+                        .map(|items| items.clone())
+                        .unwrap_or_default();
+                    compatibility.refresh(&control, &taskbook, &jobs, &peers, &profiles);
                 }
                 for (author, after_sequence) in backfill::requests_for_gaps(&taskbook, &mut gap_requests) {
                     publish_gossip(&mut swarm, &topic, &GossipMessage::TaskEventsRequest { author, after_sequence });
                 }
+            }
+            _ = presence_timer.tick() => {
+                let profile = local_peer_profile(&local_peer_id.to_string());
+                if let Ok(mut profiles) = peer_profiles.lock() {
+                    profiles.insert(profile.node_id.clone(), profile.clone());
+                }
+                publish_gossip(
+                    &mut swarm,
+                    &topic,
+                    &GossipMessage::PeerHeartbeat(profile),
+                );
             }
             Some(event) = rx_events.recv() => {
                 publish_taskbook_event(&mut swarm, &topic, &event);
@@ -262,7 +288,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     ..
                 })) => {
                     println!(" Received message from {peer_id}");
-                    let replies = gossip::handle(&context, &security, local_peer_id, peer_id, message);
+                    let replies = gossip::handle(
+                        &context,
+                        &security,
+                        local_peer_id,
+                        peer_id,
+                        message,
+                        &peer_profiles,
+                    );
                     for reply in &replies {
                         publish_gossip(&mut swarm, &topic, reply);
                     }
