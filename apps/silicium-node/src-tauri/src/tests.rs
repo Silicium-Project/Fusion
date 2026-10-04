@@ -28,15 +28,6 @@ fn crate_source() -> String {
     .concat()
 }
 
-#[cfg(target_os = "linux")]
-fn write_test_rust_runtime(network: &Path) {
-    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
-    let bin = network.join("bin");
-    fs::create_dir_all(&bin).unwrap();
-    fs::write(bin.join(format!("p2p_node{suffix}")), b"node").unwrap();
-    fs::write(bin.join(format!("compute_daemon{suffix}")), b"compute").unwrap();
-}
-
 #[test]
 fn node_id_is_safe_for_files_and_service_config() {
     assert_eq!(
@@ -138,7 +129,7 @@ fn linux_bundles_accept_tauri_product_name_resource_directory() {
         .join("Network");
     let _ = fs::remove_dir_all(&app_dir);
     fs::create_dir_all(&runtime).unwrap();
-    write_test_rust_runtime(&runtime);
+    fs::write(runtime.join("silicium"), b"#!/usr/bin/env python3\n").unwrap();
 
     let candidates = packaged_runtime_candidates(
         Path::new("/opt/silicium/usr/bin/silicium-node"),
@@ -170,7 +161,7 @@ fn linux_appimage_wrapper_ancestors_find_product_runtime_without_appdir() {
         .join("Network");
     let _ = fs::remove_dir_all(&app_dir);
     fs::create_dir_all(&runtime).unwrap();
-    write_test_rust_runtime(&runtime);
+    fs::write(runtime.join("silicium"), b"#!/usr/bin/env python3\n").unwrap();
 
     let candidates = packaged_runtime_candidates(&app_dir.join("AppRun.wrapped"), None);
 
@@ -192,11 +183,11 @@ fn packaged_runtime_requires_the_network_launcher() {
         validate_repo_root(&directory).unwrap_err(),
         "network_runtime_not_found"
     );
-    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
-    let bin = directory.join("Network").join("bin");
-    fs::create_dir_all(&bin).unwrap();
-    fs::write(bin.join(format!("p2p_node{suffix}")), b"node").unwrap();
-    fs::write(bin.join(format!("compute_daemon{suffix}")), b"compute").unwrap();
+    fs::write(
+        directory.join("Network").join("silicium"),
+        b"#!/usr/bin/env python3\n",
+    )
+    .unwrap();
     assert!(validate_repo_root(&directory).is_ok());
     fs::remove_dir_all(directory).unwrap();
 }
@@ -317,7 +308,7 @@ fn readiness_requires_the_integrated_network_health_response() {
         let _ = stream.read(&mut request);
         stream
             .write_all(
-                b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"ok\",\"service\":\"p2p_node\"}",
+                b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"ok\":true,\"service\":\"network_node\"}",
             )
             .unwrap();
     });

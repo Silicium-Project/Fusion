@@ -165,7 +165,7 @@ if [[ -z "$orchestrator_health" ]]; then
   journalctl -u "$ORCHESTRATOR_UNIT" --no-pager -n 100 >&2 || true
   exit 1
 fi
-if [[ "$orchestrator_health" != *'"service":"p2p_node"'* ]]; then
+if [[ "$orchestrator_health" != *'"service":"network_node"'* ]]; then
   echo "The integrated network node is not serving the orchestrator port: $orchestrator_health" >&2
   exit 1
 fi
@@ -344,7 +344,7 @@ if ! public_health="$(curl -fsS --max-time 12 "${public_tls_args[@]}" "${public_
   fi
   exit 28
 fi
-if [[ "$public_health" != *'"service":"p2p_node"'* ]]; then
+if [[ "$public_health" != *'"service":"network_node"'* ]]; then
   echo "The public route does not reach the integrated network node: $public_health" >&2
   exit 1
 fi
