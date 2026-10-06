@@ -12,11 +12,12 @@
       <div class="job-form__grid">
         <label class="field job-form__wide"><span>Nom du projet</span><input v-model.trim="form.title" class="input" maxlength="120" required placeholder="Ex. Rendu intérieur — version 4"></label>
         <label class="field job-form__wide"><span>Description <small>facultative</small></span><textarea v-model.trim="form.description" class="textarea" maxlength="1000" placeholder="Contexte, version ou objectif de ce calcul"></textarea></label>
+        <label class="field job-form__wide"><span>Type de calcul</span><select v-model="form.workload" class="select"><option v-for="item in workloads" :key="item.id" :value="item.id">{{ item.label }}</option></select><small>{{ selectedWorkload.hint }}</small></label>
       </div>
       <label class="job-drop" :class="{ 'job-drop--ready': file }">
-        <input type="file" required accept=".cfg,.scene,.txt,text/plain" @change="onFile">
+        <input type="file" required :accept="selectedWorkload.accept" @change="onFile">
         <span class="job-drop__icon"><UiIcon :name="file ? 'check' : 'upload'"/></span>
-        <span><strong>{{ file ? file.name : 'Ajouter le fichier d’entrée' }}</strong><small>{{ file ? fileSize : 'CFG, SCENE ou texte · 16 Mo maximum' }}</small></span>
+        <span><strong>{{ file ? file.name : 'Ajouter le fichier d’entrée' }}</strong><small>{{ file ? fileSize : `${selectedWorkload.fileHint} · 16 Mo maximum` }}</small></span>
         <span class="job-drop__action">{{ file ? 'Remplacer' : 'Parcourir' }}</span>
       </label>
     </section>
@@ -39,7 +40,7 @@
       <div class="review-card">
         <div><span>Projet</span><strong>{{ form.title || 'Sans nom' }}</strong><small>{{ form.description || 'Aucune description' }}</small></div>
         <div><span>Fichier</span><strong>{{ file?.name || 'Aucun fichier' }}</strong><small>{{ fileSize }}</small></div>
-        <div><span>Exécution</span><strong>Rendu d’image</strong><small>{{ form.fragmentCount }} parties · {{ runtimeLabel }} maximum</small></div>
+        <div><span>Exécution</span><strong>{{ selectedWorkload.label }}</strong><small>{{ form.fragmentCount }} parties · {{ runtimeLabel }} maximum</small></div>
       </div>
       <UiNotice title="Après le lancement">Le projet apparaîtra immédiatement dans vos projets avec son état de préparation.</UiNotice>
     </section>
@@ -66,6 +67,12 @@ const step = ref(1);
 const file = ref<File | null>(null);
 const localError = ref('');
 const form = reactive({ title: '', description: '', workload: 'raytracer', priority: 'normal', fragmentCount: 64, maxRuntimeSeconds: 3600 });
+/** Workloads the Rust node runs (BackEnd `ValidateWorkload`). */
+const workloads = [
+  { id: 'raytracer', label: 'Rendu d’image', hint: 'Une scène découpée en tuiles, rendues et vérifiées par les machines du réseau.', accept: '.cfg,.scene,.txt,text/plain', fileHint: 'CFG, SCENE ou texte' },
+  { id: 'calcul/integrity/sha256', label: 'Empreinte SHA-256', hint: 'Le fichier est découpé en morceaux ; chaque morceau est haché puis vérifié par une autre machine.', accept: '', fileHint: 'Tout type de fichier' },
+];
+const selectedWorkload = computed(() => workloads.find((item) => item.id === form.workload) || workloads[0]);
 const steps = [{ number: 1, title: 'Fichier', detail: 'Entrée du projet' }, { number: 2, title: 'Options', detail: 'Configuration' }, { number: 3, title: 'Lancer', detail: 'Vérification' }];
 const stepOneReady = computed(() => Boolean(form.title.trim() && file.value && !localError.value));
 const runtimeLabel = computed(() => form.maxRuntimeSeconds < 3600 ? `${Math.round(form.maxRuntimeSeconds / 60)} min` : `${(form.maxRuntimeSeconds / 3600).toFixed(form.maxRuntimeSeconds % 3600 ? 1 : 0)} h`);
