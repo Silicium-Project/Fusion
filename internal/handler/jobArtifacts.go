@@ -54,8 +54,12 @@ func raytracerJobDirectories(job models.Job) []string {
 	if strings.TrimSpace(job.SummaryPath) != "" {
 		candidates = append(candidates, filepath.Dir(job.SummaryPath))
 	}
+	storageDir, ok := silicium.JobStorageDir(job.Workload)
+	if !ok {
+		storageDir = "raytracer"
+	}
 	candidates = append(candidates,
-		filepath.Join(storageRoot, "raytracer", job.SiliciumJobID),
+		filepath.Join(storageRoot, storageDir, job.SiliciumJobID),
 		// Compatibility with the release that passed the generic workload
 		// root directly to run_network_job.py.
 		filepath.Join(storageRoot, job.SiliciumJobID),
@@ -107,8 +111,10 @@ func jobArtifactPath(jobDir string, values ...any) string {
 	)...)
 }
 
+// refreshRaytracerArtifacts records the summary and result the Rust node
+// wrote for a job of any workload it runs (the name predates sha256).
 func (h *Handler) refreshRaytracerArtifacts(job models.Job) models.Job {
-	if strings.TrimSpace(job.Workload) != "raytracer" {
+	if _, ok := silicium.JobStorageDir(job.Workload); !ok {
 		return job
 	}
 	if regularFile(job.ResultPath) && regularFile(job.SummaryPath) {
@@ -157,7 +163,7 @@ func (h *Handler) refreshRaytracerArtifacts(job models.Job) models.Job {
 }
 
 func progressPathForJob(job models.Job) string {
-	if strings.TrimSpace(job.Workload) == "raytracer" {
+	if _, ok := silicium.JobStorageDir(job.Workload); ok {
 		directories := raytracerJobDirectories(job)
 		for _, directory := range directories {
 			candidate := filepath.Join(directory, "raytracer-progress.json")

@@ -144,6 +144,26 @@ func TestBoundedQueryInt(t *testing.T) {
 	}
 }
 
+// The Rust node projects sha256 jobs under sha256/<job>/.
+func TestProgressPathFollowsTheJobWorkload(t *testing.T) {
+	networkRoot := t.TempDir()
+	workloadRoot := t.TempDir()
+	t.Setenv("SILICIUM_NETWORK_ROOT", networkRoot)
+	t.Setenv("SILICIUM_WORKLOAD_STORAGE_DIR", workloadRoot)
+	job := models.Job{Workload: "calcul/integrity/sha256", SiliciumJobID: "site-render-43"}
+
+	canonical := filepath.Join(workloadRoot, "sha256", job.SiliciumJobID, "raytracer-progress.json")
+	if err := os.MkdirAll(filepath.Dir(canonical), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(canonical, []byte(`{"stage":"computing","fragments":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := progressPathForJob(job); got != canonical {
+		t.Fatalf("progress path = %q, want %q", got, canonical)
+	}
+}
+
 func TestProgressPathUsesConfiguredWorkloadStorage(t *testing.T) {
 	networkRoot := t.TempDir()
 	workloadRoot := t.TempDir()

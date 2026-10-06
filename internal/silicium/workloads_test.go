@@ -80,3 +80,14 @@ func TestRunJobRefusesAnUnknownWorkload(t *testing.T) {
 		t.Fatalf("unexpected result %#v", result)
 	}
 }
+
+func TestJobStorageDirFollowsTheNodeLayout(t *testing.T) {
+	for workload, want := range map[string]string{"": "raytracer", "raytracer": "raytracer", "calcul/hash/sha256": "sha256"} {
+		if got, ok := JobStorageDir(workload); !ok || got != want {
+			t.Fatalf("JobStorageDir(%q) = %q, %v; want %q", workload, got, ok, want)
+		}
+	}
+	if _, ok := JobStorageDir("calcul/unknown"); ok {
+		t.Fatal("unknown workload has a storage directory")
+	}
+}

@@ -171,7 +171,7 @@ func runNodeJob(ctx context.Context, job models.Job, cfg RunnerConfig, spec work
 		}
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
 	}
-	result := RunResult{Status: "completed", ResultPath: outputPath, ComputeReceiptHash: task.ResultHash}
+	result := RunResult{Status: "completed", ResultPath: outputPath, SummaryPath: summaryPath, ComputeReceiptHash: task.ResultHash}
 	return validateRaytracerCompletion(result)
 }
 

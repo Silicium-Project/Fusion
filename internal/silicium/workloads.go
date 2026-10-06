@@ -54,3 +54,10 @@ func ValidateWorkload(workload string) error {
 	}
 	return errors.New("unsupported workload")
 }
+
+// JobStorageDir returns the directory, under the workload storage root, where
+// the Rust node projects the jobs of `workload` (progress, summary, result).
+func JobStorageDir(workload string) (string, bool) {
+	spec, ok := workloadSpecFor(workload)
+	return spec.StorageDir, ok
+}
