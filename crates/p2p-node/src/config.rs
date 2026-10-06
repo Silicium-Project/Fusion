@@ -48,6 +48,22 @@ pub(crate) fn parse_peer_ids(value: &str) -> Vec<PeerId> {
         .collect()
 }
 
+/// Peer ids pinned in bootstrap addresses (`.../p2p/<peer id>`). The node
+/// already trusts its bootstrap peer as its entry point, and the Noise
+/// handshake proves that identity, so the orchestrator named this way is a
+/// trusted publisher without a separate `SILICIUM_TRUSTED_PUBLISHERS`.
+pub(crate) fn bootstrap_peer_ids(addresses: &[Multiaddr]) -> Vec<PeerId> {
+    addresses
+        .iter()
+        .filter_map(|address| {
+            address.iter().find_map(|protocol| match protocol {
+                libp2p::multiaddr::Protocol::P2p(peer_id) => Some(peer_id),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn parse_bootstrap_peer(value: &str) -> Vec<Multiaddr> {
     value
         .split(',')
@@ -299,6 +315,8 @@ impl NodeConfig {
         let overrides = parse_node_cli_args(env::args().skip(1));
         let bootstrap_peers =
             merge_bootstrap_peers(read_bootstrap_peers_from_env(), overrides.bootstrap_peers);
+        let mut trusted_publishers = overrides.trusted_publishers;
+        trusted_publishers.extend(bootstrap_peer_ids(&bootstrap_peers));
 
         Self {
             bootstrap_peers,
@@ -312,7 +330,7 @@ impl NodeConfig {
             dispatcher_seed: overrides
                 .dispatcher_seed
                 .unwrap_or_else(read_dispatcher_seed_from_env),
-            security: SecurityConfig::from_env(overrides.trusted_publishers),
+            security: SecurityConfig::from_env(trusted_publishers),
         }
     }
 }
@@ -351,6 +369,16 @@ mod tests {
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()
             .expect("env test lock")
+    }
+
+    #[test]
+    fn bootstrap_peers_with_a_pinned_id_are_trusted_publishers() {
+        let orchestrator = PeerId::random();
+        let addresses = parse_bootstrap_peer(&format!(
+            "/ip4/10.77.0.1/tcp/46201/p2p/{orchestrator},/ip4/10.77.0.2/tcp/46201"
+        ));
+        assert_eq!(addresses.len(), 2);
+        assert_eq!(bootstrap_peer_ids(&addresses), vec![orchestrator]);
     }
 
     #[test]

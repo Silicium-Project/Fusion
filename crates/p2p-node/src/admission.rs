@@ -1,8 +1,11 @@
 //! Which tasks this node accepts, from the network and from its local API.
 //!
 //! - A task published on gossipsub is executed only if its (signed) source is
-//!   a trusted publisher; `SILICIUM_ACCEPT_UNTRUSTED_TASKS=1` lifts that for
-//!   local test networks.
+//!   a trusted publisher: `SILICIUM_TRUSTED_PUBLISHERS`, `--trusted-publisher`,
+//!   or a peer id pinned in a bootstrap address (`.../p2p/<peer id>`).
+//!   `SILICIUM_ACCEPT_UNTRUSTED_TASKS=1` lifts that for local test networks
+//!   only: the node refuses to start with it on the `dev` and `prod` release
+//!   channels, where any peer of the topic could otherwise run tasks.
 //! - Every task is sanitized ([`TaskEnvelope::sanitize_remote`]): no Docker
 //!   image, working directory or environment from the publisher, paths kept
 //!   relative to the node's work directory, output path chosen locally.
@@ -72,6 +75,22 @@ impl SecurityConfig {
                 .and_then(|value| value.trim().parse().ok())
                 .unwrap_or(defaults.compute_timeout_s),
         }
+    }
+
+    /// Accepting tasks from any peer is for local test networks only: it is
+    /// refused on the released channels (`SILICIUM_RELEASE_CHANNEL` `dev` or
+    /// `prod`).
+    pub(crate) fn check_untrusted_tasks(&self, release_channel: &str) -> Result<(), String> {
+        let released = matches!(release_channel.trim(), "dev" | "prod");
+        if self.accept_untrusted_tasks && released {
+            return Err(format!(
+                "SILICIUM_ACCEPT_UNTRUSTED_TASKS is refused on the {} channel: pin the \
+                 orchestrator in the bootstrap address (/p2p/<peer id>) or set \
+                 SILICIUM_TRUSTED_PUBLISHERS",
+                release_channel.trim()
+            ));
+        }
+        Ok(())
     }
 
     /// The API must not be reachable from other machines without a token.
@@ -183,6 +202,23 @@ mod tests {
             ..envelope()
         };
         assert!(config.admit_local(docker).is_err());
+    }
+
+    #[test]
+    fn untrusted_tasks_are_refused_on_released_channels() {
+        let open = SecurityConfig {
+            accept_untrusted_tasks: true,
+            ..SecurityConfig::default()
+        };
+        assert!(open.check_untrusted_tasks("dev").is_err());
+        assert!(open.check_untrusted_tasks("prod").is_err());
+        assert!(open.check_untrusted_tasks("local").is_ok());
+        assert!(open.check_untrusted_tasks("").is_ok());
+        assert!(
+            SecurityConfig::default()
+                .check_untrusted_tasks("prod")
+                .is_ok()
+        );
     }
 
     #[test]

@@ -19,17 +19,25 @@ uniquement un outil de migration et de comparaison.
   - **éditeur** (`src/publisher/`, toutes les secondes) : accepte la
     meilleure proposition pour la tentative ouverte et le meilleur
     vérificateur (réputation dérivée du journal, puis ancienneté), réannonce
-    la tâche quand une nouvelle tentative s'ouvre (bail expiré, retrait,
-    rejet), finalise le résultat ;
-  - **vérificateur** (`src/verifier.rs`, toutes les secondes) : pour un
+    la tâche toutes les 10 s tant que personne ne la prend ou ne propose de
+    la vérifier (workers arrivés après la publication, nouvelle tentative
+    après un bail expiré, un retrait ou un rejet), finalise le résultat ;
+  - **vérificateur** (`src/verifier.rs`, toutes les secondes, nœuds au rôle
+    `verify` seulement) : pour un
     résultat d'un autre nœud en attente de vérification, propose de le
     vérifier ; une fois accepté par l'éditeur, contrôle que les jalons
     couvrent toute l'image, recalcule via le compute-daemon les blocs tirés
     au sort à partir de l'acceptation et publie son verdict (aucun verdict si
     le rendu local échoue : le créneau se libère pour un autre vérificateur) ;
-  - **nœud seul** : quand il n'a aucun pair connecté, un nœud peut vérifier
-    son propre résultat (condition `allow_self_verification` signée par
-    l'éditeur, active par défaut) ; c'est moins fort qu'une vérification
+  - **worker seul** (`src/peers.rs`) : quand un seul nœud compute/verify est
+    sur le réseau, il peut vérifier son propre résultat (condition
+    `allow_self_verification` signée par l'éditeur, active par défaut).
+    L'orchestrateur (rôles `resource`/`storage`) ne compte pas comme worker ;
+    un pair dont le heartbeat n'est pas encore arrivé compte comme worker. Le
+    worker ne propose de se vérifier que s'il ne voit aucun autre worker, et
+    l'éditeur n'accepte cette offre que si le demandeur est le seul worker
+    qu'il voit (lui compris). Dès qu'un deuxième worker est présent, la
+    vérification doit venir de lui. C'est moins fort qu'une vérification
     indépendante, et jamais rémunéré ;
   - **contenus** (`src/content.rs`, `src/fetch/`) : scènes et images de
     résultat sont rangées par hash sous `content/<sha256>` dans le dossier de
@@ -49,8 +57,8 @@ uniquement un outil de migration et de comparaison.
     pour les autres nœuds ;
   - **ses propres tâches** : l'éditeur calcule aussi ses tuiles
     (`SILICIUM_WORK_OWN_TASKS`), mais n'accepte sa propre proposition que si
-    personne d'autre ne s'est proposé, et seulement s'il est seul ou après
-    5 s d'attente ;
+    personne d'autre ne s'est proposé, et seulement s'il ne voit aucun autre
+    worker ou après 5 s d'attente ;
   - **résultats** (`src/results.rs`) : le worker publie son image sous
     `content://<sha256>` ; une fois la tâche finalisée, l'éditeur la
     télécharge, vérifie que chaque jalon approuvé par les vérificateurs
@@ -76,7 +84,8 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_P2P_PORT` / `--p2p-port` | `0` | Port TCP/QUIC libp2p (`0` = éphémère) |
 | `SILICIUM_API_BIND` | `127.0.0.1` | Adresse d'écoute de l'API ; hors loopback, le jeton est obligatoire |
 | `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton `Authorization: Bearer` exigé par `/publish` et `/tasks` (pas `/health`) |
-| `SILICIUM_TRUSTED_PUBLISHERS` / `--trusted-publisher` | — | Peer ids dont les tâches sont exécutées ; sans liste, les tâches des autres pairs sont ignorées |
+| `SILICIUM_TRUSTED_PUBLISHERS` / `--trusted-publisher` | — | Peer ids dont les tâches sont exécutées, en plus des pairs d'amorçage dont l'adresse se termine par `/p2p/<peer id>` ; sans éditeur de confiance, les tâches des autres pairs sont ignorées |
+| `SILICIUM_NODE_ROLES` | `compute,verify` | Rôles du nœud : `compute` prend des tâches, `verify` vérifie ; `resource`/`storage` (orchestrateur) ne sont pas des workers |
 | `SILICIUM_COMPUTE_ROOT` | `$SILICIUM_DATA_DIR/work` | Dossier de travail partagé avec le compute-daemon (`content/`, `results/`) |
 | `SILICIUM_MAX_FRAGMENTS` | `32` | Tuiles par job au plus (256 au maximum) |
 | `SILICIUM_TARGET_PIXELS_PER_FRAGMENT` | `120000` | Taille visée d'une tuile, en pixels |
@@ -84,12 +93,12 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_WORK_OWN_TASKS` | `1` | `0` : ne pas calculer les tâches publiées par ce nœud (éditeur sans compute-daemon) |
 | `SILICIUM_ALLOW_SELF_VERIFICATION` | `1` | `0` : interdire l'auto-vérification quand ce nœud est le seul pair compute/verify (l'orchestrateur ne compte pas) |
 | `SILICIUM_VERIFICATIONS_REQUIRED` | `1` | Vérifications par un autre pair exigées sur les tâches publiées par ce nœud (0 : résultat finalisé sans vérification) |
-| `SILICIUM_ACCEPT_UNTRUSTED_TASKS` | `0` | `1` : exécuter les tâches de n'importe quel pair (réseau de test uniquement) |
+| `SILICIUM_ACCEPT_UNTRUSTED_TASKS` | `0` | `1` : exécuter les tâches de n'importe quel pair (réseau de test local uniquement : le nœud refuse de démarrer avec `SILICIUM_RELEASE_CHANNEL` `dev` ou `prod`) |
 | `SILICIUM_ALLOW_REMOTE_WASM` | `0` | `1` : autoriser une tâche à lancer un module WASM du dossier de travail (jamais d'image Docker) |
 | `SILICIUM_COMPUTE_TIMEOUT_S` | `300` | Borne d'un appel au compute-daemon (+ 30 s) |
 | `SILICIUM_COMPUTE_TOKEN` | — | Jeton envoyé au compute-daemon s'il en exige un |
 | `SILICIUM_DATA_DIR` / `--data-dir` | `/data` | Identité et journal de tâches |
-| `SILICIUM_BOOTSTRAP_PEERS` / `--bootstrap-peers` | — | Multiaddr des pairs d'amorçage, séparées par des virgules |
+| `SILICIUM_BOOTSTRAP_PEERS` / `--bootstrap-peers` | — | Multiaddr des pairs d'amorçage, séparées par des virgules ; avec `/p2p/<peer id>`, l'identité est vérifiée à la connexion et ce pair devient éditeur de confiance |
 | `SILICIUM_EXPORT_DIR` | — | Export des pairs, heartbeat et métriques du BackEnd |
 | `SILICIUM_WORKLOAD_STORAGE_DIR` | — | Projections `raytracer-progress.json` et résumé |
 | `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton de l'API `/v1` quand elle écoute hors loopback |
@@ -118,7 +127,8 @@ finaliser ou annuler ces tâches.
 | `src/main.rs` | Démarrage et boucle d'événements (API → réseau, minuterie de l'éditeur, gossipsub, contenus) |
 | `src/gossip.rs` | Messages reçus : événements du journal, demandes de rattrapage, tâches |
 | `src/worker.rs` | Rôle worker : proposition, attente d'acceptation, bail, résultat ou retrait |
-| `src/publisher/` | Rôle éditeur : acceptation (réputation, ancienneté), auto-vérification d'un nœud seul, réannonce, finalisation ; tests dans `tests.rs` |
+| `src/publisher/` | Rôle éditeur : acceptation (réputation, ancienneté), auto-vérification d'un worker seul, réannonce (`announce.rs`), finalisation ; tests dans `tests.rs` |
+| `src/peers.rs` | Rôles du nœud, workers connectés, règle du worker seul |
 | `src/content.rs` | Magasin de contenus par hash (scènes, images), commandes vers la boucle |
 | `src/fetch/` | Téléchargement entre pairs : fournisseurs DHT, requête-réponse, service ; test à deux nœuds dans `tests.rs` |
 | `src/jobs/` | Découpage d'un job en tuiles, manifestes sur disque, réassemblage ; tests dans `tests.rs` |

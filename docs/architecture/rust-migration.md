@@ -21,7 +21,7 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 | Découpage d'un job en fragments | oui | oui : tuiles publiées comme tâches `<job>.f<NNN>`, réassemblage et PNG chez l'éditeur (`p2p-node/src/jobs/`) |
 | Attribution d'une tâche à un seul nœud (claim, bail, retry) | oui | oui : journal de tâches v2 (`node-core::taskbook`) — l'éditeur accepte une proposition, bail renouvelable, nouvelles tentatives, facturation dérivée |
 | Transfert des entrées / résultats entre pairs | blobs par `content_id` | oui : contenus par SHA-256, fournisseurs DHT + requête-réponse libp2p (`p2p-node/src/fetch/`), image finale contrôlée contre les jalons |
-| Vérification par un autre pair | oui | oui : vérificateur accepté par l'éditeur, recalcul des jalons tirés au sort ; auto-vérification d'un nœud seul |
+| Vérification par un autre pair | oui | oui : vérificateur accepté par l'éditeur, recalcul des jalons tirés au sort ; auto-vérification d'un worker seul (l'orchestrateur ne compte pas) |
 | Réassemblage, reçus, facturation | oui | réassemblage et PNG branchés dans le nœud ; facturation dérivée du journal de tâches ; reçus Solana non |
 | NAT : connexion directe + relais | ICE, punch UDP, relais HTTP, TURN | AutoNAT + relais serveur seulement |
 | API de contrôle pour le BackEnd | `/gossip/publish` + fichiers | `/publish`, `/tasks/{id}` (sans authentification) |
@@ -33,7 +33,7 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 | 1 | Une tâche reçue par gossip pouvait fixer `runtime_image`, `runtime_workdir` et `runtime_env` (image Docker arbitraire, dossier de l'hôte monté) | **Corrigé** : `TaskEnvelope::sanitize_remote` refuse les images OCI et retire dossier et environnement ; WASM seulement si `SILICIUM_ALLOW_REMOTE_WASM=1` |
 | 2 | `scene_path` / `output_path` choisis par un pair distant | **Corrigé** : chemins relatifs sans `..` résolus dans le dossier de travail (`node-core::sandbox`) ; sortie choisie localement ; le compute-daemon refuse tout chemin hors de `SILICIUM_COMPUTE_ROOT` |
 | 3 | API du nœud sans authentification | **Corrigé** : `SILICIUM_NODE_CONTROL_TOKEN` (bearer) ; écoute hors loopback refusée sans jeton ; idem pour le compute-daemon (`SILICIUM_COMPUTE_TOKEN`) |
-| 4 | Tout pair du topic peut faire exécuter une tâche | **Corrigé** : seules les tâches signées par un éditeur de confiance (`SILICIUM_TRUSTED_PUBLISHERS`) sont exécutées |
+| 4 | Tout pair du topic peut faire exécuter une tâche | **Corrigé** : seules les tâches signées par un éditeur de confiance (`SILICIUM_TRUSTED_PUBLISHERS`, ou pair d'amorçage épinglé `/p2p/<peer id>`) sont exécutées ; `SILICIUM_ACCEPT_UNTRUSTED_TASKS` est refusé sur les canaux `dev` et `prod` (l'app desktop l'activait) |
 | 5 | Clé mesh `demo-mesh` codée en dur dans l'app desktop publiée | **Ouvert** : concerne le réseau Python ; à remplacer par une clé fournie par le pipeline de release (secret) en même temps sur le VPS et dans l'app |
 
 ## Phases

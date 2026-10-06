@@ -82,6 +82,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = config.data_dir.clone();
     let security = std::sync::Arc::new(config.security.clone());
     security.check_api_exposure()?;
+    security
+        .check_untrusted_tasks(&std::env::var("SILICIUM_RELEASE_CHANNEL").unwrap_or_default())?;
     if security.trusted_publishers.is_empty() && !security.accept_untrusted_tasks {
         println!(" No trusted publisher configured: tasks from other peers will be ignored"); // i18n:ignore -- operator log
     }
