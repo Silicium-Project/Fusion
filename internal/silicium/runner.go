@@ -155,6 +155,15 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 		}
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
 	}
+	// Finalized fragments are not the image yet: wait for the node to
+	// download the tiles from the workers and reassemble them.
+	summaryPath := filepath.Join(raytracerRoot, "raytracer-summary.json")
+	if err := waitForReassembledImage(ctx, outputPath, summaryPath, resultWaitTimeout()); err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return RunResult{Status: "cancelled", ErrorMessage: cause.Error()}
+		}
+		return RunResult{Status: "failed", ErrorMessage: err.Error()}
+	}
 	result := RunResult{Status: "completed", ResultPath: outputPath, ComputeReceiptHash: task.ResultHash}
 	return validateRaytracerCompletion(result)
 }
