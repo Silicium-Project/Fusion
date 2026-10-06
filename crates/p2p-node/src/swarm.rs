@@ -284,6 +284,8 @@ mod tests {
             runtime_image: None,
             scene_sha256: None,
             region: None,
+            workload: None,
+            byte_range: None,
             requested_fragment_count: None,
         };
         let task_envelope: TaskEnvelope = task.clone().into();

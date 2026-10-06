@@ -8,7 +8,8 @@
 //!   channels, where any peer of the topic could otherwise run tasks.
 //! - Every task is sanitized ([`TaskEnvelope::sanitize_remote`]): no Docker
 //!   image, working directory or environment from the publisher, paths kept
-//!   relative to the node's work directory, output path chosen locally.
+//!   relative to the node's work directory, output path chosen locally; its
+//!   workload must be one this node knows ([`crate::workload`]).
 //! - The local HTTP API needs `SILICIUM_NODE_CONTROL_TOKEN` as a bearer token
 //!   when it is set, and cannot listen outside loopback without one.
 
@@ -126,12 +127,20 @@ impl SecurityConfig {
         self.admit_local(envelope)
     }
 
-    /// Sanitizes a task (local API or admitted remote task).
+    /// Sanitizes a task (local API or admitted remote task) and refuses a
+    /// workload this node does not know.
     pub(crate) fn admit_local(&self, envelope: TaskEnvelope) -> Result<NetworkTask, String> {
-        envelope
+        let task = envelope
             .sanitize_remote(&self.policy)
             .map(NetworkTask::from)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        if crate::workload::of(&task).is_none() {
+            return Err(format!(
+                "unknown_workload:{}",
+                task.workload.as_deref().unwrap_or_default()
+            ));
+        }
+        Ok(task)
     }
 }
 
@@ -155,6 +164,8 @@ mod tests {
             runtime_image: None,
             scene_sha256: None,
             region: None,
+            workload: None,
+            byte_range: None,
         }
     }
 
@@ -218,6 +229,28 @@ mod tests {
             SecurityConfig::default()
                 .check_untrusted_tasks("prod")
                 .is_ok()
+        );
+    }
+
+    #[test]
+    fn unknown_workloads_are_refused() {
+        let config = SecurityConfig {
+            accept_untrusted_tasks: true,
+            ..SecurityConfig::default()
+        };
+        let sha = TaskEnvelope {
+            workload: Some("calcul/integrity/sha256".to_string()),
+            ..envelope()
+        };
+        let task = config.admit_local(sha).unwrap();
+        assert_eq!(task.output_path, "job-1/output.bin");
+        let unknown = TaskEnvelope {
+            workload: Some("calcul/unknown".to_string()),
+            ..envelope()
+        };
+        assert_eq!(
+            config.admit_local(unknown).unwrap_err(),
+            "unknown_workload:calcul/unknown"
         );
     }
 

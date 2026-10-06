@@ -5,11 +5,14 @@
 #   - WORKERS desktop workers (default 1) start 5 s AFTER the publication,
 #     on the dev channel, trusting the orchestrator only through the pinned
 #     bootstrap address (/p2p/<peer id>).
-# Passes when the orchestrator reassembles the image. With one worker, the
-# worker verifies its own fragments (lone-worker rule); with two or more,
+# Passes when the orchestrator assembles the job result. With one worker,
+# the worker verifies its own fragments (lone-worker rule); with two or more,
 # each fragment is verified by another worker.
 #
-# Usage: crates/p2p-node/scripts/e2e-local.sh <scene.cfg> [out dir]
+# WORKLOAD selects the workload (default `raytracer`, input = a scene; or
+# `calcul/integrity/sha256`, input = any file, checked against sha256sum).
+#
+# Usage: crates/p2p-node/scripts/e2e-local.sh <input file> [out dir]
 # Needs: cargo build --release -p p2p_node -p compute_daemon -p silicium-raytracer
 # Ports used: 19092, 46201, 19100+n, 19200+n.
 set -u
@@ -18,6 +21,11 @@ BIN="$ROOT/target/release"
 SCENE=$(realpath "$1")
 OUT=$(realpath -m "${2:-$ROOT/target/e2e-local}")
 WORKERS=${WORKERS:-1}
+WORKLOAD=${WORKLOAD:-raytracer}
+case "$WORKLOAD" in
+  raytracer) FINAL_EXTENSION=png ;;
+  *) FINAL_EXTENSION=json ;;
+esac
 rm -rf "$OUT"
 mkdir -p "$OUT/o/work/scenes"
 cp "$SCENE" "$OUT/o/work/scenes/scene.cfg"
@@ -31,6 +39,7 @@ start_orchestrator() {
     SILICIUM_RELEASE_CHANNEL=dev SILICIUM_DATA_DIR="$OUT/o" SILICIUM_COMPUTE_ROOT="$OUT/o/work" \
     API_PORT=19092 SILICIUM_P2P_BIND=127.0.0.1 SILICIUM_P2P_PORT=46201 \
     SILICIUM_ENABLE_QUIC_LISTENER=0 SILICIUM_WORK_OWN_TASKS=0 SILICIUM_MAX_FRAGMENTS=4 \
+    SILICIUM_TARGET_BYTES_PER_FRAGMENT="${TARGET_BYTES:-4194304}" \
     "$BIN/p2p_node" >"$OUT/orchestrator.log" 2>&1) &
   pids+=($!)
 }
@@ -61,7 +70,7 @@ for _ in $(seq 50); do grep -q "Local peer id" "$OUT/orchestrator.log" && break;
 ORCHESTRATOR=$(grep -o "Local peer id: [^ ]*" "$OUT/orchestrator.log" | awk '{print $4}')
 sleep 1
 curl -fsS -X POST localhost:19092/publish -H 'content-type: application/json' \
-  -d '{"task_id":"e2ejob","scene_path":"scenes/scene.cfg","output_path":"out.ppm","seed":"42"}' >/dev/null
+  -d '{"task_id":"e2ejob","scene_path":"scenes/scene.cfg","output_path":"out","seed":"42","workload":"'"$WORKLOAD"'"}' >/dev/null
 sleep 0.5
 JOB=$(grep -o "Job [^ ]* split" "$OUT/orchestrator.log" | head -1 | awk '{print $2}')
 echo "job $JOB published by $ORCHESTRATOR; workers join in 5 s"
@@ -71,12 +80,26 @@ for n in $(seq "$WORKERS"); do start_worker "$n" "$ORCHESTRATOR"; done
 
 for second in $(seq 120); do
   sleep 1
-  if [ -f "$OUT/o/work/results/$JOB.png" ]; then
-    echo "OK: image reassembled after ${second}s ($OUT/o/work/results/$JOB.png)"
+  if [ -f "$OUT/o/work/results/$JOB.$FINAL_EXTENSION" ]; then
+    echo "OK: $WORKLOAD job assembled after ${second}s ($OUT/o/work/results/$JOB.$FINAL_EXTENSION)"
+    if [[ "$WORKLOAD" != raytracer ]]; then
+      python3 - "$OUT/o/work/results/$JOB.json" "$SCENE" <<'PY' || exit 1
+import hashlib, json, sys
+result = json.load(open(sys.argv[1]))
+data = open(sys.argv[2], "rb").read()
+chunks = result["chunks"]
+assert result["size_bytes"] == len(data) and chunks[-1]["offset"] + chunks[-1]["length"] == len(data)
+for chunk in chunks:
+    piece = data[chunk["offset"]:chunk["offset"] + chunk["length"]]
+    assert chunk["sha256"] == hashlib.sha256(piece).hexdigest(), chunk
+print(f"sha256: {len(chunks)} chunk(s) match hashlib")
+PY
+    fi
     for n in $(seq "$WORKERS"); do
-      echo "worker $n: computed $(grep -c 'Compute successful' "$OUT/w$n/node.log")," \
-        "verified $(grep -c 'Verdict on' "$OUT/w$n/node.log")," \
-        "journal $(grep -c '"kind":"task"' "$OUT/w$n/export/node.events.ndjson" 2>/dev/null || echo 0) task event(s)"
+      journal="$OUT/w$n/export/node.events.ndjson"
+      echo "worker $n: computed $(grep '"kind":"task"' "$journal" | grep -c '"role":"compute"')," \
+        "verified $(grep '"kind":"task"' "$journal" | grep -c '"role":"verify"')" \
+        "(journal of the desktop app)"
     done
     exit 0
   fi

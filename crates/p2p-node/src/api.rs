@@ -10,8 +10,8 @@ use crate::{
     admission::SecurityConfig,
     content::ContentStore,
     control::{ControlRegistry, ControlTask, Submission},
+    jobs::result_file,
     jobs::{FRAGMENT_SUFFIX_EXAMPLE, JobStore, MAX_FRAGMENTS_LIMIT},
-    results::result_path,
     storage::TaskBookState,
     task::{NetworkTask, PeerProfile, utc_now as task_utc_now},
 };
@@ -125,10 +125,13 @@ async fn submit_control_task(
     State(state): State<ApiState>,
     Json(submission): Json<Submission>,
 ) -> impl IntoResponse {
-    let workload = submission.workload.trim();
-    if !workload.is_empty() && workload != "raytracer" {
-        return api_error(StatusCode::BAD_REQUEST, "unsupported workload");
-    }
+    let Some(workload) = crate::workload::find(&submission.workload) else {
+        let message = format!(
+            "unsupported workload (known: {})",
+            crate::workload::known_ids()
+        );
+        return api_error(StatusCode::BAD_REQUEST, &message);
+    };
     let task_id = submission.task_id.trim();
     let root_job_id = if submission.root_job_id.trim().is_empty() {
         task_id
@@ -191,6 +194,8 @@ async fn submit_control_task(
         runtime_image: None,
         scene_sha256,
         region: None,
+        workload: Some(workload.id().to_string()),
+        byte_range: None,
     };
     let Ok(mut task) = state.security.admit_local(envelope) else {
         return api_error(StatusCode::BAD_REQUEST, "invalid task envelope");
@@ -224,7 +229,7 @@ async fn submit_control_task(
         .unwrap_or_else(|| ControlTask {
             task_id: task.task_id,
             root_job_id: root_job_id.to_string(),
-            workload: "raytracer".to_string(),
+            workload: workload.id().to_string(),
             required_roles: vec!["compute".to_string(), "verify".to_string()],
             status: "queued".to_string(),
             handled_by: String::new(),
@@ -232,7 +237,7 @@ async fn submit_control_task(
             result_hash: String::new(),
             created_unix: 0,
             updated_unix: 0,
-            task: serde_json::json!({"root_job_id": root_job_id, "workload": "raytracer", "kind": "compute"}),
+            task: serde_json::json!({"root_job_id": root_job_id, "workload": workload.id(), "kind": "compute"}),
         });
     (StatusCode::ACCEPTED, Json(response)).into_response()
 }
@@ -401,7 +406,9 @@ async fn task_status(
 }
 
 /// A job of this node: its manifest, the status of each fragment, and the
-/// paths (relative to the work directory) of the images collected so far.
+/// paths (relative to the work directory) of the results collected so far
+/// and of the job result once assembled (`outputs`; for the raytracer also
+/// `image` and `png`).
 async fn job_status(
     AxumPath(job_id): AxumPath<String>,
     State(state): State<ApiState>,
@@ -423,23 +430,34 @@ async fn job_status(
             serde_json::json!({
                 "task_id": fragment.task_id,
                 "region": fragment.region,
+                "byte_range": fragment.byte_range,
                 "status": status,
                 "image": collected
                     .contains(&fragment.task_id)
-                    .then(|| result_path(&fragment.task_id)),
+                    .then(|| JobStore::fragment_result_path(&job, &fragment.task_id)),
             })
         })
         .collect();
     let complete = state.jobs.is_assembled(&job.job_id);
+    let output = |extension: &str| complete.then(|| result_file(&job.job_id, extension));
+    let outputs: Vec<String> = crate::workload::find(&job.workload)
+        .map(|workload| workload.published_outputs())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|item| output(item.extension))
+        .collect();
     let body = serde_json::json!({
         "job_id": job.job_id,
+        "workload": job.workload,
         "width": job.width,
         "height": job.height,
+        "input_bytes": job.input_bytes,
         "fragments_total": job.fragments.len(),
         "fragments_collected": collected.len(),
         "fragments": fragments,
-        "image": complete.then(|| result_path(&job.job_id)),
-        "png": complete.then(|| JobStore::png_path(&job.job_id)),
+        "outputs": outputs,
+        "image": outputs.first(),
+        "png": outputs.iter().find(|path| path.ends_with(".png")),
     });
     (StatusCode::OK, Json(body)).into_response()
 }

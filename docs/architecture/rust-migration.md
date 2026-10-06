@@ -61,7 +61,7 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 | `tools/solana_layer_bridge.cjs` | `crates/reputation-bridge` ou petit service TypeScript isolé |
 | `networked/networked_runtime.py` | `crates/node-core` (blobs de contenu) |
 | `workloads/raytracer/*.py` | `crates/raytracer` (bibliothèque) |
-| `workloads/standard/*.py` | trait `Workload`, si ces workloads sont conservés |
+| `workloads/standard/*.py` | trait `Workload` de `crates/p2p-node/src/workload/` : `calcul/integrity/sha256` porté ; les autres à porter un par un |
 | `tools/mcp_server.py` | décision ouverte : porter ou supprimer |
 
 ## Décisions ouvertes

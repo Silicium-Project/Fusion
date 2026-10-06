@@ -1,12 +1,12 @@
-//! Publishing a task queued by the API: share its scene by hash, split a
-//! whole-image render into fragments ([`crate::jobs`]), then for each task
+//! Publishing a task queued by the API: share its input by hash, split it
+//! into fragments as its workload defines ([`crate::workload`]), then for each task
 //! sign the proposal in the task book, store the DHT record and gossip it.
 //! When configured, this node also works on its own tasks.
 
 use crate::{
     content::ContentStore,
     control::ControlRegistry,
-    jobs::{self, JobSettings, JobStore},
+    jobs::{JobSettings, JobStore},
     processing::NodeContext,
     swarm::{P2pBehaviour, publish_task_record, publish_taskbook_event},
     task::{GossipMessage, NetworkTask},
@@ -62,10 +62,9 @@ fn split_job(
     settings: &PublishSettings,
     task: NetworkTask,
 ) -> Vec<NetworkTask> {
-    let scene = std::fs::read_to_string(context.content.absolute(&task.scene_path));
-    let Some((manifest, fragments)) = scene
-        .ok()
-        .and_then(|text| jobs::split(&task, &text, &settings.jobs))
+    let input = context.content.absolute(&task.scene_path);
+    let Some((manifest, fragments)) = crate::workload::of(&task)
+        .and_then(|workload| workload.split(&task, &input, &settings.jobs))
     else {
         return vec![task];
     };

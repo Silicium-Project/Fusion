@@ -1,11 +1,10 @@
 //! Job manifests on disk (`results/<job id>.job.json` in the work
-//! directory), lookup of the job a fragment belongs to, and reassembly of
-//! the final image (`results/<job id>.ppm` and `.png`) once every fragment
-//! image (`results/<fragment id>.ppm`) is there.
+//! directory), lookup of the job a fragment belongs to, and assembly of the
+//! job result (`results/<job id>.<extension>`, by the job's workload) once
+//! every fragment result (`results/<fragment id>.<extension>`) is there.
 
-use super::{FragmentRef, JobManifest};
-use crate::results::result_path;
-use silicium_raytracer::pipeline::{png, ppm, reassemble};
+use super::{FragmentRef, JobManifest, result_file};
+use crate::workload::{self, Workload};
 use std::{
     collections::BTreeMap,
     fs,
@@ -49,11 +48,6 @@ impl JobStore {
     /// Path of a job's manifest, relative to the work directory.
     pub(crate) fn manifest_path(job_id: &str) -> String {
         format!("results/{job_id}{MANIFEST_SUFFIX}")
-    }
-
-    /// Path of a job's final PNG, relative to the work directory.
-    pub(crate) fn png_path(job_id: &str) -> String {
-        format!("results/{job_id}.png")
     }
 
     /// Saves and remembers a new job.
@@ -100,53 +94,71 @@ impl JobStore {
         })
     }
 
-    /// Fragments of `job_id` whose image is collected.
+    /// Path, relative to the work directory, of the collected result of
+    /// fragment `task_id` of `job`.
+    pub(crate) fn fragment_result_path(job: &JobManifest, task_id: &str) -> String {
+        let extension = workload_of(job).map_or("bin", |w| w.fragment_extension());
+        result_file(task_id, extension)
+    }
+
+    /// Fragments of `job` whose result is collected.
     pub(crate) fn collected(&self, job: &JobManifest) -> Vec<String> {
         job.fragments
             .iter()
-            .filter(|fragment| self.root.join(result_path(&fragment.task_id)).is_file())
+            .filter(|fragment| {
+                self.root
+                    .join(Self::fragment_result_path(job, &fragment.task_id))
+                    .is_file()
+            })
             .map(|fragment| fragment.task_id.clone())
             .collect()
     }
 
-    /// True once the final image and its PNG are written (PNG last).
+    /// True once every file of the job result is written (the last one is
+    /// written last).
     pub(crate) fn is_assembled(&self, job_id: &str) -> bool {
-        self.root.join(Self::png_path(job_id)).is_file()
+        let Some(job) = self.manifest(job_id) else {
+            return false;
+        };
+        workload_of(&job)
+            .and_then(|w| w.published_outputs().last())
+            .is_some_and(|output| {
+                self.root
+                    .join(result_file(job_id, output.extension))
+                    .is_file()
+            })
     }
 
-    /// Reassembles the final image of `job_id` when every fragment image is
-    /// collected; `Ok(None)` while some are missing.
+    /// Assembles the result of `job_id` when every fragment result is
+    /// collected; `Ok(None)` while some are missing. Returns the path of the
+    /// first result file.
     pub(crate) fn assemble(&self, job_id: &str) -> Result<Option<PathBuf>, String> {
         let job = self.manifest(job_id).ok_or("unknown job")?;
-        let mut images = Vec::with_capacity(job.fragments.len());
+        let workload = workload_of(&job).ok_or("unknown workload")?;
+        let mut fragments = Vec::with_capacity(job.fragments.len());
         for fragment in &job.fragments {
-            match fs::read(self.root.join(result_path(&fragment.task_id))) {
-                Ok(bytes) => images.push((fragment.region, bytes)),
+            let path = self
+                .root
+                .join(Self::fragment_result_path(&job, &fragment.task_id));
+            match fs::read(path) {
+                Ok(bytes) => fragments.push(bytes),
                 Err(_) => return Ok(None),
             }
         }
-        let placed: Vec<reassemble::PlacedTile<'_>> = images
-            .iter()
-            .map(|(region, bytes)| reassemble::PlacedTile {
-                x_start: region.x_start as usize,
-                y_start: region.y_start as usize,
-                ppm: bytes,
-            })
-            .collect();
-        let image = reassemble::reassemble(&placed)?;
-        let decoded = ppm::parse(&image, job_id)?;
-        if (decoded.width, decoded.height) != (job.width as usize, job.height as usize) {
-            return Err(format!(
-                "reassembled image is {}x{}, expected {}x{}",
-                decoded.width, decoded.height, job.width, job.height
-            ));
+        let outputs = workload.assemble(&job, &fragments)?;
+        let mut first = None;
+        for output in outputs {
+            let path = self.root.join(result_file(job_id, output.extension));
+            write_atomic(&path, &output.bytes)?;
+            first.get_or_insert(path);
         }
-        let path = self.root.join(result_path(job_id));
-        write_atomic(&path, &image)?;
-        let preview = png::encode_rgb(decoded.width, decoded.height, &decoded.pixels)?;
-        write_atomic(&self.root.join(Self::png_path(job_id)), &preview)?;
-        Ok(Some(path))
+        Ok(first)
     }
+}
+
+/// The workload of a job.
+fn workload_of(job: &JobManifest) -> Option<&'static dyn Workload> {
+    workload::find(&job.workload)
 }
 
 /// Writes a file through a temporary name, so readers never see half of it.

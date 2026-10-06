@@ -3,10 +3,7 @@
 //! then publish the result or release the attempt.
 
 use crate::{
-    activity::Role,
-    content::ContentStore,
-    processing::{NodeContext, execute_task},
-    results::CONTENT_SCHEME,
+    activity::Role, content::ContentStore, processing::NodeContext, results::CONTENT_SCHEME,
     task::NetworkTask,
 };
 use silicium_node_core::taskbook::{DerivedTaskState, PayloadRef, TaskEventBody, TaskTerms};
@@ -70,7 +67,10 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
     }
     context.activity.started(&task_id, Role::Compute);
     let renewer = LeaseRenewer::start(context.clone(), task_id.clone(), attempt, terms);
-    let outcome = execute_task(&context, &task).await;
+    let outcome = match crate::workload::of(&task) {
+        Some(workload) => workload.execute(&context, &task).await,
+        None => None,
+    };
     renewer.stop();
     let body = match outcome {
         Some(outcome) => match share_result(&context, &task).await {

@@ -195,7 +195,7 @@ fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
         );
         object.insert(
             "workload".to_string(),
-            serde_json::Value::String("raytracer".to_string()),
+            serde_json::Value::String(workload_id(&entry.task)),
         );
         object.insert(
             "kind".to_string(),
@@ -208,7 +208,7 @@ fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
     ControlTask {
         task_id: entry.task.task_id.clone(),
         root_job_id: entry.root_job_id.clone(),
-        workload: "raytracer".to_string(),
+        workload: workload_id(&entry.task),
         required_roles: entry.required_roles.clone(),
         status,
         handled_by,
@@ -218,6 +218,13 @@ fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
         updated_unix: state.map(|_| unix_seconds()).unwrap_or(entry.updated_unix),
         task,
     }
+}
+
+/// Workload identifier of a task, for the BackEnd.
+fn workload_id(task: &NetworkTask) -> String {
+    crate::workload::of(task)
+        .map_or(crate::workload::DEFAULT_WORKLOAD, |workload| workload.id())
+        .to_string()
 }
 
 fn state_summary(state: Option<&DerivedTaskState>) -> (String, String, String, String) {

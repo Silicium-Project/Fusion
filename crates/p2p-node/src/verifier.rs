@@ -1,27 +1,24 @@
 //! Verifier role, run periodically: for every known task whose latest result
 //! awaits verification, offer to verify it; once the publisher accepts this
-//! node, check that the milestones cover the task's region, re-render the
-//! milestones drawn from the acceptance hash and publish the verdict.
+//! node, check the result as the task's workload defines it
+//! ([`crate::workload::Workload::verify`]: re-rendered milestones for the
+//! raytracer, a recomputed hash for sha256) and publish the verdict.
 //!
 //! Only nodes with the `verify` role take part. A node offers to verify its
 //! own result only when it is the only compute / verification peer on the
 //! network and the task terms allow it (lone-worker rule, see
 //! [`crate::peers`]; the orchestrator/storage peer does not count).
 //!
-//! A verdict is only published when every sampled block could be rendered:
-//! if the local compute daemon fails, nothing is published and the
-//! publisher's delay frees the slot for another verifier, instead of
+//! A verdict is only published when the check could run: if it fails
+//! locally (compute daemon down, input missing), nothing is published and
+//! the publisher's delay frees the slot for another verifier, instead of
 //! rejecting an honest result.
 
 use crate::{
-    activity::Role,
-    processing::{NodeContext, render_region},
-    task::NetworkTask,
-    worker::record_task_event,
+    activity::Role, processing::NodeContext, task::NetworkTask, worker::record_task_event,
 };
 use silicium_node_core::taskbook::{
-    DerivedTaskState, DerivedTaskStatus, ResultState, TaskEventBody, milestones_cover_region,
-    sample_milestones, verification_sample_count,
+    DerivedTaskState, DerivedTaskStatus, ResultState, TaskEventBody,
 };
 use std::{
     collections::BTreeSet,
@@ -118,27 +115,7 @@ fn next_step(
     }
 }
 
-/// True when the result's milestones tile the task's region (a fragment),
-/// or the whole image of the scene when the task has no region.
-fn covers_scene(context: &NodeContext, job: &Job) -> bool {
-    if let Some(region) = job.task.region {
-        return milestones_cover_region(
-            &job.result.milestones,
-            (region.x_start, region.x_end),
-            (region.y_start, region.y_end),
-        );
-    }
-    let Ok(text) = std::fs::read_to_string(context.content.absolute(&job.task.scene_path)) else {
-        return false;
-    };
-    let (width, height) = silicium_raytracer::pipeline::tiles::scene_resolution(&text);
-    let (Ok(width), Ok(height)) = (u32::try_from(width), u32::try_from(height)) else {
-        return false;
-    };
-    milestones_cover_region(&job.result.milestones, (0, width), (0, height))
-}
-
-/// Re-renders the sampled milestones and publishes the verdict.
+/// Checks the result and publishes the verdict.
 async fn verify(context: &NodeContext, job: Job) {
     context.activity.started(&job.task.task_id, Role::Verify);
     let verdict_published = check(context, &job).await;
@@ -148,46 +125,25 @@ async fn verify(context: &NodeContext, job: Job) {
 }
 
 /// Checks the result and publishes the verdict; false when no verdict could
-/// be published (a block could not be rendered locally).
+/// be published (the check could not run locally).
 async fn check(context: &NodeContext, job: &Job) -> bool {
-    if !covers_scene(context, job) {
+    let Some(workload) = crate::workload::of(&job.task) else {
         println!(
-            " Result of {} does not cover its region; rejecting it",
+            " Unknown workload for {}; not verifying it",
             job.task.task_id
         );
-        publish_verdict(context, job, false).await;
-        return true;
-    }
-    let milestones = &job.result.milestones;
-    let sample = sample_milestones(
-        milestones,
-        &job.seed,
-        verification_sample_count(milestones.len()),
-    );
-    // A result without commitment cannot be checked: it is rejected.
-    let mut approved = !sample.is_empty();
-    for milestone in sample {
-        let output = format!(
-            "verify/{}/attempt-{}-block-{}.ppm",
-            job.task.task_id, job.attempt, milestone.index
-        );
-        match render_region(context, &job.task, &output, milestone).await {
-            Some(hash) if hash == milestone.pixel_sha256 => {}
-            Some(_) => {
-                approved = false;
-                break;
-            }
-            None => {
-                println!(
-                    " Could not render a block of {}; no verdict published",
-                    job.task.task_id
-                );
-                return false;
-            }
+        return false;
+    };
+    let verdict = workload
+        .verify(context, &job.task, &job.result, &job.seed)
+        .await;
+    match verdict {
+        Some(approved) => {
+            publish_verdict(context, job, approved).await;
+            true
         }
+        None => false,
     }
-    publish_verdict(context, job, approved).await;
-    true
 }
 
 async fn publish_verdict(context: &NodeContext, job: &Job, approved: bool) {

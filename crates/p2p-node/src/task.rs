@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use silicium_node_core::{
     hardware::HardwareBucket,
-    p2p::{Region, TaskEnvelope},
+    p2p::{ByteRange, Region, TaskEnvelope},
     taskbook::TaskEvent,
 };
 use std::{
@@ -113,6 +113,13 @@ pub(crate) struct NetworkTask {
     /// [`crate::jobs`]); the whole image when absent.
     #[serde(default)]
     pub(crate) region: Option<Region>,
+    /// Workload of the task (see [`crate::workload`]); absent for tasks of
+    /// older publishers, which are raytracer renders.
+    #[serde(default)]
+    pub(crate) workload: Option<String>,
+    /// Chunk of the input to process (workloads splitting a file).
+    #[serde(default)]
+    pub(crate) byte_range: Option<ByteRange>,
     /// Exact fragment count requested by the local BackEnd. This is a local
     /// publishing hint and is deliberately not sent to peers.
     #[serde(skip)]
@@ -136,6 +143,8 @@ impl From<TaskEnvelope> for NetworkTask {
             runtime_image: value.runtime_image,
             scene_sha256: value.scene_sha256,
             region: value.region,
+            workload: value.workload,
+            byte_range: value.byte_range,
             requested_fragment_count: None,
         }
     }
@@ -203,6 +212,8 @@ impl From<NetworkTask> for TaskEnvelope {
             runtime_image: value.runtime_image,
             scene_sha256: value.scene_sha256,
             region: value.region,
+            workload: value.workload,
+            byte_range: value.byte_range,
         }
     }
 }

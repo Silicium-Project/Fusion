@@ -6,10 +6,11 @@
 
 use crate::{
     control::{ControlRegistry, ControlTask},
-    jobs::{JobManifest, JobStore},
+    jobs::{JobManifest, JobStore, result_file},
     peers::profile_is_worker,
     storage::TaskBookState,
     task::PeerProfile,
+    workload::{self, Workload},
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -227,15 +228,26 @@ impl CompatibilityWriter {
 
     fn write_one_job(&self, root_id: &str, tasks: &[ControlTask], jobs: &JobStore) {
         let manifest = jobs.manifest_for_root(root_id);
+        let workload_id = manifest
+            .as_ref()
+            .map(|job| job.workload.clone())
+            .or_else(|| tasks.first().map(|task| task.workload.clone()))
+            .unwrap_or_default();
+        let Some(workload) = workload::find(&workload_id) else {
+            return;
+        };
         let fragment_count = manifest
             .as_ref()
             .map(|job| job.fragments.len())
             .unwrap_or(tasks.len());
-        let job_dir = self.storage_dir.join("raytracer").join(path_id(root_id));
+        let job_dir = self
+            .storage_dir
+            .join(workload.storage_dir())
+            .join(path_id(root_id));
         let fragments = manifest
             .as_ref()
             .map(|job| self.fragment_rows(job, tasks, jobs, &job_dir))
-            .unwrap_or_else(|| self.single_fragment_rows(tasks, jobs));
+            .unwrap_or_else(|| self.single_fragment_rows(tasks, jobs, workload));
         let completed = fragments
             .iter()
             .filter(|fragment| fragment["status"] == "completed")
@@ -276,6 +288,7 @@ impl CompatibilityWriter {
         let mut summary = json!({
             "schema_version": 1,
             "job_id": root_id,
+            "workload": workload.id(),
             "fragment_count": fragment_count,
             "fragments": progress_payload["fragments"],
             "updated_utc": utc_now(),
@@ -283,23 +296,22 @@ impl CompatibilityWriter {
         });
         if complete {
             if let Some(job) = manifest {
-                let ppm = self.copy_final(
-                    jobs.root().join(crate::results::result_path(&job.job_id)),
-                    &job_dir.join("reassembled").join("render.ppm"),
-                );
-                let png = self.copy_final(
-                    jobs.root().join(JobStore::png_path(&job.job_id)),
-                    &job_dir.join("reassembled").join("render.png"),
-                );
-                summary["success"] = Value::Bool(ppm.is_some() && png.is_some());
-                if let Some(path) = ppm {
-                    summary["reassembled_ppm"] = Value::String(path.display().to_string());
-                    summary["result_path"] = Value::String(path.display().to_string());
+                let mut copied_all = true;
+                for output in workload.published_outputs() {
+                    let copied = self.copy_final(
+                        jobs.root().join(result_file(&job.job_id, output.extension)),
+                        &job_dir.join(output.target),
+                    );
+                    match copied {
+                        Some(path) => {
+                            for key in output.summary_keys {
+                                summary[*key] = Value::String(path.display().to_string());
+                            }
+                        }
+                        None => copied_all = false,
+                    }
                 }
-                if let Some(path) = png {
-                    summary["reassembled_png"] = Value::String(path.display().to_string());
-                    summary["result_png_path"] = Value::String(path.display().to_string());
-                }
+                summary["success"] = Value::Bool(copied_all);
             }
         } else if failed > 0 {
             summary["success"] = Value::Bool(false);
@@ -326,8 +338,10 @@ impl CompatibilityWriter {
             .map(|(index, fragment)| {
                 let task = by_id.get(fragment.task_id.as_str());
                 let status = task.map(|item| item.status.as_str()).unwrap_or("queued");
-                let source = jobs.root().join(crate::results::result_path(&fragment.task_id));
-                if source.is_file() {
+                let source = jobs
+                    .root()
+                    .join(JobStore::fragment_result_path(job, &fragment.task_id));
+                if source.is_file() && job.workload == workload::raytracer::ID {
                     self.write_fragment_preview(index, &source, job_dir);
                 }
                 json!({
@@ -336,6 +350,7 @@ impl CompatibilityWriter {
                     "task_id": fragment.task_id,
                     "status": status,
                     "region": fragment.region,
+                    "byte_range": fragment.byte_range,
                     "result_path": source.display().to_string(),
                     "receipt_attestation": {"accepted": status == "completed"},
                     "compute_billable_work_units": 0,
@@ -347,7 +362,12 @@ impl CompatibilityWriter {
             .collect()
     }
 
-    fn single_fragment_rows(&self, tasks: &[ControlTask], jobs: &JobStore) -> Vec<Value> {
+    fn single_fragment_rows(
+        &self,
+        tasks: &[ControlTask],
+        jobs: &JobStore,
+        workload: &dyn Workload,
+    ) -> Vec<Value> {
         tasks
             .iter()
             .enumerate()
@@ -362,7 +382,11 @@ impl CompatibilityWriter {
                     "verify_billable_work_units": 0,
                     "compute_receipt_hash": task.result_hash,
                     "verify_receipt_hash": task.result_hash,
-                    "result_path": jobs.root().join(crate::results::result_path(&task.task_id)).display().to_string(),
+                    "result_path": jobs
+                        .root()
+                        .join(result_file(&task.task_id, workload.fragment_extension()))
+                        .display()
+                        .to_string(),
                 })
             })
             .collect()

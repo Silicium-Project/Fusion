@@ -47,12 +47,13 @@ uniquement un outil de migration et de comparaison.
     requête-réponse `/silicium/content/1` (64 Mio au plus) et ne garde que des
     octets dont le hash correspond ;
   - **jobs** (`src/jobs/`, `src/publishing.rs`) : une tâche publiée par
-    l'API qui rend une image entière est découpée en tuiles
-    (`silicium_raytracer::pipeline::tiles`, centre d'abord) ; chaque tuile est
-    une tâche `<job>.f<NNN>` avec sa région. Le manifeste du job est gardé
-    sous `results/<job>.job.json` ; quand toutes les images de tuiles sont
-    là, l'éditeur réassemble `results/<job>.ppm` et `results/<job>.png`.
-    Un nœud ne propose de prendre une tuile que s'il a un créneau de calcul
+    l'API est découpée par son workload (voir « Workloads ») : tuiles d'image
+    pour le raytracer (centre d'abord), morceaux d'octets pour sha256 ;
+    chaque fragment est une tâche `<job>.f<NNN>`. Le manifeste du job est
+    gardé sous `results/<job>.job.json` ; quand tous les résultats de
+    fragments sont là, l'éditeur assemble le résultat du job
+    (`results/<job>.ppm` et `.png`, ou `results/<job>.json`).
+    Un nœud ne propose de prendre un fragment que s'il a un créneau de calcul
     libre (`SILICIUM_PARALLEL_TASKS`) : les autres tuiles restent ouvertes
     pour les autres nœuds ;
   - **ses propres tâches** : l'éditeur calcule aussi ses tuiles
@@ -88,7 +89,8 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_NODE_ROLES` | `compute,verify` | Rôles du nœud : `compute` prend des tâches, `verify` vérifie ; `resource`/`storage` (orchestrateur) ne sont pas des workers |
 | `SILICIUM_COMPUTE_ROOT` | `$SILICIUM_DATA_DIR/work` | Dossier de travail partagé avec le compute-daemon (`content/`, `results/`) |
 | `SILICIUM_MAX_FRAGMENTS` | `32` | Tuiles par job au plus (256 au maximum) |
-| `SILICIUM_TARGET_PIXELS_PER_FRAGMENT` | `120000` | Taille visée d'une tuile, en pixels |
+| `SILICIUM_TARGET_PIXELS_PER_FRAGMENT` | `120000` | Taille visée d'une tuile, en pixels (raytracer) |
+| `SILICIUM_TARGET_BYTES_PER_FRAGMENT` | `4194304` | Taille visée d'un morceau d'entrée, en octets (sha256) |
 | `SILICIUM_PARALLEL_TASKS` | `1` | Tâches calculées en même temps par ce nœud |
 | `SILICIUM_WORK_OWN_TASKS` | `1` | `0` : ne pas calculer les tâches publiées par ce nœud (éditeur sans compute-daemon) |
 | `SILICIUM_ALLOW_SELF_VERIFICATION` | `1` | `0` : interdire l'auto-vérification quand ce nœud est le seul pair compute/verify (l'orchestrateur ne compte pas) |
@@ -120,6 +122,32 @@ finaliser ou annuler ces tâches.
 | `GET` | `/v1/peers` | Pairs et métriques pour le BackEnd |
 | `GET` | `/health` ou `/healthz` | Santé |
 
+## Workloads
+
+Le journal de tâches, l'ordonnancement, le transfert des entrées et des
+résultats, le protocole de vérification et les fichiers lus par le BackEnd
+sont communs. Ce qui change d'un calcul à l'autre est derrière le trait
+`Workload` (`src/workload/mod.rs`) :
+
+| Étape | Qui | Méthode |
+| --- | --- | --- |
+| découper une tâche soumise en fragments | éditeur | `split` |
+| calculer un fragment | worker | `execute` |
+| vérifier le fragment d'un autre nœud | vérificateur | `verify` |
+| contrôler un résultat téléchargé | éditeur | `accepts_result` |
+| construire le résultat du job | éditeur | `assemble` |
+
+| Identifiant | Entrée | Fragment | Vérification | Résultat |
+| --- | --- | --- | --- | --- |
+| `raytracer` (défaut) | scène `.cfg` | tuile d'image, rendue par le compute-daemon | blocs de lignes tirés au sort et re-rendus | `reassembled/render.ppm` + `.png` |
+| `calcul/integrity/sha256` (alias `calcul/hash/sha256`) | n'importe quel fichier (64 Mio max : taille d'un contenu échangé entre pairs ; chaque worker télécharge l'entrée entière) | morceau d'octets, haché dans le nœud | recalcul complet du morceau | `result/sha256.json` : empreinte de chaque morceau, empreinte de la liste, `input_hash` si un seul morceau |
+
+L'identifiant voyage avec chaque tâche (`TaskEnvelope::workload`, absent =
+raytracer pour les éditeurs plus anciens) ; un nœud refuse une tâche d'un
+workload qu'il ne connaît pas. **Ajouter un workload** : un module qui
+implémente `Workload`, ajouté à `REGISTRY` dans `src/workload/mod.rs`, avec
+ses tests ; le BackEnd doit aussi l'accepter (`ValidateWorkload`).
+
 ## Organisation du code
 
 | Module | Contenu |
@@ -132,7 +160,8 @@ finaliser ou annuler ces tâches.
 | `src/activity.rs` | Travail en cours (envoyé dans le heartbeat) et journal `node.events.ndjson` lu par l'app desktop |
 | `src/content.rs` | Magasin de contenus par hash (scènes, images), commandes vers la boucle |
 | `src/fetch/` | Téléchargement entre pairs : fournisseurs DHT, requête-réponse, service ; test à deux nœuds dans `tests.rs` |
-| `src/jobs/` | Découpage d'un job en tuiles, manifestes sur disque, réassemblage ; tests dans `tests.rs` |
+| `src/workload/` | Workloads (voir ci-dessous) : `raytracer/` (tuiles, rendu, jalons, réassemblage), `sha256.rs` (morceaux d'octets) |
+| `src/jobs/` | Manifestes de jobs sur disque, assemblage du résultat par le workload du job ; tests dans `tests.rs` |
 | `src/publishing.rs` | Publication d'une tâche de l'API : scène partagée, découpage, proposition, DHT, gossip |
 | `src/results.rs` | Image finale d'une tâche finalisée : téléchargement, contrôle contre les jalons |
 | `src/verifier.rs` | Rôle vérificateur : offre, recalcul des blocs tirés au sort, verdict |
@@ -142,7 +171,7 @@ finaliser ou annuler ces tâches.
 | `src/swarm.rs` | Comportement libp2p, construction du swarm, publication DHT/gossipsub |
 | `src/admission.rs` | Tâches acceptées : éditeurs de confiance, assainissement, jeton de l'API |
 | `src/api.rs` | API HTTP locale |
-| `src/processing.rs` | Exécution d'une tâche acceptée (runtime, compute, auto-contrôle, réputation) |
+| `src/processing.rs` | Contexte du nœud et appels HTTP communs aux daemons locaux (compute-daemon, réputation) |
 | `src/task.rs` | Charges utiles réseau (`NetworkTask`, `GossipMessage`) |
 
 ## Construire, tester, conteneur

@@ -1,7 +1,8 @@
 //! Splitting a job into fragments, the manifest store, and reassembly.
 
 use super::*;
-use crate::results::result_path;
+use crate::{task::NetworkTask, workload::raytracer::split_scene as split};
+use silicium_node_core::p2p::Region;
 use silicium_node_core::taskbook::TaskEvent;
 use silicium_raytracer::pipeline::ppm;
 use std::collections::BTreeMap;
@@ -24,6 +25,8 @@ fn task() -> NetworkTask {
         runtime_image: None,
         scene_sha256: Some("b".repeat(64)),
         region: None,
+        workload: None,
+        byte_range: None,
         requested_fragment_count: None,
     }
 }
@@ -32,6 +35,7 @@ fn settings() -> JobSettings {
     JobSettings {
         max_fragments: 8,
         target_pixels: 500,
+        ..JobSettings::default()
     }
 }
 
@@ -142,13 +146,13 @@ fn fragments_are_reassembled_once_all_images_are_collected() {
     let pixels = full_image(64, 48);
     let (last, rest) = manifest.fragments.split_last().unwrap();
     for fragment in rest {
-        let path = root.join(result_path(&fragment.task_id));
+        let path = root.join(JobStore::fragment_result_path(&manifest, &fragment.task_id));
         store::write_atomic(&path, &crop(&pixels, 64, fragment.region)).unwrap();
     }
     assert_eq!(store.assemble(&job_id), Ok(None), "one fragment missing");
     assert!(!store.is_assembled(&job_id));
     store::write_atomic(
-        &root.join(result_path(&last.task_id)),
+        &root.join(JobStore::fragment_result_path(&manifest, &last.task_id)),
         &crop(&pixels, 64, last.region),
     )
     .unwrap();

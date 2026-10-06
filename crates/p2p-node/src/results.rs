@@ -1,19 +1,16 @@
-//! Result images: once one of this node's tasks is finalized, download the
-//! image the worker published (`content://<sha256>`), check it against the
-//! milestone commitment the verifiers approved (at the fragment's place in
-//! the image), and keep it as `results/<task_id>.ppm` in the work directory;
-//! the last fragment of a job triggers its reassembly ([`crate::jobs`]).
-//!
-//! The check matters: verifiers re-render milestones, not the uploaded file,
-//! so without it a worker could commit honest milestones and upload another
-//! image.
+//! Results: once one of this node's tasks is finalized, download the result
+//! the worker published (`content://<sha256>`), check it against the
+//! commitment the verifiers approved
+//! ([`crate::workload::Workload::accepts_result`]), and keep it as
+//! `results/<task_id>.<extension>` in the work directory; the last fragment
+//! of a job triggers the assembly of the job result ([`crate::jobs`]).
 
 use crate::{
-    jobs::{JobStore, store::write_atomic},
+    jobs::{JobStore, result_file, store::write_atomic},
     processing::NodeContext,
+    workload::{self, Workload},
 };
-use silicium_node_core::taskbook::{DerivedTaskStatus, MilestoneSample};
-use silicium_raytracer::pipeline::{ppm, sha256_hex};
+use silicium_node_core::taskbook::DerivedTaskStatus;
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
@@ -100,11 +97,6 @@ impl Collector {
     }
 }
 
-/// Path of a task's collected image, relative to the work directory.
-pub(crate) fn result_path(task_id: &str) -> String {
-    format!("results/{task_id}.ppm")
-}
-
 /// Collects one task: `Some(true)` collected, `Some(false)` to retry,
 /// `None` nothing to collect (not finalized, or not a content result).
 async fn collect_one(context: &NodeContext, jobs: &JobStore, task_id: &str) -> Option<bool> {
@@ -117,18 +109,25 @@ async fn collect_one(context: &NodeContext, jobs: &JobStore, task_id: &str) -> O
     let result = attempt.result.as_ref()?;
     let sha256 = result.result.uri.strip_prefix(CONTENT_SCHEME)?;
     if !context.content.ensure(sha256).await {
-        println!(" Result image of {task_id} not downloaded yet");
+        println!(" Result of {task_id} not downloaded yet");
         return Some(false);
     }
     let bytes = context.content.get(sha256)?;
-    let origin = jobs.fragment(task_id).map_or((0, 0), |(_, fragment)| {
-        (fragment.region.x_start, fragment.region.y_start)
-    });
-    if !image_matches_milestones(&bytes, &result.milestones, origin) {
-        println!(" Result image of {task_id} does not match its verified milestones");
+    let job = jobs.fragment(task_id);
+    let workload = job
+        .as_ref()
+        .and_then(|(job, _)| workload::find(&job.workload))
+        .or_else(|| known_workload(context, task_id))?;
+    let fragment = job.as_ref().map(|(_, fragment)| fragment);
+    if !workload.accepts_result(fragment, &bytes, &result.milestones) {
+        println!(" Result of {task_id} does not match its verified commitment");
         return None;
     }
-    let path = context.content.absolute(&result_path(task_id));
+    let relative = match &job {
+        Some((job, _)) => JobStore::fragment_result_path(job, task_id),
+        None => result_file(task_id, workload.fragment_extension()),
+    };
+    let path = context.content.absolute(&relative);
     match write_atomic(&path, &bytes) {
         Ok(()) => {
             println!(" Result of {task_id} saved to {}", path.display());
@@ -141,90 +140,15 @@ async fn collect_one(context: &NodeContext, jobs: &JobStore, task_id: &str) -> O
     }
 }
 
-/// True when every milestone's block of `image` (a P6 PPM whose top-left
-/// pixel sits at `origin` in the full image) hashes to its commitment.
-pub(crate) fn image_matches_milestones(
-    image: &[u8],
-    milestones: &[MilestoneSample],
-    origin: (u32, u32),
-) -> bool {
-    let Ok(image) = ppm::parse(image, "result") else {
-        return false;
-    };
-    !milestones.is_empty()
-        && milestones.iter().all(|milestone| {
-            block_hash(&image, milestone, origin).as_deref() == Some(&milestone.pixel_sha256)
-        })
-}
-
-/// SHA-256 of a milestone's block of rows, or `None` when it falls outside
-/// the image.
-fn block_hash(image: &ppm::Ppm, milestone: &MilestoneSample, origin: (u32, u32)) -> Option<String> {
-    let to_local = |value: u32, start: u32| value.checked_sub(start).map(|v| v as usize);
-    let x_start = to_local(milestone.x_start, origin.0)?;
-    let x_end = to_local(milestone.x_end, origin.0)?;
-    let y_start = to_local(milestone.y_start, origin.1)?;
-    let y_end = to_local(milestone.y_end, origin.1)?;
-    if x_start >= x_end || y_start >= y_end || x_end > image.width || y_end > image.height {
-        return None;
-    }
-    let stride = image.width * 3;
-    let mut block = Vec::with_capacity((x_end - x_start) * 3 * (y_end - y_start));
-    for row in y_start..y_end {
-        let offset = row * stride;
-        block.extend_from_slice(&image.pixels[offset + x_start * 3..offset + x_end * 3]);
-    }
-    Some(sha256_hex(&block))
+/// Workload of a task this node knows but that belongs to no job.
+fn known_workload(context: &NodeContext, task_id: &str) -> Option<&'static dyn Workload> {
+    let known = context.known_tasks.lock().ok()?;
+    known.get(task_id).and_then(workload::of)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silicium_raytracer::pipeline::milestones;
-
-    fn pattern(width: usize, height: usize) -> Vec<u8> {
-        let pixels: Vec<u8> = (0..width * height * 3)
-            .map(|i| (i * 31 % 256) as u8)
-            .collect();
-        ppm::encode(width, height, &pixels)
-    }
-
-    fn samples(image: &[u8], y: usize, x: usize) -> Vec<MilestoneSample> {
-        milestones::build(image, y, 4, x)
-            .unwrap()
-            .milestones
-            .into_iter()
-            .map(|m| MilestoneSample {
-                index: m.index as u32,
-                x_start: m.x_start as u32,
-                x_end: m.x_end as u32,
-                y_start: m.y_start as u32,
-                y_end: m.y_end as u32,
-                pixel_sha256: m.pixel_sha256,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn the_committed_image_matches_and_another_does_not() {
-        let image = pattern(6, 10);
-        let committed = samples(&image, 0, 0);
-        assert!(image_matches_milestones(&image, &committed, (0, 0)));
-        let mut other = image.clone();
-        let last = other.len() - 1;
-        other[last] ^= 0xff;
-        assert!(!image_matches_milestones(&other, &committed, (0, 0)));
-        assert!(!image_matches_milestones(&image, &[], (0, 0)));
-        assert!(!image_matches_milestones(b"not a ppm", &committed, (0, 0)));
-    }
-
-    #[test]
-    fn a_tile_is_checked_at_its_place_in_the_image() {
-        let tile = pattern(3, 5);
-        let committed = samples(&tile, 20, 7);
-        assert!(image_matches_milestones(&tile, &committed, (7, 20)));
-        assert!(!image_matches_milestones(&tile, &committed, (0, 0)));
-    }
 
     #[test]
     fn a_failed_collection_is_retried_a_bounded_number_of_times() {

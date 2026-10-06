@@ -39,7 +39,64 @@ fn remote_task() -> TaskEnvelope {
         runtime_image: None,
         scene_sha256: Some("not-a-hash".to_string()),
         region: None,
+        workload: None,
+        byte_range: None,
     }
+}
+
+#[test]
+fn workload_ids_are_checked() {
+    for good in ["raytracer", "calcul/integrity/sha256", "a.b_c-d/e1"] {
+        assert!(is_valid_workload_id(good), "{good}");
+    }
+    for bad in [
+        "",
+        "Raytracer",
+        "a//b",
+        "../x",
+        "a/./b",
+        "a b",
+        &"x".repeat(81),
+    ] {
+        assert!(!is_valid_workload_id(bad), "{bad}");
+    }
+}
+
+#[test]
+fn a_workload_and_a_byte_range_are_kept_when_valid() {
+    let range = ByteRange { start: 4, end: 9 };
+    let task = TaskEnvelope {
+        workload: Some("calcul/integrity/sha256".to_string()),
+        byte_range: Some(range),
+        ..remote_task()
+    };
+    let clean = task.sanitize_remote(&RemoteTaskPolicy::default()).unwrap();
+    assert_eq!(clean.workload.as_deref(), Some("calcul/integrity/sha256"));
+    assert_eq!(clean.byte_range, Some(range));
+    assert_eq!(clean.output_path, "job-1-frag-000/output.bin");
+
+    let bad_workload = TaskEnvelope {
+        workload: Some("../evil".to_string()),
+        ..remote_task()
+    };
+    assert_eq!(
+        bad_workload.sanitize_remote(&RemoteTaskPolicy::default()),
+        Err(RemoteTaskError::InvalidWorkload)
+    );
+    let bad_range = TaskEnvelope {
+        byte_range: Some(ByteRange { start: 9, end: 4 }),
+        ..remote_task()
+    };
+    assert_eq!(
+        bad_range.sanitize_remote(&RemoteTaskPolicy::default()),
+        Err(RemoteTaskError::InvalidByteRange)
+    );
+}
+
+#[test]
+fn an_envelope_without_workload_keeps_its_former_encoding() {
+    let json = serde_json::to_value(remote_task()).unwrap();
+    assert!(json.get("workload").is_none() && json.get("byte_range").is_none());
 }
 
 #[test]

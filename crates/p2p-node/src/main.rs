@@ -41,6 +41,7 @@ mod swarm;
 mod task;
 mod verifier;
 mod worker;
+mod workload;
 
 use crate::{
     api::ApiState,

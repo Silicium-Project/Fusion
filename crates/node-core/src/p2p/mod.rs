@@ -5,7 +5,7 @@
 //! fields a peer must not control (Docker image, working directory,
 //! environment, output path) and refuses paths that leave the node's sandbox.
 
-pub use crate::region::Region;
+pub use crate::region::{ByteRange, Region};
 use crate::{
     affinity::AffinityRecord,
     beta::BetaPosterior,
@@ -119,6 +119,14 @@ pub struct TaskEnvelope {
     /// when absent.
     #[serde(default)]
     pub region: Option<Region>,
+    /// Workload identifier (`raytracer`, `calcul/integrity/sha256`, ...);
+    /// absent for tasks of older publishers, which are raytracer renders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workload: Option<String>,
+    /// Part of the input to process, for workloads that split a file into
+    /// byte chunks; the whole input when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byte_range: Option<ByteRange>,
 }
 
 /// What a node accepts from tasks published by other peers.
@@ -142,12 +150,44 @@ pub enum RemoteTaskError {
     InvalidRegion,
     #[error("remote_task_wasm_refused")]
     WasmRefused,
+    #[error("remote_task_workload_invalid")]
+    InvalidWorkload,
+    #[error("remote_task_byte_range_invalid")]
+    InvalidByteRange,
+}
+
+/// Longest workload identifier accepted from a peer.
+pub const MAX_WORKLOAD_ID_LEN: usize = 80;
+
+/// True for a well-formed workload identifier: lowercase letters, digits and
+/// `/ . _ -`, at most [`MAX_WORKLOAD_ID_LEN`] characters. Whether the node
+/// knows the workload is decided by the node itself.
+pub fn is_valid_workload_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_WORKLOAD_ID_LEN
+        && id.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"/._-".contains(&byte)
+        })
+        && !id
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
 }
 
 impl TaskEnvelope {
-    /// Relative output path used for a task, whatever the publisher asked for.
+    /// Relative output path used for a raytracer task, whatever the
+    /// publisher asked for.
     pub fn local_output_path(task_id: &str) -> Option<String> {
-        crate::sandbox::safe_component(task_id).map(|id| format!("{id}/output.ppm"))
+        Self::local_output_path_for(task_id, None)
+    }
+
+    /// Relative output path of a task of `workload`: `<task id>/output.ppm`
+    /// for a raytracer render, `<task id>/output.bin` otherwise.
+    pub fn local_output_path_for(task_id: &str, workload: Option<&str>) -> Option<String> {
+        let extension = match workload {
+            None | Some("raytracer") => "ppm",
+            Some(_) => "bin",
+        };
+        crate::sandbox::safe_component(task_id).map(|id| format!("{id}/output.{extension}"))
     }
 
     /// Returns a copy that is safe to execute locally, or why the task must be
@@ -163,6 +203,11 @@ impl TaskEnvelope {
         {
             return Err(RemoteTaskError::InvalidTaskId);
         }
+        let workload = match self.workload.as_deref().map(str::trim) {
+            None | Some("") => None,
+            Some(id) if is_valid_workload_id(id) => Some(id.to_string()),
+            Some(_) => return Err(RemoteTaskError::InvalidWorkload),
+        };
         let probe = std::path::Path::new("/sandbox");
         crate::sandbox::resolve(probe, &self.scene_path)
             .map_err(|error| RemoteTaskError::InvalidPath(error.to_string()))?;
@@ -187,7 +232,8 @@ impl TaskEnvelope {
         Ok(TaskEnvelope {
             task_id: task_id.to_string(),
             scene_path: self.scene_path.trim().to_string(),
-            output_path: Self::local_output_path(task_id).ok_or(RemoteTaskError::InvalidTaskId)?,
+            output_path: Self::local_output_path_for(task_id, workload.as_deref())
+                .ok_or(RemoteTaskError::InvalidTaskId)?,
             seed: self.seed.clone(),
             hardware_hint: self.hardware_hint,
             runtime_hint: module_path.as_ref().map(|_| "wasm".to_string()),
@@ -207,6 +253,11 @@ impl TaskEnvelope {
             region: match self.region {
                 Some(region) if !region.is_valid() => return Err(RemoteTaskError::InvalidRegion),
                 region => region,
+            },
+            workload,
+            byte_range: match self.byte_range {
+                Some(range) if !range.is_valid() => return Err(RemoteTaskError::InvalidByteRange),
+                range => range,
             },
         })
     }
