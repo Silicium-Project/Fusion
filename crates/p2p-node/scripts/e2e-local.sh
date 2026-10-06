@@ -47,7 +47,7 @@ start_worker() {
   (cd "$dir" && env -i PATH="$PATH" HOME="$HOME" \
     SILICIUM_NODE_ID="desktop$n" SILICIUM_NODE_ROLES=compute,verify \
     SILICIUM_RELEASE_CHANNEL=dev SILICIUM_DATA_DIR="$dir" SILICIUM_COMPUTE_ROOT="$dir/work" \
-    API_PORT=$((19200 + n)) SILICIUM_P2P_BIND=127.0.0.1 SILICIUM_P2P_PORT=0 \
+    SILICIUM_EXPORT_DIR="$dir/export" API_PORT=$((19200 + n)) SILICIUM_P2P_BIND=127.0.0.1 SILICIUM_P2P_PORT=0 \
     SILICIUM_ENABLE_QUIC_LISTENER=0 \
     SILICIUM_BOOTSTRAP_PEERS="/ip4/127.0.0.1/tcp/46201/p2p/$2" \
     COMPUTE_DAEMON_URL="http://127.0.0.1:$((19100 + n))" \
@@ -75,7 +75,8 @@ for second in $(seq 120); do
     echo "OK: image reassembled after ${second}s ($OUT/o/work/results/$JOB.png)"
     for n in $(seq "$WORKERS"); do
       echo "worker $n: computed $(grep -c 'Compute successful' "$OUT/w$n/node.log")," \
-        "verified $(grep -c 'Verdict on' "$OUT/w$n/node.log")"
+        "verified $(grep -c 'Verdict on' "$OUT/w$n/node.log")," \
+        "journal $(grep -c '"kind":"task"' "$OUT/w$n/export/node.events.ndjson" 2>/dev/null || echo 0) task event(s)"
     done
     exit 0
   fi

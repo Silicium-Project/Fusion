@@ -20,6 +20,7 @@
 //! [`results`] (finalized images), [`gossip`] (incoming messages),
 //! [`task`] (network payloads).
 
+mod activity;
 mod admission;
 mod api;
 mod backfill;
@@ -112,11 +113,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )),
         roles: LocalRoles::from_env(),
         active_tasks: Default::default(),
+        activity: activity::ActivityLog::from_env(),
     };
     let known_peers = std::sync::Arc::new(std::sync::Mutex::new(
         std::iter::once(local_peer_id.to_string()).collect(),
     ));
-    let local_profile = local_peer_profile(&local_peer_id.to_string());
+    let local_profile = local_peer_profile(&local_peer_id.to_string(), Vec::new());
     let peer_profiles = std::sync::Arc::new(std::sync::Mutex::new(BTreeMap::from([(
         local_profile.node_id.clone(),
         local_profile,
@@ -168,7 +170,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     publish_gossip(
         &mut swarm,
         &topic,
-        &GossipMessage::PeerHeartbeat(local_peer_profile(&local_peer_id.to_string())),
+        &GossipMessage::PeerHeartbeat(local_peer_profile(&local_peer_id.to_string(), Vec::new())),
     );
 
     let (tx_publish, mut rx_publish) = mpsc::channel(32);
@@ -250,7 +252,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             _ = presence_timer.tick() => {
-                let profile = local_peer_profile(&local_peer_id.to_string());
+                let profile = local_peer_profile(
+                    &local_peer_id.to_string(),
+                    context.activity.active_tasks(),
+                );
                 if let Ok(mut profiles) = peer_profiles.lock() {
                     profiles.insert(profile.node_id.clone(), profile.clone());
                 }

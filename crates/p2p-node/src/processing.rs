@@ -4,6 +4,7 @@
 //! [`crate::worker`].
 
 use crate::{
+    activity::ActivityLog,
     content::ContentStore,
     peers::{LocalRoles, WorkerView},
     storage::TaskBookState,
@@ -53,6 +54,8 @@ pub(crate) struct NodeContext {
     /// Tasks being handled by [`crate::worker::process_task`]: a task
     /// announced again while it is handled is not claimed twice.
     pub(crate) active_tasks: Arc<Mutex<BTreeSet<String>>>,
+    /// Work in progress and work journal shown by the desktop app.
+    pub(crate) activity: ActivityLog,
 }
 
 impl NodeContext {

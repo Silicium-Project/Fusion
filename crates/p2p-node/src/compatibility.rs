@@ -7,6 +7,7 @@
 use crate::{
     control::{ControlRegistry, ControlTask},
     jobs::{JobManifest, JobStore},
+    peers::profile_is_worker,
     storage::TaskBookState,
     task::PeerProfile,
 };
@@ -108,6 +109,10 @@ impl CompatibilityWriter {
                     "activity": profile.activity,
                     "task_queue": profile.task_queue,
                     "telemetry": telemetry,
+                    // Desktop app fields: a connected worker listens for
+                    // tasks continuously (no polling as in the Python node).
+                    "updated_utc": profile.last_seen_utc,
+                    "last_claim_poll_unix": if profile_is_worker(profile) { profile.last_seen_unix } else { 0 },
                 })
             })
             .collect();

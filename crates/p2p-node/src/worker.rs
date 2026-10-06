@@ -3,6 +3,7 @@
 //! then publish the result or release the attempt.
 
 use crate::{
+    activity::Role,
     content::ContentStore,
     processing::{NodeContext, execute_task},
     results::CONTENT_SCHEME,
@@ -61,11 +62,13 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
         println!(" No open attempt for task {task_id}; not claiming it");
         return;
     };
+    context.activity.received(&task_id);
     record_task_event(&context, &task_id, TaskEventBody::ClaimProposed { attempt }).await;
     if !wait_until_accepted(&context, &task_id, attempt).await {
         println!(" Claim on task {task_id} (attempt {attempt}) not accepted for this node");
         return;
     }
+    context.activity.started(&task_id, Role::Compute);
     let renewer = LeaseRenewer::start(context.clone(), task_id.clone(), attempt, terms);
     let outcome = execute_task(&context, &task).await;
     renewer.stop();
@@ -80,6 +83,8 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
         },
         None => TaskEventBody::ClaimReleased { attempt },
     };
+    let produced = matches!(body, TaskEventBody::ResultPublished { .. });
+    context.activity.finished(&task_id, Role::Compute, produced);
     record_task_event(&context, &task_id, body).await;
 }
 

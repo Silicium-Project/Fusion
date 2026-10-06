@@ -37,8 +37,9 @@ pub(crate) struct PeerProfile {
     pub(crate) last_seen_utc: String,
 }
 
-/// Builds the local profile sent at startup and on the heartbeat cadence.
-pub(crate) fn local_peer_profile(peer_id: &str) -> PeerProfile {
+/// Builds the local profile sent at startup and on the heartbeat cadence;
+/// `active_tasks` is the work in progress (see [`crate::activity`]).
+pub(crate) fn local_peer_profile(peer_id: &str, active_tasks: Vec<Value>) -> PeerProfile {
     let logical_cpu_count = std::thread::available_parallelism()
         .map(|value| value.get())
         .unwrap_or(1);
@@ -70,8 +71,8 @@ pub(crate) fn local_peer_profile(peer_id: &str) -> PeerProfile {
             .unwrap_or_else(|_| "local".to_string()),
         capacity: json!({"logical_cpu_count": logical_cpu_count}),
         activity: json!({
-            "status": "idle",
-            "active_tasks": [],
+            "status": if active_tasks.is_empty() { "idle" } else { "working" },
+            "active_tasks": active_tasks,
             "telemetry": telemetry,
         }),
         task_queue: Vec::new(),

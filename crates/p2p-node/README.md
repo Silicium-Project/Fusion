@@ -99,7 +99,7 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_COMPUTE_TOKEN` | — | Jeton envoyé au compute-daemon s'il en exige un |
 | `SILICIUM_DATA_DIR` / `--data-dir` | `/data` | Identité et journal de tâches |
 | `SILICIUM_BOOTSTRAP_PEERS` / `--bootstrap-peers` | — | Multiaddr des pairs d'amorçage, séparées par des virgules ; avec `/p2p/<peer id>`, l'identité est vérifiée à la connexion et ce pair devient éditeur de confiance |
-| `SILICIUM_EXPORT_DIR` | — | Export des pairs, heartbeat et métriques du BackEnd |
+| `SILICIUM_EXPORT_DIR` | — | Export des pairs, heartbeat et métriques du BackEnd, et journal d'activité `node.events.ndjson` de l'app desktop |
 | `SILICIUM_WORKLOAD_STORAGE_DIR` | — | Projections `raytracer-progress.json` et résumé |
 | `SILICIUM_NODE_CONTROL_TOKEN` | — | Jeton de l'API `/v1` quand elle écoute hors loopback |
 | `SILICIUM_ENABLE_QUIC_LISTENER` / `--enable-quic`, `--disable-quic` | activé | Écoute QUIC |
@@ -129,6 +129,7 @@ finaliser ou annuler ces tâches.
 | `src/worker.rs` | Rôle worker : proposition, attente d'acceptation, bail, résultat ou retrait |
 | `src/publisher/` | Rôle éditeur : acceptation (réputation, ancienneté), auto-vérification d'un worker seul, réannonce (`announce.rs`), finalisation ; tests dans `tests.rs` |
 | `src/peers.rs` | Rôles du nœud, workers connectés, règle du worker seul |
+| `src/activity.rs` | Travail en cours (envoyé dans le heartbeat) et journal `node.events.ndjson` lu par l'app desktop |
 | `src/content.rs` | Magasin de contenus par hash (scènes, images), commandes vers la boucle |
 | `src/fetch/` | Téléchargement entre pairs : fournisseurs DHT, requête-réponse, service ; test à deux nœuds dans `tests.rs` |
 | `src/jobs/` | Découpage d'un job en tuiles, manifestes sur disque, réassemblage ; tests dans `tests.rs` |

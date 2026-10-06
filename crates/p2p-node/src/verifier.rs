@@ -14,6 +14,7 @@
 //! rejecting an honest result.
 
 use crate::{
+    activity::Role,
     processing::{NodeContext, render_region},
     task::NetworkTask,
     worker::record_task_event,
@@ -139,13 +140,23 @@ fn covers_scene(context: &NodeContext, job: &Job) -> bool {
 
 /// Re-renders the sampled milestones and publishes the verdict.
 async fn verify(context: &NodeContext, job: Job) {
-    if !covers_scene(context, &job) {
+    context.activity.started(&job.task.task_id, Role::Verify);
+    let verdict_published = check(context, &job).await;
+    context
+        .activity
+        .finished(&job.task.task_id, Role::Verify, verdict_published);
+}
+
+/// Checks the result and publishes the verdict; false when no verdict could
+/// be published (a block could not be rendered locally).
+async fn check(context: &NodeContext, job: &Job) -> bool {
+    if !covers_scene(context, job) {
         println!(
             " Result of {} does not cover its region; rejecting it",
             job.task.task_id
         );
-        publish_verdict(context, &job, false).await;
-        return;
+        publish_verdict(context, job, false).await;
+        return true;
     }
     let milestones = &job.result.milestones;
     let sample = sample_milestones(
@@ -171,11 +182,12 @@ async fn verify(context: &NodeContext, job: Job) {
                     " Could not render a block of {}; no verdict published",
                     job.task.task_id
                 );
-                return;
+                return false;
             }
         }
     }
-    publish_verdict(context, &job, approved).await;
+    publish_verdict(context, job, approved).await;
+    true
 }
 
 async fn publish_verdict(context: &NodeContext, job: &Job, approved: bool) {
