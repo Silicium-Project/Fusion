@@ -586,6 +586,55 @@ fn machine_activity_reads_work_and_last_response() {
     let _ = fs::remove_dir_all(&directory);
 }
 
+/// Files written by the Rust node (`p2p_node`) in its export directory.
+#[test]
+fn activity_reads_the_rust_node_export() {
+    let directory = env::temp_dir().join(format!("silicium-rust-export-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&directory);
+    fs::create_dir_all(&directory).unwrap();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    fs::write(
+        directory.join("node.silicium-c8fa10f1.peers.json"),
+        format!(
+            r#"{{"schema_version":1,"node_id":"silicium-c8fa10f1","peers":[{{"node_id":"silicium-c8fa10f1","peer_id":"12D3KooWQs","self":true,"online":true,"roles":["compute","verify"],"app_version":"0.2.9-dev.28","release_channel":"dev","release_build":"ad3b15f","last_seen_unix":{now},"last_claim_poll_unix":{now},"updated_utc":"2026-10-06T16:21:46Z","activity":{{"status":"working","active_tasks":[{{"item_id":"fe94.job.f004","role":"compute","activity":"fragment","workload":"raytracer","fragment_index":4,"phase":"executing"}}]}}}},{{"node_id":"orchestrator-dev-1","peer_id":"12D3KooWPC","self":false,"online":true,"roles":["resource","storage"],"last_seen_unix":{now},"last_claim_poll_unix":0}}]}}"#
+        ),
+    )
+    .unwrap();
+    let journal = [
+        r#"{"kind":"task_received","item_id":"fe94.job.f004","role":"compute","fragment_index":4,"ok":true,"timestamp_utc":"2026-10-06T15:35:16Z"}"#,
+        r#"{"kind":"task_started","item_id":"fe94.job.f004","role":"compute","activity":"fragment","fragment_index":4,"ok":true,"timestamp_utc":"2026-10-06T15:35:17Z"}"#,
+        r#"{"kind":"task","item_id":"fe94.job.f004","role":"compute","activity":"fragment","fragment_index":4,"ok":true,"duration_ms":2900,"timestamp_utc":"2026-10-06T15:35:20Z"}"#,
+        r#"{"kind":"task","item_id":"fe94.job.f004","role":"verify","activity":"verification","fragment_index":4,"ok":true,"duration_ms":400,"timestamp_utc":"2026-10-06T15:35:21Z"}"#,
+    ]
+    .join("\n");
+    fs::write(directory.join("node.events.ndjson"), journal).unwrap();
+
+    let machines = collect_machine_activity(&directory);
+    let local = machines.iter().find(|machine| machine.self_node).unwrap();
+    assert!(local.online && local.scheduler_active);
+    assert_eq!(local.status, "working");
+    assert_eq!(local.active_tasks[0].fragment_index, "4");
+    let orchestrator = machines.iter().find(|machine| !machine.self_node).unwrap();
+    assert!(orchestrator.online && !orchestrator.scheduler_active);
+
+    let mut history = Vec::new();
+    collect_event_history(&directory.join("node.events.ndjson"), &mut history);
+    let names: Vec<&str> = history.iter().map(|item| item.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "verify.fe94.job.f004",
+            "result.fe94.job.f004",
+            "task.started.fe94.job.f004",
+            "task.received.fe94.job.f004",
+        ]
+    );
+    let _ = fs::remove_dir_all(&directory);
+}
+
 #[test]
 fn runtime_telemetry_parser_preserves_resource_metrics() {
     let payload: Value = serde_json::json!({

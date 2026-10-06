@@ -17,28 +17,26 @@ fn runtime_binary(repo_root: &Path, name: &str) -> PathBuf {
         .join(format!("{name}{suffix}"))
 }
 
-fn runtime_work_dir(repo_root: &Path) -> PathBuf {
+/// Data of the Rust node of this PC: `state/` (identity, task book),
+/// `work/` (shared with the compute daemon) and `export/` (heartbeat, peers
+/// and activity journal read by the UI).
+pub(crate) fn runtime_node_dir(repo_root: &Path) -> PathBuf {
     repo_root
         .join(".silicium")
         .join("networked")
         .join("silicium-desktop-node")
-        .join("work")
+}
+
+fn runtime_work_dir(repo_root: &Path) -> PathBuf {
+    runtime_node_dir(repo_root).join("work")
 }
 
 fn runtime_state_dir(repo_root: &Path) -> PathBuf {
-    repo_root
-        .join(".silicium")
-        .join("networked")
-        .join("silicium-desktop-node")
-        .join("state")
+    runtime_node_dir(repo_root).join("state")
 }
 
-fn runtime_export_dir(repo_root: &Path) -> PathBuf {
-    repo_root
-        .join(".silicium")
-        .join("networked")
-        .join("silicium-desktop-node")
-        .join("export")
+pub(crate) fn runtime_export_dir(repo_root: &Path) -> PathBuf {
+    runtime_node_dir(repo_root).join("export")
 }
 
 fn spawn_compute_daemon(repo_root: &Path) -> Result<(), String> {

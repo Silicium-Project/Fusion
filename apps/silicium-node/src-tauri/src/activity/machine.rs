@@ -105,8 +105,26 @@ pub(crate) fn parse_resource_reputation(peer: &Value) -> Vec<BayesianResourceSco
         .collect()
 }
 
+/// Peer snapshot of the node: `node.<node id>.peers.json` written by the Rust
+/// node, else `mesh.discovery.json` of the former Python node.
+fn peer_snapshot_path(export_dir: &Path) -> Option<PathBuf> {
+    let rust = fs::read_dir(export_dir)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy())
+                .is_some_and(|name| name.starts_with("node.") && name.ends_with(".peers.json"))
+        })
+        .max_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok());
+    rust.or_else(|| Some(export_dir.join("mesh.discovery.json")))
+}
+
 pub(crate) fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
-    let snapshot_path = export_dir.join("mesh.discovery.json");
+    let Some(snapshot_path) = peer_snapshot_path(export_dir) else {
+        return Vec::new();
+    };
     let Ok(raw) = fs::read_to_string(snapshot_path) else {
         return Vec::new();
     };

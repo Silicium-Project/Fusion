@@ -203,17 +203,13 @@ pub fn install_runtime(repo_root: String) -> Result<String, String> {
 pub fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
     let root = resolve_repo_root_readonly(&repo_root)?;
     validate_repo_root(&root)?;
-    let networked_dir = root
-        .join("Network")
-        .join(".silicium")
-        .join("networked")
-        .join("silicium-desktop-node");
+    // Files written by the Rust node (the Python node used Network/.silicium).
+    let networked_dir = runtime_node_dir(&root);
     let mut history = Vec::new();
     collect_event_history(
         &networked_dir.join("export").join("node.events.ndjson"),
         &mut history,
     );
-    collect_history(&networked_dir, &mut history);
     history.sort_by_key(|entry| std::cmp::Reverse(entry.modified_at));
     history
         .dedup_by(|left, right| left.name == right.name && left.modified_at == right.modified_at);

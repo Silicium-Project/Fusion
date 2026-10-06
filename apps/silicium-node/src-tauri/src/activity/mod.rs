@@ -1,4 +1,5 @@
-//! Activity shown in the UI: node log tail, task history and event history.
+//! Activity shown in the UI: node log tail and the event history of the
+//! node (`node.events.ndjson`, written by the Rust node).
 //! The per-machine activity view is built in [`machine`].
 
 mod machine;
@@ -36,12 +37,7 @@ pub(crate) fn read_node_log_tail(repo_root: &Path) -> Option<String> {
             parts.push(format!("{label}:\n{tail}"));
         }
     }
-    let network_export = repo_root
-        .join("Network")
-        .join(".silicium")
-        .join("networked")
-        .join("silicium-desktop-node")
-        .join("export");
+    let network_export = runtime_export_dir(repo_root);
     let claim_health = network_export.join("claim-poll.health.json");
     if let Ok(content) = fs::read_to_string(claim_health) {
         if !content.trim().is_empty() {
@@ -68,42 +64,6 @@ pub(crate) fn read_node_log_tail(repo_root: &Path) -> Option<String> {
         None
     } else {
         Some(parts.join("\n\n"))
-    }
-}
-
-pub(crate) fn collect_history(path: &Path, history: &mut Vec<HistoryItem>) {
-    let Ok(entries) = fs::read_dir(path) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let Ok(metadata) = entry.metadata() else {
-            continue;
-        };
-        if metadata.is_dir() {
-            collect_history(&entry.path(), history);
-            continue;
-        }
-        let modified_at = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .map(|duration| duration.as_secs())
-            .unwrap_or(0);
-        let Some(name) = display_history_name(&entry.path()) else {
-            continue;
-        };
-        history.push(HistoryItem {
-            name,
-            modified_at,
-            size_bytes: metadata.len(),
-            kind: "file".to_string(),
-            item_id: String::new(),
-            role: String::new(),
-            activity: String::new(),
-            fragment_index: String::new(),
-            ok: None,
-            peer_id: String::new(),
-        });
     }
 }
 
@@ -135,7 +95,9 @@ pub(crate) fn collect_event_history(path: &Path, history: &mut Vec<HistoryItem>)
             .and_then(Value::as_u64)
             .unwrap_or(0);
         let ok = value.get("ok").and_then(Value::as_bool).unwrap_or(true);
+        let verification = value.get("role").and_then(Value::as_str) == Some("verify");
         let name = match kind {
+            "task" if verification && ok => format!("verify.{item_id}"),
             "task_received" | "pull_claim" => format!("task.received.{item_id}"),
             "task_started" => format!("task.started.{item_id}"),
             "fragment_fetched" => format!("fragment.fetched.{item_id}"),
@@ -182,29 +144,6 @@ pub(crate) fn parse_utc_timestamp(value: &str) -> Option<u64> {
         .map(|datetime| datetime.with_timezone(&Utc).timestamp())
         .filter(|timestamp| *timestamp >= 0)
         .map(|timestamp| timestamp as u64)
-}
-
-pub(crate) fn display_history_name(path: &Path) -> Option<String> {
-    let file_name = path.file_name()?.to_string_lossy();
-    let lower = file_name.to_lowercase();
-    if lower.ends_with(".queue.ndjson") || lower == "tasks.queue.ndjson" {
-        return None;
-    }
-    if lower.starts_with("result.") {
-        return Some(file_name.to_string());
-    }
-    if lower.contains("verify") || lower.contains("vote") {
-        return Some(file_name.to_string());
-    }
-    if path
-        .parent()
-        .and_then(Path::file_name)
-        .map(|name| name.to_string_lossy().eq_ignore_ascii_case("tasks"))
-        .unwrap_or(false)
-    {
-        return Some(format!("task.{file_name}"));
-    }
-    None
 }
 
 pub(crate) fn directory_size(path: &Path) -> u64 {
