@@ -3,7 +3,6 @@ package silicium
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -101,16 +100,23 @@ func PublishTaskControl(ctx context.Context, cfg RunnerConfig, control TaskContr
 	}
 }
 
+// RunJob submits a job to the Rust node and waits for its result.
 func RunJob(ctx context.Context, job models.Job, cfg RunnerConfig) RunResult {
-	switch strings.TrimSpace(job.Workload) {
-	case "", "raytracer":
-		return RunRaytracer(ctx, job, cfg)
-	default:
+	spec, ok := workloadSpecFor(job.Workload)
+	if !ok {
 		return RunResult{Status: "failed", ErrorMessage: "unsupported workload"}
 	}
+	return runNodeJob(ctx, job, cfg, spec)
 }
 
+// RunRaytracer runs a raytracer job (kept for callers that name it).
 func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResult {
+	return runNodeJob(ctx, job, cfg, raytracerSpec)
+}
+
+// runNodeJob submits `job` as a workload of `spec`, waits until every
+// fragment is finalized, then until the node has assembled the result.
+func runNodeJob(ctx context.Context, job models.Job, cfg RunnerConfig, spec workloadSpec) RunResult {
 	networkRoot, err := filepath.Abs(cfg.NetworkRoot)
 	if err != nil {
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
@@ -128,8 +134,8 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 	if err != nil {
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
 	}
-	raytracerRoot := filepath.Join(workloadRoot, "raytracer", job.SiliciumJobID)
-	outputPath := filepath.Join(raytracerRoot, "reassembled", "render.ppm")
+	jobRoot := filepath.Join(workloadRoot, spec.StorageDir, job.SiliciumJobID)
+	outputPath := filepath.Join(jobRoot, filepath.FromSlash(spec.ResultFile))
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o750); err != nil {
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
 	}
@@ -137,7 +143,7 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 	_, err = SubmitControlTask(ctx, cfg, ControlTaskSubmission{
 		TaskID:        job.SiliciumJobID,
 		RootJobID:     job.SiliciumJobID,
-		Workload:      "raytracer",
+		Workload:      spec.NodeID,
 		RequiredRoles: []string{"compute", "verify"},
 		ScenePath:     scenePath,
 		OutputPath:    outputPath,
@@ -155,9 +161,10 @@ func RunRaytracer(ctx context.Context, job models.Job, cfg RunnerConfig) RunResu
 		}
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
 	}
-	// Finalized fragments are not the image yet: wait for the node to
-	// download the tiles from the workers and reassemble them.
-	summaryPath := filepath.Join(raytracerRoot, "raytracer-summary.json")
+	// Finalized fragments are not the result yet: wait for the node to
+	// download the fragment results from the workers and assemble them.
+	// The node names the summary file the same way for every workload.
+	summaryPath := filepath.Join(jobRoot, "raytracer-summary.json")
 	if err := waitForReassembledImage(ctx, outputPath, summaryPath, resultWaitTimeout()); err != nil {
 		if cause := context.Cause(ctx); cause != nil {
 			return RunResult{Status: "cancelled", ErrorMessage: cause.Error()}
@@ -317,11 +324,4 @@ func envDefault(key string, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-func ValidateWorkload(workload string) error {
-	if workload == "" || workload == "raytracer" {
-		return nil
-	}
-	return errors.New("unsupported workload")
 }
