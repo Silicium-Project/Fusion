@@ -30,7 +30,11 @@ fn crate_source() -> String {
 
 #[cfg(target_os = "linux")]
 fn write_test_rust_runtime(network: &Path) {
-    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let suffix = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let bin = network.join("bin");
     fs::create_dir_all(&bin).unwrap();
     fs::write(bin.join(format!("p2p_node{suffix}")), b"node").unwrap();
@@ -83,6 +87,23 @@ fn channel_defaults_follow_the_build_channel() {
         migrate_legacy_orchestrator_url("https://example.org/orchestrator"),
         "https://example.org/orchestrator"
     );
+}
+
+#[test]
+fn dev_nodes_pin_the_orchestrator_and_never_accept_untrusted_tasks() {
+    // The pinned peer id is what makes the orchestrator a trusted publisher.
+    let (address, peer_id) = DEV_NODE_BOOTSTRAP_PEERS
+        .split_once("/p2p/")
+        .expect("dev bootstrap address pins the orchestrator peer id");
+    assert!(address.starts_with("/ip4/10.77.0.1/tcp/"));
+    assert!(peer_id.starts_with("12D3KooW") && peer_id.len() > 40);
+    if option_env!("SILICIUM_DEFAULT_BOOTSTRAP_PEERS").is_none() && release_channel() != "prod" {
+        assert_eq!(default_node_bootstrap_peers(), DEV_NODE_BOOTSTRAP_PEERS);
+    }
+    // The node refuses to start on the dev/prod channels with this flag.
+    let source = crate_source();
+    assert!(!source.contains("ACCEPT_UNTRUSTED_TASKS"));
+    assert!(!source.contains("\"SILICIUM_VERIFICATIONS_REQUIRED\", \"0\""));
 }
 
 #[test]
@@ -192,7 +213,11 @@ fn packaged_runtime_requires_the_network_launcher() {
         validate_repo_root(&directory).unwrap_err(),
         "network_runtime_not_found"
     );
-    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let suffix = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let bin = directory.join("Network").join("bin");
     fs::create_dir_all(&bin).unwrap();
     fs::write(bin.join(format!("p2p_node{suffix}")), b"node").unwrap();

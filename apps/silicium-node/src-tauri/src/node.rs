@@ -6,7 +6,11 @@ use crate::*;
 pub(crate) const NODE_API_PORT: u16 = 9092;
 
 fn runtime_binary(repo_root: &Path, name: &str) -> PathBuf {
-    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let suffix = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
     repo_root
         .join("Network")
         .join("bin")
@@ -108,9 +112,11 @@ pub(crate) fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child,
         .env("API_PORT", NODE_API_PORT.to_string())
         .env("SILICIUM_P2P_PORT", p2p_port)
         .env("SILICIUM_BOOTSTRAP_PEERS", bootstrap)
+        // Tasks are only executed when signed by a trusted publisher: the
+        // orchestrator pinned in the bootstrap address (`/p2p/<peer id>`).
+        // Results are verified by another worker, or by the worker itself when
+        // it is the only one on the network (node defaults).
         .env("SILICIUM_WORK_OWN_TASKS", "1")
-        .env("SILICIUM_ACCEPT_UNTRUSTED_TASKS", "1")
-        .env("SILICIUM_VERIFICATIONS_REQUIRED", "0")
         .env("COMPUTE_DAEMON_URL", "http://127.0.0.1:9090");
     apply_runtime_path(&mut command, repo_root);
     spawn_detached(command, repo_root)

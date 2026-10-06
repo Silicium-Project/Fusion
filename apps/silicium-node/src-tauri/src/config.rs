@@ -24,13 +24,30 @@ pub(crate) fn default_orchestrator_url() -> &'static str {
     }
 }
 
+/// libp2p rendezvous of the dev orchestrator, through the WireGuard VPN. It
+/// ends with the orchestrator's peer id (`Local peer id` in its log), derived
+/// from `identity.key` in its state directory on the VPS: if that file is
+/// lost, the orchestrator gets a new id and dev builds must be rebuilt with it.
+pub(crate) const DEV_NODE_BOOTSTRAP_PEERS: &str =
+    "/ip4/10.77.0.1/tcp/46201/p2p/12D3KooWPCXXi9DUqqao5bcjt7yT3xJyx1gsUSRyNWCKp218ioon";
+
+/// Prod rendezvous. Not pinned yet: add `/p2p/<prod peer id>` before the prod
+/// network switches to the Rust node, or prod nodes will ignore its tasks.
+pub(crate) const PROD_NODE_BOOTSTRAP_PEERS: &str = "/dns4/vps-910c1dbc.vps.ovh.net/tcp/46101";
+
 /// Direct libp2p rendezvous used by the Rust node. The HTTPS orchestrator URL
 /// remains the public control-plane address, while the Rust runtime joins the
 /// peer mesh through a multiaddr.
+///
+/// A pinned peer id (`/p2p/<peer id>`) makes the connection fail if another
+/// identity answers, and makes that peer the node's only trusted publisher:
+/// the node executes no task signed by anyone else.
+/// `SILICIUM_DEFAULT_BOOTSTRAP_PEERS` at build time overrides it.
 pub(crate) fn default_node_bootstrap_peers() -> &'static str {
-    match release_channel() {
-        "prod" => "/dns4/vps-910c1dbc.vps.ovh.net/tcp/46101",
-        _ => "/ip4/10.77.0.1/tcp/46201",
+    match option_env!("SILICIUM_DEFAULT_BOOTSTRAP_PEERS") {
+        Some(peers) if !peers.trim().is_empty() => peers,
+        _ if release_channel() == "prod" => PROD_NODE_BOOTSTRAP_PEERS,
+        _ => DEV_NODE_BOOTSTRAP_PEERS,
     }
 }
 
