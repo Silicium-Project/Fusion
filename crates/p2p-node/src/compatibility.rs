@@ -167,13 +167,12 @@ impl CompatibilityWriter {
                 })
             })
             .collect();
-        let telemetry = json!({
-            "logical_cpu_count": std::thread::available_parallelism().map(|value| value.get()).unwrap_or(1),
-            "system_cpu_percent": 0.0,
-            "system_memory_percent": 0.0,
-            "storage_used_percent": 0.0,
-            "updated_utc": utc_now(),
-        });
+        // This node's latest resource sample, from its own heartbeat profile.
+        let telemetry = profiles
+            .values()
+            .find(|profile| profile.node_id == self.node_id)
+            .and_then(|profile| profile.activity.get("telemetry").cloned())
+            .unwrap_or_else(|| json!({"updated_utc": utc_now()}));
         let heartbeat = json!({
             "schema_version": 1,
             "node_id": self.node_id.clone(),

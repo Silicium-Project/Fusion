@@ -15,3 +15,4 @@ reqwest.workspace = true
 sha2 = "0.10.9"
 silicium_node_core.workspace = true
 silicium-raytracer = { path = "../raytracer" }
+sysinfo = { version = "0.37", default-features = false, features = ["system", "disk"] }

@@ -39,6 +39,7 @@ mod results;
 mod storage;
 mod swarm;
 mod task;
+mod telemetry;
 mod verifier;
 mod worker;
 mod workload;
@@ -119,7 +120,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let known_peers = std::sync::Arc::new(std::sync::Mutex::new(
         std::iter::once(local_peer_id.to_string()).collect(),
     ));
-    let local_profile = local_peer_profile(&local_peer_id.to_string(), Vec::new());
+    let mut telemetry = telemetry::Telemetry::new(read_compute_root_from_env());
+    let local_profile =
+        local_peer_profile(&local_peer_id.to_string(), Vec::new(), telemetry.sample());
     let peer_profiles = std::sync::Arc::new(std::sync::Mutex::new(BTreeMap::from([(
         local_profile.node_id.clone(),
         local_profile,
@@ -171,7 +174,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     publish_gossip(
         &mut swarm,
         &topic,
-        &GossipMessage::PeerHeartbeat(local_peer_profile(&local_peer_id.to_string(), Vec::new())),
+        &GossipMessage::PeerHeartbeat(local_peer_profile(
+            &local_peer_id.to_string(),
+            Vec::new(),
+            telemetry.sample(),
+        )),
     );
 
     let (tx_publish, mut rx_publish) = mpsc::channel(32);
@@ -256,6 +263,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let profile = local_peer_profile(
                     &local_peer_id.to_string(),
                     context.activity.active_tasks(),
+                    telemetry.sample(),
                 );
                 if let Ok(mut profiles) = peer_profiles.lock() {
                     profiles.insert(profile.node_id.clone(), profile.clone());

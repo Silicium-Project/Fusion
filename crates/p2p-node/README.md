@@ -157,6 +157,7 @@ ses tests ; le BackEnd doit aussi l'accepter (`ValidateWorkload`).
 | `src/worker.rs` | Rôle worker : proposition, attente d'acceptation, bail, résultat ou retrait |
 | `src/publisher/` | Rôle éditeur : acceptation (réputation, ancienneté), auto-vérification d'un worker seul, réannonce (`announce.rs`), finalisation ; tests dans `tests.rs` |
 | `src/peers.rs` | Rôles du nœud, workers connectés, règle du worker seul |
+| `src/telemetry.rs` | Mesures de ressources envoyées dans le heartbeat (CPU et mémoire de la machine et des processus Silicium, disque du dossier de travail, uptime) |
 | `src/activity.rs` | Travail en cours (envoyé dans le heartbeat) et journal `node.events.ndjson` lu par l'app desktop |
 | `src/content.rs` | Magasin de contenus par hash (scènes, images), commandes vers la boucle |
 | `src/fetch/` | Téléchargement entre pairs : fournisseurs DHT, requête-réponse, service ; test à deux nœuds dans `tests.rs` |

@@ -38,18 +38,16 @@ pub(crate) struct PeerProfile {
 }
 
 /// Builds the local profile sent at startup and on the heartbeat cadence;
-/// `active_tasks` is the work in progress (see [`crate::activity`]).
-pub(crate) fn local_peer_profile(peer_id: &str, active_tasks: Vec<Value>) -> PeerProfile {
+/// `active_tasks` is the work in progress (see [`crate::activity`]) and
+/// `telemetry` the latest resource sample (see [`crate::telemetry`]).
+pub(crate) fn local_peer_profile(
+    peer_id: &str,
+    active_tasks: Vec<Value>,
+    telemetry: Value,
+) -> PeerProfile {
     let logical_cpu_count = std::thread::available_parallelism()
         .map(|value| value.get())
         .unwrap_or(1);
-    let telemetry = json!({
-        "logical_cpu_count": logical_cpu_count,
-        "system_cpu_percent": 0.0,
-        "system_memory_percent": 0.0,
-        "storage_used_percent": 0.0,
-        "updated_utc": utc_now(),
-    });
     PeerProfile {
         node_id: std::env::var("SILICIUM_NODE_ID")
             .ok()
