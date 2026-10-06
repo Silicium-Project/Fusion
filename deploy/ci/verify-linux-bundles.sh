@@ -50,10 +50,10 @@ if ! rpm -qip "$RPM_PATH" >/dev/null; then
 fi
 rpm_runtime_path="$(
   rpm -qpl "$RPM_PATH" \
-    | awk '/\/resources\/runtime\/Network\/silicium$/ && !found { print; found = 1 }'
+    | awk '/\/resources\/runtime\/Network\/bin\/p2p_node$/ && !found { print; found = 1 }'
 )"
 if [[ -z "$rpm_runtime_path" ]]; then
-  echo "The RPM package is missing its Network runtime." >&2
+  echo "The RPM package is missing its Rust node runtime." >&2
   rpm -qpl "$RPM_PATH" | sed -n '1,120p' >&2
   exit 1
 fi
@@ -67,10 +67,10 @@ fi
 
 deb_runtime_entry="$(
   find "$extract_root/deb/usr/lib" -type f \
-    -path '*/resources/runtime/Network/silicium' -print -quit
+    -path '*/resources/runtime/Network/bin/p2p_node' -print -quit
 )"
 if [[ -z "$deb_runtime_entry" ]]; then
-  echo "The Debian package is missing its Network runtime." >&2
+  echo "The Debian package is missing its Rust node runtime." >&2
   find "$extract_root/deb/usr" -maxdepth 6 -type f | sort | sed -n '1,80p' >&2
   exit 1
 fi
@@ -88,14 +88,14 @@ fi
 
 appimage_runtime_entry="$(
   find "$extract_root/appimage/squashfs-root/usr/lib" -type f \
-    -path '*/resources/runtime/Network/silicium' -print -quit
+    -path '*/resources/runtime/Network/bin/p2p_node' -print -quit
 )"
 if [[ -z "$appimage_runtime_entry" ]]; then
-  echo "The AppImage is missing its Network runtime." >&2
+  echo "The AppImage is missing its Rust node runtime." >&2
   find "$extract_root/appimage/squashfs-root/usr" -maxdepth 6 -type f | sort | sed -n '1,80p' >&2
   exit 1
 fi
 
-echo "Linux bundles verified: AppImage, deb and rpm contain the packaged Network runtime."
+echo "Linux bundles verified: AppImage, deb and rpm contain the packaged Rust node runtime."
 printf '  AppImage: %s\n  deb: %s\n  rpm: %s\n' \
   "$appimage_runtime_entry" "$deb_runtime_entry" "$rpm_runtime_path"

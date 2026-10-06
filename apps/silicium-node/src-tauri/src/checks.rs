@@ -38,7 +38,7 @@ pub(crate) fn orchestrator_check(url: &str) -> CheckItem {
     match command.output() {
         Ok(output) if output.status.success() => {
             let body = String::from_utf8_lossy(&output.stdout);
-            let integrated = body.contains("\"service\":\"network_node\"");
+            let integrated = body.contains("\"service\":\"p2p_node\"");
             CheckItem {
                 name: "Orchestrateur".to_string(),
                 ok: integrated,

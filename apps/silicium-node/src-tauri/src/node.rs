@@ -1,123 +1,119 @@
 //! Starting the network node process: spawn, readiness checks, session logs,
-//! Python launcher selection and detached child processes.
+//! Rust node/compute-daemon launchers and detached child processes.
 
 use crate::*;
 
-pub(crate) const NODE_API_PORT: u16 = 46101;
+pub(crate) const NODE_API_PORT: u16 = 9092;
+
+fn runtime_binary(repo_root: &Path, name: &str) -> PathBuf {
+    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    repo_root
+        .join("Network")
+        .join("bin")
+        .join(format!("{name}{suffix}"))
+}
+
+fn runtime_work_dir(repo_root: &Path) -> PathBuf {
+    repo_root
+        .join(".silicium")
+        .join("networked")
+        .join("silicium-desktop-node")
+        .join("work")
+}
+
+fn runtime_state_dir(repo_root: &Path) -> PathBuf {
+    repo_root
+        .join(".silicium")
+        .join("networked")
+        .join("silicium-desktop-node")
+        .join("state")
+}
+
+fn runtime_export_dir(repo_root: &Path) -> PathBuf {
+    repo_root
+        .join(".silicium")
+        .join("networked")
+        .join("silicium-desktop-node")
+        .join("export")
+}
+
+fn spawn_compute_daemon(repo_root: &Path) -> Result<(), String> {
+    let binary = runtime_binary(repo_root, "compute_daemon");
+    if !binary.is_file() {
+        return Err(format!("compute_daemon_not_found: {}", binary.display()));
+    }
+    fs::create_dir_all(runtime_work_dir(repo_root)).map_err(|error| error.to_string())?;
+    let mut command = Command::new(binary);
+    command
+        .current_dir(repo_root)
+        .env("SILICIUM_DATA_DIR", runtime_state_dir(repo_root))
+        .env("SILICIUM_COMPUTE_ROOT", runtime_work_dir(repo_root))
+        .env("SILICIUM_COMPUTE_BIND", "127.0.0.1:9090")
+        .env(
+            "SILICIUM_RAYTRACER_BIN",
+            repo_root
+                .join("Network")
+                .join("bin")
+                .join("raytracer")
+                .join(if cfg!(target_os = "windows") {
+                    "silicium-raytracer.exe"
+                } else {
+                    "silicium-raytracer"
+                }),
+        );
+    command.env(
+        "SILICIUM_RAYTRACER_ASSETS_DIR",
+        repo_root.join("Network").join("bin").join("raytracer"),
+    );
+    apply_raytracer_env(&mut command, repo_root);
+    apply_runtime_path(&mut command, repo_root);
+    spawn_detached_with_log(
+        command,
+        repo_root,
+        "silicium-compute.out.log",
+        "silicium-compute.err.log",
+    )
+    .map(|_| ())
+}
 
 pub(crate) fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child, String> {
-    let advertise_host = if config.advertise_host.trim().is_empty() {
-        detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string())
-    } else {
-        config.advertise_host.trim().to_string()
-    };
-
-    if cfg!(target_os = "windows") {
-        let network_root = repo_root.join("Network");
-        let silicium_cli = network_root.join("silicium");
-        if !silicium_cli.exists() {
-            return Err(format!(
-                "silicium_cli_not_found: {}",
-                silicium_cli.display()
-            ));
-        }
-        let node_id = effective_node_id(&config.node_id);
-        let mut command = Command::new(python_launcher(repo_root));
-        command
-            .arg(&silicium_cli)
-            .arg("node")
-            .arg("start")
-            .arg("--roles")
-            .arg("compute,verify")
-            .arg("--node-id")
-            .arg(node_id)
-            .arg("--app-version")
-            .arg(release_version())
-            .arg("--release-channel")
-            .arg(release_channel())
-            .arg("--release-build")
-            .arg(release_build())
-            .arg("--export-dir")
-            .arg(".silicium\\networked\\silicium-desktop-node\\export")
-            .arg("--state-dir")
-            .arg(".silicium\\networked\\silicium-desktop-node\\state")
-            .arg("--peer-http-bind")
-            .arg("0.0.0.0")
-            .arg("--peer-http-port")
-            .arg("46101")
-            .arg("--gossip-bind")
-            .arg("0.0.0.0")
-            .arg("--gossip-port")
-            .arg("46101")
-            .arg("--peer-advertise-host")
-            .arg(&advertise_host)
-            .arg("--peer-advertise-port")
-            .arg("46101")
-            .arg("--gossip-advertise-host")
-            .arg(&advertise_host)
-            .arg("--gossip-advertise-port")
-            .arg("46101")
-            .arg("--seed-peers")
-            .arg(&config.orchestrator_url)
-            .arg("--mesh-key")
-            .arg("demo-mesh")
-            .arg("--reputation-score")
-            .arg(config.reputation_score.to_string())
-            .arg("--peer-sync-interval-s")
-            .arg("5")
-            .arg("--peer-sync-fanout")
-            .arg("8")
-            .arg("--peer-stale-after-s")
-            .arg("15")
-            .arg("--peer-http-max-workers")
-            .arg(env::var("SILICIUM_PEER_HTTP_MAX_WORKERS").unwrap_or_else(|_| "16".to_string()))
-            .arg("--idle-ms")
-            .arg("250")
-            .arg("--pull-tasks-enable")
-            .arg("--pull-tasks-interval-s")
-            .arg("0.25")
-            .arg("--pull-tasks-batch-size")
-            .arg(env::var("SILICIUM_PULL_TASKS_BATCH_SIZE").unwrap_or_else(|_| "4".to_string()))
-            .arg("--gossip-enable")
-            .arg("--nat-punch-enable")
-            .arg("--p2p-direct-transport-backend")
-            .arg("auto")
-            .current_dir(&network_root);
-        command.env("SILICIUM_IDENTITY_MODE", "hmac");
-        command.env("SILICIUM_FORCE_HMAC_IDENTITY", "1");
-        apply_raytracer_env(&mut command, repo_root);
-        apply_runtime_path(&mut command, repo_root);
-        spawn_detached(command, repo_root)
-    } else {
-        let script = repo_root.join("deploy").join("linux").join("start-node.sh");
-        if !script.exists() {
-            return Err(format!("script_not_found: {}", script.display()));
-        }
-        let mut command = Command::new("bash");
-        command
-            .arg(script)
-            .arg(effective_node_id(&config.node_id))
-            .arg("compute,verify")
-            .arg("46101")
-            .arg(&config.orchestrator_url)
-            .arg(&advertise_host)
-            .arg("demo-mesh")
-            .arg(config.reputation_score.to_string())
-            .arg("--app-version")
-            .arg(release_version())
-            .arg("--release-channel")
-            .arg(release_channel())
-            .arg("--release-build")
-            .arg(release_build())
-            .arg("--gossip-enable")
-            .arg("--nat-punch-enable")
-            .arg("--p2p-direct-transport-backend")
-            .arg("auto")
-            .current_dir(repo_root);
-        apply_raytracer_env(&mut command, repo_root);
-        apply_runtime_path(&mut command, repo_root);
-        spawn_detached(command, repo_root)
+    let binary = runtime_binary(repo_root, "p2p_node");
+    if !binary.is_file() {
+        return Err(format!("p2p_node_not_found: {}", binary.display()));
     }
+    spawn_compute_daemon(repo_root)?;
+    let node_id = effective_node_id(&config.node_id);
+    let export_dir = runtime_export_dir(repo_root);
+    let state_dir = runtime_state_dir(repo_root);
+    let work_dir = runtime_work_dir(repo_root);
+    fs::create_dir_all(&export_dir).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&state_dir).map_err(|error| error.to_string())?;
+    let bootstrap = env::var("SILICIUM_BOOTSTRAP_PEERS")
+        .or_else(|_| env::var("SILICIUM_NODE_BOOTSTRAP_PEERS"))
+        .unwrap_or_else(|_| default_node_bootstrap_peers().to_string());
+    let p2p_port = env::var("SILICIUM_NODE_P2P_PORT").unwrap_or_else(|_| "0".to_string());
+    let mut command = Command::new(binary);
+    command
+        .current_dir(repo_root)
+        .env("SILICIUM_NODE_ID", &node_id)
+        .env("SILICIUM_NODE_ROLES", "compute,verify")
+        .env("SILICIUM_APP_VERSION", release_version())
+        .env("SILICIUM_RELEASE_CHANNEL", release_channel())
+        .env("SILICIUM_RELEASE_BUILD", release_build())
+        .env("SILICIUM_DATA_DIR", &state_dir)
+        .env("SILICIUM_COMPUTE_ROOT", &work_dir)
+        .env("SILICIUM_WORKLOAD_STORAGE_DIR", work_dir.join("jobs"))
+        .env("SILICIUM_EXPORT_DIR", &export_dir)
+        .env("SILICIUM_API_BIND", "127.0.0.1")
+        .env("API_PORT", NODE_API_PORT.to_string())
+        .env("SILICIUM_P2P_PORT", p2p_port)
+        .env("SILICIUM_BOOTSTRAP_PEERS", bootstrap)
+        .env("SILICIUM_WORK_OWN_TASKS", "1")
+        .env("SILICIUM_ACCEPT_UNTRUSTED_TASKS", "1")
+        .env("SILICIUM_VERIFICATIONS_REQUIRED", "0")
+        .env("COMPUTE_DAEMON_URL", "http://127.0.0.1:9090");
+    apply_runtime_path(&mut command, repo_root);
+    spawn_detached(command, repo_root)
 }
 
 pub(crate) fn wait_for_supervised_node_start(
@@ -203,8 +199,8 @@ pub(crate) fn local_network_node_ready(port: u16) -> bool {
     let mut response = String::new();
     let _ = stream.read_to_string(&mut response);
     (response.starts_with("HTTP/1.0 200") || response.starts_with("HTTP/1.1 200"))
-        && response.contains("\"service\":\"network_node\"")
-        && response.contains("\"ok\":true")
+        && response.contains("\"service\":\"p2p_node\"")
+        && response.contains("\"status\":\"ok\"")
 }
 
 pub(crate) fn wait_for_local_port_release(port: u16, timeout: Duration) -> bool {
@@ -226,6 +222,8 @@ pub(crate) fn reset_node_session_logs(repo_root: &Path) -> Result<(), String> {
         "silicium-supervisor.err.log",
         "silicium-node.out.log",
         "silicium-node.err.log",
+        "silicium-compute.out.log",
+        "silicium-compute.err.log",
     ] {
         let path = node_app_log_path(repo_root, name);
         if let Some(parent) = path.parent() {

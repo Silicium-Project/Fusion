@@ -274,11 +274,28 @@ $runtimeNetwork = Join-Path $runtimeRoot "Network"
 $nativeRaytracerManifest = Join-Path $networkRoot "crates\raytracer\Cargo.toml"
 $nativeRaytracerTarget = Join-Path $appRoot "src-tauri\target\raytracer-native"
 
-if (-not (Test-Path -LiteralPath (Join-Path $networkRoot "silicium"))) {
-    throw "Network runtime not found: $networkRoot"
-}
 if (-not (Test-Path -LiteralPath $nativeRaytracerManifest)) {
     throw "Native raytracer manifest not found: $nativeRaytracerManifest"
+}
+
+$nativeNodeTarget = Join-Path $networkRoot "target\release"
+$p2pNodeBinary = Join-Path $nativeNodeTarget "p2p_node.exe"
+$computeDaemonBinary = Join-Path $nativeNodeTarget "compute_daemon.exe"
+if (-not (Test-Path -LiteralPath $p2pNodeBinary) -or -not (Test-Path -LiteralPath $computeDaemonBinary)) {
+    $previousNodeCargoTarget = $env:CARGO_TARGET_DIR
+    try {
+        Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
+        & cargo build --release --locked --manifest-path (Join-Path $networkRoot "Cargo.toml") -p p2p_node -p compute_daemon
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to build the Rust node runtime."
+        }
+    } finally {
+        if ($null -eq $previousNodeCargoTarget) {
+            Remove-Item Env:CARGO_TARGET_DIR -ErrorAction SilentlyContinue
+        } else {
+            $env:CARGO_TARGET_DIR = $previousNodeCargoTarget
+        }
+    }
 }
 
 $previousCargoTarget = $env:CARGO_TARGET_DIR
@@ -296,6 +313,11 @@ if (Test-Path -LiteralPath $runtimeRoot) {
     Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
 }
 New-Item -ItemType Directory -Force -Path $runtimeNetwork | Out-Null
+
+$runtimeBin = Join-Path $runtimeNetwork "bin"
+New-Item -ItemType Directory -Force -Path $runtimeBin | Out-Null
+Copy-Item -LiteralPath $p2pNodeBinary -Destination (Join-Path $runtimeBin "p2p_node.exe") -Force
+Copy-Item -LiteralPath $computeDaemonBinary -Destination (Join-Path $runtimeBin "compute_daemon.exe") -Force
 
 Copy-Item -LiteralPath (Join-Path $networkRoot "silicium") -Destination (Join-Path $runtimeNetwork "silicium") -Force
 Copy-Directory -Source (Join-Path $networkRoot "tools") -Destination (Join-Path $runtimeNetwork "tools")

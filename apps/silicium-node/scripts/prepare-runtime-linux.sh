@@ -10,13 +10,18 @@ RUNTIME_NETWORK="$RUNTIME_ROOT/Network"
 NATIVE_RAYTRACER_MANIFEST="$NETWORK_ROOT/crates/raytracer/Cargo.toml"
 NATIVE_RAYTRACER_TARGET="$APP_ROOT/src-tauri/target/raytracer-native"
 
-[[ -f "$NETWORK_ROOT/silicium" ]] || { echo "Network runtime not found: $NETWORK_ROOT" >&2; exit 1; }
 [[ -f "$NATIVE_RAYTRACER_MANIFEST" ]] || { echo "Native raytracer manifest not found: $NATIVE_RAYTRACER_MANIFEST" >&2; exit 1; }
 [[ "$RUNTIME_ROOT" == "$APP_ROOT"/* ]] || { echo "Unsafe runtime target: $RUNTIME_ROOT" >&2; exit 1; }
 
 CARGO_TARGET_DIR="$NATIVE_RAYTRACER_TARGET" cargo build --release --manifest-path "$NATIVE_RAYTRACER_MANIFEST"
+if [[ ! -x "$NETWORK_ROOT/target/release/p2p_node" || ! -x "$NETWORK_ROOT/target/release/compute_daemon" ]]; then
+  cargo build --release --locked --manifest-path "$NETWORK_ROOT/Cargo.toml" -p p2p_node -p compute_daemon
+fi
 rm -rf -- "$RUNTIME_ROOT"
 install -d "$RUNTIME_NETWORK" "$RUNTIME_ROOT/.silicium/env" "$RUNTIME_ROOT/tools/python/site-packages"
+install -d "$RUNTIME_NETWORK/bin"
+install -m 0755 "$NETWORK_ROOT/target/release/p2p_node" "$RUNTIME_NETWORK/bin/p2p_node"
+install -m 0755 "$NETWORK_ROOT/target/release/compute_daemon" "$RUNTIME_NETWORK/bin/compute_daemon"
 install -d "$RUNTIME_ROOT/deploy/linux"
 install -m 0755 "$NETWORK_ROOT/silicium" "$RUNTIME_NETWORK/silicium"
 install -m 0755 "$REPO_ROOT/deploy/linux/start-node.sh" "$RUNTIME_ROOT/deploy/linux/start-node.sh"

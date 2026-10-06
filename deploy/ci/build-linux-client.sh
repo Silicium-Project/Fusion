@@ -18,8 +18,8 @@ if [[ -n "$free_kb" && "$free_kb" -lt "$minimum_free_kb" ]]; then
     Network/target
 fi
 
-if [[ ! -d "apps/silicium-node" || ! -d "Network" ]]; then
-  echo "Expected apps/silicium-node and Network at $ROOT." >&2
+if [[ ! -d "apps/silicium-node" || ! -d "Network/crates/p2p-node" ]]; then
+  echo "Expected apps/silicium-node and Network/crates/p2p-node at $ROOT." >&2
   exit 1
 fi
 
@@ -73,8 +73,18 @@ else
 fi
 rm -rf -- src-tauri/target/debug
 
-# Keep compiler-only targets available to the next build when disk allows it.
-# The CI lanes use `auto`: reclaim them if the host is close to full. `1` remains an explicit
+echo "Building p2p_node and compute_daemon..."
+# Network/ is a single Cargo workspace: one Cargo.lock, one target/ directory.
+cargo build --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/Cargo.toml \
+  -p p2p_node -p compute_daemon
+
+mkdir -p src-tauri/resources/runtime/bin
+cp ../../Network/target/release/p2p_node src-tauri/resources/runtime/bin/
+cp ../../Network/target/release/compute_daemon src-tauri/resources/runtime/bin/
+
+# Keep the runtime targets available to the next build when disk allows it.
+# The CI lanes use `auto`: after copying the runtime binaries, reclaim the
+# compiler-only targets if the host is close to full. `1` remains an explicit
 # override for a constrained runner.
 runtime_free_kb="$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')"
 if [[ "$reclaim_runtime_targets" == "1" ]] || \

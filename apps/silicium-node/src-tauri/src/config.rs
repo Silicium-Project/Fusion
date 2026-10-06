@@ -24,6 +24,16 @@ pub(crate) fn default_orchestrator_url() -> &'static str {
     }
 }
 
+/// Direct libp2p rendezvous used by the Rust node. The HTTPS orchestrator URL
+/// remains the public control-plane address, while the Rust runtime joins the
+/// peer mesh through a multiaddr.
+pub(crate) fn default_node_bootstrap_peers() -> &'static str {
+    match release_channel() {
+        "prod" => "/dns4/vps-910c1dbc.vps.ovh.net/tcp/46101",
+        _ => "/ip4/10.77.0.1/tcp/46201",
+    }
+}
+
 // NAT/ICE discovery and the first scheduler poll can legitimately take longer
 // than a short watchdog interval.  Restarting during that bootstrap period
 // prevents a node from ever becoming available to claim work.
