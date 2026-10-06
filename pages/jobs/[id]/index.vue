@@ -14,7 +14,7 @@
         <MetricCard label="Preuves" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? 'traçabilité active' : 'traçabilité inactive'" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
-        <UiCard id="result" title="Votre résultat" description="Aperçu de l’artefact réassemblé." padded><RenderPreview :dashboard="dashboard" :image-url="resultPreview" /></UiCard>
+        <UiCard id="result" title="Votre résultat" :description="imageJob ? 'Aperçu de l’artefact réassemblé.' : 'Empreintes calculées et vérifiées par le réseau.'" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><UiEmptyState v-else title="Résultat téléchargeable" description="Ce type de calcul n’a pas d’aperçu : utilisez « Télécharger »." icon="download" /></UiCard>
         <UiCard title="Étapes du calcul" description="De la réception à la disponibilité du résultat." padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
       </div>
       <div class="job-detail-grid job-detail-grid--bottom">
@@ -38,11 +38,13 @@
 <script setup lang="ts">
 import type { JobDashboard, JobFragment } from '~/types/api';
 import { compactIdentifier, formatDuration, formatPerformanceMultiple, formatPerformancePercent } from '~/utils/format';
-import { compactJobError, fragmentStateLabel, fragmentVisualState, isJobCancellable, shouldRefreshJob } from '~/utils/jobs';
+import { compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, shouldRefreshJob } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();
 const dashboard = ref<JobDashboard | null>(null); const loading = ref(true); const error = ref(''); const confirmOpen = ref(false); const cancelling = ref(false); const resultPreview = ref(''); const previewAttempts = ref(0);
 const visibleLimit = 80;
+const imageJob = computed(() => isImageWorkload(dashboard.value?.job.workload));
+const hashJob = computed(() => isHashWorkload(dashboard.value?.job.workload));
 const fragments = computed(() => dashboard.value?.summary?.fragments || []);
 const visibleFragments = computed(() => fragments.value.slice(-visibleLimit).reverse());
 const jobErrorDetail = computed(() => dashboard.value?.job.errorMessage || dashboard.value?.summary?.failureDetail || dashboard.value?.summary?.traceback || dashboard.value?.summary?.error || '');
@@ -57,7 +59,7 @@ const computeShare = computed(() => formatPerformancePercent(performance.value?.
 const computeNetwork = computed(() => formatPerformanceMultiple(performance.value?.compute_to_network_ratio));
 const performanceDetail = computed(() => computeNetwork.value === '—' ? 'mesure réseau indisponible' : `${computeNetwork.value} calcul / réseau`);
 const cancellable = computed(() => Boolean(dashboard.value && isJobCancellable(dashboard.value.job.status)));
-const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || (dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
+const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || (imageJob.value && dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
 function fragmentIndex(fragment: JobFragment, fallback: number) { return fragment.fragment_index ?? fragment.fragmentIndex ?? fallback; }
 function fragmentNode(fragment: JobFragment) { return String(fragment.handled_by || fragment.handledBy || 'En attente'); }
 function fragmentKey(fragment: JobFragment, fallback: number) { return `${fragmentIndex(fragment,fallback)}-${fragmentNode(fragment)}-${fragment.status}`; }
@@ -82,7 +84,7 @@ function load(force = false, background = false): Promise<void> {
   })();
   return loadPromise;
 }
-async function loadPreview() { if (!dashboard.value?.resultReady || !import.meta.client) return; previewAttempts.value += 1; const token = await session.ensureAccessToken(); if (!token) return; const response = await fetch(`${config.public.apiBase}/jobs/${route.params.id}/result`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }); if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return; const next = URL.createObjectURL(await response.blob()); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); resultPreview.value = next; }
+async function loadPreview() { if (!dashboard.value?.resultReady || !imageJob.value || !import.meta.client) return; previewAttempts.value += 1; const token = await session.ensureAccessToken(); if (!token) return; const response = await fetch(`${config.public.apiBase}/jobs/${route.params.id}/result`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }); if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return; const next = URL.createObjectURL(await response.blob()); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); resultPreview.value = next; }
 async function download() { if (dashboard.value) await jobsStore.downloadResult(dashboard.value.job); }
 async function cancel() { if (!dashboard.value) return; cancelling.value = true; try { await jobsStore.cancelJob(dashboard.value.job.id); confirmOpen.value = false; await load(true); } finally { cancelling.value = false; } }
 let timer: ReturnType<typeof setInterval> | undefined;

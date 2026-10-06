@@ -1,3 +1,4 @@
+import { resultExtension } from '~/utils/jobs';
 import type { Job, JobDashboard, JobList } from '~/types/api';
 import { clientCache } from '~/services/cache';
 
@@ -82,7 +83,7 @@ export function useJobs() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${job.title || 'silicium-resultat'}-${job.id}.${blob.type.includes('png') ? 'png' : 'bin'}`;
+    link.download = `${job.title || 'silicium-resultat'}-${job.id}.${resultExtension(blob.type)}`;
     link.click();
     URL.revokeObjectURL(url);
   }

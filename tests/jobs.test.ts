@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampJobPage, compactJobError, extractJobError, fragmentStateLabel, fragmentVisualState, isJobCancellable, shouldRefreshJob } from '../utils/jobs';
+import { clampJobPage, compactJobError, extractJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, parseHashReport, resultExtension, shouldRefreshJob } from '../utils/jobs';
 
 describe('job dashboard helpers', () => {
   it('preserves multiline traceback details while bounding oversized payloads', () => {
@@ -40,5 +40,28 @@ describe('job dashboard helpers', () => {
   it('clamps pagination after filters reduce the result set', () => {
     expect(clampJobPage(50, 41, 20)).toBe(3);
     expect(clampJobPage(0, 0, 20)).toBe(1);
+  });
+
+  it('tells image jobs from hash jobs', () => {
+    expect(isImageWorkload('raytracer')).toBe(true);
+    expect(isImageWorkload('')).toBe(true);
+    expect(isImageWorkload('calcul/integrity/sha256')).toBe(false);
+    expect(isHashWorkload('calcul/integrity/sha256')).toBe(true);
+    expect(isHashWorkload('calcul/hash/sha256')).toBe(true);
+    expect(isHashWorkload('raytracer')).toBe(false);
+  });
+
+  it('names downloaded results after their content type', () => {
+    expect(resultExtension('image/png')).toBe('png');
+    expect(resultExtension('application/json; charset=utf-8')).toBe('json');
+    expect(resultExtension('image/x-portable-pixmap')).toBe('ppm');
+    expect(resultExtension('application/octet-stream')).toBe('bin');
+  });
+
+  it('reads the SHA-256 report written by the node', () => {
+    const report = { workload: 'calcul/integrity/sha256', algorithm: 'sha256', size_bytes: 3, chunk_count: 1, chunk_list_sha256: 'l', input_hash: 'h', chunks: [{ index: 0, offset: 0, length: 3, sha256: 'h' }] };
+    expect(parseHashReport(report)?.input_hash).toBe('h');
+    expect(parseHashReport({ chunks: 'nope' })).toBeNull();
+    expect(parseHashReport(null)).toBeNull();
   });
 });

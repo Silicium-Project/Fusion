@@ -57,6 +57,23 @@ test('a failed job keeps the worker traceback visible', async ({ page }) => {
   await expect(notice).toContainText('ValueError: bad scene');
 });
 
+test('a SHA-256 job shows its chunks and its hash instead of an image', async ({ page }) => {
+  const hashJob = { ...job, title: 'Empreinte archive', workload: 'calcul/integrity/sha256', fragmentCount: 2 };
+  const fragments = [0, 1].map(fragment_index => ({ fragment_index, status: 'completed', handled_by: `worker-${fragment_index}` }));
+  const report = {
+    workload: 'calcul/integrity/sha256', algorithm: 'sha256', size_bytes: 10, chunk_count: 2, chunk_list_sha256: 'c'.repeat(64), input_hash: null,
+    chunks: [{ index: 0, offset: 0, length: 5, sha256: 'a'.repeat(64) }, { index: 1, offset: 5, length: 5, sha256: 'b'.repeat(64) }],
+  };
+  await page.route('**/api/jobs/1/dashboard', route => route.fulfill({ json: { ...dashboard, job: hashJob, resultReady: true, summary: { success: true, fragmentCount: 2, fragments } } }));
+  await page.route('**/api/jobs/1/result', route => route.fulfill({ json: report }));
+  await page.goto('/jobs/1');
+  await expect(page.getByText('Empreinte de la liste des morceaux')).toBeVisible();
+  await expect(page.getByText('c'.repeat(64))).toBeVisible();
+  await expect(page.getByText('b'.repeat(64))).toBeVisible();
+  await expect(page.locator('.render-preview')).toHaveCount(0);
+  await expect(page.getByText('2 terminés, 0 actifs, 0 en erreur.')).toBeVisible();
+});
+
 test('the project list exposes the submit path', async ({ page }) => {
   await page.goto('/jobs');
   const createLink = page.getByRole('main').getByRole('link', { name: 'Nouveau calcul' });

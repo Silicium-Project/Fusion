@@ -58,3 +58,42 @@ export const clampJobPage = (page: number, total: number, pageSize: number): num
   const lastPage = Math.max(1, Math.ceil(Math.max(0, total) / Math.max(1, pageSize)));
   return Math.max(1, Math.min(lastPage, Math.trunc(page) || 1));
 };
+
+/** Jobs that render an image (the default workload of older jobs). */
+export const isImageWorkload = (workload: unknown): boolean => {
+  const normalized = String(workload || '').trim();
+  return !normalized || normalized === 'raytracer';
+};
+
+/** Workloads whose result is a SHA-256 report (`result/sha256.json`). */
+export const isHashWorkload = (workload: unknown): boolean =>
+  ['calcul/integrity/sha256', 'calcul/hash/sha256'].includes(String(workload || '').trim());
+
+/** File extension of a downloaded result, from its content type. */
+export const resultExtension = (contentType: string): string => {
+  const type = contentType.toLowerCase();
+  if (type.includes('png')) return 'png';
+  if (type.includes('json')) return 'json';
+  if (type.includes('portable-pixmap') || type.includes('ppm')) return 'ppm';
+  return 'bin';
+};
+
+/** One chunk of a SHA-256 job result. */
+export interface HashChunk { index: number; offset: number; length: number; sha256: string }
+
+/** SHA-256 job result written by the Rust node. */
+export interface HashReport {
+  size_bytes: number;
+  chunk_count: number;
+  chunk_list_sha256: string;
+  input_hash?: string | null;
+  chunks: HashChunk[];
+}
+
+/** The report when `value` has the shape written by the node, else null. */
+export const parseHashReport = (value: unknown): HashReport | null => {
+  const report = value as Partial<HashReport> | null;
+  if (!report || typeof report !== 'object' || !Array.isArray(report.chunks)) return null;
+  if (typeof report.size_bytes !== 'number' || typeof report.chunk_list_sha256 !== 'string') return null;
+  return report as HashReport;
+};
