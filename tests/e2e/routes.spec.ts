@@ -26,7 +26,10 @@ const firstPartyRoutes: RouteCase[] = [
 
 const knownRoute = /^(?:\/|\/service|\/blockchain|\/service\/downloads\/(?:windows|windows-dev|linux-dev)|\/download|\/about|\/contact|\/auth|\/dashboard|\/jobs|\/jobs\/new|\/jobs\/\d+(?:\/dashboard|\/result)?|\/network|\/nodes|\/profile)$/;
 
+// This test opens all 19 routes one after the other: about 16 s on a fast
+// machine, more than the default 30 s on the shared CI runner.
 test('every first-party route and internal link has a canonical destination', async ({ page }) => {
+  test.setTimeout(120_000);
   await mockAPI(page);
   const hrefs: string[][] = [];
   const publicRoutes = firstPartyRoutes.filter(route => !route.authenticated);
