@@ -5,8 +5,9 @@
 
 use crate::{
     content::ContentStore,
+    peers::{LocalRoles, WorkerView},
     storage::TaskBookState,
-    task::{NetworkTask, PeerProfile},
+    task::NetworkTask,
 };
 use libp2p::PeerId;
 use silicium_node_core::{
@@ -16,7 +17,7 @@ use silicium_node_core::{
     taskbook::{MAX_MILESTONES, MilestoneSample, TaskEvent},
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     sync::{
         Arc, Mutex,
@@ -41,27 +42,26 @@ pub(crate) struct NodeContext {
     /// Scenes and result images shared with peers, inside the compute work
     /// directory.
     pub(crate) content: ContentStore,
-    /// Peers currently connected (refreshed by the event loop).
-    pub(crate) connected_peers: Arc<AtomicUsize>,
-    /// Connected peers that can independently compute or verify a result.
-    /// The orchestrator/storage peer is deliberately excluded from this
-    /// count, so a single worker may use the configured self-verification
-    /// fallback while remaining connected to the control plane.
+    /// Connected peers that can independently compute or verify a result,
+    /// refreshed by the event loop. The orchestrator/storage peer is
+    /// deliberately excluded (see the lone-worker rule in [`crate::peers`]).
     pub(crate) connected_workers: Arc<AtomicUsize>,
     /// Free compute slots: a worker claims a task only once it holds one.
     pub(crate) compute_slots: Arc<tokio::sync::Semaphore>,
+    /// Roles of this node (`SILICIUM_NODE_ROLES`).
+    pub(crate) roles: LocalRoles,
+    /// Tasks being handled by [`crate::worker::process_task`]: a task
+    /// announced again while it is handled is not claimed twice.
+    pub(crate) active_tasks: Arc<Mutex<BTreeSet<String>>>,
 }
 
 impl NodeContext {
-    /// True when this node has no connected peer.
-    pub(crate) fn is_alone(&self) -> bool {
-        self.connected_peers.load(Ordering::Relaxed) == 0
-    }
-
-    /// True when this node is the only compute/verification peer currently
-    /// connected. The publisher/orchestrator itself is not a worker.
-    pub(crate) fn is_only_worker(&self) -> bool {
-        self.connected_workers.load(Ordering::Relaxed) == 0
+    /// Workers seen by this node now (see [`crate::peers`]).
+    pub(crate) fn worker_view(&self) -> WorkerView {
+        WorkerView {
+            others: self.connected_workers.load(Ordering::Relaxed),
+            local_is_worker: self.roles.is_worker(),
+        }
     }
 
     /// Remembers a task for later verification.
@@ -69,44 +69,6 @@ impl NodeContext {
         if let Ok(mut known) = self.known_tasks.lock() {
             known.insert(task.task_id.clone(), task.clone());
         }
-    }
-}
-
-/// Whether a peer profile represents a node that can independently compute or
-/// verify a result. Control-plane roles such as `resource` and `storage` do
-/// not count for the single-worker self-verification rule.
-pub(crate) fn profile_is_worker(profile: &PeerProfile) -> bool {
-    profile.roles.iter().any(|role| {
-        role.trim().eq_ignore_ascii_case("compute") || role.trim().eq_ignore_ascii_case("verify")
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{PeerProfile, profile_is_worker};
-    use serde_json::json;
-
-    fn profile(roles: &[&str]) -> PeerProfile {
-        PeerProfile {
-            node_id: "node".to_string(),
-            peer_id: "peer".to_string(),
-            roles: roles.iter().map(|role| (*role).to_string()).collect(),
-            app_version: "test".to_string(),
-            release_channel: "dev".to_string(),
-            release_build: "test".to_string(),
-            capacity: json!({}),
-            activity: json!({}),
-            task_queue: Vec::new(),
-            last_seen_unix: 0,
-            last_seen_utc: String::new(),
-        }
-    }
-
-    #[test]
-    fn control_plane_roles_do_not_count_as_workers() {
-        assert!(!profile_is_worker(&profile(&["resource", "storage"])));
-        assert!(profile_is_worker(&profile(&["compute", "verify"])));
-        assert!(profile_is_worker(&profile(&[" VERIFY "])));
     }
 }
 

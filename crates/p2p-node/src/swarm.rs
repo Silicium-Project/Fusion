@@ -44,9 +44,14 @@ pub(crate) fn build_swarm(
         )?
         .with_quic()
         .with_behaviour(|key| {
+            // The id covers the signed source and sequence number, not only
+            // the content: a task announced again by its publisher carries
+            // the same bytes and must not be dropped as a duplicate.
             let message_id_fn = |message: &gossipsub::Message| {
                 let mut s = DefaultHasher::new();
                 message.data.hash(&mut s);
+                message.source.hash(&mut s);
+                message.sequence_number.hash(&mut s);
                 gossipsub::MessageId::from(s.finish().to_string())
             };
             let gossipsub_config = gossipsub::ConfigBuilder::default()

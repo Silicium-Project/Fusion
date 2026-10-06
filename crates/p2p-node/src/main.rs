@@ -30,6 +30,7 @@ mod control;
 mod fetch;
 mod gossip;
 mod jobs;
+mod peers;
 mod processing;
 mod publisher;
 mod publishing;
@@ -50,7 +51,8 @@ use crate::{
     },
     content::ContentStore,
     control::ControlRegistry,
-    processing::{NodeContext, profile_is_worker},
+    peers::{LocalRoles, count_connected_workers},
+    processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
         P2pBehaviourEvent, TOPIC, build_swarm, publish_gossip, publish_hardware_record,
@@ -65,10 +67,7 @@ use silicium_node_core::{
     dispatch::{DispatchCandidate, Dispatcher},
     taskbook::TaskTerms,
 };
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    time::Duration,
-};
+use std::{collections::BTreeMap, time::Duration};
 use tokio::{net::TcpListener, select, sync::mpsc};
 
 /// Starts the node, then runs the event loop: task-book events to publish,
@@ -105,11 +104,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         compute_timeout_s: security.compute_timeout_s,
         known_tasks: Default::default(),
         content: ContentStore::new(read_compute_root_from_env(), tx_content),
-        connected_peers: Default::default(),
         connected_workers: Default::default(),
         compute_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
             read_parallel_tasks_from_env(),
         )),
+        roles: LocalRoles::from_env(),
+        active_tasks: Default::default(),
     };
     let known_peers = std::sync::Arc::new(std::sync::Mutex::new(
         std::iter::once(local_peer_id.to_string()).collect(),
@@ -197,7 +197,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut pending = Vec::<NetworkTask>::new();
     let mut sweep_timer = tokio::time::interval(Duration::from_secs(1));
     let mut presence_timer = tokio::time::interval(Duration::from_secs(5));
-    let mut regossiped = BTreeSet::new();
+    let mut announcer = publisher::Reannouncer::default();
     let mut gap_requests = BTreeMap::new();
     let mut fetcher = fetch::Fetcher::default();
     let collector = results::Collector::new(jobs.clone());
@@ -205,24 +205,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         select! {
             _ = sweep_timer.tick() => {
-                context
-                    .connected_peers
-                    .store(swarm.connected_peers().count(), std::sync::atomic::Ordering::Relaxed);
+                // Poisoned lock: count every peer as a worker (no self-verification).
                 let worker_count = peer_profiles
                     .lock()
-                    .map(|profiles| {
-                        swarm
-                            .connected_peers()
-                            .filter(|peer_id| {
-                                profiles
-                                    .values()
-                                    .find(|profile| profile.peer_id == peer_id.to_string())
-                                    .map(profile_is_worker)
-                                    .unwrap_or(true)
-                            })
-                            .count()
-                    })
-                    .unwrap_or(0);
+                    .map(|profiles| count_connected_workers(swarm.connected_peers(), &profiles))
+                    .unwrap_or_else(|_| swarm.connected_peers().count());
                 context.connected_workers.store(
                     worker_count,
                     std::sync::atomic::Ordering::Relaxed,
@@ -233,13 +220,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     peers.extend(swarm.connected_peers().map(|peer| peer.to_string()));
                 }
                 verifier::sweep(&context, &verifier_memory).await;
-                let outcome = publisher::sweep(&taskbook, &mut regossiped, context.is_alone());
+                let outcome = publisher::sweep(&taskbook, &mut announcer, context.worker_view());
                 for event in &outcome.events {
                     publish_taskbook_event(&mut swarm, &topic, event);
                 }
-                for task in pending.iter().filter(|task| outcome.regossip.contains(&task.task_id)) {
-                    println!(" Announcing a retry of task {}", task.task_id);
-                    publish_gossip(&mut swarm, &topic, &GossipMessage::Task(task.clone().into()));
+                for task_id in &outcome.regossip {
+                    let task = context.known_tasks.lock().ok().and_then(|known| known.get(task_id).cloned());
+                    if let Some(task) = task {
+                        println!(" Announcing task {task_id} again (no claim or verifier yet)");
+                        publish_gossip(&mut swarm, &topic, &GossipMessage::Task(task.into()));
+                    }
                 }
                 pending.retain(|task| !outcome.finished.contains(&task.task_id));
                 collector.collect(&context, &outcome.finished);

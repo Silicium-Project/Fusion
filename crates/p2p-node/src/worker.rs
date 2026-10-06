@@ -38,11 +38,20 @@ pub(crate) async fn record_task_event(context: &NodeContext, task_id: &str, body
 /// Handles a task received from the network (see the module documentation).
 pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
     let task_id = task.task_id.clone();
+    // The publisher announces an unclaimed task again until someone claims
+    // it: handle each task once at a time.
+    let Some(_active) = ActiveTask::enter(&context, &task_id) else {
+        return;
+    };
     if !ensure_scene(&context, &mut task).await {
         println!(" Scene of task {task_id} unavailable; not claiming it");
         return;
     }
     context.remember_task(&task);
+    if !context.roles.compute {
+        // Verify-only node: it keeps the task to check results, not to claim it.
+        return;
+    }
     // Claim only with a free compute slot: the other fragments stay open for
     // other nodes meanwhile.
     let Ok(_slot) = context.compute_slots.clone().acquire_owned().await else {
@@ -140,6 +149,31 @@ async fn wait_until_accepted(context: &NodeContext, task_id: &str, attempt: u32)
         tokio::time::sleep(POLL_INTERVAL).await;
     }
     false
+}
+
+/// Marks a task as handled by this node until dropped.
+struct ActiveTask {
+    context: NodeContext,
+    task_id: String,
+}
+
+impl ActiveTask {
+    /// `None` when the task is already being handled.
+    fn enter(context: &NodeContext, task_id: &str) -> Option<Self> {
+        let mut active = context.active_tasks.lock().ok()?;
+        active.insert(task_id.to_string()).then(|| Self {
+            context: context.clone(),
+            task_id: task_id.to_string(),
+        })
+    }
+}
+
+impl Drop for ActiveTask {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.context.active_tasks.lock() {
+            active.remove(&self.task_id);
+        }
+    }
 }
 
 /// Renews the lease of a running attempt every third of the lease, within

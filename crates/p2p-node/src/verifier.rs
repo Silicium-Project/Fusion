@@ -3,9 +3,10 @@
 //! node, check that the milestones cover the task's region, re-render the
 //! milestones drawn from the acceptance hash and publish the verdict.
 //!
-//! A node offers to verify its own result only when it is the only compute /
-//! verification peer on the network and the task terms allow it (the
-//! orchestrator/storage peer does not count as a worker).
+//! Only nodes with the `verify` role take part. A node offers to verify its
+//! own result only when it is the only compute / verification peer on the
+//! network and the task terms allow it (lone-worker rule, see
+//! [`crate::peers`]; the orchestrator/storage peer does not count).
 //!
 //! A verdict is only published when every sampled block could be rendered:
 //! if the local compute daemon fails, nothing is published and the
@@ -49,6 +50,9 @@ struct Job {
 
 /// Runs one verifier sweep over the known tasks.
 pub(crate) async fn sweep(context: &NodeContext, memory: &VerifierMemory) {
+    if !context.roles.verify {
+        return;
+    }
     let known: Vec<NetworkTask> = context
         .known_tasks
         .lock()
@@ -81,7 +85,8 @@ fn next_step(
 ) -> Option<Step> {
     let me = context.taskbook.author();
     let attempt = state.attempts.last()?;
-    let self_check_allowed = state.terms.allow_self_verification && context.is_only_worker();
+    let self_check_allowed =
+        state.terms.allow_self_verification && context.worker_view().no_other_worker();
     if state.status != DerivedTaskStatus::Completed
         || (attempt.claimant == me && !self_check_allowed)
     {

@@ -25,6 +25,18 @@ fn emit(
     hash
 }
 
+/// Two workers connected to a publisher that does not work itself.
+const WORKERS: WorkerView = WorkerView {
+    others: 2,
+    local_is_worker: false,
+};
+
+/// No other worker connected to a publisher that also works.
+const ALONE: WorkerView = WorkerView {
+    others: 0,
+    local_is_worker: true,
+};
+
 /// Sweep view at `now` for a node with peers.
 fn view(book: &TaskBook, now: u64) -> SweepView<'_> {
     SweepView {
@@ -32,7 +44,7 @@ fn view(book: &TaskBook, now: u64) -> SweepView<'_> {
         me: "observer",
         now,
         records: book.author_records(now),
-        alone: false,
+        workers: WORKERS,
     }
 }
 
@@ -65,7 +77,10 @@ fn accepts_the_earliest_claim_then_finalizes_the_result() {
     let early = SigningKey::from_bytes(&[3; 32]);
     let mut book = TaskBook::default();
     let task = proposed_task(&mut book, &publisher);
-    assert!(decide(&view(&book, 0), &task).is_none());
+    assert!(
+        matches!(decide(&view(&book, 0), &task), Some(Decision::Regossip)),
+        "unclaimed: announce again"
+    );
 
     emit(
         &mut book,
@@ -143,7 +158,7 @@ fn a_lapsed_lease_without_new_claims_asks_for_a_retry() {
     assert!(decide(&view(&book, 500), &task).is_none());
     assert!(matches!(
         decide(&view(&book, 1_500), &task),
-        Some(Decision::Regossip(2))
+        Some(Decision::Regossip)
     ));
 }
 
@@ -199,7 +214,10 @@ fn a_result_waits_for_an_accepted_verifier_before_finalization() {
         },
         10,
     );
-    assert!(decide(&view(&book, 20), &task).is_none());
+    assert!(
+        matches!(decide(&view(&book, 20), &task), Some(Decision::Regossip)),
+        "no verifier yet: announce again"
+    );
 
     let offer = emit(
         &mut book,
@@ -334,11 +352,11 @@ fn a_lone_node_may_verify_its_own_result() {
     );
 
     assert!(
-        decide(&view(&book, 30), &task).is_none(),
-        "peers exist: no self-check"
+        matches!(decide(&view(&book, 30), &task), Some(Decision::Regossip)),
+        "other workers exist: no self-check"
     );
     let alone = SweepView {
-        alone: true,
+        workers: ALONE,
         ..view(&book, 30)
     };
     let Some(Decision::Sign(accept)) = decide(&alone, &task) else {
@@ -370,7 +388,7 @@ fn the_publisher_takes_its_own_task_only_when_nobody_else_claims_it() {
     let at = |book: &TaskBook, now: u64, alone: bool| {
         let view = SweepView {
             me: &me,
-            alone,
+            workers: if alone { ALONE } else { WORKERS },
             ..view(book, now)
         };
         match decide(&view, &task) {
@@ -402,4 +420,85 @@ fn the_publisher_takes_its_own_task_only_when_nobody_else_claims_it() {
         Some(other),
         "another node is preferred"
     );
+}
+
+/// The dev network: an orchestrator (not a worker) publishes, a single
+/// desktop worker computes and offers to verify its own result. That worker
+/// is the only one on the network, so its offer is accepted.
+#[test]
+fn a_single_worker_behind_an_orchestrator_may_verify_itself() {
+    let orchestrator = SigningKey::from_bytes(&[30; 32]);
+    let worker = SigningKey::from_bytes(&[31; 32]);
+    let me = TaskEvent::author_id(&orchestrator);
+    let mut book = TaskBook::default();
+    let task = TaskEvent::task_id_for(&me, "lone");
+    let spec = PayloadRef {
+        uri: "silicium/task/v1/lone".to_string(),
+        sha256: TaskEvent::payload_hash(b"spec"),
+    };
+    let terms = TaskTerms {
+        lease_ms: 10_000,
+        verifications_required: 1,
+        allow_self_verification: true,
+        ..TaskTerms::default()
+    };
+    emit(
+        &mut book,
+        &orchestrator,
+        &task,
+        TaskEventBody::TaskProposed { spec, terms },
+        0,
+    );
+    let claim = emit(
+        &mut book,
+        &worker,
+        &task,
+        TaskEventBody::ClaimProposed { attempt: 1 },
+        0,
+    );
+    emit(
+        &mut book,
+        &orchestrator,
+        &task,
+        TaskEventBody::ClaimAccepted { attempt: 1, claim },
+        0,
+    );
+    let result = PayloadRef {
+        uri: "result://lone".to_string(),
+        sha256: TaskEvent::payload_hash(b"r"),
+    };
+    let result_body = TaskEventBody::ResultPublished {
+        attempt: 1,
+        result,
+        milestones: Vec::new(),
+    };
+    emit(&mut book, &worker, &task, result_body, 10);
+    let offer = emit(
+        &mut book,
+        &worker,
+        &task,
+        TaskEventBody::VerificationClaimed { attempt: 1 },
+        20,
+    );
+    let seen_by = |workers: WorkerView| {
+        let view = SweepView {
+            me: &me,
+            workers,
+            ..view(&book, 30)
+        };
+        match decide(&view, &task) {
+            Some(Decision::Sign(TaskEventBody::VerifierAccepted { claim, .. })) => Some(claim),
+            _ => None,
+        }
+    };
+    let one_worker = WorkerView {
+        others: 1,
+        local_is_worker: false,
+    };
+    assert_eq!(seen_by(one_worker), Some(offer), "lone worker");
+    let two_workers = WorkerView {
+        others: 2,
+        local_is_worker: false,
+    };
+    assert_eq!(seen_by(two_workers), None, "another worker must verify");
 }

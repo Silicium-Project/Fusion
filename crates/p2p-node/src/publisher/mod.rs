@@ -1,18 +1,25 @@
 //! Publisher side of the task book, run periodically: for every task this
 //! node proposed, accept a claim when an attempt is open and a verifier when
-//! a result needs one, ask workers again when a retry has no claim yet, and
-//! finalize verified results.
+//! a result needs one, announce the task again while nobody claims or
+//! verifies it, and finalize verified results.
 //!
 //! Offers are ranked by the author's reputation derived from the book
 //! (finalized vs failed attempts), then by age. The claimant's offer to
-//! verify itself is only accepted when this node has no connected peer
-//! (single-node network) and the task terms allow it.
+//! verify itself is only accepted when it is the only worker this node sees
+//! (lone-worker rule, see [`crate::peers`]) and the task terms allow it.
 
-use crate::storage::{TaskBookState, now_ms};
+mod announce;
+
+pub(crate) use announce::Reannouncer;
+
+use crate::{
+    peers::WorkerView,
+    storage::{TaskBookState, now_ms},
+};
 use silicium_node_core::taskbook::{
     AuthorRecord, DerivedTaskStatus, OpenClaim, TaskBook, TaskEventBody,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// How long the publisher's own claim waits for other nodes' claims.
 const OWN_CLAIM_GRACE_MS: u64 = 5_000;
@@ -23,7 +30,7 @@ struct SweepView<'a> {
     me: &'a str,
     now: u64,
     records: BTreeMap<String, AuthorRecord>,
-    alone: bool,
+    workers: WorkerView,
 }
 
 impl SweepView<'_> {
@@ -53,7 +60,8 @@ impl SweepView<'_> {
 pub(crate) struct SweepOutcome {
     /// Events signed by this node, to gossip.
     pub(crate) events: Vec<silicium_node_core::taskbook::TaskEvent>,
-    /// Tasks to gossip again (a retry is open and nobody claimed it yet).
+    /// Tasks to gossip again: nobody claimed the open attempt, or nobody
+    /// offered to verify the result, since the last announcement.
     pub(crate) regossip: Vec<String>,
     /// Tasks that reached a terminal state.
     pub(crate) finished: Vec<String>,
@@ -62,16 +70,16 @@ pub(crate) struct SweepOutcome {
 /// One decision for one task.
 enum Decision {
     Sign(TaskEventBody),
-    Regossip(u32),
+    /// Announce the task again (workers that missed it, or joined since).
+    Regossip,
     Finished,
 }
 
-/// Runs one sweep. `regossiped` remembers `(task, attempt)` already gossiped
-/// again, so each retry is announced once.
+/// Runs one sweep. `announcer` spaces the announcements of each task.
 pub(crate) fn sweep(
     taskbook: &TaskBookState,
-    regossiped: &mut BTreeSet<(String, u32)>,
-    alone: bool,
+    announcer: &mut Reannouncer,
+    workers: WorkerView,
 ) -> SweepOutcome {
     let me = taskbook.author();
     let now = now_ms();
@@ -82,7 +90,7 @@ pub(crate) fn sweep(
                 me: &me,
                 now,
                 records: book.author_records(now),
-                alone,
+                workers,
             };
             book.tasks_published_by(&me)
                 .into_iter()
@@ -98,12 +106,15 @@ pub(crate) fn sweep(
                 Ok(event) => outcome.events.push(event),
                 Err(err) => println!(" Publisher could not sign for {task_id}: {err}"),
             },
-            Decision::Regossip(attempt) => {
-                if regossiped.insert((task_id.clone(), attempt)) {
+            Decision::Regossip => {
+                if announcer.due(&task_id, now) {
                     outcome.regossip.push(task_id);
                 }
             }
-            Decision::Finished => outcome.finished.push(task_id),
+            Decision::Finished => {
+                announcer.forget(&task_id);
+                outcome.finished.push(task_id);
+            }
         }
     }
     outcome
@@ -130,39 +141,47 @@ fn decide(view: &SweepView, task_id: &str) -> Option<Decision> {
             attempt,
             claim: claim.event_hash.clone(),
         })),
-        None if attempt > 1 => Some(Decision::Regossip(attempt)),
-        None => None,
+        // Nobody can be accepted yet: workers may have missed the task.
+        None => Some(Decision::Regossip),
     }
 }
 
 /// Claims the publisher may accept now: its own claim (this node also works
-/// on its tasks) only when nobody else offered and either this node is alone
-/// or the claim waited [`OWN_CLAIM_GRACE_MS`], so that other nodes get the
-/// work first.
+/// on its tasks) only when nobody else offered and either no other worker is
+/// connected or the claim waited [`OWN_CLAIM_GRACE_MS`], so that other nodes
+/// get the work first.
 fn eligible_claims(view: &SweepView, claims: Vec<OpenClaim>) -> Vec<OpenClaim> {
     let (own, others): (Vec<_>, Vec<_>) = claims.into_iter().partition(|c| c.author == view.me);
     if !others.is_empty() {
         return others;
     }
     own.into_iter()
-        .filter(|c| view.alone || view.now.saturating_sub(c.issued_at_ms) >= OWN_CLAIM_GRACE_MS)
+        .filter(|c| {
+            view.workers.no_other_worker()
+                || view.now.saturating_sub(c.issued_at_ms) >= OWN_CLAIM_GRACE_MS
+        })
         .collect()
 }
 
-/// Accepts the best verification offer while a verifier slot is open; the
-/// claimant's own offer only when this node is alone.
+/// Accepts the best verification offer while a verifier slot is open. An
+/// independent verifier is always preferred; the claimant's own offer is
+/// accepted only when it is the only worker on the network (lone-worker
+/// rule). With no acceptable offer, the task is announced again so that
+/// verifiers which missed it learn about it.
 fn accept_verifier(view: &SweepView, task_id: &str, attempt: u32) -> Option<Decision> {
     if view.book.verification_slots_open(task_id, view.now) == 0 {
         return None;
     }
     let offers = view.book.open_verifications(task_id, view.now);
     let independent: Vec<_> = offers.iter().filter(|o| !o.self_offer).cloned().collect();
-    let pool = if independent.is_empty() && view.alone {
+    let pool = if independent.is_empty() && view.workers.lone_worker() {
         offers
     } else {
         independent
     };
-    let offer = view.best(&pool, |o| (&o.author, o.issued_at_ms, &o.event_hash))?;
+    let Some(offer) = view.best(&pool, |o| (&o.author, o.issued_at_ms, &o.event_hash)) else {
+        return Some(Decision::Regossip);
+    };
     Some(Decision::Sign(TaskEventBody::VerifierAccepted {
         attempt,
         claim: offer.event_hash.clone(),
