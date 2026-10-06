@@ -230,6 +230,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let task = context.known_tasks.lock().ok().and_then(|known| known.get(task_id).cloned());
                     if let Some(task) = task {
                         println!(" Announcing task {task_id} again (no claim or verifier yet)");
+                        for event in backfill::task_history(&taskbook, task_id) {
+                            publish_gossip(&mut swarm, &topic, &GossipMessage::TaskEvent(event));
+                        }
                         publish_gossip(&mut swarm, &topic, &GossipMessage::Task(task.into()));
                     }
                 }

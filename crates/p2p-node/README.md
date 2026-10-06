@@ -146,6 +146,19 @@ finaliser ou annuler ces tâches.
 
 ## Construire, tester, conteneur
 
+Test de bout en bout du réseau dev en local (un orchestrateur qui ne calcule
+pas, des workers qui arrivent 5 s après la publication du job, confiance par
+adresse d'amorçage épinglée) :
+
+```bash
+cargo build --release -p p2p_node -p compute_daemon -p silicium-raytracer
+WORKERS=1 crates/p2p-node/scripts/e2e-local.sh workloads/raytracer/examples/silicium-multi-fragment-scene.cfg
+WORKERS=2 crates/p2p-node/scripts/e2e-local.sh workloads/raytracer/examples/silicium-multi-fragment-scene.cfg
+```
+
+Avec un worker, il vérifie ses propres tuiles ; avec deux, chacun vérifie
+celles de l'autre.
+
 ```bash
 cargo test -p p2p_node --locked
 docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = racine du workspace
