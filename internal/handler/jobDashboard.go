@@ -103,6 +103,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	if index := documentIndexSummary(job); index != nil {
 		payload["documentIndex"] = index
+		payload["collectionDocuments"] = h.collectionDocuments(job)
 	}
 	writeJSON(w, http.StatusOK, payload)
 }

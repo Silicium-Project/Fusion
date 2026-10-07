@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+
+	"github.com/silicium/internal/i18n"
 )
 
 func RequestID(next http.Handler) http.Handler {
@@ -43,7 +45,7 @@ func Recover(next http.Handler) http.Handler {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Cache-Control", "no-store")
 				w.WriteHeader(http.StatusInternalServerError)
-				_ = json.NewEncoder(w).Encode(map[string]string{"message": "Le service a rencontré une erreur inattendue."})
+				_ = json.NewEncoder(w).Encode(map[string]string{"message": i18n.R(r, "service.unexpected_error")})
 			}
 		}()
 		next.ServeHTTP(w, r)

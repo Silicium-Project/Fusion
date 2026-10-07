@@ -243,3 +243,25 @@ func TestAFinishedIndexIsSummarizedAndDownloadedAsAZip(t *testing.T) {
 		t.Fatalf("status = %d, headers = %v", response.Code, response.Header())
 	}
 }
+
+func TestTheDocumentsOfTheWholeCollectionAreListed(t *testing.T) {
+	h, database := documentTestHandler(t, "document-collection-list")
+	dir := t.TempDir()
+	index := func(name string, documents string) string {
+		path := filepath.Join(dir, name)
+		_ = os.WriteFile(path, []byte(`{"documents":`+documents+`}`), 0o644)
+		return path
+	}
+	jobs := []models.Job{
+		{UserID: 7, Title: "a", Workload: silicium.DocumentSearchWorkload, Status: "completed", SiliciumJobID: "list-a", CollectionID: "list-a", InputPath: "/a", ResultPath: index("a.json", `[{"name":"contrat.pdf","pages":12,"passages":40}]`)},
+		{UserID: 7, Title: "b", Workload: silicium.DocumentSearchWorkload, Status: "completed", SiliciumJobID: "list-b", CollectionID: "list-a", InputPath: "/b", ResultPath: index("b.json", `[{"name":"notes/avenant.md","pages":0,"passages":3}]`)},
+		{UserID: 8, Title: "c", Workload: silicium.DocumentSearchWorkload, Status: "completed", SiliciumJobID: "list-c", CollectionID: "list-a", InputPath: "/c", ResultPath: index("c.json", `[{"name":"secret.pdf"}]`)},
+	}
+	for i := range jobs {
+		database.Create(&jobs[i])
+	}
+	listed := h.collectionDocuments(jobs[0])
+	if len(listed) != 2 || listed[0]["name"] != "notes/avenant.md" || listed[1]["name"] != "contrat.pdf" || listed[1]["jobId"] != jobs[0].ID {
+		t.Fatalf("listed = %v", listed)
+	}
+}

@@ -107,16 +107,16 @@ func TestASingleZipIsKeptAsIs(t *testing.T) {
 
 func TestSubmissionsTheNodeCannotReadAreRefusedWithAMessage(t *testing.T) {
 	cases := map[string][]upload{
-		"pas pris en charge": {{"slides.pptx", []byte("x")}},
-		"mais pas les deux":  {{"a.zip", []byte("PK")}, {"b.pdf", []byte("%PDF")}},
+		"documents.unsupported":   {{"slides.pptx", []byte("x")}},
+		"documents.zip_and_files": {{"a.zip", []byte("PK")}, {"b.pdf", []byte("%PDF")}},
 	}
 	for want, uploads := range cases {
 		_, err := Store(t.TempDir(), headers(t, uploads...))
-		if !strings.Contains(UserMessage(err), want) {
-			t.Fatalf("%v: got %v, want a message containing %q", uploads, err, want)
+		if key, _ := UserMessage(err); key != want {
+			t.Fatalf("%v: got %v, want the message %q", uploads, err, want)
 		}
 	}
-	if _, err := Store(t.TempDir(), nil); UserMessage(err) == "" {
+	if _, err := Store(t.TempDir(), nil); func() string { key, _ := UserMessage(err); return key }() == "" {
 		t.Fatal("no file must be refused with a message")
 	}
 }

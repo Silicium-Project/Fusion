@@ -36,20 +36,24 @@ var documentExtensions = map[string]bool{
 	".pdf": true, ".docx": true, ".txt": true, ".md": true, ".markdown": true,
 }
 
-// UserError is a refusal whose message can be shown to the user.
-type UserError struct{ Message string }
+// UserError is a refusal that can be shown to the user: Key is the message
+// of the API catalog (package i18n) and Args its arguments.
+type UserError struct {
+	Key  string
+	Args []any
+}
 
-func (e *UserError) Error() string { return e.Message }
+func (e *UserError) Error() string { return fmt.Sprint(append([]any{e.Key, " "}, e.Args...)...) }
 
 var (
-	errNoFiles   = &UserError{"Ajoute au moins un document."}
-	errTooMany   = &UserError{fmt.Sprintf("Envoie %d fichiers au plus, ou un ZIP du dossier.", MaxFiles)}
-	errTooLarge  = &UserError{"Les documents dépassent 64 Mo au total. Envoie-les en plusieurs fois."}
-	errZipAndDoc = &UserError{"Envoie soit un ZIP, soit des documents, mais pas les deux ensemble."}
+	errNoFiles   = &UserError{Key: "documents.none"}
+	errTooMany   = &UserError{Key: "documents.too_many", Args: []any{MaxFiles}}
+	errTooLarge  = &UserError{Key: "documents.too_large"}
+	errZipAndDoc = &UserError{Key: "documents.zip_and_files"}
 )
 
 func unsupported(name string) error {
-	return &UserError{fmt.Sprintf("%s n'est pas pris en charge : envoie des PDF, des fichiers Word (.docx), texte, Markdown ou un ZIP.", name)}
+	return &UserError{Key: "documents.unsupported", Args: []any{name}}
 }
 
 // Store writes the uploaded files to `dir` as the node's input and returns
@@ -208,11 +212,12 @@ func extension(name string) string {
 	return strings.ToLower(path.Ext(baseName(name)))
 }
 
-// UserMessage is the message to show for err, or "" when err is internal.
-func UserMessage(err error) string {
+// UserMessage is the i18n key and arguments of the message to show for err,
+// or "" when err is internal.
+func UserMessage(err error) (string, []any) {
 	var userError *UserError
 	if errors.As(err, &userError) {
-		return userError.Message
+		return userError.Key, userError.Args
 	}
-	return ""
+	return "", nil
 }

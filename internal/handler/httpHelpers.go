@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/silicium/internal/contextkeys"
+	"github.com/silicium/internal/i18n"
 	"github.com/silicium/internal/models"
 )
 
@@ -65,4 +66,10 @@ func envDefaultValue(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// writeMessage answers `{"message": …}`, the message in the language of the
+// request.
+func writeMessage(w http.ResponseWriter, r *http.Request, status int, key string, args ...any) {
+	writeJSON(w, status, map[string]string{"message": i18n.R(r, key, args...)})
 }

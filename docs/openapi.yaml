@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Silicium API
   version: 1.1.0
-  description: API du site, des tâches et de la télémétrie Silicium.
+  description: API du site, des tâches et de la télémétrie Silicium. Les messages destinés aux utilisateurs suivent `Accept-Language` (fr par défaut, en, de). Les access tokens (audience `silicium-api`) et refresh tokens (audience `silicium-refresh`) ne sont pas interchangeables.
 servers:
   - url: http://localhost:8080
 components:
@@ -96,12 +96,13 @@ paths:
               required: [email, password]
               properties:
                 email: { type: string, format: email }
-                password: { type: string, maxLength: 72 }
-                username: { type: string }
-                first_name: { type: string }
-                last_name: { type: string }
+                password: { type: string, minLength: 8, description: '8 caractères au moins, 72 octets au plus' }
+                username: { type: string, pattern: '^[A-Za-z0-9._-]{3,30}$', description: 'Unique sans tenir compte de la casse' }
+                first_name: { type: string, maxLength: 50 }
+                last_name: { type: string, maxLength: 50 }
       responses:
         '201': { description: Compte créé }
+        '400': { description: Champ refusé (message dans la langue de `Accept-Language`) }
         '409': { description: E-mail ou nom déjà utilisé }
   /login:
     post:
@@ -124,6 +125,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Tokens' }
         '401': { description: Identifiants invalides }
+        '429': { description: 10 échecs en 15 minutes sur cet identifiant ; en-tête `Retry-After` }
   /refresh:
     post:
       security: []
@@ -222,6 +224,7 @@ paths:
   /jobs/{id}/dashboard:
     get:
       summary: Lire le détail métier et technique d’une exécution
+      description: Pour une recherche dans des documents terminée, `documentIndex` (documents lus, fichiers ignorés, nombre de passages de cette tâche) et `collectionDocuments` (tous les documents couverts par une recherche, `{jobId, name, pages, passages}`, 500 au plus).
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:

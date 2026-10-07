@@ -59,7 +59,9 @@ func (s *walletChallengeStore) issue(userID uint, address string, now time.Time)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, entry := range s.entries {
-		if !entry.ExpiresAt.After(now) || (entry.UserID == userID && entry.Address == challenge.Address) {
+		// One open challenge per user: a new one replaces the previous, so a
+		// user cannot fill the table by asking for challenges in a loop.
+		if !entry.ExpiresAt.After(now) || entry.UserID == userID {
 			delete(s.entries, key)
 		}
 	}

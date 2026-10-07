@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/silicium/internal/documents"
+	"github.com/silicium/internal/i18n"
 	"github.com/silicium/internal/models"
 	"github.com/silicium/internal/silicium"
 )
@@ -38,23 +39,24 @@ const searchTimeout = 35 * time.Second
 
 // storeDocumentSearchInput stores the documents of a new document search.
 // The user must have confirmed that the machines of the network read them.
-// On failure it returns the HTTP status and the message for the user.
-func storeDocumentSearchInput(r *http.Request, inputDir string) (string, int, string) {
+// On failure it returns the HTTP status and the i18n key of the message
+// with its arguments.
+func storeDocumentSearchInput(r *http.Request, inputDir string) (string, int, string, []any) {
 	if !formFlag(r.FormValue("acknowledge_sharing")) {
-		return "", http.StatusBadRequest, "Confirme que les documents peuvent être lus par les machines du réseau."
+		return "", http.StatusBadRequest, "documents.consent_required", nil
 	}
 	files := make([]*multipart.FileHeader, 0, len(r.MultipartForm.File["files"])+1)
 	files = append(files, r.MultipartForm.File["files"]...)
 	files = append(files, r.MultipartForm.File["file"]...)
 	inputPath, err := documents.Store(inputDir, files)
 	if err == nil {
-		return inputPath, 0, ""
+		return inputPath, 0, "", nil
 	}
-	if message := documents.UserMessage(err); message != "" {
-		return "", http.StatusBadRequest, message
+	if key, args := documents.UserMessage(err); key != "" {
+		return "", http.StatusBadRequest, key, args
 	}
 	log.Printf("store documents in %q: %v", inputDir, err)
-	return "", http.StatusInternalServerError, "Les documents n'ont pas pu être enregistrés."
+	return "", http.StatusInternalServerError, "documents.store_failed", nil
 }
 
 // collectionForNewJob is the collection a new document search joins: the
@@ -106,7 +108,7 @@ func (h *Handler) SearchJobDocuments(w http.ResponseWriter, r *http.Request) {
 	}
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" || utf8.RuneCountInString(query) > silicium.MaxSearchQueryRunes {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_query", "message": "Pose une question de 1 à 1 000 caractères."})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_query", "message": i18n.R(r, "search.query_invalid")})
 		return
 	}
 	limit := boundedQueryInt(r, "k", 10, 1, 50)
@@ -126,12 +128,12 @@ func (h *Handler) SearchJobDocuments(w http.ResponseWriter, r *http.Request) {
 	hits, err := silicium.SearchDocuments(ctx, silicium.ConfigFromEnv(), siliciumIDs, query, limit)
 	if errors.Is(err, silicium.ErrModelPreparing) {
 		w.Header().Set("Retry-After", "10")
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "model_preparing", "message": "Le moteur de recherche se prépare, réessaie dans quelques secondes."})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "model_preparing", "message": i18n.R(r, "search.preparing")})
 		return
 	}
 	if err != nil {
 		log.Printf("document search for job %d: %v", job.ID, err)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "search_unavailable", "message": "La recherche est momentanément indisponible."})
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "search_unavailable", "message": i18n.R(r, "search.unavailable")})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"query": query, "hits": searchResults(hits, jobIDs), "searchedJobs": len(siliciumIDs)})
@@ -225,4 +227,33 @@ func formFlag(value string) bool {
 	default:
 		return false
 	}
+}
+
+// maxListedDocuments bounds the documents listed above the search box.
+const maxListedDocuments = 500
+
+// collectionDocuments are the documents a search of `job` covers: those of
+// every finished job of its collection, newest job first, with the job they
+// belong to (to open them). Nil for other jobs.
+func (h *Handler) collectionDocuments(job models.Job) []map[string]any {
+	if !silicium.IsDocumentSearch(job.Workload) {
+		return nil
+	}
+	listed := []map[string]any{}
+	for _, candidate := range h.searchableJobs(job) {
+		entries, _ := readJSONMap(candidate.ResultPath)["documents"].([]any)
+		for _, entry := range entries {
+			document, ok := entry.(map[string]any)
+			if !ok || len(listed) >= maxListedDocuments {
+				continue
+			}
+			listed = append(listed, map[string]any{
+				"jobId":    candidate.ID,
+				"name":     document["name"],
+				"pages":    document["pages"],
+				"passages": document["passages"],
+			})
+		}
+	}
+	return listed
 }

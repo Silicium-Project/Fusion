@@ -13,6 +13,7 @@ type Handler struct {
 	walletChallenges *walletChallengeStore
 	status           *statusCache
 	jobRunner        func(uint)
+	logins           *loginThrottle
 }
 
 type runRegistry struct {
@@ -26,6 +27,7 @@ func New(db *gorm.DB) Handler {
 		runs:             &runRegistry{cancels: make(map[uint]context.CancelCauseFunc)},
 		walletChallenges: newWalletChallengeStore(),
 		status:           &statusCache{},
+		logins:           newLoginThrottle(),
 	}
 }
 

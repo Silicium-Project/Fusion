@@ -6,35 +6,31 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/silicium/internal/auth"
 )
 
-func TestJWTMiddlewareRequiresHS256AndExpiry(t *testing.T) {
+func TestJWTMiddlewareOnlyAcceptsAccessTokens(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	handler := JwtMiddleware(next)
-	for _, test := range []struct {
-		name   string
-		method jwt.SigningMethod
-		expiry *jwt.NumericDate
+	access, _ := auth.IssueAccess(7, "user", time.Now())
+	refresh, _ := auth.IssueRefresh(7, time.Now())
+	expired, _ := auth.IssueAccess(7, "user", time.Now().Add(-time.Hour))
+	for name, test := range map[string]struct {
+		header string
 		want   int
 	}{
-		{"valid", jwt.SigningMethodHS256, jwt.NewNumericDate(time.Now().Add(time.Minute)), http.StatusNoContent},
-		{"wrong algorithm", jwt.SigningMethodHS384, jwt.NewNumericDate(time.Now().Add(time.Minute)), http.StatusUnauthorized},
-		{"missing expiry", jwt.SigningMethodHS256, nil, http.StatusUnauthorized},
+		"access token":  {"Bearer " + access, http.StatusNoContent},
+		"refresh token": {"Bearer " + refresh, http.StatusUnauthorized},
+		"expired token": {"Bearer " + expired, http.StatusUnauthorized},
+		"no scheme":     {access, http.StatusUnauthorized},
+		"empty":         {"", http.StatusUnauthorized},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			token := jwt.NewWithClaims(test.method, jwt.RegisteredClaims{Subject: "7", ExpiresAt: test.expiry})
-			signed, err := token.SignedString(jwtKey)
-			if err != nil {
-				t.Fatal(err)
-			}
-			request := httptest.NewRequest(http.MethodGet, "/user", nil)
-			request.Header.Set("Authorization", "Bearer "+signed)
-			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, request)
-			if response.Code != test.want {
-				t.Fatalf("got %d, want %d", response.Code, test.want)
-			}
-		})
+		request := httptest.NewRequest(http.MethodGet, "/user", nil)
+		request.Header.Set("Authorization", test.header)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("%s: got %d, want %d", name, response.Code, test.want)
+		}
 	}
 }

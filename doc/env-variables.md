@@ -22,4 +22,4 @@ JWT_SECRET_KEY=your_jwt_secret_key
 -   `DATABASE_DRIVER`: `sqlite` for local development or `postgres` for production. If omitted, the API chooses SQLite unless `DATABASE_URL` is present.
 -   `SQLITE_PATH`: SQLite database path; defaults to `.silicium/site/silicium.db`.
 -   `DATABASE_URL`: PostgreSQL DSN, required when `DATABASE_DRIVER=postgres`.
--   `JWT_SECRET_KEY`: A secret key for signing JWT (JSON Web Tokens). This should be a long, random string.
+-   `JWT_SECRET_KEY`: A secret key for signing JWT (JSON Web Tokens). This should be a long, random string (32 characters or more). Required in production (`SILICIUM_RELEASE_CHANNEL=prod`): the API refuses to start without it. Elsewhere a missing key is replaced by a random one per process (sessions end when the API restarts).

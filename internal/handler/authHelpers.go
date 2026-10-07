@@ -1,3 +1,6 @@
+// Helpers of the account handlers: login lookup, registration checks, JSON
+// answers and session tokens.
+
 package handler
 
 import (
@@ -5,16 +8,17 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"net/mail"
-	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/silicium/internal/auth"
+	"github.com/silicium/internal/i18n"
 	"github.com/silicium/internal/models"
 	"gorm.io/gorm"
 )
+
+// maxAuthBodyBytes bounds the JSON body of the account requests.
+const maxAuthBodyBytes = 16 << 10
 
 func normalizeEmail(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
 
@@ -28,7 +32,7 @@ func loginIdentifier(req LoginRequest) string {
 // Email takes priority so a username cannot shadow another account's email.
 // Username comparison keeps the database's existing case-sensitive uniqueness.
 func loginUsers(db *gorm.DB, identifier string) ([]models.User, error) {
-	if identifier == "" {
+	if identifier == "" || len(identifier) > maxEmailLength {
 		return nil, nil
 	}
 	var users []models.User
@@ -40,38 +44,61 @@ func loginUsers(db *gorm.DB, identifier string) ([]models.User, error) {
 	return users, err
 }
 
-func optionalText(value *string) *string {
-	if value == nil || strings.TrimSpace(*value) == "" {
-		return nil
-	}
-	trimmed := strings.TrimSpace(*value)
-	return &trimmed
+// fieldError is a refusal of a form field: the i18n key and its arguments.
+type fieldError struct {
+	key  string
+	args []any
 }
 
+func (e *fieldError) Error() string { return e.key }
+
+func refuse(key string, args ...any) error { return &fieldError{key: key, args: args} }
+
+// errorMessage is the message of `err` in the language of the request.
+func errorMessage(r *http.Request, err error) string {
+	var field *fieldError
+	if errors.As(err, &field) {
+		return i18n.R(r, field.key, field.args...)
+	}
+	return i18n.R(r, "form.invalid")
+}
+
+// registrationUser checks a registration and returns the account to create.
 func registrationUser(req RegisterRequest) (*models.User, error) {
-	email := normalizeEmail(req.Email)
-	address, err := mail.ParseAddress(email)
-	if err != nil || address.Address != email || len(email) > 254 {
-		return nil, errors.New("Saisissez une adresse e-mail valide.")
+	email, key := validEmail(req.Email)
+	if key != "" {
+		return nil, refuse(key)
 	}
-	user := &models.User{Email: email, Role: "user", Username: optionalText(req.Username),
-		FirstName: optionalText(req.FirstName), LastName: optionalText(req.LastName)}
-	for _, name := range []*string{user.Username, user.FirstName, user.LastName} {
-		if name != nil && utf8.RuneCountInString(*name) > 50 {
-			return nil, errors.New("Les noms sont limités à 50 caractères.")
-		}
+	username, key := validUsername(req.Username)
+	if key != "" {
+		return nil, refuse(key)
 	}
-	return user, user.SetPassword(req.Password)
+	firstName, key := validPersonName(req.FirstName)
+	if key != "" {
+		return nil, refuse(key)
+	}
+	lastName, key := validPersonName(req.LastName)
+	if key != "" {
+		return nil, refuse(key)
+	}
+	if key, args := validNewPassword(req.Password); key != "" {
+		return nil, refuse(key, args...)
+	}
+	user := &models.User{Email: email, Role: "user", Username: username, FirstName: firstName, LastName: lastName}
+	if err := user.SetPassword(req.Password); err != nil {
+		return nil, refuse("password.too_long")
+	}
+	return user, nil
 }
 
 func (h *Handler) emailAvailable(w http.ResponseWriter, r *http.Request, email string) bool {
 	var count int64
 	err := h.DB.WithContext(r.Context()).Model(&models.User{}).Where("LOWER(TRIM(email)) = ?", email).Count(&count).Error
-	if !authDatabaseOK(w, err) {
+	if !authDatabaseOK(w, r, err, "account.taken") {
 		return false
 	}
 	if count != 0 {
-		writeAuthJSON(w, 409, map[string]string{"message": "Cette adresse e-mail est déjà utilisée."})
+		writeAuthJSON(w, http.StatusConflict, map[string]string{"message": i18n.R(r, "email.taken")})
 		return false
 	}
 	return true
@@ -84,38 +111,50 @@ func writeAuthJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func authDatabaseOK(w http.ResponseWriter, err error) bool {
+// writeAuthMessage answers `{"message": …}` in the language of the request.
+func writeAuthMessage(w http.ResponseWriter, r *http.Request, status int, key string, args ...any) {
+	writeAuthJSON(w, status, map[string]string{"message": i18n.R(r, key, args...)})
+}
+
+// authDatabaseOK answers the errors of an account query: a uniqueness
+// conflict becomes a 409 with `takenKey`, anything else a 503 without the
+// database details.
+func authDatabaseOK(w http.ResponseWriter, r *http.Request, err error, takenKey string) bool {
 	if err == nil {
 		return true
 	}
 	var duplicate interface{ SQLState() string }
-	if errors.Is(err, gorm.ErrDuplicatedKey) || (errors.As(err, &duplicate) && duplicate.SQLState() == "23505") {
-		writeAuthJSON(w, 409, map[string]string{"message": "Cette adresse e-mail ou ce nom d'utilisateur est déjà utilisé."})
+	if errors.Is(err, gorm.ErrDuplicatedKey) || (errors.As(err, &duplicate) && duplicate.SQLState() == "23505") ||
+		strings.Contains(strings.ToLower(err.Error()), "unique constraint") {
+		writeAuthMessage(w, r, http.StatusConflict, takenKey)
 		return false
 	}
 	log.Printf("Authentication database request failed: %v", err)
-	writeAuthJSON(w, 503, map[string]string{"message": "Le service est indisponible. Réessayez plus tard."})
+	writeAuthMessage(w, r, http.StatusServiceUnavailable, "service.unavailable")
 	return false
 }
 
-// Keep the existing bearer-token response and lifetimes; no new session protocol.
+// loginTokens are the access and refresh tokens of a new session.
 func loginTokens(user models.User) (map[string]string, error) {
-	claims := &JWTClaims{Role: user.Role, RegisteredClaims: loginClaims(user.ID, 15*time.Minute)}
-	access, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtKey)
+	now := time.Now()
+	access, err := auth.IssueAccess(user.ID, user.Role, now)
 	if err != nil {
 		return nil, err
 	}
-	refreshClaims := loginClaims(user.ID, 7*24*time.Hour)
-	refresh, err := jwt.NewWithClaims(jwt.SigningMethodHS256, &refreshClaims).SignedString(jwtKey)
+	refresh, err := auth.IssueRefresh(user.ID, now)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]string{"token": access, "refresh_token": refresh}, nil
 }
 
-func loginClaims(id uint, lifetime time.Duration) jwt.RegisteredClaims {
-	return jwt.RegisteredClaims{
-		Subject:   strconv.FormatUint(uint64(id), 10),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(lifetime)),
+// decodeAuthBody reads a bounded JSON body into `target`, refusing unknown
+// trailing data.
+func decodeAuthBody(w http.ResponseWriter, r *http.Request, target any) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxAuthBodyBytes))
+	if err := decoder.Decode(target); err != nil || decoder.More() {
+		writeAuthMessage(w, r, http.StatusBadRequest, "form.invalid")
+		return false
 	}
+	return true
 }

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/silicium/internal/documents"
 )
@@ -25,29 +26,47 @@ var (
 	errJobInputTooLarge = errors.New("input file exceeds the 16 MiB limit")
 )
 
+// maxStoredNameRunes bounds the name of a stored input file.
+const maxStoredNameRunes = 100
+
+// safeFilename is the name an uploaded file is stored under: its base name
+// (browsers on Windows may send a backslash path), with every character but
+// ASCII letters, digits, dots, hyphens and underscores replaced, no leading
+// dot (no hidden file, no ".."), at most 100 characters.
 func safeFilename(name string) string {
-	// Browsers on Windows may submit a backslash-delimited client path even
-	// when the API itself runs on Linux.
 	name = strings.ReplaceAll(name, "\\", "/")
 	base := filepath.Base(name)
-	base = strings.ReplaceAll(base, " ", "_")
-	if base == "." || base == string(filepath.Separator) || base == "" {
-		return "input.json"
+	cleaned := []rune{}
+	for _, r := range base {
+		switch {
+		case r < 0x80 && (unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '-' || r == '_'):
+			cleaned = append(cleaned, r)
+		default:
+			cleaned = append(cleaned, '_')
+		}
 	}
-	return base
+	safe := strings.TrimLeft(string(cleaned), ".")
+	if len(safe) > maxStoredNameRunes {
+		safe = safe[len(safe)-maxStoredNameRunes:]
+		safe = strings.TrimLeft(safe, ".")
+	}
+	if strings.Trim(safe, "_") == "" {
+		return "input.bin"
+	}
+	return safe
 }
 
 // storeUploadedJobInput stores the single `file` field of a job form (a
 // scene, or the file to hash). On failure it returns the HTTP status and
-// message to answer.
+// the i18n key of the message.
 func storeUploadedJobInput(r *http.Request, jobID, inputDir string) (string, int, string) {
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		return "", http.StatusBadRequest, "Input file is required"
+		return "", http.StatusBadRequest, "job.input_required"
 	}
 	defer file.Close()
 	if header.Size > maxJobInputBytes {
-		return "", http.StatusRequestEntityTooLarge, "Input file exceeds the 16 MiB limit"
+		return "", http.StatusRequestEntityTooLarge, "job.input_too_large"
 	}
 	inputPath, err := storeJobInput(inputDir, header.Filename, file)
 	if err == nil {
@@ -56,11 +75,11 @@ func storeUploadedJobInput(r *http.Request, jobID, inputDir string) (string, int
 	log.Printf("store job %q input in %q: %v", jobID, inputDir, err)
 	switch {
 	case errors.Is(err, errEmptyJobInput):
-		return "", http.StatusBadRequest, "Input file cannot be empty"
+		return "", http.StatusBadRequest, "job.input_empty"
 	case errors.Is(err, errJobInputTooLarge):
-		return "", http.StatusRequestEntityTooLarge, "Input file exceeds the 16 MiB limit"
+		return "", http.StatusRequestEntityTooLarge, "job.input_too_large"
 	default:
-		return "", http.StatusInternalServerError, "Could not store input file"
+		return "", http.StatusInternalServerError, "job.input_store_failed"
 	}
 }
 

@@ -3,44 +3,30 @@ package middleware
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"os"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/silicium/internal/auth"
 	"github.com/silicium/internal/contextkeys"
+	"github.com/silicium/internal/i18n"
 )
 
-var jwtKey []byte
-
-func init() {
-	key := os.Getenv("JWT_SECRET_KEY")
-	if key == "" {
-		fmt.Println("WARNING: JWT_SECRET_KEY environment variable not set. Using a development-only key.")
-		key = "supersecretdevelopmentkeythatshouldneverbeusedinproduction"
-	}
-	jwtKey = []byte(key)
-}
-
+// JwtMiddleware lets through the requests carrying a valid access token
+// (`Authorization: Bearer …`) and puts the user id in their context.
+// Refresh tokens are refused here: they only renew a session.
 func JwtMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		parts := strings.Fields(r.Header.Get("Authorization"))
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
-			writeUnauthorized(w, "Une authentification Bearer est requise.")
+			writeUnauthorized(w, i18n.R(r, "session.bearer_required"))
 			return
 		}
-
-		claims := &jwt.RegisteredClaims{}
-		token, err := jwt.ParseWithClaims(parts[1], claims, func(token *jwt.Token) (interface{}, error) {
-			return jwtKey, nil
-		}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithExpirationRequired())
-		if err != nil || !token.Valid || strings.TrimSpace(claims.Subject) == "" {
-			writeUnauthorized(w, "La session est invalide ou expirée.")
+		userID, err := auth.ParseAccess(parts[1])
+		if err != nil {
+			writeUnauthorized(w, i18n.R(r, "session.expired"))
 			return
 		}
-
-		ctx := context.WithValue(r.Context(), contextkeys.UserIDKey, claims.Subject)
+		ctx := context.WithValue(r.Context(), contextkeys.UserIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

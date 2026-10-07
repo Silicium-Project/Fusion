@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"github.com/silicium/internal/auth"
 	"github.com/silicium/internal/db"
 	"github.com/silicium/internal/handler"
 	"github.com/silicium/internal/middleware"
@@ -22,6 +23,9 @@ import (
 
 func main() {
 	if err := release.Validate(os.Getenv("SILICIUM_RELEASE_CHANNEL")); err != nil {
+		log.Fatal(err)
+	}
+	if err := auth.CheckKey(os.Getenv("SILICIUM_RELEASE_CHANNEL")); err != nil {
 		log.Fatal(err)
 	}
 	applicationContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -49,7 +53,7 @@ func main() {
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins:   origins,
 		AllowedMethods:   []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "Origin", "Accept", "X-Request-ID"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Origin", "Accept", "Accept-Language", "X-Request-ID"},
 		ExposedHeaders:   []string{"X-Request-ID", "X-Total-Count", "X-Page", "X-Page-Size", "X-Silicium-Cache"},
 		AllowCredentials: allowCredentials,
 		MaxAge:           600,

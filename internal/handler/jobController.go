@@ -21,68 +21,48 @@ import (
 	"github.com/silicium/internal/silicium"
 )
 
+// CreateJob answers POST /jobs: checks the form, stores the input and
+// starts the job on the network. Refusals are `{"message": …}` in the
+// language of the request.
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	userID, ok := userIDFromRequest(r)
 	if !ok {
-		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
+		writeMessage(w, r, http.StatusUnauthorized, "session.invalid")
 		return
 	}
 	// Room for the largest submission (64 MiB of documents) and the form.
 	r.Body = http.MaxBytesReader(w, r.Body, maxJobRequestBytes)
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
-		http.Error(w, "Invalid multipart form", http.StatusBadRequest)
+		writeMessage(w, r, http.StatusBadRequest, "job.form_invalid")
 		return
 	}
-
-	workload := strings.TrimSpace(r.FormValue("workload"))
-	if workload == "" {
-		workload = "raytracer"
-	}
-	if err := silicium.ValidateWorkload(workload); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	options, key, args := jobOptionsFromForm(r)
+	if key != "" {
+		writeMessage(w, r, http.StatusBadRequest, key, args...)
 		return
 	}
-	fragmentCount := 0
-	if raw := strings.TrimSpace(r.FormValue("fragment_count")); raw != "" {
-		parsed, parseErr := strconv.Atoi(raw)
-		if parseErr != nil || parsed < 1 || parsed > 256 {
-			http.Error(w, "fragment_count must be between 1 and 256", http.StatusBadRequest)
-			return
-		}
-		fragmentCount = parsed
-	}
-	maxRuntimeSeconds := 3600
-	if raw := strings.TrimSpace(r.FormValue("max_runtime_seconds")); raw != "" {
-		parsed, parseErr := strconv.Atoi(raw)
-		if parseErr != nil || parsed < 30 || parsed > 86400 {
-			http.Error(w, "max_runtime_seconds must be between 30 and 86400", http.StatusBadRequest)
-			return
-		}
-		maxRuntimeSeconds = parsed
-	}
-	deadline := time.Now().Add(time.Duration(maxRuntimeSeconds) * time.Second)
 
 	jobID := silicium.NewJobID(userID)
 	inputDir := filepath.Join(envDefault("SILICIUM_SITE_STORAGE_DIR", filepath.Join("storage", "jobs")), jobID, "input")
 	defaultTitle := "Raytracer"
 	collectionID := ""
 	var inputPath string
-	if silicium.IsDocumentSearch(workload) {
+	if silicium.IsDocumentSearch(options.workload) {
 		collection, found := h.collectionForNewJob(userID, r.FormValue("collection_id"), jobID)
 		if !found {
-			http.Error(w, "Collection not found", http.StatusNotFound)
+			writeMessage(w, r, http.StatusNotFound, "job.collection_unknown")
 			return
 		}
-		stored, status, message := storeDocumentSearchInput(r, inputDir)
-		if message != "" {
-			http.Error(w, message, status)
+		stored, status, key, args := storeDocumentSearchInput(r, inputDir)
+		if key != "" {
+			writeMessage(w, r, status, key, args...)
 			return
 		}
 		inputPath, collectionID, defaultTitle = stored, collection, documentSearchTitle
 	} else {
-		stored, status, message := storeUploadedJobInput(r, jobID, inputDir)
-		if message != "" {
-			http.Error(w, message, status)
+		stored, status, key := storeUploadedJobInput(r, jobID, inputDir)
+		if key != "" {
+			writeMessage(w, r, status, key)
 			return
 		}
 		inputPath = stored
@@ -95,17 +75,22 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}()
 	absoluteInput, err := filepath.Abs(inputPath)
 	if err != nil {
-		http.Error(w, "Could not resolve input file", http.StatusInternalServerError)
+		writeMessage(w, r, http.StatusInternalServerError, "job.input_store_failed")
 		return
 	}
-
+	title, key := validJobTitle(options.title, defaultTitle)
+	if key != "" {
+		writeMessage(w, r, http.StatusBadRequest, key)
+		return
+	}
+	deadline := time.Now().Add(time.Duration(options.maxRuntimeSeconds) * time.Second)
 	job := models.Job{
 		UserID:        userID,
-		Title:         envDefaultValue(r.FormValue("title"), defaultTitle),
-		Description:   strings.TrimSpace(r.FormValue("description")),
-		Workload:      workload,
-		Priority:      envDefaultValue(r.FormValue("priority"), "high"),
-		FragmentCount: fragmentCount,
+		Title:         title,
+		Description:   options.description,
+		Workload:      options.workload,
+		Priority:      options.priority,
+		FragmentCount: options.fragmentCount,
 		CollectionID:  collectionID,
 		Status:        "queued",
 		SiliciumJobID: jobID,
@@ -113,7 +98,8 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		DeadlineAt:    &deadline,
 	}
 	if result := h.DB.Create(&job); result.Error != nil {
-		http.Error(w, "Could not create job: "+result.Error.Error(), http.StatusInternalServerError)
+		log.Printf("create job %q: %v", jobID, result.Error)
+		writeMessage(w, r, http.StatusInternalServerError, "job.create_failed")
 		return
 	}
 	removeInputOnFailure = false
@@ -125,6 +111,56 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusAccepted, job)
+}
+
+// jobOptions are the checked fields of a job form.
+type jobOptions struct {
+	workload          string
+	title             string
+	description       string
+	priority          string
+	fragmentCount     int
+	maxRuntimeSeconds int
+}
+
+// jobOptionsFromForm checks the fields of a job form, the input aside. On
+// refusal it returns the i18n key and its arguments.
+func jobOptionsFromForm(r *http.Request) (jobOptions, string, []any) {
+	options := jobOptions{workload: strings.TrimSpace(r.FormValue("workload")), title: r.FormValue("title"), maxRuntimeSeconds: 3600}
+	if options.workload == "" {
+		options.workload = "raytracer"
+	}
+	if silicium.ValidateWorkload(options.workload) != nil {
+		return options, "job.workload_invalid", nil
+	}
+	if raw := strings.TrimSpace(r.FormValue("fragment_count")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 256 {
+			return options, "job.fragments_invalid", nil
+		}
+		options.fragmentCount = parsed
+	}
+	if raw := strings.TrimSpace(r.FormValue("max_runtime_seconds")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 30 || parsed > 86400 {
+			return options, "job.runtime_invalid", nil
+		}
+		options.maxRuntimeSeconds = parsed
+	}
+	var key string
+	if options.description, key = validJobDescription(r.FormValue("description")); key != "" {
+		return options, key, nil
+	}
+	if options.priority, key = validJobPriority(r.FormValue("priority"), "high"); key != "" {
+		return options, key, nil
+	}
+	// Checked again with the default title once the workload is known.
+	if strings.TrimSpace(options.title) != "" {
+		if _, key = validJobTitle(options.title, ""); key != "" {
+			return options, key, nil
+		}
+	}
+	return options, "", nil
 }
 
 func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
