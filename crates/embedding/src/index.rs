@@ -168,8 +168,10 @@ impl Index {
         }
         let vectors = files
             .vectors
-            .chunks_exact(4)
-            .map(|value| f32::from_le_bytes(value.try_into().expect("4 bytes")))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|value| f32::from_le_bytes(*value))
             .collect();
         let offsets = line_offsets(&files.passages);
         if offsets.len() != count {

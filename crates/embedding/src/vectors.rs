@@ -90,8 +90,10 @@ impl VectorBlock {
             ));
         }
         let values = bytes[HEADER_BYTES..]
-            .chunks_exact(4)
-            .map(|value| f32::from_le_bytes(value.try_into().expect("4 bytes")))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|value| f32::from_le_bytes(*value))
             .collect();
         Ok(Self {
             dimension,
