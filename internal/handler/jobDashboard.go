@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/silicium/internal/silicium"
 )
 
 func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +42,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"title":              job.Title,
 			"description":        job.Description,
 			"workload":           job.Workload,
+			"collectionId":       collectionOf(job),
 			"priority":           job.Priority,
 			"status":             job.Status,
 			"siliciumJobId":      job.SiliciumJobID,
@@ -99,6 +101,9 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"splitTree":  trace["split_tree"],
 		},
 	}
+	if index := documentIndexSummary(job); index != nil {
+		payload["documentIndex"] = index
+	}
 	writeJSON(w, http.StatusOK, payload)
 }
 
@@ -110,6 +115,10 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	job = h.refreshRaytracerArtifacts(job)
 	if !regularFile(job.ResultPath) {
 		http.Error(w, "Result is not ready", http.StatusNotFound)
+		return
+	}
+	if silicium.IsDocumentSearch(job.Workload) {
+		writeDocumentIndexExport(w, job)
 		return
 	}
 	http.ServeFile(w, r, job.ResultPath)

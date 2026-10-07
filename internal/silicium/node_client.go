@@ -64,7 +64,30 @@ func nodeControlURL(cfg RunnerConfig, path string) (string, error) {
 	return base + path, nil
 }
 
+// ControlError is a non-2xx answer of the node control API.
+type ControlError struct {
+	Method  string
+	Path    string
+	Status  int
+	Message string
+}
+
+func (e *ControlError) Error() string {
+	return fmt.Sprintf("node control %s %s: %s", e.Method, e.Path, e.Message)
+}
+
+// controlRequestTimeout bounds an ordinary control call.
+const controlRequestTimeout = 12 * time.Second
+
+// submissionTimeout bounds a submission: the node reads the documents of a
+// document search before answering (it gives up after 300 s).
+const submissionTimeout = 6 * time.Minute
+
 func nodeControlRequest(ctx context.Context, cfg RunnerConfig, method, path string, body any, output any) error {
+	return nodeControlRequestWithin(ctx, cfg, controlRequestTimeout, method, path, body, output)
+}
+
+func nodeControlRequestWithin(ctx context.Context, cfg RunnerConfig, timeout time.Duration, method, path string, body any, output any) error {
 	endpoint, err := nodeControlURL(cfg, path)
 	if err != nil {
 		return err
@@ -90,7 +113,7 @@ func nodeControlRequest(ctx context.Context, cfg RunnerConfig, method, path stri
 	if token := strings.TrimSpace(cfg.NodeControlToken); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	response, err := (&http.Client{Timeout: 12 * time.Second}).Do(request)
+	response, err := (&http.Client{Timeout: timeout}).Do(request)
 	if err != nil {
 		return err
 	}
@@ -98,10 +121,11 @@ func nodeControlRequest(ctx context.Context, cfg RunnerConfig, method, path stri
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		var failure map[string]any
 		_ = json.NewDecoder(response.Body).Decode(&failure)
-		if message, ok := failure["error"].(string); ok && strings.TrimSpace(message) != "" {
-			return fmt.Errorf("node control %s %s: %s", method, path, message)
+		message, _ := failure["error"].(string)
+		if strings.TrimSpace(message) == "" {
+			message = response.Status
 		}
-		return fmt.Errorf("node control %s %s: %s", method, path, response.Status)
+		return &ControlError{Method: method, Path: path, Status: response.StatusCode, Message: message}
 	}
 	if output == nil || response.StatusCode == http.StatusNoContent {
 		return nil
@@ -123,7 +147,7 @@ func ListControlTasks(ctx context.Context, cfg RunnerConfig, rootJobID string) (
 
 func SubmitControlTask(ctx context.Context, cfg RunnerConfig, task ControlTaskSubmission) (ControlTask, error) {
 	var response ControlTask
-	if err := nodeControlRequest(ctx, cfg, http.MethodPost, "/v1/tasks", task, &response); err != nil {
+	if err := nodeControlRequestWithin(ctx, cfg, submissionTimeout, http.MethodPost, "/v1/tasks", task, &response); err != nil {
 		return ControlTask{}, err
 	}
 	return response, nil

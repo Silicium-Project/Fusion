@@ -27,6 +27,8 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
 		return
 	}
+	// Room for the largest submission (64 MiB of documents) and the form.
+	r.Body = http.MaxBytesReader(w, r.Body, maxJobRequestBytes)
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
 		http.Error(w, "Invalid multipart form", http.StatusBadRequest)
 		return
@@ -60,33 +62,30 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 	deadline := time.Now().Add(time.Duration(maxRuntimeSeconds) * time.Second)
 
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "Input file is required", http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-	if header.Size > maxJobInputBytes {
-		http.Error(w, "Input file exceeds the 16 MiB limit", http.StatusRequestEntityTooLarge)
-		return
-	}
-
 	jobID := silicium.NewJobID(userID)
 	inputDir := filepath.Join(envDefault("SILICIUM_SITE_STORAGE_DIR", filepath.Join("storage", "jobs")), jobID, "input")
-	inputPath, err := storeJobInput(inputDir, header.Filename, file)
-	if err != nil {
-		log.Printf("store job %q input in %q: %v", jobID, inputDir, err)
-		status := http.StatusInternalServerError
-		message := "Could not store input file"
-		if errors.Is(err, errEmptyJobInput) {
-			status = http.StatusBadRequest
-			message = "Input file cannot be empty"
-		} else if errors.Is(err, errJobInputTooLarge) {
-			status = http.StatusRequestEntityTooLarge
-			message = "Input file exceeds the 16 MiB limit"
+	defaultTitle := "Raytracer"
+	collectionID := ""
+	var inputPath string
+	if silicium.IsDocumentSearch(workload) {
+		collection, found := h.collectionForNewJob(userID, r.FormValue("collection_id"), jobID)
+		if !found {
+			http.Error(w, "Collection not found", http.StatusNotFound)
+			return
 		}
-		http.Error(w, message, status)
-		return
+		stored, status, message := storeDocumentSearchInput(r, inputDir)
+		if message != "" {
+			http.Error(w, message, status)
+			return
+		}
+		inputPath, collectionID, defaultTitle = stored, collection, documentSearchTitle
+	} else {
+		stored, status, message := storeUploadedJobInput(r, jobID, inputDir)
+		if message != "" {
+			http.Error(w, message, status)
+			return
+		}
+		inputPath = stored
 	}
 	removeInputOnFailure := true
 	defer func() {
@@ -102,11 +101,12 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 
 	job := models.Job{
 		UserID:        userID,
-		Title:         envDefaultValue(r.FormValue("title"), "Raytracer"),
+		Title:         envDefaultValue(r.FormValue("title"), defaultTitle),
 		Description:   strings.TrimSpace(r.FormValue("description")),
 		Workload:      workload,
 		Priority:      envDefaultValue(r.FormValue("priority"), "high"),
 		FragmentCount: fragmentCount,
+		CollectionID:  collectionID,
 		Status:        "queued",
 		SiliciumJobID: jobID,
 		InputPath:     absoluteInput,

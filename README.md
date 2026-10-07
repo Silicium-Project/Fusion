@@ -7,6 +7,7 @@ API HTTP du site Silicium. Elle gère les comptes, les sessions JWT, les tâches
 - comptes et sessions : `POST /register`, `POST /login`, `POST /refresh`, `/user` ;
 - preuve de portefeuille : `POST /user/wallet/challenge`, puis `POST /user/wallet` avec une signature Ed25519 ;
 - tâches : création multipart, pagination, annulation, résultat et détail d’exécution sous `/jobs` ;
+- recherche dans des documents : dépôt des documents (`internal/documents`), collections, recherche `GET /jobs/{id}/search`, ouverture d’un document `GET /jobs/{id}/documents`, export de l’index par `GET /jobs/{id}/result` ;
 - réseau : pairs et travaux RPC agrégés sous `/jobs/network` ;
 - supervision publique : `/health`, `/healthz` et `/status` ;
 - contrat OpenAPI : `/docs/openapi.yaml` dans l’image déployée.

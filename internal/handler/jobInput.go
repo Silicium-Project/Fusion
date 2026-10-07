@@ -5,12 +5,20 @@ package handler
 import (
 	"errors"
 	"io"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/silicium/internal/documents"
 )
 
 const maxJobInputBytes int64 = 16 << 20
+
+// maxJobRequestBytes bounds a job creation request: the largest input (the
+// documents of a document search) and the form fields around it.
+const maxJobRequestBytes = documents.MaxUploadBytes + 1<<20
 
 var (
 	errEmptyJobInput    = errors.New("input file is empty")
@@ -27,6 +35,33 @@ func safeFilename(name string) string {
 		return "input.json"
 	}
 	return base
+}
+
+// storeUploadedJobInput stores the single `file` field of a job form (a
+// scene, or the file to hash). On failure it returns the HTTP status and
+// message to answer.
+func storeUploadedJobInput(r *http.Request, jobID, inputDir string) (string, int, string) {
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		return "", http.StatusBadRequest, "Input file is required"
+	}
+	defer file.Close()
+	if header.Size > maxJobInputBytes {
+		return "", http.StatusRequestEntityTooLarge, "Input file exceeds the 16 MiB limit"
+	}
+	inputPath, err := storeJobInput(inputDir, header.Filename, file)
+	if err == nil {
+		return inputPath, 0, ""
+	}
+	log.Printf("store job %q input in %q: %v", jobID, inputDir, err)
+	switch {
+	case errors.Is(err, errEmptyJobInput):
+		return "", http.StatusBadRequest, "Input file cannot be empty"
+	case errors.Is(err, errJobInputTooLarge):
+		return "", http.StatusRequestEntityTooLarge, "Input file exceeds the 16 MiB limit"
+	default:
+		return "", http.StatusInternalServerError, "Could not store input file"
+	}
 }
 
 func storeJobInput(inputDir, filename string, source io.Reader) (string, error) {

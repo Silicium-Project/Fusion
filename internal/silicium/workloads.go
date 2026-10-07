@@ -33,12 +33,30 @@ var sha256Spec = workloadSpec{
 	ResultFile: "result/sha256.json",
 }
 
+// DocumentSearchWorkload is the workload of "Recherche dans mes documents":
+// the node turns the submitted documents into passages, the network embeds
+// them with a pinned model, and the site searches them by meaning.
+const DocumentSearchWorkload = "ai/embedding/multilingual-e5-small"
+
+var documentSearchSpec = workloadSpec{
+	NodeID:     DocumentSearchWorkload,
+	StorageDir: "embedding",
+	ResultFile: "index/index.json",
+}
+
 // workloadSpecs lists the accepted workload names, aliases included.
 var workloadSpecs = map[string]workloadSpec{
 	"":                        raytracerSpec,
 	"raytracer":               raytracerSpec,
 	"calcul/integrity/sha256": sha256Spec,
 	"calcul/hash/sha256":      sha256Spec,
+	DocumentSearchWorkload:    documentSearchSpec,
+}
+
+// IsDocumentSearch reports whether `workload` is a document search.
+func IsDocumentSearch(workload string) bool {
+	spec, ok := workloadSpecFor(workload)
+	return ok && spec.NodeID == DocumentSearchWorkload
 }
 
 // workloadSpecFor returns the spec of a workload name.

@@ -183,8 +183,32 @@ paths:
         '200': { description: Liste paginée }
     post:
       summary: Soumettre une tâche multipart
+      description: >
+        `workload` choisit le calcul : `raytracer` (champ `file`, une scène),
+        `calcul/integrity/sha256` (champ `file`), ou
+        `ai/embedding/multilingual-e5-small` pour une recherche dans des
+        documents (champs `files` : PDF, .docx, texte, Markdown, ou un seul ZIP ;
+        64 Mio au total ; `acknowledge_sharing=1` obligatoire, car les machines du
+        réseau lisent le texte ; `collection_id` facultatif pour ajouter les
+        documents à une collection existante du compte).
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                workload: { type: string }
+                title: { type: string }
+                file: { type: string, format: binary }
+                files: { type: array, items: { type: string, format: binary } }
+                acknowledge_sharing: { type: string, enum: ['1', 'true'] }
+                collection_id: { type: string }
+                fragment_count: { type: integer, minimum: 1, maximum: 256 }
+                max_runtime_seconds: { type: integer, minimum: 30, maximum: 86400 }
       responses:
         '202': { description: Tâche acceptée }
+        '400': { description: Formulaire ou documents refusés (message pour l’utilisateur) }
+        '404': { description: Collection d’un autre compte ou inconnue }
   /jobs/network/peers:
     get:
       summary: Lire le registre des nœuds annoté avec les versions
@@ -213,7 +237,51 @@ paths:
   /jobs/{id}/result:
     get:
       summary: Télécharger le résultat final
+      description: Pour une recherche dans des documents, un ZIP de l’index (index.json, vectors.f32, passages.jsonl, LISEZMOI.txt).
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
         '200': { description: Artefact final }
+  /jobs/{id}/search:
+    get:
+      summary: Chercher dans les documents d’une collection
+      description: Cherche par le sens dans toutes les tâches terminées de la collection de la tâche `id`.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 1000 } }
+        - { name: k, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        '200':
+          description: Passages les plus proches, du meilleur au moins bon
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query: { type: string }
+                  searchedJobs: { type: integer }
+                  hits:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        jobId: { type: integer }
+                        passageId: { type: integer }
+                        document: { type: string }
+                        page: { type: integer, nullable: true }
+                        text: { type: string }
+                        score: { type: number }
+        '400': { description: Question vide ou trop longue }
+        '404': { description: Tâche introuvable ou qui n’est pas une recherche dans des documents }
+        '502': { description: Recherche indisponible }
+        '503': { description: Le modèle se prépare ; réessayer après `Retry-After` secondes }
+  /jobs/{id}/documents:
+    get:
+      summary: Ouvrir un document envoyé
+      description: Sert un document de la tâche (nom tel que donné par un résultat de recherche), pour lecture seulement.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: name, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Le document }
+        '404': { description: Document introuvable }

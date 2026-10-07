@@ -30,4 +30,8 @@ type Job struct {
 	CompletedAt     *time.Time     `json:"completedAt,omitempty"`
 	CreatedAt       time.Time      `json:"createdAt"`
 	UpdatedAt       time.Time      `json:"updatedAt"`
+
+	// CollectionID groups the document-search jobs searched together: the
+	// first job of a collection, then the jobs that add documents to it.
+	CollectionID string `gorm:"size:128;index" json:"collectionId,omitempty"`
 }

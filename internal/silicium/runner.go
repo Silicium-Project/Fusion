@@ -3,7 +3,9 @@ package silicium
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -151,6 +153,11 @@ func runNodeJob(ctx context.Context, job models.Job, cfg RunnerConfig, spec work
 		FragmentCount: job.FragmentCount,
 	})
 	if err != nil {
+		// The node refuses unreadable documents with a message for the user.
+		var refused *ControlError
+		if errors.As(err, &refused) && refused.Status == http.StatusBadRequest && IsDocumentSearch(job.Workload) {
+			return RunResult{Status: "failed", ErrorMessage: refused.Message}
+		}
 		return RunResult{Status: "failed", ErrorMessage: "rust_node_submission_failed: " + err.Error()}
 	}
 	task, err := waitForControlTask(ctx, cfg, job.SiliciumJobID)
