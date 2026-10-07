@@ -75,6 +75,7 @@ export const resultExtension = (contentType: string): string => {
   if (type.includes('png')) return 'png';
   if (type.includes('json')) return 'json';
   if (type.includes('portable-pixmap') || type.includes('ppm')) return 'ppm';
+  if (type.includes('zip')) return 'zip';
   return 'bin';
 };
 

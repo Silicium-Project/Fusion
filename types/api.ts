@@ -1,3 +1,5 @@
+import type { DocumentIndexSummary } from '~/utils/documents';
+
 export type JobStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'expired' | string;
 
 export interface User {
@@ -24,6 +26,8 @@ export interface Job {
   workload: string;
   priority: string;
   fragmentCount?: number;
+  /** Document searches added to the same collection are searched together. */
+  collectionId?: string;
   status: JobStatus;
   siliciumJobId: string;
   devnetJob?: string;
@@ -216,6 +220,8 @@ export interface JobDashboard {
   job: Job;
   resultReady: boolean;
   resultUrl: string;
+  /** Documents read and files skipped, once a document search is finished. */
+  documentIndex?: DocumentIndexSummary;
   diagnostics?: Record<string, unknown>;
   summary?: {
     success?: boolean;

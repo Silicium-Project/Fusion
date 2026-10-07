@@ -1,14 +1,20 @@
 <template>
   <div class="app-page new-job-page">
     <header><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>Retour aux projets</NuxtLink><span class="eyebrow">Nouveau calcul</span><h1 class="page-title">Lancer un calcul</h1><p class="page-intro">Ajoutez votre fichier, choisissez la configuration adaptée puis suivez le résultat depuis votre espace.</p></header>
-    <div class="new-job-layout"><UiCard title="Créer un projet" description="Le réseau s’occupe de la répartition et de la vérification." padded><JobForm :submitting="submitting" :error="error" @submit="submit" /></UiCard><aside class="stack"><UiCard title="Votre parcours" padded><ol class="expectations"><li v-for="(item,index) in expectations" :key="item.title"><span>{{ index + 1 }}</span><div><strong>{{ item.title }}</strong><small>{{ item.text }}</small></div></li></ol></UiCard><UiNotice title="Après le lancement">Vous serez redirigé vers le suivi du projet dès que le fichier sera accepté.</UiNotice></aside></div>
+    <div class="new-job-layout"><UiCard title="Créer un projet" description="Le réseau s’occupe de la répartition et de la vérification." padded><JobForm :submitting="submitting" :error="error" :initial-workload="initialWorkload" :collection-id="collectionId" @submit="submit" /></UiCard><aside class="stack"><UiCard title="Votre parcours" padded><ol class="expectations"><li v-for="(item,index) in expectations" :key="item.title"><span>{{ index + 1 }}</span><div><strong>{{ item.title }}</strong><small>{{ item.text }}</small></div></li></ol></UiCard><UiNotice title="Après le lancement">Vous serez redirigé vers le suivi du projet dès que le fichier sera accepté.</UiNotice></aside></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { CreateJobInput } from '~/composables/useJobs';
 import { extractJobError } from '~/utils/jobs';
+import { DOCUMENT_SEARCH_WORKLOAD } from '~/utils/documents';
 definePageMeta({ layout: 'app', middleware: 'auth' });
+const route = useRoute();
+// `?workload=documents` opens the document search; `&collection=…` adds
+// documents to an existing one ("Ajouter des documents").
+const collectionId = computed(() => typeof route.query.collection === 'string' ? route.query.collection : '');
+const initialWorkload = computed(() => route.query.workload === 'documents' || collectionId.value ? DOCUMENT_SEARCH_WORKLOAD : '');
 const router = useRouter(); const { createJob } = useJobs(); const submitting = ref(false); const error = ref('');
 const expectations = [{ title: 'Ajouter le fichier', text: 'Le format et la taille sont vérifiés immédiatement.' }, { title: 'Choisir les options', text: 'La configuration recommandée est proposée par défaut.' }, { title: 'Suivre le calcul', text: 'La progression et le résultat restent visibles dans votre espace.' }];
 async function submit(input: CreateJobInput) { submitting.value = true; error.value = ''; try { const job = await createJob(input); await router.push(`/jobs/${job.id}`); } catch (failure) { error.value = extractJobError(failure); } finally { submitting.value = false; } }

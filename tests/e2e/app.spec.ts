@@ -115,3 +115,56 @@ test('logout clears the session and returns to the public homepage', async ({ pa
   const cookies = await page.context().cookies();
   expect(cookies.some(cookie => cookie.name === 'auth_token' || cookie.name === 'refresh_token')).toBe(false);
 });
+
+test('documents are sent for a document search only after the sharing consent', async ({ page }) => {
+  let sent = '';
+  await page.route('**/api/jobs', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent = route.request().postData() || '';
+    return route.fulfill({ status: 202, json: { ...job, workload: 'ai/embedding/multilingual-e5-small' } });
+  });
+  await page.goto('/jobs/new?workload=documents');
+  await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Cours de droit');
+  await page.locator('input[type=file]').setInputFiles([
+    { name: 'contrat.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 contrat') },
+    { name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from('# Notes') },
+  ]);
+  await expect(page.getByText('2 documents prêts')).toBeVisible();
+  const continueButton = page.getByRole('button', { name: 'Continuer' });
+  await expect(continueButton).toBeDisabled();
+  await page.getByText('J’ai compris que les machines du réseau lisent le texte de mes documents.').click();
+  await continueButton.click();
+  await expect(page.locator('.advanced-options')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await page.getByRole('button', { name: 'Lancer le calcul' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
+  expect(sent).toContain('ai/embedding/multilingual-e5-small');
+  expect(sent).toContain('name="acknowledge_sharing"\r\n\r\n1');
+  expect(sent).toContain('filename="contrat.pdf"');
+  expect(sent).toContain('filename="notes.md"');
+  expect(sent).not.toContain('name="fragment_count"');
+});
+
+test('a finished document search answers questions with the source of each passage', async ({ page }) => {
+  const documentJob = { ...job, title: 'Cours de droit', workload: 'ai/embedding/multilingual-e5-small', collectionId: 'site-docs-1' };
+  await page.route('**/api/jobs/1/dashboard', route => route.fulfill({ json: {
+    ...dashboard, job: documentJob, resultReady: true,
+    summary: { success: true, fragmentCount: 1, fragments: [{ fragment_index: 0, status: 'completed', items: 40 }] },
+    documentIndex: { passageCount: 40, documents: [{ name: 'contrat.pdf', pages: 12, passages: 40 }], skipped: [{ name: 'scan.pdf', reason: 'no_text' }] },
+  } }));
+  let asked = '';
+  await page.route('**/api/jobs/1/search?*', route => {
+    asked = new URL(route.request().url()).searchParams.get('q') || '';
+    return route.fulfill({ json: { query: asked, searchedJobs: 1, hits: [{ jobId: 1, passageId: 7, document: 'contrat.pdf', page: 12, text: 'Le client peut demander la résiliation du contrat par lettre recommandée.', score: 0.87 }] } });
+  });
+  await page.goto('/jobs/1');
+  await expect(page.getByText('1 document lu, 40 passages.', { exact: false })).toBeVisible();
+  await expect(page.getByText('scan.pdf')).toBeVisible();
+  await page.getByPlaceholder('Pose ta question, par exemple : comment résilier le contrat ?').fill('comment résilier le contrat ?');
+  await page.getByRole('button', { name: 'Chercher' }).click();
+  await expect(page.getByText('contrat.pdf — page 12')).toBeVisible();
+  await expect(page.locator('mark', { hasText: 'résiliation' })).toBeVisible();
+  expect(asked).toBe('comment résilier le contrat ?');
+  await expect(page.getByRole('link', { name: 'Ajouter des documents' })).toHaveAttribute('href', /collection=site-docs-1/);
+  await expect(page.getByRole('button', { name: 'Télécharger', exact: true })).toHaveCount(0);
+});

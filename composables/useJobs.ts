@@ -1,4 +1,5 @@
 import { resultExtension } from '~/utils/jobs';
+import { isDocumentSearchWorkload, type DocumentHit } from '~/utils/documents';
 import type { Job, JobDashboard, JobList } from '~/types/api';
 import { clientCache } from '~/services/cache';
 
@@ -9,7 +10,19 @@ export interface CreateJobInput {
   priority: string;
   fragmentCount: number;
   maxRuntimeSeconds: number;
-  file: File;
+  /** The input of a render or a hash. */
+  file?: File | null;
+  /** The documents of a document search. */
+  files?: File[];
+  /** The user confirmed that the machines of the network read the documents. */
+  acknowledgeSharing?: boolean;
+  /** Collection to add the documents to (a new one when empty). */
+  collectionId?: string;
+}
+
+/** The search engine is still getting ready: try again in a few seconds. */
+export class SearchPreparingError extends Error {
+  constructor() { super('Le moteur de recherche se prépare, réessaie dans quelques secondes.'); }
 }
 
 export function useJobs() {
@@ -58,10 +71,18 @@ export function useJobs() {
     form.append('description', input.description.trim());
     form.append('workload', input.workload);
     form.append('priority', input.priority);
-    form.append('fragment_count', String(input.fragmentCount));
     form.append('max_runtime_seconds', String(input.maxRuntimeSeconds));
-    form.append('file', input.file);
-    const job = await authorizedFetch<Job>('/jobs', { method: 'POST', body: form, timeout: 30_000 });
+    if (isDocumentSearchWorkload(input.workload)) {
+      // The node splits documents itself: no part count.
+      for (const document of input.files || []) form.append('files', document);
+      form.append('acknowledge_sharing', input.acknowledgeSharing ? '1' : '0');
+      if (input.collectionId) form.append('collection_id', input.collectionId);
+    } else {
+      form.append('fragment_count', String(input.fragmentCount));
+      if (input.file) form.append('file', input.file);
+    }
+    // Documents can weigh 64 Mo: leave time for slow uploads.
+    const job = await authorizedFetch<Job>('/jobs', { method: 'POST', body: form, timeout: isDocumentSearchWorkload(input.workload) ? 300_000 : 30_000 });
     clientCache.invalidate('jobs:');
     return job;
   }
@@ -88,5 +109,32 @@ export function useJobs() {
     URL.revokeObjectURL(url);
   }
 
-  return { jobs, total, loading, error, loadJobs, getJobDashboard, createJob, cancelJob, downloadResult };
+  /** The passages of the job's collection closest to `query`, best first. */
+  async function searchDocuments(id: number, query: string, limit = 10): Promise<DocumentHit[]> {
+    try {
+      const response = await authorizedFetch<{ hits: DocumentHit[] }>(`/jobs/${id}/search`, { query: { q: query, k: limit }, timeout: 40_000 });
+      return response.hits || [];
+    } catch (failure) {
+      const status = (failure as { status?: number; statusCode?: number }).status ?? (failure as { statusCode?: number }).statusCode;
+      if (status === 503) throw new SearchPreparingError();
+      throw failure;
+    }
+  }
+
+  /** Opens a document of a search result in a new tab, at its page. */
+  async function openDocument(hit: Pick<DocumentHit, 'jobId' | 'document' | 'page'>): Promise<void> {
+    // Opened before the download so that the browser does not block it.
+    const opened = window.open('', '_blank');
+    const token = await useSession().ensureAccessToken();
+    if (!token) { opened?.close(); throw new Error('Session expirée.'); }
+    const config = useRuntimeConfig();
+    const response = await fetch(`${config.public.apiBase}/jobs/${hit.jobId}/documents?name=${encodeURIComponent(hit.document)}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!response.ok) { opened?.close(); throw new Error('Le document n’est pas disponible.'); }
+    const url = URL.createObjectURL(await response.blob());
+    const target = hit.page ? `${url}#page=${hit.page}` : url;
+    if (opened) opened.location.href = target; else window.open(target, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  return { jobs, total, loading, error, loadJobs, getJobDashboard, createJob, cancelJob, downloadResult, searchDocuments, openDocument };
 }

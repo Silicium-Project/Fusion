@@ -25,6 +25,7 @@ actions principales utilisent le graphite de la marque.
 - `/auth` : connexion et création de compte.
 - `/dashboard` : synthèse du compte et des calculs.
 - `/jobs`, `/jobs/new`, `/jobs/:id` : création et suivi d'un calcul.
+- « Recherche dans mes documents » : dépôt de documents sur `/jobs/new?workload=documents` (ajout à une recherche existante avec `&collection=…`), puis recherche, ouverture des documents et export de l'index sur `/jobs/:id` (`components/jobs/DocumentSearch.vue`, `utils/documents.ts`).
 - `/network`, `/nodes` : capacité agrégée et installation d'un nœud.
 - `/profile` : identité, sécurité et portefeuille Solana.
 

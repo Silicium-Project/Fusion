@@ -3,7 +3,7 @@
     <template v-if="dashboard">
       <header class="job-head">
         <div><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>Tous mes projets</NuxtLink><div class="job-head__title"><span class="job-head__cube"><UiIcon name="cube"/></span><div><div class="cluster"><h1>{{ dashboard.job.title }}</h1><UiStatusBadge :status="dashboard.job.status" /></div><p>{{ dashboard.job.description || 'Calcul distribué sur le réseau Silicium.' }}</p></div></div></div>
-        <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">Rafraîchir</UiButton><UiButton v-if="dashboard.resultReady" icon="download" size="small" @click="download">Télécharger</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">Arrêter</UiButton></div>
+        <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">Rafraîchir</UiButton><UiButton v-if="dashboard.resultReady && !documentJob" icon="download" size="small" @click="download">Télécharger</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">Arrêter</UiButton></div>
       </header>
       <UiNotice v-if="jobErrorDetail" tone="danger" title="Le calcul a rencontré une erreur">{{ compactJobError(jobErrorDetail) }}</UiNotice>
       <section class="metric-grid">
@@ -14,7 +14,7 @@
         <MetricCard label="Preuves" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? 'traçabilité active' : 'traçabilité inactive'" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
-        <UiCard id="result" title="Votre résultat" :description="imageJob ? 'Aperçu de l’artefact réassemblé.' : 'Empreintes calculées et vérifiées par le réseau.'" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><UiEmptyState v-else title="Résultat téléchargeable" description="Ce type de calcul n’a pas d’aperçu : utilisez « Télécharger »." icon="download" /></UiCard>
+        <UiCard id="result" :title="documentJob ? 'Recherche dans tes documents' : 'Votre résultat'" :description="resultDescription" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><DocumentSearch v-else-if="documentJob" :dashboard="dashboard" /><UiEmptyState v-else title="Résultat téléchargeable" description="Ce type de calcul n’a pas d’aperçu : utilisez « Télécharger »." icon="download" /></UiCard>
         <UiCard title="Étapes du calcul" description="De la réception à la disponibilité du résultat." padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
       </div>
       <div class="job-detail-grid job-detail-grid--bottom">
@@ -38,6 +38,7 @@
 <script setup lang="ts">
 import type { JobDashboard, JobFragment } from '~/types/api';
 import { compactIdentifier, formatDuration, formatPerformanceMultiple, formatPerformancePercent } from '~/utils/format';
+import { isDocumentSearchWorkload } from '~/utils/documents';
 import { compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, shouldRefreshJob } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();
@@ -45,6 +46,8 @@ const dashboard = ref<JobDashboard | null>(null); const loading = ref(true); con
 const visibleLimit = 80;
 const imageJob = computed(() => isImageWorkload(dashboard.value?.job.workload));
 const hashJob = computed(() => isHashWorkload(dashboard.value?.job.workload));
+const documentJob = computed(() => isDocumentSearchWorkload(dashboard.value?.job.workload));
+const resultDescription = computed(() => imageJob.value ? 'Aperçu de l’artefact réassemblé.' : documentJob.value ? 'Pose une question : les passages qui y répondent remontent, avec leur document et leur page.' : 'Empreintes calculées et vérifiées par le réseau.');
 const fragments = computed(() => dashboard.value?.summary?.fragments || []);
 const visibleFragments = computed(() => fragments.value.slice(-visibleLimit).reverse());
 const jobErrorDetail = computed(() => dashboard.value?.job.errorMessage || dashboard.value?.summary?.failureDetail || dashboard.value?.summary?.traceback || dashboard.value?.summary?.error || '');
