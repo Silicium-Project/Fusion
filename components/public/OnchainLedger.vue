@@ -1,9 +1,9 @@
 <template>
-  <article class="onchain-ledger marketing-glass" :class="{ 'onchain-ledger--compact': compact }" aria-label="Flux de paiements Silicium">
+  <article class="onchain-ledger marketing-glass" :class="{ 'onchain-ledger--compact': compact }" :aria-label="t('ledger.aria')">
     <header class="onchain-ledger__header">
       <div>
         <span class="onchain-ledger__eyebrow"><i></i>Solana / {{ networkLabel }}</span>
-          <strong>Registre des paiements</strong>
+          <strong>{{ t('ledger.title') }}</strong>
       </div>
       <UiStatusBadge :status="chain.status" :label="chainStatusLabel" />
     </header>
@@ -12,8 +12,8 @@
       <div class="onchain-ledger__hero-row">
         <span class="onchain-ledger__seal"><UiIcon name="shield" /></span>
         <div>
-          <span class="onchain-ledger__micro-label">RÉSEAU SOLANA</span>
-          <strong>{{ chain.configured ? 'Paiements activés' : 'Configuration disponible' }}</strong>
+          <span class="onchain-ledger__micro-label">{{ t('ledger.solana') }}</span>
+          <strong>{{ chain.configured ? t('ledger.enabled') : t('ledger.available') }}</strong>
           <small>{{ programLabel }}</small>
         </div>
       </div>
@@ -23,25 +23,25 @@
       <div class="onchain-ledger__entries">
         <div>
           <span class="onchain-ledger__entry-icon onchain-ledger__entry-icon--mint"><UiIcon name="upload" /></span>
-          <p><strong>Projet enregistré</strong><small>Trace de départ</small></p>
+          <p><strong>{{ entries[0]?.title }}</strong><small>{{ entries[0]?.text }}</small></p>
           <b>01</b>
         </div>
         <div>
           <span class="onchain-ledger__entry-icon onchain-ledger__entry-icon--violet"><UiIcon name="layers" /></span>
-          <p><strong>Résultat contrôlé</strong><small>Calcul + vérification</small></p>
+          <p><strong>{{ entries[1]?.title }}</strong><small>{{ entries[1]?.text }}</small></p>
           <b>02</b>
         </div>
         <div>
           <span class="onchain-ledger__entry-icon onchain-ledger__entry-icon--ink"><UiIcon name="wallet" /></span>
-          <p><strong>Paiement associé</strong><small>Récompense ou remboursement</small></p>
+          <p><strong>{{ entries[2]?.title }}</strong><small>{{ entries[2]?.text }}</small></p>
           <b>03</b>
         </div>
       </div>
     </div>
 
     <footer class="onchain-ledger__footer">
-      <span><i></i>Transaction signée par le portefeuille</span>
-      <small>{{ compact ? 'VÉRIFIABLE' : 'PAIEMENT · CONTRÔLE · RÉSULTAT' }}</small>
+      <span><i></i>{{ t('ledger.signed') }}</span>
+      <small>{{ compact ? t('ledger.verifiable') : t('ledger.trail') }}</small>
     </footer>
   </article>
 </template>
@@ -51,6 +51,8 @@ import type { SystemStatus } from '~/types/api';
 import { compactIdentifier, statusLabel } from '~/utils/format';
 
 const props = withDefaults(defineProps<{ compact?: boolean; status?: SystemStatus['blockchain'] | null }>(), { compact: false });
+const { t, tl } = useI18n();
+const entries = computed(() => tl<{ title: string; text: string }>('ledger.entries'));
 const chain = computed(() => ({
   status: props.status?.status || 'unknown',
   network: props.status?.network || 'unknown',
@@ -59,7 +61,7 @@ const chain = computed(() => ({
 }));
 const networkLabel = computed(() => chain.value.network.charAt(0).toUpperCase() + chain.value.network.slice(1));
 const chainStatusLabel = computed(() => statusLabel(chain.value.status));
-const programLabel = computed(() => chain.value.programId ? compactIdentifier(chain.value.programId, 10, 8) : 'Identifiant fourni par l’environnement');
+const programLabel = computed(() => chain.value.programId ? compactIdentifier(chain.value.programId, 10, 8) : t('ledger.programFallback'));
 </script>
 
 <style scoped>

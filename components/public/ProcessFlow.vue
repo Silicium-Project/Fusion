@@ -6,7 +6,7 @@
       <div class="process-story__layout marketing-container">
         <div class="process-story__copy">
           <div class="process-story__eyebrow-row">
-            <span class="process-story__eyebrow">Le réseau, en vrai</span>
+            <span class="process-story__eyebrow">{{ t('processFlow.eyebrow') }}</span>
             <span class="process-story__counter"><b>{{ activeStep.number }}</b> / {{ total }}</span>
           </div>
 
@@ -17,12 +17,12 @@
               <p>{{ activeStep.text }}</p>
               <div class="process-story__outcome">
                 <span class="process-story__outcome-icon"><UiIcon name="check" /></span>
-                <span><small>À cette étape</small><strong>{{ activeStep.result }}</strong></span>
+                <span><small>{{ t('processFlow.atThisStep') }}</small><strong>{{ activeStep.result }}</strong></span>
               </div>
             </article>
           </div>
 
-          <nav class="process-story__nav" aria-label="Étapes du fonctionnement">
+          <nav class="process-story__nav" :aria-label="t('processFlow.navAria')">
             <button
               v-for="(step, index) in steps"
               :key="step.id"
@@ -36,7 +36,7 @@
               <i aria-hidden="true"></i>
             </button>
           </nav>
-          <p class="process-story__hint"><span aria-hidden="true"></span>Faites défiler pour voir la caméra suivre le travail</p>
+          <p class="process-story__hint"><span aria-hidden="true"></span>{{ t('processFlow.hint') }}</p>
         </div>
 
         <div class="process-story__network-wrap">
@@ -44,7 +44,7 @@
             <ClientOnly>
               <ProcessGraph3D :nodes="graphNodes" :active-node-id="activeNodeId" :active-phase="activeIndex" />
               <template #fallback>
-                <div class="process-story__graph-fallback">Chargement du réseau 3D…</div>
+                <div class="process-story__graph-fallback">{{ t('processFlow.loading3d') }}</div>
               </template>
             </ClientOnly>
           </div>
@@ -70,31 +70,28 @@ type ProcessStep = {
   networkCaption: string;
 };
 
-const steps: ProcessStep[] = [
-  { id: 'send', number: '01', navLabel: 'Envoyer', kicker: 'Votre projet', title: 'Vous envoyez, une seule fois.', text: 'Silicium reçoit votre projet et prépare automatiquement le travail, sans vous demander de choisir chaque machine.', result: 'Un projet prêt à circuler', networkCaption: 'La caméra rejoint la machine qui reçoit le projet' },
-  { id: 'share', number: '02', navLabel: 'Répartir', kicker: 'Le réseau', title: 'Les bonnes machines se coordonnent.', text: 'Les ressources disponibles se relaient d’elles-mêmes pour prendre chacune la partie utile du travail.', result: 'Les ressources utiles, au bon moment', networkCaption: 'La caméra se rapproche du relais sélectionné' },
-  { id: 'compute', number: '03', navLabel: 'Calculer', kicker: 'Le calcul', title: 'Tout avance en parallèle.', text: 'Chaque machine traite sa partie pendant que Silicium suit l’avancement et vérifie la circulation des résultats.', result: 'Des parties traitées ensemble', networkCaption: 'La caméra suit la machine qui calcule maintenant' },
-  { id: 'return', number: '04', navLabel: 'Recevoir', kicker: 'Pour vous', title: 'Vous recevez un résultat vérifié.', text: 'Les réponses sont comparées, réunies puis présentées dans un résultat prêt à utiliser.', result: 'Une réponse prête à utiliser', networkCaption: 'La caméra arrive près du résultat final' },
-];
+const { t, tl } = useI18n();
+const stepIds = ['send', 'share', 'compute', 'return'];
+const steps = computed<ProcessStep[]>(() => tl<Omit<ProcessStep, 'id' | 'number'>>('processFlow.steps').map((step, index) => ({ ...step, id: stepIds[index] || `step-${index}`, number: `0${index + 1}` })));
 
-const graphNodes = [
-  { id: 'source', label: 'Projet', phase: 0, x: -3.8, y: 2.1, z: 0.3, tone: 'mint' as Tone },
-  { id: 'relay-a', label: 'Relais A', phase: 1, x: 2.7, y: 1.6, z: -1.9, tone: 'violet' as Tone },
-  { id: 'relay-b', label: 'Relais B', phase: 1, x: -2.8, y: -1.9, z: 1.6, tone: 'mint' as Tone },
-  { id: 'compute-a', label: 'Calcul A', phase: 2, x: 3.6, y: -1.3, z: 1.8, tone: 'blue' as Tone },
-  { id: 'compute-b', label: 'Calcul B', phase: 2, x: -0.3, y: 3, z: -3, tone: 'violet' as Tone },
-  { id: 'result', label: 'Résultat', phase: 3, x: 0.4, y: -3.1, z: 2.8, tone: 'amber' as Tone },
-] as const;
+const graphNodes = computed(() => [
+  { id: 'source', label: t('processFlow.nodes.source'), phase: 0, x: -3.8, y: 2.1, z: 0.3, tone: 'mint' as Tone },
+  { id: 'relay-a', label: t('processFlow.nodes.relayA'), phase: 1, x: 2.7, y: 1.6, z: -1.9, tone: 'violet' as Tone },
+  { id: 'relay-b', label: t('processFlow.nodes.relayB'), phase: 1, x: -2.8, y: -1.9, z: 1.6, tone: 'mint' as Tone },
+  { id: 'compute-a', label: t('processFlow.nodes.computeA'), phase: 2, x: 3.6, y: -1.3, z: 1.8, tone: 'blue' as Tone },
+  { id: 'compute-b', label: t('processFlow.nodes.computeB'), phase: 2, x: -0.3, y: 3, z: -3, tone: 'violet' as Tone },
+  { id: 'result', label: t('processFlow.nodes.result'), phase: 3, x: 0.4, y: -3.1, z: 2.8, tone: 'amber' as Tone },
+]);
 
 const stepNodeIds = ['source', 'relay-a', 'compute-a', 'result'];
 const story = ref<HTMLElement | null>(null);
 const storyProgress = ref(0);
 const requestedIndex = ref<number | null>(null);
-const scrollIndex = computed(() => Math.min(steps.length - 1, Math.floor(Math.min(storyProgress.value + 0.001, 0.999999) * steps.length)));
+const scrollIndex = computed(() => Math.min(steps.value.length - 1, Math.floor(Math.min(storyProgress.value + 0.001, 0.999999) * steps.value.length)));
 const activeIndex = computed(() => requestedIndex.value ?? scrollIndex.value);
-const activeStep = computed(() => steps[activeIndex.value]);
+const activeStep = computed(() => steps.value[activeIndex.value] || steps.value[0]!);
 const activeNodeId = computed(() => stepNodeIds[activeIndex.value] || stepNodeIds[0]);
-const total = String(steps.length).padStart(2, '0');
+const total = computed(() => String(steps.value.length).padStart(2, '0'));
 
 function updateProgress() {
   const section = story.value || document.querySelector<HTMLElement>('.process-story');
@@ -103,7 +100,7 @@ function updateProgress() {
   storyProgress.value = Math.max(0, Math.min(1, -section.getBoundingClientRect().top / scrollable));
 
   if (requestedIndex.value !== null) {
-    const requestedProgress = (requestedIndex.value + 0.5) / steps.length;
+    const requestedProgress = (requestedIndex.value + 0.5) / steps.value.length;
     if (Math.abs(storyProgress.value - requestedProgress) < 0.08) requestedIndex.value = null;
   }
 }
@@ -117,7 +114,7 @@ function scrollToStep(index: number) {
   // that node's XYZ coordinates instead of following a predefined path.
   requestedIndex.value = index;
   const scrollable = Math.max(1, section.offsetHeight - window.innerHeight);
-  const top = window.scrollY + section.getBoundingClientRect().top + scrollable * ((index + 0.5) / steps.length);
+  const top = window.scrollY + section.getBoundingClientRect().top + scrollable * ((index + 0.5) / steps.value.length);
   window.scrollTo({ top, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
 }
 

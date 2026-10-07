@@ -2,6 +2,7 @@
 // The user drops documents, the network turns their passages into vectors,
 // then the user searches them by meaning. Nothing technical (model, vectors,
 // passages per part) is shown: these helpers keep the screens in plain words.
+import { translate } from './i18n';
 
 /** Workload of a document search (BackEnd `silicium.DocumentSearchWorkload`). */
 export const DOCUMENT_SEARCH_WORKLOAD = 'ai/embedding/multilingual-e5-small';
@@ -32,14 +33,14 @@ export const mergeDocumentSelection = (current: File[], added: File[]): File[] =
 
 /** Why a selection cannot be sent, in the user's words; '' when it can. */
 export const documentSelectionError = (files: File[]): string => {
-  if (!files.length) return 'Ajoute au moins un document.';
-  if (files.length > MAX_DOCUMENT_FILES) return `Envoie ${MAX_DOCUMENT_FILES} fichiers au plus, ou un ZIP du dossier.`;
+  if (!files.length) return translate('documents.selection.none');
+  if (files.length > MAX_DOCUMENT_FILES) return translate('documents.selection.tooMany', { max: MAX_DOCUMENT_FILES });
   const archives = files.filter((file) => extensionOf(file.name) === 'zip');
-  if (archives.length && files.length > 1) return 'Envoie soit un ZIP, soit des documents, mais pas les deux ensemble.';
+  if (archives.length && files.length > 1) return translate('documents.selection.zipAndFiles');
   const unsupported = files.find((file) => extensionOf(file.name) !== 'zip' && !DOCUMENT_EXTENSIONS.includes(extensionOf(file.name)));
-  if (unsupported) return `${unsupported.name} n’est pas pris en charge : envoie des PDF, des fichiers Word (.docx), texte, Markdown ou un ZIP.`;
-  if (files.some((file) => file.size === 0)) return 'Un des documents est vide.';
-  if (files.reduce((total, file) => total + file.size, 0) > MAX_DOCUMENT_BYTES) return 'Les documents dépassent 64 Mo au total. Envoie-les en plusieurs fois.';
+  if (unsupported) return translate('documents.selection.unsupported', { name: unsupported.name });
+  if (files.some((file) => file.size === 0)) return translate('documents.selection.empty');
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_DOCUMENT_BYTES) return translate('documents.selection.tooLarge');
   return '';
 };
 
@@ -60,18 +61,35 @@ export interface DocumentIndexSummary {
   passageCount?: number | null;
 }
 
+/** A document of a collection, listed above the search box. */
+export interface CollectionDocument {
+  jobId: number;
+  name: string;
+  pages?: number | null;
+  passages?: number | null;
+}
+
+const SKIP_REASONS = ['no_text', 'unsupported_format', 'unreadable', 'too_large'];
+
 /** Why a file was not read, in the user's words. */
-export const skipReasonLabel = (reason: string): string => ({
-  no_text: 'aucun texte lisible : c’est sans doute une image scannée',
-  unsupported_format: 'format non pris en charge',
-  unreadable: 'fichier abîmé ou protégé',
-  too_large: 'fichier trop gros',
-} as Record<string, string>)[reason] || 'non lu';
+export const skipReasonLabel = (reason: string): string =>
+  translate(`documents.skip.${SKIP_REASONS.includes(reason) ? reason : 'other'}`);
+
+/** The file name of a document path (`dossier/contrat.pdf` → `contrat.pdf`). */
+export const documentName = (path: string): string => path.split('/').pop() || path;
 
 /** Where a passage comes from: `contrat.pdf — page 12`. */
 export const passageSource = (hit: Pick<DocumentHit, 'document' | 'page'>): string => {
-  const name = hit.document.split('/').pop() || hit.document;
-  return hit.page ? `${name} — page ${hit.page}` : name;
+  const name = documentName(hit.document);
+  return hit.page ? translate('documents.page', { name, page: hit.page }) : name;
+};
+
+/** The documents of a collection, each name once, sorted by name. */
+export const uniqueDocuments = (documents: CollectionDocument[]): CollectionDocument[] => {
+  const seen = new Set<string>();
+  return documents
+    .filter((document) => document && typeof document.name === 'string' && !seen.has(document.name) && seen.add(document.name))
+    .sort((a, b) => documentName(a.name).localeCompare(documentName(b.name), undefined, { numeric: true, sensitivity: 'base' }));
 };
 
 /** Passages read so far, from the parts of the job (`items` per part). */

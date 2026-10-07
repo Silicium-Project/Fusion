@@ -1,23 +1,26 @@
 import type { JobStatus, NetworkPeer } from '~/types/api';
+import { intlLocale, translate } from './i18n';
 
-const statusLabels: Record<string, string> = {
-  queued: 'En attente', running: 'En cours', cancelling: 'Arrêt en cours', completed: 'Terminé',
-  planned: 'Planifié', queued_compute: 'Calcul en attente', computed: 'Calcul terminé', queued_verify: 'Validation en attente', verified: 'Validé', reassembled: 'Assemblé',
-  failed: 'Échec', cancelled: 'Annulé', canceled: 'Annulé', expired: 'Expiré', dead_lettered: 'Abandonné', finalized: 'Finalisé', resolved: 'Résolu', operational: 'Opérationnel',
-  degraded: 'Dégradé', unavailable: 'Indisponible', current: 'À jour', outdated: 'Mise à jour requise',
-  'outdated-build': 'Build obsolète', unknown: 'À vérifier', server: 'Serveur', online: 'En ligne', offline: 'Hors ligne',
-};
+/** Statuses with a label in the catalog (`status.*`). */
+const knownStatuses = new Set([
+  'queued', 'running', 'cancelling', 'completed', 'planned', 'queued_compute', 'computed', 'queued_verify', 'verified', 'reassembled',
+  'failed', 'cancelled', 'canceled', 'expired', 'dead_lettered', 'finalized', 'resolved', 'operational', 'degraded', 'unavailable',
+  'current', 'outdated', 'outdated-build', 'unknown', 'server', 'online', 'offline',
+]);
 
-const networkRoleLabels: Record<string, string> = {
-  server: 'Orchestration', orchestrator: 'Orchestration', orchestrateur: 'Orchestration', orchestration: 'Orchestration',
-  resource: 'Calcul', worker: 'Calcul', compute: 'Calcul', calcul: 'Calcul',
-  verify: 'Vérification', validator: 'Vérification', validation: 'Vérification',
-  storage: 'Persistance', persistence: 'Persistance', stockage: 'Persistance',
+/** Role group of a network role name, as a key of `roles.*`. */
+export type NetworkRoleGroup = 'orchestration' | 'compute' | 'verify' | 'storage';
+
+const networkRoleGroups: Record<string, NetworkRoleGroup> = {
+  server: 'orchestration', orchestrator: 'orchestration', orchestrateur: 'orchestration', orchestration: 'orchestration',
+  resource: 'compute', worker: 'compute', compute: 'compute', calcul: 'compute',
+  verify: 'verify', validator: 'verify', validation: 'verify',
+  storage: 'storage', persistence: 'storage', stockage: 'storage',
 };
 
 export function statusLabel(status?: JobStatus): string {
   const normalized = String(status || 'unknown').toLowerCase();
-  return statusLabels[normalized] || normalized.replaceAll('_', ' ');
+  return knownStatuses.has(normalized) ? translate(`status.${normalized}`) : normalized.replaceAll('_', ' ');
 }
 
 export function statusTone(status?: JobStatus): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
@@ -34,16 +37,24 @@ export function isTerminalNetworkStatus(status?: string): boolean {
     .includes(String(status || '').toLowerCase());
 }
 
-export function networkRoleLabel(role?: string): string {
+/** The group of a role announced by a node, or undefined for another role. */
+export function networkRoleGroup(role?: string): NetworkRoleGroup | undefined {
   const normalized = String(role || '').toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
-  return networkRoleLabels[normalized] || normalized || 'Rôle non défini';
+  return networkRoleGroups[normalized];
+}
+
+export function networkRoleLabel(role?: string): string {
+  const group = networkRoleGroup(role);
+  if (group) return translate(`roles.${group}`);
+  const normalized = String(role || '').toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
+  return normalized || translate('roles.undefined');
 }
 
 export function formatDate(value?: string, includeTime = true): string {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat('fr-FR', {
+  return new Intl.DateTimeFormat(intlLocale(), {
     dateStyle: 'medium', ...(includeTime ? { timeStyle: 'short' as const } : {}),
   }).format(date);
 }
@@ -93,7 +104,7 @@ export function compactIdentifier(value?: string, head = 7, tail = 5): string {
 }
 
 export function peerId(peer: NetworkPeer): string {
-  return String(peer.node_id || peer.nodeId || 'Nœud sans identifiant');
+  return String(peer.node_id || peer.nodeId || translate('nodes.unnamed'));
 }
 
 export function peerRoles(peer: NetworkPeer): string[] {

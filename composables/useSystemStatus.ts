@@ -1,5 +1,6 @@
 import type { SystemStatus, UpdateManifest } from '~/types/api';
 import { clientCache } from '~/services/cache';
+import { translate } from '~/utils/i18n';
 
 export function useSystemStatus() {
   const config = useRuntimeConfig();
@@ -29,7 +30,7 @@ export function useSystemStatus() {
         backend: { status: 'unavailable' }, network: { status: 'unknown', peers: 0, activePeers: 0, outdatedPeers: 0 },
         blockchain: { status: 'unknown', network: 'unknown', configured: false },
       };
-      error.value = 'Le service d’état ne répond pas pour le moment.';
+      error.value = translate('errors.statusLoad');
     } finally {
       loading.value = false;
     }

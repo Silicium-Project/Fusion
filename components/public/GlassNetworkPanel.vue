@@ -1,8 +1,8 @@
 <template>
-  <section class="network-panel marketing-glass" aria-label="Vue synthétique du réseau Silicium">
+  <section class="network-panel marketing-glass" :aria-label="t('glassPanel.aria')">
     <header class="network-panel__header">
       <div>
-        <span class="network-panel__label">Réseau Silicium</span>
+        <span class="network-panel__label">{{ t('glassPanel.label') }}</span>
         <strong>{{ networkStatusLabel }}</strong>
       </div>
       <span class="network-panel__status"><i aria-hidden="true"></i>{{ statusLabel(status?.network.status || 'unknown') }}</span>
@@ -10,15 +10,15 @@
 
     <div class="network-panel__summary">
       <div>
-        <span class="network-panel__eyebrow">Machines actives</span>
+        <span class="network-panel__eyebrow">{{ t('glassPanel.active') }}</span>
         <strong>{{ activePeers }} <small>/ {{ totalPeers }}</small></strong>
-        <p>{{ totalPeers }} machine{{ totalPeers === 1 ? '' : 's' }} connue{{ totalPeers === 1 ? '' : 's' }} · {{ updatedLabel }}</p>
+        <p>{{ t('glassPanel.known', { count: totalPeers }) }} · {{ updatedLabel }}</p>
       </div>
-      <span class="network-panel__signal" :aria-label="`État réseau : ${statusLabel(status?.network.status || 'unknown')}`"><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="network-panel__signal" :aria-label="t('glassPanel.networkState', { status: statusLabel(status?.network.status || 'unknown') })"><i></i><i></i><i></i><i></i><i></i></span>
     </div>
 
-    <div class="network-panel__map" role="img" aria-label="Réseau de machines reliées autour d’un point central">
-      <span class="network-panel__map-caption">Calculs en cours</span>
+    <div class="network-panel__map" role="img" :aria-label="t('glassPanel.mapAria')">
+      <span class="network-panel__map-caption">{{ t('glassPanel.running') }}</span>
       <svg viewBox="0 0 680 300" fill="none" aria-hidden="true">
         <defs>
           <linearGradient id="network-line" x1="90" y1="60" x2="600" y2="240" gradientUnits="userSpaceOnUse">
@@ -46,14 +46,14 @@
         <g class="network-panel__node"><circle cx="175" cy="256" r="6" /><circle cx="175" cy="256" r="11" /></g>
         <g class="network-panel__node network-panel__node--violet"><circle cx="508" cy="258" r="6" /><circle cx="508" cy="258" r="11" /></g>
       </svg>
-      <span class="network-panel__chip network-panel__chip--one">contrôle</span>
-      <span class="network-panel__chip network-panel__chip--two">travail partagé</span>
+      <span class="network-panel__chip network-panel__chip--one">{{ t('glassPanel.control') }}</span>
+      <span class="network-panel__chip network-panel__chip--two">{{ t('glassPanel.shared') }}</span>
     </div>
 
     <footer class="network-panel__metrics">
-      <div><span>CPU système</span><strong>{{ percent(status?.network.systemCpuPercent) }}</strong></div>
-      <div><span>File réseau</span><strong>{{ integer(status?.network.queueDepth) }}</strong></div>
-      <div><span>À mettre à jour</span><strong>{{ status?.network.outdatedPeers ?? '—' }}</strong></div>
+      <div><span>{{ t('glassPanel.cpu') }}</span><strong>{{ percent(status?.network.systemCpuPercent) }}</strong></div>
+      <div><span>{{ t('glassPanel.queue') }}</span><strong>{{ integer(status?.network.queueDepth) }}</strong></div>
+      <div><span>{{ t('glassPanel.toUpdate') }}</span><strong>{{ status?.network.outdatedPeers ?? '—' }}</strong></div>
     </footer>
   </section>
 </template>
@@ -61,11 +61,12 @@
 <script setup lang="ts">
 import { formatDate, statusLabel } from '~/utils/format';
 
+const { t } = useI18n();
 const { status, refresh } = useSystemStatus();
 const totalPeers = computed(() => status.value?.network.peers ?? 0);
 const activePeers = computed(() => status.value?.network.activePeers ?? 0);
 const networkStatusLabel = computed(() => statusLabel(status.value?.network.status || 'unknown'));
-const updatedLabel = computed(() => status.value?.checkedAt ? `actualisé ${formatDate(status.value.checkedAt)}` : 'en attente de télémétrie');
+const updatedLabel = computed(() => status.value?.checkedAt ? t('glassPanel.updated', { date: formatDate(status.value.checkedAt) }) : t('glassPanel.waiting'));
 const percent = (value: unknown): string => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} %` : '—';
 const integer = (value: unknown): string => Number.isFinite(Number(value)) ? String(Math.max(0, Math.round(Number(value)))) : '—';
 

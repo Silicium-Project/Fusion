@@ -1,12 +1,18 @@
+import { translate } from './i18n';
+
 export const compactJobError = (message: string, limit = 16_000): string => {
   const normalized = String(message || '').replace(/\r\n?/g, '\n').trim();
-  if (!normalized) return 'Erreur sans détail fourni par le worker.';
+  if (!normalized) return translate('errors.workerNoDetail');
   if (normalized.length <= limit) return normalized;
-  const marker = '\n\n[… détail d’erreur tronqué pour l’affichage …]';
+  const marker = `\n\n${translate('errors.truncated')}`;
   return `${normalized.slice(0, Math.max(0, limit - marker.length)).trimEnd()}${marker}`;
 };
 
-export const extractJobError = (failure: unknown, fallback = 'La tâche ne peut pas être soumise pour le moment.'): string => {
+/**
+ * The message to show for a failed request or job: the API's `message`
+ * (in the user's language) before an `error` code, then the fallback.
+ */
+export const extractJobError = (failure: unknown, fallback = translate('errors.submitFailed')): string => {
   const candidate = failure as {
     data?: unknown;
     message?: unknown;
@@ -17,7 +23,7 @@ export const extractJobError = (failure: unknown, fallback = 'La tâche ne peut 
     if (typeof payload === 'string' && payload.trim()) return payload.trim();
     if (!payload || typeof payload !== 'object') continue;
     const values = payload as Record<string, unknown>;
-    const message = ['failureDetail', 'failure_detail', 'errorMessage', 'error', 'message']
+    const message = ['failureDetail', 'failure_detail', 'errorMessage', 'message', 'error']
       .map((key) => values[key]).find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim() || '';
     const traceback = ['traceback', 'error_traceback']
       .map((key) => values[key]).find((value): value is string => typeof value === 'string' && Boolean(value.trim()))?.trim() || '';
@@ -43,13 +49,7 @@ export const fragmentVisualState = (status: unknown): FragmentVisualState => {
   return 'planned';
 };
 
-export const fragmentStateLabel = (status: unknown): string => ({
-  planned: 'En attente',
-  computing: 'Calcul en cours',
-  validating: 'Validation en cours',
-  done: 'Terminé',
-  failed: 'En erreur',
-})[fragmentVisualState(status)];
+export const fragmentStateLabel = (status: unknown): string => translate(`fragmentState.${fragmentVisualState(status)}`);
 
 export const shouldRefreshJob = (status: string, resultReady: boolean): boolean =>
   isJobCancellable(status) || (status === 'completed' && !resultReady);

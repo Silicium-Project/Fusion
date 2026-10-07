@@ -1,4 +1,6 @@
 import type { WalletChallenge } from '~/types/api';
+import { extractJobError } from '~/utils/jobs';
+import { translate } from '~/utils/i18n';
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -21,7 +23,7 @@ export function useWallet() {
 
   async function connect(): Promise<string> {
     if (!import.meta.client || !window.solana?.isPhantom) {
-      throw new Error('Phantom est requis pour connecter un portefeuille Solana.');
+      throw new Error(translate('errors.phantomRequired'));
     }
     connecting.value = true;
     error.value = '';
@@ -41,7 +43,7 @@ export function useWallet() {
       await loadUser(true);
       return walletAddress;
     } catch (failure) {
-      error.value = failure instanceof Error ? failure.message : 'Le portefeuille ne peut pas être connecté.';
+      error.value = extractJobError(failure, translate('errors.walletFailed'));
       throw failure;
     } finally {
       connecting.value = false;

@@ -1,32 +1,34 @@
 <template>
   <div class="app-page">
-    <header class="app-page-head"><div><span class="eyebrow">Votre espace</span><h1 class="page-title">Accueil</h1><p class="page-intro">Lancez un calcul, suivez vos projets et récupérez vos résultats au même endroit.</p></div><UiButton to="/jobs/new" icon="upload">Nouveau calcul</UiButton></header>
-    <UiNotice v-if="loadError" tone="warning">Certaines données ne sont pas disponibles. Vous pouvez continuer à utiliser les autres fonctions.</UiNotice>
-    <section class="metric-grid" aria-label="Indicateurs clés">
-      <MetricCard label="Mes projets" :value="total" detail="dans votre espace" icon="jobs" tone="ink" />
-      <MetricCard label="En cours" :value="runningCount" detail="projets actifs" icon="activity" tone="mint" />
-      <MetricCard label="Terminés" :value="completedCount" detail="résultats disponibles" icon="check" tone="violet" />
-      <MetricCard label="Machines en ligne" :value="onlineCount" :detail="`${outdatedCount} à mettre à jour`" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
+    <header class="app-page-head"><div><span class="eyebrow">{{ t('nav.yourSpace') }}</span><h1 class="page-title">{{ t('nav.home') }}</h1><p class="page-intro">{{ t('dashboard.intro') }}</p></div><UiButton to="/jobs/new" icon="upload">{{ t('common.newJob') }}</UiButton></header>
+    <UiNotice v-if="loadError" tone="warning">{{ t('dashboard.partialData') }}</UiNotice>
+    <section class="metric-grid" :aria-label="t('dashboard.metrics')">
+      <MetricCard :label="t('dashboard.projects')" :value="total" :detail="t('dashboard.inYourSpace')" icon="jobs" tone="ink" />
+      <MetricCard :label="t('dashboard.running')" :value="runningCount" :detail="t('dashboard.activeProjects')" icon="activity" tone="mint" />
+      <MetricCard :label="t('dashboard.finished')" :value="completedCount" :detail="t('dashboard.resultsAvailable')" icon="check" tone="violet" />
+      <MetricCard :label="t('dashboard.machinesOnline')" :value="onlineCount" :detail="t('dashboard.toUpdate', { count: outdatedCount })" icon="nodes" :tone="outdatedCount ? 'amber' : 'mint'" />
     </section>
     <div class="two-column">
-      <UiCard title="Mes projets récents" description="Vos derniers calculs et leur progression.">
-        <template #actions><UiButton to="/jobs" variant="ghost" size="small" icon="arrow">Voir tous les projets</UiButton></template>
+      <UiCard :title="t('dashboard.recent')" :description="t('dashboard.recentText')">
+        <template #actions><UiButton to="/jobs" variant="ghost" size="small" icon="arrow">{{ t('dashboard.allProjects') }}</UiButton></template>
         <JobTable :jobs="jobs.slice(0, 6)" :loading="jobsLoading" @cancel="requestCancel" @download="download" />
       </UiCard>
       <div class="stack">
-        <UiCard title="Santé du réseau" description="La capacité disponible pour vos prochains calculs." padded interactive>
-          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ onlineCount }} machine{{ onlineCount > 1 ? 's' : '' }} en ligne</strong><small>{{ currentCount }} à jour · {{ activeWorkloads }} calcul{{ activeWorkloads > 1 ? 's' : '' }} actif{{ activeWorkloads > 1 ? 's' : '' }}</small></div><UiStatusBadge :status="onlineCount ? 'operational' : peers.length ? 'degraded' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ group.role }}</dt><dd>{{ group.count }}</dd></div><div><dt>Calculs actifs</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">Voir l’état du réseau</UiButton></div>
+        <UiCard :title="t('nav.networkHealth')" :description="t('dashboard.networkText')" padded interactive>
+          <div class="dashboard-network"><div class="dashboard-network__head"><span class="dashboard-network__signal"><i></i></span><div><strong>{{ t('dashboard.online', { count: onlineCount }) }}</strong><small>{{ t('dashboard.upToDate', { current: currentCount, count: activeWorkloads }) }}</small></div><UiStatusBadge :status="onlineCount ? 'operational' : peers.length ? 'degraded' : 'unknown'" /></div><dl><div v-for="group in roleGroups.slice(0, 4)" :key="group.role"><dt>{{ networkRoleLabel(group.role) }}</dt><dd>{{ group.count }}</dd></div><div><dt>{{ t('dashboard.activeJobs') }}</dt><dd>{{ activeWorkloads }}</dd></div></dl><UiButton to="/network" variant="secondary" size="small" icon="arrow">{{ t('dashboard.seeNetwork') }}</UiButton></div>
         </UiCard>
-        <UiCard title="Accès rapides" padded><div class="quick-actions"><NuxtLink to="/jobs"><span><UiIcon name="activity"/></span><div><strong>Suivre mes calculs</strong><small>Avancement, résultat et historique</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/nodes"><span><UiIcon name="nodes"/></span><div><strong>Gérer mes machines</strong><small>Disponibilité, versions et capacité</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/download"><span><UiIcon name="download"/></span><div><strong>Installer un nœud</strong><small>Télécharger la version recommandée</small></div><UiIcon name="chevron"/></NuxtLink></div></UiCard>
+        <UiCard :title="t('dashboard.quick')" padded><div class="quick-actions"><NuxtLink to="/jobs"><span><UiIcon name="activity"/></span><div><strong>{{ t('dashboard.quickJobs') }}</strong><small>{{ t('dashboard.quickJobsText') }}</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/workloads"><span><UiIcon name="layers"/></span><div><strong>{{ t('dashboard.quickWorkloads') }}</strong><small>{{ t('dashboard.quickWorkloadsText') }}</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/nodes"><span><UiIcon name="nodes"/></span><div><strong>{{ t('dashboard.quickNodes') }}</strong><small>{{ t('dashboard.quickNodesText') }}</small></div><UiIcon name="chevron"/></NuxtLink><NuxtLink to="/download"><span><UiIcon name="download"/></span><div><strong>{{ t('dashboard.quickInstall') }}</strong><small>{{ t('dashboard.quickInstallText') }}</small></div><UiIcon name="chevron"/></NuxtLink></div></UiCard>
       </div>
     </div>
-    <UiModal :open="Boolean(cancelTarget)" title="Arrêter ce projet ?" @close="cancelTarget = null"><p class="modal-copy">Les parties encore en cours recevront une demande d’arrêt. Les résultats déjà vérifiés restent comptabilisés.</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">Continuer</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">Arrêter le projet</UiButton></div></UiModal>
+    <UiModal :open="Boolean(cancelTarget)" :title="t('dashboard.stopTitle')" @close="cancelTarget = null"><p class="modal-copy">{{ t('dashboard.stopText') }}</p><div class="modal-actions"><UiButton variant="ghost" @click="cancelTarget = null">{{ t('common.continue') }}</UiButton><UiButton variant="danger" :loading="cancelling" @click="confirmCancel">{{ t('dashboard.stopConfirm') }}</UiButton></div></UiModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { Job } from '~/types/api';
+import { networkRoleLabel } from '~/utils/format';
 definePageMeta({ layout: 'app', middleware: 'auth' });
+const { t } = useI18n();
 const jobStore = useJobs();
 const network = useNetwork();
 const { jobs, total, loading: jobsLoading } = jobStore;
@@ -44,7 +46,7 @@ async function download(job: Job) { await jobStore.downloadResult(job).catch(() 
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => { load(); timer = setInterval(() => load(), 5_000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });
-useSeoMeta({ title: 'Accueil — Silicium' });
+useSeoMeta({ title: () => `${t('nav.home')} — Silicium` });
 </script>
 
 <style scoped>

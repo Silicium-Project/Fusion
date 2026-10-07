@@ -2,6 +2,7 @@ import { resultExtension } from '~/utils/jobs';
 import { isDocumentSearchWorkload, type DocumentHit } from '~/utils/documents';
 import type { Job, JobDashboard, JobList } from '~/types/api';
 import { clientCache } from '~/services/cache';
+import { translate } from '~/utils/i18n';
 
 export interface CreateJobInput {
   title: string;
@@ -22,11 +23,15 @@ export interface CreateJobInput {
 
 /** The search engine is still getting ready: try again in a few seconds. */
 export class SearchPreparingError extends Error {
-  constructor() { super('Le moteur de recherche se prépare, réessaie dans quelques secondes.'); }
+  constructor() { super(translate('errors.searchPreparing')); }
 }
 
+/** A file name from a project title: no path separators or reserved characters. */
+const safeDownloadName = (title: string): string =>
+  (title || 'silicium-result').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim().slice(0, 80) || 'silicium-result';
+
 export function useJobs() {
-  const { authorizedFetch, authorizedFetchRaw, user } = useSession();
+  const { authorizedFetch, authorizedFetchRaw, ensureAccessToken, user } = useSession();
   const jobs = useState<Job[]>('jobs:items', () => []);
   const total = useState<number>('jobs:total', () => 0);
   const loading = useState<boolean>('jobs:loading', () => false);
@@ -54,7 +59,7 @@ export function useJobs() {
       total.value = result.total;
       return result;
     } catch (failure) {
-      error.value = 'Les tâches ne peuvent pas être chargées pour le moment.';
+      error.value = translate('errors.jobsLoad');
       throw failure;
     } finally {
       loading.value = false;
@@ -87,7 +92,7 @@ export function useJobs() {
     return job;
   }
 
-  async function cancelJob(id: number, reason = 'Arrêt demandé depuis le site'): Promise<Job> {
+  async function cancelJob(id: number, reason = translate('errors.cancelReason')): Promise<Job> {
     const job = await authorizedFetch<Job>(`/jobs/${id}/cancel`, { method: 'POST', body: { reason } });
     clientCache.invalidate('jobs:');
     clientCache.invalidate(`job:${identity()}:${id}`);
@@ -95,16 +100,16 @@ export function useJobs() {
   }
 
   async function downloadResult(job: Job): Promise<void> {
-    const token = await useSession().ensureAccessToken();
-    if (!token) throw new Error('Session expirée.');
+    const token = await ensureAccessToken();
+    if (!token) throw new Error(translate('common.sessionExpired'));
     const config = useRuntimeConfig();
     const response = await fetch(`${config.public.apiBase}/jobs/${job.id}/result`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok) throw new Error('Le résultat n’est pas disponible.');
+    if (!response.ok) throw new Error(translate('errors.resultUnavailable'));
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${job.title || 'silicium-resultat'}-${job.id}.${resultExtension(blob.type)}`;
+    link.download = `${safeDownloadName(job.title)}-${job.id}.${resultExtension(blob.type)}`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -125,11 +130,11 @@ export function useJobs() {
   async function openDocument(hit: Pick<DocumentHit, 'jobId' | 'document' | 'page'>): Promise<void> {
     // Opened before the download so that the browser does not block it.
     const opened = window.open('', '_blank');
-    const token = await useSession().ensureAccessToken();
-    if (!token) { opened?.close(); throw new Error('Session expirée.'); }
+    const token = await ensureAccessToken();
+    if (!token) { opened?.close(); throw new Error(translate('common.sessionExpired')); }
     const config = useRuntimeConfig();
     const response = await fetch(`${config.public.apiBase}/jobs/${hit.jobId}/documents?name=${encodeURIComponent(hit.document)}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok) { opened?.close(); throw new Error('Le document n’est pas disponible.'); }
+    if (!response.ok) { opened?.close(); throw new Error(translate('errors.documentUnavailable')); }
     const url = URL.createObjectURL(await response.blob());
     const target = hit.page ? `${url}#page=${hit.page}` : url;
     if (opened) opened.location.href = target; else window.open(target, '_blank');

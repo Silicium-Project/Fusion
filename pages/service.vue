@@ -2,57 +2,57 @@
   <div v-if="!isDownloadPage" class="service-page marketing-page">
     <section class="service-hero marketing-container">
       <div v-reveal="'left'" class="service-hero__copy">
-        <span class="marketing-kicker">Comment ça marche</span>
-        <h1 class="marketing-title">Votre projet avance<br><em>au-delà d’une seule machine.</em></h1>
-        <p class="marketing-lede">Envoyez-le une fois. Silicium répartit automatiquement le travail et vous rend un seul résultat.</p>
-        <div class="marketing-action-row"><UiButton to="#status" size="large" icon="arrow">Voir l’état du service</UiButton><UiButton to="/download" variant="secondary" size="large">Installer un nœud</UiButton></div>
+        <span class="marketing-kicker">{{ t('service.kicker') }}</span>
+        <h1 class="marketing-title">{{ t('service.title') }}<br><em>{{ t('service.titleEm') }}</em></h1>
+        <p class="marketing-lede">{{ t('service.lede') }}</p>
+        <div class="marketing-action-row"><UiButton to="#status" size="large" icon="arrow">{{ t('service.seeStatus') }}</UiButton><UiButton to="/download" variant="secondary" size="large">{{ t('common.installNode') }}</UiButton></div>
       </div>
       <div v-reveal="'right'" class="service-console marketing-glass">
-        <header class="service-console__header"><div><span class="service-console__label">Comment le réseau vous aide</span><strong>Votre projet, étape par étape</strong></div><span class="service-console__badge"><i></i>Le réseau travaille</span></header>
+        <header class="service-console__header"><div><span class="service-console__label">{{ t('service.consoleLabel') }}</span><strong>{{ t('service.consoleTitle') }}</strong></div><span class="service-console__badge"><i></i>{{ t('service.consoleBadge') }}</span></header>
         <div class="service-console__list">
-          <article v-for="(layer, index) in layers" :key="layer.title"><span class="service-console__index">{{ layer.number }}</span><span class="service-console__icon"><UiIcon :name="layer.icon" /></span><div><strong>{{ layer.title }}</strong><p>{{ layer.text }}</p></div><span class="service-console__state">{{ index === 3 ? 'SORTIE' : 'ACTIF' }}</span></article>
+          <article v-for="(layer, index) in layers" :key="layer.number"><span class="service-console__index">{{ layer.number }}</span><span class="service-console__icon"><UiIcon :name="layer.icon" /></span><div><strong>{{ layer.title }}</strong><p>{{ layer.text }}</p></div><span class="service-console__state">{{ index === 3 ? t('service.stateOut') : t('service.stateActive') }}</span></article>
         </div>
-        <footer class="service-console__footer"><span><i></i>Dernière mise à jour</span><span class="mono">{{ status?.checkedAt ? formatDate(status.checkedAt) : '—' }}</span></footer>
+        <footer class="service-console__footer"><span><i></i>{{ t('service.lastUpdate') }}</span><span class="mono">{{ status?.checkedAt ? formatDate(status.checkedAt) : '—' }}</span></footer>
       </div>
     </section>
 
     <section class="service-flow marketing-container marketing-section">
-      <div v-reveal class="marketing-section-heading"><div><span class="marketing-kicker">Le fonctionnement</span><h2>Envoyez une fois.<br>Le réseau fait le reste.</h2></div><p>Votre projet est réparti, calculé, contrôlé puis rassemblé avant de vous revenir.</p></div>
+      <div v-reveal class="marketing-section-heading"><div><span class="marketing-kicker">{{ t('service.flowKicker') }}</span><h2>{{ t('service.flowTitle') }}<br>{{ t('service.flowTitle2') }}</h2></div><p>{{ t('service.flowText') }}</p></div>
       <ProcessFlow />
     </section>
 
     <section id="status" class="status-section marketing-container marketing-section--tight">
-      <div class="status-section__head"><div><span class="marketing-kicker">En ce moment</span><h2>Le réseau est prêt</h2><p>Mis à jour : {{ status ? formatDate(status.checkedAt) : 'en cours' }}</p></div><UiButton variant="secondary" size="small" icon="refresh" :loading="loading" @click="refresh(true)">Rafraîchir</UiButton></div>
+      <div class="status-section__head"><div><span class="marketing-kicker">{{ t('service.nowKicker') }}</span><h2>{{ t('service.nowTitle') }}</h2><p>{{ t('service.updated', { date: status ? formatDate(status.checkedAt) : t('service.updating') }) }}</p></div><UiButton variant="secondary" size="small" icon="refresh" :loading="loading" @click="refresh(true)">{{ t('common.refresh') }}</UiButton></div>
       <UiNotice v-if="error" tone="warning">{{ error }}</UiNotice>
-      <div class="status-board marketing-glass"><article v-for="item in statusItems" :key="item.label"><div class="status-board__mark"><UiIcon :name="item.icon" /></div><div class="status-board__main"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><p>{{ item.detail }}</p></div><UiStatusBadge :status="item.status" /></article></div>
+      <div class="status-board marketing-glass"><article v-for="item in statusItems" :key="item.key"><div class="status-board__mark"><UiIcon :name="item.icon" /></div><div class="status-board__main"><span>{{ item.label }}</span><strong>{{ item.value }}</strong><p>{{ item.detail }}</p></div><UiStatusBadge :status="item.status" /></article></div>
     </section>
 
     <section id="downloads" class="downloads marketing-container marketing-section--tight">
-      <div class="downloads__intro"><span class="marketing-kicker">Pour les contributeurs</span><h2>Aidez le réseau<br><em>à grandir.</em></h2><p>Installez la version stable pour mettre une machine à disposition du réseau. Les versions de développement servent à tester les nouveautés.</p></div>
+      <div class="downloads__intro"><span class="marketing-kicker">{{ t('service.contributorsKicker') }}</span><h2>{{ t('service.contributorsTitle') }}<br><em>{{ t('service.contributorsTitleEm') }}</em></h2><p>{{ t('service.contributorsText') }}</p></div>
       <div class="downloads__list">
-        <a :href="nodeDownloadUrls.windows" aria-label="Télécharger Silicium pour Windows, version stable">
+        <a :href="nodeDownloadUrls.windows" :aria-label="t('service.ariaWindowsStable')">
           <span class="downloads__platform downloads__platform--windows"><UiIcon name="windows" /></span>
-          <div><strong>Silicium pour Windows</strong><small>Version stable · {{ stableVersion }}</small></div>
+          <div><strong>{{ t('service.windowsStable') }}</strong><small>{{ t('service.stableVersion', { version: stableVersion }) }}</small></div>
           <UiIcon name="arrow" />
         </a>
-        <a :href="nodeDownloadUrls.windowsDev" aria-label="Télécharger Silicium pour Windows, version test">
+        <a :href="nodeDownloadUrls.windowsDev" :aria-label="t('service.ariaWindowsTest')">
           <span class="downloads__platform downloads__platform--windows downloads__platform--violet"><UiIcon name="windows" /></span>
-          <div><strong>Windows · version test</strong><small>Version de test · {{ devVersion }}</small></div>
+          <div><strong>{{ t('service.windowsTest') }}</strong><small>{{ t('service.testVersion', { version: devVersion }) }}</small></div>
           <UiIcon name="arrow" />
         </a>
-        <a :href="nodeDownloadUrls.linuxDev" aria-label="Télécharger Silicium pour Linux, version test">
+        <a :href="nodeDownloadUrls.linuxDev" :aria-label="t('service.ariaLinuxTest')">
           <span class="downloads__platform downloads__platform--linux downloads__platform--graphite"><UiIcon name="linux" /></span>
-          <div><strong>Linux · version test</strong><small>AppImage · {{ devVersion }}</small></div>
+          <div><strong>{{ t('service.linuxTest') }}</strong><small>AppImage · {{ devVersion }}</small></div>
           <UiIcon name="arrow" />
         </a>
-        <a :href="nodeDownloadUrls.linuxDevDeb" aria-label="Télécharger Silicium pour Linux, paquet Debian">
+        <a :href="nodeDownloadUrls.linuxDevDeb" :aria-label="t('service.ariaLinuxDeb')">
           <span class="downloads__platform downloads__platform--linux downloads__platform--graphite"><UiIcon name="linux" /></span>
-          <div><strong>Linux · paquet Debian</strong><small>.deb · {{ devVersion }}</small></div>
+          <div><strong>{{ t('service.linuxDeb') }}</strong><small>.deb · {{ devVersion }}</small></div>
           <UiIcon name="arrow" />
         </a>
-        <a :href="nodeDownloadUrls.linuxDevRpm" aria-label="Télécharger Silicium pour Linux, paquet RPM">
+        <a :href="nodeDownloadUrls.linuxDevRpm" :aria-label="t('service.ariaLinuxRpm')">
           <span class="downloads__platform downloads__platform--linux downloads__platform--graphite"><UiIcon name="linux" /></span>
-          <div><strong>Linux · paquet RPM</strong><small>.rpm · {{ devVersion }}</small></div>
+          <div><strong>{{ t('service.linuxRpm') }}</strong><small>.rpm · {{ devVersion }}</small></div>
           <UiIcon name="arrow" />
         </a>
       </div>
@@ -76,24 +76,21 @@ const nodeDownloadUrls = computed(() => ({
   linuxDevDeb: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevDebUrl, '/downloads/silicium-node-linux-dev.deb'),
   linuxDevRpm: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevRpmUrl, '/downloads/silicium-node-linux-dev.rpm'),
 }));
-const layers = [
-  { number: '01', title: 'Votre projet', text: 'Vous l’envoyez une seule fois.', icon: 'code' },
-  { number: '02', title: 'Les machines', text: 'Le travail se partage automatiquement.', icon: 'layers' },
-  { number: '03', title: 'Le calcul', text: 'Chaque machine fait la part qui lui revient.', icon: 'network' },
-  { number: '04', title: 'Votre résultat', text: 'Les réponses sont réunies et contrôlées.', icon: 'shield' },
-];
+const { t, tl } = useI18n();
+const layerIcons = ['code', 'layers', 'network', 'shield'];
+const layers = computed(() => tl<{ title: string; text: string }>('service.layers').map((layer, index) => ({ ...layer, number: `0${index + 1}`, icon: layerIcons[index] || 'code' })));
 const statusItems = computed(() => [
-  { label: 'Silicium', status: status.value?.backend.status || 'unknown', value: statusLabel(status.value?.backend.status), detail: 'Comptes, projets et coordination du calcul.', icon: 'code' },
-  { label: 'Réseau', status: status.value?.network.status || 'unknown', value: status.value ? `${status.value.network.activePeers} machines actives` : '—', detail: status.value ? `${status.value.network.outdatedPeers} mise(s) à jour en attente.` : 'Télémétrie indisponible.', icon: 'network' },
-  { label: 'Paiements', status: status.value?.blockchain.status || 'unknown', value: blockchainNetwork.value, detail: status.value?.blockchain.configured ? 'Paiements et contrôles disponibles.' : 'Service en préparation.', icon: 'shield' },
+  { key: 'backend', label: 'Silicium', status: status.value?.backend.status || 'unknown', value: statusLabel(status.value?.backend.status), detail: t('service.statusBackend'), icon: 'code' },
+  { key: 'network', label: t('service.statusNetwork'), status: status.value?.network.status || 'unknown', value: status.value ? t('service.activeMachines', { count: status.value.network.activePeers }) : '—', detail: status.value ? t('service.pendingUpdates', { count: status.value.network.outdatedPeers }) : t('service.telemetryUnavailable'), icon: 'network' },
+  { key: 'payments', label: t('service.payments'), status: status.value?.blockchain.status || 'unknown', value: blockchainNetwork.value, detail: status.value?.blockchain.configured ? t('service.paymentsReady') : t('service.paymentsPreparing'), icon: 'shield' },
 ]);
 const blockchainNetwork = computed(() => { const value = status.value?.blockchain.network || 'unknown'; return value.charAt(0).toUpperCase() + value.slice(1); });
-const stableVersion = computed(() => manifest.value?.channels?.prod?.version || 'indisponible');
-const devVersion = computed(() => manifest.value?.channels?.dev?.version || 'indisponible');
+const stableVersion = computed(() => manifest.value?.channels?.prod?.version || t('common.unavailable'));
+const devVersion = computed(() => manifest.value?.channels?.dev?.version || t('common.unavailable'));
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => { refresh(); timer = setInterval(() => refresh(), Math.max(10, Number(config.public.statusRefreshSeconds) || 30) * 1000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });
-useSeoMeta({ title: 'Comment fonctionne Silicium ?', description: 'Découvrez comment Silicium répartit vos calculs sur un réseau de machines et vous rend le résultat.' });
+useSeoMeta({ title: () => t('service.seoTitle'), description: () => t('service.seoDescription') });
 </script>
 
 <style scoped>

@@ -1,6 +1,6 @@
 <template>
-  <form class="job-form" :aria-busy="submitting" @submit.prevent="submit">
-    <ol class="wizard-progress" aria-label="Étapes de création du calcul">
+  <form class="job-form" :aria-busy="submitting" novalidate @submit.prevent="submit">
+    <ol class="wizard-progress" :aria-label="t('jobForm.stepsAria')">
       <li v-for="item in steps" :key="item.number" :class="{ 'wizard-progress__item--active': step === item.number, 'wizard-progress__item--done': step > item.number }">
         <span>{{ step > item.number ? '✓' : item.number }}</span>
         <div><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></div>
@@ -8,67 +8,67 @@
     </ol>
 
     <section v-if="step === 1" class="wizard-step" aria-labelledby="job-step-file">
-      <div class="wizard-step__intro"><span class="eyebrow">Étape 1 sur 3</span><h2 id="job-step-file">Quel fichier voulez-vous calculer ?</h2><p>Commencez par donner un nom à votre projet et ajouter le fichier d’entrée.</p></div>
+      <div class="wizard-step__intro"><span class="eyebrow">{{ t('jobForm.stepOf', { step: 1 }) }}</span><h2 id="job-step-file">{{ t('jobForm.fileTitle') }}</h2><p>{{ t('jobForm.fileText') }}</p></div>
       <div class="job-form__grid">
-        <label class="field job-form__wide"><span>Nom du projet</span><input v-model.trim="form.title" class="input" maxlength="120" required placeholder="Ex. Rendu intérieur — version 4"></label>
-        <label class="field job-form__wide"><span>Description <small>facultative</small></span><textarea v-model.trim="form.description" class="textarea" maxlength="1000" placeholder="Contexte, version ou objectif de ce calcul"></textarea></label>
-        <label class="field job-form__wide"><span>Type de calcul</span><select v-model="form.workload" class="select" :disabled="Boolean(collectionId)"><option v-for="item in workloads" :key="item.id" :value="item.id">{{ item.label }}</option></select><small>{{ selectedWorkload.hint }}</small></label>
+        <label class="field job-form__wide"><span>{{ t('jobForm.name') }}</span><input v-model.trim="form.title" class="input" :maxlength="LIMITS.jobTitle" required :placeholder="t('jobForm.namePlaceholder')"></label>
+        <label class="field job-form__wide"><span>{{ t('jobForm.description') }} <small>{{ t('common.optional') }}</small></span><textarea v-model.trim="form.description" class="textarea" :maxlength="LIMITS.jobDescription" :placeholder="t('jobForm.descriptionPlaceholder')"></textarea></label>
+        <label class="field job-form__wide"><span>{{ t('jobForm.type') }}</span><select v-model="form.workload" class="select" :disabled="Boolean(collectionId)"><option v-for="item in workloads" :key="item.id" :value="item.id">{{ item.label }}</option></select><small>{{ selectedWorkload.hint }} <NuxtLink :to="`/workloads#${selectedWorkload.anchor}`" class="job-form__help">{{ t('jobForm.typeHelp') }}</NuxtLink></small></label>
       </div>
       <template v-if="documentMode">
-        <UiNotice v-if="collectionId" title="Ajout à ta recherche">Les nouveaux documents rejoignent ceux que tu as déjà envoyés : une même recherche portera sur tous.</UiNotice>
+        <UiNotice v-if="collectionId" :title="t('jobForm.addingTitle')">{{ t('jobForm.addingText') }}</UiNotice>
         <label class="job-drop" :class="{ 'job-drop--ready': documents.length, 'job-drop--over': dragging }" @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
           <input type="file" multiple :accept="DOCUMENT_ACCEPT" @change="onDocuments">
           <span class="job-drop__icon"><UiIcon :name="documents.length ? 'check' : 'upload'"/></span>
-          <span><strong>{{ documents.length ? `${documents.length} document${documents.length > 1 ? 's' : ''} prêt${documents.length > 1 ? 's' : ''}` : 'Glisse tes documents ici' }}</strong><small>{{ documents.length ? documentsSize : 'PDF, Word, texte, Markdown, ou un ZIP · 64 Mo au total' }}</small></span>
-          <span class="job-drop__action">{{ documents.length ? 'Ajouter' : 'Parcourir' }}</span>
+          <span><strong>{{ documents.length ? t('jobForm.documentsReady', { count: documents.length }) : t('jobForm.dropDocuments') }}</strong><small>{{ documents.length ? documentsSize : t('jobForm.documentsHint') }}</small></span>
+          <span class="job-drop__action">{{ documents.length ? t('jobForm.add') : t('jobForm.browse') }}</span>
         </label>
-        <ul v-if="documents.length" class="document-list" aria-label="Documents choisis">
-          <li v-for="(document, index) in documents" :key="`${document.name}-${document.size}`"><span>{{ document.name }}</span><small>{{ formatSize(document.size) }}</small><button type="button" :aria-label="`Retirer ${document.name}`" @click="removeDocument(index)"><UiIcon name="x"/></button></li>
+        <ul v-if="documents.length" class="document-list" :aria-label="t('jobForm.chosen')">
+          <li v-for="(document, index) in documents" :key="`${document.name}-${document.size}`"><span>{{ document.name }}</span><small>{{ formatBytes(document.size) }}</small><button type="button" :aria-label="t('jobForm.remove', { name: document.name })" @click="removeDocument(index)"><UiIcon name="x"/></button></li>
         </ul>
         <label class="sharing-consent">
           <input v-model="acknowledgeSharing" type="checkbox">
-          <span><strong>J’ai compris que les machines du réseau lisent le texte de mes documents.</strong><small>N’envoie pas de documents confidentiels (contrats signés, données de santé, mots de passe…).</small></span>
+          <span><strong>{{ t('jobForm.consent') }}</strong><small>{{ t('jobForm.consentHint') }}</small></span>
         </label>
       </template>
       <label v-else class="job-drop" :class="{ 'job-drop--ready': file }">
         <input type="file" required :accept="selectedWorkload.accept" @change="onFile">
         <span class="job-drop__icon"><UiIcon :name="file ? 'check' : 'upload'"/></span>
-        <span><strong>{{ file ? file.name : 'Ajouter le fichier d’entrée' }}</strong><small>{{ file ? fileSize : `${selectedWorkload.fileHint} · 16 Mo maximum` }}</small></span>
-        <span class="job-drop__action">{{ file ? 'Remplacer' : 'Parcourir' }}</span>
+        <span><strong>{{ file ? file.name : t('jobForm.addInput') }}</strong><small>{{ file ? fileSize : t('jobForm.maxSize', { hint: selectedWorkload.fileHint }) }}</small></span>
+        <span class="job-drop__action">{{ file ? t('jobForm.replace') : t('jobForm.browse') }}</span>
       </label>
     </section>
 
     <section v-else-if="step === 2" class="wizard-step" aria-labelledby="job-step-options">
-      <div class="wizard-step__intro"><span class="eyebrow">Étape 2 sur 3</span><h2 id="job-step-options">Comment voulez-vous l’exécuter ?</h2><p>La configuration recommandée convient à la plupart des projets. Les réglages techniques restent disponibles si nécessaire.</p></div>
-      <div class="recommended-option"><span class="recommended-option__icon"><UiIcon name="sparkle"/></span><div><strong>Configuration recommandée</strong><p>{{ documentMode ? 'Silicium découpe tes documents, les répartit sur les machines du réseau et vérifie chaque partie : rien à régler.' : 'Silicium répartit automatiquement le calcul sur les machines compatibles et vérifie les résultats.' }}</p></div><UiStatusBadge status="operational" label="Recommandé" /></div>
+      <div class="wizard-step__intro"><span class="eyebrow">{{ t('jobForm.stepOf', { step: 2 }) }}</span><h2 id="job-step-options">{{ t('jobForm.optionsTitle') }}</h2><p>{{ t('jobForm.optionsText') }}</p></div>
+      <div class="recommended-option"><span class="recommended-option__icon"><UiIcon name="sparkle"/></span><div><strong>{{ t('jobForm.recommended') }}</strong><p>{{ documentMode ? t('jobForm.recommendedDocuments') : t('jobForm.recommendedDefault') }}</p></div><UiStatusBadge status="operational" :label="t('jobForm.recommendedBadge')" /></div>
       <details v-if="!documentMode" class="advanced-options">
-        <summary><span><UiIcon name="code"/>Options avancées</span><UiIcon name="chevron"/></summary>
+        <summary><span><UiIcon name="code"/>{{ t('jobForm.advanced') }}</span><UiIcon name="chevron"/></summary>
         <div class="job-form__configuration">
-          <label><span class="field-label">Nombre de parties</span><strong>{{ form.fragmentCount }}</strong><input v-model.number="form.fragmentCount" type="range" min="1" max="256" step="1" aria-label="Nombre de parties"><small>Les parties sont réparties entre les machines disponibles.</small></label>
-          <label><span class="field-label">Durée maximale</span><strong>{{ runtimeLabel }}</strong><input v-model.number="form.maxRuntimeSeconds" type="range" min="60" max="14400" step="60" aria-label="Durée maximale"><small>Une demande d’arrêt est émise si cette limite est atteinte.</small></label>
-          <label class="field"><span>Priorité</span><select v-model="form.priority" class="select"><option value="low">Basse</option><option value="normal">Normale</option><option value="high">Haute</option><option value="urgent">Urgente</option></select></label>
+          <label><span class="field-label">{{ t('jobForm.parts') }}</span><strong>{{ form.fragmentCount }}</strong><input v-model.number="form.fragmentCount" type="range" min="1" max="256" step="1" :aria-label="t('jobForm.parts')"><small>{{ t('jobForm.partsHint') }}<template v-if="hashMode"> {{ t('jobForm.hashOnePart') }}</template></small></label>
+          <label><span class="field-label">{{ t('jobForm.maxDuration') }}</span><strong>{{ runtimeLabel }}</strong><input v-model.number="form.maxRuntimeSeconds" type="range" min="60" max="14400" step="60" :aria-label="t('jobForm.maxDuration')"><small>{{ t('jobForm.maxDurationHint') }}</small></label>
+          <label class="field"><span>{{ t('jobForm.priority') }}</span><select v-model="form.priority" class="select"><option v-for="priority in priorities" :key="priority" :value="priority">{{ t(`jobForm.priorities.${priority}`) }}</option></select></label>
         </div>
       </details>
     </section>
 
     <section v-else class="wizard-step" aria-labelledby="job-step-review">
-      <div class="wizard-step__intro"><span class="eyebrow">Étape 3 sur 3</span><h2 id="job-step-review">Vérifier et lancer</h2><p>Tout est prêt. Vérifiez les informations principales avant de démarrer le calcul.</p></div>
+      <div class="wizard-step__intro"><span class="eyebrow">{{ t('jobForm.stepOf', { step: 3 }) }}</span><h2 id="job-step-review">{{ t('jobForm.reviewTitle') }}</h2><p>{{ t('jobForm.reviewText') }}</p></div>
       <div class="review-card">
-        <div><span>Projet</span><strong>{{ form.title || 'Sans nom' }}</strong><small>{{ form.description || 'Aucune description' }}</small></div>
-        <div v-if="documentMode"><span>Documents</span><strong>{{ documents.length }} document{{ documents.length > 1 ? 's' : '' }}</strong><small>{{ documentsSize }}</small></div>
-        <div v-else><span>Fichier</span><strong>{{ file?.name || 'Aucun fichier' }}</strong><small>{{ fileSize }}</small></div>
-        <div><span>Exécution</span><strong>{{ selectedWorkload.label }}</strong><small>{{ documentMode ? 'Découpage automatique' : `${form.fragmentCount} parties` }} · {{ runtimeLabel }} maximum</small></div>
+        <div><span>{{ t('jobForm.project') }}</span><strong>{{ form.title || t('jobForm.untitled') }}</strong><small>{{ form.description || t('jobForm.noDescription') }}</small></div>
+        <div v-if="documentMode"><span>{{ t('jobForm.documents') }}</span><strong>{{ t('jobForm.documentCount', { count: documents.length }) }}</strong><small>{{ documentsSize }}</small></div>
+        <div v-else><span>{{ t('jobForm.file') }}</span><strong>{{ file?.name || t('jobForm.noFile') }}</strong><small>{{ fileSize }}</small></div>
+        <div><span>{{ t('jobForm.execution') }}</span><strong>{{ selectedWorkload.label }}</strong><small>{{ documentMode ? t('jobForm.autoSplit') : t('jobForm.partCount', { count: form.fragmentCount }) }} · {{ t('jobForm.maximum', { duration: runtimeLabel }) }}</small></div>
       </div>
-      <UiNotice title="Après le lancement">Le projet apparaîtra immédiatement dans vos projets avec son état de préparation.</UiNotice>
+      <UiNotice :title="t('jobForm.afterLaunch')">{{ t('jobForm.afterLaunchText') }}</UiNotice>
     </section>
 
     <UiNotice v-if="formError" tone="danger">{{ formError }}</UiNotice>
     <div class="job-form__footer">
-      <p>{{ step < 3 ? 'Vous pourrez modifier les options avant le lancement.' : 'Le réseau prendra le relais dès que le fichier sera accepté.' }}</p>
+      <p>{{ step < 3 ? t('jobForm.footerEdit') : t('jobForm.footerLaunch') }}</p>
       <div class="cluster">
-        <UiButton v-if="step > 1" type="button" variant="ghost" @click="step--">Retour</UiButton>
-        <UiButton v-if="step < 3" type="button" icon="arrow" :disabled="step === 1 && !stepOneReady" @click="nextStep">Continuer</UiButton>
-        <UiButton v-else type="submit" icon="arrow" :loading="submitting">Lancer le calcul</UiButton>
+        <UiButton v-if="step > 1" type="button" variant="ghost" @click="step--">{{ t('common.back') }}</UiButton>
+        <UiButton v-if="step < 3" type="button" icon="arrow" :disabled="step === 1 && !stepOneReady" @click="nextStep">{{ t('common.continue') }}</UiButton>
+        <UiButton v-else type="submit" icon="arrow" :loading="submitting">{{ t('jobForm.launch') }}</UiButton>
       </div>
     </div>
   </form>
@@ -77,10 +77,14 @@
 <script setup lang="ts">
 import type { CreateJobInput } from '~/composables/useJobs';
 import { DOCUMENT_ACCEPT, DOCUMENT_SEARCH_WORKLOAD, documentSelectionError, isDocumentSearchWorkload, mergeDocumentSelection } from '~/utils/documents';
+import { isHashWorkload } from '~/utils/jobs';
+import { firstProblem, jobDescriptionProblem, jobTitleProblem, LIMITS } from '~/utils/validation';
 
 const props = withDefaults(defineProps<{ submitting?: boolean; error?: string; initialWorkload?: string; collectionId?: string }>(), { submitting: false, error: '', initialWorkload: '', collectionId: '' });
 const emit = defineEmits<{ submit: [input: CreateJobInput] }>();
+const { t, tl, formatBytes } = useI18n();
 const MAX_INPUT_BYTES = 16 * 1024 * 1024;
+const priorities = ['low', 'normal', 'high', 'urgent'];
 const step = ref(1);
 const file = ref<File | null>(null);
 const localError = ref('');
@@ -88,24 +92,25 @@ const form = reactive({ title: '', description: '', workload: props.collectionId
 const documents = ref<File[]>([]);
 const acknowledgeSharing = ref(false);
 const dragging = ref(false);
-/** Workloads the Rust node runs (BackEnd `ValidateWorkload`). */
-const workloads = [
-  { id: 'raytracer', label: 'Rendu d’image', hint: 'Une scène découpée en tuiles, rendues et vérifiées par les machines du réseau.', accept: '.cfg,.scene,.txt,text/plain', fileHint: 'CFG, SCENE ou texte' },
-  { id: 'calcul/integrity/sha256', label: 'Empreinte SHA-256', hint: 'Le fichier est découpé en morceaux ; chaque morceau est haché puis vérifié par une autre machine.', accept: '', fileHint: 'Tout type de fichier' },
-  { id: DOCUMENT_SEARCH_WORKLOAD, label: 'Recherche dans mes documents', hint: 'Dépose tes PDF, fichiers Word ou notes, puis cherche dedans avec tes mots : les passages qui répondent à ta question remontent, même sans les mêmes mots.', accept: DOCUMENT_ACCEPT, fileHint: 'PDF, Word, texte, Markdown ou ZIP' },
-];
+/** Workloads the Rust node runs (BackEnd `ValidateWorkload`); `anchor` is their section of /workloads. */
+const workloads = computed(() => [
+  { id: 'raytracer', anchor: 'raytracer', ...workloadCopy('raytracer'), accept: '.cfg,.scene,.txt,text/plain' },
+  { id: 'calcul/integrity/sha256', anchor: 'sha256', ...workloadCopy('sha256'), accept: '' },
+  { id: DOCUMENT_SEARCH_WORKLOAD, anchor: 'documents', ...workloadCopy('documents'), accept: DOCUMENT_ACCEPT },
+]);
+function workloadCopy(key: string) {
+  return { label: t(`jobForm.workloads.${key}.label`), hint: t(`jobForm.workloads.${key}.hint`), fileHint: t(`jobForm.workloads.${key}.fileHint`) };
+}
 const documentMode = computed(() => isDocumentSearchWorkload(form.workload));
-const selectedWorkload = computed(() => workloads.find((item) => item.id === form.workload) || workloads[0]);
-const steps = [{ number: 1, title: 'Fichier', detail: 'Entrée du projet' }, { number: 2, title: 'Options', detail: 'Configuration' }, { number: 3, title: 'Lancer', detail: 'Vérification' }];
-const stepOneReady = computed(() => Boolean(form.title.trim() && !localError.value && (documentMode.value ? documents.value.length && acknowledgeSharing.value : file.value)));
-const formatSize = (bytes: number) => bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} Mo` : `${Math.max(.1, bytes / 1024).toFixed(1)} Ko`;
-const documentsSize = computed(() => formatSize(documents.value.reduce((total, document) => total + document.size, 0)));
+const hashMode = computed(() => isHashWorkload(form.workload));
+const selectedWorkload = computed(() => workloads.value.find((item) => item.id === form.workload) || workloads.value[0]!);
+const steps = computed(() => tl<{ title: string; detail: string }>('jobForm.steps').map((item, index) => ({ ...item, number: index + 1 })));
+const textProblem = computed(() => firstProblem(jobTitleProblem(form.title), jobDescriptionProblem(form.description)));
+const stepOneReady = computed(() => Boolean(form.title.trim() && !localError.value && !textProblem.value && (documentMode.value ? documents.value.length && acknowledgeSharing.value : file.value)));
+const documentsSize = computed(() => formatBytes(documents.value.reduce((total, document) => total + document.size, 0)));
 const runtimeLabel = computed(() => form.maxRuntimeSeconds < 3600 ? `${Math.round(form.maxRuntimeSeconds / 60)} min` : `${(form.maxRuntimeSeconds / 3600).toFixed(form.maxRuntimeSeconds % 3600 ? 1 : 0)} h`);
-const fileSize = computed(() => {
-  if (!file.value) return '';
-  return file.value.size >= 1024 * 1024 ? `${(file.value.size / 1024 / 1024).toFixed(1)} Mo` : `${Math.max(.1, file.value.size / 1024).toFixed(1)} Ko`;
-});
-const formError = computed(() => localError.value || props.error);
+const fileSize = computed(() => (file.value ? formatBytes(file.value.size) : ''));
+const formError = computed(() => localError.value || (textProblem.value ? t(textProblem.value) : '') || props.error);
 
 function onFile(event: Event) {
   const selected = (event.target as HTMLInputElement).files?.[0] || null;
@@ -114,10 +119,10 @@ function onFile(event: Event) {
   if (!selected) return;
   if (selected.size === 0) {
     file.value = null;
-    localError.value = 'Le fichier de calcul ne peut pas être vide.';
+    localError.value = t('jobForm.emptyFile');
   } else if (selected.size > MAX_INPUT_BYTES) {
     file.value = null;
-    localError.value = 'Le fichier ne doit pas dépasser 16 Mo.';
+    localError.value = t('jobForm.tooLarge');
   }
 }
 
@@ -148,18 +153,19 @@ watch(() => form.workload, () => { localError.value = ''; });
 function nextStep() {
   localError.value = '';
   if (step.value === 1) {
-    if (!form.title.trim()) { localError.value = 'Donnez un nom à votre projet pour continuer.'; return; }
+    if (!form.title.trim()) { localError.value = t('jobForm.nameRequired'); return; }
+    if (textProblem.value) return;
     if (documentMode.value) {
       localError.value = documentSelectionError(documents.value);
       if (localError.value) return;
-      if (!acknowledgeSharing.value) { localError.value = 'Coche la case pour confirmer que les machines du réseau peuvent lire tes documents.'; return; }
-    } else if (!file.value) { localError.value = 'Ajoutez un fichier d’entrée pour continuer.'; return; }
+      if (!acknowledgeSharing.value) { localError.value = t('jobForm.consentRequired'); return; }
+    } else if (!file.value) { localError.value = t('jobForm.fileRequired'); return; }
   }
   step.value = Math.min(3, step.value + 1);
 }
 
 function submit() {
-  if (step.value !== 3 || props.submitting || localError.value) return;
+  if (step.value !== 3 || props.submitting || localError.value || textProblem.value) return;
   if (documentMode.value) {
     if (!documents.value.length || !acknowledgeSharing.value) return;
     emit('submit', { ...form, files: documents.value, acknowledgeSharing: true, collectionId: props.collectionId || undefined });
@@ -171,7 +177,7 @@ function submit() {
 </script>
 
 <style scoped>
-.job-form{display:grid;gap:1.35rem}.wizard-progress{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin:0;padding:0 0 1.25rem;border-bottom:1px solid var(--border);list-style:none}.wizard-progress li{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:.55rem;min-width:0;color:var(--ink-400)}.wizard-progress li>span{display:grid;width:1.8rem;height:1.8rem;place-items:center;border:1px solid var(--border);border-radius:50%;background:var(--surface-soft);font-family:var(--font-mono);font-size:.6rem}.wizard-progress li strong,.wizard-progress li small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wizard-progress li strong{font-size:.65rem}.wizard-progress li small{margin-top:.16rem;color:var(--ink-400);font-size:.55rem}.wizard-progress__item--active{color:var(--ink-950)!important}.wizard-progress__item--active>span,.wizard-progress__item--done>span{border-color:rgba(18,191,174,.2)!important;background:var(--mint-100)!important;color:var(--mint-700)}.wizard-progress__item--done{color:var(--mint-700)!important}.wizard-step{display:grid;gap:1.25rem}.wizard-step__intro{display:grid;gap:.5rem}.wizard-step__intro h2{margin:.15rem 0 0;color:var(--ink-950);font-size:1.35rem;letter-spacing:-.045em}.wizard-step__intro p{max-width:650px;margin:0;color:var(--ink-600);font-size:.72rem;line-height:1.6}.job-form__grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.job-form__wide{grid-column:1/-1}.field span small{color:var(--ink-500);font-weight:500}.job-drop{display:grid;min-height:92px;grid-template-columns:auto 1fr auto;align-items:center;gap:1rem;padding:1rem;border:1px dashed var(--border-strong);border-radius:var(--radius-md);background:rgba(244,245,241,.45);cursor:pointer}.job-drop:hover,.job-drop--ready,.job-drop--over{border-color:var(--mint-500);background:var(--mint-100)}.document-list{display:grid;gap:.35rem;margin:0;padding:0;list-style:none}.document-list li{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:.7rem;padding:.5rem .7rem;border:1px solid var(--border);border-radius:.6rem;background:white;font-size:.66rem}.document-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.document-list small{color:var(--ink-500);font-size:.58rem}.document-list button{display:grid;width:1.6rem;height:1.6rem;place-items:center;border:0;border-radius:.4rem;background:transparent;color:var(--ink-500);cursor:pointer}.document-list button:hover{background:var(--surface-soft);color:var(--ink-900)}.document-list svg{width:.75rem}.sharing-consent{display:grid;grid-template-columns:auto 1fr;gap:.7rem;padding:.85rem 1rem;border:1px solid rgba(217,119,6,.25);border-radius:var(--radius-md);background:#fff8eb;cursor:pointer}.sharing-consent input{margin-top:.15rem;accent-color:var(--mint-600)}.sharing-consent strong,.sharing-consent small{display:block}.sharing-consent strong{color:var(--ink-900);font-size:.68rem}.sharing-consent small{margin-top:.25rem;color:var(--ink-600);font-size:.6rem;line-height:1.45}.job-drop input{position:absolute;width:1px;height:1px;opacity:0}.job-drop__icon{display:grid;width:2.7rem;height:2.7rem;place-items:center;border-radius:.75rem;background:white;color:var(--mint-700);box-shadow:var(--shadow-sm)}.job-drop__icon svg{width:1.1rem}.job-drop strong,.job-drop small{display:block}.job-drop strong{font-size:.76rem}.job-drop small{margin-top:.3rem;color:var(--ink-500);font-size:.62rem}.job-drop__action{padding:.58rem .72rem;border:1px solid var(--border-strong);border-radius:.55rem;background:white;font-size:.68rem;font-weight:750}.recommended-option{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.8rem;padding:1rem;border:1px solid rgba(18,191,174,.18);border-radius:var(--radius-md);background:var(--mint-100)}.recommended-option__icon{display:grid;width:2.4rem;height:2.4rem;place-items:center;border-radius:.7rem;background:white;color:var(--mint-700)}.recommended-option__icon svg{width:1rem}.recommended-option strong,.recommended-option p{display:block}.recommended-option strong{font-size:.76rem}.recommended-option p{margin:.25rem 0 0;color:var(--ink-600);font-size:.62rem;line-height:1.45}.advanced-options{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-soft)}.advanced-options summary{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.85rem 1rem;color:var(--ink-800);font-size:.7rem;font-weight:760;cursor:pointer;list-style:none}.advanced-options summary::-webkit-details-marker{display:none}.advanced-options summary>span{display:inline-flex;align-items:center;gap:.5rem}.advanced-options summary svg{width:.85rem}.advanced-options summary>svg{color:var(--ink-400);transition:transform .2s}.advanced-options[open] summary>svg{transform:rotate(90deg)}.job-form__configuration{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:0 1rem 1rem}.job-form__configuration>label{display:grid;grid-template-columns:1fr auto;gap:.5rem;padding:.85rem;border:1px solid var(--border);border-radius:.7rem;background:white}.job-form__configuration>label:last-child{grid-template-columns:1fr;align-content:start}.job-form__configuration strong{font-size:.76rem}.job-form__configuration input{grid-column:1/-1;width:100%;accent-color:var(--mint-600)}.job-form__configuration small{grid-column:1/-1;color:var(--ink-500);font-size:.58rem;line-height:1.4}.field-label{font-size:.64rem;font-weight:700}.review-card{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem}.review-card>div{min-width:0;padding:.85rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface-soft)}.review-card span,.review-card strong,.review-card small{display:block}.review-card span{color:var(--ink-500);font-size:.57rem}.review-card strong{margin-top:.35rem;overflow:hidden;color:var(--ink-900);font-size:.7rem;text-overflow:ellipsis;white-space:nowrap}.review-card small{margin-top:.28rem;overflow:hidden;color:var(--ink-500);font-size:.58rem;text-overflow:ellipsis;white-space:nowrap}.job-form__footer{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:1rem;border-top:1px solid var(--border)}.job-form__footer p{max-width:430px;margin:0;color:var(--ink-500);font-size:.65rem;line-height:1.5}
+.job-form{display:grid;gap:1.35rem}.wizard-progress{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin:0;padding:0 0 1.25rem;border-bottom:1px solid var(--border);list-style:none}.wizard-progress li{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:.55rem;min-width:0;color:var(--ink-400)}.wizard-progress li>span{display:grid;width:1.8rem;height:1.8rem;place-items:center;border:1px solid var(--border);border-radius:50%;background:var(--surface-soft);font-family:var(--font-mono);font-size:.6rem}.wizard-progress li strong,.wizard-progress li small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wizard-progress li strong{font-size:.65rem}.wizard-progress li small{margin-top:.16rem;color:var(--ink-400);font-size:.55rem}.wizard-progress__item--active{color:var(--ink-950)!important}.wizard-progress__item--active>span,.wizard-progress__item--done>span{border-color:rgba(18,191,174,.2)!important;background:var(--mint-100)!important;color:var(--mint-700)}.wizard-progress__item--done{color:var(--mint-700)!important}.wizard-step{display:grid;gap:1.25rem}.wizard-step__intro{display:grid;gap:.5rem}.wizard-step__intro h2{margin:.15rem 0 0;color:var(--ink-950);font-size:1.35rem;letter-spacing:-.045em}.wizard-step__intro p{max-width:650px;margin:0;color:var(--ink-600);font-size:.72rem;line-height:1.6}.job-form__grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}.job-form__wide{grid-column:1/-1}.field span small{color:var(--ink-500);font-weight:500}.job-form__help{color:var(--mint-700);font-weight:700;text-decoration:underline;text-underline-offset:2px}.job-drop{display:grid;min-height:92px;grid-template-columns:auto 1fr auto;align-items:center;gap:1rem;padding:1rem;border:1px dashed var(--border-strong);border-radius:var(--radius-md);background:rgba(244,245,241,.45);cursor:pointer}.job-drop:hover,.job-drop--ready,.job-drop--over{border-color:var(--mint-500);background:var(--mint-100)}.document-list{display:grid;gap:.35rem;margin:0;padding:0;list-style:none}.document-list li{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:.7rem;padding:.5rem .7rem;border:1px solid var(--border);border-radius:.6rem;background:white;font-size:.66rem}.document-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.document-list small{color:var(--ink-500);font-size:.58rem}.document-list button{display:grid;width:1.6rem;height:1.6rem;place-items:center;border:0;border-radius:.4rem;background:transparent;color:var(--ink-500);cursor:pointer}.document-list button:hover{background:var(--surface-soft);color:var(--ink-900)}.document-list svg{width:.75rem}.sharing-consent{display:grid;grid-template-columns:auto 1fr;gap:.7rem;padding:.85rem 1rem;border:1px solid rgba(217,119,6,.25);border-radius:var(--radius-md);background:#fff8eb;cursor:pointer}.sharing-consent input{margin-top:.15rem;accent-color:var(--mint-600)}.sharing-consent strong,.sharing-consent small{display:block}.sharing-consent strong{color:var(--ink-900);font-size:.68rem}.sharing-consent small{margin-top:.25rem;color:var(--ink-600);font-size:.6rem;line-height:1.45}.job-drop input{position:absolute;width:1px;height:1px;opacity:0}.job-drop__icon{display:grid;width:2.7rem;height:2.7rem;place-items:center;border-radius:.75rem;background:white;color:var(--mint-700);box-shadow:var(--shadow-sm)}.job-drop__icon svg{width:1.1rem}.job-drop strong,.job-drop small{display:block}.job-drop strong{font-size:.76rem}.job-drop small{margin-top:.3rem;color:var(--ink-500);font-size:.62rem}.job-drop__action{padding:.58rem .72rem;border:1px solid var(--border-strong);border-radius:.55rem;background:white;font-size:.68rem;font-weight:750}.recommended-option{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.8rem;padding:1rem;border:1px solid rgba(18,191,174,.18);border-radius:var(--radius-md);background:var(--mint-100)}.recommended-option__icon{display:grid;width:2.4rem;height:2.4rem;place-items:center;border-radius:.7rem;background:white;color:var(--mint-700)}.recommended-option__icon svg{width:1rem}.recommended-option strong,.recommended-option p{display:block}.recommended-option strong{font-size:.76rem}.recommended-option p{margin:.25rem 0 0;color:var(--ink-600);font-size:.62rem;line-height:1.45}.advanced-options{border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-soft)}.advanced-options summary{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.85rem 1rem;color:var(--ink-800);font-size:.7rem;font-weight:760;cursor:pointer;list-style:none}.advanced-options summary::-webkit-details-marker{display:none}.advanced-options summary>span{display:inline-flex;align-items:center;gap:.5rem}.advanced-options summary svg{width:.85rem}.advanced-options summary>svg{color:var(--ink-400);transition:transform .2s}.advanced-options[open] summary>svg{transform:rotate(90deg)}.job-form__configuration{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;padding:0 1rem 1rem}.job-form__configuration>label{display:grid;grid-template-columns:1fr auto;gap:.5rem;padding:.85rem;border:1px solid var(--border);border-radius:.7rem;background:white}.job-form__configuration>label:last-child{grid-template-columns:1fr;align-content:start}.job-form__configuration strong{font-size:.76rem}.job-form__configuration input{grid-column:1/-1;width:100%;accent-color:var(--mint-600)}.job-form__configuration small{grid-column:1/-1;color:var(--ink-500);font-size:.58rem;line-height:1.4}.field-label{font-size:.64rem;font-weight:700}.review-card{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem}.review-card>div{min-width:0;padding:.85rem;border:1px solid var(--border);border-radius:.75rem;background:var(--surface-soft)}.review-card span,.review-card strong,.review-card small{display:block}.review-card span{color:var(--ink-500);font-size:.57rem}.review-card strong{margin-top:.35rem;overflow:hidden;color:var(--ink-900);font-size:.7rem;text-overflow:ellipsis;white-space:nowrap}.review-card small{margin-top:.28rem;overflow:hidden;color:var(--ink-500);font-size:.58rem;text-overflow:ellipsis;white-space:nowrap}.job-form__footer{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding-top:1rem;border-top:1px solid var(--border)}.job-form__footer p{max-width:430px;margin:0;color:var(--ink-500);font-size:.65rem;line-height:1.5}
 @media(max-width:700px){.review-card{grid-template-columns:1fr}.recommended-option{grid-template-columns:auto 1fr}.recommended-option :deep(.status-badge){grid-column:2;justify-self:start}.job-form__configuration{grid-template-columns:1fr}}
 @media(max-width:620px){.job-form__grid{grid-template-columns:1fr}.job-form__wide{grid-column:auto}.wizard-progress li small{display:none}.job-drop{grid-template-columns:auto 1fr}.job-drop__action{display:none}.job-form__footer{align-items:stretch;flex-direction:column}.job-form__footer .cluster{justify-content:flex-end}}
 </style>

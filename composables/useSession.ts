@@ -1,6 +1,10 @@
 import type { AuthTokens, User } from '~/types/api';
 import { clientCache } from '~/services/cache';
 import { authErrorMessage, tokenExpiry } from '~/utils/auth';
+import { currentLocale, translate } from '~/utils/i18n';
+
+/** Headers of every API call: the API answers in the language of the site. */
+export const languageHeaders = (): Record<string, string> => ({ 'Accept-Language': currentLocale() });
 
 let refreshRequest: Promise<string | null> | null = null;
 
@@ -23,14 +27,14 @@ export function useSession() {
   });
 
   const isAuthenticated = computed(() => Boolean(tokenExpiry(accessToken.value) || refreshToken.value));
-  const displayName = computed(() => user.value?.username || user.value?.firstName || user.value?.email || 'Mon compte');
+  const displayName = computed(() => user.value?.username || user.value?.firstName || user.value?.email || translate('nav.myAccount'));
   const initials = computed(() => {
     const source = [user.value?.firstName, user.value?.lastName].filter(Boolean).join(' ') || displayName.value;
     return source.split(/\s+/).slice(0, 2).map(part => part.charAt(0)).join('').toUpperCase() || 'S';
   });
 
   function setTokens(tokens: AuthTokens): void {
-    if (!tokenExpiry(tokens.token)) throw new Error('La réponse de connexion est invalide.');
+    if (!tokenExpiry(tokens.token)) throw new Error(translate('errors.loginResponse'));
     accessToken.value = tokens.token;
     if (tokens.refresh_token) refreshToken.value = tokens.refresh_token;
   }
@@ -49,7 +53,7 @@ export function useSession() {
     if (refreshRequest) return refreshRequest;
 
     refreshRequest = $fetch<AuthTokens>(`${config.public.apiBase}/refresh`, {
-      method: 'POST', body: { refresh_token: refreshToken.value }, retry: 0, timeout: 12_000,
+      method: 'POST', body: { refresh_token: refreshToken.value }, headers: languageHeaders(), retry: 0, timeout: 12_000,
     }).then((tokens) => {
       setTokens(tokens);
       return tokens.token;
@@ -69,8 +73,8 @@ export function useSession() {
 
   async function authorizedFetch<T>(path: string, options: Record<string, unknown> = {}, canRetry = true): Promise<T> {
     const token = await ensureAccessToken();
-    if (!token || token === 'refresh-pending') throw Object.assign(new Error('Session expirée.'), { statusCode: 401 });
-    const headers = { ...(options.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` };
+    if (!token || token === 'refresh-pending') throw Object.assign(new Error(translate('common.sessionExpired')), { statusCode: 401 });
+    const headers = { ...languageHeaders(), ...(options.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` };
     try {
       return await $fetch<T>(`${config.public.apiBase}${path}`, { ...options, headers, retry: 0 } as never);
     } catch (error) {
@@ -86,8 +90,8 @@ export function useSession() {
 
   async function authorizedFetchRaw<T>(path: string, options: Record<string, unknown> = {}, canRetry = true): Promise<any> {
     const token = await ensureAccessToken();
-    if (!token || token === 'refresh-pending') throw Object.assign(new Error('Session expirée.'), { statusCode: 401 });
-    const headers = { ...(options.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` };
+    if (!token || token === 'refresh-pending') throw Object.assign(new Error(translate('common.sessionExpired')), { statusCode: 401 });
+    const headers = { ...languageHeaders(), ...(options.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` };
     try {
       return await $fetch.raw<T>(`${config.public.apiBase}${path}`, { ...options, headers, retry: 0 } as never);
     } catch (error) {
@@ -118,7 +122,7 @@ export function useSession() {
 
   async function login(identifier: string, password: string): Promise<User | null> {
     const tokens = await $fetch<AuthTokens>(`${config.public.apiBase}/login`, {
-      method: 'POST', body: { identifier: identifier.trim(), password }, retry: 0, timeout: 15_000,
+      method: 'POST', body: { identifier: identifier.trim(), password }, headers: languageHeaders(), retry: 0, timeout: 15_000,
     });
     setTokens(tokens);
     clientCache.invalidate();
@@ -127,7 +131,7 @@ export function useSession() {
   }
 
   async function register(payload: { email: string; password: string; username?: string; first_name?: string; last_name?: string }): Promise<void> {
-    await $fetch(`${config.public.apiBase}/register`, { method: 'POST', body: payload, retry: 0, timeout: 15_000 });
+    await $fetch(`${config.public.apiBase}/register`, { method: 'POST', body: payload, headers: languageHeaders(), retry: 0, timeout: 15_000 });
   }
 
   async function saveProfile(payload: Record<string, string | undefined>): Promise<User> {

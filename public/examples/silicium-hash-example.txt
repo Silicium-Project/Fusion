@@ -1,0 +1,15 @@
+Silicium — example file for the "SHA-256 hash" job type.
+
+Send this file with a single part (advanced options) and compare the hash
+shown by Silicium with the one computed on your own machine:
+
+  Linux / macOS : sha256sum silicium-hash-example.txt
+  Windows       : Get-FileHash silicium-hash-example.txt -Algorithm SHA256
+
+Both must be identical: the network computed the same bytes as you did.
+
+With several parts, Silicium shows one hash per chunk and the hash of their
+list: change a single character of this file and only the chunk that
+contains it gets a different hash.
+
+0123456789 abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ

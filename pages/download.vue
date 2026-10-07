@@ -2,39 +2,39 @@
   <div class="download-page marketing-page">
     <section class="download-hero marketing-container">
       <div class="download-hero__copy">
-        <span class="marketing-kicker">Installer une machine</span>
-        <h1 class="marketing-title">Une machine prête<br><em>à rejoindre le réseau.</em></h1>
-        <p class="marketing-lede">Téléchargez la version stable recommandée, installez le nœud Silicium puis vérifiez sa connexion depuis votre espace.</p>
-        <div class="download-hero__actions"><UiButton to="/auth?mode=register" size="large" icon="arrow">Créer mon espace</UiButton><UiButton to="/service" variant="secondary" size="large">Comprendre le fonctionnement</UiButton></div>
+        <span class="marketing-kicker">{{ t('download.kicker') }}</span>
+        <h1 class="marketing-title">{{ t('download.title') }}<br><em>{{ t('download.titleEm') }}</em></h1>
+        <p class="marketing-lede">{{ t('download.lede') }}</p>
+        <div class="download-hero__actions"><UiButton to="/auth?mode=register" size="large" icon="arrow">{{ t('download.createSpace') }}</UiButton><UiButton to="/service" variant="secondary" size="large">{{ t('download.understand') }}</UiButton></div>
       </div>
-      <div class="release-highlight marketing-glass"><div class="release-highlight__top"><span>VERSION RECOMMANDÉE</span><UiStatusBadge status="operational" label="Stable" /></div><div class="release-highlight__body"><span class="release-highlight__icon"><UiIcon name="download" /></span><div><strong>{{ stableVersion }}</strong><small>Dernière version vérifiée pour le réseau</small></div></div><dl><div><dt>Canal</dt><dd>Stable</dd></div><div><dt>Installation</dt><dd>Windows</dd></div><div><dt>Statut</dt><dd>Compatible</dd></div></dl></div>
+      <div class="release-highlight marketing-glass"><div class="release-highlight__top"><span>{{ t('download.recommended') }}</span><UiStatusBadge status="operational" :label="t('download.stable')" /></div><div class="release-highlight__body"><span class="release-highlight__icon"><UiIcon name="download" /></span><div><strong>{{ stableVersion }}</strong><small>{{ t('download.lastVerified') }}</small></div></div><dl><div><dt>{{ t('download.channel') }}</dt><dd>{{ t('download.stable') }}</dd></div><div><dt>{{ t('download.installation') }}</dt><dd>Windows</dd></div><div><dt>{{ t('download.status') }}</dt><dd>{{ t('download.compatible') }}</dd></div></dl></div>
     </section>
 
     <section class="release-section marketing-container">
-      <div class="marketing-section-heading"><div><span class="marketing-kicker">Versions disponibles</span><h2>Télécharger le bon<br>artefact.</h2></div><p>La version stable est proposée en premier. Les versions de test restent séparées pour éviter une installation accidentelle sur une machine de production.</p></div>
-      <UiNotice v-if="error" tone="warning">{{ error }} Les liens configurés restent disponibles, mais vérifiez la version avant installation.</UiNotice>
+      <div class="marketing-section-heading"><div><span class="marketing-kicker">{{ t('download.versionsKicker') }}</span><h2>{{ t('download.versionsTitle') }}<br>{{ t('download.versionsTitle2') }}</h2></div><p>{{ t('download.versionsText') }}</p></div>
+      <UiNotice v-if="error" tone="warning">{{ error }} {{ t('download.errorSuffix') }}</UiNotice>
       <div class="release-grid">
         <article v-for="release in releases" :key="release.key" class="release-card" :class="`release-card--${release.tone}`">
           <div class="release-card__head"><span class="release-card__icon"><UiIcon :name="release.icon" /></span><UiStatusBadge :status="release.status" :label="release.channel" /></div>
           <div class="release-card__copy"><h3>{{ release.label }}</h3><p>{{ release.detail }}</p></div>
-          <dl class="release-card__meta"><div><dt>Version</dt><dd>{{ release.version }}</dd></div><div><dt>Format</dt><dd>{{ release.format }}</dd></div><div><dt>Build</dt><dd>{{ release.build || '—' }}</dd></div></dl>
-          <UiButton :href="release.url" target="_blank" icon="download">Télécharger</UiButton>
+          <dl class="release-card__meta"><div><dt>{{ t('download.version') }}</dt><dd>{{ release.version }}</dd></div><div><dt>{{ t('download.format') }}</dt><dd>{{ release.format }}</dd></div><div><dt>{{ t('download.build') }}</dt><dd>{{ release.build || '—' }}</dd></div></dl>
+          <UiButton :href="release.url" target="_blank" icon="download">{{ t('common.download') }}</UiButton>
         </article>
       </div>
-      <p class="release-note">Les sommes de contrôle et les signatures sont fournis par le manifeste de publication lorsqu’ils sont disponibles. N’installez pas une version qui n’est pas marquée comme compatible.</p>
+      <p class="release-note">{{ t('download.note') }}</p>
     </section>
 
     <section class="package-install-section marketing-container marketing-glass" aria-labelledby="package-install-title">
-      <div><span class="marketing-kicker">Installation native Linux</span><h2 id="package-install-title">Le bon paquet<br><em>pour votre distribution.</em></h2><p>Téléchargez le format adapté, puis laissez le gestionnaire de paquets installer les dépendances du nœud.</p></div>
+      <div><span class="marketing-kicker">{{ t('download.nativeKicker') }}</span><h2 id="package-install-title">{{ t('download.nativeTitle') }}<br><em>{{ t('download.nativeTitleEm') }}</em></h2><p>{{ t('download.nativeText') }}</p></div>
       <div class="package-install-options">
-        <article><div><strong>Debian · Ubuntu</strong><small>Paquet .deb · apt</small></div><code>sudo apt install ./silicium-node-linux-dev.deb</code><UiButton :href="linuxPackageUrls.deb" target="_blank" variant="secondary" icon="download">Télécharger le .deb</UiButton></article>
-        <article><div><strong>Fedora · RHEL</strong><small>Paquet .rpm · dnf</small></div><code>sudo dnf install ./silicium-node-linux-dev.rpm</code><UiButton :href="linuxPackageUrls.rpm" target="_blank" variant="secondary" icon="download">Télécharger le .rpm</UiButton></article>
+        <article><div><strong>Debian · Ubuntu</strong><small>{{ t('download.debPackage') }}</small></div><code>sudo apt install ./silicium-node-linux-dev.deb</code><UiButton :href="linuxPackageUrls.deb" target="_blank" variant="secondary" icon="download">{{ t('download.downloadDeb') }}</UiButton></article>
+        <article><div><strong>Fedora · RHEL</strong><small>{{ t('download.rpmPackage') }}</small></div><code>sudo dnf install ./silicium-node-linux-dev.rpm</code><UiButton :href="linuxPackageUrls.rpm" target="_blank" variant="secondary" icon="download">{{ t('download.downloadRpm') }}</UiButton></article>
       </div>
     </section>
 
     <section class="install-section marketing-container marketing-glass">
-      <div><span class="marketing-kicker">Après le téléchargement</span><h2>Trois étapes pour<br><em>être opérationnel.</em></h2><p>Une fois le nœud installé, son état de connexion et sa version apparaissent dans la page Machines.</p></div>
-      <ol class="install-steps"><li><span>01</span><div><strong>Installer</strong><small>Ouvrez l’installeur et acceptez les permissions nécessaires.</small></div></li><li><span>02</span><div><strong>Démarrer</strong><small>Lancez le nœud avec la configuration fournie.</small></div></li><li><span>03</span><div><strong>Vérifier</strong><small>Attendez le statut “En ligne” dans votre espace.</small></div></li></ol>
+      <div><span class="marketing-kicker">{{ t('download.afterKicker') }}</span><h2>{{ t('download.afterTitle') }}<br><em>{{ t('download.afterTitleEm') }}</em></h2><p>{{ t('download.afterText') }}</p></div>
+      <ol class="install-steps"><li v-for="(step, index) in tl<{ title: string; text: string }>('download.steps')" :key="index"><span>0{{ index + 1 }}</span><div><strong>{{ step.title }}</strong><small>{{ step.text }}</small></div></li></ol>
     </section>
   </div>
 </template>
@@ -52,15 +52,20 @@ const linuxPackageUrls = computed(() => ({
   deb: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevDebUrl, '/downloads/silicium-node-linux-dev.deb'),
   rpm: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevRpmUrl, '/downloads/silicium-node-linux-dev.rpm'),
 }));
+const { t, tl } = useI18n();
+const release = (key: string) => ({
+  label: t(`download.releases.${key}.label`), channel: t(`download.releases.${key}.channel`),
+  detail: t(`download.releases.${key}.detail`), format: t(`download.releases.${key}.format`),
+});
 const releases = computed(() => [
-  { key: 'windows-stable', label: 'Silicium pour Windows', channel: 'Stable recommandée', detail: 'La version de référence pour connecter une machine au réseau.', icon: 'windows', version: stableRelease.value.version || 'stable', build: stableRelease.value.build, format: 'Installeur Windows', url: resolveNodeDownloadUrl(config.public.nodeAppWindowsUrl, '/downloads/silicium-node-windows.exe'), status: 'operational', tone: 'stable' },
-  { key: 'windows-dev', label: 'Windows · version test', channel: 'Test', detail: 'Pour tester les nouveautés avant leur validation générale.', icon: 'windows', version: devRelease.value.version || 'dev', build: devRelease.value.build, format: 'Installeur Windows', url: resolveNodeDownloadUrl(config.public.nodeAppWindowsDevUrl, '/downloads/silicium-node-windows-dev.exe'), status: 'degraded', tone: 'test' },
-  { key: 'linux-dev', label: 'Linux · version test', channel: 'Test', detail: 'Une AppImage pour les environnements Linux de test.', icon: 'linux', version: devRelease.value.version || 'dev', build: devRelease.value.build, format: 'AppImage', url: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevUrl, '/downloads/silicium-node-linux-dev.AppImage'), status: 'degraded', tone: 'test' },
-  { key: 'linux-dev-deb', label: 'Linux · paquet Debian', channel: 'Test', detail: 'Le paquet Debian installe le nœud et ses dépendances sur Debian ou Ubuntu.', icon: 'linux', version: devRelease.value.version || 'dev', build: devRelease.value.build, format: 'Paquet .deb', url: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevDebUrl, '/downloads/silicium-node-linux-dev.deb'), status: 'degraded', tone: 'test' },
-  { key: 'linux-dev-rpm', label: 'Linux · paquet RPM', channel: 'Test', detail: 'Le paquet RPM installe le nœud et ses dépendances sur Fedora ou RHEL.', icon: 'linux', version: devRelease.value.version || 'dev', build: devRelease.value.build, format: 'Paquet .rpm', url: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevRpmUrl, '/downloads/silicium-node-linux-dev.rpm'), status: 'degraded', tone: 'test' },
+  { key: 'windows-stable', ...release('windowsStable'), icon: 'windows', version: stableRelease.value.version || 'stable', build: stableRelease.value.build, url: resolveNodeDownloadUrl(config.public.nodeAppWindowsUrl, '/downloads/silicium-node-windows.exe'), status: 'operational', tone: 'stable' },
+  { key: 'windows-dev', ...release('windowsDev'), icon: 'windows', version: devRelease.value.version || 'dev', build: devRelease.value.build, url: resolveNodeDownloadUrl(config.public.nodeAppWindowsDevUrl, '/downloads/silicium-node-windows-dev.exe'), status: 'degraded', tone: 'test' },
+  { key: 'linux-dev', ...release('linuxDev'), icon: 'linux', version: devRelease.value.version || 'dev', build: devRelease.value.build, url: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevUrl, '/downloads/silicium-node-linux-dev.AppImage'), status: 'degraded', tone: 'test' },
+  { key: 'linux-dev-deb', ...release('linuxDeb'), icon: 'linux', version: devRelease.value.version || 'dev', build: devRelease.value.build, url: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevDebUrl, '/downloads/silicium-node-linux-dev.deb'), status: 'degraded', tone: 'test' },
+  { key: 'linux-dev-rpm', ...release('linuxRpm'), icon: 'linux', version: devRelease.value.version || 'dev', build: devRelease.value.build, url: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevRpmUrl, '/downloads/silicium-node-linux-dev.rpm'), status: 'degraded', tone: 'test' },
 ]);
 onMounted(() => refresh());
-useSeoMeta({ title: 'Télécharger le nœud — Silicium', description: 'Téléchargez la version compatible du nœud Silicium et connectez une machine au réseau.' });
+useSeoMeta({ title: () => t('download.seoTitle'), description: () => t('download.seoDescription') });
 </script>
 
 <style scoped>

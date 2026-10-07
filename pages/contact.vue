@@ -2,20 +2,21 @@
   <div class="contact-page marketing-page">
     <section class="contact-layout marketing-container">
       <div v-reveal="'left'" class="contact-intro">
-        <span class="marketing-kicker">Boîte à idées</span>
-        <h1 class="marketing-title">Une idée pour le réseau ?<br><em>Parlons-en.</em></h1>
-        <p class="marketing-lede">Ce formulaire sert uniquement à proposer une idée, un usage ou une amélioration. Les tâches sont reçues et distribuées automatiquement par le service.</p>
-        <div class="contact-brief marketing-glass"><span class="contact-brief__label">Ce que vous pouvez proposer</span><div><span>01</span><p>Un usage ou un type de projet à essayer</p></div><div><span>02</span><p>Une amélioration d’interface ou de suivi</p></div><div><span>03</span><p>Une idée de rôle, d’intégration ou de machine</p></div></div>
-        <div class="contact-details"><div><UiIcon name="activity" /><span><strong>Idées produit</strong><small>Usages, parcours et priorités</small></span></div><div><UiIcon name="network" /><span><strong>Réseau expérimental</strong><small>Retours sur le devnet</small></span></div></div>
+        <span class="marketing-kicker">{{ t('contact.kicker') }}</span>
+        <h1 class="marketing-title">{{ t('contact.title') }}<br><em>{{ t('contact.titleEm') }}</em></h1>
+        <p class="marketing-lede">{{ t('contact.lede') }}</p>
+        <div class="contact-brief marketing-glass"><span class="contact-brief__label">{{ t('contact.briefLabel') }}</span><div v-for="(item, index) in tl('contact.brief')" :key="item"><span>0{{ index + 1 }}</span><p>{{ item }}</p></div></div>
+        <div class="contact-details"><div><UiIcon name="activity" /><span><strong>{{ t('contact.productIdeas') }}</strong><small>{{ t('contact.productIdeasText') }}</small></span></div><div><UiIcon name="network" /><span><strong>{{ t('contact.experimental') }}</strong><small>{{ t('contact.experimentalText') }}</small></span></div></div>
       </div>
       <form v-reveal="'right'" class="contact-form marketing-glass" @submit.prevent="send">
-        <div class="contact-form__head"><div><span class="marketing-kicker">Proposer une idée</span><h2>Décrivez ce que vous imaginez.</h2></div><small>Envoi par e-mail</small></div>
+        <div class="contact-form__head"><div><span class="marketing-kicker">{{ t('contact.formKicker') }}</span><h2>{{ t('contact.formTitle') }}</h2></div><small>{{ t('contact.byEmail') }}</small></div>
         <div class="contact-form__body">
-          <div class="contact-form__grid"><label class="field"><span>Votre nom</span><input v-model.trim="form.name" required class="input" autocomplete="name" placeholder="Nom et prénom"></label><label class="field"><span>Votre e-mail</span><input v-model.trim="form.email" required class="input" type="email" autocomplete="email" placeholder="vous@exemple.fr"></label></div>
-          <label class="field"><span>Sujet</span><select v-model="form.subject" class="select"><option>Idée produit</option><option>Idée pour le réseau</option><option>Amélioration UX</option><option>Autre idée</option></select></label>
-          <label class="field"><span>Votre idée</span><textarea v-model.trim="form.message" required minlength="20" class="textarea" placeholder="Décrivez l’idée, le problème qu’elle résout et ce que vous aimeriez voir."></textarea></label>
-          <UiNotice v-if="notice" :tone="contactEmail ? 'success' : 'warning'">{{ notice }}</UiNotice>
-          <UiButton type="submit" size="large" icon="arrow">Préparer l’idée</UiButton>
+          <div class="contact-form__grid"><label class="field"><span>{{ t('contact.name') }}</span><input v-model.trim="form.name" required class="input" autocomplete="name" :maxlength="LIMITS.contactName" :placeholder="t('contact.namePlaceholder')"></label><label class="field"><span>{{ t('contact.email') }}</span><input v-model.trim="form.email" required class="input" type="email" autocomplete="email" :maxlength="LIMITS.email" :placeholder="t('auth.emailPlaceholder')"></label></div>
+          <label class="field"><span>{{ t('contact.subject') }}</span><select v-model="form.subject" class="select"><option v-for="(subject, index) in tl('contact.subjects')" :key="index" :value="index">{{ subject }}</option></select></label>
+          <label class="field"><span>{{ t('contact.idea') }}</span><textarea v-model.trim="form.message" required minlength="20" :maxlength="LIMITS.contactMessage" class="textarea" :placeholder="t('contact.ideaPlaceholder')"></textarea></label>
+          <UiNotice v-if="formError" tone="danger">{{ formError }}</UiNotice>
+          <UiNotice v-else-if="notice" :tone="contactEmail ? 'success' : 'warning'">{{ notice }}</UiNotice>
+          <UiButton type="submit" size="large" icon="arrow">{{ t('contact.submit') }}</UiButton>
         </div>
       </form>
     </section>
@@ -23,18 +24,27 @@
 </template>
 
 <script setup lang="ts">
+import { emailProblem, LIMITS } from '~/utils/validation';
 definePageMeta({ layout: 'public' });
+const { t, tl } = useI18n();
 const config = useRuntimeConfig();
 const contactEmail = computed(() => String(config.public.contactEmail || ''));
 const notice = ref('');
-const form = reactive({ name: '', email: '', subject: 'Idée produit', message: '' });
+const formError = ref('');
+const form = reactive({ name: '', email: '', subject: 0, message: '' });
+/** Names and emails go into the body of the prepared email only. */
+const oneLine = (value: string) => value.replace(/[\r\n]+/g, ' ').trim();
 function send() {
-  if (!contactEmail.value) { notice.value = 'L’adresse de contact sera publiée prochainement. Votre message reste dans ce navigateur.'; return; }
-  const body = `Bonjour,\n\n${form.message}\n\n${form.name}\n${form.email}`;
-  window.location.href = `mailto:${contactEmail.value}?subject=${encodeURIComponent(`[Silicium — idée] ${form.subject}`)}&body=${encodeURIComponent(body)}`;
-  notice.value = 'Votre application e-mail a été ouverte avec l’idée préparée.';
+  formError.value = '';
+  const problem = emailProblem(form.email) || ([...form.message].length < 20 ? 'validation.messageShort' : '');
+  if (problem) { formError.value = t(problem); return; }
+  if (!contactEmail.value) { notice.value = t('contact.noAddress'); return; }
+  const subject = tl('contact.subjects')[form.subject] || '';
+  const body = `${t('contact.mailGreeting')}\n\n${form.message.slice(0, LIMITS.contactMessage)}\n\n${oneLine(form.name).slice(0, LIMITS.contactName)}\n${oneLine(form.email)}`;
+  window.location.href = `mailto:${contactEmail.value}?subject=${encodeURIComponent(t('contact.mailSubject', { subject }))}&body=${encodeURIComponent(body)}`;
+  notice.value = t('contact.opened');
 }
-useSeoMeta({ title: 'Idées — Silicium', description: 'Proposez une idée d’usage, d’interface ou de réseau à l’équipe Silicium.' });
+useSeoMeta({ title: () => t('contact.seoTitle'), description: () => t('contact.seoDescription') });
 </script>
 
 <style scoped>

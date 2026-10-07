@@ -1,14 +1,18 @@
 <template>
   <footer class="public-footer">
     <div class="marketing-container public-footer__top">
-      <div class="public-footer__brand"><BrandLogo /><p>Silicium donne à vos projets accès à plusieurs machines, puis vous rend un résultat vérifié.</p></div>
-      <div class="public-footer__links"><strong>Explorer</strong><NuxtLink to="/service">Produit</NuxtLink><NuxtLink to="/download">Télécharger le nœud</NuxtLink><NuxtLink to="/blockchain">Blockchain</NuxtLink><NuxtLink to="/about">À propos</NuxtLink><NuxtLink to="/contact">Idées</NuxtLink></div>
-      <div class="public-footer__links"><strong>Accès</strong><NuxtLink to="/auth?mode=login">Connexion</NuxtLink><NuxtLink to="/auth?mode=register">Ouvrir un compte</NuxtLink><NuxtLink to="/download">Installer une machine</NuxtLink></div>
-      <div class="public-footer__status"><span class="public-footer__status-dot"></span><div><strong>Devnet opérationnel</strong><small>Infrastructure expérimentale</small></div></div>
+      <div class="public-footer__brand"><BrandLogo /><p>{{ t('footer.tagline') }}</p></div>
+      <div class="public-footer__links"><strong>{{ t('footer.explore') }}</strong><NuxtLink to="/service">{{ t('nav.product') }}</NuxtLink><NuxtLink to="/download">{{ t('nav.downloadNode') }}</NuxtLink><NuxtLink to="/blockchain">{{ t('nav.blockchain') }}</NuxtLink><NuxtLink to="/about">{{ t('nav.about') }}</NuxtLink><NuxtLink to="/contact">{{ t('nav.ideas') }}</NuxtLink></div>
+      <div class="public-footer__links"><strong>{{ t('footer.access') }}</strong><NuxtLink to="/auth?mode=login">{{ t('auth.login') }}</NuxtLink><NuxtLink to="/auth?mode=register">{{ t('nav.signUp') }}</NuxtLink><NuxtLink to="/download">{{ t('footer.installMachine') }}</NuxtLink></div>
+      <div class="public-footer__status"><span class="public-footer__status-dot"></span><div><strong>{{ t('footer.devnet') }}</strong><small>{{ t('footer.experimental') }}</small></div></div>
     </div>
-    <div class="marketing-container public-footer__bottom"><span>© {{ new Date().getFullYear() }} Silicium Project</span><span>Conçu pour rendre le calcul vérifiable.</span></div>
+    <div class="marketing-container public-footer__bottom"><span>© {{ new Date().getFullYear() }} Silicium Project</span><span>{{ t('footer.motto') }}</span></div>
   </footer>
 </template>
+
+<script setup lang="ts">
+const { t } = useI18n();
+</script>
 
 <style scoped>
 .public-footer{margin-top:6rem;border-top:1px solid var(--border);background:rgba(235,240,237,.55)}

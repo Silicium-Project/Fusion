@@ -1,5 +1,5 @@
 <template>
-  <NuxtLink :to="to" class="brand-logo" :class="{ 'brand-logo--compact': compact }" aria-label="Silicium — Accueil">
+  <NuxtLink :to="to" class="brand-logo" :class="{ 'brand-logo--compact': compact }" :aria-label="t('nav.logoHome')">
     <img src="/brand/silicium-logo.png" alt="" class="brand-logo__mark">
     <span v-if="!compact" class="brand-logo__name">Silicium</span>
   </NuxtLink>
@@ -7,6 +7,7 @@
 
 <script setup lang="ts">
 withDefaults(defineProps<{ to?: string; compact?: boolean }>(), { to: '/', compact: false });
+const { t } = useI18n();
 </script>
 
 <style scoped>

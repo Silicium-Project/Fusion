@@ -1,34 +1,31 @@
 <template>
   <div class="about-page marketing-page">
     <section class="about-hero marketing-container">
-      <div v-reveal class="about-hero__copy"><span class="marketing-kicker">Notre modèle</span><h1 class="marketing-title">Plusieurs machines.<br><em>Un résultat pour vous.</em></h1><p class="marketing-lede">Silicium permet à plusieurs machines de travailler ensemble sur votre projet. Vous n’avez pas à gérer les détails techniques.</p></div>
-      <div v-reveal="'right'" class="about-hero__aside marketing-glass"><span class="about-hero__number">01</span><p>Vous envoyez votre projet. Le réseau s’occupe du reste. Vous récupérez le résultat.</p><span class="about-hero__line"></span><small>NOTRE MANIÈRE DE FAIRE</small></div>
+      <div v-reveal class="about-hero__copy"><span class="marketing-kicker">{{ t('about.kicker') }}</span><h1 class="marketing-title">{{ t('about.title') }}<br><em>{{ t('about.titleEm') }}</em></h1><p class="marketing-lede">{{ t('about.lede') }}</p></div>
+      <div v-reveal="'right'" class="about-hero__aside marketing-glass"><span class="about-hero__number">01</span><p>{{ t('about.aside') }}</p><span class="about-hero__line"></span><small>{{ t('about.asideTag') }}</small></div>
     </section>
 
     <section class="manifesto marketing-container marketing-section--tight">
-      <div class="manifesto__index"><span>01</span><i></i><small>MANIFESTE</small></div>
-      <div class="manifesto__lead"><span class="marketing-kicker">Ce que nous construisons</span><p>La technologie doit vous aider, pas vous demander de la comprendre d’abord.</p></div>
-      <div class="manifesto__copy"><p>Un projet arrive, puis Silicium le répartit entre plusieurs machines. Chacune fait sa part, les résultats sont contrôlés et la réponse est réunie au même endroit.</p><p>Vous voyez d’abord ce qui compte : l’avancement, le résultat et les actions possibles. Les détails restent disponibles quand vous souhaitez aller plus loin.</p></div>
+      <div class="manifesto__index"><span>01</span><i></i><small>{{ t('about.manifesto') }}</small></div>
+      <div class="manifesto__lead"><span class="marketing-kicker">{{ t('about.buildKicker') }}</span><p>{{ t('about.buildLead') }}</p></div>
+      <div class="manifesto__copy"><p v-for="paragraph in tl('about.buildText')" :key="paragraph">{{ paragraph }}</p></div>
     </section>
 
     <section id="network" class="architecture marketing-container marketing-section">
-      <div v-reveal class="marketing-section-heading"><div><span class="marketing-kicker">Qui fait quoi ?</span><h2>Chacun son rôle.<br>Tout le monde avance ensemble.</h2></div><p>Certaines machines organisent, d’autres calculent ou vérifient. Pour vous, cela reste un seul parcours.</p></div>
-      <div class="architecture__grid marketing-glass"><article v-for="(role,index) in roles" :key="role.title"><div class="architecture__top"><span class="architecture__index">0{{ index + 1 }}</span><span class="architecture__icon"><UiIcon :name="role.icon" /></span></div><span class="architecture__kicker">{{ role.kicker }}</span><h3>{{ role.title }}</h3><p>{{ role.text }}</p><small>{{ role.output }}</small></article></div>
+      <div v-reveal class="marketing-section-heading"><div><span class="marketing-kicker">{{ t('about.rolesKicker') }}</span><h2>{{ t('about.rolesTitle') }}<br>{{ t('about.rolesTitle2') }}</h2></div><p>{{ t('about.rolesText') }}</p></div>
+      <div class="architecture__grid marketing-glass"><article v-for="(role,index) in roles" :key="index"><div class="architecture__top"><span class="architecture__index">0{{ index + 1 }}</span><span class="architecture__icon"><UiIcon :name="role.icon" /></span></div><span class="architecture__kicker">{{ role.kicker }}</span><h3>{{ role.title }}</h3><p>{{ role.text }}</p><small>{{ role.output }}</small></article></div>
     </section>
 
-    <section class="values marketing-container marketing-section--tight"><article><span class="values__index">01</span><span class="marketing-kicker">Principe</span><h2>Comprendre en un coup d’œil</h2><p>L’avancement et le résultat restent lisibles sans parcourir toute la technique.</p></article><article><span class="values__index">02</span><span class="marketing-kicker">Principe</span><h2>Voir les détails quand il faut</h2><p>Les informations avancées s’ouvrent lorsque vous voulez comprendre ou vérifier.</p></article><article><span class="values__index">03</span><span class="marketing-kicker">Principe</span><h2>Faire confiance au résultat</h2><p>Chaque résultat reste relié au projet et aux machines qui ont participé.</p></article></section>
+    <section class="values marketing-container marketing-section--tight"><article v-for="(value, index) in tl<{ title: string; text: string }>('about.values')" :key="index"><span class="values__index">0{{ index + 1 }}</span><span class="marketing-kicker">{{ t('about.principle') }}</span><h2>{{ value.title }}</h2><p>{{ value.text }}</p></article></section>
   </div>
 </template>
 
 <script setup lang="ts">
 definePageMeta({ layout: 'public' });
-const roles = [
-  { kicker: 'Organiser', title: 'Coordination', text: 'Décide comment répartir le projet entre les machines disponibles.', output: 'Produit · plan de travail', icon: 'layers' },
-  { kicker: 'Calculer', title: 'Machines', text: 'Exécutent chacune une partie du projet selon leurs capacités.', output: 'Produit · résultats intermédiaires', icon: 'processor' },
-  { kicker: 'Contrôler', title: 'Vérification', text: 'Compare les résultats avant de les réunir.', output: 'Produit · contrôle', icon: 'shield' },
-  { kicker: 'Conserver', title: 'Fichiers', text: 'Garde les éléments nécessaires pour retrouver le projet et son résultat.', output: 'Produit · fichiers disponibles', icon: 'database' },
-];
-useSeoMeta({ title: 'À propos — Silicium', description: 'Découvrez comment plusieurs machines peuvent travailler ensemble sur un même projet avec Silicium.' });
+const { t, tl } = useI18n();
+const roleIcons = ['layers', 'processor', 'shield', 'database'];
+const roles = computed(() => tl<{ kicker: string; title: string; text: string; output: string }>('about.roles').map((role, index) => ({ ...role, icon: roleIcons[index] || 'layers' })));
+useSeoMeta({ title: () => t('about.seoTitle'), description: () => t('about.seoDescription') });
 </script>
 
 <style scoped>

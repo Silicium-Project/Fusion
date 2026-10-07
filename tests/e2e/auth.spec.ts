@@ -8,7 +8,7 @@ test('registration and login establish the two-token session', async ({ page }) 
   await page.goto('/auth?mode=register');
   await page.getByPlaceholder('Prénom').fill('Luis');
   await page.getByPlaceholder('Nom de famille').fill('Fernandes');
-  await page.getByPlaceholder("Nom d'utilisateur").fill('luis');
+  await page.getByPlaceholder('Nom d’utilisateur').fill('luis');
   await page.getByPlaceholder('vous@exemple.fr').fill(user.email);
   await page.getByPlaceholder('8 caractères minimum').fill('correct-password');
   await page.getByRole('button', { name: 'Créer mon compte' }).click();

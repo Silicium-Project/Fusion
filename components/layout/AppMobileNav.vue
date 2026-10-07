@@ -1,14 +1,15 @@
 <template>
-  <nav class="mobile-nav" aria-label="Navigation mobile de l’application">
+  <nav class="mobile-nav" :aria-label="t('nav.mobileNavigation')">
     <NuxtLink v-for="item in items" :key="item.to" :to="item.to" :aria-label="item.label"><UiIcon :name="item.icon"/><span>{{ item.shortLabel || item.label }}</span></NuxtLink>
   </nav>
 </template>
 
 <script setup lang="ts">
-const items = [
-  { label: 'Accueil', to: '/dashboard', icon: 'overview' }, { label: 'Mes projets', shortLabel: 'Projets', to: '/jobs', icon: 'jobs' },
-  { label: 'Nouveau calcul', shortLabel: 'Nouveau', to: '/jobs/new', icon: 'upload' }, { label: 'Machines', to: '/nodes', icon: 'nodes' }, { label: 'Compte', to: '/profile', icon: 'account' },
-];
+const { t } = useI18n();
+const items = computed(() => [
+  { label: t('nav.home'), to: '/dashboard', icon: 'overview' }, { label: t('nav.projects'), shortLabel: t('nav.projectsShort'), to: '/jobs', icon: 'jobs' },
+  { label: t('common.newJob'), shortLabel: t('nav.newShort'), to: '/jobs/new', icon: 'upload' }, { label: t('nav.machines'), to: '/nodes', icon: 'nodes' }, { label: t('nav.account'), to: '/profile', icon: 'account' },
+]);
 </script>
 
 <style scoped>

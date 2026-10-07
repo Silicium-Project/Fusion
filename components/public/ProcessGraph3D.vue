@@ -7,7 +7,7 @@
     :data-camera-target="activeNodeId"
     data-camera-position="0,0,0"
     role="img"
-    :aria-label="`Graphe 3D du réseau. La caméra se concentre sur ${activeNodeLabel}.`"
+    :aria-label="t('graph3d.aria', { node: activeNodeLabel })"
     @pointermove="handlePointerMove"
     @pointerleave="handlePointerLeave"
   >
@@ -28,19 +28,19 @@
     <div class="process-graph-3d__readout" aria-hidden="true">
       <span class="process-graph-3d__readout-dot"></span>
       <span>
-        <small>Caméra 3D · cible active</small>
+        <small>{{ t('graph3d.target') }}</small>
         <strong>{{ activeNodeLabel }}</strong>
       </span>
     </div>
 
     <div v-if="!ready" class="process-graph-3d__loading" aria-hidden="true">
       <span class="process-graph-3d__loading-orbit"></span>
-      <span>Initialisation du réseau 3D</span>
+      <span>{{ t('graph3d.loading') }}</span>
     </div>
 
     <div v-if="fallback" class="process-graph-3d__fallback">
-      <strong>Le réseau 3D n’est pas disponible dans ce navigateur.</strong>
-      <span>La lecture du parcours reste accessible dans le panneau à gauche.</span>
+      <strong>{{ t('graph3d.unsupported') }}</strong>
+      <span>{{ t('graph3d.fallback') }}</span>
     </div>
   </div>
 </template>
@@ -64,13 +64,14 @@ const props = defineProps<{
   activePhase: number;
 }>();
 
+const { t } = useI18n();
 const root = ref<HTMLElement | null>(null);
 const canvas = ref<HTMLCanvasElement | null>(null);
 const ready = ref(false);
 const fallback = ref(false);
 
 const activeNodeLabel = computed(() => {
-  return props.nodes.find(node => node.id === props.activeNodeId)?.label || 'Réseau';
+  return props.nodes.find(node => node.id === props.activeNodeId)?.label || t('graph3d.network');
 });
 
 type NodeRuntime = {

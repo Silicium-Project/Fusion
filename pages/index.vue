@@ -2,84 +2,80 @@
   <div class="home-page marketing-page">
     <section class="home-hero marketing-container">
       <div v-reveal="'left'" class="home-hero__copy">
-        <span class="marketing-kicker">Calcul distribué, simplement</span>
-        <h1 class="marketing-title">Ne soyez plus limité<br><em>par votre matériel.</em></h1>
-        <p class="marketing-lede">Envoyez votre projet. Silicium mobilise plusieurs machines et vous rend un résultat contrôlé.</p>
+        <span class="marketing-kicker">{{ t('home.kicker') }}</span>
+        <h1 class="marketing-title">{{ t('home.title') }}<br><em>{{ t('home.titleEm') }}</em></h1>
+        <p class="marketing-lede">{{ t('home.lede') }}</p>
         <div class="marketing-action-row">
-          <UiButton :to="primaryTarget" size="large" icon="arrow">{{ isAuthenticated ? 'Ouvrir mon espace' : 'Commencer maintenant' }}</UiButton>
-          <UiButton to="/download" variant="secondary" size="large">Installer un nœud</UiButton>
+          <UiButton :to="primaryTarget" size="large" icon="arrow">{{ isAuthenticated ? t('home.openSpace') : t('home.start') }}</UiButton>
+          <UiButton to="/download" variant="secondary" size="large">{{ t('common.installNode') }}</UiButton>
         </div>
-        <div class="home-hero__meta" aria-label="Engagements Silicium">
-          <span><i>01</i>Un seul envoi</span>
-          <span><i>02</i>Plusieurs machines</span>
-          <span><i>03</i>Un résultat contrôlé</span>
+        <div class="home-hero__meta" :aria-label="t('home.commitments')">
+          <span v-for="(item, index) in tl('home.meta')" :key="item"><i>0{{ index + 1 }}</i>{{ item }}</span>
         </div>
       </div>
       <GlassNetworkPanel v-reveal="'right'" />
     </section>
 
-    <section class="home-signal marketing-container marketing-glass" aria-label="Principes de Silicium">
-      <div class="home-signal__lead"><span class="marketing-kicker">Le principe</span><strong>Votre projet ne dépend plus d’une seule machine.</strong></div>
-      <div class="home-signal__point"><span>01</span><p>Envoyez votre projet une seule fois.</p></div>
-      <div class="home-signal__point"><span>02</span><p>Le réseau trouve les machines disponibles.</p></div>
-      <div class="home-signal__point"><span>03</span><p>Récupérez un résultat vérifié.</p></div>
+    <section class="home-signal marketing-container marketing-glass" :aria-label="t('home.principles')">
+      <div class="home-signal__lead"><span class="marketing-kicker">{{ t('home.principleKicker') }}</span><strong>{{ t('home.principleLead') }}</strong></div>
+      <div v-for="(point, index) in tl('home.points')" :key="point" class="home-signal__point"><span>0{{ index + 1 }}</span><p>{{ point }}</p></div>
     </section>
 
     <section class="home-process marketing-container marketing-section">
       <div v-reveal class="marketing-section-heading">
-        <div><span class="marketing-kicker">Comment ça marche</span><h2>Vous envoyez.<br>Le réseau travaille.</h2></div>
-        <p>Silicium répartit automatiquement votre projet, contrôle les résultats et vous rend une réponse claire.</p>
+        <div><span class="marketing-kicker">{{ t('home.howKicker') }}</span><h2>{{ t('home.howTitle') }}<br>{{ t('home.howTitle2') }}</h2></div>
+        <p>{{ t('home.howText') }}</p>
       </div>
       <ProcessFlow />
     </section>
 
     <section class="home-chain marketing-container marketing-section--tight">
       <div v-reveal="'left'" class="home-chain__copy">
-        <span class="marketing-kicker">Blockchain et paiements</span>
-        <h2>Votre résultat, avec<br><em>une preuve visible.</em></h2>
-        <p>La blockchain garde une trace des paiements et des contrôles liés à votre projet. Vos fichiers restent dans le réseau.</p>
-        <ul><li><UiIcon name="shield" />Une trace du projet</li><li><UiIcon name="wallet" />Des paiements clairs</li><li><UiIcon name="check" />Vos clés restent chez vous</li></ul>
-        <UiButton to="/blockchain" variant="secondary" icon="arrow">Voir comment ça marche</UiButton>
+        <span class="marketing-kicker">{{ t('home.chainKicker') }}</span>
+        <h2>{{ t('home.chainTitle') }}<br><em>{{ t('home.chainTitleEm') }}</em></h2>
+        <p>{{ t('home.chainText') }}</p>
+        <ul><li v-for="(item, index) in tl('home.chainItems')" :key="item"><UiIcon :name="['shield', 'wallet', 'check'][index] || 'check'" />{{ item }}</li></ul>
+        <UiButton to="/blockchain" variant="secondary" icon="arrow">{{ t('home.chainCta') }}</UiButton>
       </div>
       <OnchainLedger v-reveal="'right'" compact :status="status?.blockchain" />
     </section>
 
     <section class="home-receipt marketing-container marketing-section--tight">
       <div v-reveal="'left'" class="home-receipt__visual marketing-glass">
-        <header class="home-receipt__bar"><span><i></i><i></i><i></i></span><strong>PROJET / RÉSULTAT</strong><small>EN DIRECT</small></header>
+        <header class="home-receipt__bar"><span><i></i><i></i><i></i></span><strong>{{ t('home.receiptBar') }}</strong><small>{{ t('home.receiptLive') }}</small></header>
         <div class="home-receipt__body">
-          <div class="home-receipt__headline"><div><span class="marketing-kicker">Résultat vérifiable</span><strong>Le résultat suit son origine</strong></div><span class="home-receipt__check"><UiIcon name="check" /></span></div>
-          <div class="home-receipt__progress"><span>Avancement du projet</span><strong>Visible dans votre espace</strong><div><i></i></div></div>
+          <div class="home-receipt__headline"><div><span class="marketing-kicker">{{ t('home.receiptKicker') }}</span><strong>{{ t('home.receiptTitle') }}</strong></div><span class="home-receipt__check"><UiIcon name="check" /></span></div>
+          <div class="home-receipt__progress"><span>{{ t('home.receiptProgress') }}</span><strong>{{ t('home.receiptProgressValue') }}</strong><div><i></i></div></div>
           <div class="home-receipt__rows">
-            <div><span><UiIcon name="layers" /></span><p><strong>Projet réparti</strong><small>Les parties sont attribuées aux machines disponibles.</small></p><b>ÉTAPE</b></div>
-            <div><span><UiIcon name="shield" /></span><p><strong>Résultats contrôlés</strong><small>Les contrôles restent reliés à chaque partie.</small></p><b>CONTRÔLE</b></div>
-            <div><span><UiIcon name="result" /></span><p><strong>Résultat disponible</strong><small>Le suivi et les détails restent accessibles.</small></p><b class="home-receipt__valid">SUIVI</b></div>
+            <div v-for="(row, index) in receiptRows" :key="row.title"><span><UiIcon :name="['layers', 'shield', 'result'][index] || 'check'" /></span><p><strong>{{ row.title }}</strong><small>{{ row.text }}</small></p><b :class="{ 'home-receipt__valid': index === 2 }">{{ row.tag }}</b></div>
           </div>
         </div>
       </div>
       <div v-reveal="'right'" class="home-receipt__copy">
-        <span class="marketing-kicker">Suivi en clair</span>
-        <h2>Vous voyez ce qui<br><em>se passe.</em></h2>
-        <p>L’avancement, le résultat et les informations utiles sont réunis au même endroit.</p>
-        <ul><li><UiIcon name="check" />Une vue claire de l’avancement</li><li><UiIcon name="check" />Les informations utiles au bon moment</li><li><UiIcon name="check" />Un résultat dont l’origine est visible</li></ul>
-        <UiButton to="/about" variant="secondary" icon="arrow">Découvrir notre approche</UiButton>
+        <span class="marketing-kicker">{{ t('home.followKicker') }}</span>
+        <h2>{{ t('home.followTitle') }}<br><em>{{ t('home.followTitleEm') }}</em></h2>
+        <p>{{ t('home.followText') }}</p>
+        <ul><li v-for="item in tl('home.followItems')" :key="item"><UiIcon name="check" />{{ item }}</li></ul>
+        <UiButton to="/about" variant="secondary" icon="arrow">{{ t('home.followCta') }}</UiButton>
       </div>
     </section>
 
     <section v-reveal class="home-cta marketing-container marketing-glass">
-      <div><span class="marketing-kicker">Prêt à essayer ?</span><h2>Faites avancer vos projets<br><em>avec le réseau.</em></h2><p>Envoyez votre projet et laissez plusieurs machines se partager le travail.</p></div>
-      <UiButton :to="primaryTarget" size="large" icon="arrow">{{ isAuthenticated ? 'Accéder à mon espace' : 'Commencer maintenant' }}</UiButton>
+      <div><span class="marketing-kicker">{{ t('home.ctaKicker') }}</span><h2>{{ t('home.ctaTitle') }}<br><em>{{ t('home.ctaTitleEm') }}</em></h2><p>{{ t('home.ctaText') }}</p></div>
+      <UiButton :to="primaryTarget" size="large" icon="arrow">{{ isAuthenticated ? t('home.ctaSpace') : t('home.start') }}</UiButton>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
 definePageMeta({ layout: 'public' });
+const { t, tl } = useI18n();
 const { isAuthenticated } = useSession();
 const { status, refresh } = useSystemStatus();
+const receiptRows = computed(() => tl<{ title: string; text: string; tag: string }>('home.receiptRows'));
 const primaryTarget = computed(() => isAuthenticated.value ? '/dashboard' : '/auth?mode=register');
 onMounted(() => { refresh(); });
-useSeoMeta({ title: 'Silicium — Plus de puissance pour vos projets', description: 'Silicium répartit vos calculs sur un réseau de machines et vous rend des résultats vérifiés.' });
+useSeoMeta({ title: () => t('home.seoTitle'), description: () => t('home.seoDescription') });
 </script>
 
 <style scoped>

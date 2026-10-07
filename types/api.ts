@@ -1,4 +1,4 @@
-import type { DocumentIndexSummary } from '~/utils/documents';
+import type { CollectionDocument, DocumentIndexSummary } from '~/utils/documents';
 
 export type JobStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'expired' | string;
 
@@ -222,6 +222,8 @@ export interface JobDashboard {
   resultUrl: string;
   /** Documents read and files skipped, once a document search is finished. */
   documentIndex?: DocumentIndexSummary;
+  /** Every document a search of this job covers (the whole collection). */
+  collectionDocuments?: CollectionDocument[] | null;
   diagnostics?: Record<string, unknown>;
   summary?: {
     success?: boolean;

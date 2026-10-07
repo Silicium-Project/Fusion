@@ -21,12 +21,13 @@ const firstPartyRoutes: RouteCase[] = [
   { path: '/jobs/1/result', heading: 'Rendu architecture', authenticated: true, canonicalPath: '/jobs/1' },
   { path: '/network', heading: 'Santé du réseau', authenticated: true },
   { path: '/nodes', heading: 'Machines', authenticated: true },
+  { path: '/workloads', heading: 'Types de calcul', authenticated: true },
   { path: '/profile', heading: 'Paramètres', authenticated: true },
 ];
 
-const knownRoute = /^(?:\/|\/service|\/blockchain|\/service\/downloads\/(?:windows|windows-dev|linux-dev)|\/download|\/about|\/contact|\/auth|\/dashboard|\/jobs|\/jobs\/new|\/jobs\/\d+(?:\/dashboard|\/result)?|\/network|\/nodes|\/profile)$/;
+const knownRoute = /^(?:\/|\/service|\/blockchain|\/service\/downloads\/(?:windows|windows-dev|linux-dev)|\/download|\/about|\/contact|\/auth|\/dashboard|\/jobs|\/jobs\/new|\/jobs\/\d+(?:\/dashboard|\/result)?|\/network|\/nodes|\/workloads|\/profile)$/;
 
-// This test opens all 19 routes one after the other: about 16 s on a fast
+// This test opens all 20 routes one after the other: about 16 s on a fast
 // machine, more than the default 30 s on the shared CI runner.
 test('every first-party route and internal link has a canonical destination', async ({ page }) => {
   test.setTimeout(120_000);
@@ -49,7 +50,7 @@ test('every first-party route and internal link has a canonical destination', as
     hrefs.push(await privatePage.locator('a[href]').evaluateAll(anchors => anchors.map(anchor => anchor.getAttribute('href')).filter((href): href is string => Boolean(href))));
   }
 
-  const invalid = [...new Set(hrefs.flatMap(items => items).map(href => new URL(href, 'http://127.0.0.1:3001')).filter(url => url.origin === 'http://127.0.0.1:3001' && !url.pathname.startsWith('/downloads/') && !url.pathname.startsWith('/api/') && !knownRoute.test(url.pathname)).map(url => url.pathname))];
+  const invalid = [...new Set(hrefs.flatMap(items => items).map(href => new URL(href, 'http://127.0.0.1:3001')).filter(url => url.origin === 'http://127.0.0.1:3001' && !url.pathname.startsWith('/downloads/') && !url.pathname.startsWith('/examples/') && !url.pathname.startsWith('/api/') && !knownRoute.test(url.pathname)).map(url => url.pathname))];
   expect(invalid).toEqual([]);
   await privatePage.close();
 });

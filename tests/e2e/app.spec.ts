@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => { await mockAPI(page); await authenticate(pa
 for (const pageCase of [
   { path: '/dashboard', heading: 'Accueil' }, { path: '/jobs', heading: 'Mes projets' },
   { path: '/jobs/new', heading: 'Lancer un calcul' }, { path: '/jobs/1', heading: 'Rendu architecture' },
-  { path: '/network', heading: 'Santé du réseau' }, { path: '/nodes', heading: 'Machines' }, { path: '/profile', heading: 'Paramètres' },
+  { path: '/network', heading: 'Santé du réseau' }, { path: '/nodes', heading: 'Machines' }, { path: '/workloads', heading: 'Types de calcul' }, { path: '/profile', heading: 'Paramètres' },
 ]) {
   test(`${pageCase.path} renders without browser errors`, async ({ page }) => {
     const errors: string[] = [];
@@ -160,11 +160,81 @@ test('a finished document search answers questions with the source of each passa
   await page.goto('/jobs/1');
   await expect(page.getByText('1 document lu, 40 passages.', { exact: false })).toBeVisible();
   await expect(page.getByText('scan.pdf')).toBeVisible();
-  await page.getByPlaceholder('Pose ta question, par exemple : comment résilier le contrat ?').fill('comment résilier le contrat ?');
+  await page.getByPlaceholder('Posez votre question, par exemple : comment résilier le contrat ?').fill('comment résilier le contrat ?');
   await page.getByRole('button', { name: 'Chercher' }).click();
   await expect(page.getByText('contrat.pdf — page 12')).toBeVisible();
   await expect(page.locator('mark', { hasText: 'résiliation' })).toBeVisible();
   expect(asked).toBe('comment résilier le contrat ?');
   await expect(page.getByRole('link', { name: 'Ajouter des documents' })).toHaveAttribute('href', /collection=site-docs-1/);
   await expect(page.getByRole('button', { name: 'Télécharger', exact: true })).toHaveCount(0);
+});
+
+test('a document search lists the documents searched and scrolls past the first five passages', async ({ page }) => {
+  const documentJob = { ...job, title: 'Cours de droit', workload: 'ai/embedding/multilingual-e5-small', collectionId: 'site-docs-1' };
+  const collectionDocuments = Array.from({ length: 10 }, (_, index) => ({ jobId: 1, name: `dossier/chapitre-${String(index + 1).padStart(2, '0')}.pdf`, pages: index + 2, passages: 10 }));
+  await page.route('**/api/jobs/1/dashboard', route => route.fulfill({ json: {
+    ...dashboard, job: documentJob, resultReady: true,
+    summary: { success: true, fragmentCount: 1, fragments: [{ fragment_index: 0, status: 'completed', items: 100 }] },
+    documentIndex: { passageCount: 100, documents: collectionDocuments.slice(0, 1), skipped: [] },
+    collectionDocuments,
+  } }));
+  const text = 'Le préavis est d’un mois pour un logement meublé. '.repeat(12);
+  let asked = 0;
+  await page.route('**/api/jobs/1/search?*', route => {
+    asked = Number(new URL(route.request().url()).searchParams.get('k'));
+    return route.fulfill({ json: { searchedJobs: 2, hits: Array.from({ length: 12 }, (_, index) => ({ jobId: 1, passageId: index, document: 'dossier/chapitre-01.pdf', page: index + 1, text, score: 0.9 - index / 100 })) } });
+  });
+  await page.goto('/jobs/1');
+  const sources = page.getByRole('region', { name: /Recherche dans/ });
+  await expect(sources).toContainText('10 documents');
+  await expect(sources.getByRole('button')).toHaveCount(9); // 8 documents + "Voir les 10 documents"
+  await sources.getByRole('button', { name: 'Voir les 10 documents' }).click();
+  await expect(sources.getByRole('button', { name: /chapitre-10\.pdf/ })).toBeVisible();
+
+  const before = await page.evaluate(() => document.documentElement.scrollHeight);
+  await page.getByPlaceholder('Posez votre question, par exemple : comment résilier le contrat ?').fill('quel est le préavis ?');
+  await page.getByRole('button', { name: 'Chercher' }).click();
+  const list = page.getByRole('list', { name: 'Passages trouvés' });
+  await expect(list.getByRole('listitem')).toHaveCount(12);
+  expect(asked).toBe(20);
+  const box = await list.evaluate(element => ({ client: element.clientHeight, scroll: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
+  expect(box.overflow).toBe('auto');
+  expect(box.scroll).toBeGreaterThan(box.client);
+  const fifth = await list.getByRole('listitem').nth(4).evaluate((item, ) => item.getBoundingClientRect().bottom - item.parentElement!.getBoundingClientRect().top);
+  expect(Math.abs(fifth - box.client)).toBeLessThan(4);
+  const after = await page.evaluate(() => document.documentElement.scrollHeight);
+  expect(after - before).toBeLessThan(box.client + 200);
+});
+
+test('the site switches to English and German, and the API is asked in that language', async ({ page }) => {
+  const languages: string[] = [];
+  await page.route('**/api/jobs?*', async route => { languages.push(route.request().headers()['accept-language'] || ''); await route.fallback(); });
+  await page.goto('/dashboard');
+  await page.getByRole('button', { name: 'English' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Home', exact: true })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await page.goto('/jobs');
+  await expect(page.getByRole('heading', { name: 'My projects', exact: true })).toBeVisible();
+  await expect.poll(() => languages.at(-1)).toBe('en');
+  await page.getByRole('button', { name: 'Deutsch' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Meine Projekte', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Meine Projekte', exact: true })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'de');
+});
+
+test('the job types page explains each type and offers its example file', async ({ page }) => {
+  await page.goto('/workloads');
+  for (const name of ['Rendu d’image', 'Empreinte SHA-256', 'Recherche dans mes documents']) {
+    await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
+  }
+  for (const file of ['silicium-demo-scene.cfg', 'silicium-hash-example.txt', 'silicium-documents-example.zip']) {
+    const link = page.locator(`a[href="/examples/${file}"]`);
+    await expect(link).toHaveAttribute('download', file);
+    const response = await page.request.get(`/examples/${file}`);
+    expect(response.ok()).toBe(true);
+  }
+  await page.locator('#sha256').getByRole('link', { name: 'Essayer avec ce type' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs/new' && url.searchParams.get('workload') === 'calcul/integrity/sha256');
+  await expect(page.getByRole('combobox').first()).toHaveValue('calcul/integrity/sha256');
 });

@@ -1,14 +1,14 @@
 <template>
   <aside class="app-sidebar">
     <div class="app-sidebar__brand"><BrandLogo /></div>
-    <nav class="app-sidebar__nav" aria-label="Navigation de l’application">
-      <p>Votre espace</p>
+    <nav class="app-sidebar__nav" :aria-label="t('nav.appNavigation')">
+      <p>{{ t('nav.yourSpace') }}</p>
       <NuxtLink v-for="item in primary" :key="item.to" :to="item.to" :title="item.label" :aria-label="item.label"><UiIcon :name="item.icon"/><span>{{ item.label }}</span></NuxtLink>
-      <p>Ressources</p>
+      <p>{{ t('nav.resources') }}</p>
       <NuxtLink v-for="item in infrastructure" :key="item.to" :to="item.to" :title="item.label" :aria-label="item.label"><UiIcon :name="item.icon"/><span>{{ item.label }}</span></NuxtLink>
     </nav>
     <div class="app-sidebar__bottom">
-      <UiButton to="/jobs/new" icon="upload" title="Nouveau calcul" aria-label="Nouveau calcul"><span class="app-sidebar__network-label">Nouveau calcul</span></UiButton>
+      <UiButton to="/jobs/new" icon="upload" :title="t('common.newJob')" :aria-label="t('common.newJob')"><span class="app-sidebar__network-label">{{ t('common.newJob') }}</span></UiButton>
       <NuxtLink to="/profile" class="app-sidebar__profile"><span>{{ initials }}</span><div><strong>{{ displayName }}</strong><small>{{ user?.email }}</small></div><UiIcon name="chevron"/></NuxtLink>
     </div>
   </aside>
@@ -16,8 +16,9 @@
 
 <script setup lang="ts">
 const { user, displayName, initials } = useSession();
-const primary = [{ label: 'Accueil', to: '/dashboard', icon: 'overview' }, { label: 'Mes projets', to: '/jobs', icon: 'jobs' }];
-const infrastructure = [{ label: 'Machines', to: '/nodes', icon: 'nodes' }, { label: 'Télécharger le nœud', to: '/download', icon: 'download' }, { label: 'Santé du réseau', to: '/network', icon: 'network' }];
+const { t } = useI18n();
+const primary = computed(() => [{ label: t('nav.home'), to: '/dashboard', icon: 'overview' }, { label: t('nav.projects'), to: '/jobs', icon: 'jobs' }]);
+const infrastructure = computed(() => [{ label: t('nav.machines'), to: '/nodes', icon: 'nodes' }, { label: t('nav.workloads'), to: '/workloads', icon: 'layers' }, { label: t('nav.downloadNode'), to: '/download', icon: 'download' }, { label: t('nav.networkHealth'), to: '/network', icon: 'network' }]);
 </script>
 
 <style scoped>

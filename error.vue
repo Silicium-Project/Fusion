@@ -4,18 +4,18 @@
     <main class="content-width">
       <section class="error-card surface">
         <div class="error-card__mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <span class="error-page__code">{{ error?.statusCode || 500 }} · {{ error?.statusCode === 404 ? 'Ressource introuvable' : 'Incident isolé' }}</span>
-        <h1>{{ error?.statusCode === 404 ? 'Cette page n’existe pas.' : 'Quelque chose s’est interrompu.' }}</h1>
-        <p>{{ error?.statusCode === 404 ? 'Le lien a peut-être changé. Les chemins utiles restent accessibles depuis les points d’entrée ci-dessous.' : 'L’incident a été isolé. Revenez à un point connu pour continuer.' }}</p>
+        <span class="error-page__code">{{ error?.statusCode || 500 }} · {{ error?.statusCode === 404 ? t('errorPage.notFound') : t('errorPage.incident') }}</span>
+        <h1>{{ error?.statusCode === 404 ? t('errorPage.notFoundTitle') : t('errorPage.incidentTitle') }}</h1>
+        <p>{{ error?.statusCode === 404 ? t('errorPage.notFoundText') : t('errorPage.incidentText') }}</p>
         <div class="cluster">
-          <UiButton to="/" icon="arrow">Retour à l’accueil</UiButton>
-          <UiButton to="/service" variant="secondary">Voir le produit</UiButton>
-          <UiButton v-if="error?.statusCode !== 404" variant="secondary" icon="refresh" @click="clearError({ redirect: '/' })">Réessayer</UiButton>
+          <UiButton to="/" icon="arrow">{{ t('auth.backHome') }}</UiButton>
+          <UiButton to="/service" variant="secondary">{{ t('errorPage.seeProduct') }}</UiButton>
+          <UiButton v-if="error?.statusCode !== 404" variant="secondary" icon="refresh" @click="clearError({ redirect: '/' })">{{ t('common.retry') }}</UiButton>
         </div>
-        <nav class="error-card__paths" aria-label="Raccourcis de navigation">
-          <NuxtLink to="/about"><span>Architecture</span><UiIcon name="arrow" /></NuxtLink>
-          <NuxtLink to="/contact"><span>Contact</span><UiIcon name="arrow" /></NuxtLink>
-          <NuxtLink to="/auth?mode=login"><span>Accéder à l’espace</span><UiIcon name="arrow" /></NuxtLink>
+        <nav class="error-card__paths" :aria-label="t('errorPage.shortcuts')">
+          <NuxtLink to="/about"><span>{{ t('errorPage.architecture') }}</span><UiIcon name="arrow" /></NuxtLink>
+          <NuxtLink to="/contact"><span>{{ t('errorPage.contact') }}</span><UiIcon name="arrow" /></NuxtLink>
+          <NuxtLink to="/auth?mode=login"><span>{{ t('errorPage.space') }}</span><UiIcon name="arrow" /></NuxtLink>
         </nav>
       </section>
     </main>
@@ -25,6 +25,7 @@
 
 <script setup lang="ts">
 defineProps<{ error: { statusCode?: number; message?: string } }>();
+const { t } = useI18n();
 </script>
 
 <style scoped>

@@ -2,28 +2,30 @@
   <header class="public-header">
     <div class="public-header__inner marketing-container">
       <BrandLogo />
-      <nav class="public-header__nav" aria-label="Navigation principale">
+      <nav class="public-header__nav" :aria-label="t('nav.main')">
         <NuxtLink v-for="item in navigation" :key="item.to" :to="item.to" :class="{ 'is-active': isCurrent(item) }"><span>{{ item.index }}</span>{{ item.label }}</NuxtLink>
       </nav>
       <div class="public-header__actions">
         <ReleaseBadge :channel="releaseChannel" :version="releaseVersion" :build="releaseBuild" />
-        <UiButton v-if="isAuthenticated" to="/dashboard" variant="ghost" size="small">Ouvrir l’espace</UiButton>
+        <LocaleSwitcher />
+        <UiButton v-if="isAuthenticated" to="/dashboard" variant="ghost" size="small">{{ t('nav.openSpace') }}</UiButton>
         <UiButton v-if="isAuthenticated" to="/profile" variant="secondary" size="small" icon="account">{{ displayName }}</UiButton>
         <template v-else>
-          <UiButton to="/auth?mode=login" variant="ghost" size="small">Se connecter</UiButton>
-          <UiButton to="/auth?mode=register" size="small">Ouvrir un compte</UiButton>
+          <UiButton to="/auth?mode=login" variant="ghost" size="small">{{ t('nav.signIn') }}</UiButton>
+          <UiButton to="/auth?mode=register" size="small">{{ t('nav.signUp') }}</UiButton>
         </template>
       </div>
-      <button class="public-header__menu" type="button" :aria-label="menuOpen ? 'Fermer le menu' : 'Ouvrir le menu'" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
+      <button class="public-header__menu" type="button" :aria-label="menuOpen ? t('nav.closeMenu') : t('nav.openMenu')" :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
         <UiIcon :name="menuOpen ? 'x' : 'menu'" />
       </button>
     </div>
-    <nav v-if="menuOpen" class="public-header__mobile" aria-label="Navigation mobile">
+    <nav v-if="menuOpen" class="public-header__mobile" :aria-label="t('nav.mobile')">
       <NuxtLink v-for="item in navigation" :key="item.to" :to="item.to"><span><small>{{ item.index }}</small>{{ item.label }}</span><UiIcon name="chevron" /></NuxtLink>
       <div class="public-header__mobile-actions">
-        <UiButton v-if="isAuthenticated" to="/dashboard">Ouvrir l’espace</UiButton>
+        <LocaleSwitcher class="public-header__mobile-locale" />
+        <UiButton v-if="isAuthenticated" to="/dashboard">{{ t('nav.openSpace') }}</UiButton>
         <UiButton v-if="isAuthenticated" to="/profile" variant="secondary">{{ displayName }}</UiButton>
-        <template v-else><UiButton to="/auth?mode=login" variant="secondary">Se connecter</UiButton><UiButton to="/auth?mode=register">Ouvrir un compte</UiButton></template>
+        <template v-else><UiButton to="/auth?mode=login" variant="secondary">{{ t('nav.signIn') }}</UiButton><UiButton to="/auth?mode=register">{{ t('nav.signUp') }}</UiButton></template>
       </div>
     </nav>
   </header>
@@ -37,14 +39,15 @@ const releaseChannel = String(config.public.releaseChannel || 'dev');
 const releaseVersion = String(config.public.releaseVersion || 'unknown');
 const releaseBuild = String(config.public.releaseBuild || 'local');
 const { isAuthenticated, displayName, loadUser } = useSession();
-const navigation = [
-  { index: '01', label: 'Produit', to: '/service' },
-  { index: '02', label: 'Télécharger', to: '/download' },
-  { index: '03', label: 'Réseau', to: '/about#network' },
-  { index: '04', label: 'Blockchain', to: '/blockchain' },
-  { index: '05', label: 'À propos', to: '/about' },
-  { index: '06', label: 'Idées', to: '/contact' },
-];
+const { t } = useI18n();
+const navigation = computed(() => [
+  { index: '01', label: t('nav.product'), to: '/service' },
+  { index: '02', label: t('nav.download'), to: '/download' },
+  { index: '03', label: t('nav.network'), to: '/about#network' },
+  { index: '04', label: t('nav.blockchain'), to: '/blockchain' },
+  { index: '05', label: t('nav.about'), to: '/about' },
+  { index: '06', label: t('nav.ideas'), to: '/contact' },
+]);
 function isCurrent(item: { to: string }) {
   const target = new URL(item.to, 'http://silicium.local');
   if (target.pathname !== route.path) return false;
@@ -70,7 +73,7 @@ onMounted(() => { if (isAuthenticated.value) loadUser().catch(() => undefined); 
 .public-header__mobile{display:none;width:min(calc(100% - 2rem),1240px);margin:.7rem auto 1rem;padding:.65rem;border:1px solid var(--glass-edge);border-radius:1.25rem;background:var(--glass-solid);box-shadow:var(--glass-inset),var(--glass-shadow);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px)}
 .public-header__mobile>a{display:flex;align-items:center;justify-content:space-between;padding:.95rem .7rem;border-bottom:1px solid var(--border);font-size:.87rem;font-weight:730}
 .public-header__mobile>a span{display:flex;align-items:center;gap:.75rem}.public-header__mobile>a small{color:var(--ink-400);font-family:var(--font-mono);font-size:.58rem;font-weight:500}.public-header__mobile>a svg{width:.9rem;color:var(--ink-500)}
-.public-header__mobile-actions{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;padding:.9rem .25rem .15rem}
-@media(max-width:900px){.public-header__inner{min-height:4.35rem}.public-header__nav,.public-header__actions{display:none}.public-header__menu{display:grid}.public-header__mobile{display:block}}
+.public-header__mobile-actions{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;padding:.9rem .25rem .15rem}.public-header__mobile-locale{grid-column:1/-1;justify-self:start}
+@media(max-width:900px){.public-header__inner{min-height:4.35rem}.public-header__nav,.public-header__actions{display:none}.public-header__menu{display:grid;justify-self:end}.public-header__mobile{display:block}}
 @media(max-width:520px){.public-header__mobile{width:calc(100% - 1.5rem)}.public-header__mobile-actions{grid-template-columns:1fr}.public-header__inner{min-height:4.1rem}}
 </style>

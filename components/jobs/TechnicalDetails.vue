@@ -8,21 +8,24 @@
 import type { JobDashboard } from '~/types/api';
 import { compactIdentifier, formatMilliseconds, formatPerformanceMultiple, formatPerformancePercent } from '~/utils/format';
 const props = defineProps<{ dashboard: JobDashboard }>();
+const { t } = useI18n();
+/** A known priority in the user's language, else the raw value. */
+const priorityLabel = (priority?: string) => (priority && ['low', 'normal', 'high', 'urgent'].includes(priority) ? t(`jobForm.priorities.${priority}`) : priority || '—');
 const items = computed(() => {
   const performance = props.dashboard.summary?.performance;
   return [
-    { label: 'Identifiant réseau', value: props.dashboard.job.siliciumJobId || '—', mono: true },
-    { label: 'Charge', value: props.dashboard.job.workload || '—', mono: false },
-    { label: 'Priorité', value: props.dashboard.job.priority || '—', mono: false },
-    { label: 'Temps de calcul', value: formatMilliseconds(performance?.compute_ms), mono: true },
-    { label: 'Temps réseau / coordination', value: formatMilliseconds(performance?.network_ms), mono: true },
-    { label: 'Calcul / temps total', value: formatPerformancePercent(performance?.compute_to_total_ratio), mono: true },
-    { label: 'Calcul / réseau', value: formatPerformanceMultiple(performance?.compute_to_network_ratio), mono: true },
-    { label: 'Unités facturables', value: String(props.dashboard.job.billableWorkUnits || 0), mono: true },
-    { label: 'Receipt hash', value: compactIdentifier(props.dashboard.job.computeReceiptHash, 12, 8), mono: true },
-    { label: 'Programme Solana', value: compactIdentifier(props.dashboard.devnet?.programId, 12, 8), mono: true },
-    { label: 'Transactions Devnet', value: String(props.dashboard.devnet?.signatures?.length || 0), mono: true },
-    { label: 'RPC', value: props.dashboard.devnet?.rpc || '—', mono: true },
+    { label: t('technical.networkId'), value: props.dashboard.job.siliciumJobId || '—', mono: true },
+    { label: t('technical.workload'), value: props.dashboard.job.workload || '—', mono: false },
+    { label: t('technical.priority'), value: priorityLabel(props.dashboard.job.priority), mono: false },
+    { label: t('technical.computeTime'), value: formatMilliseconds(performance?.compute_ms), mono: true },
+    { label: t('technical.networkTime'), value: formatMilliseconds(performance?.network_ms), mono: true },
+    { label: t('technical.computeShare'), value: formatPerformancePercent(performance?.compute_to_total_ratio), mono: true },
+    { label: t('technical.computeRatio'), value: formatPerformanceMultiple(performance?.compute_to_network_ratio), mono: true },
+    { label: t('technical.billable'), value: String(props.dashboard.job.billableWorkUnits || 0), mono: true },
+    { label: t('technical.receipt'), value: compactIdentifier(props.dashboard.job.computeReceiptHash, 12, 8), mono: true },
+    { label: t('technical.program'), value: compactIdentifier(props.dashboard.devnet?.programId, 12, 8), mono: true },
+    { label: t('technical.transactions'), value: String(props.dashboard.devnet?.signatures?.length || 0), mono: true },
+    { label: t('technical.rpc'), value: props.dashboard.devnet?.rpc || '—', mono: true },
   ];
 });
 </script>

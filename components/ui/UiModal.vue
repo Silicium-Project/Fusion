@@ -3,7 +3,7 @@
     <Transition name="modal">
       <div v-if="open" class="modal-backdrop" role="presentation" @mousedown.self="$emit('close')">
         <section class="modal-panel" role="dialog" aria-modal="true" :aria-labelledby="titleId">
-          <header class="modal-panel__header"><h2 :id="titleId">{{ title }}</h2><button type="button" aria-label="Fermer" @click="$emit('close')"><UiIcon name="x" /></button></header>
+          <header class="modal-panel__header"><h2 :id="titleId">{{ title }}</h2><button type="button" :aria-label="t('common.close')" @click="$emit('close')"><UiIcon name="x" /></button></header>
           <div class="modal-panel__body"><slot /></div>
         </section>
       </div>
@@ -13,6 +13,7 @@
 
 <script setup lang="ts">
 const props = defineProps<{ open: boolean; title: string }>();
+const { t } = useI18n();
 const titleId = `modal-${Math.random().toString(36).slice(2)}`;
 
 function onKeydown(event: KeyboardEvent) {

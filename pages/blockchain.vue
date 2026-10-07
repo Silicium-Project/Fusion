@@ -2,25 +2,25 @@
   <div class="blockchain-page marketing-page">
     <section class="chain-hero marketing-container">
       <div v-reveal="'left'" class="chain-hero__copy">
-        <span class="marketing-kicker">Blockchain et paiements</span>
-        <h1 class="marketing-title">Du calcul au paiement,<br><em>tout reste visible.</em></h1>
-        <p class="marketing-lede">Silicium utilise la blockchain pour garder une trace des paiements et vérifier ce qui s’est passé. Vos fichiers restent dans le réseau.</p>
+        <span class="marketing-kicker">{{ t('blockchain.kicker') }}</span>
+        <h1 class="marketing-title">{{ t('blockchain.title') }}<br><em>{{ t('blockchain.titleEm') }}</em></h1>
+        <p class="marketing-lede">{{ t('blockchain.lede') }}</p>
         <div class="marketing-action-row">
-          <UiButton :to="walletTarget" size="large" icon="wallet">Connecter mon portefeuille</UiButton>
-          <UiButton to="#flow" variant="secondary" size="large">Voir le flux</UiButton>
+          <UiButton :to="walletTarget" size="large" icon="wallet">{{ t('blockchain.connectWallet') }}</UiButton>
+          <UiButton to="#flow" variant="secondary" size="large">{{ t('blockchain.seeFlow') }}</UiButton>
         </div>
-        <p class="chain-hero__note"><UiIcon name="shield" /> Réseau de démonstration · les jetons utilisés ici n’ont pas de valeur réelle.</p>
+        <p class="chain-hero__note"><UiIcon name="shield" /> {{ t('blockchain.note') }}</p>
       </div>
       <OnchainLedger v-reveal="'right'" :status="blockchain" />
     </section>
 
     <section class="chain-principles marketing-container marketing-section--tight">
       <div v-reveal class="marketing-section-heading">
-        <div><span class="marketing-kicker">Ce que la blockchain apporte</span><h2>Ce qui compte reste visible.<br>Vos fichiers restent à leur place.</h2></div>
-        <p>Les calculs restent dans le réseau. La blockchain garde une trace des paiements et des contrôles associés à votre projet.</p>
+        <div><span class="marketing-kicker">{{ t('blockchain.bringsKicker') }}</span><h2>{{ t('blockchain.bringsTitle') }}<br>{{ t('blockchain.bringsTitle2') }}</h2></div>
+        <p>{{ t('blockchain.bringsText') }}</p>
       </div>
       <div class="chain-principles__grid">
-        <article v-for="item in principles" :key="item.title" class="chain-principle marketing-glass">
+        <article v-for="item in principles" :key="item.index" class="chain-principle marketing-glass">
           <span class="chain-principle__index">{{ item.index }}</span>
           <span class="chain-principle__icon"><UiIcon :name="item.icon" /></span>
           <h3>{{ item.title }}</h3>
@@ -32,11 +32,11 @@
 
     <section id="flow" class="chain-flow marketing-container marketing-section">
       <div v-reveal class="marketing-section-heading">
-        <div><span class="marketing-kicker">Du projet au paiement</span><h2>Du projet au résultat,<br>sans mauvaise surprise.</h2></div>
-        <p>Vous envoyez le projet, le réseau travaille, le résultat est contrôlé puis le paiement suit ce qui s’est réellement passé.</p>
+        <div><span class="marketing-kicker">{{ t('blockchain.flowKicker') }}</span><h2>{{ t('blockchain.flowTitle') }}<br>{{ t('blockchain.flowTitle2') }}</h2></div>
+        <p>{{ t('blockchain.flowText') }}</p>
       </div>
       <ol class="chain-flow__timeline">
-        <li v-for="(step, index) in flowSteps" :key="step.title">
+        <li v-for="(step, index) in flowSteps" :key="step.label">
           <div class="chain-flow__marker"><span>{{ String(index + 1).padStart(2, '0') }}</span><UiIcon :name="step.icon" /></div>
           <div class="chain-flow__body"><span class="chain-flow__label">{{ step.label }}</span><h3>{{ step.title }}</h3><p>{{ step.text }}</p></div>
           <span v-if="index < flowSteps.length - 1" class="chain-flow__connector" aria-hidden="true"></span>
@@ -47,21 +47,21 @@
     <section class="chain-wallet marketing-container marketing-section--tight">
       <div class="chain-wallet__panel marketing-glass">
         <div class="chain-wallet__copy">
-          <span class="marketing-kicker">Votre portefeuille numérique</span>
-          <h2>Votre portefeuille reste à vous.<br><em>Vos clés restent chez vous.</em></h2>
-          <p>La connexion Phantom sert à confirmer que le portefeuille vous appartient et à signer les opérations qui vous concernent. Silicium ne demande jamais votre clé privée.</p>
-          <div class="marketing-action-row"><UiButton :to="walletTarget" icon="arrow">{{ isAuthenticated ? 'Ouvrir mon profil' : 'Créer mon espace' }}</UiButton><UiButton to="/service#status" variant="secondary">Voir le statut des paiements</UiButton></div>
+          <span class="marketing-kicker">{{ t('blockchain.walletKicker') }}</span>
+          <h2>{{ t('blockchain.walletTitle') }}<br><em>{{ t('blockchain.walletTitleEm') }}</em></h2>
+          <p>{{ t('blockchain.walletText') }}</p>
+          <div class="marketing-action-row"><UiButton :to="walletTarget" icon="arrow">{{ isAuthenticated ? t('blockchain.openProfile') : t('blockchain.createSpace') }}</UiButton><UiButton to="/service#status" variant="secondary">{{ t('blockchain.paymentStatus') }}</UiButton></div>
         </div>
         <div class="chain-wallet__checks">
           <div v-for="item in walletChecks" :key="item.title"><span><UiIcon :name="item.icon" /></span><p><strong>{{ item.title }}</strong><small>{{ item.text }}</small></p><UiIcon name="check" /></div>
         </div>
       </div>
-      <p class="chain-wallet__footnote">{{ blockchain.configured ? 'Le service de paiement est activé dans cet environnement.' : 'Le service de paiement peut être activé selon l’environnement. Cette page affiche son statut réel.' }}</p>
+      <p class="chain-wallet__footnote">{{ blockchain.configured ? t('blockchain.configured') : t('blockchain.notConfigured') }}</p>
     </section>
 
     <section v-reveal class="chain-cta marketing-container marketing-glass">
-      <div><span class="marketing-kicker">Réseau et paiements</span><h2>Voyez comment tout s’enchaîne,<br><em>du projet au résultat.</em></h2><p>Découvrez comment le réseau travaille et comment la blockchain accompagne le paiement.</p></div>
-      <UiButton to="/service" size="large" icon="arrow">Explorer le produit</UiButton>
+      <div><span class="marketing-kicker">{{ t('blockchain.ctaKicker') }}</span><h2>{{ t('blockchain.ctaTitle') }}<br><em>{{ t('blockchain.ctaTitleEm') }}</em></h2><p>{{ t('blockchain.ctaText') }}</p></div>
+      <UiButton to="/service" size="large" icon="arrow">{{ t('blockchain.ctaButton') }}</UiButton>
     </section>
   </div>
 </template>
@@ -76,26 +76,15 @@ const { status, refresh } = useSystemStatus();
 const config = useRuntimeConfig();
 const blockchain = computed<SystemStatus['blockchain']>(() => status.value?.blockchain || { status: 'unknown', network: 'unknown', configured: false });
 const walletTarget = computed(() => isAuthenticated.value ? '/profile' : '/auth?mode=register');
-const principles = [
-  { index: '01', icon: 'processor', title: 'Travailler ensemble', text: 'Les machines exécutent les différentes parties du projet.', detail: 'Machines · réseau · résultat' },
-  { index: '02', icon: 'shield', title: 'Vérifier', text: 'Les résultats sont comparés avant d’être considérés comme fiables.', detail: 'Contrôle · résultat · confiance' },
-  { index: '03', icon: 'wallet', title: 'Régler', text: 'Le paiement suit le résultat : récompense si tout est bon, remboursement sinon.', detail: 'Paiement · récompense · remboursement' },
-];
-const flowSteps = [
-  { label: '01 / VOUS', icon: 'upload', title: 'Vous envoyez le projet', text: 'Votre projet est enregistré avant que le réseau commence à travailler.' },
-  { label: '02 / RÉSEAU', icon: 'wallet', title: 'Le réseau travaille', text: 'Le montant prévu reste réservé le temps que le calcul avance.' },
-  { label: '03 / CONTRÔLE', icon: 'shield', title: 'Le résultat est contrôlé', text: 'Les machines calculent et les contrôles confirment le résultat.' },
-  { label: '04 / PAIEMENT', icon: 'result', title: 'Le paiement suit le résultat', text: 'La récompense est versée ou le montant est remboursé selon l’issue.' },
-];
-const walletChecks = [
-  { icon: 'wallet', title: 'Portefeuille confirmé', text: 'Connexion Phantom et vérification de propriété.' },
-  { icon: 'shield', title: 'Permissions limitées', text: 'Aucune clé privée ne quitte votre portefeuille.' },
-  { icon: 'result', title: 'Paiement traçable', text: 'Chaque règlement reste rattaché au résultat.' },
-];
+const { t, tl } = useI18n();
+const withIcons = <T extends object>(items: T[], icons: string[]) => items.map((item, index) => ({ ...item, icon: icons[index] || 'check', index: `0${index + 1}` }));
+const principles = computed(() => withIcons(tl<{ title: string; text: string; detail: string }>('blockchain.principles'), ['processor', 'shield', 'wallet']));
+const flowSteps = computed(() => withIcons(tl<{ label: string; title: string; text: string }>('blockchain.flowSteps'), ['upload', 'wallet', 'shield', 'result']));
+const walletChecks = computed(() => withIcons(tl<{ title: string; text: string }>('blockchain.walletChecks'), ['wallet', 'shield', 'result']));
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => { refresh(); timer = setInterval(() => refresh(), Math.max(20, Number(config.public.statusRefreshSeconds) || 30) * 1000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); });
-useSeoMeta({ title: 'Blockchain et paiements — Silicium', description: 'Comprenez comment la blockchain accompagne les calculs, les contrôles et les paiements du réseau Silicium.' });
+useSeoMeta({ title: () => t('blockchain.seoTitle'), description: () => t('blockchain.seoDescription') });
 </script>
 
 <style scoped>

@@ -1,4 +1,5 @@
 import { jwtDecode } from 'jwt-decode';
+import { translate } from './i18n';
 
 // Only a UI expiry check. The API remains responsible for verifying the signature.
 export function tokenExpiry(token: unknown, now = Date.now()): Date | undefined {
@@ -15,8 +16,15 @@ export function authErrorMessage(error: unknown): string {
   const failure = error as { data?: { message?: unknown }; status?: number; statusCode?: number };
   if (typeof failure?.data?.message === 'string') return failure.data.message;
   const status = failure?.statusCode ?? failure?.status;
-  if (status === 401) return 'Identifiant ou mot de passe incorrect.';
-  if (status === 409) return 'Cette adresse e-mail ou ce nom d’utilisateur est déjà utilisé.';
-  if (status === 400) return 'Vérifiez les informations du formulaire.';
-  return 'Le service est indisponible. Réessayez plus tard.';
+  if (status === 401) return translate('auth.invalidCredentials');
+  if (status === 409) return translate('auth.taken');
+  if (status === 400) return translate('auth.checkForm');
+  if (status === 429) return translate('auth.tooMany');
+  return translate('auth.unavailable');
+}
+
+/** A redirect target that stays on this site (`/jobs/3`), else `fallback`. */
+export function safeRedirect(value: unknown, fallback = '/dashboard'): string {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\') || /[\u0000-\u001f]/.test(value)) return fallback;
+  return value;
 }

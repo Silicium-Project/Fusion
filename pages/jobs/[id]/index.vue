@@ -2,36 +2,36 @@
   <div class="app-page">
     <template v-if="dashboard">
       <header class="job-head">
-        <div><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>Tous mes projets</NuxtLink><div class="job-head__title"><span class="job-head__cube"><UiIcon name="cube"/></span><div><div class="cluster"><h1>{{ dashboard.job.title }}</h1><UiStatusBadge :status="dashboard.job.status" /></div><p>{{ dashboard.job.description || 'Calcul distribué sur le réseau Silicium.' }}</p></div></div></div>
-        <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">Rafraîchir</UiButton><UiButton v-if="dashboard.resultReady && !documentJob" icon="download" size="small" @click="download">Télécharger</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">Arrêter</UiButton></div>
+        <div><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>{{ t('jobDetail.allProjects') }}</NuxtLink><div class="job-head__title"><span class="job-head__cube"><UiIcon name="cube"/></span><div><div class="cluster"><h1>{{ dashboard.job.title }}</h1><UiStatusBadge :status="dashboard.job.status" /></div><p>{{ dashboard.job.description || t('jobDetail.defaultDescription') }}</p></div></div></div>
+        <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">{{ t('common.refresh') }}</UiButton><UiButton v-if="dashboard.resultReady && !documentJob" icon="download" size="small" @click="download">{{ t('common.download') }}</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">{{ t('jobDetail.stop') }}</UiButton></div>
       </header>
-      <UiNotice v-if="jobErrorDetail" tone="danger" title="Le calcul a rencontré une erreur">{{ compactJobError(jobErrorDetail) }}</UiNotice>
+      <UiNotice v-if="jobErrorDetail" tone="danger" :title="t('jobDetail.errorTitle')">{{ compactJobError(jobErrorDetail) }}</UiNotice>
       <section class="metric-grid">
-        <MetricCard label="Parties" :value="fragmentTotal" :detail="`${fragmentDone} terminées`" icon="layers" tone="mint" />
-        <MetricCard label="Machines mobilisées" :value="nodeCount" detail="calcul et vérification" icon="nodes" tone="ink" />
-        <MetricCard label="Durée" :value="duration" detail="depuis le démarrage" icon="clock" tone="violet" />
-        <MetricCard label="Rendement calcul" :value="computeShare" :detail="performanceDetail" icon="activity" tone="mint" />
-        <MetricCard label="Preuves" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? 'traçabilité active' : 'traçabilité inactive'" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
+        <MetricCard :label="t('jobDetail.parts')" :value="fragmentTotal" :detail="t('jobDetail.partsDone', { count: fragmentDone })" icon="layers" tone="mint" />
+        <MetricCard :label="t('jobDetail.machines')" :value="nodeCount" :detail="t('jobDetail.machinesText')" icon="nodes" tone="ink" />
+        <MetricCard :label="t('jobDetail.duration')" :value="duration" :detail="t('jobDetail.sinceStart')" icon="clock" tone="violet" />
+        <MetricCard :label="t('jobDetail.efficiency')" :value="computeShare" :detail="performanceDetail" icon="activity" tone="mint" />
+        <MetricCard :label="t('jobDetail.proofs')" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? t('jobDetail.tracing') : t('jobDetail.noTracing')" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
-        <UiCard id="result" :title="documentJob ? 'Recherche dans tes documents' : 'Votre résultat'" :description="resultDescription" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><DocumentSearch v-else-if="documentJob" :dashboard="dashboard" /><UiEmptyState v-else title="Résultat téléchargeable" description="Ce type de calcul n’a pas d’aperçu : utilisez « Télécharger »." icon="download" /></UiCard>
-        <UiCard title="Étapes du calcul" description="De la réception à la disponibilité du résultat." padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
+        <UiCard id="result" :title="documentJob ? t('jobDetail.searchTitle') : t('jobDetail.resultTitle')" :description="resultDescription" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><DocumentSearch v-else-if="documentJob" :dashboard="dashboard" /><UiEmptyState v-else :title="t('jobDetail.downloadableTitle')" :description="t('jobDetail.downloadableText')" icon="download" /></UiCard>
+        <UiCard :title="t('jobDetail.steps')" :description="t('jobDetail.stepsText')" padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
       </div>
       <div class="job-detail-grid job-detail-grid--bottom">
-        <UiCard title="Fragments" :description="`${fragmentDone} terminés, ${fragmentActive} actifs, ${fragmentFailed} en erreur.`">
-          <div v-if="!fragments.length" class="empty-dash"><UiEmptyState title="Aucun fragment publié" description="Les fragments apparaîtront dès que l’orchestrateur aura produit le plan d’exécution." icon="layers" /></div>
-          <div v-else class="table-wrap"><table class="data-table fragments-table"><thead><tr><th>Fragment</th><th>Étape</th><th>Nœud</th><th>Statut</th></tr></thead><tbody><tr v-for="(fragment,index) in visibleFragments" :key="fragmentKey(fragment,index)"><td class="mono">#{{ fragmentIndex(fragment,index) }}</td><td>{{ fragmentStateLabel(fragment.status) }}</td><td class="mono">{{ compactIdentifier(fragmentNode(fragment), 10, 5) }}</td><td><UiStatusBadge :status="String(fragment.status || 'unknown')" /></td></tr></tbody></table></div>
-          <footer v-if="fragments.length > visibleLimit" class="card-footer">Les {{ visibleLimit }} fragments les plus récents sont affichés sur {{ fragments.length }}.</footer>
+        <UiCard :title="t('jobDetail.fragments')" :description="t('jobDetail.fragmentsText', { done: fragmentDone, active: fragmentActive, failed: fragmentFailed })">
+          <div v-if="!fragments.length" class="empty-dash"><UiEmptyState :title="t('jobDetail.noFragments')" :description="t('jobDetail.noFragmentsText')" icon="layers" /></div>
+          <div v-else class="table-wrap"><table class="data-table fragments-table"><thead><tr><th>{{ t('jobDetail.fragment') }}</th><th>{{ t('jobDetail.stage') }}</th><th>{{ t('jobDetail.node') }}</th><th>{{ t('jobDetail.status') }}</th></tr></thead><tbody><tr v-for="(fragment,index) in visibleFragments" :key="fragmentKey(fragment,index)"><td class="mono">#{{ fragmentIndex(fragment,index) }}</td><td>{{ fragmentStateLabel(fragment.status) }}</td><td class="mono">{{ compactIdentifier(fragmentNode(fragment) || t('jobDetail.waiting'), 10, 5) }}</td><td><UiStatusBadge :status="String(fragment.status || 'unknown')" /></td></tr></tbody></table></div>
+          <footer v-if="fragments.length > visibleLimit" class="card-footer">{{ t('jobDetail.recent', { limit: visibleLimit, total: fragments.length }) }}</footer>
         </UiCard>
         <div class="stack">
-          <UiCard title="Détails techniques" padded><TechnicalDetails :dashboard="dashboard" /></UiCard>
-          <UiCard v-if="dashboard.devnet?.signatures?.length" title="Transactions Devnet" padded><div class="transaction-list"><a v-for="signature in dashboard.devnet.signatures.slice(0,5)" :key="signature" :href="`https://explorer.solana.com/tx/${signature}?cluster=devnet`" target="_blank" rel="noopener noreferrer"><span class="mono">{{ compactIdentifier(signature, 10, 8) }}</span><UiIcon name="external"/></a></div></UiCard>
+          <UiCard :title="t('jobDetail.technical')" padded><TechnicalDetails :dashboard="dashboard" /></UiCard>
+          <UiCard v-if="dashboard.devnet?.signatures?.length" :title="t('jobDetail.devnet')" padded><div class="transaction-list"><a v-for="signature in dashboard.devnet.signatures.slice(0,5)" :key="signature" :href="`https://explorer.solana.com/tx/${encodeURIComponent(signature)}?cluster=devnet`" target="_blank" rel="noopener noreferrer"><span class="mono">{{ compactIdentifier(signature, 10, 8) }}</span><UiIcon name="external"/></a></div></UiCard>
         </div>
       </div>
     </template>
     <div v-else-if="loading" class="detail-loading"><div class="skeleton"></div><div class="metric-grid"><div v-for="n in 5" :key="n" class="skeleton"></div></div><div class="skeleton large"></div></div>
-    <UiCard v-else padded><UiEmptyState title="Projet introuvable" :description="error || 'Ce projet n’existe pas ou n’appartient pas à votre compte.'" icon="alert"><UiButton to="/jobs" variant="secondary" size="small">Retour aux projets</UiButton></UiEmptyState></UiCard>
-    <UiModal :open="confirmOpen" title="Arrêter le calcul ?" @close="confirmOpen = false"><p class="modal-copy">Les parties encore en cours recevront une demande d’arrêt. Les résultats déjà vérifiés resteront enregistrés.</p><div class="modal-actions"><UiButton variant="ghost" @click="confirmOpen = false">Continuer le calcul</UiButton><UiButton variant="danger" :loading="cancelling" @click="cancel">Arrêter maintenant</UiButton></div></UiModal>
+    <UiCard v-else padded><UiEmptyState :title="t('jobDetail.notFoundTitle')" :description="error || t('jobDetail.notFoundText')" icon="alert"><UiButton to="/jobs" variant="secondary" size="small">{{ t('jobDetail.backToProjects') }}</UiButton></UiEmptyState></UiCard>
+    <UiModal :open="confirmOpen" :title="t('jobDetail.stopTitle')" @close="confirmOpen = false"><p class="modal-copy">{{ t('jobDetail.stopText') }}</p><div class="modal-actions"><UiButton variant="ghost" @click="confirmOpen = false">{{ t('jobDetail.keepRunning') }}</UiButton><UiButton variant="danger" :loading="cancelling" @click="cancel">{{ t('jobDetail.stopNow') }}</UiButton></div></UiModal>
   </div>
 </template>
 
@@ -41,13 +41,14 @@ import { compactIdentifier, formatDuration, formatPerformanceMultiple, formatPer
 import { isDocumentSearchWorkload } from '~/utils/documents';
 import { compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, shouldRefreshJob } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
+const { t } = useI18n();
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();
 const dashboard = ref<JobDashboard | null>(null); const loading = ref(true); const error = ref(''); const confirmOpen = ref(false); const cancelling = ref(false); const resultPreview = ref(''); const previewAttempts = ref(0);
 const visibleLimit = 80;
 const imageJob = computed(() => isImageWorkload(dashboard.value?.job.workload));
 const hashJob = computed(() => isHashWorkload(dashboard.value?.job.workload));
 const documentJob = computed(() => isDocumentSearchWorkload(dashboard.value?.job.workload));
-const resultDescription = computed(() => imageJob.value ? 'Aperçu de l’artefact réassemblé.' : documentJob.value ? 'Pose une question : les passages qui y répondent remontent, avec leur document et leur page.' : 'Empreintes calculées et vérifiées par le réseau.');
+const resultDescription = computed(() => imageJob.value ? t('jobDetail.imageDescription') : documentJob.value ? t('jobDetail.documentsDescription') : t('jobDetail.hashDescription'));
 const fragments = computed(() => dashboard.value?.summary?.fragments || []);
 const visibleFragments = computed(() => fragments.value.slice(-visibleLimit).reverse());
 const jobErrorDetail = computed(() => dashboard.value?.job.errorMessage || dashboard.value?.summary?.failureDetail || dashboard.value?.summary?.traceback || dashboard.value?.summary?.error || '');
@@ -60,11 +61,11 @@ const duration = computed(() => dashboard.value ? formatDuration(dashboard.value
 const performance = computed(() => dashboard.value?.summary?.performance);
 const computeShare = computed(() => formatPerformancePercent(performance.value?.compute_to_total_ratio));
 const computeNetwork = computed(() => formatPerformanceMultiple(performance.value?.compute_to_network_ratio));
-const performanceDetail = computed(() => computeNetwork.value === '—' ? 'mesure réseau indisponible' : `${computeNetwork.value} calcul / réseau`);
+const performanceDetail = computed(() => computeNetwork.value === '—' ? t('jobDetail.noNetworkMeasure') : t('jobDetail.computeVsNetwork', { value: computeNetwork.value }));
 const cancellable = computed(() => Boolean(dashboard.value && isJobCancellable(dashboard.value.job.status)));
 const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || (imageJob.value && dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
 function fragmentIndex(fragment: JobFragment, fallback: number) { return fragment.fragment_index ?? fragment.fragmentIndex ?? fallback; }
-function fragmentNode(fragment: JobFragment) { return String(fragment.handled_by || fragment.handledBy || 'En attente'); }
+function fragmentNode(fragment: JobFragment) { return String(fragment.handled_by || fragment.handledBy || ''); }
 function fragmentKey(fragment: JobFragment, fallback: number) { return `${fragmentIndex(fragment,fallback)}-${fragmentNode(fragment)}-${fragment.status}`; }
 let loadPromise: Promise<void> | undefined;
 function load(force = false, background = false): Promise<void> {
@@ -78,7 +79,7 @@ function load(force = false, background = false): Promise<void> {
     } catch (failure) {
       if (!dashboard.value) {
         const response = failure as { status?: number; statusCode?: number };
-        error.value = response.status === 404 || response.statusCode === 404 ? 'Cette tâche est introuvable.' : 'Le détail de cette tâche ne peut pas être chargé.';
+        error.value = response.status === 404 || response.statusCode === 404 ? t('jobDetail.notFound') : t('jobDetail.loadFailed');
       }
     } finally {
       loading.value = false;
@@ -93,7 +94,7 @@ async function cancel() { if (!dashboard.value) return; cancelling.value = true;
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => { load(); timer = setInterval(() => { if (shouldPoll.value) load(true, true); }, 2_000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); });
-useSeoMeta({ title: () => dashboard.value ? `${dashboard.value.job.title} — Silicium` : 'Suivi du projet — Silicium' });
+useSeoMeta({ title: () => dashboard.value ? `${dashboard.value.job.title} — Silicium` : t('jobDetail.seoFallback') });
 </script>
 
 <style scoped>

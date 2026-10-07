@@ -1,22 +1,22 @@
 <template>
   <div class="render-preview">
-    <img v-if="imageUrl" :src="imageUrl" alt="Aperçu du résultat calculé">
+    <img v-if="imageUrl" :src="imageUrl" :alt="t('render.alt')">
     <div v-else class="render-preview__placeholder">
       <div class="render-preview__tiles" :style="tileGridStyle">
         <i
           v-for="tile in tiles"
           :key="tile.index"
           :class="`is-${tile.state}`"
-          :title="`Fragment ${tile.index + 1} · ${tile.label}`"
+          :title="t('render.tile', { index: tile.index + 1, label: tile.label })"
         ></i>
       </div>
       <strong>{{ progressTitle }}</strong>
-      <small>{{ doneCount }} / {{ total || '—' }} fragments terminés</small>
+      <small>{{ t('render.progress', { done: doneCount, total: total || '—' }) }}</small>
       <div class="render-preview__legend">
-        <span><i class="is-computing"></i>{{ computingCount }} calcul</span>
-        <span><i class="is-validating"></i>{{ validatingCount }} validation</span>
-        <span><i class="is-done"></i>{{ doneCount }} terminés</span>
-        <span v-if="failedCount"><i class="is-failed"></i>{{ failedCount }} erreurs</span>
+        <span><i class="is-computing"></i>{{ t('render.computing', { count: computingCount }) }}</span>
+        <span><i class="is-validating"></i>{{ t('render.validating', { count: validatingCount }) }}</span>
+        <span><i class="is-done"></i>{{ t('render.done', { count: doneCount }) }}</span>
+        <span v-if="failedCount"><i class="is-failed"></i>{{ t('render.failed', { count: failedCount }) }}</span>
       </div>
     </div>
     <div class="render-preview__meta"><span><i></i>{{ width }} × {{ height }} px</span><span>Raytracer</span></div>
@@ -28,6 +28,7 @@ import type { JobDashboard, JobFragment } from '~/types/api';
 import { fragmentStateLabel, fragmentVisualState } from '~/utils/jobs';
 
 const props = defineProps<{ dashboard: JobDashboard; imageUrl?: string }>();
+const { t } = useI18n();
 const fragments = computed(() => props.dashboard.summary?.fragments || []);
 const total = computed(() => Number(props.dashboard.summary?.fragmentCount || props.dashboard.job.fragmentCount || fragments.value.length || 0));
 const width = computed(() => props.dashboard.summary?.image?.width || '—');
@@ -45,11 +46,11 @@ const validatingCount = computed(() => stateCount('validating'));
 const doneCount = computed(() => stateCount('done'));
 const failedCount = computed(() => stateCount('failed'));
 const progressTitle = computed(() => {
-  if (props.dashboard.resultReady) return 'Préparation de l’aperçu';
-  if (validatingCount.value) return 'Validation des fragments';
-  if (computingCount.value) return 'Calcul des fragments';
-  if (doneCount.value) return 'Assemblage du résultat';
-  return 'Résultat en construction';
+  if (props.dashboard.resultReady) return t('render.preparing');
+  if (validatingCount.value) return t('render.validatingTitle');
+  if (computingCount.value) return t('render.computingTitle');
+  if (doneCount.value) return t('render.assembling');
+  return t('render.building');
 });
 const tileGridStyle = computed(() => {
   const imageWidth = Number(width.value) || 1;

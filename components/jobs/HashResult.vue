@@ -2,23 +2,23 @@
   <div class="hash-result">
     <template v-if="report">
       <div class="hash-result__main">
-        <span>{{ report.input_hash ? 'Empreinte SHA-256 du fichier' : 'Empreinte de la liste des morceaux' }}</span>
+        <span>{{ report.input_hash ? t('hash.fileHash') : t('hash.listHash') }}</span>
         <code>{{ report.input_hash || report.chunk_list_sha256 }}</code>
-        <small>{{ formatBytes(report.size_bytes) }} · {{ report.chunk_count }} morceau{{ report.chunk_count > 1 ? 'x' : '' }} haché{{ report.chunk_count > 1 ? 's' : '' }} et vérifié{{ report.chunk_count > 1 ? 's' : '' }} par le réseau</small>
+        <small>{{ t('hash.summary', { size: formatBytes(report.size_bytes), count: report.chunk_count }) }}</small>
       </div>
-      <p v-if="!report.input_hash" class="hash-result__note">Le fichier a été découpé en morceaux calculés sur plusieurs machines : chaque morceau a sa propre empreinte, et la ligne ci-dessus est l’empreinte de leur liste.</p>
+      <p v-if="!report.input_hash" class="hash-result__note">{{ t('hash.note') }}</p>
       <div v-if="report.chunks.length > 1" class="table-wrap">
         <table class="data-table hash-result__chunks">
-          <thead><tr><th>Morceau</th><th>Octets</th><th>SHA-256</th></tr></thead>
+          <thead><tr><th>{{ t('hash.chunk') }}</th><th>{{ t('hash.bytes') }}</th><th>SHA-256</th></tr></thead>
           <tbody><tr v-for="chunk in visibleChunks" :key="chunk.index"><td class="mono">#{{ chunk.index }}</td><td class="mono">{{ chunk.offset }}–{{ chunk.offset + chunk.length }}</td><td class="mono">{{ chunk.sha256 }}</td></tr></tbody>
         </table>
       </div>
-      <small v-if="report.chunks.length > visibleChunks.length" class="hash-result__more">{{ visibleChunks.length }} morceaux affichés sur {{ report.chunks.length }} ; le fichier téléchargé les contient tous.</small>
+      <small v-if="report.chunks.length > visibleChunks.length" class="hash-result__more">{{ t('hash.more', { shown: visibleChunks.length, total: report.chunks.length }) }}</small>
     </template>
     <div v-else class="hash-result__progress">
-      <strong>{{ dashboard.resultReady ? 'Lecture du résultat…' : 'Calcul des empreintes' }}</strong>
+      <strong>{{ dashboard.resultReady ? t('hash.readingResult') : t('hash.computing') }}</strong>
       <div class="hash-result__bar" role="progressbar" :aria-valuenow="doneCount" :aria-valuemax="total || undefined"><i :style="{ width: `${percent}%` }"></i></div>
-      <small>{{ doneCount }} / {{ total || '—' }} morceaux terminés</small>
+      <small>{{ t('hash.progress', { done: doneCount, total: total || '—' }) }}</small>
     </div>
   </div>
 </template>
@@ -31,6 +31,7 @@ import { fragmentVisualState, parseHashReport, type HashReport } from '~/utils/j
 
 const props = defineProps<{ dashboard: JobDashboard }>();
 const session = useSession();
+const { t, formatBytes } = useI18n();
 const config = useRuntimeConfig();
 const report = ref<HashReport | null>(null);
 const fragments = computed(() => props.dashboard.summary?.fragments || []);
@@ -38,12 +39,6 @@ const total = computed(() => Number(props.dashboard.summary?.fragmentCount || fr
 const doneCount = computed(() => fragments.value.filter(item => fragmentVisualState(item.status) === 'done').length);
 const percent = computed(() => total.value ? Math.round(doneCount.value * 100 / total.value) : 0);
 const visibleChunks = computed(() => report.value?.chunks.slice(0, 50) || []);
-
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
-}
 
 async function loadReport() {
   if (!props.dashboard.resultReady || report.value || !import.meta.client) return;

@@ -1,6 +1,7 @@
 import type { NetworkMetrics, NetworkPeer, NetworkPeersResponse, NetworkRuntimeTelemetry, NetworkTasksResponse } from '~/types/api';
 import { clientCache } from '~/services/cache';
 import { peerRoles } from '~/utils/format';
+import { translate } from '~/utils/i18n';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -90,7 +91,7 @@ export function useNetwork() {
       tasksPayload.value = nextTasks;
       lastUpdatedAt.value = String(nextPeers.updated_utc || nextPeers.metrics?.updated_utc || new Date().toISOString());
     } catch (failure) {
-      error.value = 'La télémétrie réseau est momentanément indisponible.';
+      error.value = translate('errors.networkLoad');
       throw failure;
     } finally {
       loading.value = false;

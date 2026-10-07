@@ -6,7 +6,7 @@
     :title="build ? `Build ${build}` : undefined"
   >
     <i aria-hidden="true"></i>
-    <span>{{ normalizedChannel === 'prod' ? 'Production' : 'Développement' }}</span>
+    <span>{{ normalizedChannel === 'prod' ? t('release.production') : t('release.development') }}</span>
     <small>{{ version || 'unknown' }}</small>
   </span>
 </template>
@@ -18,6 +18,7 @@ const props = defineProps<{
   build?: string;
 }>();
 
+const { t } = useI18n();
 const normalizedChannel = computed(() => props.channel?.trim().toLowerCase() === 'prod' ? 'prod' : 'dev');
 </script>
 
