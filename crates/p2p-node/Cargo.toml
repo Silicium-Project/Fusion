@@ -14,5 +14,18 @@ ed25519-dalek.workspace = true
 reqwest.workspace = true
 sha2 = "0.10.9"
 silicium_node_core.workspace = true
+silicium-embedding = { path = "../embedding" }
 silicium-raytracer = { path = "../raytracer" }
 sysinfo = { version = "0.37", default-features = false, features = ["system", "disk"] }
+
+[target.'cfg(unix)'.dependencies]
+# Limits of the child process that reads submitted documents.
+libc = "0.2"
+
+[dev-dependencies]
+silicium-embedding = { path = "../embedding", features = ["test-model"] }
+
+[features]
+# Adds the `ai/embedding/test-tiny` workload (tiny in-memory model) for the
+# local end-to-end check (`scripts/e2e-local.sh`). Never in a release.
+test-model = ["silicium-embedding/test-model"]

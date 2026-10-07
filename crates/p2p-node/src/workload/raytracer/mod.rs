@@ -103,6 +103,7 @@ impl Workload for Raytracer {
     fn assemble(
         &self,
         job: &JobManifest,
+        _input: &Path,
         fragments: &[Vec<u8>],
     ) -> Result<Vec<OutputFile>, String> {
         let placed: Vec<reassemble::PlacedTile<'_>> = job

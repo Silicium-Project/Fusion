@@ -23,6 +23,9 @@ struct Entry {
     required_roles: Vec<String>,
     created_unix: i64,
     updated_unix: i64,
+    /// Why the task could not be published (it never reaches the task book).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    failure: Option<String>,
 }
 
 /// Input accepted by the BackEnd's `/v1/tasks` endpoint.
@@ -92,6 +95,7 @@ impl ControlRegistry {
             required_roles,
             created_unix: now,
             updated_unix: now,
+            failure: None,
         };
         self.with_entries(|entries| {
             entries.insert(entry.task.task_id.clone(), entry);
@@ -119,8 +123,20 @@ impl ControlRegistry {
                     required_roles: required_roles.to_vec(),
                     created_unix: now,
                     updated_unix: now,
+                    failure: None,
                 },
             );
+        });
+    }
+
+    /// Marks a submitted task that could not be published as failed, with
+    /// the reason the BackEnd reports.
+    pub(crate) fn mark_failed(&self, task_id: &str, reason: &str) {
+        let _ = self.with_entries(|entries| {
+            if let Some(entry) = entries.get_mut(task_id) {
+                entry.failure = Some(reason.to_string());
+                entry.updated_unix = unix_seconds();
+            }
         });
     }
 
@@ -186,7 +202,15 @@ impl ControlRegistry {
 
 fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
     let state = taskbook.state(&entry.task.task_id).ok().flatten();
-    let (status, handled_by, result_hash, error) = state_summary(state.as_ref());
+    let (status, handled_by, result_hash, error) = match (&entry.failure, &state) {
+        (Some(reason), None) => (
+            "failed".to_string(),
+            String::new(),
+            String::new(),
+            reason.clone(),
+        ),
+        _ => state_summary(state.as_ref()),
+    };
     let mut task = serde_json::to_value(&entry.task).unwrap_or_else(|_| serde_json::json!({}));
     if let Some(object) = task.as_object_mut() {
         object.insert(

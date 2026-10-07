@@ -12,8 +12,10 @@ use crate::{
     control::{ControlRegistry, ControlTask, Submission},
     jobs::result_file,
     jobs::{FRAGMENT_SUFFIX_EXAMPLE, JobStore, MAX_FRAGMENTS_LIMIT},
+    publishing::{ImportError, import_input},
     storage::TaskBookState,
     task::{NetworkTask, PeerProfile, utc_now as task_utc_now},
+    workload::embedding::search::{SearchRequest, search},
 };
 use axum::{
     Router,
@@ -46,6 +48,8 @@ pub(crate) struct ApiState {
     pub(crate) peers: Arc<Mutex<BTreeSet<String>>>,
     pub(crate) peer_profiles: Arc<Mutex<BTreeMap<String, PeerProfile>>>,
     pub(crate) security: Arc<SecurityConfig>,
+    /// Data directory of the node (models used by the search).
+    pub(crate) data_dir: PathBuf,
 }
 
 /// Builds the API router.
@@ -63,6 +67,7 @@ pub(crate) fn router(state: ApiState) -> Router {
             post(cancel_control_workload),
         )
         .route("/v1/peers", get(control_peers))
+        .route("/v1/embedding/search", post(embedding_search))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_token))
         .route("/health", get(health))
         .route("/healthz", get(health))
@@ -161,19 +166,21 @@ async fn submit_control_task(
     // admission; the requested site path is represented by the compatibility
     // projection after the fragments are reassembled.
     let _requested_output_path = submission.output_path.trim();
-    let (scene_path, scene_sha256) = if source.is_absolute() {
-        match state.content.add_external_file(&source).await {
-            Ok(hash) => (ContentStore::relative_path(&hash), Some(hash)),
-            Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
-        }
+    let source = if source.is_absolute() {
+        source
     } else {
-        match state
-            .content
-            .add_file(source.to_string_lossy().as_ref())
-            .await
-        {
-            Ok(hash) => (ContentStore::relative_path(&hash), Some(hash)),
-            Err(error) => return api_error(StatusCode::BAD_REQUEST, &error),
+        state.content.absolute(source.to_string_lossy().as_ref())
+    };
+    // A workload may turn the submitted file into its shared input (the
+    // corpus of a document search); its refusal is a message for the user.
+    let (scene_path, scene_sha256) = match import_input(&state.content, workload, &source).await {
+        Ok(hash) => (ContentStore::relative_path(&hash), Some(hash)),
+        Err(ImportError::Rejected(message)) => {
+            return api_error(StatusCode::BAD_REQUEST, &message);
+        }
+        Err(ImportError::Storage(message)) => {
+            println!(" Input of {task_id} not stored: {message}");
+            return api_error(StatusCode::INTERNAL_SERVER_ERROR, "input_not_stored");
         }
     };
     let envelope = silicium_node_core::p2p::TaskEnvelope {
@@ -460,6 +467,18 @@ async fn job_status(
         "png": outputs.iter().find(|path| path.ends_with(".png")),
     });
     (StatusCode::OK, Json(body)).into_response()
+}
+
+/// `POST /v1/embedding/search`: the best passages of document-search jobs
+/// for a query (see [`crate::workload::embedding::search`]).
+async fn embedding_search(
+    State(state): State<ApiState>,
+    Json(request): Json<SearchRequest>,
+) -> Response {
+    match search(&state.jobs, &state.data_dir, request).await {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(error) => error.into_response(),
+    }
 }
 
 async fn health() -> impl IntoResponse {

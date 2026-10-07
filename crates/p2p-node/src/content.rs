@@ -59,7 +59,8 @@ impl ContentStore {
         self.add_bytes(&bytes).await
     }
 
-    async fn add_bytes(&self, bytes: &[u8]) -> Result<String, String> {
+    /// Stores `bytes`, announces them, and returns their hash.
+    pub(crate) async fn add_bytes(&self, bytes: &[u8]) -> Result<String, String> {
         if bytes.len() > MAX_CONTENT_BYTES {
             return Err(format!("larger than {MAX_CONTENT_BYTES} bytes"));
         }
@@ -72,6 +73,16 @@ impl ContentStore {
             })
             .await;
         Ok(sha256)
+    }
+
+    /// Announces in the DHT that this node holds `sha256`.
+    pub(crate) async fn provide(&self, sha256: &str) {
+        let _ = self
+            .commands
+            .send(ContentCommand::Provide {
+                sha256: sha256.to_string(),
+            })
+            .await;
     }
 
     /// Bytes of a stored content, when present and intact.

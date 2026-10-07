@@ -77,6 +77,12 @@ use tokio::{net::TcpListener, select, sync::mpsc};
 /// tasks queued by the API, and swarm events.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Child process parsing submitted documents (see
+    // `workload::embedding::prepare`): it never starts the node.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some(workload::embedding::prepare::SUBCOMMAND) {
+        std::process::exit(workload::embedding::prepare::run_subcommand(&args[1..]));
+    }
     let config = NodeConfig::from_env_and_args();
     let bootstrap_peers = config.bootstrap_peers.clone();
     let api_port = config.api_port;
@@ -116,6 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         roles: LocalRoles::from_env(),
         active_tasks: Default::default(),
         activity: activity::ActivityLog::from_env(),
+        data_dir: data_dir.clone(),
     };
     let known_peers = std::sync::Arc::new(std::sync::Mutex::new(
         std::iter::once(local_peer_id.to_string()).collect(),
@@ -193,6 +200,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         peers: known_peers.clone(),
         peer_profiles: peer_profiles.clone(),
         security: security.clone(),
+        data_dir: data_dir.clone(),
     };
     let app = api::router(api_state);
 
@@ -248,6 +256,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 pending.retain(|task| !outcome.finished.contains(&task.task_id));
                 collector.collect(&context, &outcome.finished);
+                collector.prefetch(&context);
                 if let Ok(peers) = known_peers.lock() {
                     let profiles = peer_profiles
                         .lock()

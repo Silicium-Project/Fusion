@@ -12,7 +12,7 @@ use crate::{
 };
 use silicium_node_core::taskbook::DerivedTaskStatus;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex},
 };
 
@@ -26,6 +26,8 @@ const MAX_TRIES: u32 = 5;
 pub(crate) struct Collector {
     tasks: Arc<Mutex<BTreeMap<String, Collection>>>,
     jobs: JobStore,
+    /// Results already downloaded (or being downloaded) before finalization.
+    prefetched: Arc<Mutex<BTreeSet<String>>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,7 +42,53 @@ impl Collector {
         Self {
             tasks: Arc::default(),
             jobs,
+            prefetched: Arc::default(),
         }
+    }
+
+    /// Downloads the result of each of this node's tasks as soon as it is
+    /// published, and serves it to peers: a verifier that cannot reach the
+    /// worker (two PCs behind their routers) gets it from the publisher,
+    /// which every node reaches. The publisher would download it at
+    /// finalization anyway.
+    pub(crate) fn prefetch(&self, context: &NodeContext) {
+        let me = context.taskbook.author();
+        let mine = context
+            .taskbook
+            .with_book(|book| book.tasks_published_by(&me))
+            .unwrap_or_default();
+        for task_id in mine {
+            if self.is_collected(&task_id) {
+                continue;
+            }
+            let Some(sha256) = awaiting_verification(context, &task_id) else {
+                continue;
+            };
+            let first_time = self
+                .prefetched
+                .lock()
+                .is_ok_and(|mut seen| seen.insert(sha256.clone()));
+            if !first_time {
+                continue;
+            }
+            let content = context.content.clone();
+            let prefetched = self.prefetched.clone();
+            tokio::spawn(async move {
+                if content.ensure(&sha256).await {
+                    content.provide(&sha256).await;
+                } else if let Ok(mut seen) = prefetched.lock() {
+                    // Not downloaded: a later sweep tries again.
+                    seen.remove(&sha256);
+                }
+            });
+        }
+    }
+
+    /// True once the result of `task_id` is collected (nothing left to fetch).
+    fn is_collected(&self, task_id: &str) -> bool {
+        self.tasks
+            .lock()
+            .is_ok_and(|tasks| matches!(tasks.get(task_id), Some(Collection::Done)))
     }
 
     /// Starts collecting the result of each finished task not yet collected
@@ -138,6 +186,20 @@ async fn collect_one(context: &NodeContext, jobs: &JobStore, task_id: &str) -> O
             Some(false)
         }
     }
+}
+
+/// Hash of the result of `task_id` when it awaits verification.
+fn awaiting_verification(context: &NodeContext, task_id: &str) -> Option<String> {
+    let state = context.taskbook.state(task_id).ok().flatten()?;
+    if state.status != DerivedTaskStatus::Completed {
+        return None;
+    }
+    let result = state.attempts.last()?.result.as_ref()?;
+    result
+        .result
+        .uri
+        .strip_prefix(CONTENT_SCHEME)
+        .map(str::to_string)
 }
 
 /// Workload of a task this node knows but that belongs to no job.

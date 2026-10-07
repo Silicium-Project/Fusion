@@ -127,7 +127,9 @@ fn the_job_result_lists_every_chunk() {
     );
     assert!(!Sha256.accepts_result(None, b"not json", &[]));
 
-    let outputs = Sha256.assemble(&manifest, &fragments).unwrap();
+    let outputs = Sha256
+        .assemble(&manifest, Path::new(""), &fragments)
+        .unwrap();
     let result: JobHash = serde_json::from_slice(&outputs[0].bytes).unwrap();
     assert_eq!(result.size_bytes, 10);
     assert_eq!(result.chunk_count, 3);
@@ -141,7 +143,9 @@ fn the_job_result_lists_every_chunk() {
     assert_eq!(result.chunk_list_sha256, sha256_hex(list.as_bytes()));
 
     assert!(
-        Sha256.assemble(&manifest, &fragments[..2]).is_err(),
+        Sha256
+            .assemble(&manifest, Path::new(""), &fragments[..2])
+            .is_err(),
         "a chunk is missing"
     );
 }
@@ -153,7 +157,11 @@ fn a_single_chunk_job_reports_the_input_hash() {
     assert_eq!(tasks.len(), 1);
     let chunk = hash_chunk(&path, tasks[0].byte_range, 0).unwrap();
     let outputs = Sha256
-        .assemble(&manifest, &[serde_json::to_vec(&chunk).unwrap()])
+        .assemble(
+            &manifest,
+            Path::new(""),
+            &[serde_json::to_vec(&chunk).unwrap()],
+        )
         .unwrap();
     let result: JobHash = serde_json::from_slice(&outputs[0].bytes).unwrap();
     assert_eq!(

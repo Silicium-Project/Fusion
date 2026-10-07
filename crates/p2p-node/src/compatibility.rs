@@ -350,6 +350,7 @@ impl CompatibilityWriter {
                     "status": status,
                     "region": fragment.region,
                     "byte_range": fragment.byte_range,
+                    "items": fragment.items.map(|items| items.count),
                     "result_path": source.display().to_string(),
                     "receipt_attestation": {"accepted": status == "completed"},
                     "compute_billable_work_units": 0,
@@ -409,7 +410,14 @@ impl CompatibilityWriter {
         );
     }
 
+    /// Copies a final result file for the BackEnd. Result files never change
+    /// once written: a copy of the same size is already there and is not
+    /// rewritten on every refresh (indexes weigh hundreds of megabytes).
     fn copy_final(&self, source: PathBuf, target: &Path) -> Option<PathBuf> {
+        let source_size = fs::metadata(&source).ok()?.len();
+        if fs::metadata(target).is_ok_and(|meta| meta.is_file() && meta.len() == source_size) {
+            return Some(target.to_path_buf());
+        }
         let bytes = fs::read(source).ok()?;
         write_bytes(target, &bytes);
         target.is_file().then(|| target.to_path_buf())

@@ -91,6 +91,15 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_MAX_FRAGMENTS` | `32` | Tuiles par job au plus (256 au maximum) |
 | `SILICIUM_TARGET_PIXELS_PER_FRAGMENT` | `120000` | Taille visée d'une tuile, en pixels (raytracer) |
 | `SILICIUM_TARGET_BYTES_PER_FRAGMENT` | `4194304` | Taille visée d'un morceau d'entrée, en octets (sha256) |
+| `SILICIUM_EMBEDDING_PASSAGES_PER_FRAGMENT` | `128` | Passages par fragment d'une recherche dans des documents |
+| `SILICIUM_MODEL_DIR` | `$SILICIUM_DATA_DIR/models` | Fichiers des modèles (téléchargés une fois, rangés par SHA-256) |
+| `SILICIUM_MODEL_BASE_URL` | `https://huggingface.co` | Source des modèles (un miroir de même arborescence convient : les hashes sont vérifiés quelle que soit la source) |
+| `SILICIUM_EMBEDDING_IDLE_UNLOAD_S` | `900` | Un modèle inutilisé depuis ce délai est déchargé de la mémoire |
+| `SILICIUM_EMBEDDING_INDEX_CACHE_MB` | `512` | Mémoire des index gardés pour la recherche (éditeur) |
+| `SILICIUM_EMBEDDING_PREPARE_TIMEOUT_S` | `300` | Temps maximal de lecture des documents envoyés (processus enfant tué au-delà) |
+| `SILICIUM_EMBEDDING_PREPARE_MEMORY_MB` | `2048` | Mémoire du processus enfant qui lit les documents (Unix) |
+| `SILICIUM_EMBEDDING_PREPARE_PARALLEL` | `2` | Lectures de documents en même temps |
+| `SILICIUM_EMBEDDING_PREPARE_IN_PROCESS` | `0` | `1` : lire les documents dans le processus du nœud (débogage uniquement) |
 | `SILICIUM_PARALLEL_TASKS` | `1` | Tâches calculées en même temps par ce nœud |
 | `SILICIUM_WORK_OWN_TASKS` | `1` | `0` : ne pas calculer les tâches publiées par ce nœud (éditeur sans compute-daemon) |
 | `SILICIUM_ALLOW_SELF_VERIFICATION` | `1` | `0` : interdire l'auto-vérification quand ce nœud est le seul pair compute/verify (l'orchestrateur ne compte pas) |
@@ -120,6 +129,7 @@ finaliser ou annuler ces tâches.
 | `POST` / `GET` | `/v1/tasks` | Soumission et suivi des tâches du BackEnd |
 | `POST` | `/v1/workloads/{root_job_id}/cancel` | Annulation d'un workload |
 | `GET` | `/v1/peers` | Pairs et métriques pour le BackEnd |
+| `POST` | `/v1/embedding/search` | Recherche dans des jobs de documents : `{"jobs": [...], "query": "...", "top_k": 10}` → passages les plus proches ; `503` + `Retry-After` pendant la préparation du modèle |
 | `GET` | `/health` ou `/healthz` | Santé |
 
 ## Workloads
@@ -131,7 +141,9 @@ sont communs. Ce qui change d'un calcul à l'autre est derrière le trait
 
 | Étape | Qui | Méthode |
 | --- | --- | --- |
+| transformer le fichier soumis en entrée partagée (facultatif) | éditeur | `prepare_input` |
 | découper une tâche soumise en fragments | éditeur | `split` |
+| se préparer (télécharger un modèle) avant de prendre une tâche | worker, vérificateur | `ensure_ready` |
 | calculer un fragment | worker | `execute` |
 | vérifier le fragment d'un autre nœud | vérificateur | `verify` |
 | contrôler un résultat téléchargé | éditeur | `accepts_result` |
@@ -141,6 +153,11 @@ sont communs. Ce qui change d'un calcul à l'autre est derrière le trait
 | --- | --- | --- | --- | --- |
 | `raytracer` (défaut) | scène `.cfg` | tuile d'image, rendue par le compute-daemon | blocs de lignes tirés au sort et re-rendus | `reassembled/render.ppm` + `.png` |
 | `calcul/integrity/sha256` (alias `calcul/hash/sha256`) | n'importe quel fichier (64 Mio max : taille d'un contenu échangé entre pairs ; chaque worker télécharge l'entrée entière) | morceau d'octets, haché dans le nœud | recalcul complet du morceau | `result/sha256.json` : empreinte de chaque morceau, empreinte de la liste, `input_hash` si un seul morceau |
+| `ai/embedding/multilingual-e5-small` | documents (PDF, `.docx`, texte, Markdown ou ZIP), transformés par l'éditeur en corpus de passages (`silicium-corpus/1`) dans un processus enfant | passages entiers, vectorisés par le modèle épinglé (crate `silicium-embedding`) | forme et normes du bloc, puis 3 à 8 passages tirés au sort recalculés et comparés par similarité cosinus (≥ 0,999) | `index/` : `index.json`, `vectors.f32`, `passages.jsonl` ; recherche par `/v1/embedding/search` |
+
+Le workload de recherche dans des documents est décrit en détail dans
+`docs/architecture/embedding-workload.md` : formats, modèle épinglé,
+vérification et sa probabilité de détection, exploitation, limites.
 
 L'identifiant voyage avec chaque tâche (`TaskEnvelope::workload`, absent =
 raytracer pour les éditeurs plus anciens) ; un nœud refuse une tâche d'un
@@ -161,7 +178,7 @@ ses tests ; le BackEnd doit aussi l'accepter (`ValidateWorkload`).
 | `src/activity.rs` | Travail en cours (envoyé dans le heartbeat) et journal `node.events.ndjson` lu par l'app desktop |
 | `src/content.rs` | Magasin de contenus par hash (scènes, images), commandes vers la boucle |
 | `src/fetch/` | Téléchargement entre pairs : fournisseurs DHT, requête-réponse, service ; test à deux nœuds dans `tests.rs` |
-| `src/workload/` | Workloads (voir ci-dessous) : `raytracer/` (tuiles, rendu, jalons, réassemblage), `sha256.rs` (morceaux d'octets) |
+| `src/workload/` | Workloads (voir ci-dessous) : `raytracer/` (tuiles, rendu, jalons, réassemblage), `sha256.rs` (morceaux d'octets), `embedding/` (préparation des documents, modèle en mémoire, calcul et vérification des vecteurs, recherche) |
 | `src/jobs/` | Manifestes de jobs sur disque, assemblage du résultat par le workload du job ; tests dans `tests.rs` |
 | `src/publishing.rs` | Publication d'une tâche de l'API : scène partagée, découpage, proposition, DHT, gossip |
 | `src/results.rs` | Image finale d'une tâche finalisée : téléchargement, contrôle contre les jalons |
@@ -188,7 +205,13 @@ WORKERS=2 crates/p2p-node/scripts/e2e-local.sh workloads/raytracer/examples/sili
 ```
 
 Avec un worker, il vérifie ses propres tuiles ; avec deux, chacun vérifie
-celles de l'autre.
+celles de l'autre. La recherche dans des documents se teste avec un modèle
+minuscule construit en mémoire (fonctionnalité `test-model`, jamais livrée) :
+
+```bash
+cargo build --release -p p2p_node --features p2p_node/test-model -p compute_daemon -p silicium-raytracer
+WORKERS=2 WORKLOAD=ai/embedding/test-tiny crates/p2p-node/scripts/e2e-local.sh documents.zip
+```
 
 ```bash
 cargo test -p p2p_node --locked
@@ -218,4 +241,12 @@ docker build -f crates/p2p-node/Dockerfile .   # depuis Network/ : contexte = ra
   les heartbeats dans `SILICIUM_WORKLOAD_STORAGE_DIR` et `SILICIUM_EXPORT_DIR`.
 - Un contenu passe en une seule réponse : 64 Mio au plus (pas de reprise
   d'un transfert interrompu).
+- Deux PC derrière leur box ne se joignent souvent pas : un vérificateur
+  récupère alors le résultat d'un worker auprès de l'éditeur, qui le
+  télécharge dès sa publication (`Collector::prefetch`) et le sert ; à défaut
+  des détenteurs annoncés, un téléchargement essaie tous les pairs connectés.
+- Recherche dans des documents : les workers lisent le texte des documents.
+  Le mode « seulement mes appareils » (liaison compte–nœud, tâches réservées,
+  contenus servis aux seuls nœuds autorisés) n'existe pas encore ; le site
+  avertit l'utilisateur avant l'envoi.
 - Ports P2P aléatoires (`tcp/0`, `udp/0`) : injoignable derrière un pare-feu.

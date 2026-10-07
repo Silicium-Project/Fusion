@@ -25,6 +25,9 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+/// Delay before a check that could not run locally is tried again.
+const RETRY_UNANSWERED_AFTER: std::time::Duration = std::time::Duration::from_secs(15);
+
 /// What this node already did as a verifier, by `(task id, attempt)`.
 #[derive(Clone, Default)]
 pub(crate) struct VerifierMemory {
@@ -60,6 +63,15 @@ pub(crate) async fn sweep(context: &NodeContext, memory: &VerifierMemory) {
         let Some(state) = context.taskbook.state(&task.task_id).ok().flatten() else {
             continue;
         };
+        // A workload that needs a model only offers once the model is ready
+        // (asking for it starts the download). Only results awaiting
+        // verification ask, so finished tasks do not keep a model loaded.
+        if state.status == DerivedTaskStatus::Completed
+            && let Some(workload) = crate::workload::of(&task)
+            && !workload.ensure_ready(context).await
+        {
+            continue;
+        }
         match next_step(context, memory, &state, task) {
             Some(Step::Offer(attempt)) => {
                 let body = TaskEventBody::VerificationClaimed { attempt };
@@ -67,7 +79,8 @@ pub(crate) async fn sweep(context: &NodeContext, memory: &VerifierMemory) {
             }
             Some(Step::Verify(job)) => {
                 let context = context.clone();
-                tokio::spawn(async move { verify(&context, *job).await });
+                let memory = memory.clone();
+                tokio::spawn(async move { verify(&context, &memory, *job).await });
             }
             None => {}
         }
@@ -116,12 +129,21 @@ fn next_step(
 }
 
 /// Checks the result and publishes the verdict.
-async fn verify(context: &NodeContext, job: Job) {
+async fn verify(context: &NodeContext, memory: &VerifierMemory, job: Job) {
     context.activity.started(&job.task.task_id, Role::Verify);
     let verdict_published = check(context, &job).await;
     context
         .activity
         .finished(&job.task.task_id, Role::Verify, verdict_published);
+    if !verdict_published {
+        // The check could not run here (model or result not available yet):
+        // a later sweep tries again, rather than leaving the verification
+        // this node was accepted for unanswered.
+        tokio::time::sleep(RETRY_UNANSWERED_AFTER).await;
+        if let Ok(mut started) = memory.started.lock() {
+            started.remove(&(job.task.task_id.clone(), job.attempt));
+        }
+    }
 }
 
 /// Checks the result and publishes the verdict; false when no verdict could

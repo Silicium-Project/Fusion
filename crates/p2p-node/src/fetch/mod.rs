@@ -1,5 +1,8 @@
 //! Downloading content from peers: find holders through DHT provider records
-//! (falling back to every connected peer), ask them one at a time over the
+//! (then every connected peer, when no holder answers: two home PCs often
+//! cannot reach each other, while both reach the publisher, which keeps the
+//! results of its tasks, see [`crate::results::Collector::prefetch`]), ask
+//! them one at a time over the
 //! `/silicium/content/1` request-response protocol, keep the first answer
 //! that hashes to the requested value, and serve this node's own content to
 //! others.
@@ -56,6 +59,8 @@ struct Download {
     asked: Vec<PeerId>,
     /// True while a request to a peer awaits its answer (one at a time).
     in_flight: bool,
+    /// Connected peers when the lookup ended, asked once the holders failed.
+    fallback: Vec<PeerId>,
 }
 
 /// Downloads in progress, by content hash, and the queries serving them.
@@ -87,6 +92,7 @@ impl Fetcher {
                 waiters: vec![reply],
                 asked: Vec::new(),
                 in_flight: false,
+                fallback: Vec::new(),
             },
         );
     }
@@ -109,9 +115,8 @@ impl Fetcher {
                 download.candidates.push_back(peer);
             }
         }
-        if finished && download.candidates.is_empty() && download.asked.is_empty() {
-            // Nobody announced it: try every connected peer.
-            download.candidates.extend(connected.iter().copied());
+        if finished {
+            download.fallback = connected.to_vec();
         }
         if download.in_flight {
             return None;
@@ -122,6 +127,14 @@ impl Fetcher {
     /// Picks the next peer to ask, or fails the download when none is left.
     fn next_candidate(&mut self, sha256: &str) -> Option<(String, PeerId)> {
         let download = self.downloads.get_mut(sha256)?;
+        if download.candidates.is_empty() {
+            // No holder left to ask: try the other connected peers.
+            let untried: Vec<PeerId> = std::mem::take(&mut download.fallback)
+                .into_iter()
+                .filter(|peer| !download.asked.contains(peer))
+                .collect();
+            download.candidates.extend(untried);
+        }
         match download.candidates.pop_front() {
             Some(peer) => {
                 download.asked.push(peer);

@@ -24,6 +24,7 @@
 - [rust-migration.md](architecture/rust-migration.md)
 - [interface-policy.md](architecture/interface-policy.md) — quand introduire une interface
 - [resource-intelligence.md](architecture/resource-intelligence.md) — profil de ressources et réputation par ressource
+- [embedding-workload.md](architecture/embedding-workload.md) — recherche dans des documents : formats, modèle épinglé, vérification, exploitation
 
 ### Contrats
 - [backend-files.md](contracts/backend-files.md)

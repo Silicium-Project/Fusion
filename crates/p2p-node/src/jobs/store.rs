@@ -4,7 +4,10 @@
 //! every fragment result (`results/<fragment id>.<extension>`) is there.
 
 use super::{FragmentRef, JobManifest, result_file};
-use crate::workload::{self, Workload};
+use crate::{
+    content::ContentStore,
+    workload::{self, Workload},
+};
 use std::{
     collections::BTreeMap,
     fs,
@@ -145,7 +148,12 @@ impl JobStore {
                 Err(_) => return Ok(None),
             }
         }
-        let outputs = workload.assemble(&job, &fragments)?;
+        let input = job
+            .scene_sha256
+            .as_deref()
+            .map(|sha256| self.root.join(ContentStore::relative_path(sha256)))
+            .unwrap_or_default();
+        let outputs = workload.assemble(&job, &input, &fragments)?;
         let mut first = None;
         for output in outputs {
             let path = self.root.join(result_file(job_id, output.extension));

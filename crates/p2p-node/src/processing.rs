@@ -53,6 +53,8 @@ pub(crate) struct NodeContext {
     pub(crate) active_tasks: Arc<Mutex<BTreeSet<String>>>,
     /// Work in progress and work journal shown by the desktop app.
     pub(crate) activity: ActivityLog,
+    /// Data directory of the node (identity, task book, models).
+    pub(crate) data_dir: std::path::PathBuf,
 }
 
 impl NodeContext {

@@ -36,7 +36,9 @@ pub(crate) async fn publish_request(
     settings: &PublishSettings,
     mut task: NetworkTask,
 ) -> Vec<NetworkTask> {
-    share_scene(context, &mut task).await;
+    if !share_scene(context, &mut task).await {
+        return Vec::new();
+    }
     let tasks = split_job(context, jobs, settings, task);
     for task in &tasks {
         publish_one(swarm, topic, context, settings, task);
@@ -44,15 +46,64 @@ pub(crate) async fn publish_request(
     tasks
 }
 
-/// Copies the scene into the content store, so peers can fetch it by hash.
-async fn share_scene(context: &NodeContext, task: &mut NetworkTask) {
-    match context.content.add_file(&task.scene_path).await {
+/// Shares the task's input by hash (prepared by its workload when it
+/// prepares inputs), unless the control API already did. False when the
+/// workload refused the input: the task is not published.
+async fn share_scene(context: &NodeContext, task: &mut NetworkTask) -> bool {
+    if let Some(sha256) = &task.scene_sha256
+        && task.scene_path == ContentStore::relative_path(sha256)
+        && context.content.has(sha256)
+    {
+        return true;
+    }
+    let Some(workload) = crate::workload::of(task) else {
+        return true;
+    };
+    let source = context.content.absolute(&task.scene_path);
+    match import_input(&context.content, workload, &source).await {
         Ok(sha256) => {
             task.scene_path = ContentStore::relative_path(&sha256);
             task.scene_sha256 = Some(sha256);
+            true
         }
-        Err(err) => println!(" Scene of {} not shared: {err}", task.task_id),
+        Err(ImportError::Rejected(reason)) => {
+            println!(" Input of {} refused: {reason}", task.task_id);
+            false
+        }
+        Err(ImportError::Storage(err)) => {
+            println!(" Scene of {} not shared: {err}", task.task_id);
+            true
+        }
     }
+}
+
+/// Why a submitted input was not imported.
+#[derive(Debug)]
+pub(crate) enum ImportError {
+    /// The workload refused it; the message is for the submitter.
+    Rejected(String),
+    /// It could not be stored.
+    Storage(String),
+}
+
+/// Imports the file submitted at `source` into the content store, as the
+/// workload prepares it ([`crate::workload::Workload::prepare_input`]) or as
+/// is, and returns its hash.
+pub(crate) async fn import_input(
+    content: &ContentStore,
+    workload: &'static dyn crate::workload::Workload,
+    source: &std::path::Path,
+) -> Result<String, ImportError> {
+    let path = source.to_path_buf();
+    let prepared = tokio::task::spawn_blocking(move || workload.prepare_input(&path))
+        .await
+        .map_err(|err| ImportError::Storage(err.to_string()))?
+        .map_err(ImportError::Rejected)?;
+    match prepared {
+        Some(bytes) => content.add_bytes(&bytes).await,
+        None => content.add_external_file(source).await,
+    }
+    .map_err(ImportError::Storage)
 }
 
 /// The fragments of `task`'s job, or `task` alone when it is not split.
@@ -63,9 +114,17 @@ fn split_job(
     task: NetworkTask,
 ) -> Vec<NetworkTask> {
     let input = context.content.absolute(&task.scene_path);
-    let Some((manifest, fragments)) = crate::workload::of(&task)
-        .and_then(|workload| workload.split(&task, &input, &settings.jobs))
+    let workload = crate::workload::of(&task);
+    let Some((manifest, fragments)) =
+        workload.and_then(|workload| workload.split(&task, &input, &settings.jobs))
     else {
+        if workload.is_some_and(|workload| workload.requires_split()) {
+            println!(" Job {} could not be split; not published", task.task_id);
+            settings
+                .control
+                .mark_failed(&task.task_id, "input_not_split");
+            return Vec::new();
+        }
         return vec![task];
     };
     let count = fragments.len();

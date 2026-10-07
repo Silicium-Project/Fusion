@@ -50,6 +50,14 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
         // Verify-only node: it keeps the task to check results, not to claim it.
         return;
     }
+    // A workload needing local resources (a model to download) gets them
+    // first; the publisher announces the task again until someone claims it.
+    if let Some(workload) = crate::workload::of(&task)
+        && !workload.ensure_ready(&context).await
+    {
+        println!(" Not ready for task {task_id} yet; claiming it when announced again");
+        return;
+    }
     // Claim only with a free compute slot: the other fragments stay open for
     // other nodes meanwhile.
     let Ok(_slot) = context.compute_slots.clone().acquire_owned().await else {

@@ -52,6 +52,7 @@ pub(crate) fn split(
             task_id,
             region,
             byte_range: None,
+            items: None,
         });
         tasks.push(fragment);
     }

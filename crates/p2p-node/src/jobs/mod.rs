@@ -74,6 +74,17 @@ pub(crate) struct FragmentRef {
     /// Input chunk (workloads splitting a file).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) byte_range: Option<ByteRange>,
+    /// Items of the input in the chunk, for workloads whose input is a list
+    /// (the passages of a document-search job).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) items: Option<ItemRange>,
+}
+
+/// Consecutive items `first..first + count` of a job's input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ItemRange {
+    pub(crate) first: u64,
+    pub(crate) count: u64,
 }
 
 fn empty_region() -> Region {
@@ -92,6 +103,15 @@ impl FragmentRef {
             task_id,
             region: empty_region(),
             byte_range: Some(range),
+            items: None,
+        }
+    }
+
+    /// Fragment covering the items `items` of the input, stored in `range`.
+    pub(crate) fn items(task_id: String, range: ByteRange, items: ItemRange) -> Self {
+        Self {
+            items: Some(items),
+            ..Self::chunk(task_id, range)
         }
     }
 }

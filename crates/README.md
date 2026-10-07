@@ -12,9 +12,10 @@ runtime **cible** : il remplace progressivement le runtime Python de `tools/`,
 | [`compute-daemon/`](compute-daemon/) | `compute_daemon` | binaire `compute_daemon` | Calcul et vérification locaux (lance le raytracer) | Prototype |
 | [`reputation-bridge/`](reputation-bridge/) | `reputation_bridge` | binaire `reputation_bridge` | Scores de réputation, vérification de stake Solana | Prototype |
 | [`raytracer/`](raytracer/) | `silicium-raytracer` | binaire `silicium-raytracer` | Moteur de rendu déterministe, utilisé en production | Production |
+| [`embedding/`](embedding/) | `silicium-embedding` | bibliothèque + binaire `silicium-embed` | Recherche dans des documents : lecture des documents, passages, modèle épinglé, vecteurs, index | Nouveau (dev) |
 
-Dépendances entre crates : seul `p2p-node` dépend de `node-core` (dépendance
-par chemin). Les autres crates sont indépendantes et communiquent en HTTP local.
+Dépendances entre crates : `p2p-node` dépend de `node-core`, du raytracer
+(pipeline de tuiles) et de `embedding` (dépendances par chemin). Les autres crates sont indépendantes et communiquent en HTTP local.
 
 ## Construire et tester
 
