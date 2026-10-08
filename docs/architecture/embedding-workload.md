@@ -52,17 +52,29 @@ d'autres workloads d'IA :
 
 ## 3. Formats
 
-### Corpus `silicium-corpus/1` (entrée partagée, JSON Lines)
+### Corpus `silicium-corpus/2` (entrée partagée, JSON Lines)
 
 ```
-{"format":"silicium-corpus/1","passage_count":3,"documents":[{"name":"contrat.pdf","pages":12,"passages":2},…],"skipped":[{"name":"scan.pdf","reason":"no_text"}]}
-{"id":0,"doc":0,"page":1,"text":"…"}
+{"format":"silicium-corpus/2","passage_count":3,"documents":[{"name":"contrat.pdf","pages":12,"passages":2},…],"skipped":[{"name":"scan.pdf","reason":"no_text"}]}
+{"id":0,"doc":0,"page":1,"section":"Contrat › Article 6 - Résiliation","text":"…"}
 {"id":1,"doc":0,"page":2,"text":"…"}
 ```
 
-- Passages de 200 mots au plus, chevauchement de 40 mots, sans sortir d'une
-  page (un passage a toujours sa page). Une fin de page de moins de 30 mots
-  rejoint le passage précédent.
+- Passages de 150 mots au plus, chevauchement de 30 mots, sans sortir d'une
+  page (un passage a toujours sa page). Une fin de moins de 25 mots rejoint
+  le passage précédent.
+- **Titres** : titres Markdown, styles de titre Word (`Heading 1`, `Titre 2`,
+  `Überschrift 3`), lignes courtes du type « Article 6 », « Chapitre II »,
+  « § 3 », « 2.1 Durée », ou en MAJUSCULES. Un titre ouvre un nouveau
+  passage, et chaque passage garde le chemin des titres qui le contiennent
+  (`section`, trois niveaux, séparés par « › », absent sans titre).
+- Le modèle vectorise `section` + saut de ligne + texte (sans répéter un
+  titre qui ouvre déjà le passage) : un passage qui ne dit pas de quoi il
+  parle est retrouvé par le titre de sa section. Workers et vérificateurs
+  construisent ce texte avec la même fonction (`PassageRecord::embedding_input`).
+- `silicium-corpus/1` (sans `section`) est encore lu ; un nœud plus ancien
+  refuse `/2`, donc l'éditeur et les workers doivent être mis à jour
+  ensemble.
 - Le découpage est déterministe : un même document donne toujours les mêmes
   passages (les vérificateurs en dépendent).
 - Un fragment = une plage d'octets de lignes entières (`byte_range` de
@@ -157,7 +169,17 @@ appelé par le BackEnd avec les tâches terminées de la collection :
 {"jobs": ["site-render-7-…", "site-render-7-…"], "query": "comment résilier ?", "top_k": 10}
 ```
 
-- La question est vectorisée avec le même modèle épinglé (préfixe `query: `).
+- **Recherche hybride** : la question est vectorisée avec le même modèle
+  épinglé (préfixe `query: `) et cherchée aussi par mots-clés (BM25 sur le
+  document, la section et le texte de chaque passage ; statistiques communes
+  à toutes les tâches cherchées). Les deux classements sont fusionnés par
+  rang réciproque (RRF, k = 60). Les mots-clés rattrapent ce qu'un petit
+  modèle manque : nombres, noms, références (« article 6 », « 780 € »).
+  L'index de mots-clés est construit au chargement de l'index, en mémoire :
+  les fichiers publiés ne changent pas.
+- Deux passages voisins qui se chevauchent ne sont montrés qu'une fois.
+- Chaque résultat porte sa `section`, affichée par le site sous le nom du
+  document.
 - Recherche exacte par produit scalaire : une fraction de seconde pour un million de passages
   sur un cœur. Les index chargés restent en mémoire (512 Mo par défaut, les
   moins récemment utilisés sortent en premier).
@@ -201,6 +223,7 @@ seconde ; un livre de 300 pages (~1 000 passages) prend quelques secondes.
 | Nœud | `cargo test -p p2p_node` | préparation, découpage, calcul, vérification d'un résultat honnête et de résultats truqués, assemblage, API de recherche |
 | Bout en bout | `WORKERS=2 WORKLOAD=ai/embedding/test-tiny crates/p2p-node/scripts/e2e-local.sh docs.zip` (binaire construit avec `--features p2p_node/test-model`) | orchestrateur + 2 workers en local : chacun calcule un fragment et vérifie celui de l'autre, l'index est assemblé, la recherche répond |
 | Vrai modèle | `cargo test -p silicium-embedding --release --test real_model -- --ignored` | téléchargement, hashes, classement par le sens (français et anglais), écart entre lots |
+| Qualité | `silicium-embed eval crates/embedding/eval` | rappel@k et MRR des modes dense, mots-clés et hybride sur 74 questions FR/EN/DE (`--lexical-only` sans modèle) |
 | Parité | `crates/embedding/scripts/parity_check.py` | vecteurs identiques à `sentence-transformers` (≥ 0,999) |
 | BackEnd | `go test ./...` | dépôt, consentement, collections, recherche, ouverture, export |
 | FrontEnd | `npm test`, `npm run test:functional` | sélection des documents, surlignage, parcours de dépôt et de recherche |
@@ -211,8 +234,11 @@ seconde ; un livre de 300 pages (~1 000 passages) prend quelques secondes.
    compte (appairage depuis l'app), tâches réservées à une liste de pairs dans
    l'enveloppe signée, contenus servis aux seuls pairs autorisés. Le site
    l'affichera par défaut quand l'utilisateur a au moins un appareil lié.
-2. **OCR** des PDF scannés (aujourd'hui signalés, pas lus).
-3. **Formats** `.odt`, `.pptx`, HTML.
-4. **Index approché** (HNSW) au-delà d'environ un million de passages.
-5. **Réponses rédigées** : le workload Ollama s'appuiera sur cet index pour
+2. **Qualité de recherche** : reclassement des meilleurs passages par un
+   cross-encoder, modèle plus grand (`bge-m3`) comme second workload, jugés
+   sur `silicium-embed eval`.
+3. **OCR** des PDF scannés (aujourd'hui signalés, pas lus).
+4. **Formats** `.odt`, `.pptx`, HTML.
+5. **Index approché** (HNSW) au-delà d'environ un million de passages.
+6. **Réponses rédigées** : le workload Ollama s'appuiera sur cet index pour
    répondre à la question en citant les passages (RAG).

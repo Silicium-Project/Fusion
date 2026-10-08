@@ -18,6 +18,7 @@ use crate::{
     Error, Result,
     corpus::{self, DocumentEntry},
     documents::SkippedDocument,
+    lexical::LexicalIndex,
     model::ModelSpec,
     vectors::{VectorBlock, dot},
 };
@@ -51,6 +52,10 @@ pub struct IndexPassage {
     pub id: u64,
     pub document: String,
     pub page: Option<u32>,
+    /// Headings above the passage (`Article 6 › Préavis`), empty when the
+    /// document has none (and in indexes built before sections existed).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub section: String,
     pub text: String,
 }
 
@@ -105,6 +110,7 @@ pub fn assemble(
             id: record.id,
             document,
             page: record.page,
+            section: record.section,
             text: record.text,
         };
         passages.extend(serde_json::to_vec(&line).map_err(|err| Error::Format(err.to_string()))?);
@@ -138,6 +144,8 @@ pub struct Index {
     passages: Vec<u8>,
     /// Start of each line of `passages`.
     offsets: Vec<usize>,
+    /// Keyword index of the passages (built on load, not stored).
+    lexical: LexicalIndex,
 }
 
 impl Index {
@@ -179,12 +187,28 @@ impl Index {
                 "passage file does not match the manifest".into(),
             ));
         }
-        Ok(Self {
+        let mut index = Self {
             manifest,
             vectors,
             passages: files.passages,
             offsets,
-        })
+            lexical: LexicalIndex::default(),
+        };
+        let mut searchable = Vec::with_capacity(count);
+        for id in 0..count as u64 {
+            let passage = index.passage(id)?;
+            searchable.push(format!(
+                "{} {} {}",
+                passage.document, passage.section, passage.text
+            ));
+        }
+        index.lexical = LexicalIndex::build(searchable.iter().map(String::as_str));
+        Ok(index)
+    }
+
+    /// The keyword index of the passages (document name, section and text).
+    pub fn lexical(&self) -> &LexicalIndex {
+        &self.lexical
     }
 
     /// The `k` passages most similar to `query` (a unit vector), best first.
@@ -222,7 +246,10 @@ impl Index {
 
     /// Approximate memory held by this index, in bytes.
     pub fn memory_bytes(&self) -> usize {
-        self.vectors.len() * 4 + self.passages.len() + self.offsets.len() * 8
+        self.vectors.len() * 4
+            + self.passages.len()
+            + self.offsets.len() * 8
+            + self.lexical.memory_bytes()
     }
 }
 

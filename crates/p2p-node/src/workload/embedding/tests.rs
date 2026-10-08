@@ -150,7 +150,7 @@ fn submitted_documents_become_a_corpus_or_a_message() {
     let file = node.root.join("notes.txt");
     std::fs::write(&file, "un contrat à résilier").unwrap();
     let corpus_bytes = MULTILINGUAL_E5_SMALL.prepare_input(&file).unwrap().unwrap();
-    assert!(corpus_bytes.starts_with(b"{\"format\":\"silicium-corpus/1\""));
+    assert!(corpus_bytes.starts_with(b"{\"format\":\"silicium-corpus/2\""));
     let slides = node.root.join("slides.pptx");
     std::fs::write(&slides, b"PK\x03\x04").unwrap();
     let message = MULTILINGUAL_E5_SMALL.prepare_input(&slides).unwrap_err();

@@ -34,7 +34,11 @@ pub(super) async fn execute(
     let first_id = passages.first()?.id;
     let dimension = workload.model.dimension;
     let computed = tokio::task::spawn_blocking(move || {
-        let texts: Vec<&str> = passages.iter().map(|record| record.text.as_str()).collect();
+        let inputs: Vec<_> = passages
+            .iter()
+            .map(PassageRecord::embedding_input)
+            .collect();
+        let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
         let vectors = encoder.embed_passages(&texts)?;
         Ok::<_, silicium_embedding::Error>(
             VectorBlock::new(dimension, first_id, &vectors)?.to_bytes(),
@@ -126,10 +130,11 @@ fn recompute_agrees(
     picks: &[usize],
     threshold: f32,
 ) -> silicium_embedding::Result<bool> {
-    let texts: Vec<&str> = picks
+    let inputs: Vec<_> = picks
         .iter()
-        .map(|&index| passages[index].text.as_str())
+        .map(|&index| passages[index].embedding_input())
         .collect();
+    let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
     let expected = encoder.embed_passages(&texts)?;
     Ok(picks.iter().zip(&expected).all(|(&index, expected)| {
         block

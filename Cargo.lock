@@ -4575,6 +4575,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokenizers 0.23.2",
+ "unicode-normalization",
  "zip",
 ]
 

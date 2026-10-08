@@ -3,6 +3,10 @@
 //! displayed (`w:lastRenderedPageBreak`) and where the author forced one
 //! (`w:br w:type="page"`): when present they number the pages, so that a
 //! search result can say "page 12" as for a PDF.
+//!
+//! Paragraphs in a heading style (`Heading 1`, `Titre 2`, `Überschrift 3`,
+//! `Title`) are written as Markdown headings (`## …`), so that passages
+//! follow the structure of the document (see [`crate::passages`]).
 
 use super::{Page, SkipReason};
 use quick_xml::{Reader, events::Event};
@@ -56,14 +60,36 @@ fn parse(xml: &str) -> Result<(Vec<String>, bool), quick_xml::Error> {
     let mut pages = vec![String::new()];
     let mut in_text = false;
     let mut breaks_seen = false;
+    // Start of the current paragraph (page, byte) and its heading level.
+    let mut paragraph = (0, 0);
+    let mut heading_level: Option<usize> = None;
     loop {
         match reader.read_event()? {
             Event::Start(element) if element.local_name().as_ref() == "t" => in_text = true,
+            Event::Start(element) if element.local_name().as_ref() == "p" => {
+                paragraph = (pages.len() - 1, current(&mut pages).len());
+                heading_level = None;
+            }
             Event::End(element) => match element.local_name().as_ref() {
                 "t" => in_text = false,
-                "p" => current(&mut pages).push('\n'),
+                "p" => {
+                    if let Some(level) = heading_level.take()
+                        && paragraph.0 == pages.len() - 1
+                    {
+                        let page = current(&mut pages);
+                        if page[paragraph.1..].trim().is_empty() {
+                            // An empty heading paragraph: nothing to mark.
+                        } else {
+                            page.insert_str(paragraph.1, &format!("{} ", "#".repeat(level)));
+                        }
+                    }
+                    current(&mut pages).push('\n');
+                }
                 _ => {}
             },
+            Event::Empty(element) if element.local_name().as_ref() == "pStyle" => {
+                heading_level = style_heading_level(&element);
+            }
             Event::Empty(element) => match element.local_name().as_ref() {
                 "tab" => current(&mut pages).push(' '),
                 "lastRenderedPageBreak" => {
@@ -101,6 +127,27 @@ fn new_page(pages: &mut Vec<String>) {
 
 fn current(pages: &mut [String]) -> &mut String {
     pages.last_mut().expect("there is always a page")
+}
+
+/// Heading level of a paragraph style (`<w:pStyle w:val="Heading2"/>`):
+/// the style identifiers Word writes in English, French and German, and
+/// `Title`, which is level 1.
+fn style_heading_level(element: &quick_xml::events::BytesStart<'_>) -> Option<usize> {
+    let attribute = element
+        .attributes()
+        .flatten()
+        .find(|attribute| attribute.key.local_name().as_ref() == "val")?;
+    let value = attribute.value.to_lowercase().replace(' ', "");
+    if matches!(value.as_str(), "title" | "titre" | "titel") {
+        return Some(1);
+    }
+    let level = ["heading", "titre", "berschrift"]
+        .iter()
+        .find_map(|prefix| value.find(prefix).map(|at| &value[at + prefix.len()..]))?;
+    level
+        .parse::<usize>()
+        .ok()
+        .filter(|level| (1..=6).contains(level))
 }
 
 /// True for `<w:br w:type="page"/>`.

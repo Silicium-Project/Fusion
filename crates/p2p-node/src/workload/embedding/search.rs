@@ -3,8 +3,9 @@
 //!
 //! The BackEnd sends the jobs of one collection (the jobs a person filled
 //! with documents, all of the same model) and the query; the publisher
-//! embeds the query with the same pinned model, searches every index and
-//! returns the best passages. Indexes are read from the job results
+//! embeds the query with the same pinned model, searches every index by
+//! meaning and by keywords, fuses both rankings and returns the best
+//! passages (`silicium_embedding::search`, hybrid mode). Indexes are read from the job results
 //! (`results/<job>.index.json`, `.vectors.f32`, `.passages.jsonl`) and kept
 //! in memory up to `SILICIUM_EMBEDDING_INDEX_CACHE_MB` (default 512),
 //! least recently used first out.
@@ -12,7 +13,10 @@
 use super::{Embedding, runtime};
 use crate::jobs::{JobStore, result_file};
 use serde::{Deserialize, Serialize};
-use silicium_embedding::index::{Index, IndexFiles, top_k};
+use silicium_embedding::{
+    index::{Index, IndexFiles},
+    search::{self as hybrid, Mode},
+};
 use std::{
     collections::HashMap,
     path::Path,
@@ -50,7 +54,11 @@ pub(crate) struct SearchHit {
     pub(crate) passage_id: u64,
     pub(crate) document: String,
     pub(crate) page: Option<u32>,
+    /// Headings above the passage (empty when the document has none).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub(crate) section: String,
     pub(crate) text: String,
+    /// Fused rank score: only the order is meaningful.
     pub(crate) score: f32,
 }
 
@@ -135,7 +143,7 @@ pub(crate) async fn search(
         let vector = encoder
             .embed_query(&query)
             .map_err(|err| SearchError::Failed(err.to_string()))?;
-        rank(&indexes, &vector, limit).map(|hits| SearchResponse {
+        rank(&indexes, &vector, &query, limit).map(|hits| SearchResponse {
             model: workload.model.id.to_string(),
             hits,
             unavailable_jobs,
@@ -145,33 +153,30 @@ pub(crate) async fn search(
     .map_err(|err| SearchError::Failed(err.to_string()))?
 }
 
-/// The best `top_k` passages of all `indexes` (root job id, index).
+/// The best `limit` passages of all `indexes` (root job id, index), by
+/// meaning and keywords fused.
 fn rank(
     indexes: &[(String, Arc<Index>)],
-    query: &[f32],
+    vector: &[f32],
+    query: &str,
     limit: usize,
 ) -> Result<Vec<SearchHit>, SearchError> {
-    let mut candidates = Vec::new();
-    for (position, (_, index)) in indexes.iter().enumerate() {
-        let hits = index
-            .search(query, limit)
-            .map_err(|err| SearchError::Failed(err.to_string()))?;
-        candidates.extend(hits.into_iter().map(|hit| ((position, hit.id), hit.score)));
-    }
-    top_k(candidates.into_iter(), limit)
+    let failed = |err: silicium_embedding::Error| SearchError::Failed(err.to_string());
+    let searched: Vec<&Index> = indexes.iter().map(|(_, index)| index.as_ref()).collect();
+    hybrid::search(&searched, Some(vector), query, limit, Mode::Hybrid)
+        .map_err(failed)?
         .into_iter()
-        .map(|((position, id), score)| {
-            let (job_id, index) = &indexes[position];
-            let passage = index
-                .passage(id)
-                .map_err(|err| SearchError::Failed(err.to_string()))?;
+        .map(|found| {
+            let (job_id, index) = &indexes[found.index];
+            let passage = index.passage(found.id).map_err(failed)?;
             Ok(SearchHit {
                 job_id: job_id.clone(),
-                passage_id: id,
+                passage_id: found.id,
                 document: passage.document,
                 page: passage.page,
+                section: passage.section,
                 text: passage.text,
-                score,
+                score: found.score,
             })
         })
         .collect()

@@ -1,0 +1,74 @@
+{"id": "fr-bail-01", "lang": "fr", "question": "Combien de temps de préavis pour quitter l'appartement meublé ?", "expected": [{"document": "contrat-de-location.md", "contains": "Le préavis est d'un mois pour un logement meublé"}]}
+{"id": "fr-bail-02", "lang": "fr", "question": "Quel est le montant du loyer de l'appartement de la rue des Lilas ?", "expected": [{"document": "contrat-de-location.md", "contains": "loyer mensuel est de 780 euros"}]}
+{"id": "fr-bail-03", "lang": "fr", "question": "Quand est-ce que je récupère ma caution ?", "expected": [{"document": "contrat-de-location.md", "contains": "restitué dans un délai d'un mois après la remise des clés"}]}
+{"id": "fr-bail-04", "lang": "fr", "question": "Ai-je le droit d'avoir un chat ?", "expected": [{"document": "contrat-de-location.md", "contains": "détention d'animaux domestiques est autorisée"}]}
+{"id": "fr-bail-05", "lang": "fr", "question": "Qui paie si la chaudière tombe en panne ?", "expected": [{"document": "contrat-de-location.md", "contains": "remplacement de la chaudière"}]}
+{"id": "fr-bail-06", "lang": "fr", "question": "Puis-je louer mon appartement sur Airbnb pendant les vacances ?", "expected": [{"document": "contrat-de-location.md", "contains": "sous-location"}]}
+{"id": "fr-bail-07", "lang": "fr", "question": "Comment le loyer augmente-t-il chaque année ?", "expected": [{"document": "contrat-de-location.md", "contains": "indice de référence des loyers"}]}
+{"id": "fr-bail-08", "lang": "fr", "question": "article 9 assurance habitation attestation", "expected": [{"document": "contrat-de-location.md", "contains": "assurer le logement contre les risques locatifs"}]}
+{"id": "fr-bail-09", "lang": "fr", "question": "Que couvrent les 60 euros de charges ?", "expected": [{"document": "contrat-de-location.md", "contains": "60 euros de provisions sur charges"}]}
+{"id": "fr-vide-01", "lang": "fr", "question": "Préavis réduit en cas de perte d'emploi pour la maison avec jardin", "expected": [{"document": "bail-logement-vide.md", "contains": "réduit à un mois en cas de mutation"}]}
+{"id": "fr-vide-02", "lang": "fr", "question": "Qui doit tondre la pelouse ?", "expected": [{"document": "bail-logement-vide.md", "contains": "tonte de la pelouse"}]}
+{"id": "fr-vide-03", "lang": "fr", "question": "Ai-je le droit de repeindre le salon ?", "expected": [{"document": "bail-logement-vide.md", "contains": "repeindre une pièce"}]}
+{"id": "fr-regl-01", "lang": "fr", "question": "À partir de quelle heure faut-il faire moins de bruit le soir ?", "expected": [{"document": "reglement-interieur.txt", "contains": "calme doit être respecté de 22 h à 7 h"}]}
+{"id": "fr-regl-02", "lang": "fr", "question": "Peut-on faire des travaux de perceuse le dimanche ?", "expected": [{"document": "reglement-interieur.txt", "contains": "interdits le dimanche"}]}
+{"id": "fr-regl-03", "lang": "fr", "question": "Où jeter les bouteilles en verre ?", "expected": [{"document": "reglement-interieur.txt", "contains": "verre dans le conteneur"}]}
+{"id": "fr-regl-04", "lang": "fr", "question": "Quand sont ramassés les encombrants ?", "expected": [{"document": "reglement-interieur.txt", "contains": "premier mardi du mois"}]}
+{"id": "fr-regl-05", "lang": "fr", "question": "Qui appeler en cas de fuite d'eau le week-end ?", "expected": [{"document": "reglement-interieur.txt", "contains": "numéro d'astreinte"}]}
+{"id": "fr-regl-06", "lang": "fr", "question": "Mes invités peuvent-ils se garer dans le parking ?", "expected": [{"document": "reglement-interieur.txt", "contains": "stationnement des visiteurs est toléré"}]}
+{"id": "fr-regl-07", "lang": "fr", "question": "Puis-je laisser mon vélo dans le couloir ?", "expected": [{"document": "reglement-interieur.txt", "contains": "Rien ne doit être stocké dans les couloirs"}, {"document": "reglement-interieur.txt", "contains": "vélos sont rangés dans le local"}]}
+{"id": "fr-trav-01", "lang": "fr", "question": "Combien de jours de télétravail par semaine ?", "expected": [{"document": "contrat-de-travail.md", "contains": "travailler à domicile deux jours par semaine"}]}
+{"id": "fr-trav-02", "lang": "fr", "question": "Quelle est la durée de la période d'essai ?", "expected": [{"document": "contrat-de-travail.md", "contains": "période d'essai de quatre mois"}]}
+{"id": "fr-trav-03", "lang": "fr", "question": "Quel est mon salaire annuel brut ?", "expected": [{"document": "contrat-de-travail.md", "contains": "48 000 euros"}]}
+{"id": "fr-trav-04", "lang": "fr", "question": "Combien de vacances par an ?", "expected": [{"document": "contrat-de-travail.md", "contains": "25 jours ouvrés de congés payés"}]}
+{"id": "fr-trav-05", "lang": "fr", "question": "Si je démissionne, combien de temps dois-je rester ?", "expected": [{"document": "contrat-de-travail.md", "contains": "préavis de trois mois"}]}
+{"id": "fr-trav-06", "lang": "fr", "question": "valeur des tickets resto", "expected": [{"document": "contrat-de-travail.md", "contains": "titres-restaurant d'une valeur de 9 euros"}]}
+{"id": "fr-trav-07", "lang": "fr", "question": "La mutuelle est-elle payée par l'entreprise ?", "expected": [{"document": "contrat-de-travail.md", "contains": "prise en charge à 60 %"}]}
+{"id": "fr-trav-08", "lang": "fr", "question": "Syntec", "expected": [{"document": "contrat-de-travail.md", "contains": "convention collective Syntec"}]}
+{"id": "fr-noeud-01", "lang": "fr", "question": "Quel port faut-il ouvrir sur la box pour le nœud ?", "expected": [{"document": "guide-du-noeud-silicium.md", "contains": "port TCP 46201"}]}
+{"id": "fr-noeud-02", "lang": "fr", "question": "Le nœud consomme-t-il toute la puissance de mon ordinateur ?", "expected": [{"document": "guide-du-noeud-silicium.md", "contains": "au plus la moitié des cœurs"}]}
+{"id": "fr-noeud-03", "lang": "fr", "question": "Que se passe-t-il si une machine renvoie un mauvais résultat ?", "expected": [{"document": "guide-du-noeud-silicium.md", "contains": "Un fragment refusé est recalculé ailleurs"}]}
+{"id": "fr-noeud-04", "lang": "fr", "question": "Les unités gagnées ont-elles une valeur ?", "expected": [{"document": "guide-du-noeud-silicium.md", "contains": "n'ont pas de valeur réelle"}]}
+{"id": "fr-noeud-05", "lang": "fr", "question": "Mon PC portable sur batterie va-t-il calculer ?", "expected": [{"document": "guide-du-noeud-silicium.md", "contains": "batterie descend sous 20 %"}]}
+{"id": "fr-noeud-06", "lang": "fr", "question": "Pourquoi ne faut-il pas envoyer de documents secrets ?", "expected": [{"document": "guide-du-noeud-silicium.md", "contains": "voient les données des fragments"}]}
+{"id": "fr-x-01", "lang": "fr", "question": "Combien de semaines de congé parental ?", "expected": [{"document": "employee-handbook.md", "contains": "16 weeks of fully paid parental leave"}]}
+{"id": "fr-x-02", "lang": "fr", "question": "Que signifie l'erreur E3 de la machine à café ?", "expected": [{"document": "coffee-machine-manual.md", "contains": "Error E3 means the water tank is empty"}]}
+{"id": "fr-x-03", "lang": "fr", "question": "Combien de temps sont conservées mes positions GPS ?", "expected": [{"document": "privacy-policy.md", "contains": "Trip locations are kept for 13 months"}]}
+{"id": "fr-x-04", "lang": "fr", "question": "Quelle caution pour louer un vélo électrique ?", "expected": [{"document": "fahrrad-mietbedingungen.md", "contains": "für E-Bikes 500 Euro"}]}
+{"id": "fr-x-05", "lang": "fr", "question": "Quelle franchise en cas de maladie à l'étranger ?", "expected": [{"document": "reiseversicherung.md", "contains": "Selbstbeteiligung von 150 Euro"}]}
+{"id": "en-hand-01", "lang": "en", "question": "How many days of holiday do I get?", "expected": [{"document": "employee-handbook.md", "contains": "28 days of paid annual leave"}]}
+{"id": "en-hand-02", "lang": "en", "question": "When do I need a doctor's note?", "expected": [{"document": "employee-handbook.md", "contains": "medical certificate is required from the fourth consecutive day"}]}
+{"id": "en-hand-03", "lang": "en", "question": "Can I work from abroad for a few weeks?", "expected": [{"document": "employee-handbook.md", "contains": "Working from another country"}]}
+{"id": "en-hand-04", "lang": "en", "question": "What is the daily food allowance on business trips?", "expected": [{"document": "employee-handbook.md", "contains": "reimbursed up to 40 pounds per day"}]}
+{"id": "en-hand-05", "lang": "en", "question": "What should I do if my laptop gets stolen?", "expected": [{"document": "employee-handbook.md", "contains": "reported to the IT team within 24 hours"}]}
+{"id": "en-hand-06", "lang": "en", "question": "notice period resignation after first year", "expected": [{"document": "employee-handbook.md", "contains": "two months' notice"}]}
+{"id": "en-hand-07", "lang": "en", "question": "Money to set up a home office", "expected": [{"document": "employee-handbook.md", "contains": "home-office allowance of 400 pounds"}]}
+{"id": "en-hand-08", "lang": "en", "question": "Can unused leave be kept for next year?", "expected": [{"document": "employee-handbook.md", "contains": "carried over to the next year"}]}
+{"id": "en-coffee-01", "lang": "en", "question": "How often should I descale the coffee machine?", "expected": [{"document": "coffee-machine-manual.md", "contains": "every three months, or after 300 coffees"}]}
+{"id": "en-coffee-02", "lang": "en", "question": "The coffee machine light is blinking orange", "expected": [{"document": "coffee-machine-manual.md", "contains": "blinks orange quickly"}]}
+{"id": "en-coffee-03", "lang": "en", "question": "Can I put the drip tray in the dishwasher?", "expected": [{"document": "coffee-machine-manual.md", "contains": "not dishwasher safe"}]}
+{"id": "en-coffee-04", "lang": "en", "question": "How do I change the amount of coffee in the cup?", "expected": [{"document": "coffee-machine-manual.md", "contains": "cup volumes can be programmed"}]}
+{"id": "en-coffee-05", "lang": "en", "question": "My espresso is lukewarm", "expected": [{"document": "coffee-machine-manual.md", "contains": "coffee is not hot enough"}]}
+{"id": "en-kettle-01", "lang": "en", "question": "How do I descale the kettle with vinegar?", "expected": [{"document": "kettle-manual.md", "contains": "half white vinegar"}]}
+{"id": "en-kettle-02", "lang": "en", "question": "How long is the kettle guaranteed?", "expected": [{"document": "kettle-manual.md", "contains": "guaranteed for one year"}]}
+{"id": "en-priv-01", "lang": "en", "question": "How do I delete my personal data?", "expected": [{"document": "privacy-policy.md", "contains": "access, correct, export or delete your personal data"}]}
+{"id": "en-priv-02", "lang": "en", "question": "Do you sell my data to advertisers?", "expected": [{"document": "privacy-policy.md", "contains": "We do not sell your personal data"}]}
+{"id": "en-priv-03", "lang": "en", "question": "How long are invoices kept?", "expected": [{"document": "privacy-policy.md", "contains": "Invoices are kept for ten years"}]}
+{"id": "en-priv-04", "lang": "en", "question": "Is my location tracked when I am not riding?", "expected": [{"document": "privacy-policy.md", "contains": "We do not track your location outside of a rental"}]}
+{"id": "en-priv-05", "lang": "en", "question": "Email address of the data protection officer", "expected": [{"document": "privacy-policy.md", "contains": "privacy@example-bikes.test"}]}
+{"id": "en-x-01", "lang": "en", "question": "How much notice must a tenant give for a furnished flat?", "expected": [{"document": "contrat-de-location.md", "contains": "Le préavis est d'un mois pour un logement meublé"}]}
+{"id": "en-x-02", "lang": "en", "question": "Which TCP port does the Silicium node use?", "expected": [{"document": "guide-du-noeud-silicium.md", "contains": "port TCP 46201"}]}
+{"id": "de-reise-01", "lang": "de", "question": "Wie hoch ist die Selbstbeteiligung bei einer Behandlung im Ausland?", "expected": [{"document": "reiseversicherung.md", "contains": "Selbstbeteiligung von 150 Euro"}]}
+{"id": "de-reise-02", "lang": "de", "question": "Bis wann muss ich einen Schaden melden?", "expected": [{"document": "reiseversicherung.md", "contains": "innerhalb von zwei Wochen nach der Rückkehr"}]}
+{"id": "de-reise-03", "lang": "de", "question": "Ist mein Schmuck im Hotel versichert?", "expected": [{"document": "reiseversicherung.md", "contains": "Wertsachen wie Schmuck"}]}
+{"id": "de-reise-04", "lang": "de", "question": "Wie kann ich die Versicherung kündigen?", "expected": [{"document": "reiseversicherung.md", "contains": "Frist von drei Monaten"}]}
+{"id": "de-reise-05", "lang": "de", "question": "Was kostet die Familienversicherung pro Jahr?", "expected": [{"document": "reiseversicherung.md", "contains": "149 Euro für Familien"}]}
+{"id": "de-reise-06", "lang": "de", "question": "Zahlt die Versicherung, wenn ich vor der Reise krank werde und nicht fahren kann?", "expected": [{"document": "reiseversicherung.md", "contains": "Erstattet werden die Stornokosten"}]}
+{"id": "de-rad-01", "lang": "de", "question": "Bis wann muss ich das Fahrrad zurückbringen?", "expected": [{"document": "fahrrad-mietbedingungen.md", "contains": "bis 19 Uhr zurückzugeben"}]}
+{"id": "de-rad-02", "lang": "de", "question": "Was kostet ein E-Bike pro Tag?", "expected": [{"document": "fahrrad-mietbedingungen.md", "contains": "E-Bike 35 Euro pro Tag"}]}
+{"id": "de-rad-03", "lang": "de", "question": "Kann ich meine Reservierung kostenlos absagen?", "expected": [{"document": "fahrrad-mietbedingungen.md", "contains": "48 Stunden vor Mietbeginn kostenlos storniert"}]}
+{"id": "de-rad-04", "lang": "de", "question": "Wer zahlt, wenn das Rad gestohlen wird?", "expected": [{"document": "fahrrad-mietbedingungen.md", "contains": "höchstens 800 Euro"}]}
+{"id": "de-rad-05", "lang": "de", "question": "Wie alt muss man sein, um ein Fahrrad zu mieten?", "expected": [{"document": "fahrrad-mietbedingungen.md", "contains": "mindestens 16 Jahre alt"}]}
+{"id": "de-rad-06", "lang": "de", "question": "Gibt es Rabatt für eine Woche?", "expected": [{"document": "fahrrad-mietbedingungen.md", "contains": "20 Prozent Rabatt"}]}
+{"id": "de-x-01", "lang": "de", "question": "Wie lange dauert die Probezeit des Entwicklers?", "expected": [{"document": "contrat-de-travail.md", "contains": "période d'essai de quatre mois"}]}
+{"id": "de-x-02", "lang": "de", "question": "Wie oft sollte man die Kaffeemaschine entkalken?", "expected": [{"document": "coffee-machine-manual.md", "contains": "every three months, or after 300 coffees"}]}

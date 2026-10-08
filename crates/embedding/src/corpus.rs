@@ -1,14 +1,18 @@
 //! The corpus: the canonical input of a document-search job.
 //!
 //! The publisher turns the submitted files into one JSON Lines file
-//! (format `silicium-corpus/1`), shared with the workers by hash:
+//! (format `silicium-corpus/2`), shared with the workers by hash:
 //!
 //! ```text
-//! {"format":"silicium-corpus/1","passage_count":3,"documents":[...],"skipped":[...]}
-//! {"id":0,"doc":0,"page":1,"text":"…"}
-//! {"id":1,"doc":0,"page":2,"text":"…"}
+//! {"format":"silicium-corpus/2","passage_count":3,"documents":[...],"skipped":[...]}
+//! {"id":0,"doc":0,"page":1,"section":"Article 6 - Préavis","text":"…"}
+//! {"id":1,"doc":0,"page":2,"section":"Article 6 - Préavis","text":"…"}
 //! {"id":2,"doc":1,"page":null,"text":"…"}
 //! ```
+//!
+//! Format 2 adds the `section` of a passage (the headings above it), which
+//! is embedded with the text ([`PassageRecord::embedding_input`]). Format 1
+//! corpora (no section) are still read: their passages embed as before.
 //!
 //! The first line is the [`CorpusHeader`]; every other line is a
 //! [`PassageRecord`], ids counting from 0 in order. A fragment of the job
@@ -23,8 +27,10 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Identifier of this format, first field of the header.
-pub const FORMAT: &str = "silicium-corpus/1";
+/// Identifier of the format written, first field of the header.
+pub const FORMAT: &str = "silicium-corpus/2";
+/// Formats read.
+const READ_FORMATS: &[&str] = &["silicium-corpus/1", FORMAT];
 
 /// First line of a corpus.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,7 +57,24 @@ pub struct PassageRecord {
     /// Index in [`CorpusHeader::documents`].
     pub doc: u32,
     pub page: Option<u32>,
+    /// Headings above the passage, outermost first (format 2).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub section: String,
     pub text: String,
+}
+
+impl PassageRecord {
+    /// The text given to the model: the section on a first line, then the
+    /// passage (the section is not repeated when the passage starts with
+    /// it). Every node builds it the same way, so that workers and
+    /// verifiers embed the same input.
+    pub fn embedding_input(&self) -> std::borrow::Cow<'_, str> {
+        if self.section.is_empty() || self.text.starts_with(&self.section) {
+            std::borrow::Cow::Borrowed(&self.text)
+        } else {
+            std::borrow::Cow::Owned(format!("{}\n{}", self.section, self.text))
+        }
+    }
 }
 
 /// The passages of one fragment: a byte range of the corpus file.
@@ -92,6 +115,7 @@ pub fn build(extraction: &Extraction, chunker: &Chunker) -> Result<Vec<u8>> {
             id: id as u64,
             doc: passage.document as u32,
             page: passage.page,
+            section: passage.section,
             text: passage.text,
         };
         bytes.extend(json_line(&record)?);
@@ -107,7 +131,7 @@ pub fn read_header(bytes: &[u8]) -> Result<(CorpusHeader, usize)> {
         .ok_or_else(|| Error::Format("corpus without header line".into()))?;
     let header: CorpusHeader = serde_json::from_slice(&bytes[..end])
         .map_err(|err| Error::Format(format!("corpus header: {err}")))?;
-    if header.format != FORMAT {
+    if !READ_FORMATS.contains(&header.format.as_str()) {
         return Err(Error::Format(format!(
             "unknown corpus format {}",
             header.format

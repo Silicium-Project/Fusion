@@ -25,6 +25,7 @@ sha2 = "0.10.9"
 tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
 encoding_rs = "0.8"
+unicode-normalization = "0.1"
 
 [features]
 # A tiny in-memory model for tests and the local end-to-end check

@@ -51,6 +51,7 @@ fn a_corpus_has_a_header_then_one_line_per_passage() {
             id: 3,
             doc: 1,
             page: None,
+            section: String::new(),
             text: "mes notes".into()
         }
     );
@@ -135,5 +136,25 @@ fn malformed_corpora_and_ranges_are_refused() {
     assert!(
         plan_fragments(&gap, 1, 8, None).is_err(),
         "header says 3 passages"
+    );
+}
+
+#[test]
+fn the_section_is_embedded_before_the_text_once() {
+    let record = |section: &str, text: &str| PassageRecord {
+        id: 0,
+        doc: 0,
+        page: None,
+        section: section.into(),
+        text: text.into(),
+    };
+    assert_eq!(record("", "texte").embedding_input(), "texte");
+    assert_eq!(
+        record("Bail › Article 6", "Le préavis").embedding_input(),
+        "Bail › Article 6\nLe préavis"
+    );
+    assert_eq!(
+        record("Article 6", "Article 6 Le préavis").embedding_input(),
+        "Article 6 Le préavis"
     );
 }

@@ -18,13 +18,16 @@ Conception détaillée (formats, vérification, sécurité, exploitation) :
 | Module | Rôle |
 | --- | --- |
 | `documents` | PDF, Word (`.docx`), texte, Markdown, ZIP → pages de texte ; fichiers ignorés listés avec leur raison (PDF scanné, format non pris en charge, fichier abîmé, trop gros) |
-| `passages` | Pages → passages de 200 mots au plus, chevauchement de 40 mots, sans sortir d'une page |
-| `corpus` | Entrée d'un job (`silicium-corpus/1`, JSON Lines) et découpage en fragments de passages entiers |
+| `passages` | Pages → passages de 150 mots au plus, chevauchement de 30 mots, sans sortir d'une page ; titres repérés (Markdown, styles Word, « Article 6 », « 2.1 », « § 3 », MAJUSCULES) : un titre ouvre un passage et chaque passage garde son chemin de titres (`section`, 3 niveaux) |
+| `corpus` | Entrée d'un job (`silicium-corpus/2`, JSON Lines ; `/1` encore lu) ; le texte vectorisé est `section` + saut de ligne + passage et découpage en fragments de passages entiers |
 | `model` | Modèles épinglés (commit du dépôt, SHA-256 et taille de chaque fichier, architecture compilée) et leur cache local (`model/store.rs`) |
 | `encoder` | Le modèle (Candle, CPU) : préfixes `passage: ` / `query: `, moyenne des jetons, vecteurs de norme 1 |
 | `vectors` | Bloc de vecteurs publié par un worker (`SLCMVEC1`) et ses contrôles |
 | `sampling` | Passages recalculés par un vérificateur, tirés d'une graine |
-| `index` | Index assemblé (`silicium-index/1`) et recherche exacte |
+| `index` | Index assemblé (`silicium-index/1`) et recherche exacte par le sens |
+| `lexical` | Index de mots-clés BM25 construit au chargement (minuscules, sans accents, mots vides FR/EN/DE retirés, mots coupés à 6 lettres, nombres gardés) |
+| `search` | Recherche par le sens, par mots-clés ou hybride (fusion RRF, par défaut) sur plusieurs index ; passages voisins qui se chevauchent montrés une fois |
+| `eval` | Qualité de la recherche sur un jeu de questions : rappel@1/3/5/10 et MRR@10, par langue |
 | `testing` | Modèle minuscule construit en mémoire (fonctionnalité `test-model`, jamais dans une release) |
 
 ## Modèle
@@ -47,8 +50,17 @@ mélangés.
 silicium-embed prepare documents.zip -o corpus.jsonl   # documents → corpus
 silicium-embed model fetch                             # télécharge et vérifie le modèle
 silicium-embed index corpus.jsonl -o index/            # corpus → index, sur cette machine
-silicium-embed search index/ "comment résilier ?"      # meilleurs passages (JSON Lines)
+silicium-embed search index/ "comment résilier ?"      # meilleurs passages (JSON Lines), --mode hybrid|dense|lexical
+silicium-embed eval crates/embedding/eval              # qualité : dense, mots-clés et hybride
+silicium-embed eval crates/embedding/eval --lexical-only   # sans modèle (mots-clés seuls)
 ```
+
+`eval` lit un dossier `documents/` et `questions.jsonl` (voir
+[`eval/README.md`](eval/README.md)), construit l'index avec le vrai modèle
+et compare les trois modes ; `--max-words`, `--overlap-words` et
+`--min-words` essaient un autre découpage, `--json` sort le rapport complet.
+Toute modification du découpage, des mots-clés ou du modèle se juge sur ces
+chiffres.
 
 Les modèles sont rangés sous `--data-dir/models` (par défaut
 `$SILICIUM_DATA_DIR/models`, sinon `./models`) ou `SILICIUM_MODEL_DIR` ; la
@@ -72,6 +84,8 @@ poste de développement, pas en CI.
 - Pas d'OCR : un PDF scanné est signalé (`no_text`) mais pas lu.
 - Formats lus : PDF, `.docx`, texte, Markdown, ZIP d'un niveau ; pas de
   `.doc`, `.odt`, `.pptx` ni HTML.
+- Mots-clés : racinisation grossière (6 premières lettres), sans synonymes ;
+  le sens est l'affaire du modèle.
 - Recherche exacte (produit scalaire sur tous les passages) : une fraction de seconde pour un
   million de passages sur un cœur ; un index approché (HNSW) deviendra utile
   au-delà, sans changer les fichiers.

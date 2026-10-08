@@ -166,6 +166,16 @@ fn word_files_are_split_on_recorded_page_breaks() {
 }
 
 #[test]
+fn word_heading_styles_become_markdown_headings() {
+    let body = r#"<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Bail</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Article 6</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="Titre3"/></w:pPr><w:r><w:t>Préavis</w:t></w:r></w:p>
+        <w:p><w:pPr><w:pStyle w:val="Normal"/></w:pPr><w:r><w:t>Un mois.</w:t></w:r></w:p>"#;
+    let pages = texts(&extract_bytes("bail.docx", &docx(body), &Limits::default()));
+    assert_eq!(pages[0].2, "# Bail\n## Article 6\n### Préavis\nUn mois.");
+}
+
+#[test]
 fn archives_are_read_one_level_deep_and_skip_what_is_not_a_document() {
     let inner = zip_of(&[("deep.txt", b"profond")]);
     let archive = zip_of(&[

@@ -14,7 +14,8 @@ fn sample_index(per_fragment: usize) -> (Vec<u8>, IndexFiles) {
         .iter()
         .map(|plan| {
             let records = corpus::read_range(&corpus_bytes, plan.start, plan.end).unwrap();
-            let texts: Vec<&str> = records.iter().map(|r| r.text.as_str()).collect();
+            let inputs: Vec<_> = records.iter().map(|r| r.embedding_input()).collect();
+            let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
             let vectors = encoder.embed_passages(&texts).unwrap();
             VectorBlock::new(testing::TINY.dimension, plan.first_id, &vectors).unwrap()
         })
