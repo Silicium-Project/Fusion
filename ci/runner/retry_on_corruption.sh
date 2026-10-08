@@ -15,7 +15,9 @@
 # The runners share ~/.cargo and ~/.rustup: another job may be reinstalling
 # rustup at the moment of the retry (the binary is then missing for a few
 # seconds). Before retrying, wait for the shared Rust install lock and for the
-# command to be back, instead of failing with "command not found".
+# command to be back, instead of failing with "command not found". A wrapper
+# (`bash ./ci/script.sh`, `python …`) runs cargo itself: cargo is waited for
+# too, since checking only for `bash` would retry while cargo is missing.
 set -euo pipefail
 
 target_dir="target"
@@ -81,4 +83,7 @@ else
   exit "$status"
 fi
 wait_for_command "$1"
+if [[ "$1" != cargo ]]; then
+  wait_for_command cargo
+fi
 run "$@"
