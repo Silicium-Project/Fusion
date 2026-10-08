@@ -50,6 +50,8 @@ export interface DocumentHit {
   passageId: number;
   document: string;
   page: number | null;
+  /** Heading path of the passage ("Bail › Article 6"), absent without headings. */
+  section?: string;
   text: string;
   score: number;
 }

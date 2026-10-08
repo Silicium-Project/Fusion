@@ -155,7 +155,7 @@ test('a finished document search answers questions with the source of each passa
   let asked = '';
   await page.route('**/api/jobs/1/search?*', route => {
     asked = new URL(route.request().url()).searchParams.get('q') || '';
-    return route.fulfill({ json: { query: asked, searchedJobs: 1, hits: [{ jobId: 1, passageId: 7, document: 'contrat.pdf', page: 12, text: 'Le client peut demander la résiliation du contrat par lettre recommandée.', score: 0.87 }] } });
+    return route.fulfill({ json: { query: asked, searchedJobs: 1, hits: [{ jobId: 1, passageId: 7, document: 'contrat.pdf', page: 12, section: 'Contrat › Article 6 - Résiliation', text: 'Le client peut demander la résiliation du contrat par lettre recommandée.', score: 0.87 }] } });
   });
   await page.goto('/jobs/1');
   await expect(page.getByText('1 document lu, 40 passages.', { exact: false })).toBeVisible();
@@ -163,6 +163,7 @@ test('a finished document search answers questions with the source of each passa
   await page.getByPlaceholder('Posez votre question, par exemple : comment résilier le contrat ?').fill('comment résilier le contrat ?');
   await page.getByRole('button', { name: 'Chercher' }).click();
   await expect(page.getByText('contrat.pdf — page 12')).toBeVisible();
+  await expect(page.getByText('Contrat › Article 6 - Résiliation')).toBeVisible();
   await expect(page.locator('mark', { hasText: 'résiliation' })).toBeVisible();
   expect(asked).toBe('comment résilier le contrat ?');
   await expect(page.getByRole('link', { name: 'Ajouter des documents' })).toHaveAttribute('href', /collection=site-docs-1/);
