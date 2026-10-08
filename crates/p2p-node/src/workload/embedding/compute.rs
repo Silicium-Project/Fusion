@@ -12,7 +12,7 @@ use crate::{
     processing::NodeContext, results::CONTENT_SCHEME, task::NetworkTask, workload::ComputeOutcome,
 };
 use silicium_embedding::{
-    corpus::{self, PassageRecord},
+    corpus::{self, DocumentEntry, PassageRecord},
     encoder::Encoder,
     model::ModelSpec,
     sampling::{sample_indices, sample_size},
@@ -28,7 +28,7 @@ pub(super) async fn execute(
     task: &NetworkTask,
 ) -> Option<ComputeOutcome> {
     let encoder = ready_encoder(workload, context, &task.task_id)?;
-    let passages = local_passages(context, task)
+    let (documents, passages) = local_passages(context, task)
         .map_err(|err| println!(" Passages of {} unreadable: {err}", task.task_id))
         .ok()?;
     let first_id = passages.first()?.id;
@@ -36,9 +36,9 @@ pub(super) async fn execute(
     let computed = tokio::task::spawn_blocking(move || {
         let inputs: Vec<_> = passages
             .iter()
-            .map(PassageRecord::embedding_input)
+            .map(|passage| passage.embedding_input(&documents))
             .collect();
-        let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
+        let texts: Vec<&str> = inputs.iter().map(String::as_str).collect();
         let vectors = encoder.embed_passages(&texts)?;
         Ok::<_, silicium_embedding::Error>(
             VectorBlock::new(dimension, first_id, &vectors)?.to_bytes(),
@@ -76,7 +76,7 @@ pub(super) async fn verify(
     seed: &str,
 ) -> Option<bool> {
     let encoder = ready_encoder(workload, context, &task.task_id)?;
-    let passages = local_passages(context, task).ok()?;
+    let (documents, passages) = local_passages(context, task).ok()?;
     let first_id = passages.first()?.id;
     let sha256 = result.result.uri.strip_prefix(CONTENT_SCHEME)?;
     if !context.content.ensure(sha256).await {
@@ -94,7 +94,7 @@ pub(super) async fn verify(
     let picks = sample_indices(seed, passages.len(), sample_size(passages.len()));
     let threshold = workload.model.min_verification_cosine;
     let checked = tokio::task::spawn_blocking(move || {
-        recompute_agrees(&encoder, &passages, &block, &picks, threshold)
+        recompute_agrees(&encoder, &documents, &passages, &block, &picks, threshold)
     })
     .await;
     match checked {
@@ -125,6 +125,7 @@ pub(super) fn checked_block(
 /// cosine of the published vector.
 fn recompute_agrees(
     encoder: &Encoder,
+    documents: &[DocumentEntry],
     passages: &[PassageRecord],
     block: &VectorBlock,
     picks: &[usize],
@@ -132,9 +133,9 @@ fn recompute_agrees(
 ) -> silicium_embedding::Result<bool> {
     let inputs: Vec<_> = picks
         .iter()
-        .map(|&index| passages[index].embedding_input())
+        .map(|&index| passages[index].embedding_input(documents))
         .collect();
-    let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
+    let texts: Vec<&str> = inputs.iter().map(String::as_str).collect();
     let expected = encoder.embed_passages(&texts)?;
     Ok(picks.iter().zip(&expected).all(|(&index, expected)| {
         block
@@ -162,15 +163,20 @@ fn ready_encoder(
     }
 }
 
-/// The passages of `task`, read from the local copy of the corpus.
-fn local_passages(context: &NodeContext, task: &NetworkTask) -> Result<Vec<PassageRecord>, String> {
+/// The documents of the corpus and the passages of `task`, read from the
+/// local copy of the corpus.
+fn local_passages(
+    context: &NodeContext,
+    task: &NetworkTask,
+) -> Result<(Vec<DocumentEntry>, Vec<PassageRecord>), String> {
     let range = task.byte_range.ok_or("task without passage range")?;
     let corpus_bytes =
         std::fs::read(context.content.absolute(&task.scene_path)).map_err(|err| err.to_string())?;
+    let (header, _) = corpus::read_header(&corpus_bytes).map_err(|err| err.to_string())?;
     let passages =
         corpus::read_range(&corpus_bytes, range.start, range.end).map_err(|err| err.to_string())?;
     if passages.is_empty() {
         return Err("empty passage range".into());
     }
-    Ok(passages)
+    Ok((header.documents, passages))
 }

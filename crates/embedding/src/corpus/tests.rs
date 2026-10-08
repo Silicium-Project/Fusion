@@ -140,21 +140,56 @@ fn malformed_corpora_and_ranges_are_refused() {
 }
 
 #[test]
-fn the_section_is_embedded_before_the_text_once() {
-    let record = |section: &str, text: &str| PassageRecord {
+fn the_model_reads_title_section_and_text_without_repeats() {
+    assert_eq!(embedding_text("", "", "texte"), "texte");
+    assert_eq!(
+        embedding_text("bail", "Article 6", "Le préavis"),
+        "bail\nArticle 6\nLe préavis"
+    );
+    assert_eq!(
+        embedding_text(
+            "contrat de location",
+            "Contrat de location meublé › Article 6",
+            "Un mois"
+        ),
+        "Contrat de location meublé › Article 6\nUn mois",
+        "title already in the section"
+    );
+    assert_eq!(
+        embedding_text("bail", "Article 6", "Article 6 Le préavis"),
+        "bail\nArticle 6 Le préavis",
+        "heading already in the text"
+    );
+    assert_eq!(
+        embedding_text("notice", "", "Notice du lave-linge"),
+        "Notice du lave-linge"
+    );
+}
+
+#[test]
+fn a_document_title_comes_from_its_file_name() {
+    assert_eq!(
+        document_title("docs/contrat-de-bail.pdf"),
+        "contrat de bail"
+    );
+    assert_eq!(
+        document_title("C:\\dossier\\notice_L700.txt"),
+        "notice L700"
+    );
+    assert_eq!(document_title(".bashrc"), ".bashrc");
+    assert_eq!(document_title("sans extension"), "sans extension");
+    let record = PassageRecord {
         id: 0,
         doc: 0,
         page: None,
-        section: section.into(),
-        text: text.into(),
+        section: String::new(),
+        text: "Un mois.".into(),
     };
-    assert_eq!(record("", "texte").embedding_input(), "texte");
-    assert_eq!(
-        record("Bail › Article 6", "Le préavis").embedding_input(),
-        "Bail › Article 6\nLe préavis"
-    );
-    assert_eq!(
-        record("Article 6", "Article 6 Le préavis").embedding_input(),
-        "Article 6 Le préavis"
-    );
+    let documents = [DocumentEntry {
+        name: "bail.md".into(),
+        pages: 1,
+        passages: 1,
+    }];
+    assert_eq!(record.embedding_input(&documents), "bail\nUn mois.");
+    assert_eq!(record.embedding_input(&[]), "Un mois.");
 }

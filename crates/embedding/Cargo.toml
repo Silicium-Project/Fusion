@@ -9,7 +9,7 @@ name = "silicium_embedding"
 
 [[bin]]
 name = "silicium-embed"
-path = "src/bin/silicium-embed.rs"
+path = "src/bin/silicium-embed/main.rs"
 
 [dependencies]
 candle-core = "0.11"

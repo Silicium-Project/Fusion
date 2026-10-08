@@ -9,13 +9,17 @@ use crate::{
 fn sample_index(per_fragment: usize) -> (Vec<u8>, IndexFiles) {
     let encoder = testing::tiny_encoder().unwrap();
     let corpus_bytes = corpus::build(&sample_extraction(5), &Chunker::default()).unwrap();
+    let (header, _) = corpus::read_header(&corpus_bytes).unwrap();
     let plans = corpus::plan_fragments(&corpus_bytes, per_fragment, 64, None).unwrap();
     let blocks: Vec<VectorBlock> = plans
         .iter()
         .map(|plan| {
             let records = corpus::read_range(&corpus_bytes, plan.start, plan.end).unwrap();
-            let inputs: Vec<_> = records.iter().map(|r| r.embedding_input()).collect();
-            let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
+            let inputs: Vec<_> = records
+                .iter()
+                .map(|r| r.embedding_input(&header.documents))
+                .collect();
+            let texts: Vec<&str> = inputs.iter().map(String::as_str).collect();
             let vectors = encoder.embed_passages(&texts).unwrap();
             VectorBlock::new(testing::TINY.dimension, plan.first_id, &vectors).unwrap()
         })
@@ -68,11 +72,13 @@ fn search_finds_the_passage_of_the_same_text_first() {
     let (_, files) = sample_index(3);
     let index = Index::from_files(files).unwrap();
     let encoder = testing::tiny_encoder().unwrap();
-    let wanted = index.passage(5).unwrap().text;
-    let query = encoder
-        .embed_passages(&[wanted.as_str()])
-        .unwrap()
-        .remove(0);
+    let wanted = index.passage(5).unwrap();
+    let input = corpus::embedding_text(
+        &corpus::document_title(&wanted.document),
+        &wanted.section,
+        &wanted.text,
+    );
+    let query = encoder.embed_passages(&[input.as_str()]).unwrap().remove(0);
     let hits = index.search(&query, 3).unwrap();
     assert_eq!(hits.len(), 3);
     assert_eq!(hits[0].id, 5);

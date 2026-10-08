@@ -1,0 +1,35 @@
+Merci d'avoir choisi le lave-linge hublot Aqualis L700, référence AQL-700-8B, d'une capacité de 8 kg et d'une vitesse d'essorage maximale de 1 400 tours par minute. Ce document est fictif et a été écrit pour mesurer la qualité de la recherche de Silicium. Lisez attentivement ces instructions avant la première utilisation et conservez-les avec la garantie.
+
+L'appareil doit être installé sur un sol plan et rigide, dans une pièce où la température reste supérieure à 5 °C. Avant tout branchement, retirez impérativement les quatre vis de bridage situées à l'arrière de la machine ; elles bloquent le tambour pendant le transport et leur oubli provoque de fortes vibrations et des dommages non couverts par la garantie. Obturez les trous avec les caches en plastique fournis dans le sachet d'accessoires.
+
+Réglez les pieds à l'aide de la clé plate de 17 mm jusqu'à ce que le niveau à bulle posé sur le plan de travail soit parfaitement horizontal, puis serrez les contre-écrous. Raccordez le tuyau d'arrivée à un robinet d'eau froide fileté de 3/4 de pouce, la pression devant être comprise entre 0,1 et 1 MPa. Le tuyau de vidange doit être placé à une hauteur comprise entre 60 et 90 cm au-dessus du sol. La machine se branche sur une prise 230 V reliée à la terre et protégée par un fusible de 16 A ; n'utilisez ni rallonge ni multiprise.
+
+Avant le premier lavage de linge, lancez un programme Coton à 60 °C à vide avec une demi-dose de lessive afin d'éliminer les résidus d'eau de test laissés en usine.
+
+Le bac à produits comporte trois compartiments : le compartiment I reçoit la lessive de prélavage, le compartiment II la lessive de lavage principal et le compartiment marqué d'une fleur l'adoucissant, qui ne doit jamais dépasser le repère MAX. Avec de la lessive liquide, placez le volet amovible en position basse dans le compartiment II.
+
+Le programme Coton accepte jusqu'à 8 kg et des températures de 20 à 90 °C. Le programme Synthétiques est limité à 4 kg et à 60 °C. Le programme Laine et soie lave à froid ou à 30 °C au maximum, avec un essorage limité à 600 tours. Le programme Rapide 15 minutes convient à 2 kg de linge peu sale lavé à 30 °C. Le programme Eco 40-60 est le plus économe en eau et en énergie pour le linge en coton normalement sale, mais sa durée peut atteindre 3 heures 38 minutes.
+
+Pour activer la sécurité enfants, maintenez appuyées simultanément les touches Température et Essorage pendant trois secondes jusqu'à l'apparition d'un cadenas sur l'afficheur. La même manipulation la désactive. La fonction Départ différé permet de retarder la fin du cycle de 1 à 24 heures par paliers d'une heure en appuyant sur la touche représentant une horloge.
+
+Si vous avez oublié un vêtement, la touche Ajout de linge permet d'ouvrir la porte pendant les dix premières minutes du cycle, tant que le niveau d'eau reste sous le bord du hublot. Au-delà, la porte reste verrouillée pour votre sécurité.
+
+En cas d'anomalie, un code s'affiche et le cycle s'interrompt. Les codes possibles sont les suivants.
+E10 : l'arrivée d'eau est insuffisante ; vérifiez que le robinet est ouvert et que le filtre du tuyau d'arrivée n'est pas obstrué.
+E21 : la porte n'est pas verrouillée ; refermez fermement le hublot jusqu'au déclic puis relancez le programme.
+E24 : la vidange ne s'effectue pas en moins de dix minutes ; nettoyez le filtre de la pompe et contrôlez que le tuyau de vidange n'est pas plié.
+E32 : l'eau ne chauffe pas ; la résistance est peut-être entartrée ou défectueuse, contactez le service après-vente.
+E40 : le tambour est déséquilibré ; répartissez le linge ou ajoutez quelques pièces avant de relancer l'essorage.
+E51 : un défaut du moteur a été détecté ; débranchez l'appareil pendant dix minutes et si le code persiste, appelez un technicien.
+E66 : une fuite d'eau est détectée dans le socle ; coupez l'arrivée d'eau, débranchez la machine et n'essayez pas de la relancer.
+E90 : la communication entre la carte électronique et le panneau de commande est interrompue.
+
+Le filtre de la pompe se trouve derrière la trappe située en bas à droite de la façade. Nettoyez-le tous les deux mois : placez une serpillière et un récipient plat, dévissez lentement le filtre dans le sens inverse des aiguilles d'une montre, laissez s'écouler l'eau restante, retirez les peluches et les objets éventuels, puis revissez à fond.
+
+Pour limiter les mauvaises odeurs, laissez le hublot et le bac entrouverts après chaque lavage, essuyez le joint en caoutchouc et lancez une fois par mois le programme Nettoyage tambour à 90 °C sans linge. N'utilisez pas de produits à base de chlore pour nettoyer la façade.
+
+En prévision d'une longue absence ou d'un risque de gel, fermez le robinet d'arrivée, débranchez la machine et videz entièrement l'eau résiduelle par le petit tuyau d'urgence situé à côté du filtre.
+
+La consommation annoncée est de 49 litres d'eau et de 0,62 kWh pour un cycle Eco 40-60 à pleine charge. L'appareil appartient à la classe énergétique A et son niveau sonore est de 72 dB en phase d'essorage.
+
+Le lave-linge est garanti deux ans pièces et main-d'œuvre à compter de la date d'achat figurant sur la facture. Le moteur à induction bénéficie d'une garantie prolongée de dix ans, pièce seule. La garantie ne couvre pas les dommages causés par le calcaire, une mauvaise installation ou un usage professionnel. Pour toute intervention, munissez-vous du numéro de série inscrit sur l'étiquette au dos du hublot et contactez le service après-vente Aqualis au 0 805 62 41 70, du lundi au vendredi de 9 heures à 18 heures. Les pièces détachées fonctionnelles restent disponibles pendant dix ans après l'arrêt de la commercialisation du modèle.

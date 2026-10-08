@@ -19,12 +19,13 @@
 //! `SILICIUM_DATA_DIR` directory, else the current one), or
 //! `SILICIUM_MODEL_DIR`; see `silicium_embedding::model::store`.
 
+mod evaluation;
+
 use clap::{Parser, Subcommand};
 use silicium_embedding::{
-    corpus::{self, PassageRecord},
-    documents::{self, Extraction, Limits},
+    corpus,
+    documents::{self, Limits},
     encoder::Encoder,
-    eval,
     index::{self, Index},
     model::{self, ModelSpec, store::ModelStore},
     passages::Chunker,
@@ -94,6 +95,13 @@ enum Command {
         overlap_words: Option<usize>,
         #[arg(long)]
         min_words: Option<usize>,
+        /// Headings ignored: no sections, pages cut every `--max-words`.
+        #[arg(long)]
+        no_headings: bool,
+        /// What the model reads of a passage: `full` (document title,
+        /// section and text, as the network), `section`, `title` or `text`.
+        #[arg(long, default_value = "full")]
+        input: String,
         /// Weights of the keywords tried in hybrid mode (the meaning weighs 1).
         #[arg(long, value_delimiter = ',', default_values_t = [0.2, 0.35, 0.5, 0.75, 1.0])]
         lexical_weights: Vec<f32>,
@@ -150,6 +158,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             max_words,
             overlap_words,
             min_words,
+            no_headings,
+            input,
             lexical_weights,
             json,
         } => {
@@ -158,17 +168,19 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 max_words: max_words.unwrap_or(defaults.max_words),
                 overlap_words: overlap_words.unwrap_or(defaults.overlap_words),
                 min_words: min_words.unwrap_or(defaults.min_words),
+                headings: !no_headings,
             };
+            let input: evaluation::Input = input.parse()?;
             let encoder = if lexical_only {
                 None
             } else {
                 Some(load(spec, &data_dir)?)
             };
-            run_eval(
+            evaluation::run(
                 encoder.as_ref(),
                 spec,
                 &set,
-                &chunker,
+                (&chunker, input),
                 &lexical_weights,
                 json,
             )
@@ -208,10 +220,13 @@ fn build_index(
     output: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let corpus_bytes = std::fs::read(corpus_path)?;
-    let (_, body) = corpus::read_header(&corpus_bytes)?;
+    let (header, body) = corpus::read_header(&corpus_bytes)?;
     let records = corpus::read_range(&corpus_bytes, body as u64, corpus_bytes.len() as u64)?;
-    let inputs: Vec<_> = records.iter().map(PassageRecord::embedding_input).collect();
-    let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
+    let inputs: Vec<_> = records
+        .iter()
+        .map(|record| record.embedding_input(&header.documents))
+        .collect();
+    let texts: Vec<&str> = inputs.iter().map(String::as_str).collect();
     let vectors = encoder.embed_passages(&texts)?;
     let block = VectorBlock::new(spec.dimension, 0, &vectors)?;
     let files = index::assemble(&corpus_bytes, &[block], spec)?;
@@ -242,101 +257,6 @@ fn search(
             "text": passage.text,
         });
         println!("{line}");
-    }
-    Ok(())
-}
-
-/// Reads every file under `dir` (sorted, so the corpus is the same on
-/// every machine) as one submission.
-fn extract_directory(dir: &Path) -> Result<Extraction, Box<dyn std::error::Error>> {
-    let mut files = Vec::new();
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(current) = pending.pop() {
-        for entry in std::fs::read_dir(&current)? {
-            let path = entry?.path();
-            if path.is_dir() {
-                pending.push(path);
-            } else {
-                files.push(path);
-            }
-        }
-    }
-    files.sort();
-    let mut extraction = Extraction::default();
-    for path in files {
-        let name = path.strip_prefix(dir)?.to_string_lossy().replace('\\', "/");
-        let read = documents::extract_bytes(&name, &std::fs::read(&path)?, &Limits::default());
-        extraction.documents.extend(read.documents);
-        extraction.skipped.extend(read.skipped);
-    }
-    Ok(extraction)
-}
-
-/// Builds the index of a question set's documents and prints the reports.
-fn run_eval(
-    encoder: Option<&Encoder>,
-    spec: &ModelSpec,
-    set: &Path,
-    chunker: &Chunker,
-    lexical_weights: &[f32],
-    json: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let questions = eval::read_questions(&std::fs::read_to_string(set.join("questions.jsonl"))?)?;
-    let extraction = extract_directory(&set.join("documents"))?;
-    for skipped in &extraction.skipped {
-        eprintln!("skipped {}: {:?}", skipped.name, skipped.reason);
-    }
-    let corpus_bytes = corpus::build(&extraction, chunker)?;
-    let (header, body) = corpus::read_header(&corpus_bytes)?;
-    let records = corpus::read_range(&corpus_bytes, body as u64, corpus_bytes.len() as u64)?;
-    let vectors = match encoder {
-        Some(encoder) => {
-            let inputs: Vec<_> = records.iter().map(PassageRecord::embedding_input).collect();
-            let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
-            encoder.embed_passages(&texts)?
-        }
-        // Keywords only: any unit vectors will do, they are not searched.
-        None => records
-            .iter()
-            .map(|_| {
-                let mut unit = vec![0.0; spec.dimension];
-                unit[0] = 1.0;
-                unit
-            })
-            .collect(),
-    };
-    let block = VectorBlock::new(spec.dimension, 0, &vectors)?;
-    let index = Index::from_files(index::assemble(&corpus_bytes, &[block], spec)?)?;
-    eprintln!(
-        "{} documents, {} passages, {} questions (chunks of {} words, overlap {}, min {})",
-        header.documents.len(),
-        header.passage_count,
-        questions.len(),
-        chunker.max_words,
-        chunker.overlap_words,
-        chunker.min_words
-    );
-    let mut runs = vec![(Mode::Lexical, 1.0)];
-    if encoder.is_some() {
-        runs.insert(0, (Mode::Dense, 1.0));
-        runs.push((Mode::Auto, search::LEXICAL_WEIGHT));
-        runs.extend(lexical_weights.iter().map(|&weight| (Mode::Hybrid, weight)));
-    }
-    let embed = |question: &str| -> silicium_embedding::Result<Vec<f32>> {
-        encoder
-            .ok_or_else(|| silicium_embedding::Error::Input("no model".into()))?
-            .embed_query(question)
-    };
-    let mut reports = Vec::new();
-    for (mode, weight) in runs {
-        reports.push(eval::evaluate(&index, &questions, mode, weight, &embed)?);
-    }
-    if json {
-        println!("{}", serde_json::to_string_pretty(&reports)?);
-    } else {
-        for report in &reports {
-            println!("{}", eval::format_report(report));
-        }
     }
     Ok(())
 }

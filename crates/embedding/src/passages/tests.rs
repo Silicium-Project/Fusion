@@ -26,6 +26,7 @@ fn chunker(max_words: usize, overlap_words: usize, min_words: usize) -> Chunker 
         max_words,
         overlap_words,
         min_words,
+        headings: true,
     }
 }
 
@@ -199,4 +200,62 @@ fn passages_keep_their_document_and_page() {
         summary,
         vec![(0, Some(1), "un"), (0, Some(2), "deux"), (1, None, "trois")]
     );
+}
+
+#[test]
+fn headings_can_be_ignored() {
+    let document = Document {
+        name: "bail.md".into(),
+        pages: vec![Page {
+            number: None,
+            text: "# Bail\nUn texte.\n## Article 6 - Préavis\nUn mois.".into(),
+        }],
+    };
+    let plain = Chunker {
+        headings: false,
+        ..Chunker::default()
+    };
+    let passages = plain.passages(&[document]);
+    assert_eq!(passages.len(), 1);
+    assert_eq!(passages[0].section, "");
+    assert_eq!(
+        passages[0].text,
+        "# Bail Un texte. ## Article 6 - Préavis Un mois."
+    );
+}
+
+#[test]
+fn passages_end_at_a_paragraph_then_at_a_sentence() {
+    let paragraph = |prefix: &str, count: usize| format!("{}.", words(prefix, count));
+    // Two paragraphs of 60 words, then a long one: the first passage ends
+    // after the second paragraph, the next starts with the third.
+    let text = format!(
+        "{}\n\n{}\n\n{}",
+        paragraph("a", 60),
+        paragraph("b", 60),
+        paragraph("c", 200)
+    );
+    let passages = chunker(150, 30, 25).passages(&[document(&[(None, &text)])]);
+    assert!(passages[0].text.ends_with("b59."), "{}", passages[0].text);
+    assert!(passages[1].text.starts_with("c0 "));
+    // One paragraph of sentences of 40 words: cuts at a sentence end and
+    // starts again with the last whole sentence.
+    let sentences: Vec<String> = (0..8).map(|n| paragraph(&format!("s{n}x"), 40)).collect();
+    let passages = chunker(150, 50, 25).passages(&[document(&[(None, &sentences.join(" "))])]);
+    assert!(passages[0].text.ends_with("s2x39."), "{}", passages[0].text);
+    assert!(
+        passages[1].text.starts_with("s2x0 "),
+        "{}",
+        passages[1].text
+    );
+    for passage in &passages {
+        assert!(passage.text.ends_with('.'), "{}", passage.text);
+    }
+}
+
+#[test]
+fn text_without_sentences_is_cut_in_overlapping_windows() {
+    let passages = chunker(100, 20, 10).passages(&[document(&[(None, &words("w", 230))])]);
+    assert!(passages[0].text.ends_with("w99"));
+    assert!(passages[1].text.starts_with("w80 "));
 }

@@ -18,8 +18,8 @@ Conception détaillée (formats, vérification, sécurité, exploitation) :
 | Module | Rôle |
 | --- | --- |
 | `documents` | PDF, Word (`.docx`), texte, Markdown, ZIP → pages de texte ; fichiers ignorés listés avec leur raison (PDF scanné, format non pris en charge, fichier abîmé, trop gros) |
-| `passages` | Pages → passages de 150 mots au plus, chevauchement de 30 mots, sans sortir d'une page ; titres repérés (Markdown, styles Word, « Article 6 », « 2.1 », « § 3 », MAJUSCULES) : un titre ouvre un passage et chaque passage garde son chemin de titres (`section`, 3 niveaux) |
-| `corpus` | Entrée d'un job (`silicium-corpus/2`, JSON Lines ; `/1` encore lu) ; le texte vectorisé est `section` + saut de ligne + passage et découpage en fragments de passages entiers |
+| `passages` | Pages → passages de 150 mots au plus, coupés en fin de paragraphe, sinon en fin de phrase (chevauchement de phrases entières), sinon tous les 150 mots avec 30 mots de chevauchement, sans sortir d'une page ; titres repérés (Markdown, styles Word, « Article 6 », « 2.1 », « § 3 », MAJUSCULES) : un titre ouvre un passage et chaque passage garde son chemin de titres (`section`, 3 niveaux) |
+| `corpus` | Entrée d'un job (`silicium-corpus/2`, JSON Lines ; `/1` encore lu) ; le texte vectorisé est titre du document (nom du fichier) + `section` + passage, et découpage en fragments de passages entiers |
 | `model` | Modèles épinglés (commit du dépôt, SHA-256 et taille de chaque fichier, architecture compilée) et leur cache local (`model/store.rs`) |
 | `encoder` | Le modèle (Candle, CPU) : préfixes `passage: ` / `query: `, moyenne des jetons, vecteurs de norme 1 |
 | `vectors` | Bloc de vecteurs publié par un worker (`SLCMVEC1`) et ses contrôles |
@@ -57,8 +57,9 @@ silicium-embed eval crates/embedding/eval --lexical-only   # sans modèle (mots-
 
 `eval` lit un dossier `documents/` et `questions.jsonl` (voir
 [`eval/README.md`](eval/README.md)), construit l'index avec le vrai modèle
-et compare les trois modes ; `--max-words`, `--overlap-words` et
-`--min-words` essaient un autre découpage, `--json` sort le rapport complet.
+et compare les modes ; `--max-words`, `--overlap-words`, `--min-words` et
+`--no-headings` essaient un autre découpage, `--input full|section|title|text`
+un autre texte vectorisé, `--json` sort le rapport complet.
 Toute modification du découpage, des mots-clés ou du modèle se juge sur ces
 chiffres.
 

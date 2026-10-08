@@ -43,6 +43,10 @@ pub struct Chunker {
     /// many words: a section of up to `max_words + min_words - 1` words
     /// stays one passage instead of leaving a tail of a few words.
     pub min_words: usize,
+    /// Headings start passages and make sections. Off, pages are cut every
+    /// `max_words` and passages have no section (to measure what headings
+    /// bring).
+    pub headings: bool,
 }
 
 impl Default for Chunker {
@@ -51,6 +55,7 @@ impl Default for Chunker {
             max_words: 150,
             overlap_words: 30,
             min_words: 25,
+            headings: true,
         }
     }
 }
@@ -94,14 +99,17 @@ impl Chunker {
             let mut outline = Outline::default();
             for page in &document.pages {
                 let mut words: Vec<String> = Vec::new();
+                // Positions in `words` where a paragraph ends.
+                let mut paragraph_ends: Vec<usize> = Vec::new();
                 // Words of text since the last heading: headings directly
                 // following one another stay in the same passage.
                 let mut body_words = 0;
                 let mut section = outline.section();
                 for line in page.text.lines() {
-                    if let Some((level, title)) = heading(line) {
+                    if let Some((level, title)) = heading(line).filter(|_| self.headings) {
                         if body_words > 0 {
                             self.flush(&mut passages, &mut words, &section, index, page.number);
+                            paragraph_ends.clear();
                         }
                         body_words = 0;
                         words.extend(title.split_whitespace().map(str::to_string));
@@ -109,28 +117,67 @@ impl Chunker {
                         section = outline.section();
                         continue;
                     }
-                    let line_words = line.split_whitespace().map(str::to_string);
+                    if line.trim().is_empty() {
+                        if !words.is_empty() && paragraph_ends.last() != Some(&words.len()) {
+                            paragraph_ends.push(words.len());
+                        }
+                        continue;
+                    }
                     let before = words.len();
-                    words.extend(line_words);
+                    words.extend(line.split_whitespace().map(str::to_string));
                     body_words += words.len() - before;
                     while words.len() >= self.max_words.max(1) + self.min_words {
-                        let window: Vec<String> = words.drain(..self.max_words.max(1)).collect();
-                        let kept = self.overlap_words.min(window.len());
-                        let mut rest = window[window.len() - kept..].to_vec();
-                        rest.append(&mut words);
-                        words = rest;
+                        let (end, next) = self.cut(&words, &paragraph_ends);
                         passages.push(Passage {
                             document: index,
                             page: page.number,
                             section: section.clone(),
-                            text: window.join(" "),
+                            text: words[..end].join(" "),
                         });
+                        words.drain(..next);
+                        paragraph_ends.retain(|&position| position > next);
+                        paragraph_ends
+                            .iter_mut()
+                            .for_each(|position| *position -= next);
                     }
                 }
                 self.flush(&mut passages, &mut words, &section, index, page.number);
             }
         }
         passages
+    }
+
+    /// Where the next passage of `words` ends, and where the one after
+    /// starts, when more than `max_words + min_words` are gathered. The
+    /// passage keeps from `min_words` to `max_words` words and ends, by
+    /// preference:
+    ///
+    /// 1. at the last end of a paragraph, the next starting right after;
+    /// 2. at the last end of a sentence, the next starting with the
+    ///    sentences of the last `overlap_words` words (or right after);
+    /// 3. at `max_words`, the next repeating the last `overlap_words`.
+    ///
+    /// So that a passage does not start or end in the middle of a sentence
+    /// when the text gives a better place.
+    fn cut(&self, words: &[String], paragraph_ends: &[usize]) -> (usize, usize) {
+        let max = self.max_words.max(1);
+        let min = self.min_words.clamp(1, max);
+        if let Some(&end) = paragraph_ends
+            .iter()
+            .rev()
+            .find(|&&end| (min..=max).contains(&end))
+        {
+            return (end, end);
+        }
+        let ends_sentence = |position: usize| ends_a_sentence(&words[position - 1]);
+        if let Some(end) = (min..=max).rev().find(|&end| ends_sentence(end)) {
+            let overlap = self.overlap_words.min(end - 1);
+            let next = (end - overlap..end)
+                .find(|&start| ends_sentence(start))
+                .unwrap_or(end);
+            return (end, next);
+        }
+        (max, max - self.overlap_words.min(max - 1))
     }
 
     /// Ends the passage being gathered.
@@ -191,6 +238,13 @@ pub fn heading(line: &str) -> Option<(u8, String)> {
         return Some((1, clean_title(line)));
     }
     None
+}
+
+/// True when `word` ends a sentence (`fin.`, `fin ?` written `fin?`,
+/// `fin.»`); short words such as `M.` or `1.` do not.
+fn ends_a_sentence(word: &str) -> bool {
+    let word = word.trim_end_matches([')', '»', '"', '\'', '’', '”']);
+    word.chars().count() > 2 && word.ends_with(['.', '!', '?', '…'])
 }
 
 fn ends_like_a_sentence(line: &str) -> bool {

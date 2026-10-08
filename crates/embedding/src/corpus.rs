@@ -10,9 +10,10 @@
 //! {"id":2,"doc":1,"page":null,"text":"…"}
 //! ```
 //!
-//! Format 2 adds the `section` of a passage (the headings above it), which
-//! is embedded with the text ([`PassageRecord::embedding_input`]). Format 1
-//! corpora (no section) are still read: their passages embed as before.
+//! Format 2 adds the `section` of a passage (the headings above it). The
+//! model reads the document title, the section and the text
+//! ([`PassageRecord::embedding_input`]). Format 1 corpora (no section) are
+//! still read.
 //!
 //! The first line is the [`CorpusHeader`]; every other line is a
 //! [`PassageRecord`], ids counting from 0 in order. A fragment of the job
@@ -64,17 +65,50 @@ pub struct PassageRecord {
 }
 
 impl PassageRecord {
-    /// The text given to the model: the section on a first line, then the
-    /// passage (the section is not repeated when the passage starts with
-    /// it). Every node builds it the same way, so that workers and
-    /// verifiers embed the same input.
-    pub fn embedding_input(&self) -> std::borrow::Cow<'_, str> {
-        if self.section.is_empty() || self.text.starts_with(&self.section) {
-            std::borrow::Cow::Borrowed(&self.text)
-        } else {
-            std::borrow::Cow::Owned(format!("{}\n{}", self.section, self.text))
+    /// The text given to the model for this passage of a corpus whose
+    /// documents are `documents` (see [`embedding_text`]). Every node builds
+    /// it the same way, so that workers and verifiers embed the same input.
+    pub fn embedding_input(&self, documents: &[DocumentEntry]) -> String {
+        let title = documents
+            .get(self.doc as usize)
+            .map(|document| document_title(&document.name))
+            .unwrap_or_default();
+        embedding_text(&title, &self.section, &self.text)
+    }
+}
+
+/// The title of a document for the model: its file name without folders
+/// nor extension, `-` and `_` read as spaces (`docs/contrat-de-bail.pdf`
+/// gives `contrat de bail`).
+pub fn document_title(name: &str) -> String {
+    let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let stem = match file.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => stem,
+        _ => file,
+    };
+    stem.replace(['-', '_'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Document title, section and passage text, one per line. A line is left
+/// out when empty or when the next one already starts with it (a section
+/// that opens with the document title, a passage that opens with its
+/// heading), compared without case.
+pub fn embedding_text(title: &str, section: &str, text: &str) -> String {
+    let parts = [title, section, text];
+    let mut lines = Vec::with_capacity(3);
+    for (position, part) in parts.iter().enumerate() {
+        let repeated = parts[position + 1..]
+            .iter()
+            .find(|next| !next.is_empty())
+            .is_some_and(|next| next.to_lowercase().starts_with(&part.to_lowercase()));
+        if !part.is_empty() && !repeated {
+            lines.push(*part);
         }
     }
+    lines.join("\n")
 }
 
 /// The passages of one fragment: a byte range of the corpus file.

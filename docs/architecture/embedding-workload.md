@@ -60,17 +60,22 @@ d'autres workloads d'IA :
 {"id":1,"doc":0,"page":2,"text":"…"}
 ```
 
-- Passages de 150 mots au plus, chevauchement de 30 mots, sans sortir d'une
-  page (un passage a toujours sa page). Une fin de moins de 25 mots rejoint
-  le passage précédent.
+- Passages de 150 mots au plus, sans sortir d'une page (un passage a
+  toujours sa page). Un passage se termine de préférence en fin de
+  paragraphe, sinon en fin de phrase (le suivant reprend les dernières
+  phrases entières, 30 mots au plus), sinon après 150 mots (30 mots repris) :
+  un passage ne commence pas au milieu d'une phrase quand le texte offre
+  mieux. Une fin de moins de 25 mots rejoint le passage précédent.
 - **Titres** : titres Markdown, styles de titre Word (`Heading 1`, `Titre 2`,
   `Überschrift 3`), lignes courtes du type « Article 6 », « Chapitre II »,
   « § 3 », « 2.1 Durée », ou en MAJUSCULES. Un titre ouvre un nouveau
   passage, et chaque passage garde le chemin des titres qui le contiennent
   (`section`, trois niveaux, séparés par « › », absent sans titre).
-- Le modèle vectorise `section` + saut de ligne + texte (sans répéter un
-  titre qui ouvre déjà le passage) : un passage qui ne dit pas de quoi il
-  parle est retrouvé par le titre de sa section. Workers et vérificateurs
+- Le modèle vectorise, une par ligne : le titre du document (nom du
+  fichier sans dossier ni extension, `-` et `_` lus comme des espaces), la
+  `section` et le texte, sans répéter une ligne par laquelle la suivante
+  commence déjà : un passage qui ne dit pas de quoi il parle est retrouvé
+  par le titre de sa section ou de son document. Workers et vérificateurs
   construisent ce texte avec la même fonction (`PassageRecord::embedding_input`).
 - `silicium-corpus/1` (sans `section`) est encore lu ; un nœud plus ancien
   refuse `/2`, donc l'éditeur et les workers doivent être mis à jour
@@ -176,9 +181,9 @@ appelé par le BackEnd avec les tâches terminées de la collection :
   le texte de chaque passage ; statistiques communes à toutes les tâches
   cherchées) et les deux classements sont fusionnés par rang réciproque
   pondéré (RRF, k = 60 ; mots-clés × 0,5). Mesure sur le jeu d'évaluation
-  avec le vrai modèle : sens seul MRR 0,864 ; hybride sur toutes les
-  questions 0,851 (poids 0,2) à 0,838 (poids 1) ; aucun poids ne bat le sens
-  sur des questions ordinaires, d'où ce déclenchement. L'index de mots-clés
+  (232 questions) avec le vrai modèle : sens seul MRR 0,791 ; hybride sur
+  toutes les questions 0,785 à 0,805 selon le poids ; automatique 0,808.
+  Les mots-clés ne servent que sur les mots exacts, d'où ce déclenchement. L'index de mots-clés
   est construit au chargement de l'index, en mémoire : les fichiers publiés
   ne changent pas.
 - Deux passages voisins qui se chevauchent ne sont montrés qu'une fois.
@@ -227,7 +232,7 @@ seconde ; un livre de 300 pages (~1 000 passages) prend quelques secondes.
 | Nœud | `cargo test -p p2p_node` | préparation, découpage, calcul, vérification d'un résultat honnête et de résultats truqués, assemblage, API de recherche |
 | Bout en bout | `WORKERS=2 WORKLOAD=ai/embedding/test-tiny crates/p2p-node/scripts/e2e-local.sh docs.zip` (binaire construit avec `--features p2p_node/test-model`) | orchestrateur + 2 workers en local : chacun calcule un fragment et vérifie celui de l'autre, l'index est assemblé, la recherche répond |
 | Vrai modèle | `cargo test -p silicium-embedding --release --test real_model -- --ignored` | téléchargement, hashes, classement par le sens (français et anglais), écart entre lots |
-| Qualité | `silicium-embed eval crates/embedding/eval` | rappel@k et MRR des modes dense, mots-clés et hybride sur 74 questions FR/EN/DE (`--lexical-only` sans modèle) |
+| Qualité | `silicium-embed eval crates/embedding/eval` | rappel@k et MRR des modes sur 232 questions FR/EN/DE et 24 documents (`--lexical-only` sans modèle ; résultats dans `crates/embedding/eval/README.md`) |
 | Parité | `crates/embedding/scripts/parity_check.py` | vecteurs identiques à `sentence-transformers` (≥ 0,999) |
 | BackEnd | `go test ./...` | dépôt, consentement, collections, recherche, ouverture, export |
 | FrontEnd | `npm test`, `npm run test:functional` | sélection des documents, surlignage, parcours de dépôt et de recherche |

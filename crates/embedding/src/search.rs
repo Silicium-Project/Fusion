@@ -16,10 +16,10 @@
 //! - **Automatic** ([`Mode::Auto`], the default): hybrid when the query
 //!   holds an exact token ([`has_exact_terms`]: a number, a code such as
 //!   `E3`, an acronym such as `GPS`), by meaning otherwise. On the
-//!   evaluation set with the real model, no keyword weight made hybrid
-//!   search beat the meaning alone on ordinary questions (MRR 0.851 at
-//!   weight 0.2, 0.838 at 1, against 0.864): keywords only earn their place
-//!   on the tokens a small model reads poorly.
+//!   evaluation set with the real model (232 questions), MRR 0.808 against
+//!   0.791 by meaning alone and 0.785 to 0.805 for hybrid search on every
+//!   question: keywords earn their place on the tokens a small model reads
+//!   poorly, and blur ordinary questions.
 //!
 //! Neighbouring passages cut from the same text with an overlap often come
 //! out together; the lower-ranked one is dropped ([`collapse_neighbours`]),
@@ -254,11 +254,14 @@ mod tests {
             skipped: Vec::new(),
         };
         let bytes = corpus::build(&extraction, &Chunker::default()).unwrap();
-        let (_, body) = corpus::read_header(&bytes).unwrap();
+        let (header, body) = corpus::read_header(&bytes).unwrap();
         let records = corpus::read_range(&bytes, body as u64, bytes.len() as u64).unwrap();
         let encoder = testing::tiny_encoder().unwrap();
-        let inputs: Vec<_> = records.iter().map(|r| r.embedding_input()).collect();
-        let texts: Vec<&str> = inputs.iter().map(AsRef::as_ref).collect();
+        let inputs: Vec<_> = records
+            .iter()
+            .map(|r| r.embedding_input(&header.documents))
+            .collect();
+        let texts: Vec<&str> = inputs.iter().map(String::as_str).collect();
         let vectors = encoder.embed_passages(&texts).unwrap();
         let block = VectorBlock::new(testing::TINY.dimension, 0, &vectors).unwrap();
         Index::from_files(index::assemble(&bytes, &[block], &testing::TINY).unwrap()).unwrap()
