@@ -228,6 +228,15 @@ impl Index {
             .collect())
     }
 
+    /// Cosine of passage `id` with `query` (a unit vector), `None` for an
+    /// unknown passage or a vector of the wrong dimension.
+    pub fn similarity(&self, id: u64, query: &[f32]) -> Option<f32> {
+        let dimension = self.manifest.dimension;
+        let start = usize::try_from(id).ok()?.checked_mul(dimension)?;
+        let vector = self.vectors.get(start..start + dimension)?;
+        (query.len() == dimension).then(|| dot(query, vector))
+    }
+
     /// Passage `id`.
     pub fn passage(&self, id: u64) -> Result<IndexPassage> {
         let index = usize::try_from(id).map_err(|_| Error::Format("passage id".into()))?;

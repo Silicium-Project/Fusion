@@ -105,6 +105,12 @@ enum Command {
         /// Weights of the keywords tried in hybrid mode (the meaning weighs 1).
         #[arg(long, value_delimiter = ',', default_values_t = [0.2, 0.35, 0.5, 0.75, 1.0])]
         lexical_weights: Vec<f32>,
+        /// Results more than this below the best one (cosine) are dropped.
+        #[arg(long, default_value_t = search::RELEVANCE_MARGIN)]
+        margin: f32,
+        /// Keeps 10 results per question, however far from the best.
+        #[arg(long)]
+        no_margin: bool,
         /// Prints the reports as JSON.
         #[arg(long)]
         json: bool,
@@ -161,6 +167,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             no_headings,
             input,
             lexical_weights,
+            margin,
+            no_margin,
             json,
         } => {
             let defaults = Chunker::default();
@@ -181,7 +189,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 spec,
                 &set,
                 (&chunker, input),
-                &lexical_weights,
+                (&lexical_weights, (!no_margin).then_some(margin)),
                 json,
             )
         }

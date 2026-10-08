@@ -187,6 +187,11 @@ appelé par le BackEnd avec les tâches terminées de la collection :
   est construit au chargement de l'index, en mémoire : les fichiers publiés
   ne changent pas.
 - Deux passages voisins qui se chevauchent ne sont montrés qu'une fois.
+- **Seuil de pertinence** : un résultat dont le cosinus avec la question est
+  à plus de 0,04 du meilleur n'est pas montré (sauf les 3 premiers résultats
+  par mots-clés). « lamp » donne les 2 diapositives qui en parlent au lieu de
+  20 passages ; sur le jeu d'évaluation, aucune bonne réponse n'est perdue
+  et 37 % des résultats hors sujet disparaissent des 10 premiers.
 - Chaque résultat porte sa `section`, affichée par le site sous le nom du
   document.
 - Recherche exacte par produit scalaire : une fraction de seconde pour un million de passages

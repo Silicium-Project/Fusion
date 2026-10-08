@@ -46,7 +46,7 @@ pub(crate) fn run(
     spec: &ModelSpec,
     set: &Path,
     (chunker, input): (&Chunker, Input),
-    lexical_weights: &[f32],
+    (lexical_weights, margin): (&[f32], Option<f32>),
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let questions = eval::read_questions(&std::fs::read_to_string(set.join("questions.jsonl"))?)?;
@@ -88,11 +88,19 @@ pub(crate) fn run(
         chunker.min_words,
         chunker.headings
     );
-    let mut runs = vec![(Mode::Lexical, 1.0)];
+    let tuned = |lexical_weight| search::Tuning {
+        lexical_weight,
+        margin,
+    };
+    let mut runs = vec![(Mode::Lexical, tuned(1.0))];
     if encoder.is_some() {
-        runs.insert(0, (Mode::Dense, 1.0));
-        runs.push((Mode::Auto, search::LEXICAL_WEIGHT));
-        runs.extend(lexical_weights.iter().map(|&weight| (Mode::Hybrid, weight)));
+        runs.insert(0, (Mode::Dense, tuned(1.0)));
+        runs.push((Mode::Auto, tuned(search::LEXICAL_WEIGHT)));
+        runs.extend(
+            lexical_weights
+                .iter()
+                .map(|&weight| (Mode::Hybrid, tuned(weight))),
+        );
     }
     let embed = |question: &str| -> silicium_embedding::Result<Vec<f32>> {
         encoder
@@ -100,8 +108,8 @@ pub(crate) fn run(
             .embed_query(question)
     };
     let mut reports = Vec::new();
-    for (mode, weight) in runs {
-        reports.push(eval::evaluate(&index, &questions, mode, weight, &embed)?);
+    for (mode, tuning) in runs {
+        reports.push(eval::evaluate(&index, &questions, mode, &tuning, &embed)?);
     }
     if json {
         println!("{}", serde_json::to_string_pretty(&reports)?);

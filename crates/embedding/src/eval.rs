@@ -86,6 +86,8 @@ pub struct Report {
     pub by_lang: BTreeMap<String, Scores>,
     /// Questions not answered in the first [`DEPTH`] results.
     pub missed: Vec<String>,
+    /// Results returned per question, on average ([`DEPTH`] at most).
+    pub shown: f32,
 }
 
 /// Recall at each cutoff and mean reciprocal rank.
@@ -123,31 +125,32 @@ impl Scores {
     }
 }
 
-/// Runs `questions` on `index` in `mode`, keywords weighing
-/// `lexical_weight` in [`Mode::Hybrid`]. `embed` turns a question into a
-/// query vector (needed except in [`Mode::Lexical`]).
+/// Runs `questions` on `index` in `mode` with `tuning`. `embed` turns a
+/// question into a query vector (needed except in [`Mode::Lexical`]).
 pub fn evaluate(
     index: &Index,
     questions: &[Question],
     mode: Mode,
-    lexical_weight: f32,
+    tuning: &search::Tuning,
     embed: &dyn Fn(&str) -> Result<Vec<f32>>,
 ) -> Result<Report> {
     let mut ranks: Vec<(String, Option<usize>)> = Vec::new();
     let mut missed = Vec::new();
+    let mut shown = 0;
     for question in questions {
         let vector = match mode {
             Mode::Lexical => None,
             _ => Some(embed(&question.question)?),
         };
-        let found = search::search_weighted(
+        let found = search::search_tuned(
             &[index],
             vector.as_deref(),
             &question.question,
             DEPTH,
             mode,
-            lexical_weight,
+            tuning,
         )?;
+        shown += found.len();
         let mut rank = None;
         for (position, hit) in found.iter().enumerate() {
             if answers(&index.passage(hit.id)?, &question.expected) {
@@ -166,8 +169,8 @@ pub fn evaluate(
     }
     Ok(Report {
         mode: match mode {
-            Mode::Hybrid => format!("hybrid (keywords x{lexical_weight})"),
-            Mode::Auto => format!("auto (keywords x{lexical_weight} on exact tokens)"),
+            Mode::Hybrid => format!("hybrid (keywords x{})", tuning.lexical_weight),
+            Mode::Auto => format!("auto (keywords x{} on exact tokens)", tuning.lexical_weight),
             other => format!("{other:?}").to_lowercase(),
         },
         overall: Scores::from_ranks(&ranks.iter().map(|(_, rank)| *rank).collect::<Vec<_>>()),
@@ -176,6 +179,7 @@ pub fn evaluate(
             .map(|(lang, ranks)| (lang, Scores::from_ranks(&ranks)))
             .collect(),
         missed,
+        shown: shown as f32 / questions.len().max(1) as f32,
     })
 }
 
@@ -194,7 +198,10 @@ pub fn format_report(report: &Report) -> String {
             scores.mrr
         )
     };
-    let mut lines = vec![format!("{}:", report.mode), line("all", &report.overall)];
+    let mut lines = vec![
+        format!("{} (results shown: {:.1})", report.mode, report.shown),
+        line("all", &report.overall),
+    ];
     for (lang, scores) in &report.by_lang {
         lines.push(line(lang, scores));
     }

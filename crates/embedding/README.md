@@ -26,7 +26,7 @@ Conception détaillée (formats, vérification, sécurité, exploitation) :
 | `sampling` | Passages recalculés par un vérificateur, tirés d'une graine |
 | `index` | Index assemblé (`silicium-index/1`) et recherche exacte par le sens |
 | `lexical` | Index de mots-clés BM25 construit au chargement (minuscules, sans accents, mots vides FR/EN/DE retirés, mots coupés à 6 lettres, nombres gardés) |
-| `search` | Recherche par le sens, par mots-clés, hybride (fusion RRF pondérée) ou automatique (défaut : hybride si la question contient un nombre, un code ou un sigle, sens sinon) sur plusieurs index ; passages voisins qui se chevauchent montrés une fois |
+| `search` | Seuil de pertinence (résultats à plus de 0,04 de cosinus du meilleur écartés) ; recherche par le sens, par mots-clés, hybride (fusion RRF pondérée) ou automatique (défaut : hybride si la question contient un nombre, un code ou un sigle, sens sinon) sur plusieurs index ; passages voisins qui se chevauchent montrés une fois |
 | `eval` | Qualité de la recherche sur un jeu de questions : rappel@1/3/5/10 et MRR@10, par langue |
 | `testing` | Modèle minuscule construit en mémoire (fonctionnalité `test-model`, jamais dans une release) |
 

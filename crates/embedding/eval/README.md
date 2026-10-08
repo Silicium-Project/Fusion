@@ -20,6 +20,10 @@ moyen (MRR@10), au total et par langue, puis les questions manquées :
 - `hybrid (keywords xP)` : sens + mots-clés sur toutes les questions, pour
   chaque poids P de `--lexical-weights`.
 
+Chaque mode indique aussi `results shown` : le nombre moyen de résultats
+montrés (10 au plus) après le seuil de pertinence (`--margin`, 0,04 par
+défaut ; `--no-margin` garde 10 résultats).
+
 Options pour comparer : `--max-words`, `--overlap-words`, `--min-words`,
 `--no-headings` (découpage sans titres ni sections) et `--input` (ce que lit
 le modèle : `full` = titre du document + section + texte, `section`,
@@ -50,6 +54,10 @@ Mode `auto` dans chaque ligne. Sur la version actuelle : sens seul 0,791,
 mots-clés seuls 0,733, hybride sur toutes les questions de 0,785 (poids 0,2)
 à 0,805 (poids 0,75). Restent ratées surtout les questions posées dans une
 autre langue que le document.
+
+Seuil de pertinence (mode `auto`) : sans seuil, 10 résultats et MRR
+0,808 ; seuil 0,04, 6,3 résultats et le même MRR ; seuil 0,03, 5,0 résultats
+mais 3 bonnes réponses sur 232 sortent des 10 premiers.
 
 ## Format
 
