@@ -11,6 +11,11 @@ describe('job dashboard helpers', () => {
   it('extracts structured submit failures without dropping the traceback', () => {
     expect(extractJobError({ data: { error: 'worker failed', traceback: 'Traceback\nValueError: bad scene' } })).toBe('worker failed\n\nTraceback\nValueError: bad scene');
     expect(extractJobError({ data: 'plain backend error' })).toBe('plain backend error');
+    const nginx = '<html>\r\n<head><title>500 Internal Server Error</title></head>\r\n<body></body>\r\n</html>\r\n<!-- a padding -->';
+    expect(extractJobError({ data: nginx, statusCode: 500 })).toContain('Réessayez dans quelques minutes');
+    expect(extractJobError({ data: nginx })).toBe('La tâche ne peut pas être soumise pour le moment.');
+    expect(extractJobError({ response: { _data: '<!DOCTYPE html><p>x</p>', status: 413 } })).toBe('Le fichier est trop volumineux pour être envoyé.');
+    expect(extractJobError({ data: { message: 'Nom trop long.' }, statusCode: 400 })).toBe('Nom trop long.');
   });
 
   it('only offers cancellation for non-terminal jobs', () => {

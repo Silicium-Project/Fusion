@@ -72,6 +72,8 @@ export const fr = {
     phantomRequired: 'Phantom est requis pour connecter un portefeuille Solana.',
     walletFailed: 'Le portefeuille ne peut pas être connecté.',
     cancelReason: 'Arrêt demandé depuis le site',
+    serverError: 'Le serveur n’a pas pu traiter la demande. Réessayez dans quelques minutes ; si le problème continue, prévenez l’équipe Silicium.',
+    tooLarge: 'Le fichier est trop volumineux pour être envoyé.',
   },
   auth: {
     invalidCredentials: 'Identifiant ou mot de passe incorrect.',

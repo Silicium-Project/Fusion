@@ -8,19 +8,37 @@ export const compactJobError = (message: string, limit = 16_000): string => {
   return `${normalized.slice(0, Math.max(0, limit - marker.length)).trimEnd()}${marker}`;
 };
 
+/** True for an HTML page (the error page of a proxy), never shown as text. */
+const isHtml = (text: string): boolean => /^\s*<(!doctype|html|head|body)\b/i.test(text) || /<\/html>/i.test(text);
+
+/** A message for an HTTP status when the response says nothing readable. */
+const statusMessage = (status: unknown): string | undefined => {
+  const code = Number(status);
+  if (code === 413) return translate('errors.tooLarge');
+  if (code >= 500 && code < 600) return translate('errors.serverError');
+  return undefined;
+};
+
 /**
  * The message to show for a failed request or job: the API's `message`
- * (in the user's language) before an `error` code, then the fallback.
+ * (in the user's language) before an `error` code, then a message for the
+ * HTTP status, then the fallback. An HTML error page (from the proxy in
+ * front of the API) is never shown.
  */
 export const extractJobError = (failure: unknown, fallback = translate('errors.submitFailed')): string => {
   const candidate = failure as {
     data?: unknown;
     message?: unknown;
-    response?: { _data?: unknown; data?: unknown };
+    status?: unknown;
+    statusCode?: unknown;
+    response?: { _data?: unknown; data?: unknown; status?: unknown };
   };
   const payloads = [candidate?.data, candidate?.response?._data, candidate?.response?.data, candidate];
   for (const payload of payloads) {
-    if (typeof payload === 'string' && payload.trim()) return payload.trim();
+    if (typeof payload === 'string' && payload.trim()) {
+      if (isHtml(payload)) continue;
+      return payload.trim();
+    }
     if (!payload || typeof payload !== 'object') continue;
     const values = payload as Record<string, unknown>;
     const message = ['failureDetail', 'failure_detail', 'errorMessage', 'message', 'error']
@@ -32,7 +50,9 @@ export const extractJobError = (failure: unknown, fallback = translate('errors.s
       return message ? `${message}\n\n${traceback}` : traceback;
     }
   }
-  return failure instanceof Error && failure.message ? failure.message : fallback;
+  const byStatus = statusMessage(candidate?.statusCode ?? candidate?.status ?? candidate?.response?.status);
+  if (byStatus) return byStatus;
+  return failure instanceof Error && failure.message && !isHtml(failure.message) ? failure.message : fallback;
 };
 
 export const isJobCancellable = (status: string): boolean =>

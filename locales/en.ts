@@ -71,6 +71,8 @@ export const en: Catalog<typeof fr> = {
     phantomRequired: 'Phantom is required to connect a Solana wallet.',
     walletFailed: 'The wallet cannot be connected.',
     cancelReason: 'Stop requested from the website',
+    serverError: 'The server could not handle the request. Try again in a few minutes; if it keeps happening, tell the Silicium team.',
+    tooLarge: 'The file is too large to be sent.',
   },
   auth: {
     invalidCredentials: 'Incorrect username or password.',
