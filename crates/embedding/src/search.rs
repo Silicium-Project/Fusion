@@ -5,7 +5,7 @@
 //! - **By keywords** ([`Mode::Lexical`]): BM25 over the folded terms of the
 //!   passages ([`crate::lexical`]), with statistics computed over all the
 //!   indexes searched, so that their scores are comparable.
-//! - **Hybrid** ([`Mode::Hybrid`], the default): both rankings fused by
+//! - **Hybrid** ([`Mode::Hybrid`]): both rankings fused by
 //!   weighted reciprocal rank fusion (RRF): a passage scores
 //!   `weight / (RRF_K + rank)` in each ranking where it appears, and the
 //!   sums are sorted. RRF needs no score calibration between the two
@@ -13,6 +13,13 @@
 //!   find. Keywords weigh [`LEXICAL_WEIGHT`] against 1 for the meaning: on
 //!   the evaluation set, keywords alone are clearly worse than the model,
 //!   and at equal weight they push good answers down.
+//! - **Automatic** ([`Mode::Auto`], the default): hybrid when the query
+//!   holds an exact token ([`has_exact_terms`]: a number, a code such as
+//!   `E3`, an acronym such as `GPS`), by meaning otherwise. On the
+//!   evaluation set with the real model, no keyword weight made hybrid
+//!   search beat the meaning alone on ordinary questions (MRR 0.851 at
+//!   weight 0.2, 0.838 at 1, against 0.864): keywords only earn their place
+//!   on the tokens a small model reads poorly.
 //!
 //! Neighbouring passages cut from the same text with an overlap often come
 //! out together; the lower-ranked one is dropped ([`collapse_neighbours`]),
@@ -42,9 +49,12 @@ pub enum Mode {
     Dense,
     /// By keywords only.
     Lexical,
-    /// Both, fused (default).
-    #[default]
+    /// Both, fused.
     Hybrid,
+    /// Hybrid when the query holds an exact token, by meaning otherwise
+    /// (default).
+    #[default]
+    Auto,
 }
 
 impl std::str::FromStr for Mode {
@@ -55,6 +65,7 @@ impl std::str::FromStr for Mode {
             "dense" => Ok(Mode::Dense),
             "lexical" => Ok(Mode::Lexical),
             "hybrid" => Ok(Mode::Hybrid),
+            "auto" => Ok(Mode::Auto),
             other => Err(Error::Input(format!("unknown search mode {other}"))),
         }
     }
@@ -96,6 +107,11 @@ pub fn search_weighted(
     if k == 0 || indexes.is_empty() {
         return Ok(Vec::new());
     }
+    let mode = match mode {
+        Mode::Auto if has_exact_terms(query) => Mode::Hybrid,
+        Mode::Auto => Mode::Dense,
+        other => other,
+    };
     let depth = (k * 4).max(MIN_CANDIDATES);
     let dense = match (mode, vector) {
         (Mode::Lexical, _) => Vec::new(),
@@ -109,9 +125,18 @@ pub fn search_weighted(
     let ranked = match mode {
         Mode::Dense => dense,
         Mode::Lexical => lexical,
-        Mode::Hybrid => fuse(&[(&dense, 1.0), (&lexical, lexical_weight)]),
+        Mode::Hybrid | Mode::Auto => fuse(&[(&dense, 1.0), (&lexical, lexical_weight)]),
     };
     collapse_neighbours(indexes, ranked, k)
+}
+
+/// True when `query` holds a word with a digit (`780`, `E3`, `2.1`) or an
+/// acronym of two letters or more in capitals (`GPS`, `TCP`).
+pub fn has_exact_terms(query: &str) -> bool {
+    query.split(|c: char| !c.is_alphanumeric()).any(|word| {
+        word.chars().any(|c| c.is_ascii_digit())
+            || (word.chars().count() >= 2 && word.chars().all(char::is_uppercase))
+    })
 }
 
 /// The `depth` passages closest to `vector` over all indexes.
@@ -256,6 +281,14 @@ mod tests {
         );
         assert_eq!(hybrid.len(), 3);
         assert!(search(&[&a], None, "780", 3, Mode::Hybrid).is_err());
+        let auto = search(&[&a, &b], Some(&vector), "780", 3, Mode::Auto).unwrap();
+        assert_eq!(auto, hybrid, "a number: keywords too");
+        let vector = encoder.embed_query("le chat").unwrap();
+        assert_eq!(
+            search(&[&a, &b], Some(&vector), "le chat", 3, Mode::Auto).unwrap(),
+            search(&[&a, &b], Some(&vector), "le chat", 3, Mode::Dense).unwrap(),
+            "no exact token: meaning only"
+        );
         let dense = search(&[&a, &b], Some(&vector), "780", 4, Mode::Dense).unwrap();
         assert_eq!(dense.len(), 4);
     }
@@ -306,6 +339,22 @@ mod tests {
         };
         assert_eq!(order(0.5), [1, 2], "the meaning decides");
         assert_eq!(order(2.0), [2, 1], "the keywords decide");
+    }
+
+    #[test]
+    fn exact_tokens_are_numbers_codes_and_acronyms() {
+        for query in [
+            "article 9",
+            "l'erreur E3",
+            "positions GPS",
+            "port TCP ?",
+            "60 €",
+        ] {
+            assert!(has_exact_terms(query), "{query}");
+        }
+        for query in ["Comment résilier le contrat ?", "Le PC", "Été", "A b"] {
+            assert_eq!(has_exact_terms(query), query == "Le PC", "{query}");
+        }
     }
 
     #[test]

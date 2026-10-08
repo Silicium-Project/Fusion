@@ -167,6 +167,7 @@ pub fn evaluate(
     Ok(Report {
         mode: match mode {
             Mode::Hybrid => format!("hybrid (keywords x{lexical_weight})"),
+            Mode::Auto => format!("auto (keywords x{lexical_weight} on exact tokens)"),
             other => format!("{other:?}").to_lowercase(),
         },
         overall: Scores::from_ranks(&ranks.iter().map(|(_, rank)| *rank).collect::<Vec<_>>()),

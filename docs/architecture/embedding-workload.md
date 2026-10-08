@@ -169,15 +169,18 @@ appelé par le BackEnd avec les tâches terminées de la collection :
 {"jobs": ["site-render-7-…", "site-render-7-…"], "query": "comment résilier ?", "top_k": 10}
 ```
 
-- **Recherche hybride** : la question est vectorisée avec le même modèle
-  épinglé (préfixe `query: `) et cherchée aussi par mots-clés (BM25 sur le
-  document, la section et le texte de chaque passage ; statistiques communes
-  à toutes les tâches cherchées). Les deux classements sont fusionnés par
-  rang réciproque pondéré (RRF, k = 60 ; mots-clés × 0,5, sens × 1 : à
-  poids égal, les mots-clés faisaient baisser le MRR de 0,864 à 0,838). Les mots-clés rattrapent ce qu'un petit
-  modèle manque : nombres, noms, références (« article 6 », « 780 € »).
-  L'index de mots-clés est construit au chargement de l'index, en mémoire :
-  les fichiers publiés ne changent pas.
+- **Recherche par le sens, avec les mots-clés quand il le faut** : la
+  question est vectorisée avec le même modèle épinglé (préfixe `query: `).
+  Si elle contient un mot exact (nombre, code comme `E3`, sigle comme `GPS`),
+  elle est aussi cherchée par mots-clés (BM25 sur le document, la section et
+  le texte de chaque passage ; statistiques communes à toutes les tâches
+  cherchées) et les deux classements sont fusionnés par rang réciproque
+  pondéré (RRF, k = 60 ; mots-clés × 0,5). Mesure sur le jeu d'évaluation
+  avec le vrai modèle : sens seul MRR 0,864 ; hybride sur toutes les
+  questions 0,851 (poids 0,2) à 0,838 (poids 1) ; aucun poids ne bat le sens
+  sur des questions ordinaires, d'où ce déclenchement. L'index de mots-clés
+  est construit au chargement de l'index, en mémoire : les fichiers publiés
+  ne changent pas.
 - Deux passages voisins qui se chevauchent ne sont montrés qu'une fois.
 - Chaque résultat porte sa `section`, affichée par le site sous le nom du
   document.

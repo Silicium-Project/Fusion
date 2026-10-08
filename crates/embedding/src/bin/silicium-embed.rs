@@ -77,8 +77,9 @@ enum Command {
         query: String,
         #[arg(short, default_value_t = 10)]
         k: usize,
-        /// `hybrid` (default), `dense` (meaning only) or `lexical` (keywords only).
-        #[arg(long, default_value = "hybrid")]
+        /// `auto` (default: hybrid when the query has a number, code or
+        /// acronym, meaning otherwise), `hybrid`, `dense` or `lexical`.
+        #[arg(long, default_value = "auto")]
         mode: String,
     },
     /// Measures the search on a question set (`documents/` + `questions.jsonl`).
@@ -318,6 +319,7 @@ fn run_eval(
     let mut runs = vec![(Mode::Lexical, 1.0)];
     if encoder.is_some() {
         runs.insert(0, (Mode::Dense, 1.0));
+        runs.push((Mode::Auto, search::LEXICAL_WEIGHT));
         runs.extend(lexical_weights.iter().map(|&weight| (Mode::Hybrid, weight)));
     }
     let embed = |question: &str| -> silicium_embedding::Result<Vec<f32>> {

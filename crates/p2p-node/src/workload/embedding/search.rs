@@ -163,7 +163,7 @@ fn rank(
 ) -> Result<Vec<SearchHit>, SearchError> {
     let failed = |err: silicium_embedding::Error| SearchError::Failed(err.to_string());
     let searched: Vec<&Index> = indexes.iter().map(|(_, index)| index.as_ref()).collect();
-    hybrid::search(&searched, Some(vector), query, limit, Mode::Hybrid)
+    hybrid::search(&searched, Some(vector), query, limit, Mode::Auto)
         .map_err(failed)?
         .into_iter()
         .map(|found| {
