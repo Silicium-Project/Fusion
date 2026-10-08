@@ -57,5 +57,23 @@ done
 if [[ "$toolchain" == "stable" ]]; then
   "$rustup" default stable
 fi
-echo "$cargo_bin" >> "${GITHUB_PATH:-/dev/null}"
+
+# Put the directory that really holds `cargo` on the PATH of the next steps.
+# It is $cargo_bin for a rustup installed by rustup-init; a rustup found
+# elsewhere (a distribution package, another account's PATH) keeps its
+# proxies in another directory, and `cargo` would then be missing.
+cargo_dir="$cargo_bin"
+if [[ ! -x "$cargo_dir/cargo" ]]; then
+  if [[ -x "$(dirname "$rustup")/cargo" ]]; then
+    cargo_dir="$(dirname "$rustup")"
+  else
+    cargo_dir="$(dirname "$("$rustup" which --toolchain "$toolchain" cargo)")"
+  fi
+  echo "::notice::cargo is not in $cargo_bin for $(id -un); using $cargo_dir."
+fi
+if ! PATH="$cargo_dir:$PATH" cargo --version >/dev/null 2>&1; then
+  echo "::error::cargo cannot run from $cargo_dir for $(id -un) (HOME=$HOME)." >&2
+  exit 1
+fi
+echo "$cargo_dir" >> "${GITHUB_PATH:-/dev/null}"
 "$rustup" run "$toolchain" rustc --version

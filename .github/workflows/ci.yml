@@ -486,10 +486,11 @@ jobs:
             busybox:1.36 \
             chown -R "$(id -u):$(id -g)" /workspace
           git clean -ffdx
-          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
-          echo "$cargo_bin" >> "$GITHUB_PATH"
-          export PATH="$cargo_bin:$PATH"
-          rustup run stable cargo --version
+          # Only perf-budget builds Rust here (its toolchain comes from "Set up
+          # Rust"); docker-e2e and smoke run on runners that may have no Rust.
+          if [[ "${{ matrix.job }}" == "perf-budget" ]]; then
+            cargo --version
+          fi
 
       - name: Test native raytracer
         if: matrix.job == 'raytracer-rust'
