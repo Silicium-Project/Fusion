@@ -1,4 +1,5 @@
 import type { WalletChallenge } from '~/types/api';
+import { isUserRejection, phantomProvider } from '~/utils/wallet';
 import { extractJobError } from '~/utils/jobs';
 import { translate } from '~/utils/i18n';
 
@@ -22,13 +23,15 @@ export function useWallet() {
   }
 
   async function connect(): Promise<string> {
-    if (!import.meta.client || !window.solana?.isPhantom) {
-      throw new Error(translate('errors.phantomRequired'));
+    error.value = '';
+    const provider = import.meta.client ? phantomProvider(window) : null;
+    if (!provider) {
+      // Shown under the button: without it, the click seemed to do nothing.
+      error.value = translate('errors.phantomRequired');
+      throw new Error(error.value);
     }
     connecting.value = true;
-    error.value = '';
     try {
-      const provider = window.solana;
       const connection = await provider.connect();
       const walletAddress = connection.publicKey.toString();
       const challenge = await authorizedFetch<WalletChallenge>('/user/wallet/challenge', {
@@ -43,7 +46,9 @@ export function useWallet() {
       await loadUser(true);
       return walletAddress;
     } catch (failure) {
-      error.value = extractJobError(failure, translate('errors.walletFailed'));
+      error.value = isUserRejection(failure)
+        ? translate('errors.walletRejected')
+        : extractJobError(failure, translate('errors.walletFailed'));
       throw failure;
     } finally {
       connecting.value = false;

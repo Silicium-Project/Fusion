@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampJobPage, compactJobError, extractJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, parseHashReport, resultExtension, shouldRefreshJob } from '../utils/jobs';
+import { clampJobPage, compactJobError, extractJobError, jobPartCount, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, parseHashReport, resultExtension, shouldRefreshJob } from '../utils/jobs';
 
 describe('job dashboard helpers', () => {
   it('preserves multiline traceback details while bounding oversized payloads', () => {
@@ -68,5 +68,12 @@ describe('job dashboard helpers', () => {
     expect(parseHashReport(report)?.input_hash).toBe('h');
     expect(parseHashReport({ chunks: 'nope' })).toBeNull();
     expect(parseHashReport(null)).toBeNull();
+  });
+
+  it('counts the parts of a job, 0 while the network has not split it', () => {
+    expect(jobPartCount(0, '8')).toBe(8);
+    expect(jobPartCount(undefined, null, 3)).toBe(3);
+    expect(jobPartCount(0, undefined, 0)).toBe(0);
+    expect(jobPartCount('abc', -2)).toBe(0);
   });
 });

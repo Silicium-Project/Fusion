@@ -4,6 +4,28 @@ type MotionElement = HTMLElement & {
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+// A card with form fields does not move under the pointer: tilting a form
+// while the user types is uncomfortable, and redrawing its blurred glass
+// on every pointer move made the settings page slow.
+const hasFormFields = (element: HTMLElement) => element.querySelector('input, textarea, select') !== null;
+
+/**
+ * `handler` at most once per animation frame, with the last event: a pointer
+ * fires far more moves than the screen draws frames.
+ */
+function perFrame(handler: (event: PointerEvent) => void): (event: PointerEvent) => void {
+  let pending: PointerEvent | null = null;
+  return (event) => {
+    if (pending) { pending = event; return; }
+    pending = event;
+    requestAnimationFrame(() => {
+      const last = pending;
+      pending = null;
+      if (last) handler(last);
+    });
+  };
+}
+
 // UiCard owns the v-tilt interaction. Keeping it out of the generic spatial
 // scan prevents two pointer handlers from writing the same transform variables
 // and producing a doubled depth/parallax effect.
@@ -28,8 +50,8 @@ function bindSpatialTile(element: HTMLElement) {
   element.classList.add('spatial-tile');
   resetSpatial(element);
 
-  const move = (event: PointerEvent) => {
-    if (event.pointerType === 'touch') return;
+  const move = perFrame((event: PointerEvent) => {
+    if (event.pointerType === 'touch' || hasFormFields(element)) return;
     const rect = element.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
@@ -46,7 +68,7 @@ function bindSpatialTile(element: HTMLElement) {
     element.style.setProperty('--spatial-light-x', `${(x * 100).toFixed(1)}%`);
     element.style.setProperty('--spatial-light-y', `${(y * 100).toFixed(1)}%`);
     element.dataset.spatialActive = 'true';
-  };
+  });
   const reset = () => resetSpatial(element);
   element.addEventListener('pointermove', move);
   element.addEventListener('pointerleave', reset);
@@ -88,7 +110,8 @@ export default defineNuxtPlugin((nuxtApp) => {
     mounted(element: MotionElement, binding) {
       if (binding.value === false || reducedMotion()) return;
       const strength = typeof binding.value === 'number' ? binding.value : 4;
-      const move = (event: PointerEvent) => {
+      const move = perFrame((event: PointerEvent) => {
+        if (hasFormFields(element)) return;
         const rect = element.getBoundingClientRect();
         const x = (event.clientX - rect.left) / rect.width;
         const y = (event.clientY - rect.top) / rect.height;
@@ -105,7 +128,7 @@ export default defineNuxtPlugin((nuxtApp) => {
         element.style.setProperty('--spatial-light-x', `${x * 100}%`);
         element.style.setProperty('--spatial-light-y', `${y * 100}%`);
         element.dataset.tilting = 'true';
-      };
+      });
       const reset = () => {
         element.style.setProperty('--tilt-x', '0deg');
         element.style.setProperty('--tilt-y', '0deg');

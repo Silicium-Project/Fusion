@@ -6,9 +6,9 @@
       <thead><tr><th>{{ t('jobs.table.project') }}</th><th>{{ t('jobs.table.status') }}</th><th>{{ t('jobs.table.split') }}</th><th>{{ t('jobs.table.created') }}</th><th><span class="sr-only">{{ t('jobs.table.actions') }}</span></th></tr></thead>
       <tbody>
         <tr v-for="job in jobs" :key="job.id">
-          <td><NuxtLink :to="`/jobs/${job.id}`" class="job-name"><span><UiIcon name="cube"/></span><div><strong>{{ job.title }}</strong><small>{{ job.workload }} · {{ compactIdentifier(job.siliciumJobId, 10, 5) }}</small></div></NuxtLink></td>
+          <td><NuxtLink :to="`/jobs/${job.id}`" class="job-name"><span><UiIcon name="cube"/></span><div><strong :title="job.title">{{ job.title }}</strong><small>{{ job.workload }} · {{ compactIdentifier(job.siliciumJobId, 10, 5) }}</small></div></NuxtLink></td>
           <td><UiStatusBadge :status="job.status" /></td>
-          <td><strong class="distribution">{{ fragmentCount(job) }}</strong><small class="cell-detail">{{ t('jobs.table.parts') }}</small></td>
+          <td><template v-if="partCount(job)"><strong class="distribution">{{ partCount(job) }}</strong><small class="cell-detail">{{ t('jobs.table.parts') }}</small></template><template v-else-if="isDocumentSearchWorkload(job.workload)"><strong class="distribution">{{ t('jobs.table.auto') }}</strong><small class="cell-detail">{{ t('jobs.table.autoDetail') }}</small></template><strong v-else class="distribution">—</strong></td>
           <td><span>{{ formatDate(job.createdAt) }}</span><small v-if="job.startedAt" class="cell-detail">{{ formatDuration(job.startedAt, job.completedAt) }}</small></td>
           <td><div class="row-actions"><UiButton :to="`/jobs/${job.id}`" variant="ghost" size="small" icon="chevron">{{ t('common.open') }}</UiButton><button v-if="isJobCancellable(job.status)" type="button" class="icon-action icon-action--danger" :aria-label="t('jobs.table.cancel', { title: job.title })" @click="$emit('cancel', job)"><UiIcon name="x"/></button><button v-if="job.status === 'completed'" type="button" class="icon-action" :aria-label="t('jobs.table.download', { title: job.title })" @click="$emit('download', job)"><UiIcon name="download"/></button></div></td>
         </tr>
@@ -20,13 +20,14 @@
 <script setup lang="ts">
 import type { Job } from '~/types/api';
 import { compactIdentifier, formatDate, formatDuration } from '~/utils/format';
-import { isJobCancellable } from '~/utils/jobs';
+import { isJobCancellable, jobPartCount } from '~/utils/jobs';
+import { isDocumentSearchWorkload } from '~/utils/documents';
 defineProps<{ jobs: Job[]; loading?: boolean }>();
 defineEmits<{ cancel: [job: Job]; download: [job: Job] }>();
 const { t } = useI18n();
-function fragmentCount(job: Job): number { const networkCount = Number(job.network?.total || 0); return Number(job.fragmentCount || networkCount || 0); }
+const partCount = (job: Job): number => jobPartCount(job.fragmentCount, job.network?.total);
 </script>
 
 <style scoped>
-.job-table-loading{display:grid;gap:.65rem;padding:1rem}.job-table-loading .skeleton{height:3.8rem}.job-name{display:flex;min-width:220px;align-items:center;gap:.7rem}.job-name>span{display:grid;width:2rem;height:2rem;flex:0 0 auto;place-items:center;border-radius:.55rem;background:var(--violet-100);color:var(--violet-600)}.job-name svg{width:.9rem}.job-name strong,.job-name small{display:block}.job-name strong{font-size:.78rem}.job-name small{margin-top:.25rem;color:var(--ink-500);font-size:.63rem}.distribution{font-size:.82rem}.cell-detail{display:block;margin-top:.2rem;color:var(--ink-500);font-size:.6rem}.row-actions{display:flex;align-items:center;justify-content:flex-end;gap:.2rem}.icon-action{display:grid;width:2rem;height:2rem;place-items:center;border:0;border-radius:.55rem;background:transparent;color:var(--ink-600);cursor:pointer}.icon-action:hover{background:var(--ink-100);color:var(--ink-950)}.icon-action--danger:hover{background:var(--red-100);color:var(--red-600)}.icon-action svg{width:.9rem}
+.job-table-loading{display:grid;gap:.65rem;padding:1rem}.job-table-loading .skeleton{height:3.8rem}.job-name{display:flex;min-width:220px;align-items:center;gap:.7rem}.job-name>span{display:grid;width:2rem;height:2rem;flex:0 0 auto;place-items:center;border-radius:.55rem;background:var(--violet-100);color:var(--violet-600)}.job-name svg{width:.9rem}.job-name>div{min-width:0}.job-name strong,.job-name small{display:block}.job-name strong{max-width:min(36vw,26rem);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.job-name strong{font-size:.78rem}.job-name small{margin-top:.25rem;color:var(--ink-500);font-size:.63rem}.distribution{font-size:.82rem}.cell-detail{display:block;margin-top:.2rem;color:var(--ink-500);font-size:.6rem}.row-actions{display:flex;align-items:center;justify-content:flex-end;gap:.2rem}.icon-action{display:grid;width:2rem;height:2rem;place-items:center;border:0;border-radius:.55rem;background:transparent;color:var(--ink-600);cursor:pointer}.icon-action:hover{background:var(--ink-100);color:var(--ink-950)}.icon-action--danger:hover{background:var(--red-100);color:var(--red-600)}.icon-action svg{width:.9rem}
 </style>

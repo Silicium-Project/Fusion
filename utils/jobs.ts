@@ -55,6 +55,19 @@ export const extractJobError = (failure: unknown, fallback = translate('errors.s
   return failure instanceof Error && failure.message && !isHtml(failure.message) ? failure.message : fallback;
 };
 
+/**
+ * The number of parts of a job: the first known count among `counts`, 0
+ * while it is not known yet (a document search is split by the network
+ * once the documents are read).
+ */
+export const jobPartCount = (...counts: unknown[]): number => {
+  for (const count of counts) {
+    const value = Math.trunc(Number(count));
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return 0;
+};
+
 export const isJobCancellable = (status: string): boolean =>
   ['queued', 'running', 'cancelling'].includes(status);
 
