@@ -51,7 +51,7 @@ silicium-embed prepare documents.zip -o corpus.jsonl   # documents → corpus
 silicium-embed model fetch                             # télécharge et vérifie le modèle
 silicium-embed index corpus.jsonl -o index/            # corpus → index, sur cette machine
 silicium-embed search index/ "comment résilier ?"      # meilleurs passages (JSON Lines), --mode hybrid|dense|lexical
-silicium-embed eval crates/embedding/eval              # qualité : dense, mots-clés et hybride
+silicium-embed eval crates/embedding/eval              # qualité : dense, mots-clés et hybride (plusieurs poids des mots-clés, --lexical-weights)
 silicium-embed eval crates/embedding/eval --lexical-only   # sans modèle (mots-clés seuls)
 ```
 

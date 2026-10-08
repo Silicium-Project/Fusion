@@ -6,10 +6,13 @@
 //!   passages ([`crate::lexical`]), with statistics computed over all the
 //!   indexes searched, so that their scores are comparable.
 //! - **Hybrid** ([`Mode::Hybrid`], the default): both rankings fused by
-//!   reciprocal rank fusion (RRF): a passage scores `1 / (RRF_K + rank)` in
-//!   each ranking where it appears, and the sums are sorted. RRF needs no
-//!   score calibration between the two methods, which have nothing in
-//!   common, and favors passages that both find.
+//!   weighted reciprocal rank fusion (RRF): a passage scores
+//!   `weight / (RRF_K + rank)` in each ranking where it appears, and the
+//!   sums are sorted. RRF needs no score calibration between the two
+//!   methods, which have nothing in common, and favors passages that both
+//!   find. Keywords weigh [`LEXICAL_WEIGHT`] against 1 for the meaning: on
+//!   the evaluation set, keywords alone are clearly worse than the model,
+//!   and at equal weight they push good answers down.
 //!
 //! Neighbouring passages cut from the same text with an overlap often come
 //! out together; the lower-ranked one is dropped ([`collapse_neighbours`]),
@@ -24,6 +27,9 @@ use std::collections::HashMap;
 
 /// Rank offset of reciprocal rank fusion (the usual value).
 pub const RRF_K: f32 = 60.0;
+/// Weight of the keyword ranking in hybrid search (the meaning weighs 1),
+/// chosen with `silicium-embed eval`.
+pub const LEXICAL_WEIGHT: f32 = 0.5;
 /// Candidates taken from each ranking before fusion, at least.
 const MIN_CANDIDATES: usize = 50;
 /// Words compared to tell that two neighbouring passages overlap.
@@ -74,6 +80,19 @@ pub fn search(
     k: usize,
     mode: Mode,
 ) -> Result<Vec<Found>> {
+    search_weighted(indexes, vector, query, k, mode, LEXICAL_WEIGHT)
+}
+
+/// [`search`] with another weight of the keyword ranking in
+/// [`Mode::Hybrid`] (to tune it).
+pub fn search_weighted(
+    indexes: &[&Index],
+    vector: Option<&[f32]>,
+    query: &str,
+    k: usize,
+    mode: Mode,
+    lexical_weight: f32,
+) -> Result<Vec<Found>> {
     if k == 0 || indexes.is_empty() {
         return Ok(Vec::new());
     }
@@ -90,7 +109,7 @@ pub fn search(
     let ranked = match mode {
         Mode::Dense => dense,
         Mode::Lexical => lexical,
-        Mode::Hybrid => fuse(&[&dense, &lexical]),
+        Mode::Hybrid => fuse(&[(&dense, 1.0), (&lexical, lexical_weight)]),
     };
     collapse_neighbours(indexes, ranked, k)
 }
@@ -134,13 +153,14 @@ fn as_found(ranked: Vec<((usize, u64), f32)>) -> Vec<Found> {
         .collect()
 }
 
-/// Reciprocal rank fusion of several rankings (best first).
-pub fn fuse(rankings: &[&[Found]]) -> Vec<Found> {
+/// Weighted reciprocal rank fusion of several `(ranking, weight)` (each
+/// ranking best first).
+pub fn fuse(rankings: &[(&[Found], f32)]) -> Vec<Found> {
     let mut scores: HashMap<(usize, u64), f32> = HashMap::new();
-    for ranking in rankings {
+    for (ranking, weight) in rankings {
         for (rank, found) in ranking.iter().enumerate() {
             *scores.entry((found.index, found.id)).or_default() +=
-                1.0 / (RRF_K + rank as f32 + 1.0);
+                weight / (RRF_K + rank as f32 + 1.0);
         }
     }
     let count = scores.len();
@@ -265,10 +285,27 @@ mod tests {
     fn fusion_favours_passages_found_by_both_rankings() {
         let dense = [found(0, 1), found(0, 2), found(0, 3)];
         let lexical = [found(0, 3), found(0, 4)];
-        let fused: Vec<u64> = fuse(&[&dense, &lexical]).iter().map(|f| f.id).collect();
+        let fused: Vec<u64> = fuse(&[(&dense, 1.0), (&lexical, 1.0)])
+            .iter()
+            .map(|f| f.id)
+            .collect();
         assert_eq!(fused[0], 3, "found by both");
         assert_eq!(fused[1], 1, "first of a ranking");
         assert_eq!(fused[2..], [2, 4], "equal scores keep the smaller id first");
+    }
+
+    #[test]
+    fn a_lighter_ranking_counts_less() {
+        let dense = [found(0, 1), found(0, 2)];
+        let lexical = [found(0, 2), found(0, 1)];
+        let order = |weight| -> Vec<u64> {
+            fuse(&[(&dense, 1.0), (&lexical, weight)])
+                .iter()
+                .map(|f| f.id)
+                .collect()
+        };
+        assert_eq!(order(0.5), [1, 2], "the meaning decides");
+        assert_eq!(order(2.0), [2, 1], "the keywords decide");
     }
 
     #[test]

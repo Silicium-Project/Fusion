@@ -13,7 +13,8 @@
 //! and contains the expected words (compared folded: case, accents and
 //! spaces ignored), so the set stays valid when the chunking changes.
 //!
-//! [`evaluate`] reports, for one search mode, the share of questions
+//! [`evaluate`] reports, for one search mode (and, in hybrid mode, one
+//! weight of the keywords), the share of questions
 //! answered in the first 1, 3, 5 and 10 results (recall@k) and the mean
 //! reciprocal rank of the first answer (MRR@10), overall and per language.
 //! `silicium-embed eval` runs it (see the crate README); the set of this
@@ -122,12 +123,14 @@ impl Scores {
     }
 }
 
-/// Runs `questions` on `index` in `mode`. `embed` turns a question into a
+/// Runs `questions` on `index` in `mode`, keywords weighing
+/// `lexical_weight` in [`Mode::Hybrid`]. `embed` turns a question into a
 /// query vector (needed except in [`Mode::Lexical`]).
 pub fn evaluate(
     index: &Index,
     questions: &[Question],
     mode: Mode,
+    lexical_weight: f32,
     embed: &dyn Fn(&str) -> Result<Vec<f32>>,
 ) -> Result<Report> {
     let mut ranks: Vec<(String, Option<usize>)> = Vec::new();
@@ -137,7 +140,14 @@ pub fn evaluate(
             Mode::Lexical => None,
             _ => Some(embed(&question.question)?),
         };
-        let found = search::search(&[index], vector.as_deref(), &question.question, DEPTH, mode)?;
+        let found = search::search_weighted(
+            &[index],
+            vector.as_deref(),
+            &question.question,
+            DEPTH,
+            mode,
+            lexical_weight,
+        )?;
         let mut rank = None;
         for (position, hit) in found.iter().enumerate() {
             if answers(&index.passage(hit.id)?, &question.expected) {
@@ -155,7 +165,10 @@ pub fn evaluate(
         by_lang.entry(lang.clone()).or_default().push(*rank);
     }
     Ok(Report {
-        mode: format!("{mode:?}").to_lowercase(),
+        mode: match mode {
+            Mode::Hybrid => format!("hybrid (keywords x{lexical_weight})"),
+            other => format!("{other:?}").to_lowercase(),
+        },
         overall: Scores::from_ranks(&ranks.iter().map(|(_, rank)| *rank).collect::<Vec<_>>()),
         by_lang: by_lang
             .into_iter()

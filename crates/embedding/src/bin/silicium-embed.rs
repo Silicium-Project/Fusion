@@ -93,6 +93,9 @@ enum Command {
         overlap_words: Option<usize>,
         #[arg(long)]
         min_words: Option<usize>,
+        /// Weights of the keywords tried in hybrid mode (the meaning weighs 1).
+        #[arg(long, value_delimiter = ',', default_values_t = [0.2, 0.35, 0.5, 0.75, 1.0])]
+        lexical_weights: Vec<f32>,
         /// Prints the reports as JSON.
         #[arg(long)]
         json: bool,
@@ -146,6 +149,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             max_words,
             overlap_words,
             min_words,
+            lexical_weights,
             json,
         } => {
             let defaults = Chunker::default();
@@ -159,7 +163,14 @@ fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             } else {
                 Some(load(spec, &data_dir)?)
             };
-            run_eval(encoder.as_ref(), spec, &set, &chunker, json)
+            run_eval(
+                encoder.as_ref(),
+                spec,
+                &set,
+                &chunker,
+                &lexical_weights,
+                json,
+            )
         }
     }
 }
@@ -266,6 +277,7 @@ fn run_eval(
     spec: &ModelSpec,
     set: &Path,
     chunker: &Chunker,
+    lexical_weights: &[f32],
     json: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let questions = eval::read_questions(&std::fs::read_to_string(set.join("questions.jsonl"))?)?;
@@ -303,18 +315,19 @@ fn run_eval(
         chunker.overlap_words,
         chunker.min_words
     );
-    let modes: &[Mode] = match encoder {
-        Some(_) => &[Mode::Dense, Mode::Lexical, Mode::Hybrid],
-        None => &[Mode::Lexical],
-    };
+    let mut runs = vec![(Mode::Lexical, 1.0)];
+    if encoder.is_some() {
+        runs.insert(0, (Mode::Dense, 1.0));
+        runs.extend(lexical_weights.iter().map(|&weight| (Mode::Hybrid, weight)));
+    }
     let embed = |question: &str| -> silicium_embedding::Result<Vec<f32>> {
         encoder
             .ok_or_else(|| silicium_embedding::Error::Input("no model".into()))?
             .embed_query(question)
     };
     let mut reports = Vec::new();
-    for &mode in modes {
-        reports.push(eval::evaluate(&index, &questions, mode, &embed)?);
+    for (mode, weight) in runs {
+        reports.push(eval::evaluate(&index, &questions, mode, weight, &embed)?);
     }
     if json {
         println!("{}", serde_json::to_string_pretty(&reports)?);

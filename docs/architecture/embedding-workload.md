@@ -173,7 +173,8 @@ appelé par le BackEnd avec les tâches terminées de la collection :
   épinglé (préfixe `query: `) et cherchée aussi par mots-clés (BM25 sur le
   document, la section et le texte de chaque passage ; statistiques communes
   à toutes les tâches cherchées). Les deux classements sont fusionnés par
-  rang réciproque (RRF, k = 60). Les mots-clés rattrapent ce qu'un petit
+  rang réciproque pondéré (RRF, k = 60 ; mots-clés × 0,5, sens × 1 : à
+  poids égal, les mots-clés faisaient baisser le MRR de 0,864 à 0,838). Les mots-clés rattrapent ce qu'un petit
   modèle manque : nombres, noms, références (« article 6 », « 780 € »).
   L'index de mots-clés est construit au chargement de l'index, en mémoire :
   les fichiers publiés ne changent pas.
