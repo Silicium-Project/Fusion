@@ -19,7 +19,7 @@ func TestSearchDocumentsAsksTheNodeWithTheControlToken(t *testing.T) {
 			return
 		}
 		_ = json.NewDecoder(r.Body).Decode(&received)
-		_, _ = w.Write([]byte(`{"model":"multilingual-e5-small","hits":[{"job_id":"site-1","passage_id":4,"document":"contrat.pdf","page":12,"text":"préavis de trente jours","score":0.87}]}`))
+		_, _ = w.Write([]byte(`{"model":"multilingual-e5-small","hits":[{"job_id":"site-1","passage_id":4,"document":"contrat.pdf","page":12,"section":"Bail › Article 6","text":"préavis de trente jours","score":0.87}]}`))
 	}))
 	defer server.Close()
 	cfg := RunnerConfig{NodeAPIURL: server.URL, NodeControlToken: "secret"}
@@ -31,7 +31,7 @@ func TestSearchDocumentsAsksTheNodeWithTheControlToken(t *testing.T) {
 	if received.Query != "résilier ?" || received.TopK != 5 || len(received.Jobs) != 1 {
 		t.Fatalf("request = %+v", received)
 	}
-	if len(hits) != 1 || hits[0].Document != "contrat.pdf" || hits[0].Page == nil || *hits[0].Page != 12 {
+	if len(hits) != 1 || hits[0].Document != "contrat.pdf" || hits[0].Page == nil || *hits[0].Page != 12 || hits[0].Section != "Bail › Article 6" {
 		t.Fatalf("hits = %+v", hits)
 	}
 }

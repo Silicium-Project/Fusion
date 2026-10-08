@@ -152,6 +152,7 @@ func searchResults(hits []silicium.DocumentHit, jobIDs map[string]uint) []map[st
 			"passageId": hit.PassageID,
 			"document":  hit.Document,
 			"page":      hit.Page,
+			"section":   hit.Section,
 			"text":      hit.Text,
 			"score":     hit.Score,
 		})

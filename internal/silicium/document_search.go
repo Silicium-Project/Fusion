@@ -26,12 +26,15 @@ const MaxSearchQueryRunes = 1000
 // DocumentHit is one passage found by a search.
 type DocumentHit struct {
 	// JobID is the Silicium id of the job holding the passage.
-	JobID     string  `json:"job_id"`
-	PassageID uint64  `json:"passage_id"`
-	Document  string  `json:"document"`
-	Page      *int    `json:"page"`
-	Text      string  `json:"text"`
-	Score     float64 `json:"score"`
+	JobID     string `json:"job_id"`
+	PassageID uint64 `json:"passage_id"`
+	Document  string `json:"document"`
+	Page      *int   `json:"page"`
+	// Section is the heading path of the passage ("Bail › Article 6"),
+	// empty when the document has no headings there.
+	Section string  `json:"section,omitempty"`
+	Text    string  `json:"text"`
+	Score   float64 `json:"score"`
 }
 
 type documentSearchRequest struct {

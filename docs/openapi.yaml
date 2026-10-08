@@ -272,6 +272,7 @@ paths:
                         passageId: { type: integer }
                         document: { type: string }
                         page: { type: integer, nullable: true }
+                        section: { type: string, description: "Chemin des titres du passage (« Bail › Article 6 »), vide sans titre" }
                         text: { type: string }
                         score: { type: number }
         '400': { description: Question vide ou trop longue }
