@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -28,15 +27,7 @@ func TestNetworkRootJobIDNormalizesNestedFragmentIDs(t *testing.T) {
 	}
 }
 
-func TestNetworkTerminalStatusIncludesAllTerminalSchedulerStates(t *testing.T) {
-	for _, status := range []string{"completed", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved"} {
-		if !networkTerminalStatus(status) {
-			t.Fatalf("networkTerminalStatus(%q) = false", status)
-		}
-	}
-	if networkTerminalStatus("running") {
-		t.Fatal("running must not be terminal")
-	}
+func TestNetworkTaskFailedCountsOnlyFailures(t *testing.T) {
 	for _, status := range []string{"failed", "dead_lettered", "expired"} {
 		if !networkTaskFailed(status) {
 			t.Fatalf("%q must count as a failed task", status)
@@ -44,39 +35,6 @@ func TestNetworkTerminalStatusIncludesAllTerminalSchedulerStates(t *testing.T) {
 	}
 	if networkTaskFailed("cancelled") {
 		t.Fatal("cancelled must not count as a failed task")
-	}
-}
-
-func TestNetworkTaskFailureDetailsLoadsWorkerArtifacts(t *testing.T) {
-	exportDir := t.TempDir()
-	tasksDir := filepath.Join(exportDir, "tasks")
-	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	item := map[string]any{
-		"task_id": "job-frag-000",
-		"status":  "failed",
-	}
-	result := map[string]any{
-		"success":    false,
-		"error":      "raytracer_fragment_failed",
-		"error_type": "RuntimeError",
-		"traceback":  "Traceback (most recent call last):\n  worker.py:42\nRuntimeError: bad scene",
-	}
-	raw, err := json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(exportDir, "result.job-frag-000.json"), raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	details := networkTaskFailureDetails(tasksDir, item)
-	if details["error"] != "raytracer_fragment_failed" || details["error_type"] != "RuntimeError" {
-		t.Fatalf("unexpected failure fields: %#v", details)
-	}
-	if !strings.Contains(stringValue(details["failure_detail"]), "worker.py:42") {
-		t.Fatalf("traceback was not retained: %#v", details)
 	}
 }
 

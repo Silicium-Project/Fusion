@@ -18,17 +18,10 @@ import (
 type RunnerConfig struct {
 	NetworkRoot        string
 	OrchestratorNodeID string
-	// Used only when rendering historical imported RPC summaries. All new
-	// Network traffic uses the Rust node control API.
+	// Export directory of the orchestrator node: heartbeat and peer files
+	// read by the network endpoints.
 	OrchestratorExportDir string
 	WorkloadStorageDir    string
-	DevnetTrace           bool
-	DevnetTxDelayMS       string
-	MinComputeReputation  string
-	MinVerifyReputation   string
-	ControlURL            string
-	IdentityKeyPath       string
-	DashboardURL          string
 	NodeAPIURL            string
 	NodeControlToken      string
 	// NodeContainerDataRoot is the path used by the BackEnd container for the
@@ -63,16 +56,6 @@ func ConfigFromEnv() RunnerConfig {
 		OrchestratorNodeID:    envDefault("SILICIUM_ORCHESTRATOR_NODE_ID", "orchestrator-1"),
 		OrchestratorExportDir: envDefault("SILICIUM_ORCHESTRATOR_EXPORT_DIR", filepath.Join(networkRoot, ".silicium", "networked", "orchestrator", "export")),
 		WorkloadStorageDir:    envDefault("SILICIUM_WORKLOAD_STORAGE_DIR", filepath.Join(networkRoot, ".silicium", "jobs")),
-		// Devnet settlement is an explicit write operation. Keep it opt-in so a
-		// backend without a funded wallet cannot accidentally publish or pay a
-		// trace during a normal render.
-		DevnetTrace:           envDefault("SILICIUM_DEVNET_TRACE", "0") == "1",
-		DevnetTxDelayMS:       envDefault("SILICIUM_DEVNET_TX_DELAY_MS", "2500"),
-		MinComputeReputation:  envDefault("SILICIUM_MIN_COMPUTE_REPUTATION", "50"),
-		MinVerifyReputation:   envDefault("SILICIUM_MIN_VERIFY_REPUTATION", "40"),
-		ControlURL:            envDefault("SILICIUM_CONTROL_URL", "http://127.0.0.1:46100/gossip/publish"),
-		IdentityKeyPath:       envDefault("SILICIUM_ORCHESTRATOR_IDENTITY_KEY", "/var/lib/silicium/network/orchestrator/state/peer_identity_ed25519.pem"),
-		DashboardURL:          envDefault("SILICIUM_DASHBOARD_URL", "http://localhost:5174/"),
 		NodeAPIURL:            envDefault("SILICIUM_NODE_API_URL", "http://127.0.0.1:9092"),
 		NodeControlToken:      os.Getenv("SILICIUM_NODE_CONTROL_TOKEN"),
 		NodeContainerDataRoot: envDefault("SILICIUM_NODE_CONTAINER_DATA_ROOT", "/var/lib/silicium"),

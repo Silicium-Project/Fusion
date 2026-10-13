@@ -25,9 +25,6 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 	if len(summary) == 0 {
 		summary = readJSONMap(progressPathForJob(job))
 	}
-	if strings.HasPrefix(job.InputPath, "rpc://") {
-		summary = h.networkJobSummary(job.SiliciumJobID, summary)
-	}
 	trace := readJSONMap(job.DevnetTracePath)
 	devnetTrace, _ := summary["devnet_trace"].(map[string]any)
 	if len(trace) == 0 {

@@ -15,10 +15,6 @@ import (
 	"github.com/silicium/internal/silicium"
 )
 
-func networkTasksDirectory() string {
-	return filepath.Join(silicium.ConfigFromEnv().OrchestratorExportDir, "tasks")
-}
-
 func networkPeersFile() string {
 	cfg := silicium.ConfigFromEnv()
 	return filepath.Join(cfg.OrchestratorExportDir, "node."+cfg.OrchestratorNodeID+".peers.json")
@@ -28,9 +24,11 @@ func networkManifestFile() string {
 	return filepath.Join(envDefault("SILICIUM_DOWNLOADS_DIR", "/var/lib/silicium/downloads"), "update-manifest.json")
 }
 
-func networkTerminalStatus(status string) bool {
+// networkTaskFailed reports whether a task status of the node's task book
+// counts as a failure (a cancellation does not).
+func networkTaskFailed(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "completed", "verified", "failed", "dead_lettered", "cancelled", "canceled", "expired", "finalized", "resolved":
+	case "failed", "dead_lettered", "expired":
 		return true
 	default:
 		return false

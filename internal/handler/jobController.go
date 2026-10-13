@@ -169,11 +169,6 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "User ID not found in context", http.StatusUnauthorized)
 		return
 	}
-	// Reconcile only network work already owned by this user before querying.
-	// The shared registry is telemetry, not an authorization boundary.
-	if err := h.syncNetworkJobs(uint(userID)); err != nil {
-		log.Printf("network job sync: %v", err)
-	}
 	page := boundedQueryInt(r, "page", 1, 1, 1_000_000)
 	pageSize := boundedQueryInt(r, "page_size", 20, 1, 100)
 	query := h.DB.Model(&models.Job{}).Where("user_id = ?", userID)

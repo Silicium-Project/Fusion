@@ -5,13 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -253,110 +251,6 @@ func TestRefreshRaytracerArtifactsRepairsLegacyOutputRoot(t *testing.T) {
 	}
 }
 
-func TestNetworkJobSummaryUsesConfiguredExportDirectory(t *testing.T) {
-	exportDir := t.TempDir()
-	tasksDir := filepath.Join(exportDir, "tasks")
-	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	tasks := []map[string]any{
-		{
-			"task_id":     "rpc-job-1-frag-000-compute",
-			"root_job_id": "rpc-job-1",
-			"status":      "completed",
-			"handled_by":  "worker-local",
-			"handled_utc": "2026-09-09T08:00:00Z",
-			"task": map[string]any{
-				"kind":           "compute",
-				"fragment_index": 0,
-				"fragment_count": 1,
-			},
-		},
-		{
-			"task_id":     "other-job-frag-000-compute",
-			"root_job_id": "other-job",
-			"status":      "completed",
-		},
-	}
-	for index, task := range tasks {
-		raw, err := json.Marshal(task)
-		if err != nil {
-			t.Fatal(err)
-		}
-		path := filepath.Join(tasksDir, fmt.Sprintf("task-%d.json", index))
-		if err := os.WriteFile(path, raw, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	t.Setenv("SILICIUM_ORCHESTRATOR_EXPORT_DIR", exportDir)
-	h := New(nil)
-	summary := h.networkJobSummary("rpc-job-1", map[string]any{})
-	if summary["stage"] != "completed" || summary["fragment_count"] != 1 {
-		t.Fatalf("unexpected summary: %#v", summary)
-	}
-	fragments, ok := summary["fragments"].([]map[string]any)
-	if !ok || len(fragments) != 1 || fragments[0]["handledBy"] != "worker-local" {
-		t.Fatalf("unexpected fragments: %#v", summary["fragments"])
-	}
-}
-
-func TestNetworkJobSummaryIncludesWorkerFailureDetails(t *testing.T) {
-	exportDir := t.TempDir()
-	tasksDir := filepath.Join(exportDir, "tasks")
-	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	task := map[string]any{
-		"task_id":     "rpc-job-fail-frag-000-compute",
-		"root_job_id": "rpc-job-fail",
-		"status":      "failed",
-		"handled_by":  "worker-local",
-		"task": map[string]any{
-			"kind":           "compute",
-			"fragment_index": 0,
-			"fragment_count": 1,
-		},
-	}
-	raw, err := json.Marshal(task)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tasksDir, "failed.json"), raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	result := map[string]any{
-		"success":    false,
-		"error":      "raytracer_fragment_failed",
-		"error_type": "RuntimeError",
-		"traceback":  "Traceback (most recent call last):\n  worker.py:42\nRuntimeError: bad scene",
-	}
-	raw, err = json.Marshal(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(exportDir, "result.rpc-job-fail-frag-000-compute.json"), raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	t.Setenv("SILICIUM_ORCHESTRATOR_EXPORT_DIR", exportDir)
-	h := New(nil)
-	summary := h.networkJobSummary("rpc-job-fail", map[string]any{"status": "queued"})
-	fragments, ok := summary["fragments"].([]map[string]any)
-	if !ok || len(fragments) != 1 {
-		t.Fatalf("unexpected fragments: %#v", summary["fragments"])
-	}
-	if !strings.Contains(fragments[0]["failureDetail"].(string), "worker.py:42") {
-		t.Fatalf("worker traceback missing from fragment: %#v", fragments[0])
-	}
-	if !strings.Contains(summary["failure_detail"].(string), "RuntimeError: bad scene") {
-		t.Fatalf("worker traceback missing from summary: %#v", summary)
-	}
-	if summary["stage"] != "failed" {
-		t.Fatalf("task registry status must override stale fallback status: %#v", summary)
-	}
-}
-
 func TestVerifiedBillingForCancelledJobOnlyCountsCosignedFragments(t *testing.T) {
 	progressPath := filepath.Join(t.TempDir(), "raytracer-progress.json")
 	payload := `{"fragments":[
@@ -378,47 +272,6 @@ func TestVerifiedBillingForCancelledJobOnlyCountsCosignedFragments(t *testing.T)
 	}
 	if receiptHash == "" {
 		t.Fatal("expected a receipt-set hash")
-	}
-}
-
-func TestActiveTaskRootIDsOnlyReturnsNonTerminalDescendants(t *testing.T) {
-	exportDir := t.TempDir()
-	tasksDir := filepath.Join(exportDir, "tasks")
-	if err := os.MkdirAll(tasksDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	envelopes := map[string]map[string]any{
-		"active.json": {
-			"task_id": "site-render-1-frag-004-compute-retry-02",
-			"status":  "dispatched",
-		},
-		"nested.json": {
-			"task_id": "custom-task",
-			"status":  "running",
-			"task":    map[string]any{"root_job_id": "site-render-2"},
-		},
-		"done.json": {
-			"task_id":     "site-render-3-frag-001",
-			"root_job_id": "site-render-3",
-			"status":      "completed",
-		},
-	}
-	for name, envelope := range envelopes {
-		raw, err := json.Marshal(envelope)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(tasksDir, name), raw, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	roots, err := activeTaskRootIDs(exportDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !roots["site-render-1"] || !roots["site-render-2"] || roots["site-render-3"] || len(roots) != 2 {
-		t.Fatalf("unexpected active roots: %#v", roots)
 	}
 }
 
