@@ -18,6 +18,25 @@ cd "$ROOT"
 echo ">> Building p2p_node, compute_daemon and silicium-raytracer (release)"
 cargo build --release --locked -p p2p_node -p compute_daemon -p silicium-raytracer
 
+# Several CI runners share the VPS: shift every port of e2e-local.sh by an
+# offset whose ports nobody listens on (unless E2E_PORT_OFFSET is given).
+port_busy() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+offset_free() {
+  local port
+  for port in $((19092 + $1)) $((46201 + $1)) $((19100 + $1)) $((19103 + $1)) $((19200 + $1)) $((19203 + $1)); do
+    port_busy "$port" && return 1
+  done
+  return 0
+}
+if [[ -z "${E2E_PORT_OFFSET:-}" ]]; then
+  for _ in $(seq 50); do
+    candidate=$(( (RANDOM % 90) * 10 ))
+    if offset_free "$candidate"; then E2E_PORT_OFFSET=$candidate; break; fi
+  done
+fi
+export E2E_PORT_OFFSET="${E2E_PORT_OFFSET:?no free ports found for the e2e network}"
+echo ">> Ports shifted by $E2E_PORT_OFFSET"
+
 echo ">> Raytracer, one worker"
 WORKERS=1 bash "$RUN" "$SCENE" "$OUT/raytracer-1"
 echo ">> Raytracer, two workers"
