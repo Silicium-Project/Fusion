@@ -20,9 +20,6 @@ CONFIG_DIR="$(channel_field config_dir)"
 DATA_ROOT="$(channel_field data_dir)"
 PUBLIC_BASE_URL="$(channel_field public_base_url)"
 ORCHESTRATOR_PORT="$(channel_field orchestrator_port)"
-EXPERIMENT_API_PORT="$(channel_field experiment_api_port)"
-EXPERIMENT_RPC_PORT="$(channel_field experiment_rpc_port)"
-EXPERIMENT_EVENTS_PORT="$(channel_field experiment_events_port)"
 BACKEND_HTTP_PORT="$(channel_field backend_http_port)"
 BACKEND_P2P_PORT="$(channel_field backend_p2p_port)"
 FRONTEND_HTTP_PORT="$(channel_field frontend_http_port)"
@@ -47,7 +44,6 @@ fi
 
 release_version="${SILICIUM_RELEASE_VERSION:-$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' "$ROOT/apps/silicium-node/package.json")}"
 release_build="${SILICIUM_RELEASE_BUILD:-$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || printf local)}"
-mesh_key="${SILICIUM_DEV_MESH_KEY:-dev-$(openssl rand -hex 24)}"
 
 mkdir -p "$CONFIG_DIR" "$DATA_ROOT"/site/jobs "$DATA_ROOT"/site/runtime \
   "$DATA_ROOT"/network "$DATA_ROOT"/solana "$DATA_ROOT"/downloads \
@@ -75,7 +71,6 @@ set_env_value() {
 copy_if_missing "$CONFIG_DIR/backend.env" deploy/env/backend.example.env
 copy_if_missing "$CONFIG_DIR/frontend.env" deploy/env/frontend.example.env
 copy_if_missing "$CONFIG_DIR/orchestrator.env" deploy/env/orchestrator.example.env
-copy_if_missing "$CONFIG_DIR/experiment-api.env" deploy/env/experiment-api.example.env
 copy_if_missing "$CONFIG_DIR/compose.env" deploy/env/compose.example.env
 copy_if_missing "$CONFIG_DIR/update-channels.env" deploy/env/update-channels.example.env
 
@@ -83,7 +78,6 @@ compose_env="$CONFIG_DIR/compose.env"
 backend_env="$CONFIG_DIR/backend.env"
 frontend_env="$CONFIG_DIR/frontend.env"
 orchestrator_env="$CONFIG_DIR/orchestrator.env"
-experiment_env="$CONFIG_DIR/experiment-api.env"
 updates_env="$CONFIG_DIR/update-channels.env"
 
 db_password="$(grep -E '^POSTGRES_PASSWORD=' "$compose_env" | tail -n 1 | cut -d= -f2- || true)"
@@ -93,10 +87,6 @@ fi
 jwt_secret="$(grep -E '^JWT_SECRET_KEY=' "$backend_env" | tail -n 1 | cut -d= -f2- || true)"
 if [[ -z "$jwt_secret" || "$jwt_secret" == GENERATE_* || "$jwt_secret" == CHANGE_* ]]; then
   jwt_secret="$(openssl rand -hex 32)"
-fi
-mcp_token="$(grep -E '^SILICIUM_MCP_TOKEN=' "$experiment_env" | tail -n 1 | cut -d= -f2- || true)"
-if [[ -z "$mcp_token" || "$mcp_token" == replace-* ]]; then
-  mcp_token="$(openssl rand -hex 32)"
 fi
 
 set_env_value "$compose_env" POSTGRES_DB silicium_dev
@@ -114,7 +104,6 @@ set_env_value "$compose_env" SILICIUM_BACKEND_P2P_PORT "$BACKEND_P2P_PORT"
 set_env_value "$compose_env" SILICIUM_FRONTEND_HTTP_PORT "$FRONTEND_HTTP_PORT"
 set_env_value "$compose_env" SILICIUM_REPUTATION_HTTP_PORT "$REPUTATION_HTTP_PORT"
 set_env_value "$compose_env" SILICIUM_ORCHESTRATOR_PORT "$ORCHESTRATOR_PORT"
-set_env_value "$compose_env" SILICIUM_EXPERIMENT_EVENTS_PORT "$EXPERIMENT_EVENTS_PORT"
 set_env_value "$compose_env" SILICIUM_TURN_PORT "$TURN_PORT"
 set_env_value "$compose_env" SILICIUM_TURN_TLS_PORT "$TURN_TLS_PORT"
 set_env_value "$compose_env" SILICIUM_TURN_RELAY_MIN_PORT "$TURN_RELAY_MIN_PORT"
@@ -148,10 +137,6 @@ set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_NODE_ID orchestrator-dev-1
 set_env_value "$backend_env" SILICIUM_SITE_STORAGE_DIR /var/lib/silicium/site/jobs
 set_env_value "$backend_env" SILICIUM_WORKLOAD_STORAGE_DIR /var/lib/silicium/site/runtime
 set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_HOST "$VPN_SERVER_ADDRESS"
-set_env_value "$backend_env" SILICIUM_SEED_PEERS "http://127.0.0.1:${ORCHESTRATOR_PORT}"
-set_env_value "$backend_env" SILICIUM_CONTROL_URL "http://127.0.0.1:${ORCHESTRATOR_PORT}/gossip/publish"
-set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_IDENTITY_KEY /var/lib/silicium/network/orchestrator/backend-identity/peer_identity_ed25519.pem
-set_env_value "$backend_env" SILICIUM_MESH_KEY "$mesh_key"
 set_env_value "$backend_env" SILICIUM_SOLANA_WALLET /var/lib/silicium/solana/id.json
 set_env_value "$backend_env" SILICIUM_DEVNET_TRACE 0
 set_env_value "$backend_env" SILICIUM_DEVNET_TRACE_MODE devnet
@@ -169,7 +154,6 @@ set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_WINDOWS_DEV_URL "$PUBLIC_BASE
 set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_LINUX_DEV_URL "$PUBLIC_BASE_URL/downloads/silicium-node-linux-dev.AppImage"
 set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_LINUX_DEV_DEB_URL "$PUBLIC_BASE_URL/downloads/silicium-node-linux-dev.deb"
 set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_LINUX_DEV_RPM_URL "$PUBLIC_BASE_URL/downloads/silicium-node-linux-dev.rpm"
-set_env_value "$frontend_env" NUXT_SILICIUM_MESH_KEY "$mesh_key"
 
 set_env_value "$orchestrator_env" SILICIUM_NODE_ID orchestrator-dev-1
 set_env_value "$orchestrator_env" SILICIUM_NODE_ROLES resource,storage
@@ -177,26 +161,15 @@ set_env_value "$orchestrator_env" SILICIUM_NODE_PORT "$ORCHESTRATOR_PORT"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_CHANNEL dev
 set_env_value "$orchestrator_env" SILICIUM_APP_VERSION "$release_version"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_BUILD "$release_build"
-set_env_value "$orchestrator_env" SILICIUM_NODE_ADVERTISE_HOST "$VPN_SERVER_ADDRESS"
 set_env_value "$orchestrator_env" SILICIUM_NODE_ADVERTISE_URL "$PUBLIC_BASE_URL/orchestrator"
-set_env_value "$orchestrator_env" SILICIUM_MESH_KEY "$mesh_key"
 set_env_value "$orchestrator_env" SILICIUM_EXPORT_DIR "$DATA_ROOT/network/orchestrator/export"
 set_env_value "$orchestrator_env" SILICIUM_STATE_DIR "$DATA_ROOT/network/orchestrator/state"
 
-set_env_value "$experiment_env" SILICIUM_EXPERIMENT_API_PORT "$EXPERIMENT_API_PORT"
-set_env_value "$experiment_env" SILICIUM_EXPERIMENT_EXPORT_DIR "$DATA_ROOT/network/orchestrator/export"
-set_env_value "$experiment_env" SILICIUM_EXPERIMENT_SNAPSHOT_DIR "$DATA_ROOT/network/experiment-api/snapshots"
-set_env_value "$experiment_env" SILICIUM_MCP_TOKEN "$mcp_token"
 
 set_env_value "$updates_env" SILICIUM_DOWNLOADS_DIR "$DATA_ROOT/downloads"
 set_env_value "$updates_env" SILICIUM_DOWNLOAD_BASE_URL "$PUBLIC_BASE_URL/downloads"
 set_env_value "$updates_env" SILICIUM_DEV_VERSION "$release_version"
 set_env_value "$updates_env" SILICIUM_UPDATE_SIGNING_KEY "$CONFIG_DIR/update-signing-key.pem"
-set_env_value "$updates_env" SILICIUM_UPDATE_P2P_DIR "$DATA_ROOT/network/orchestrator/export/p2p"
-set_env_value "$updates_env" SILICIUM_UPDATE_GOSSIP_URL "http://127.0.0.1:${ORCHESTRATOR_PORT}/gossip/publish"
-set_env_value "$updates_env" SILICIUM_MESH_KEY "$mesh_key"
-set_env_value "$updates_env" SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY "$DATA_ROOT/update-publisher/peer_identity_ed25519.pem"
-set_env_value "$updates_env" SILICIUM_UPDATE_GOSSIP_REQUIRED 0
 
 if [[ ! -s "$CONFIG_DIR/update-signing-key.pem" ]]; then
   openssl genpkey -algorithm Ed25519 -out "$CONFIG_DIR/update-signing-key.pem" >/dev/null 2>&1

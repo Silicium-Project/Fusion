@@ -277,45 +277,46 @@ fn update_install_lease_allows_only_one_installer_for_a_content_id() {
 }
 
 #[test]
-fn managed_runtime_cleanup_removes_obsolete_build_assets() {
+fn managed_runtime_cleanup_removes_the_python_runtime_and_keeps_the_node() {
     let directory =
         env::temp_dir().join(format!("silicium-runtime-cleanup-{}", std::process::id()));
     let _ = fs::remove_dir_all(&directory);
-    let legacy = directory.join("tools").join("openssl").join("bin");
-    let python_crypto = directory
-        .join("tools")
-        .join("python")
-        .join("Lib")
-        .join("site-packages")
-        .join("cryptography");
-    let obsolete_p2p_target = directory
-        .join("Network")
+    let network = directory.join("Network");
+    let legacy_files = [
+        directory
+            .join("tools")
+            .join("openssl")
+            .join("bin")
+            .join("openssl.exe"),
+        directory.join("tools").join("python").join("python.exe"),
+        network.join("tools").join("network_node.py"),
+        network.join("networked").join("networked_runtime.py"),
+        network.join("workloads").join("registry.py"),
+        network.join("silicium"),
+        directory.join("deploy").join("linux").join("start-node.sh"),
+    ];
+    for file in &legacy_files {
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, b"legacy").unwrap();
+    }
+    let node = network.join("bin").join("p2p_node");
+    let identity = directory
+        .join(".silicium")
         .join("networked")
-        .join("p2p_node")
-        .join("target")
-        .join("release");
-    let networked_runtime = directory
-        .join("Network")
-        .join("networked")
-        .join("networked_runtime.py");
-    fs::create_dir_all(&legacy).unwrap();
-    fs::create_dir_all(&python_crypto).unwrap();
-    fs::create_dir_all(&obsolete_p2p_target).unwrap();
-    fs::write(legacy.join("openssl.exe"), b"legacy").unwrap();
-    fs::write(python_crypto.join("_rust.pyd"), b"keep").unwrap();
-    fs::write(obsolete_p2p_target.join("p2p_node.exe"), b"remove").unwrap();
-    fs::write(&networked_runtime, b"keep").unwrap();
+        .join("identity.key");
+    for file in [&node, &identity] {
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, b"keep").unwrap();
+    }
 
     remove_legacy_runtime_assets(&directory).unwrap();
+    // A second pass (next supervisor start) has nothing left to do.
+    remove_legacy_runtime_assets(&directory).unwrap();
 
-    assert!(!directory.join("tools").join("openssl").exists());
-    assert!(python_crypto.join("_rust.pyd").exists());
-    assert!(!directory
-        .join("Network")
-        .join("networked")
-        .join("p2p_node")
-        .exists());
-    assert!(networked_runtime.exists());
+    for relative in LEGACY_RUNTIME_PATHS {
+        assert!(!directory.join(relative).exists(), "{relative} survived");
+    }
+    assert!(node.exists() && identity.exists());
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -459,7 +460,8 @@ fn automatic_update_script_restarts_the_notification_shell() {
     assert!(source.contains("supervisor_recovered_after_update_failure"));
     assert!(source.contains("stale_node_runtime_stopped"));
     assert!(source.contains("Get-CimInstance Win32_Process"));
-    assert!(source.contains("IndexOf('silicium node start'"));
+    assert!(source.contains("$_.Name -ieq 'p2p_node.exe' -or $_.Name -ieq 'compute_daemon.exe'"));
+    assert!(!source.contains("silicium node start"));
     assert!(source.contains("kill_managed_node_processes(&repo_root)"));
 }
 
@@ -563,7 +565,7 @@ fn machine_activity_reads_work_and_last_response() {
         .unwrap()
         .as_secs();
     fs::write(
-        directory.join("mesh.discovery.json"),
+        directory.join("node.desktop.peers.json"),
         format!(
             r#"{{"peers":[{{"node_id":"worker-a","roles":["compute"],"app_version":"0.2.9-dev.1","release_channel":"dev","release_build":"test","last_seen_unix":{now},"last_claim_poll_unix":{now},"last_claim_poll_utc":"2026-07-13T18:00:00Z","last_claim_error":"","updated_utc":"2026-07-13T18:00:00Z","activity":{{"status":"working","active_tasks":[{{"item_id":"render:1","role":"compute","activity":"fragment","workload":"raytracer-fragment","fragment_index":3,"fragment_count":16,"x_start":0,"x_end":100,"y_start":0,"y_end":100}}],"last_response":{{"item_id":"verify:2","ok":true,"timestamp_utc":"2026-07-13T17:59:00Z"}}}},"task_queue":[{{"item_id":"verify:3","kind":"task","role":"verify","activity":"verify","workload":"verification/rendering/raytracer-fragment","fragment_index":3,"fragment_count":16,"source_task_id":"render:1","source_node_id":"worker-b","status":"queued","priority":"high","assigned_peer_id":"","origin_node_id":"orchestrator-1","x_start":0,"x_end":100,"y_start":0,"y_end":100}}]}}]}}"#
         ),
@@ -647,14 +649,14 @@ fn runtime_telemetry_parser_preserves_resource_metrics() {
         "system_memory_used_bytes": 8_589_934_592_u64,
         "system_memory_percent": 50.0,
         "logical_cpu_count": 16_u64,
-        "python_thread_count": 7_u64,
+        "runtime_thread_count": 7_u64,
         "storage_used_percent": 61.2
     });
     let telemetry = parse_runtime_telemetry(Some(&payload));
     assert_eq!(telemetry.sampled_unix, 1_784_000_000);
     assert_eq!(telemetry.process_rss_bytes, 134_217_728);
     assert_eq!(telemetry.logical_cpu_count, 16);
-    assert_eq!(telemetry.python_thread_count, 7);
+    assert_eq!(telemetry.runtime_thread_count, 7);
     assert!((telemetry.process_cpu_percent - 37.25).abs() < f64::EPSILON);
     assert!((telemetry.system_memory_percent - 50.0).abs() < f64::EPSILON);
 }

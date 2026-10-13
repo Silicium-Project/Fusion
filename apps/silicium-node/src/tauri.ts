@@ -47,7 +47,7 @@ export type RuntimeTelemetry = {
   systemMemoryUsedBytes: number;
   systemMemoryPercent: number;
   logicalCpuCount: number;
-  pythonThreadCount: number;
+  runtimeThreadCount: number;
   loadAverage: number[];
   storageTotalBytes: number;
   storageFreeBytes: number;
@@ -114,7 +114,6 @@ export type MachineActivity = {
   releaseChannel: string;
   releaseBuild: string;
   httpBaseUrl: string;
-  meshPostUrl: string;
   relayCapable: boolean;
   features: string[];
   candidates: MachineCandidate[];
@@ -145,7 +144,6 @@ export type NodeActivity = {
 
 export type NodeDiagnostics = {
   repoRoot: string;
-  siliciumCli: string;
   logDir: string;
   nodePid?: number | null;
   supervisorPid?: number | null;
@@ -154,7 +152,6 @@ export type NodeDiagnostics = {
   portReady: boolean;
   orchestrator: CheckItem;
   openssl: CheckItem;
-  python: CheckItem;
   logTail: string;
 };
 
@@ -222,10 +219,6 @@ export async function nodeStatus(repoRoot?: string): Promise<NodeStatus> {
 
 export async function checkEnvironment(repoRoot: string): Promise<CheckItem[]> {
   return await invoke<CheckItem[]>('check_environment', { repoRoot });
-}
-
-export async function installRuntime(repoRoot: string): Promise<string> {
-  return await invoke<string>('install_runtime', { repoRoot });
 }
 
 export async function nodeActivity(repoRoot: string): Promise<NodeActivity> {

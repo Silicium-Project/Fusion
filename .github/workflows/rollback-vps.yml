@@ -148,7 +148,6 @@ jobs:
 
           sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL" SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/linux/install-services.sh" "$VPS_ROOT"
           sudo SILICIUM_RELEASE_VERSION="$RELEASE_VERSION" SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL" SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
-          sudo systemctl restart silicium-node.service || true
           sudo bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
           REMOTE
 

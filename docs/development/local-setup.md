@@ -17,16 +17,15 @@ git submodule update --init --recursive
 
 Ce script verifie/installe les outils systeme principaux, puis installe les dependances npm du layer Solana et du site.
 
-## Raytracer natif
+## Binaires du réseau
 
-Les nœuds de calcul ont besoin du binaire `silicium-raytracer` :
+Le réseau local utilise les binaires Rust du dépôt Network (`p2p_node`,
+`compute_daemon`, `silicium-raytracer`). `start-silicium-local.cmd` les compile
+s'ils manquent ; pour les construire à l'avance :
 
 ```powershell
-cargo build --release --manifest-path Network\crates\raytracer\Cargo.toml
+cargo build --release --locked --manifest-path Network\Cargo.toml -p p2p_node -p compute_daemon -p silicium-raytracer
 ```
-
-`install-silicium-windows.cmd` le trouve ensuite automatiquement
-(`Network\crates\raytracer\target\release\silicium-raytracer.exe`).
 
 ## Lancement local en une commande
 
@@ -40,7 +39,10 @@ Le lancement local suppose que les submodules sont initialises.
 
 Le script demarre:
 
-- un noeud de calcul et un noeud de verification via le launcher Network;
+- un orchestrateur local (`p2p_node`, API sur le port 46100) et un worker
+  (`compute_daemon` + `p2p_node`) qui lui fait confiance par son adresse
+  d'amorçage épinglée, comme l'application de bureau (donnees dans
+  `.silicium\local-network`);
 - une base SQLite locale dans `.silicium\site\silicium.db` par defaut;
 - le service BackEnd sur `http://localhost:8080`;
 - le service FrontEnd sur `http://localhost:3000/dashboard`.
@@ -67,7 +69,10 @@ Le backend lit notamment:
 - `SQLITE_PATH`, avec `.silicium\site\silicium.db` par defaut;
 - `JWT_SECRET_KEY`, avec une valeur locale de developpement si absente;
 - `SILICIUM_NETWORK_ROOT`;
-- `SILICIUM_SEED_PEERS`;
-- `SILICIUM_MESH_KEY`.
+- `SILICIUM_NODE_API_URL` et `SILICIUM_NODE_CONTROL_TOKEN`, l'API de
+  l'orchestrateur local (`p2p_node`) que `start-silicium-local` demarre avec un
+  worker;
+- `SILICIUM_ORCHESTRATOR_EXPORT_DIR` et `SILICIUM_WORKLOAD_STORAGE_DIR`, les
+  fichiers ecrits par cet orchestrateur.
 
 Pour un deploiement reel, ces valeurs devront etre fournies par l'environnement de production et non par les valeurs par defaut de developpement.

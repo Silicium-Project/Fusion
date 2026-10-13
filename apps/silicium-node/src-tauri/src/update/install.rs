@@ -1,4 +1,4 @@
-//! Update download (hash-checked), cache for peers, and the platform-specific
+//! Update download (hash-checked) and the platform-specific
 //! installers (Linux AppImage swap, Windows NSIS / other platforms).
 
 use crate::*;
@@ -27,25 +27,11 @@ pub(crate) fn download_update(release: &UpdateRelease) -> Result<PathBuf, String
         let metadata = fs::metadata(&installer).map_err(|error| error.to_string())?;
         let size_matches = release.size_bytes == 0 || metadata.len() == release.size_bytes;
         if size_matches && sha256_file(&installer)? == release.sha256.trim().to_ascii_lowercase() {
-            cache_update_for_peers(&installer, &release.content_id);
             return Ok(installer);
         }
     }
-    let primary_download = curl_download(&release.url, &installer, 300);
-    if primary_download.is_err() {
-        let fallback_url = format!(
-            "http://127.0.0.1:46101/updates/content/{}",
-            release.content_id.trim().to_ascii_lowercase()
-        );
-        curl_download(&fallback_url, &installer, 600).map_err(|fallback_error| {
-            format!(
-                "update_download_unavailable:primary={};gossip={fallback_error}",
-                primary_download
-                    .err()
-                    .unwrap_or_else(|| "unknown".to_string())
-            )
-        })?;
-    }
+    curl_download(&release.url, &installer, 300)
+        .map_err(|error| format!("update_download_unavailable:{error}"))?;
     let metadata = fs::metadata(&installer).map_err(|error| error.to_string())?;
     if release.size_bytes > 0 && metadata.len() != release.size_bytes {
         let _ = fs::remove_file(&installer);
@@ -60,30 +46,7 @@ pub(crate) fn download_update(release: &UpdateRelease) -> Result<PathBuf, String
         let _ = fs::remove_file(&installer);
         return Err("update_sha256_mismatch".to_string());
     }
-    cache_update_for_peers(&installer, &release.content_id);
     Ok(installer)
-}
-
-pub(crate) fn cache_update_for_peers(installer: &Path, content_id: &str) {
-    let url = format!(
-        "http://127.0.0.1:46101/updates/cache/{}",
-        content_id.trim().to_ascii_lowercase()
-    );
-    let source = format!("@{}", installer.display());
-    let _ = Command::new(curl_command())
-        .arg("--silent")
-        .arg("--show-error")
-        .arg("--fail")
-        .arg("--max-time")
-        .arg("300")
-        .arg("--request")
-        .arg("POST")
-        .arg("--data-binary")
-        .arg(source)
-        .arg(url)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
 }
 
 pub(crate) fn schedule_update_install(
@@ -267,7 +230,7 @@ try {
     Get-CimInstance Win32_Process | Where-Object {
       $_.ProcessId -ne $PID -and
       $_.CommandLine -and
-      $_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+      ($_.Name -ieq 'p2p_node.exe' -or $_.Name -ieq 'compute_daemon.exe') -and
       $_.CommandLine.IndexOf($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
     } | ForEach-Object {
       & taskkill.exe /PID $_.ProcessId /T /F | Out-Null

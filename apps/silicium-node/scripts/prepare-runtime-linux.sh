@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Prepares the Linux runtime bundled in the AppImage/deb/rpm
+# (src-tauri/resources/runtime): the Rust node (p2p_node), the compute daemon
+# (compute_daemon) and the native raytracer, plus the raytracer environment
+# file read by the app. The network runtime needs no Python.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,50 +21,16 @@ CARGO_TARGET_DIR="$NATIVE_RAYTRACER_TARGET" cargo build --release --manifest-pat
 if [[ ! -x "$NETWORK_ROOT/target/release/p2p_node" || ! -x "$NETWORK_ROOT/target/release/compute_daemon" ]]; then
   cargo build --release --locked --manifest-path "$NETWORK_ROOT/Cargo.toml" -p p2p_node -p compute_daemon
 fi
+
 rm -rf -- "$RUNTIME_ROOT"
-install -d "$RUNTIME_NETWORK" "$RUNTIME_ROOT/.silicium/env" "$RUNTIME_ROOT/tools/python/site-packages"
-install -d "$RUNTIME_NETWORK/bin"
+install -d "$RUNTIME_NETWORK/bin/raytracer" "$RUNTIME_ROOT/.silicium/env"
 install -m 0755 "$NETWORK_ROOT/target/release/p2p_node" "$RUNTIME_NETWORK/bin/p2p_node"
 install -m 0755 "$NETWORK_ROOT/target/release/compute_daemon" "$RUNTIME_NETWORK/bin/compute_daemon"
-install -d "$RUNTIME_ROOT/deploy/linux"
-install -m 0755 "$NETWORK_ROOT/silicium" "$RUNTIME_NETWORK/silicium"
-install -m 0755 "$REPO_ROOT/deploy/linux/start-node.sh" "$RUNTIME_ROOT/deploy/linux/start-node.sh"
-cp -a "$NETWORK_ROOT/tools" "$RUNTIME_NETWORK/tools"
-for optional in workloads bin; do
-  if [[ -d "$NETWORK_ROOT/$optional" ]]; then
-    cp -a "$NETWORK_ROOT/$optional" "$RUNTIME_NETWORK/$optional"
-  fi
-done
-# Developer tooling (tests, demos, CI helpers) never ships to users.
-rm -rf -- "$RUNTIME_NETWORK/tools/dev"
-install -d "$RUNTIME_NETWORK/bin/raytracer"
 install -m 0755 "$NATIVE_RAYTRACER_TARGET/release/silicium-raytracer" "$RUNTIME_NETWORK/bin/raytracer/silicium-raytracer"
-networked_source=""
-if [[ -d "$NETWORK_ROOT/networked" ]]; then
-  networked_source="$NETWORK_ROOT/networked"
-fi
-if [[ -n "$networked_source" ]]; then
-  install -d "$RUNTIME_NETWORK/networked"
-  install -m 0644 \
-    "$networked_source/__init__.py" \
-    "$networked_source/networked_runtime.py" \
-    "$RUNTIME_NETWORK/networked/"
-fi
 
 cat > "$RUNTIME_ROOT/.silicium/env/raytracer.env" <<'EOF'
 SILICIUM_RAYTRACER_BIN=Network/bin/raytracer/silicium-raytracer
 SILICIUM_RAYTRACER_ASSETS_DIR=Network/bin/raytracer
 EOF
 
-if [[ -f "$NETWORK_ROOT/requirements-p2p.txt" ]]; then
-  python3 -m pip install \
-    --disable-pip-version-check \
-    --no-compile \
-    --target "$RUNTIME_ROOT/tools/python/site-packages" \
-    -r "$NETWORK_ROOT/requirements-p2p.txt"
-fi
-
-find "$RUNTIME_ROOT" -type d -name __pycache__ -prune -exec rm -rf -- {} +
-find "$RUNTIME_ROOT" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
-python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import aioice, cryptography' "$RUNTIME_ROOT/tools/python/site-packages"
 echo "Linux runtime prepared: $RUNTIME_ROOT"

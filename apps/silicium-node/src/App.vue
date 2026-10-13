@@ -104,7 +104,7 @@
           <article><span>RAM machine</span><strong>{{ formatMetricPercent(localMachine.telemetry.systemMemoryPercent) }}</strong><small>{{ formatBytes(localMachine.telemetry.systemMemoryUsedBytes) }} / {{ formatBytes(localMachine.telemetry.systemMemoryTotalBytes) }}</small></article>
           <article><span>RAM Silicium</span><strong>{{ formatBytes(localMachine.telemetry.processRssBytes) }}</strong><small>pic {{ formatBytes(localMachine.telemetry.processPeakRssBytes) }}</small></article>
           <article><span>Stockage</span><strong>{{ formatMetricPercent(localMachine.telemetry.storageUsedPercent) }}</strong><small>{{ formatBytes(localMachine.telemetry.storageFreeBytes) }} libres</small></article>
-          <article><span>Uptime node</span><strong>{{ formatElapsed(localMachine.telemetry.nodeUptimeSeconds * 1000) }}</strong><small>{{ localMachine.telemetry.pythonThreadCount }} threads runtime</small></article>
+          <article><span>Uptime node</span><strong>{{ formatElapsed(localMachine.telemetry.nodeUptimeSeconds * 1000) }}</strong><small>{{ localMachine.telemetry.runtimeThreadCount }} threads runtime</small></article>
         </div>
       </section>
 
@@ -113,7 +113,7 @@
           <div>
             <p class="eyebrow">Task book partage</p>
             <h2>Queue de taches connue</h2>
-            <p>Vue gossip des travaux en attente ou en cours, avec role, workload, parcelle et attribution.</p>
+            <p>Travaux en attente ou en cours sur le reseau, avec role, workload, parcelle et attribution.</p>
           </div>
           <strong class="queue-count">{{ networkTaskQueue.length }}</strong>
         </div>
@@ -221,7 +221,7 @@
           <div>
             <p class="eyebrow">Annuaire reseau connu</p>
             <h2>Nodes observes par ce PC</h2>
-            <p>Presence, release, identite P2P, ICE et activite scheduler issues du dernier snapshot mesh.</p>
+            <p>Presence, release, identite P2P et activite des machines, d apres le dernier instantane des pairs du noeud.</p>
           </div>
           <div class="directory-metrics">
             <span><strong>{{ activity.machines.length }}</strong> connus</span>
@@ -287,7 +287,6 @@
               <div class="directory-detail-grid">
                 <div><span>Roles</span><code>{{ machine.roles.join(', ') || 'aucun' }}</code></div>
                 <div><span>Endpoint HTTP annonce</span><code>{{ machine.httpBaseUrl || 'non annonce' }}</code></div>
-                <div><span>Endpoint mesh annonce</span><code>{{ machine.meshPostUrl || 'non annonce' }}</code></div>
                 <div><span>Identite P2P</span><code>{{ machine.identityId || 'inconnue' }}</code></div>
                 <div><span>Plateforme / CPU</span><code>{{ machine.platform || 'inconnue' }} · {{ machine.cpuCount || '?' }} coeur(s)</code></div>
                 <div><span>Fonctions transport</span><code>{{ machine.features.join(', ') || 'non annoncees' }}</code></div>
@@ -331,7 +330,7 @@
                     <span v-if="task.totalUnits > 0">Unites <strong>{{ formatNumber(task.completedUnits) }} / {{ formatNumber(task.totalUnits) }} {{ task.unit }}</strong></span>
                     <span v-if="task.throughputUnitsPerSecond > 0">Debit <strong>{{ formatNumber(task.throughputUnitsPerSecond) }} {{ task.unit }}/s</strong></span>
                     <span v-if="task.pixelsTotal > 0">Pixels <strong>{{ formatNumber(task.pixelsCompleted) }} / {{ formatNumber(task.pixelsTotal) }}</strong></span>
-                    <span>Threads <strong>{{ task.workerThreads || task.resourceUsage.pythonThreadCount || '?' }}</strong></span>
+                    <span>Threads <strong>{{ task.workerThreads || task.resourceUsage.runtimeThreadCount || '?' }}</strong></span>
                     <span>CPU / RAM <strong>{{ formatMetricPercent(task.resourceUsage.systemCpuPercent) }} / {{ formatBytes(task.resourceUsage.processRssBytes) }}</strong></span>
                     <span>Essai <strong>{{ task.attempt || 1 }} / {{ (task.maxRetries || 0) + 1 }}</strong></span>
                   </div>
@@ -425,13 +424,6 @@
         </div>
 
         <div class="check-list">
-          <div class="check-row" :class="{ ok: diagnostics.python.ok }">
-            <span>{{ diagnostics.python.ok ? 'ok' : 'x' }}</span>
-            <div>
-              <strong>Python</strong>
-              <small>{{ diagnostics.python.detail || 'non teste' }}</small>
-            </div>
-          </div>
           <div class="check-row" :class="{ ok: diagnostics.openssl.ok }">
             <span>{{ diagnostics.openssl.ok ? 'ok' : 'x' }}</span>
             <div>
@@ -451,8 +443,6 @@
         <div class="diag-grid">
           <span>Runtime</span>
           <code>{{ diagnostics.repoRoot || form.repoRoot || 'non detecte' }}</code>
-          <span>CLI Silicium</span>
-          <code>{{ diagnostics.siliciumCli || 'non detecte' }}</code>
           <span>Logs</span>
           <code>{{ diagnostics.logDir || 'non detecte' }}</code>
           <span>Node PID</span>
@@ -536,7 +526,6 @@ const activity = reactive<NodeActivity>({
 });
 const diagnostics = reactive<NodeDiagnostics>({
   repoRoot: '',
-  siliciumCli: '',
   logDir: '',
   nodePid: null,
   supervisorPid: null,
@@ -545,7 +534,6 @@ const diagnostics = reactive<NodeDiagnostics>({
   portReady: false,
   orchestrator: { name: 'Orchestrateur', ok: false, detail: 'non teste' },
   openssl: { name: 'Identite reseau', ok: false, detail: 'non teste' },
-  python: { name: 'Python', ok: false, detail: 'non teste' },
   logTail: 'Ouvrez puis cliquez sur Verifier pour charger les diagnostics.',
 });
 const updateInfo = reactive<UpdateStatus>({

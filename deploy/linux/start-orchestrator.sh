@@ -35,28 +35,6 @@ port="${SILICIUM_NODE_PORT:-46100}"
 data_root="${SILICIUM_DATA_ROOT:-$channel_data_root}"
 export_dir="${SILICIUM_EXPORT_DIR:-$data_root/network/orchestrator/export}"
 state_dir="${SILICIUM_STATE_DIR:-$data_root/network/orchestrator/state}"
-mesh_key="${SILICIUM_MESH_KEY:-}"
-advertise_host="${SILICIUM_NODE_ADVERTISE_HOST:-}"
-
-# ORCHESTRATOR_PUBLIC_IP is intentionally a placeholder in the checked-in
-# example. Resolve it at runtime when an operator has not supplied a public
-# address, so the peer book never advertises the placeholder literally.
-if [[ -z "$advertise_host" || "$advertise_host" == "ORCHESTRATOR_PUBLIC_IP" ]]; then
-  advertise_host="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
-fi
-if [[ -z "$advertise_host" ]]; then
-  advertise_host="$(hostname -I 2>/dev/null | awk '{print $1}')"
-fi
-if [[ -z "$advertise_host" ]]; then
-  echo "Could not determine the orchestrator advertised host; set SILICIUM_NODE_ADVERTISE_HOST in $ENV_FILE." >&2
-  exit 1
-fi
-
-advertise_url="${SILICIUM_NODE_ADVERTISE_URL:-}"
-if [[ -z "$advertise_url" ]]; then
-  advertise_url="http://${advertise_host}:${port}"
-fi
-
 mkdir -p "$export_dir" "$state_dir"
 cd "$ROOT/Network"
 

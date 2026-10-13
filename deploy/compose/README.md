@@ -2,8 +2,7 @@
 
 This stack runs PostgreSQL, the Go backend, the Nuxt frontend,
 the reputation bridge, TURN, and the reverse proxy in containers. The network
-orchestrator and authenticated experiment/MCP API remain host-side systemd
-services.
+orchestrator (`p2p_node`) remains a host-side systemd service.
 
 The PostgreSQL data directory is a host bind mount at
 `/var/lib/silicium/postgres`. The migration script never removes an existing

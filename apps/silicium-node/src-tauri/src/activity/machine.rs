@@ -69,7 +69,7 @@ pub(crate) fn parse_runtime_telemetry(value: Option<&Value>) -> RuntimeTelemetry
         system_memory_used_bytes: telemetry_u64(value, "system_memory_used_bytes"),
         system_memory_percent: telemetry_number(value, "system_memory_percent"),
         logical_cpu_count: telemetry_u64(value, "logical_cpu_count"),
-        python_thread_count: telemetry_u64(value, "python_thread_count"),
+        runtime_thread_count: telemetry_u64(value, "runtime_thread_count"),
         load_average: value
             .and_then(|item| item.get("load_average"))
             .and_then(Value::as_array)
@@ -105,10 +105,10 @@ pub(crate) fn parse_resource_reputation(peer: &Value) -> Vec<BayesianResourceSco
         .collect()
 }
 
-/// Peer snapshot of the node: `node.<node id>.peers.json` written by the Rust
-/// node, else `mesh.discovery.json` of the former Python node.
+/// Peer snapshot of the node: the most recent `node.<node id>.peers.json`
+/// written by the node.
 fn peer_snapshot_path(export_dir: &Path) -> Option<PathBuf> {
-    let rust = fs::read_dir(export_dir)
+    fs::read_dir(export_dir)
         .ok()?
         .flatten()
         .map(|entry| entry.path())
@@ -117,8 +117,7 @@ fn peer_snapshot_path(export_dir: &Path) -> Option<PathBuf> {
                 .map(|name| name.to_string_lossy())
                 .is_some_and(|name| name.starts_with("node.") && name.ends_with(".peers.json"))
         })
-        .max_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok());
-    rust.or_else(|| Some(export_dir.join("mesh.discovery.json")))
+        .max_by_key(|path| fs::metadata(path).and_then(|meta| meta.modified()).ok())
 }
 
 pub(crate) fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity> {
@@ -468,11 +467,6 @@ pub(crate) fn collect_machine_activity(export_dir: &Path) -> Vec<MachineActivity
                     .to_string(),
                 http_base_url: peer
                     .get("http_base_url")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                mesh_post_url: peer
-                    .get("mesh_post_url")
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .to_string(),

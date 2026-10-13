@@ -64,8 +64,6 @@ pub(crate) const UPDATE_SIGNING_PUBLIC_KEY_B64: &str =
 pub(crate) const UPDATE_SIGNING_KEY_ID: &str =
     "f8d1c0149d9fcc171a39f96e5b9965a235500b7fe20cd2348912d38ca91e6d4c";
 
-pub(crate) const LOCAL_UPDATE_MANIFEST_URL: &str = "http://127.0.0.1:46101/updates/manifest";
-
 pub(crate) fn normalized_node_id(node_id: &str) -> String {
     let normalized = node_id
         .trim()

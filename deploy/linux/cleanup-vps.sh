@@ -11,9 +11,9 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 [[ "$STALE_JOB_DAYS" =~ ^[0-9]+$ ]] || { echo "Invalid SILICIUM_STALE_JOB_DAYS: $STALE_JOB_DAYS" >&2; exit 1; }
 
-if pgrep -af 'raytracer|run_network_job' >/dev/null 2>&1; then
+if pgrep -af 'raytracer' >/dev/null 2>&1; then
   echo "A raytracer workload is active; refusing to clean job data." >&2
-  pgrep -af 'raytracer|run_network_job' >&2 || true
+  pgrep -af 'raytracer' >&2 || true
   exit 2
 fi
 

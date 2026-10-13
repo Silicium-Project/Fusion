@@ -24,12 +24,12 @@ on:
         type: boolean
         default: true
       run_network_core:
-        description: "Run the fast Network/Python/Rust lane."
+        description: "Run the fast Network lane (Rust tests and developer tooling tests)."
         required: false
         type: boolean
         default: true
       run_network_e2e:
-        description: "Run the Docker network end-to-end lane."
+        description: "Run the network end-to-end lane (Rust orchestrator and workers on loopback)."
         required: false
         type: boolean
         default: true
@@ -67,12 +67,12 @@ on:
         type: boolean
         default: true
       run_network_core:
-        description: "Run the fast Network/Python/Rust lane."
+        description: "Run the fast Network lane (Rust tests and developer tooling tests)."
         required: false
         type: boolean
         default: true
       run_network_e2e:
-        description: "Run the Docker network end-to-end lane."
+        description: "Run the network end-to-end lane (Rust orchestrator and workers on loopback)."
         required: false
         type: boolean
         default: true
@@ -250,6 +250,7 @@ jobs:
         shell: bash
         run: bash deploy/ci/install-rust-toolchain.sh stable
 
+      # Python is only used by Network's developer tooling tests (pytest).
       - name: Set up Python dependencies
         uses: actions/setup-python@v5
         with:
@@ -284,21 +285,13 @@ jobs:
         with:
           workspaces: Network
 
-      - name: Isolate raytracer runtime cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          cache_dir="$RUNNER_TEMP/silicium-raytracer-cache"
-          rm -rf "$cache_dir"
-          mkdir -p "$cache_dir"
-          echo "SILICIUM_RAYTRACER_RUNTIME_CACHE=$cache_dir" >> "$GITHUB_ENV"
-
       - name: Run core checks
         shell: bash
         run: |
           set -euo pipefail
-          # Docker/proxy coverage is isolated in network-smoke. This lane
-          # stays focused on Python, manifests, and native workload tests.
+          # Docker/proxy coverage is isolated in network-smoke and the
+          # loopback network in network-e2e. This lane runs the Rust tests and
+          # the tests of Network's developer tooling.
           CORE_CHECK_MODE=quick CORE_CHECK_SCOPE=all bash Network/ci/core_check.sh
 
   network-e2e:
@@ -306,11 +299,6 @@ jobs:
     if: ${{ always() && inputs.run_network_e2e && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 120
-    env:
-      E2E_TIMEOUT_S: 2400
-      E2E_WAIT_S: 1200
-      DOCKER_CLIENT_TIMEOUT: 1200
-      COMPOSE_HTTP_TIMEOUT: 1200
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -340,37 +328,20 @@ jobs:
           git submodule sync -- BackEnd FrontEnd Network
           git -c "http.https://github.com/.extraHeader=AUTHORIZATION: Basic ${git_auth}" submodule update --init --force --recursive -- BackEnd FrontEnd Network
 
-      - name: Prepare Docker access
+      - name: Set up Rust
         shell: bash
-        run: |
-          set -euo pipefail
-          docker_path="$(command -v docker)"
-          if docker info >/dev/null 2>&1; then
-            exit 0
-          fi
-          if ! sudo -n "$docker_path" info >/dev/null 2>&1; then
-            echo "Docker is unavailable and passwordless sudo cannot access it." >&2
-            exit 1
-          fi
-          wrapper_dir="$RUNNER_TEMP/docker-bin"
-          mkdir -p "$wrapper_dir"
-          printf '%s\n' '#!/usr/bin/env bash' "exec sudo -n \"$docker_path\" \"\$@\"" > "$wrapper_dir/docker"
-          chmod +x "$wrapper_dir/docker"
-          echo "$wrapper_dir" >> "$GITHUB_PATH"
+        run: bash deploy/ci/install-rust-toolchain.sh stable
 
-      - name: Normalize Docker workspace ownership
-        shell: bash
-        run: |
-          set -euo pipefail
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE/Network:/workspace" \
-            busybox:1.36 \
-            chown -R "$(id -u):$(id -g)" /workspace
-          git -C Network clean -ffdx
+      - name: Cache Network Rust target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Network
 
-      - name: Run Docker e2e stack
+      # Orchestrator and workers (release binaries) on loopback: raytracer
+      # with one then two workers, and sha256.
+      - name: Run the network end-to-end check
         shell: bash
-        run: bash Network/ci/docker_e2e.sh
+        run: bash Network/ci/e2e.sh
 
   network-smoke:
     needs: [submodule-ci-gate]

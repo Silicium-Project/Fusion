@@ -23,11 +23,6 @@ on:
         description: "Existing dev GitHub Release tag to install. Blank selects the newest published dev release."
         required: false
         default: ""
-      run_e2e:
-        description: "Run the long Docker end-to-end suite after deployment."
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -105,7 +100,7 @@ jobs:
               exit 22
             }
           fi
-          for env_file in orchestrator.env experiment-api.env backend.env frontend.env compose.env update-channels.env; do
+          for env_file in orchestrator.env backend.env frontend.env compose.env update-channels.env; do
             if [[ ! -f "/etc/silicium-dev/$env_file" ]]; then
               echo "Missing development config: /etc/silicium-dev/$env_file" >&2
             fi
@@ -269,7 +264,6 @@ jobs:
           RELEASE_BUILD: ${{ steps.release.outputs.release_build }}
           RELEASE_STAGING: ${{ steps.release.outputs.release_staging }}
           NODE_ARTIFACTS_STAGED: true
-          RUN_E2E: ${{ github.event.inputs.run_e2e || 'false' }}
         run: |
           set -euo pipefail
           vps_user="${VPS_USER:-luis}"
@@ -281,7 +275,7 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
             -o IdentitiesOnly=yes -i "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519")
           ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
-            "VPS_ROOT='$vps_root' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_BUILD='$RELEASE_BUILD' RELEASE_STAGING='$RELEASE_STAGING' NODE_ARTIFACTS_STAGED='$NODE_ARTIFACTS_STAGED' RUN_E2E='$RUN_E2E' bash -s" <<'REMOTE'
+            "VPS_ROOT='$vps_root' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_BUILD='$RELEASE_BUILD' RELEASE_STAGING='$RELEASE_STAGING' NODE_ARTIFACTS_STAGED='$NODE_ARTIFACTS_STAGED' bash -s" <<'REMOTE'
           set -euo pipefail
           VPS_ROOT="${VPS_ROOT:?}"
           VPS_GITHUB_TOKEN="${VPS_GITHUB_TOKEN:?}"
@@ -342,12 +336,5 @@ jobs:
             SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
           sudo systemctl start silicium-update-manifest-dev.service
           sudo SILICIUM_RELEASE_CHANNEL=dev bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
-          if [[ "$RUN_E2E" == "true" ]]; then
-            sudo SILICIUM_RELEASE_CHANNEL=dev \
-              E2E_TIMEOUT_S=1200 E2E_WAIT_S=600 \
-              bash "$VPS_ROOT/deploy/compose/e2e.sh" "$VPS_ROOT"
-          else
-            echo "Skipping optional long dev E2E suite (run_e2e=false)."
-          fi
           echo "Development channel deployed: $RELEASE_VERSION ($RELEASE_BUILD)"
           REMOTE

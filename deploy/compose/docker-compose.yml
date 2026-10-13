@@ -59,8 +59,6 @@ services:
       HOST: 0.0.0.0
       PORT: 8080
       CORS_ALLOWED_ORIGINS: ${SILICIUM_CORS_ALLOWED_ORIGINS:-https://vps-910c1dbc.vps.ovh.net}
-      SILICIUM_SEED_PEERS: http://host.docker.internal:${SILICIUM_ORCHESTRATOR_PORT:-46100}
-      SILICIUM_CONTROL_URL: http://host.docker.internal:${SILICIUM_ORCHESTRATOR_PORT:-46100}/gossip/publish
       SILICIUM_NODE_API_URL: http://host.docker.internal:${SILICIUM_ORCHESTRATOR_PORT:-46100}
       SILICIUM_NODE_CONTROL_TOKEN: ${SILICIUM_NODE_CONTROL_TOKEN:-}
       # The BackEnd sees the data bind mount at /var/lib/silicium, while the
@@ -70,13 +68,9 @@ services:
       SILICIUM_RELEASE_CHANNEL: ${SILICIUM_RELEASE_CHANNEL:-prod}
       SILICIUM_RELEASE_VERSION: ${SILICIUM_RELEASE_VERSION:-unknown}
       SILICIUM_RELEASE_BUILD: ${SILICIUM_RELEASE_BUILD:-local}
-      SILICIUM_ORCHESTRATOR_IDENTITY_KEY: /var/lib/silicium/network/orchestrator/backend-identity/peer_identity_ed25519.pem
       SILICIUM_ORCHESTRATOR_EXPORT_DIR: /var/lib/silicium/network/orchestrator/export
       SILICIUM_SITE_STORAGE_DIR: /var/lib/silicium/site/jobs
       SILICIUM_WORKLOAD_STORAGE_DIR: /var/lib/silicium/site/runtime
-      SILICIUM_SOLANA_WALLET: /var/lib/silicium/solana/id.json
-      # Control-plane only: results/artifacts remain on authenticated P2P/HTTP.
-      SILICIUM_RPC_EVENTS_CONNECT: tcp://host.docker.internal:${SILICIUM_EXPERIMENT_EVENTS_PORT:-9771}
     depends_on:
       postgres:
         condition: service_healthy

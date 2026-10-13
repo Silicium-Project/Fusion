@@ -66,7 +66,6 @@ pub(crate) struct MachineActivity {
     pub(crate) release_channel: String,
     pub(crate) release_build: String,
     pub(crate) http_base_url: String,
-    pub(crate) mesh_post_url: String,
     pub(crate) relay_capable: bool,
     pub(crate) features: Vec<String>,
     pub(crate) candidates: Vec<MachineCandidate>,
@@ -187,7 +186,7 @@ pub(crate) struct RuntimeTelemetry {
     pub(crate) system_memory_used_bytes: u64,
     pub(crate) system_memory_percent: f64,
     pub(crate) logical_cpu_count: u64,
-    pub(crate) python_thread_count: u64,
+    pub(crate) runtime_thread_count: u64,
     pub(crate) load_average: Vec<f64>,
     pub(crate) storage_total_bytes: u64,
     pub(crate) storage_free_bytes: u64,
@@ -198,7 +197,6 @@ pub(crate) struct RuntimeTelemetry {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NodeDiagnostics {
     pub(crate) repo_root: String,
-    pub(crate) silicium_cli: String,
     pub(crate) log_dir: String,
     pub(crate) node_pid: Option<u32>,
     pub(crate) supervisor_pid: Option<u32>,
@@ -207,7 +205,6 @@ pub(crate) struct NodeDiagnostics {
     pub(crate) port_ready: bool,
     pub(crate) orchestrator: CheckItem,
     pub(crate) openssl: CheckItem,
-    pub(crate) python: CheckItem,
     pub(crate) log_tail: String,
 }
 

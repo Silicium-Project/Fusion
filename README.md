@@ -11,7 +11,7 @@ Ce dépôt, **Fusion**, assemble tous les composants et contient le déploiement
 
 | Chemin | Type | Contenu |
 | --- | --- | --- |
-| [`Network/`](Network/) | sous-module | Runtime réseau (Rust cible, Python legacy), programme Solana. Voir `Network/README.md` |
+| [`Network/`](Network/) | sous-module | Runtime réseau en Rust (nœud, calcul, workloads), programme Solana. Voir `Network/README.md` |
 | [`BackEnd/`](BackEnd/) | sous-module | API Go : comptes, sessions JWT, jobs, pilotage du réseau |
 | [`FrontEnd/`](FrontEnd/) | sous-module | Site Nuxt 3 : création et suivi des calculs |
 | [`apps/silicium-node/`](apps/silicium-node/) | dossier | Application desktop Tauri qui installe et supervise un nœud chez l'utilisateur |
@@ -28,8 +28,9 @@ Ce dépôt, **Fusion**, assemble tous les composants et contient le déploiement
 - **Go** pour le BackEnd, **TypeScript** pour le FrontEnd et le SDK Solana.
 - **Python** uniquement pour l'outillage des développeurs.
 
-Le runtime réseau est encore en Python en production ; sa migration vers Rust
-est décrite dans
+Le runtime réseau est entièrement en Rust : l'orchestrateur du serveur et les
+nœuds des utilisateurs exécutent le même binaire `p2p_node`. L'ancien runtime
+Python a été supprimé ; l'historique de la bascule est dans
 [`Network/docs/architecture/rust-migration.md`](Network/docs/architecture/rust-migration.md).
 
 ## Démarrage rapide (Windows)

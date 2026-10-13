@@ -103,7 +103,6 @@ pub fn run() {
             commands::stop_node,
             commands::node_status,
             commands::check_environment,
-            commands::install_runtime,
             commands::node_activity,
             commands::node_diagnostics,
             commands::app_defaults,

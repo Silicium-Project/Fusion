@@ -147,7 +147,7 @@ pub fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Resul
 #[tauri::command]
 pub fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
     let root = resolve_repo_root(&repo_root)?;
-    let mut checks = vec![python_command_check(&root), identity_mode_check()];
+    let mut checks = vec![identity_mode_check()];
 
     checks.push(path_check("Repo Silicium", &root.join("Network")));
     checks.push(path_check(
@@ -158,52 +158,10 @@ pub fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
 }
 
 #[tauri::command]
-pub fn install_runtime(repo_root: String) -> Result<String, String> {
-    let root = resolve_repo_root(&repo_root)?;
-    validate_repo_root(&root)?;
-    let status = if cfg!(target_os = "windows") {
-        let script = root.join("install-silicium-windows.cmd");
-        if !script.exists() {
-            return Err(format!("installer_not_found: {}", script.display()));
-        }
-        let mut command = Command::new("cmd");
-        command
-            .arg("/C")
-            .arg(script)
-            .arg("-SkipDockerCheck")
-            .current_dir(&root)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        configure_detached_process(&mut command);
-        command.status()
-    } else if cfg!(target_os = "linux") {
-        let mut command = Command::new(python_launcher(&root));
-        command
-            .arg("-c")
-            .arg("import aioice, cryptography")
-            .current_dir(&root)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        apply_runtime_path(&mut command, &root);
-        configure_python_command(&mut command, &root);
-        command.status()
-    } else {
-        return Err(format!("runtime_install_unsupported:{}", env::consts::OS));
-    };
-    let status = status.map_err(|error| error.to_string())?;
-    if !status.success() {
-        return Err(format!("installer_failed: {status}"));
-    }
-    Ok("Runtime pret".to_string())
-}
-
-#[tauri::command]
 pub fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
     let root = resolve_repo_root_readonly(&repo_root)?;
     validate_repo_root(&root)?;
-    // Files written by the Rust node (the Python node used Network/.silicium).
+    // Activity journal and peer files written by the node.
     let networked_dir = runtime_node_dir(&root);
     let mut history = Vec::new();
     collect_event_history(
@@ -257,10 +215,8 @@ pub fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
         .parent()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| root.display().to_string());
-    let silicium_cli = root.join("Network").join("silicium");
     Ok(NodeDiagnostics {
         repo_root: root.display().to_string(),
-        silicium_cli: silicium_cli.display().to_string(),
         log_dir,
         node_pid,
         supervisor_pid,
@@ -269,7 +225,6 @@ pub fn node_diagnostics(repo_root: String) -> Result<NodeDiagnostics, String> {
         port_ready,
         orchestrator: orchestrator_check(&orchestrator_url),
         openssl: identity_mode_check(),
-        python: python_command_check(&root),
         log_tail: read_node_log_tail(&root)
             .unwrap_or_else(|| "Aucun log node disponible pour le moment.".to_string()),
     })

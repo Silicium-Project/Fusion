@@ -4,25 +4,13 @@
 use crate::*;
 
 pub(crate) fn fetch_update_release() -> Result<UpdateRelease, String> {
-    let primary = curl_get(update_manifest_url(), 15)
+    curl_get(update_manifest_url(), 15)
         .and_then(|output| {
             serde_json::from_str::<Value>(output.trim())
                 .map_err(|error| format!("update_manifest_invalid:{error}"))
         })
-        .and_then(|manifest| select_update_release(&manifest));
-    let primary_error = match primary {
-        Ok(release) => return Ok(release),
-        Err(error) => error,
-    };
-    let fallback = curl_get(LOCAL_UPDATE_MANIFEST_URL, 10)
-        .and_then(|output| {
-            serde_json::from_str::<Value>(output.trim())
-                .map_err(|error| format!("update_gossip_manifest_invalid:{error}"))
-        })
-        .and_then(|manifest| select_update_release(&manifest));
-    fallback.map_err(|fallback_error| {
-        format!("update_manifest_unavailable:primary={primary_error};gossip={fallback_error}")
-    })
+        .and_then(|manifest| select_update_release(&manifest))
+        .map_err(|error| format!("update_manifest_unavailable:{error}"))
 }
 
 pub(crate) fn select_update_release(manifest: &Value) -> Result<UpdateRelease, String> {

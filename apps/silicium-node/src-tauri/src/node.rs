@@ -68,7 +68,6 @@ fn spawn_compute_daemon(repo_root: &Path) -> Result<(), String> {
         repo_root.join("Network").join("bin").join("raytracer"),
     );
     apply_raytracer_env(&mut command, repo_root);
-    apply_runtime_path(&mut command, repo_root);
     spawn_detached_with_log(
         command,
         repo_root,
@@ -116,7 +115,6 @@ pub(crate) fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child,
         // it is the only one on the network (node defaults).
         .env("SILICIUM_WORK_OWN_TASKS", "1")
         .env("COMPUTE_DAEMON_URL", "http://127.0.0.1:9090");
-    apply_runtime_path(&mut command, repo_root);
     spawn_detached(command, repo_root)
 }
 
@@ -258,63 +256,6 @@ pub(crate) fn spawn_supervisor(repo_root: &Path) -> Result<Child, String> {
         "silicium-supervisor.out.log",
         "silicium-supervisor.err.log",
     )
-}
-
-pub(crate) fn python_launcher(repo_root: &Path) -> String {
-    if cfg!(target_os = "linux") {
-        if let Ok(configured) = env::var("SILICIUM_PYTHON3") {
-            if !configured.trim().is_empty() {
-                return configured;
-            }
-        }
-        for candidate in ["/usr/bin/python3", "/usr/local/bin/python3"] {
-            if Path::new(candidate).exists() {
-                return candidate.to_string();
-            }
-        }
-        return "python3".to_string();
-    }
-    if !cfg!(target_os = "windows") {
-        return "python3".to_string();
-    }
-    let mut candidates = Vec::new();
-    candidates.push(repo_root.join("tools").join("python").join("python.exe"));
-    candidates.push(repo_root.join("tools").join("python").join("python3.exe"));
-    candidates.push(repo_root.join("python").join("python.exe"));
-    let bundled_default = repo_root.join("tools").join("python").join("python.exe");
-    if is_managed_runtime_root(repo_root) {
-        return candidates
-            .into_iter()
-            .find(|path| path.exists())
-            .unwrap_or(bundled_default)
-            .display()
-            .to_string();
-    }
-    if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
-        for version in [
-            "Python314",
-            "Python313",
-            "Python312",
-            "Python311",
-            "Python310",
-        ] {
-            candidates.push(
-                PathBuf::from(&local_app_data)
-                    .join("Programs")
-                    .join("Python")
-                    .join(version)
-                    .join("python.exe"),
-            );
-        }
-    }
-    if let Ok(system_root) = env::var("SystemRoot") {
-        candidates.push(PathBuf::from(system_root).join("py.exe"));
-    }
-    candidates
-        .into_iter()
-        .find(|path| path.exists())
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "py".to_string())
 }
 
 pub(crate) fn spawn_detached(command: Command, repo_root: &Path) -> Result<Child, String> {

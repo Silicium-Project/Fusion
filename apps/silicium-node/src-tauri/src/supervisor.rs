@@ -13,8 +13,8 @@ pub fn run_supervisor_cli() -> i32 {
     }
     // The supervisor is also the Linux autostart entrypoint. It must refresh
     // the persistent runtime from the currently mounted AppImage before it
-    // starts the network child; using the readonly resolver here left an old
-    // start-node.sh in ~/.config after an AppImage update.
+    // starts the network child; the readonly resolver would keep the binaries
+    // of the previous version after an AppImage update.
     let repo_root = match resolve_repo_root(&repo_root) {
         Ok(root) => root,
         Err(error) => {
@@ -41,7 +41,7 @@ pub fn run_supervisor_cli() -> i32 {
         }
     }
     // A supervisor launched directly by XDG autostart does not pass through
-    // spawn_supervisor(), so the previous session's Python traceback would
+    // spawn_supervisor(), so the previous session's error output would
     // otherwise remain in the diagnostic tail after a successful recovery.
     // Reset only after taking the lease: a second supervisor must never wipe
     // logs belonging to the active one.
@@ -49,8 +49,8 @@ pub fn run_supervisor_cli() -> i32 {
         let _ = append_supervisor_log(&repo_root, &format!("session_log_reset_failed: {error}\n"));
     }
     // An older updater may have lost silicium-node.pid while leaving the
-    // Python network runtime alive. Replace it on supervisor startup so the
-    // advertised app version/build always matches this executable.
+    // node alive. Replace it on supervisor startup so the advertised app
+    // version/build always matches this executable.
     kill_managed_node_processes(&repo_root);
     remove_pid(&repo_root);
     thread::spawn(run_background_update_loop);
@@ -84,9 +84,8 @@ pub fn run_supervisor_cli() -> i32 {
             if let Ok(Some(pid)) = read_pid(&repo_root) {
                 let _ = kill_process_tree(pid);
             }
-            // Older Linux bundles tracked the shell wrapper instead of the
-            // Python child. Reap both the recorded tree and any orphaned
-            // managed launcher before trying to bind the node port again.
+            // Reap both the recorded tree and any orphaned managed node or
+            // compute daemon before trying to bind the node port again.
             kill_known_silicium_processes(Some(&repo_root));
             remove_pid(&repo_root);
             node_running = false;

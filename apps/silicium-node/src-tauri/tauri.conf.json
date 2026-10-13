@@ -35,10 +35,10 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["python3", "curl", "openssl", "ca-certificates"]
+        "depends": ["curl", "openssl", "ca-certificates"]
       },
       "rpm": {
-        "depends": ["python3", "curl", "openssl", "ca-certificates"]
+        "depends": ["curl", "openssl", "ca-certificates"]
       },
       "appimage": {
         "bundleMediaFramework": false

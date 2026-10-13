@@ -106,10 +106,8 @@ pub(crate) fn linux_managed_node_pids(repo_root: Option<&Path>) -> Vec<u32> {
                     .join(" ")
             })
             .unwrap_or_default();
-        let is_node_launcher = command_line.contains("start-node.sh")
-            || command_line.contains("silicium node start")
-            || command_line.contains("p2p_node")
-            || command_line.contains("compute_daemon");
+        let is_node_launcher =
+            command_line.contains("p2p_node") || command_line.contains("compute_daemon");
         if !is_node_launcher {
             continue;
         }
@@ -140,7 +138,6 @@ pub(crate) fn kill_known_silicium_processes(repo_root: Option<&Path>) {
     #[cfg(target_os = "windows")]
     {
         let mut filters = vec![
-            "$_.CommandLine -like '*silicium node start*'".to_string(),
             "$_.CommandLine -like '* --supervisor *'".to_string(),
             "$_.CommandLine -like '* --supervisor'".to_string(),
         ];
@@ -184,7 +181,7 @@ pub(crate) fn kill_managed_node_processes(repo_root: &Path) {
     {
         let escaped = repo_root.display().to_string().replace('\'', "''");
         let script = format!(
-        "$root = '{escaped}'; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and ($_.CommandLine.IndexOf('silicium node start', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf('networked\\p2p_node', [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.Name -ieq 'p2p_node.exe') }} | ForEach-Object {{ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null }}"
+        "$root = '{escaped}'; Get-CimInstance Win32_Process | Where-Object {{ $_.ProcessId -ne $PID -and $_.CommandLine -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 -and ($_.Name -ieq 'p2p_node.exe' -or $_.Name -ieq 'compute_daemon.exe') }} | ForEach-Object {{ & taskkill.exe /PID $_.ProcessId /T /F | Out-Null }}"
     );
         let mut command = Command::new("powershell.exe");
         command
@@ -319,8 +316,8 @@ pub(crate) fn linux_process_tree(pid: u32) -> Vec<u32> {
                 visit(child, seen, result);
             }
         }
-        // Children are returned before their parent so a shell wrapper cannot
-        // outlive the Python process that owns the listening socket.
+        // Children are returned before their parent so a wrapper cannot
+        // outlive the process that owns the listening socket.
         result.push(pid);
     }
 

@@ -1,5 +1,5 @@
-//! Environment checks shown in the UI: orchestrator reachability, Python,
-//! identity mode, required paths.
+//! Environment checks shown in the UI: orchestrator reachability, identity
+//! mode, required paths.
 
 use crate::*;
 
@@ -66,53 +66,6 @@ pub(crate) fn orchestrator_check(url: &str) -> CheckItem {
             ok: false,
             detail: format!("verification impossible: {}", error),
         },
-    }
-}
-
-pub(crate) fn python_command_check(repo_root: &Path) -> CheckItem {
-    let python = python_launcher(repo_root);
-    let mut process = Command::new(python);
-    configure_python_command(&mut process, repo_root);
-    process.arg("--version").stdin(Stdio::null());
-    configure_detached_process(&mut process);
-    match process.output() {
-        Ok(output) if output.status.success() => CheckItem {
-            name: "Python".to_string(),
-            ok: true,
-            detail: String::from_utf8_lossy(if output.stdout.is_empty() {
-                &output.stderr
-            } else {
-                &output.stdout
-            })
-            .trim()
-            .to_string(),
-        },
-        Ok(output) => CheckItem {
-            name: "Python".to_string(),
-            ok: false,
-            detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-        },
-        Err(error) => CheckItem {
-            name: "Python".to_string(),
-            ok: false,
-            detail: error.to_string(),
-        },
-    }
-}
-
-pub(crate) fn configure_python_command(command: &mut Command, repo_root: &Path) {
-    if !cfg!(target_os = "linux") {
-        return;
-    }
-    // AppImage's launcher exports PYTHONHOME/PYTHONPATH for its bundled
-    // partial Python tree. The node uses the host interpreter with the
-    // packaged third-party modules instead.
-    command.env_remove("PYTHONHOME");
-    let site_packages = repo_root.join("tools").join("python").join("site-packages");
-    if site_packages.exists() {
-        command.env("PYTHONPATH", site_packages.display().to_string());
-    } else {
-        command.env_remove("PYTHONPATH");
     }
 }
 

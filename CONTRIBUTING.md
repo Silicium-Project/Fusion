@@ -53,7 +53,7 @@ CI/CD configuration, or documentation that belongs to the composition layer.
 | Rust (stable) | 1.78+ | Network, silicium-node (Tauri) |
 | Go | 1.22+ | BackEnd |
 | Docker & Compose v2 | Latest stable | Integration tests, deploy |
-| Python | 3.11+ | Network runtime scripts |
+| Python | 3.11+ | Developer tooling and deploy scripts (not the runtime) |
 
 > **Tauri prerequisites:** On Linux you additionally need WebKitGTK 4.1 and
 > its development headers. See the
@@ -172,8 +172,8 @@ Key variables used by the backend:
 | `DATABASE_URL` | — | Required when `DATABASE_DRIVER=postgres` |
 | `SQLITE_PATH` | `.silicium/site/silicium.db` | SQLite file path |
 | `JWT_SECRET_KEY` | auto-generated | Auth signing key |
-| `SILICIUM_MESH_KEY` | — | P2P mesh shared secret |
-| `SILICIUM_SEED_PEERS` | — | Bootstrap peer list |
+| `SILICIUM_NODE_API_URL` | `http://127.0.0.1:46100` (local stack) | API of the orchestrator node (`p2p_node`) |
+| `SILICIUM_NODE_CONTROL_TOKEN` | local value | Bearer token of that API |
 
 > **Never commit real secrets.** The `.gitignore` already excludes `.env*`
 > files at the root level.
@@ -259,12 +259,14 @@ cd BackEnd && go test ./...
 cd FrontEnd && npm run test
 ```
 
-### Docker E2E tests
+### Network end-to-end test
 
-Requires Docker and Compose v2:
+Starts an orchestrator and workers (release binaries) on loopback and runs a
+raytracer job with one then two workers, and a sha256 job (Linux/WSL, no
+Docker needed):
 
 ```bash
-cd deploy && docker compose -f compose/docker-compose.yml up --abort-on-container-exit
+cd Network && make e2e
 ```
 
 ### CI smoke test (local)

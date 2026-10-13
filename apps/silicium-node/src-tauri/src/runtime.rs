@@ -1,5 +1,5 @@
 //! Location and preparation of the node runtime: repository root resolution,
-//! managed runtime copy, packaged runtime discovery, and the PATH / raytracer
+//! managed runtime copy, packaged runtime discovery, and the raytracer
 //! environment given to child processes.
 
 use crate::*;
@@ -93,51 +93,39 @@ pub(crate) fn ensure_managed_runtime() -> Result<PathBuf, String> {
     Ok(root)
 }
 
+/// Files of earlier bundles that the current runtime no longer ships, relative
+/// to the managed runtime root: the Python network runtime (interpreter and
+/// site-packages in `tools/`, `Network/tools`, `Network/networked`,
+/// `Network/workloads`, the `Network/silicium` CLI and its
+/// `deploy/linux/start-node.sh` launcher) and the OpenSSL CLI of releases
+/// before dev.14.
+pub(crate) const LEGACY_RUNTIME_PATHS: [&str; 6] = [
+    "tools",
+    "Network/tools",
+    "Network/networked",
+    "Network/workloads",
+    "Network/silicium",
+    "deploy",
+];
+
+/// Removes the files of earlier bundles from the managed runtime. NSIS
+/// upgrades and the managed-runtime copy are additive, so files that disappear
+/// from a newer bundle otherwise survive forever. Node data (`.silicium/`) and
+/// the binaries in `Network/bin/` are never touched.
 pub(crate) fn remove_legacy_runtime_assets(root: &Path) -> Result<(), String> {
-    // Releases before dev.14 bundled the OpenSSL CLI and added it to PATH.
-    // NSIS upgrades and the managed-runtime copy are additive, so files that
-    // disappear from a newer bundle otherwise survive forever. Cryptography
-    // uses its own Python extension and does not need this executable.
-    let legacy_openssl = root.join("tools").join("openssl");
-    if legacy_openssl.exists() {
-        fs::remove_dir_all(&legacy_openssl).map_err(|error| {
-            format!(
-                "legacy_runtime_cleanup_failed:{}:{error}",
-                legacy_openssl.display()
-            )
-        })?;
-    }
-    // The integrated Python daemon only needs networked_runtime.py. Older
-    // bundles copied the complete Rust workspaces, including Cargo targets,
-    // into the user profile. Besides wasting disk, that allowed the CLI to
-    // compile an experimental node during activation.
-    let legacy_networked_crates = root.join("Network").join("networked");
-    for crate_name in [
-        "compute_daemon",
-        "p2p_node",
-        "reputation_bridge",
-        "silicium_node_core",
-    ] {
-        let path = legacy_networked_crates.join(crate_name);
-        if path.exists() {
-            fs::remove_dir_all(&path).map_err(|error| {
-                format!("legacy_runtime_cleanup_failed:{}:{error}", path.display())
-            })?;
-        }
-    }
-    let legacy_raytracer_target = root
-        .join("Network")
-        .join("workloads")
-        .join("raytracer")
-        .join("native")
-        .join("target");
-    if legacy_raytracer_target.exists() {
-        fs::remove_dir_all(&legacy_raytracer_target).map_err(|error| {
-            format!(
-                "legacy_runtime_cleanup_failed:{}:{error}",
-                legacy_raytracer_target.display()
-            )
-        })?;
+    for relative in LEGACY_RUNTIME_PATHS {
+        let path = relative
+            .split('/')
+            .fold(root.to_path_buf(), |path, part| path.join(part));
+        let removed = if path.is_dir() {
+            fs::remove_dir_all(&path)
+        } else if path.exists() {
+            fs::remove_file(&path)
+        } else {
+            continue;
+        };
+        removed
+            .map_err(|error| format!("legacy_runtime_cleanup_failed:{}:{error}", path.display()))?;
     }
     Ok(())
 }
@@ -147,10 +135,6 @@ pub(crate) fn refresh_managed_runtime_if_needed(root: PathBuf) -> Result<PathBuf
         return Ok(root);
     }
     ensure_managed_runtime()
-}
-
-pub(crate) fn is_managed_runtime_root(root: &Path) -> bool {
-    same_path(root, &managed_runtime_root())
 }
 
 pub(crate) fn find_packaged_runtime_root() -> Option<PathBuf> {
@@ -283,42 +267,6 @@ pub(crate) fn copy_dir_all(source: &Path, target: &Path) -> Result<(), String> {
         }
     }
     Ok(())
-}
-
-pub(crate) fn apply_runtime_path(command: &mut Command, repo_root: &Path) {
-    let mut path_entries = Vec::new();
-    if is_managed_runtime_root(repo_root) {
-        command.env("SILICIUM_REQUIRE_BUNDLED_RUNTIME", "1");
-    }
-    if cfg!(target_os = "windows") {
-        let python_dir = repo_root.join("tools").join("python");
-        if python_dir.exists() {
-            path_entries.push(python_dir);
-        }
-    } else {
-        let site_packages = repo_root.join("tools").join("python").join("site-packages");
-        command.env_remove("PYTHONHOME");
-        if site_packages.exists() {
-            command.env("PYTHONPATH", site_packages.display().to_string());
-        } else {
-            command.env_remove("PYTHONPATH");
-        }
-    }
-    if !path_entries.is_empty() {
-        let current_path = env::var("PATH").unwrap_or_default();
-        let separator = if cfg!(target_os = "windows") {
-            ";"
-        } else {
-            ":"
-        };
-        let prefix = path_entries
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(separator);
-        let next_path = format!("{}{}{}", prefix, separator, current_path);
-        command.env("PATH", next_path);
-    }
 }
 
 pub(crate) fn apply_raytracer_env(command: &mut Command, repo_root: &Path) {
