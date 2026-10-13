@@ -94,7 +94,7 @@ export interface NetworkRuntimeTelemetry {
   system_memory_used_bytes?: number;
   system_memory_percent?: number;
   logical_cpu_count?: number;
-  python_thread_count?: number;
+  runtime_thread_count?: number;
   load_average?: number[];
   storage_total_bytes?: number;
   storage_free_bytes?: number;
