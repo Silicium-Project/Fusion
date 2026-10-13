@@ -1,72 +1,21 @@
-# Windows Support Matrix
+# Support de Windows
 
-This document describes what is supported on Windows today, by runtime mode.
-It is intentionally explicit about what is tested in CI vs best-effort.
+Ce que l'on peut faire sur Windows avec le dépôt Network.
 
-Terminology
-- "Windows native": running commands in PowerShell / cmd.exe (no WSL shell).
-- "Docker Desktop": Docker Desktop installed and the Windows `docker.exe` works.
-- "WSL": running inside a Linux distribution (e.g. Ubuntu on WSL2).
+## Chez l'utilisateur
 
-## Recommended Setup (Windows)
+L'application de bureau (Fusion `apps/silicium-node`) embarque les binaires
+Rust `p2p_node.exe`, `compute_daemon.exe` et `silicium-raytracer.exe`. Aucun
+Python ni Docker n'est nécessaire.
 
-1. Install Python (3.11+ recommended).
-2. Install Docker Desktop (recommended for Network E2E and infra).
-3. Optional: install WSL2 + one distro (Ubuntu) if you want to run bash scripts directly.
+## Pour un développeur
 
-## Modes
+| Tâche | Windows natif (PowerShell) | WSL2 |
+| --- | --- | --- |
+| `cargo build`, `cargo test --workspace` | oui | oui |
+| Tests de l'outillage (`python -m pytest -q`, Python 3.11+, `requirements-dev.txt`) | oui | oui |
+| Scripts bash (`ci/*.sh`, `crates/p2p-node/scripts/e2e-local.sh`, `infra/**/*.sh`) | non | oui |
+| Validateur Solana local et proxy (`infra/docker-compose.yml`) | Docker Desktop | Docker Desktop (intégration WSL) |
 
-### Mode A: Windows native + Docker Desktop (Recommended)
-
-What you can do:
-- `python .\\silicium test`
-- `python .\\silicium test --entrypoint-docker` (exécute `tests/test_entrypoint.py` dans un conteneur Linux)
-- `python .\\silicium tui` (Textual when available, else headless shell fallback)
-- `python .\\silicium check` (active Python/runtime checks)
-- `python .\\silicium smoke` (proxy smoke, requires Docker)
-
-What you typically cannot do without WSL:
-- Running `ci/*.sh` and `infra/**/*.sh` directly (bash scripts).
-
-### Mode B: Windows native (No Docker, No WSL)
-
-What you can do:
-- `python .\\silicium workload lint` (manifest validation only)
-- `python .\\silicium test` (Python-only tests; some infra paths are skipped on Windows)
-
-Constraints:
-- No Docker-backed checks (`silicium check --full`, proxy smoke).
-- No direct execution of bash scripts.
-
-### Mode C: WSL (Ubuntu) + Docker Desktop integration
-
-What you can do:
-- Run bash scripts directly (e.g. `ci/docker_e2e.sh`, `infra/bin/run-with-proxy.sh`).
-- Run Linux toolchain-dependent builds (`make`, `g++`, binutils).
-
-Constraints:
-- Requires Docker Desktop -> WSL Integration enabled for the distro.
-- File path interop: prefer running in the same environment consistently (all-in-WSL or all-in-Windows).
-
-## Support Matrix
-
-Legend: "CI" = validated in GitHub Actions, "Local" = works but not CI-gated.
-
-| Capability | Windows native | Win + Docker Desktop | WSL + Docker Desktop |
-|---|---:|---:|---:|
-| `python .\\silicium test` | CI | CI | Local |
-| `python .\\silicium test --entrypoint-docker` | - | Local | Local |
-| `python .\\silicium tui` | Local | Local | Local |
-| `python .\\silicium check` | Local | Local | Local |
-| `python .\\silicium smoke` | - | Local | Local |
-| Run `ci/*.sh` directly | - | - | Local |
-| Run `infra/**/*.sh` directly | - | - | Local |
-
-## Diagnostics
-
-Use:
-- `python .\\silicium doctor`
-
-Expected signals:
-- Docker: OK/FAIL with a short reason.
-- On Windows, WSL distro listing and Docker socket integration hints.
+Conseil : rester dans un seul environnement (tout Windows ou tout WSL) pour
+éviter les soucis de chemins et de fins de ligne.

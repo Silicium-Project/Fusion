@@ -1,14 +1,13 @@
 # crates/ — runtime Rust
 
-Tout le code Rust qui s'exécute chez un utilisateur ou sur le serveur. C'est le
-runtime **cible** : il remplace progressivement le runtime Python de `tools/`,
-`networked/` et `workloads/` (voir
+Tout le code qui s'exécute chez un utilisateur ou sur le serveur. Il a
+remplacé l'ancien runtime Python, supprimé (voir
 [`docs/architecture/rust-migration.md`](../docs/architecture/rust-migration.md)).
 
 | Crate | Paquet Cargo | Produit | Rôle | Maturité |
 | --- | --- | --- | --- | --- |
 | [`node-core/`](node-core/) | `silicium_node_core` | bibliothèque | Types réseau, journal de tâches signé, réputation, matériel, exécution WASM/OCI | Solide, bien testé |
-| [`p2p-node/`](p2p-node/) | `p2p_node` | binaire `p2p_node` | Nœud libp2p + API HTTP locale | Prototype |
+| [`p2p-node/`](p2p-node/) | `p2p_node` | binaire `p2p_node` | Nœud libp2p, API HTTP locale, workloads (orchestrateur et worker) | Production (canal dev) |
 | [`compute-daemon/`](compute-daemon/) | `compute_daemon` | binaire `compute_daemon` | Calcul et vérification locaux (lance le raytracer) | Prototype |
 | [`reputation-bridge/`](reputation-bridge/) | `reputation_bridge` | binaire `reputation_bridge` | Scores de réputation, vérification de stake Solana | Prototype |
 | [`raytracer/`](raytracer/) | `silicium-raytracer` | binaire `silicium-raytracer` | Moteur de rendu déterministe, utilisé en production | Production |

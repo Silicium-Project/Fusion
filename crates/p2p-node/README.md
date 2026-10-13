@@ -1,8 +1,8 @@
 # p2p-node (`p2p_node`)
 
-Binaire du nœud Rust. Le canal dev l'utilise désormais comme runtime de
-référence pour le desktop et l'orchestrateur VPS ; le Python historique reste
-uniquement un outil de migration et de comparaison.
+Binaire du nœud Rust : l'orchestrateur du VPS et les workers de l'app desktop
+exécutent ce même binaire (seuls les rôles et la configuration changent).
+C'est le seul runtime réseau ; l'ancien nœud Python a été supprimé.
 
 ## Ce qu'il fait
 
@@ -200,12 +200,13 @@ adresse d'amorçage épinglée) :
 
 ```bash
 cargo build --release -p p2p_node -p compute_daemon -p silicium-raytracer
-WORKERS=1 crates/p2p-node/scripts/e2e-local.sh workloads/raytracer/examples/silicium-multi-fragment-scene.cfg
-WORKERS=2 crates/p2p-node/scripts/e2e-local.sh workloads/raytracer/examples/silicium-multi-fragment-scene.cfg
+WORKERS=1 crates/p2p-node/scripts/e2e-local.sh crates/raytracer/scenes/silicium-multi-fragment-scene.cfg
+WORKERS=2 crates/p2p-node/scripts/e2e-local.sh crates/raytracer/scenes/silicium-multi-fragment-scene.cfg
 ```
 
 Avec un worker, il vérifie ses propres tuiles ; avec deux, chacun vérifie
-celles de l'autre. La recherche dans des documents se teste avec un modèle
+celles de l'autre. `ci/e2e.sh` (`make e2e`) enchaîne ces scénarios et le
+workload sha256. La recherche dans des documents se teste avec un modèle
 minuscule construit en mémoire (fonctionnalité `test-model`, jamais livrée) :
 
 ```bash

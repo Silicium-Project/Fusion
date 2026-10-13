@@ -11,23 +11,13 @@ __pycache__/
 .tmp*/
 tmp/
 tmp_pytest_root/
-mcp-smoke-*/
 build/
-perf-budget-report.json
 
 # Local runtime and validator output
 .silicium/
-.silicium-world/
 *.log
 Network-*.ndjson
 solana-validator-*.log
-tools/__pycache__/
-tools/dev/tui/__pycache__/
-tests/__pycache__/
-workloads/raytracer/**/*.ppm
-workloads/raytracer/**/*.out
-workloads/raytracer/**/*.o
-workloads/raytracer/**/*.a
 
 # Secrets generated for the reverse proxy (certificates/private keys)
 infra/docker/reverse-proxy/certs/*.crt

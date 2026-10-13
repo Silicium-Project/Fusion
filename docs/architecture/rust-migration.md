@@ -1,5 +1,10 @@
 # Migration du runtime vers Rust
 
+> **État (2026-10-13) : terminée.** Le runtime Python (nœud, orchestration
+> raytracer, API MCP, RPC, CLI `silicium`, TUI, catalogue `workloads/`) a été
+> supprimé (phase 7). Ce document reste comme historique de la bascule ; les
+> tableaux « ce qui manque » ci-dessous décrivent l'état d'avant.
+
 **Règle du projet :** Rust pour tout ce qui s'exécute chez un utilisateur ou sur
 le serveur ; Python uniquement pour l'outillage des développeurs (tests, E2E,
 démos, contrôles qualité, scripts de release).
@@ -34,7 +39,7 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 | 2 | `scene_path` / `output_path` choisis par un pair distant | **Corrigé** : chemins relatifs sans `..` résolus dans le dossier de travail (`node-core::sandbox`) ; sortie choisie localement ; le compute-daemon refuse tout chemin hors de `SILICIUM_COMPUTE_ROOT` |
 | 3 | API du nœud sans authentification | **Corrigé** : `SILICIUM_NODE_CONTROL_TOKEN` (bearer) ; écoute hors loopback refusée sans jeton ; idem pour le compute-daemon (`SILICIUM_COMPUTE_TOKEN`) |
 | 4 | Tout pair du topic peut faire exécuter une tâche | **Corrigé** : seules les tâches signées par un éditeur de confiance (`SILICIUM_TRUSTED_PUBLISHERS`, ou pair d'amorçage épinglé `/p2p/<peer id>`) sont exécutées ; `SILICIUM_ACCEPT_UNTRUSTED_TASKS` est refusé sur les canaux `dev` et `prod` (l'app desktop l'activait) |
-| 5 | Clé mesh `demo-mesh` codée en dur dans l'app desktop publiée | **Ouvert** : concerne le réseau Python ; à remplacer par une clé fournie par le pipeline de release (secret) en même temps sur le VPS et dans l'app |
+| 5 | Clé mesh `demo-mesh` codée en dur dans l'app desktop publiée | **Sans objet** : la clé mesh n'existait que dans le réseau Python, supprimé ; le réseau Rust repose sur les tâches signées (4) |
 
 ## Phases
 
@@ -47,7 +52,7 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 | 4. Ordonnanceur et transport | Claim/bail/retry/annulation, blobs libp2p, relais client + DCUtR, vérification croisée, reprise après redémarrage | Test d'intégration à 3 nœuds |
 | 5. Parité BackEnd / FrontEnd / Solana | API `/v1` complète (progression, fragments, reçus), télémétrie, séquence Solana identique | Tests Go + Playwright, `devnet_minimal_job_flow.ts` |
 | 6. Bascule | Orchestrateur Rust sur le VPS, app lançant directement le binaire, plus de clé mesh | Canal `dev` stable une semaine, installeur sans Python |
-| 7. Nettoyage | Suppression de `tools/*.py` runtime, `networked/`, `workloads/*.py`, dépendance `python3` des paquets | Contrôle CI : aucun service de prod ne lance Python |
+| 7. Nettoyage | Suppression de `tools/*.py` runtime, `networked/`, `workloads/`, dépendance `python3` des paquets | **Fait** : plus aucun service de prod ni installeur ne lance ou n'embarque Python |
 
 ## Correspondance Python → Rust
 
@@ -61,12 +66,18 @@ forcée de l'app), une fois que le nœud Rust a rattrapé le Python.
 | `tools/solana_layer_bridge.cjs` | `crates/reputation-bridge` ou petit service TypeScript isolé |
 | `networked/networked_runtime.py` | `crates/node-core` (blobs de contenu) |
 | `workloads/raytracer/*.py` | `crates/raytracer` (bibliothèque) |
-| `workloads/standard/*.py` | trait `Workload` de `crates/p2p-node/src/workload/` : `calcul/integrity/sha256` porté ; les autres à porter un par un |
-| `tools/mcp_server.py` | décision ouverte : porter ou supprimer |
+| `workloads/standard/*.py` | trait `Workload` de `crates/p2p-node/src/workload/` : `calcul/integrity/sha256` porté ; les autres (libm, zstd, monte-carlo, matrix, blender, h265…) n'étaient que des prototypes du nœud Python et ont été supprimés avec lui (historique Git) |
+| `tools/mcp_server.py` | supprimé (API expérimentale sans utilisateur ; le BackEnd utilise l'API `/v1` du nœud) |
 
-## Décisions ouvertes
+## Décisions
 
-- Sort de l'API expérimentale MCP (`tools/mcp_server.py`).
-- Conservation des workloads « standard » dans la v1 Rust.
-- Solana côté nœud : Rust natif ou service TypeScript isolé.
-- Contrat de progression : fichiers JSON écrits par le Rust, ou `GET /v1/workloads/{id}`.
+- API expérimentale MCP (`tools/mcp_server.py`) : supprimée.
+- Workloads « standard » : seul `calcul/integrity/sha256` a été porté ; les
+  autres sont à réécrire en Rust (trait `Workload`) s'ils redeviennent utiles.
+- Contrat de progression : fichiers JSON écrits par le nœud Rust
+  (`../contracts/backend-files.md`).
+
+## Reste ouvert
+
+- Solana côté nœud : Rust natif ou service TypeScript isolé (les reçus signés
+  et la séquence on-chain du nœud Python n'ont pas été portés).

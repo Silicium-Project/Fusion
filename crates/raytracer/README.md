@@ -16,7 +16,8 @@ silicium-raytracer <scene.cfg> --output <rendu.ppm> \
 - `--x-*` / `--y-*` : ne rend qu'une tuile rectangulaire.
 - `--threads` ou `SILICIUM_RAYTRACER_THREADS` : nombre de threads (défaut : nombre
   de CPU logiques).
-- Scène d'exemple : `workloads/raytracer/examples/demo-scene.cfg`.
+- Scènes d'exemple : `scenes/` (`demo-scene.cfg`, `silicium-test-scene.cfg`,
+  `silicium-multi-fragment-scene.cfg`, utilisée par `ci/e2e.sh`).
 
 Le déterminisme est une exigence : deux nœuds doivent produire les mêmes octets
 pour qu'une vérification par un autre pair fonctionne.
@@ -50,17 +51,15 @@ silicium-raytracer resolution scene.cfg                     # {"width", "height"
 ```
 
 Chaque étape affiche un objet JSON. C'est la **seule** implémentation de la
-chaîne des tuiles : l'orchestrateur et les nœuds Python l'appellent via
-`workloads/raytracer/native.py` (binaire `SILICIUM_PIPELINE_BIN` côté
-orchestrateur, `SILICIUM_RAYTRACER_BIN` côté nœud), et le déploiement construit
-le binaire (`Fusion/deploy/compose/deploy.sh`). Le code de ces étapes est dans
+chaîne des tuiles : le nœud (`crates/p2p-node`, workload `raytracer`) l'utilise
+comme bibliothèque, et le `compute_daemon` lance le binaire
+(`SILICIUM_RAYTRACER_BIN`) pour rendre une tuile. Le code de ces étapes est dans
 `src/commands/` (un fichier par groupe d'étapes).
 
 Les résultats ne doivent pas changer : des nœuds de versions différentes
 comparent les hash de jalons. `tests/fixtures/python_parity.json` fige les
 résultats enregistrés depuis l'ancien code Python (supprimé) ; il est lu par
-`tests/python_parity.rs` et par `tests/test_raytracer_native.py` (pont Python).
-Ne pas le régénérer.
+`tests/python_parity.rs`. Ne pas le régénérer.
 
 `tests/milestone_rules.rs` teste les règles elles-mêmes : regroupement des
 lignes en jalons, jalon modifié par un pixel altéré, taux d'échantillonnage selon
@@ -71,7 +70,6 @@ la réputation, escalade en cas d'échec.
 ```bash
 cargo build --release -p silicium-raytracer   # binaire dans Network/target/release/
 cargo test -p silicium-raytracer
-python3 -m pytest tests/test_raytracer_native.py   # pont Python, utilise target/release ou target/debug
 ```
 
 L'app desktop (`Fusion/apps/silicium-node/scripts/prepare-runtime*`) construit ce
@@ -79,5 +77,5 @@ binaire et l'installe dans `Network/bin/raytracer/`.
 
 ## Évolution prévue
 
-Brancher la chaîne directement dans le nœud Rust (sans passer par le Python des
-nœuds). Les reçus signés (`tools/receipt_verification.py`) restent à porter.
+Les reçus de calcul signés de l'ancien nœud Python n'ont pas été portés ; la
+facturation est dérivée du journal de tâches du nœud.

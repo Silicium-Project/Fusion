@@ -9,12 +9,11 @@ from pathlib import Path
 from typing import Any
 
 
+# The Python CLI/TUI and its workload catalog are gone: only the shared
+# messages and the infra shell scripts are still translated.
 REQUIRED_NAMESPACES = [
     "core.",
-    "cli.",
-    "tui.",
     "infra.",
-    "workload.",
 ]
 
 

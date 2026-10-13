@@ -2,29 +2,23 @@ SHELL := /bin/bash
 
 PYTHON ?= python3
 
-.PHONY: all test check lint golden smoke raytracer-test rust-test rust-lint clean re
+.PHONY: all check test e2e smoke rust-test rust-lint tools-test clean re
 
 all: check
 
-test:
-	$(PYTHON) -m pytest
-
+# Rust tests + developer tooling tests (what Fusion's "network-core" runs).
 check:
-	CORE_CHECK_MODE=quick CORE_CHECK_SCOPE=platform bash ci/core_check.sh
+	CORE_CHECK_MODE=quick bash ci/core_check.sh
 
-lint:
-	$(PYTHON) ./silicium workload lint
+test: rust-test tools-test
 
-golden:
-	$(PYTHON) ./silicium workload golden --strict
+# Loopback network with real binaries: raytracer (1 and 2 workers), sha256.
+e2e:
+	bash ci/e2e.sh
 
+# Reverse proxy + TLS of infra/docker-compose.yml (needs Docker).
 smoke:
-	$(PYTHON) ./silicium smoke
-
-raytracer-test:
-	cargo test -p silicium-raytracer
-	cargo build -p silicium-raytracer
-	SILICIUM_TEST_PIPELINE_BIN=target/debug/silicium-raytracer $(PYTHON) -m pytest -q tests/test_raytracer_native.py
+	bash tests/smoke/run_proxy_smoke.sh
 
 rust-test:
 	cargo test --workspace --locked
@@ -33,7 +27,11 @@ rust-lint:
 	cargo fmt --all --check
 	cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
+# Tests of tools/dev/ (UTF-8, locales, Solana preflight, Solana entrypoint).
+tools-test:
+	$(PYTHON) -m pytest -q
+
 clean:
-	$(PYTHON) ./silicium clean cache
+	cargo clean
 
 re: clean all

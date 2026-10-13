@@ -174,8 +174,7 @@ pub(crate) fn to_json(sample: &Sample, interval_ms: u64, uptime_s: f64, peak_rss
         "system_memory_used_bytes": memory_used,
         "system_memory_percent": round(percent(memory_used, sample.memory_total_bytes)),
         "load_average": sample.load_average,
-        // Field name kept from the Python node, read by the desktop app.
-        "python_thread_count": sample.runtime_threads,
+        "runtime_thread_count": sample.runtime_threads,
         "storage_total_bytes": sample.storage_total_bytes,
         "storage_free_bytes": sample.storage_free_bytes,
         "storage_used_percent": round(percent(storage_used, sample.storage_total_bytes)),

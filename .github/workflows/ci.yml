@@ -39,12 +39,12 @@ jobs:
     runs-on: [self-hosted, fusion-linux]
     outputs:
       python: ${{ steps.detect.outputs.python }}
+      e2e: ${{ steps.detect.outputs.e2e }}
       javascript: ${{ steps.detect.outputs.javascript }}
       rust: ${{ steps.detect.outputs.rust }}
       solana: ${{ steps.detect.outputs.solana }}
       docker: ${{ steps.detect.outputs.docker }}
       p2p: ${{ steps.detect.outputs.p2p }}
-      raytracer: ${{ steps.detect.outputs.raytracer }}
       rust_crates: ${{ steps.detect.outputs.rust_crates }}
       codeql: ${{ steps.detect.outputs.codeql }}
       test_jobs: ${{ steps.detect.outputs.test_jobs }}
@@ -83,16 +83,17 @@ jobs:
           solana=false
           docker=false
           p2p=false
-          raytracer=false
-          if matches '^(tools|workloads|tests|silicium|proto|i18n|ci)/|^(pyproject\.toml|requirements.*\.txt|Makefile)$'; then python=true; fi
+          e2e=false
+          # Python is only developer tooling now (tools/dev/, tests/).
+          if matches '^(tools|tests|i18n)/|^requirements-dev\.txt$'; then python=true; fi
           if matches '^solana-layer/|\.(js|jsx|ts|tsx)$|(^|/)(package|yarn)\.json$'; then javascript=true; fi
           if matches '^crates/|(^|/)Cargo\.(toml|lock)$'; then rust=true; fi
           if matches '^solana-layer/'; then solana=true; fi
-          if matches '^(infra|ci/|tests/smoke/|crates/.*/Dockerfile)|docker-compose'; then docker=true; fi
+          if matches '^(infra/|tests/smoke/|crates/.*/Dockerfile)|docker-compose'; then docker=true; fi
           if matches '^crates/(p2p-node|node-core)/|^ci/p2p_kademlia_smoke\.sh$'; then p2p=true; fi
-          if matches '^workloads/raytracer/|^crates/raytracer/|^tests/(fixtures/python_raytracer|test_raytracer_native)'; then raytracer=true; fi
+          if matches '^crates/|(^|/)Cargo\.(toml|lock)$|^ci/(e2e|core_check)\.sh$'; then e2e=true; fi
           if matches '^\.github/workflows/'; then
-            python=true; javascript=true; rust=true; solana=true; docker=true; p2p=true; raytracer=true
+            python=true; javascript=true; rust=true; solana=true; docker=true; p2p=true; e2e=true
           fi
           rust_crates='[]'
           add_rust_crate() {
@@ -124,16 +125,15 @@ jobs:
               test_jobs="${test_jobs%]},\"$name\"]"
             fi
           }
-          if [[ "$raytracer" == true ]]; then add_test_job raytracer-rust; fi
           if [[ "$python" == true ]]; then add_test_job pytest; fi
-          if [[ "$docker" == true ]]; then add_test_job docker-e2e; add_test_job smoke; fi
+          if [[ "$e2e" == true ]]; then add_test_job e2e; fi
+          if [[ "$docker" == true ]]; then add_test_job smoke; fi
           if [[ "$p2p" == true ]]; then add_test_job p2p-kademlia-smoke; fi
-          if [[ "$python" == true || "$rust" == true ]]; then add_test_job perf-budget; fi
           printf 'Changed paths:\n%s\n' "$changed_paths"
           printf 'codeql=%s\n' "$codeql"
           printf 'test_jobs=%s\n' "$test_jobs"
           printf 'rust_crates=%s\n' "$rust_crates"
-          for name in python javascript rust solana docker p2p raytracer rust_crates codeql test_jobs; do
+          for name in python javascript rust solana docker p2p e2e rust_crates codeql test_jobs; do
             printf '%s=%s\n' "$name" "${!name}" >> "$GITHUB_OUTPUT"
           done
 
@@ -185,7 +185,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m compileall tools workloads tests
+          python -m compileall tools tests ci/runner
 
   p2p-node:
     needs: [changes]
@@ -392,10 +392,6 @@ jobs:
         job: ${{ fromJSON(needs.changes.outputs.test_jobs) }}
 
     env:
-      E2E_TIMEOUT_S: 2400
-      E2E_WAIT_S: 1200
-      DOCKER_CLIENT_TIMEOUT: 1200
-      COMPOSE_HTTP_TIMEOUT: 1200
       RUSTUP_TOOLCHAIN: stable
 
     steps:
@@ -411,12 +407,12 @@ jobs:
         run: git clean -ffdx
 
       - name: Set up Rust
-        if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
+        if: matrix.job == 'e2e' || matrix.job == 'p2p-kademlia-smoke'
         shell: bash
         run: bash ci/runner/install_rust_toolchain.sh stable
 
       - name: Expose Rust toolchain to shell
-        if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
+        if: matrix.job == 'e2e' || matrix.job == 'p2p-kademlia-smoke'
         shell: bash
         run: |
           set -euo pipefail
@@ -435,7 +431,7 @@ jobs:
           cargo --version
 
       - name: Repair runner Rust state
-        if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
+        if: matrix.job == 'e2e' || matrix.job == 'p2p-kademlia-smoke'
         shell: bash
         run: |
           set -euo pipefail
@@ -443,13 +439,13 @@ jobs:
           python3 ci/runner/repair_cargo_sources.py
 
       - name: Cache Rust build
-        if: matrix.job == 'raytracer-rust' || matrix.job == 'p2p-kademlia-smoke' || matrix.job == 'perf-budget'
+        if: matrix.job == 'e2e' || matrix.job == 'p2p-kademlia-smoke'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
 
       - name: Set up Python
-        if: matrix.job == 'pytest' || matrix.job == 'docker-e2e' || matrix.job == 'pytest-hosted' || matrix.job == 'smoke' || matrix.job == 'perf-budget' || matrix.job == 'raytracer-rust'
+        if: matrix.job == 'pytest'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -457,7 +453,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
 
       - name: Prepare Docker access
-        if: matrix.job == 'docker-e2e' || matrix.job == 'smoke' || matrix.job == 'perf-budget'
+        if: matrix.job == 'smoke'
         shell: bash
         run: |
           set -euo pipefail
@@ -477,7 +473,7 @@ jobs:
           echo "$wrapper_dir" >> "$GITHUB_PATH"
 
       - name: Normalize shared workspace ownership
-        if: matrix.job == 'docker-e2e' || matrix.job == 'smoke' || matrix.job == 'perf-budget'
+        if: matrix.job == 'smoke'
         shell: bash
         run: |
           set -euo pipefail
@@ -486,30 +482,9 @@ jobs:
             busybox:1.36 \
             chown -R "$(id -u):$(id -g)" /workspace
           git clean -ffdx
-          # Only perf-budget builds Rust here (its toolchain comes from "Set up
-          # Rust"); docker-e2e and smoke run on runners that may have no Rust.
-          if [[ "${{ matrix.job }}" == "perf-budget" ]]; then
-            cargo --version
-          fi
-
-      - name: Test native raytracer
-        if: matrix.job == 'raytracer-rust'
-        run: bash ci/runner/retry_on_corruption.sh -- cargo test --locked -p silicium-raytracer
-
-      # The Python orchestrator and nodes call the binary through
-      # workloads/raytracer/native.py; the pytest job has no Rust binary, so the
-      # bridge is tested here against a fresh build.
-      - name: Test the Python bridge to the native pipeline
-        if: matrix.job == 'raytracer-rust'
-        env:
-          SILICIUM_TEST_PIPELINE_BIN: target/debug/silicium-raytracer
-        run: |
-          bash ci/runner/retry_on_corruption.sh -- cargo build --locked -p silicium-raytracer
-          python -m pip install -r requirements-dev.txt
-          python -m pytest -q tests/test_raytracer_native.py
 
       - name: Install dev dependencies
-        if: matrix.job == 'pytest' || matrix.job == 'perf-budget'
+        if: matrix.job == 'pytest'
         run: python -m pip install -r requirements-dev.txt
 
       - name: Validate UTF-8 files
@@ -520,40 +495,24 @@ jobs:
         if: matrix.job == 'pytest'
         run: python tools/dev/quality/check_i18n_locales.py --strict
 
-      - name: Validate hard-coded i18n strings (changed lines)
+      - name: Test developer tooling
         if: matrix.job == 'pytest'
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PUSH_BASE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: |
-          BASE_SHA="${PR_BASE_SHA:-$PUSH_BASE_SHA}"
-          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
-            BASE_SHA="HEAD~1"
-          fi
-          python tools/dev/quality/check_i18n_hardcoded_strings.py --base "$BASE_SHA" --head "$HEAD_SHA" --strict
+        run: python -m pytest -q
 
-      - name: Lint workload manifests
-        if: matrix.job == 'pytest'
-        run: ./silicium workload lint
+      # Orchestrator + workers on loopback with the release binaries:
+      # raytracer (1 and 2 workers) and sha256.
+      - name: End-to-end network check
+        if: matrix.job == 'e2e'
+        run: bash ci/runner/retry_on_corruption.sh -- bash ci/e2e.sh
 
-      - name: Validate golden corpus
-        if: matrix.job == 'pytest'
-        run: ./silicium workload golden --strict
-
-      - name: Run test suite via silicium CLI
-        if: matrix.job == 'pytest'
-        run: ./silicium test
-
-      - name: Install e2e dependencies
-        if: matrix.job == 'docker-e2e'
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements-dev.txt
-
-      - name: Run Docker e2e stack
-        if: matrix.job == 'docker-e2e'
-        env:
-          SILICIUM_E2E_DOCKER_GROUP_REEXEC: "1"
-        run: bash ./ci/docker_e2e.sh
+      - name: Upload e2e logs
+        if: failure() && matrix.job == 'e2e'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: target/e2e/**/*.log
+          if-no-files-found: ignore
 
       - name: Run Kademlia smoke test
         if: matrix.job == 'p2p-kademlia-smoke'
@@ -561,78 +520,4 @@ jobs:
 
       - name: Smoke test proxy + TLS
         if: matrix.job == 'smoke'
-        run: ./silicium smoke
-
-      - name: Run budget checks
-        if: matrix.job == 'perf-budget'
-        run: |
-          bash ci/runner/retry_on_corruption.sh -- python tools/dev/quality/perf_budget.py \
-            --all \
-            --strict \
-            --output /tmp/perf-budget-report.json
-
-      - name: Publish budget summary
-        if: matrix.job == 'perf-budget'
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          report = json.loads(Path("/tmp/perf-budget-report.json").read_text())
-          lines = ["## Performance budget report", ""]
-          for item in report.get("results", []):
-              profile = item.get("profile", "unknown")
-              metrics = item.get("metrics", {})
-              budgets = item.get("budgets", {})
-              violations = item.get("violations", [])
-              status = "FAIL" if violations else "PASS"
-              lines.append(f"- `{profile}`: **{status}**")
-              lines.append(
-                  "  "
-                  + f"wall={metrics.get('wall_sec')} / {budgets.get('wall_sec')}, "
-                  + f"cpu={metrics.get('cpu_sec')} / {budgets.get('cpu_sec')}, "
-                  + f"rss={metrics.get('max_rss_kib')} / {budgets.get('max_rss_kib')}"
-              )
-              if violations:
-                  for violation in violations:
-                      lines.append(f"  - violation: `{violation}`")
-          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text("\n".join(lines))
-          PY
-
-      - name: Upload budget artifact
-        continue-on-error: true
-        if: matrix.job == 'perf-budget'
-        uses: actions/upload-artifact@v4
-        with:
-          name: perf-budget-report
-          path: /tmp/perf-budget-report.json
-
-  pytest-hosted:
-    needs: [changes]
-    if: ${{ vars.SILICIUM_ENABLE_HOSTED_CI == '1' && needs.changes.outputs.python == 'true' }}
-    runs-on: [self-hosted, fusion-linux]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          clean: false
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-
-      - name: Run test suite via silicium CLI (self-hosted)
-        shell: bash
-        run: |
-          set -euo pipefail
-          if docker info >/dev/null 2>&1; then
-            python ./silicium test --entrypoint-docker
-          else
-            echo "Docker unavailable on this runner; falling back to host-only Python tests."
-            python ./silicium test
-          fi
+        run: bash tests/smoke/run_proxy_smoke.sh

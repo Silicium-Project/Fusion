@@ -1,7 +1,8 @@
 # Vue d'ensemble de l'architecture
 
-Ce document décrit **ce qui tourne réellement aujourd'hui** (branche `main`) et
-**l'architecture cible**. Le passage de l'un à l'autre est décrit dans
+Ce document décrit **ce qui tourne aujourd'hui**. Le runtime réseau est
+entièrement en Rust ; l'ancien runtime Python (nœud, orchestration, API MCP,
+CLI) a été supprimé. L'historique de la bascule est dans
 [`rust-migration.md`](rust-migration.md).
 
 ## Composants du projet Silicium
@@ -9,87 +10,70 @@ Ce document décrit **ce qui tourne réellement aujourd'hui** (branche `main`) e
 | Composant | Dépôt / dossier | Langage | Rôle |
 | --- | --- | --- | --- |
 | FrontEnd | `Fusion/FrontEnd` | Nuxt 3 / TypeScript | Création et suivi des calculs par l'utilisateur |
-| BackEnd | `Fusion/BackEnd` | Go | Comptes, sessions JWT, jobs ; pilote le réseau |
-| Nœud réseau | `Network/` | Python (actuel) → Rust (cible) | Découverte des pairs, distribution, calcul, vérification |
-| App desktop | `Fusion/apps/silicium-node` | Tauri (Rust + Vue) | Installe et supervise le nœud chez l'utilisateur |
+| BackEnd | `Fusion/BackEnd` | Go | Comptes, sessions JWT, jobs ; pilote l'orchestrateur par son API `/v1` |
+| Nœud réseau | `Network/crates/p2p-node` | Rust | Orchestrateur sur le VPS, worker chez l'utilisateur : libp2p, journal de tâches, découpage, vérification, assemblage |
+| Calcul | `Network/crates/compute-daemon`, `crates/raytracer`, `crates/embedding` | Rust | Exécution locale des tâches (rendu, sha256, embeddings) |
+| App desktop | `Fusion/apps/silicium-node` | Tauri (Rust + Vue) | Installe et supervise `p2p_node` + `compute_daemon` chez l'utilisateur |
 | Couche Solana | `Network/solana-layer` | Anchor (Rust) + SDK TypeScript | Jobs on-chain, réputation, staking, récompenses |
 | Déploiement | `Fusion/deploy` | Docker Compose, systemd, Nginx | Serveur (VPS), CI/CD, canaux dev/prod |
 
-## Architecture actuelle (production, `main`)
+## Architecture
 
 ```mermaid
 flowchart LR
     U[Navigateur] --> P[Nginx /api]
     P --> B[BackEnd Go]
-    B -->|lance run_network_job.py| J[Orchestration du job<br/>Python]
-    B -->|POST /gossip/publish<br/>contrôles de tâches| O
-    J --> O[Orchestrateur<br/>tools/network_node.py<br/>VPS :46100]
-    O <-->|HTTP gossip + clé mesh| W1[Nœud utilisateur<br/>network_node.py :46101]
-    O <-->|HTTP gossip + clé mesh| W2[Nœud utilisateur<br/>network_node.py]
-    W1 -->|compute.py| R[silicium-raytracer<br/>crates/raytracer]
-    O -->|node solana_layer_bridge.cjs| S[(Programme Solana)]
-    B -->|lit les fichiers d'export JSON| O
+    B -->|API /v1 + jeton de contrôle| O[Orchestrateur<br/>p2p_node sur le VPS]
+    B -->|lit heartbeat, progression,<br/>résumé (fichiers)| O
+    O <-->|libp2p : Noise, QUIC, Kademlia,<br/>Gossipsub, relais, DCUtR| W1[Worker<br/>p2p_node chez l'utilisateur]
+    O <-->|libp2p| W2[Worker]
+    W1 --> C[compute_daemon<br/>+ silicium-raytracer]
 ```
 
 Points clés :
 
-- **Tout le plan réseau est en Python** : `tools/network_node.py` (code dans
-  `tools/node/`) sert à la fois
-  d'orchestrateur sur le VPS et de nœud de calcul chez les utilisateurs
-  (lancé par l'app Tauri via `silicium node start`).
-- **Le calcul lui-même est déjà en Rust** : le rendu passe par le binaire
-  `silicium-raytracer` (`crates/raytracer`).
-- **Le BackEnd lit des fichiers écrits par le runtime Python** (progression,
-  fragments, reçus, heartbeat des pairs). C'est un contrat implicite ; voir
-  [`../contracts/backend-files.md`](../contracts/backend-files.md).
-- Les appels Solana passent par Node.js (`tools/solana_layer_bridge.cjs`).
+- **Un seul binaire de nœud** (`p2p_node`) : l'orchestrateur du VPS (rôles
+  `resource,storage`) et les workers des utilisateurs (rôles `compute,verify`)
+  exécutent le même code avec une configuration différente.
+- **Le BackEnd parle à l'orchestrateur par HTTP** : `POST /v1/tasks`
+  (soumission), `POST /v1/workloads/{id}/cancel`, `GET /v1/peers`,
+  `POST /v1/embedding/search`, avec le jeton `SILICIUM_NODE_CONTROL_TOKEN`.
+- **Le BackEnd lit aussi des fichiers écrits par le nœud** (heartbeat, pairs,
+  progression, résumé) : voir [`../contracts/backend-files.md`](../contracts/backend-files.md).
+- **Seules les tâches signées par un éditeur de confiance sont exécutées** :
+  le pair d'amorçage épinglé (`/p2p/<peer id>`) ou `SILICIUM_TRUSTED_PUBLISHERS`.
+- Les fichiers circulent entre pairs **par hash de contenu** (SHA-256), jamais
+  par chemin.
 
-## Parcours d'un job (actuel)
+## Parcours d'un job
 
 ```mermaid
 sequenceDiagram
     participant F as FrontEnd
     participant B as BackEnd
-    participant J as run_network_job.py
-    participant O as Orchestrateur (VPS)
-    participant C as Nœud compute
-    participant V as Nœud verify
+    participant O as Orchestrateur (p2p_node, VPS)
+    participant C as Worker (calcul)
+    participant V as Worker (vérification)
 
-    F->>B: POST /jobs (scène .cfg)
-    B->>J: lance le job (sous-processus Python)
-    J->>J: découpe l'image en tuiles
-    J->>O: publie les tâches de fragments
-    C->>O: réclame une tâche (pull)
-    C->>C: rend la tuile (silicium-raytracer), hash des jalons
-    C->>O: renvoie le fragment + reçu
-    O->>V: défi sur un jalon choisi au hasard
-    V->>O: verdict
-    J->>J: réassemble l'image, écrit progression + reçus
+    F->>B: POST /jobs (scène, fichier ou documents)
+    B->>O: POST /v1/tasks
+    O->>O: prépare l'entrée, découpe en fragments (trait Workload)
+    O-->>C: publie les tâches signées (gossip)
+    C->>O: propose de calculer ; l'orchestrateur accepte (bail)
+    C->>C: calcule le fragment (compute_daemon)
+    V->>V: recalcule un échantillon (autre worker, ou le worker seul)
+    O->>O: assemble le résultat, écrit progression et résumé
     B-->>F: GET /jobs/{id} (lit les fichiers produits)
 ```
 
-## Architecture cible (Rust)
-
-```mermaid
-flowchart LR
-    B[BackEnd Go] -->|API /v1 + jeton| N[silicium-node<br/>crates/p2p-node]
-    N <-->|libp2p : Noise, QUIC, Kademlia,<br/>Gossipsub, relay, DCUtR| M[Autres nœuds silicium-node]
-    N --> CD[Calcul : crates/compute-daemon<br/>+ crates/raytracer]
-    N --> RB[crates/reputation-bridge]
-    RB --> S[(Programme Solana)]
-```
-
-Principes de la cible :
-
-- un seul binaire `silicium-node` par machine, sans Python ni Node.js ;
-- un plan de contrôle HTTP versionné (`/v1`) réservé au BackEnd, authentifié ;
-- un plan de données libp2p entre nœuds : les fichiers circulent par hash de
-  contenu, jamais par chemin ;
-- des tâches signées par l'orchestrateur, vérifiées par un pair différent de
-  celui qui a calculé.
+Les workloads disponibles (`raytracer`, `calcul/integrity/sha256`,
+`ai/embedding/multilingual-e5-small`) implémentent le trait `Workload` de
+`crates/p2p-node/src/workload/` ; en ajouter un nouveau se fait en Rust, dans ce
+module.
 
 ## Où trouver quoi
 
 - Organisation des dossiers : [`repository-layout.md`](repository-layout.md)
-- Plan de migration : [`rust-migration.md`](rust-migration.md)
-- Contrats (API, fichiers, protocoles) : [`../contracts/`](../contracts/)
+- Recherche dans des documents : [`embedding-workload.md`](embedding-workload.md)
+- API du nœud : `crates/p2p-node/README.md`
+- Contrats (fichiers, programme Solana) : [`../contracts/`](../contracts/)

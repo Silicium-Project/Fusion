@@ -1,9 +1,0 @@
-# The world-node image does not copy repo files into the image; the repo is
-# bind-mounted at runtime. Keep the build context tiny and deterministic.
-**
-!infra/
-!infra/docker/
-!infra/docker/world-node.Dockerfile
-!infra/docker/world-node-entrypoint.sh
-!infra/docker/solana-tools.Dockerfile
-!requirements-p2p.txt

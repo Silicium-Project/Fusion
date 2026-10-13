@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Main check of the Network repository (`make check`, Fusion "network-core"):
+# Rust workspace tests, then the tests of the Python developer tooling.
+#
+# CORE_CHECK_MODE=full also runs the end-to-end network check (ci/e2e.sh).
+# CORE_CHECK_SCOPE is accepted for compatibility (platform|all) and has no
+# other effect: there is a single scope since the Python runtime is gone.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -7,60 +13,27 @@ cd "$ROOT"
 MODE="${CORE_CHECK_MODE:-quick}"
 SCOPE="${CORE_CHECK_SCOPE:-platform}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-DOCKER_MODE="${CORE_CHECK_WITH_DOCKER:-auto}"
-REQUIRE_DOCKER="${CORE_CHECK_REQUIRE_DOCKER:-0}"
 
-log() {
-  echo ">> $*"
-}
+log() { echo ">> $*"; }
+fail() { echo "[ERROR] $*" >&2; exit 1; }
 
-fail() {
-  echo "[ERROR] $*" >&2
-  exit 1
-}
+case "$MODE" in quick|full) ;; *) fail "Unknown CORE_CHECK_MODE: $MODE (expected quick or full)" ;; esac
+case "$SCOPE" in platform|all) ;; *) fail "Unknown CORE_CHECK_SCOPE: $SCOPE (expected platform or all)" ;; esac
+command -v cargo >/dev/null 2>&1 || fail "cargo not found"
 
-case "$MODE" in
-  quick|full) ;;
-  *) fail "Unknown CORE_CHECK_MODE: $MODE (expected quick or full)" ;;
-esac
+log "Rust tests (workspace)"
+cargo test --workspace --locked
 
-case "$SCOPE" in
-  platform|all) ;;
-  *) fail "Unknown CORE_CHECK_SCOPE: $SCOPE (expected platform)" ;;
-esac
-
-command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "Python executable not found: $PYTHON_BIN"
-
-log "Python syntax"
-"$PYTHON_BIN" -m compileall -q tools workloads tests
-
-log "Workload manifests"
-"$PYTHON_BIN" ./silicium workload lint
-"$PYTHON_BIN" ./silicium workload golden --strict
-
-log "Python tests"
-"$PYTHON_BIN" -m pytest
-
-log "Raytracer native tests"
-if command -v cargo >/dev/null 2>&1; then
-  cargo test --locked -p silicium-raytracer
-  cargo build --locked -p silicium-raytracer
-  SILICIUM_TEST_PIPELINE_BIN=target/debug/silicium-raytracer "$PYTHON_BIN" -m pytest -q tests/test_raytracer_native.py
+if command -v "$PYTHON_BIN" >/dev/null 2>&1 && "$PYTHON_BIN" -c 'import pytest' 2>/dev/null; then
+  log "Developer tooling tests"
+  "$PYTHON_BIN" -m pytest -q
 else
-  echo "Cargo unavailable; native raytracer tests skipped."
+  echo "pytest unavailable; developer tooling tests skipped (pip install -r requirements-dev.txt)."
 fi
 
 if [[ "$MODE" == "full" ]]; then
-  if [[ "$DOCKER_MODE" == "0" ]]; then
-    echo "Docker-backed checks disabled."
-  elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    log "Proxy smoke"
-    "$PYTHON_BIN" ./silicium smoke
-  elif [[ "$REQUIRE_DOCKER" == "1" || "$DOCKER_MODE" == "1" ]]; then
-    fail "Docker is required for the full check but is unavailable."
-  else
-    echo "Docker unavailable; proxy smoke skipped."
-  fi
+  log "End-to-end network check"
+  bash ci/e2e.sh
 fi
 
 log "Core check OK"

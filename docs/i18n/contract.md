@@ -8,9 +8,10 @@ Developer workflow:
 
 ## Scope
 
-- CLI/TUI Python strings.
-- Network node, workload, and MCP user-facing text.
-- Infra/scripts user-facing output.
+- Infra/scripts user-facing output (`infra/bin/`, `i18n/shell/`).
+- The Rust node writes machine-readable logs and events only; the texts users
+  read come from the desktop app and the website, which have their own
+  catalogs.
 
 ## Key naming rules
 
@@ -18,19 +19,13 @@ Developer workflow:
 - Charset: lowercase ASCII, digits, and underscores.
 - Separator: `.` between namespace segments.
 - Example keys:
-  - `cli.shell.prompt`
-  - `tui.status.running`
-  - `network.node.peer_unavailable`
-  - `mcp.error.unauthorized`
+  - `infra.proxy.docker_missing`
+  - `core.error`
 
 ## Namespace policy
 
 - `core.*`: shared/common messages.
-- `cli.*`: command-line shell/command messages.
-- `tui.*`: terminal UI labels/status/errors.
-- `network.*`, `mcp.*`: active runtime and control-plane messages.
 - `infra.*`: scripts/compose/proxy user output.
-- `workload.*`: workload catalog and validation messages.
 
 ## Locale file format
 

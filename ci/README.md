@@ -4,8 +4,8 @@ Appelés par `.github/workflows/ci.yml` et utilisables en local.
 
 | Script | Rôle |
 | --- | --- |
-| `core_check.sh` | Contrôle principal (`make check`) : tests Python, raytracer, Docker optionnel. Variables : `CORE_CHECK_MODE`, `CORE_CHECK_SCOPE`, `CORE_CHECK_WITH_DOCKER` |
-| `docker_e2e.sh` + `docker-compose.e2e.yml` + `e2e-manifest.json` | E2E complet en Docker : orchestrateur, workers et scénario (`tools/dev/e2e/`) |
+| `core_check.sh` | Contrôle principal (`make check`, job « network-core » de Fusion) : tests Rust du workspace, puis tests de l'outillage Python si `pytest` est installé. `CORE_CHECK_MODE=full` lance aussi `e2e.sh` ; `CORE_CHECK_SCOPE` est accepté pour compatibilité |
+| `e2e.sh` | E2E du réseau Rust en local, sans Docker (`make e2e`, job « network-e2e » de Fusion) : compile les binaires release puis lance `crates/p2p-node/scripts/e2e-local.sh` (raytracer avec 1 puis 2 workers, sha256) |
 | `p2p_kademlia_smoke.sh` | Deux nœuds Rust locaux échangent un enregistrement Kademlia |
 
 ## `runner/` — protection des runners auto-hébergés

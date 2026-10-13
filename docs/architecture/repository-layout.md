@@ -3,53 +3,35 @@
 ```text
 Network/
 ├── Cargo.toml, Cargo.lock     # workspace Cargo unique (toutes les crates de crates/)
-├── crates/                    # Rust — runtime cible (s'exécute chez l'utilisateur / sur le serveur)
+├── crates/                    # Rust — tout ce qui s'exécute chez l'utilisateur ou sur le serveur
 │   ├── node-core/             #   types, journal de tâches signé, réputation, matériel, runtime WASM/OCI
-│   ├── p2p-node/              #   binaire du nœud : libp2p, API HTTP locale, traitement des tâches
+│   ├── p2p-node/              #   binaire du nœud : libp2p, API HTTP locale, workloads (trait Workload)
 │   ├── compute-daemon/        #   service local de calcul et de vérification (lance le raytracer)
 │   ├── reputation-bridge/     #   scores de réputation et vérification de stake Solana
-│   └── raytracer/             #   moteur de rendu natif déterministe (binaire silicium-raytracer)
+│   ├── raytracer/             #   moteur de rendu natif déterministe (binaire silicium-raytracer, scènes d'exemple)
+│   └── embedding/             #   documents, passages, modèle épinglé, index de vecteurs
 ├── solana-layer/              # Anchor (Rust) + SDK TypeScript + tests — workspace séparé
 │
-├── tools/                     # Python LEGACY — runtime de production encore actif
-│   ├── network_node.py        #   point d'entrée du nœud Python (façade de compatibilité)
-│   ├── node/                  #   le nœud Python (orchestrateur VPS + nœuds utilisateurs), par fonctionnalité
-│   │   ├── peer/              #     couche P2P : PeerNetwork (mixins) + serveur HTTP (http/)
-│   │   └── daemon/            #     démon : NetworkNode (mixins : files, claims, dispatch, on-chain…)
-│   ├── mcp_server.py          #   API expérimentale MCP (service systemd sur le VPS)
-│   ├── mcp_ingress/           #   implémentation du serveur MCP (un module par responsabilité)
-│   ├── direct_transport.py    #   NAT traversal (ICE)
-│   ├── rpc_*.py               #   RPC ZeroMQ
-│   ├── runtime_telemetry.py, resource_intelligence.py, receipt_verification.py, i18n.py
-│   ├── solana_layer_bridge.cjs#   pont Node.js vers le programme Solana
-│   ├── cli/                   #   implémentation de la CLI `silicium` (livrée avec l'app)
-│   └── dev/                   # Python OUTILLAGE — ne part jamais en production
-│       ├── e2e/               #     scénarios Docker E2E, workers de test, test de charge
-│       ├── world/             #     démo « world mesh » et son interface
-│       ├── quality/           #     contrôles UTF-8, i18n, budgets de performance
-│       ├── release/           #     manifeste de mise à jour, preflight Solana devnet
-│       └── tui/               #     interface terminal opérateur
-├── networked/                 # Python LEGACY — paquet networked (blobs de contenu)
-├── workloads/                 # workloads : manifestes, registre, handlers (Python legacy), fixtures, golden
-│
-├── tests/                     # tests pytest (+ fixtures/)
-├── proto/                     # contrat RPC protobuf (legacy)
-├── i18n/                      # traductions CLI et shell
-├── infra/                     # Docker (Solana local, bootstrap, world), systemd
-├── ci/                        # scripts de CI
+├── tools/dev/                 # Python OUTILLAGE — ne part jamais en production
+│   ├── quality/               #   contrôles UTF-8 et parité des traductions
+│   └── release/               #   preflight Solana devnet
+├── tests/                     # tests pytest de tools/dev/ et des fichiers d'infra
+├── i18n/                      # traductions des scripts shell d'infra
+├── infra/                     # Docker (validateur Solana local, proxy, nœud d'amorçage)
+├── ci/                        # scripts de CI (core_check.sh, e2e.sh, runner/)
 ├── docs/                      # documentation, rangée par partie
-├── silicium                   # CLI développeur et lanceur de nœud (point d'entrée de tools/cli/)
-└── Makefile                   # raccourcis : check, test, rust-test, rust-lint, raytracer-test
+└── Makefile                   # raccourcis : check, test, e2e, rust-test, rust-lint, tools-test
 ```
 
 ## Règles
 
-- **Du nouveau code runtime va dans `crates/`.** Rien de nouveau dans `tools/`,
-  `networked/` ou `workloads/` hors correctifs : ces dossiers disparaissent à la
-  fin de la migration ([`rust-migration.md`](rust-migration.md)).
-- **Tout script Python qui ne sert qu'aux développeurs va dans `tools/dev/<domaine>/`.**
+- **Le code runtime va dans `crates/`**, en Rust. Un nouveau calcul est un
+  nouveau `Workload` dans `crates/p2p-node/src/workload/`.
+- **Python seulement pour l'outillage développeur** : `tools/dev/<domaine>/`,
+  testé dans `tests/`.
 - **Pas d'état généré dans Git** : cibles Cargo, ledgers, caches, journaux,
   wallets et secrets sont ignorés par `.gitignore`.
-- Les composants supprimés (chaîne C++ `splitter`/`executor`/`worker`, viewer Qt,
-  démos d'assembleur, corpus PE, fallback Python du raytracer) ne doivent pas
-  revenir. Leur historique reste dans Git.
+- Les composants supprimés (runtime Python : `tools/network_node.py`,
+  `tools/node/`, `tools/mcp_server.py`, RPC ZeroMQ, `networked/`, catalogue
+  `workloads/`, CLI `silicium`, TUI ; chaîne C++, viewer Qt, démos
+  d'assembleur, corpus PE) ne doivent pas revenir. Leur historique reste dans Git.
