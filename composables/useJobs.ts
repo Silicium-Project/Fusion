@@ -109,7 +109,7 @@ export function useJobs() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${safeDownloadName(job.title)}-${job.id}.${resultExtension(blob.type)}`;
+    link.download = `${safeDownloadName(job.title)}-${job.id}.${resultExtension(blob.type, response.headers.get('content-disposition'))}`;
     link.click();
     URL.revokeObjectURL(url);
   }

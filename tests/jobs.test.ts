@@ -61,6 +61,8 @@ describe('job dashboard helpers', () => {
     expect(resultExtension('application/json; charset=utf-8')).toBe('json');
     expect(resultExtension('image/x-portable-pixmap')).toBe('ppm');
     expect(resultExtension('application/octet-stream')).toBe('bin');
+    expect(resultExtension('application/octet-stream', 'inline; filename="result.png"')).toBe('png');
+    expect(resultExtension('image/png', null)).toBe('png');
   });
 
   it('reads the SHA-256 report written by the node', () => {

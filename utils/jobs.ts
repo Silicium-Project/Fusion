@@ -120,7 +120,10 @@ export const isHashWorkload = (workload: unknown): boolean =>
   ['calcul/integrity/sha256', 'calcul/hash/sha256'].includes(String(workload || '').trim());
 
 /** File extension of a downloaded result, from its content type. */
-export const resultExtension = (contentType: string): string => {
+export const resultExtension = (contentType: string, disposition?: string | null): string => {
+  // The API names the file it sends (`filename="result.png"`): trust that first.
+  const named = /filename="?[^";]*\.([a-z0-9]{1,8})"?/i.exec(disposition || '');
+  if (named) return named[1].toLowerCase();
   const type = contentType.toLowerCase();
   if (type.includes('png')) return 'png';
   if (type.includes('json')) return 'json';
