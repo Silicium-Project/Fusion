@@ -39,6 +39,7 @@ mod results;
 mod storage;
 mod swarm;
 mod task;
+mod task_trace;
 mod telemetry;
 mod verifier;
 mod worker;

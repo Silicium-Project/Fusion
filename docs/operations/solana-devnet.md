@@ -25,8 +25,27 @@ verifiers, soumet un fragment, vote, réclame les récompenses des verifiers,
 puis finalise le job. La sortie contient les signatures de chaque transaction,
 les comptes impliqués et le compte `JobResult` finalisé.
 
-Le backend ne lance pas ces écritures par défaut. Après configuration de
-`SILICIUM_SOLANA_WALLET`, `SILICIUM_SOLANA_RPC` et du programme canonique,
-activer explicitement `SILICIUM_DEVNET_TRACE=1`. Le script de trace lie alors
-le hash du rendu réassemblé au fragment on-chain et exige
-`reconciliation.hash_match=true` avant de déclarer le job réussi.
+## Trace blockchain des jobs
+
+Ce flux complet reste un test du programme. Les jobs du site sont tracés plus
+simplement par le BackEnd (`internal/chainproof`) lorsque
+`SILICIUM_DEVNET_TRACE=1` :
+
+1. le nœud Rust écrit dans le résumé du job, pour chaque tâche, sa trace signée
+   du task book (`fragments[].trace` : worker, vérificateurs, hash des
+   événements ; voir `docs/contracts/backend-files.md`) ;
+2. à la fin du job, le BackEnd calcule une feuille par tâche terminée
+   (SHA-256 de `0x00` + JSON canonique), la racine de Merkle (nœuds internes
+   SHA-256 de `0x01` + gauche + droite) et l'empreinte du résultat final ;
+3. il envoie **une** transaction Memo signée par `SILICIUM_SOLANA_WALLET`
+   sur `SILICIUM_SOLANA_RPC`, avec le texte
+   `silicium.job-proof.v1 job=<id> tasks=<n> root=<racine> final=<sha256>` ;
+4. il écrit `devnet-trace.json` à côté du résumé (feuilles et preuves de
+   Merkle de chaque tâche), que la page du job affiche. Le bouton « Vérifier
+   depuis la blockchain » relit la transaction sur Solana et recalcule chaque
+   preuve dans le navigateur.
+
+Un échec d'ancrage (portefeuille absent ou vide, RPC injoignable) ne fait
+jamais échouer le job : la trace passe en `failed` avec la raison. Le
+portefeuille doit avoir quelques milliers de lamports par job (frais d'une
+transaction, pas de compte créé).

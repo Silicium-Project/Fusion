@@ -245,6 +245,7 @@ async fn submit_control_task(
             created_unix: 0,
             updated_unix: 0,
             task: serde_json::json!({"root_job_id": root_job_id, "workload": workload.id(), "kind": "compute"}),
+            trace: None,
         });
     (StatusCode::ACCEPTED, Json(response)).into_response()
 }

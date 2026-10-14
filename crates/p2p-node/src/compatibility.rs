@@ -357,6 +357,9 @@ impl CompatibilityWriter {
                     "verify_billable_work_units": 0,
                     "compute_receipt_hash": task.map(|item| item.result_hash.clone()).unwrap_or_default(),
                     "verify_receipt_hash": task.map(|item| item.result_hash.clone()).unwrap_or_default(),
+                    "result_hash": task.map(|item| item.result_hash.clone()).unwrap_or_default(),
+                    "worker": task.map(|item| item.handled_by.clone()).unwrap_or_default(),
+                    "trace": task.and_then(|item| item.trace.clone()),
                 })
             })
             .collect()
@@ -382,6 +385,9 @@ impl CompatibilityWriter {
                     "verify_billable_work_units": 0,
                     "compute_receipt_hash": task.result_hash,
                     "verify_receipt_hash": task.result_hash,
+                    "result_hash": task.result_hash,
+                    "worker": task.handled_by,
+                    "trace": task.trace,
                     "result_path": jobs
                         .root()
                         .join(result_file(&task.task_id, workload.fragment_extension()))

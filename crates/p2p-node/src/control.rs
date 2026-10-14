@@ -5,7 +5,11 @@
 //! task envelope, so the BackEnd can query the Rust node without knowing the
 //! task-book author's key or the fragment suffixes.
 
-use crate::{storage::TaskBookState, task::NetworkTask};
+use crate::{
+    storage::TaskBookState,
+    task::NetworkTask,
+    task_trace::{TaskTrace, trace_of},
+};
 use serde::{Deserialize, Serialize};
 use silicium_node_core::taskbook::{DerivedTaskState, DerivedTaskStatus};
 use std::{
@@ -60,6 +64,9 @@ pub(crate) struct ControlTask {
     pub(crate) created_unix: i64,
     pub(crate) updated_unix: i64,
     pub(crate) task: serde_json::Value,
+    /// Signed task-book trace (worker, verifiers, event hashes), once claimed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) trace: Option<TaskTrace>,
 }
 
 #[derive(Clone)]
@@ -239,7 +246,11 @@ fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
         error,
         result_hash,
         created_unix: entry.created_unix,
-        updated_unix: state.map(|_| unix_seconds()).unwrap_or(entry.updated_unix),
+        updated_unix: state
+            .as_ref()
+            .map(|_| unix_seconds())
+            .unwrap_or(entry.updated_unix),
+        trace: state.as_ref().and_then(trace_of),
         task,
     }
 }
