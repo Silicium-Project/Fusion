@@ -142,6 +142,8 @@ export interface NetworkSubtask {
   status?: string;
   handled_by?: string;
   handledBy?: string;
+  /** Task-book author id of the worker (Rust node). */
+  worker?: string;
   fragment_index?: number;
   fragmentIndex?: number;
   stage?: string;
@@ -190,6 +192,8 @@ export interface JobFragment {
   stage?: string;
   handled_by?: string;
   handledBy?: string;
+  /** Task-book author id of the worker (Rust node). */
+  worker?: string;
   x_start?: number;
   x_end?: number;
   y_start?: number;
@@ -246,18 +250,63 @@ export interface JobDashboard {
     splitTree?: unknown;
     [key: string]: unknown;
   };
-  devnet?: {
-    enabled?: boolean;
-    ok?: boolean;
-    status?: string;
-    job?: string;
-    programId?: string;
-    rpc?: string;
-    signatures?: string[];
-    fragments?: unknown;
-    splitTree?: unknown;
-    [key: string]: unknown;
-  };
+  devnet?: ChainTrace;
+}
+
+/** A verifier of an anchored task (task-book author id = hex Ed25519 key). */
+export interface ChainVerifier {
+  author: string;
+  verdict: boolean | null;
+  verification_event: string;
+  self_verification: boolean;
+}
+
+/** One sibling on a Merkle path. */
+export interface ChainProofStep {
+  sibling: string;
+  left: boolean;
+}
+
+/** A task of an anchored job: its signed trace, leaf hash and Merkle proof. */
+export interface ChainTask {
+  task_id: string;
+  fragment_index: number;
+  status: string;
+  result_sha256: string;
+  publisher: string;
+  proposal_event: string;
+  spec_sha256: string;
+  attempt: number;
+  worker: string;
+  claim_event: string;
+  result_event: string;
+  verifiers: ChainVerifier[];
+  leaf_hash: string;
+  proof: ChainProofStep[];
+}
+
+/** Blockchain trace of a job (`devnet` block of the dashboard). */
+export interface ChainTrace {
+  enabled?: boolean;
+  ok?: boolean;
+  /** `anchored`, `pending`, `failed` or `not_requested`. */
+  status?: string;
+  job?: string;
+  programId?: string;
+  rpc?: string;
+  cluster?: string;
+  payer?: string;
+  signatures?: string[];
+  explorerUrl?: string;
+  memo?: string;
+  merkleRoot?: string;
+  finalSha256?: string;
+  taskCount?: number;
+  fragments?: ChainTask[];
+  splitTree?: unknown;
+  updatedUtc?: string;
+  error?: string;
+  [key: string]: unknown;
 }
 
 export interface SystemStatus {

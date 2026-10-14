@@ -87,6 +87,23 @@ export const fragmentStateLabel = (status: unknown): string => translate(`fragme
 export const shouldRefreshJob = (status: string, resultReady: boolean): boolean =>
   isJobCancellable(status) || (status === 'completed' && !resultReady);
 
+/** How long after completion the page waits for the blockchain anchor. */
+const CHAIN_ANCHOR_WAIT_MS = 5 * 60_000;
+
+/**
+ * A completed job whose trace is still being written on the blockchain:
+ * keep refreshing for a few minutes, then stop (the anchor may have failed
+ * on the server side without a trace file).
+ */
+export const awaitingChainAnchor = (
+  dashboard: { job: { status: string; completedAt?: string }; devnet?: { status?: string } },
+  now: number = Date.now(),
+): boolean => {
+  if (dashboard.job.status !== 'completed' || dashboard.devnet?.status !== 'pending') return false;
+  const completed = Date.parse(dashboard.job.completedAt || '');
+  return Number.isFinite(completed) && now - completed < CHAIN_ANCHOR_WAIT_MS;
+};
+
 export const clampJobPage = (page: number, total: number, pageSize: number): number => {
   const lastPage = Math.max(1, Math.ceil(Math.max(0, total) / Math.max(1, pageSize)));
   return Math.max(1, Math.min(lastPage, Math.trunc(page) || 1));

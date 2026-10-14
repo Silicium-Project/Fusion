@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { authenticate, dashboard, job, mockAPI } from './fixtures';
 
@@ -238,4 +239,34 @@ test('the job types page explains each type and offers its example file', async 
   await page.locator('#sha256').getByRole('link', { name: 'Essayer avec ce type' }).click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/new' && url.searchParams.get('workload') === 'calcul/integrity/sha256');
   await expect(page.getByRole('combobox').first()).toHaveValue('calcul/integrity/sha256');
+});
+
+test('a completed job shows its blockchain trace and checks it against the chain', async ({ page }) => {
+  // Trace written by the Go BackEnd; the browser recomputes it.
+  const trace = JSON.parse(readFileSync(new URL('../fixtures/chain-trace.json', import.meta.url), 'utf8'));
+  const signature = '5'.repeat(88);
+  const devnet = {
+    enabled: true, ok: true, status: 'anchored', programId: trace.program_id, rpc: 'https://api.devnet.solana.com', cluster: 'devnet',
+    signatures: [signature], explorerUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
+    memo: trace.memo, merkleRoot: trace.merkle_root, finalSha256: trace.final_sha256, taskCount: trace.task_count, fragments: trace.fragments,
+  };
+  await page.route('**/api/jobs/1/dashboard', route => route.fulfill({ json: { ...dashboard, devnet } }));
+  // The Solana RPC answers getTransaction with the anchored memo.
+  await page.route('https://api.devnet.solana.com/**', route => route.fulfill({ json: { jsonrpc: '2.0', id: JSON.parse(route.request().postData() || '{}').id ?? 1, result: {
+    slot: 1, blockTime: 1, version: 'legacy',
+    meta: { err: null, fee: 5000, preBalances: [1, 1], postBalances: [1, 1], innerInstructions: [], logMessages: [], status: { Ok: null } },
+    transaction: { signatures: [signature], message: {
+      accountKeys: [{ pubkey: '11111111111111111111111111111111', signer: true, writable: true, source: 'transaction' }, { pubkey: trace.program_id, signer: false, writable: false, source: 'transaction' }],
+      recentBlockhash: '11111111111111111111111111111111',
+      instructions: [{ program: 'spl-memo', programId: trace.program_id, parsed: trace.memo, stackHeight: null }],
+    } },
+  } } }));
+  await page.goto('/jobs/1');
+  await expect(page.getByText('Ancrée sur Solana', { exact: true })).toBeVisible();
+  await expect(page.getByText(trace.merkle_root)).toBeVisible();
+  await expect(page.getByRole('link', { name: /5555/ })).toHaveAttribute('href', devnet.explorerUrl);
+  await page.getByRole('button', { name: 'Vérifier depuis la blockchain' }).click();
+  await expect(page.getByText('Trace intacte', { exact: true })).toBeVisible();
+  await expect(page.getByText('La racine inscrite sur Solana correspond : 3 tâches vérifiées.')).toBeVisible();
+  await expect(page.locator('.chain-trace__mark.is-valid')).toHaveCount(3);
 });

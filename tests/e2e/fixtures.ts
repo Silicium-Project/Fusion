@@ -14,7 +14,7 @@ export const job = {
 export const dashboard = {
   job, resultReady: false, resultUrl: '/jobs/1/result', diagnostics: {},
   summary: { success: true, stage: 'completed', fragmentCount: 4, image: { width: 1920, height: 1080 }, fragments: [0, 1, 2, 3].map(fragment_index => ({ fragment_index, status: 'verified', stage: 'verify', handled_by: `worker-${fragment_index % 2}` })), nodeRuns: [] },
-  devnet: { enabled: true, ok: true, status: 'confirmed', programId: 'program-functional', rpc: 'https://api.devnet.solana.com', signatures: ['signature-functional'] },
+  devnet: { enabled: true, ok: true, status: 'anchored', programId: 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr', rpc: 'https://api.devnet.solana.com', cluster: 'devnet', signatures: ['signature-functional'] },
 };
 
 export async function mockAPI(page: Page) {

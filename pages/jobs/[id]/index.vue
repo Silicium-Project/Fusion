@@ -25,9 +25,9 @@
         </UiCard>
         <div class="stack">
           <UiCard :title="t('jobDetail.technical')" padded><TechnicalDetails :dashboard="dashboard" /></UiCard>
-          <UiCard v-if="dashboard.devnet?.signatures?.length" :title="t('jobDetail.devnet')" padded><div class="transaction-list"><a v-for="signature in dashboard.devnet.signatures.slice(0,5)" :key="signature" :href="`https://explorer.solana.com/tx/${encodeURIComponent(signature)}?cluster=devnet`" target="_blank" rel="noopener noreferrer"><span class="mono">{{ compactIdentifier(signature, 10, 8) }}</span><UiIcon name="external"/></a></div></UiCard>
         </div>
       </div>
+      <UiCard v-if="dashboard.devnet && (dashboard.devnet.enabled || dashboard.devnet.signatures?.length)" id="blockchain" :title="t('chainTrace.title')" :description="t('chainTrace.description')" padded><ChainTrace :trace="dashboard.devnet" /></UiCard>
     </template>
     <div v-else-if="loading" class="detail-loading"><div class="skeleton"></div><div class="metric-grid"><div v-for="n in 5" :key="n" class="skeleton"></div></div><div class="skeleton large"></div></div>
     <UiCard v-else padded><UiEmptyState :title="t('jobDetail.notFoundTitle')" :description="error || t('jobDetail.notFoundText')" icon="alert"><UiButton to="/jobs" variant="secondary" size="small">{{ t('jobDetail.backToProjects') }}</UiButton></UiEmptyState></UiCard>
@@ -39,7 +39,7 @@
 import type { JobDashboard, JobFragment } from '~/types/api';
 import { compactIdentifier, formatDuration, formatPerformanceMultiple, formatPerformancePercent } from '~/utils/format';
 import { isDocumentSearchWorkload } from '~/utils/documents';
-import { compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, jobPartCount, shouldRefreshJob } from '~/utils/jobs';
+import { awaitingChainAnchor, compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, jobPartCount, shouldRefreshJob } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const { t } = useI18n();
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();
@@ -63,9 +63,9 @@ const computeShare = computed(() => formatPerformancePercent(performance.value?.
 const computeNetwork = computed(() => formatPerformanceMultiple(performance.value?.compute_to_network_ratio));
 const performanceDetail = computed(() => computeNetwork.value === '—' ? t('jobDetail.noNetworkMeasure') : t('jobDetail.computeVsNetwork', { value: computeNetwork.value }));
 const cancellable = computed(() => Boolean(dashboard.value && isJobCancellable(dashboard.value.job.status)));
-const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || (imageJob.value && dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
+const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || awaitingChainAnchor(dashboard.value) || (imageJob.value && dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
 function fragmentIndex(fragment: JobFragment, fallback: number) { return fragment.fragment_index ?? fragment.fragmentIndex ?? fallback; }
-function fragmentNode(fragment: JobFragment) { return String(fragment.handled_by || fragment.handledBy || ''); }
+function fragmentNode(fragment: JobFragment) { return String(fragment.handled_by || fragment.handledBy || fragment.worker || ''); }
 function fragmentKey(fragment: JobFragment, fallback: number) { return `${fragmentIndex(fragment,fallback)}-${fragmentNode(fragment)}-${fragment.status}`; }
 let loadPromise: Promise<void> | undefined;
 function load(force = false, background = false): Promise<void> {
@@ -98,6 +98,6 @@ useSeoMeta({ title: () => dashboard.value ? `${dashboard.value.job.title} — Si
 </script>
 
 <style scoped>
-.job-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem}.job-head>div:first-child{min-width:0}.back-link{display:inline-flex;align-items:center;gap:.4rem;margin-bottom:1rem;color:var(--ink-500);font-size:.63rem;font-weight:700}.back-link svg{width:.75rem;transform:rotate(180deg)}.job-head__title{display:flex;align-items:center;gap:.9rem;min-width:0}.job-head__title>div{min-width:0}.job-head__cube{display:grid;width:3.25rem;height:3.25rem;flex:0 0 auto;place-items:center;border-radius:.9rem;background:var(--violet-100);color:var(--violet-600)}.job-head__cube svg{width:1.3rem}.job-head h1{margin:0;overflow-wrap:anywhere;font-size:clamp(1.65rem,3vw,2.4rem);letter-spacing:-.05em}.job-head p{display:-webkit-box;margin:.35rem 0 0;overflow:hidden;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;color:var(--ink-600);font-size:.7rem}.job-head__actions{display:flex;gap:.45rem}.job-detail-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);gap:1rem}.job-detail-grid--bottom{align-items:start}.fragments-table{min-width:520px}.card-footer{padding:.75rem 1rem;border-top:1px solid var(--border);color:var(--ink-500);font-size:.6rem}.transaction-list{display:grid}.transaction-list a{display:flex;align-items:center;justify-content:space-between;padding:.65rem 0;border-bottom:1px solid var(--border);color:var(--ink-700);font-size:.62rem}.transaction-list a:last-child{border:0}.transaction-list svg{width:.8rem;color:var(--mint-700)}.modal-copy{margin:0;color:var(--ink-600);font-size:.8rem;line-height:1.7}.modal-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.5rem}.detail-loading{display:grid;gap:1rem}.detail-loading>.skeleton:first-child{height:90px}.detail-loading .metric-grid .skeleton{height:110px}.detail-loading .large{height:420px}
+.job-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem}.job-head>div:first-child{min-width:0}.back-link{display:inline-flex;align-items:center;gap:.4rem;margin-bottom:1rem;color:var(--ink-500);font-size:.63rem;font-weight:700}.back-link svg{width:.75rem;transform:rotate(180deg)}.job-head__title{display:flex;align-items:center;gap:.9rem;min-width:0}.job-head__title>div{min-width:0}.job-head__cube{display:grid;width:3.25rem;height:3.25rem;flex:0 0 auto;place-items:center;border-radius:.9rem;background:var(--violet-100);color:var(--violet-600)}.job-head__cube svg{width:1.3rem}.job-head h1{margin:0;overflow-wrap:anywhere;font-size:clamp(1.65rem,3vw,2.4rem);letter-spacing:-.05em}.job-head p{display:-webkit-box;margin:.35rem 0 0;overflow:hidden;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;color:var(--ink-600);font-size:.7rem}.job-head__actions{display:flex;gap:.45rem}.job-detail-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);gap:1rem}.job-detail-grid--bottom{align-items:start}.fragments-table{min-width:520px}.card-footer{padding:.75rem 1rem;border-top:1px solid var(--border);color:var(--ink-500);font-size:.6rem}.modal-copy{margin:0;color:var(--ink-600);font-size:.8rem;line-height:1.7}.modal-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.5rem}.detail-loading{display:grid;gap:1rem}.detail-loading>.skeleton:first-child{height:90px}.detail-loading .metric-grid .skeleton{height:110px}.detail-loading .large{height:420px}
 @media(max-width:980px){.job-detail-grid{grid-template-columns:1fr}.job-head{align-items:stretch;flex-direction:column}.job-head__actions{justify-content:flex-end}}@media(max-width:560px){.job-head__title{align-items:flex-start}.job-head__actions{overflow-x:auto;justify-content:flex-start;padding-bottom:.2rem}.job-head__cube{width:2.7rem;height:2.7rem}.job-head__title .cluster{gap:.45rem}.modal-actions{align-items:stretch;flex-direction:column}}
 </style>
