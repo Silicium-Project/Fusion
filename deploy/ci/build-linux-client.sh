@@ -31,6 +31,24 @@ export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 # Prime the exact AppImage tool cache before spending time compiling Rust.
 bash "$ROOT/deploy/ci/prepare-tauri-linux-tools.sh"
 
+# Printed when the bundle step fails: which linuxdeploy plugins answer, and
+# which host tools the GTK plugin needs.
+print_linuxdeploy_diagnostics() {
+  local tools="$1/cache/tauri"
+  echo "::group::linuxdeploy diagnostics"
+  ls -la -- "$tools" || true
+  local plugin
+  for plugin in "$tools"/linuxdeploy-plugin-*; do
+    echo "$plugin --plugin-api-version: $(TMPDIR="$1/tmp" APPIMAGE_EXTRACT_AND_RUN=1 "$plugin" --plugin-api-version 2>&1; echo " (exit $?)")"
+  done
+  TMPDIR="$1/tmp" APPIMAGE_EXTRACT_AND_RUN=1 "$tools/linuxdeploy-x86_64.AppImage" --appimage-extract-and-run --list-plugins || true
+  local tool
+  for tool in pkg-config pkgconf glib-compile-schemas gdk-pixbuf-query-loaders gtk-query-immodules-3.0 patchelf file ldd find; do
+    printf '%s: %s\n' "$tool" "$(command -v "$tool" || echo missing)"
+  done
+  echo "::endgroup::"
+}
+
 pushd apps/silicium-node >/dev/null
 export SILICIUM_RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
 export SILICIUM_RELEASE_BUILD="${SILICIUM_RELEASE_BUILD:-local}"
@@ -105,8 +123,22 @@ export SILICIUM_SKIP_FRONTEND_BUILD="1"
 # libraries and makes the AppImage step fail; the libraries stay unstripped.
 export APPIMAGE_EXTRACT_AND_RUN=1
 export NO_STRIP=true
+# Tauri runs linuxdeploy and its plugins from <XDG cache>/tauri, and each
+# AppImage extracts itself under $TMPDIR. Several runners share this host: a
+# parallel job can rewrite those tools or clean the extracted copy this one is
+# executing ("subprocess failed (exit code 127)"). The bundle step gets its own
+# copy of the tools and its own TMPDIR.
+bundle_tmp="$(mktemp -d "${RUNNER_TEMP:-/tmp}/silicium-bundle.XXXXXX")"
+trap 'rm -rf -- "$bundle_tmp"' EXIT
+mkdir -p "$bundle_tmp/cache/tauri" "$bundle_tmp/tmp"
+cp -a -- "${XDG_CACHE_HOME:-$HOME/.cache}/tauri/." "$bundle_tmp/cache/tauri/"
+
 # --verbose prints linuxdeploy's own output, the only place its errors appear.
-npx tauri build --verbose --bundles deb,appimage,rpm "${tauri_config_args[@]}"
+if ! XDG_CACHE_HOME="$bundle_tmp/cache" TMPDIR="$bundle_tmp/tmp" \
+  npx tauri build --verbose --bundles deb,appimage,rpm "${tauri_config_args[@]}"; then
+  print_linuxdeploy_diagnostics "$bundle_tmp"
+  exit 1
+fi
 
 appimage_path="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
 deb_path="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
