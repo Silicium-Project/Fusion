@@ -194,14 +194,31 @@ backend_uid="${backend_identity%%:*}"
 backend_gid="${backend_identity##*:}"
 install -d -m 0750 -o "$backend_uid" -g "$backend_gid" "$SILICIUM_DATA_ROOT/site/jobs" "$SILICIUM_DATA_ROOT/site/runtime"
 
-# Keep blockchain proofs disabled in both the legacy and current runtimes.
-# Existing installations may contain either setting, so replace both
-# deterministically instead of relying on defaults from a particular release.
+# Blockchain trace of jobs (BackEnd internal/chainproof): one Solana Memo
+# transaction per finished job, signed by the channel's wallet. The dev
+# channel creates its wallet; another channel is traced only once an
+# operator has put a wallet in its data root. Both settings are rewritten on
+# every deployment so an old value never lingers.
 backend_env="$SILICIUM_CONFIG_DIR/backend.env"
-sed -i -E '/^SILICIUM_DEVNET_TRACE(_MODE)?=/d' "$backend_env"
+solana_dir="$SILICIUM_DATA_ROOT/solana"
+solana_wallet="$solana_dir/id.json"
+if [[ "$RELEASE_CHANNEL" == "dev" && ! -s "$solana_wallet" ]]; then
+  install -d -m 0750 "$solana_dir"
+  python3 "$ROOT/deploy/release/solana_wallet.py" ensure "$solana_wallet" >/dev/null
+fi
+devnet_trace=0
+if [[ -s "$solana_wallet" ]]; then
+  chown "$backend_uid:$backend_gid" "$solana_dir" "$solana_wallet"
+  chmod 0750 "$solana_dir"
+  chmod 0400 "$solana_wallet"
+  devnet_trace=1
+  echo "Blockchain trace enabled; Solana wallet $(python3 "$ROOT/deploy/release/solana_wallet.py" address "$solana_wallet") (fund it on devnet: https://faucet.solana.com)."
+fi
+sed -i -E '/^SILICIUM_(DEVNET_TRACE(_MODE)?|SOLANA_WALLET)=/d' "$backend_env"
 printf '%s\n' \
-  'SILICIUM_DEVNET_TRACE=0' \
-  'SILICIUM_DEVNET_TRACE_MODE=devnet' >> "$backend_env"
+  "SILICIUM_DEVNET_TRACE=$devnet_trace" \
+  'SILICIUM_DEVNET_TRACE_MODE=devnet' \
+  'SILICIUM_SOLANA_WALLET=/var/lib/silicium/solana/id.json' >> "$backend_env"
 
 # Releases before the Rust orchestrator built a tile pipeline for the Python
 # job runner and pointed the backend at it; nothing reads it any more.
