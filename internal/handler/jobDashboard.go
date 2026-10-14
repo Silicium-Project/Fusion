@@ -25,14 +25,6 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 	if len(summary) == 0 {
 		summary = readJSONMap(progressPathForJob(job))
 	}
-	trace := readJSONMap(job.DevnetTracePath)
-	devnetTrace, _ := summary["devnet_trace"].(map[string]any)
-	if len(trace) == 0 {
-		if inner, ok := devnetTrace["trace"].(map[string]any); ok {
-			trace = inner
-		}
-	}
-
 	payload := map[string]any{
 		"job": map[string]any{
 			"id":                 job.ID,
@@ -86,17 +78,7 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 			"splitTree":        summary["split_tree"],
 			"performance":      summary["performance"],
 		},
-		"devnet": map[string]any{
-			"enabled":    devnetTrace["enabled"],
-			"ok":         devnetTrace["ok"],
-			"status":     devnetTrace["status"],
-			"job":        trace["job"],
-			"programId":  trace["program_id"],
-			"rpc":        trace["rpc"],
-			"signatures": trace["signatures"],
-			"fragments":  trace["fragments"],
-			"splitTree":  trace["split_tree"],
-		},
+		"devnet": devnetDashboard(job, summary),
 	}
 	if index := documentIndexSummary(job); index != nil {
 		payload["documentIndex"] = index

@@ -308,4 +308,7 @@ func (h *Handler) runSiliciumJob(jobID uint) {
 		}
 		signalCancel()
 	}
+	if runResult.Status == "completed" {
+		h.anchorJobOnChain(jobID)
+	}
 }
