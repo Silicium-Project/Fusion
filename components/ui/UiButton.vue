@@ -37,9 +37,9 @@ const classes = computed(() => [`ui-button--${props.variant}`, `ui-button--${pro
 .ui-button:hover:not(:disabled) { transform: translateY(-2px); }
 .ui-button:active:not(:disabled){transform:translateY(0) scale(.985)}
 .ui-button:disabled { cursor: not-allowed; opacity: .55; }
-.ui-button--small { min-height: 2.2rem; padding: .55rem .72rem; font-size: .72rem; }
-.ui-button--medium { min-height: 2.75rem; padding: .72rem 1rem; font-size: .78rem; }
-.ui-button--large { min-height: 3.15rem; padding: .9rem 1.25rem; font-size: .84rem; }
+.ui-button--small { min-height: 2.2rem; padding: .55rem .72rem; font-size: .905rem; }
+.ui-button--medium { min-height: 2.75rem; padding: .72rem 1rem; font-size: .925rem; }
+.ui-button--large { min-height: 3.15rem; padding: .9rem 1.25rem; font-size: .945rem; }
 .ui-button--primary { border-color:rgba(255,255,255,.12);background: linear-gradient(145deg,var(--ink-800),var(--ink-950) 62%); color: white; box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(0,0,0,.2),0 10px 24px rgba(11,21,35,.2); }
 .ui-button--primary:hover { background:linear-gradient(145deg,#283a50,var(--ink-950) 70%);box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 16px 32px rgba(11,21,35,.24) }
 .ui-button--secondary { border-color:var(--glass-edge); background: var(--glass-clear); color: var(--ink-900); box-shadow:var(--glass-inset),0 8px 20px rgba(11,21,35,.06);-webkit-backdrop-filter:blur(16px) saturate(1.25);backdrop-filter:blur(16px) saturate(1.25) }

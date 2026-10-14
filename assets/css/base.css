@@ -15,7 +15,7 @@ body {
     var(--paper);
   color: var(--ink-900);
   font-family: var(--font-body);
-  font-size: 16px;
+  font-size: 100%; /* follows the reader's browser setting */
   font-optical-sizing: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -134,11 +134,11 @@ h1, h2, h3, h4 { color: var(--ink-900); font-family: var(--font-display); font-o
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .text-muted { color: var(--ink-600); }
 .text-faint { color: var(--ink-500); }
-.eyebrow { color: var(--mint-700); font-size: .7rem; font-weight: 780; letter-spacing: .14em; text-transform: uppercase; }
+.eyebrow { color: var(--mint-700); font-size: .898rem; font-weight: 780; letter-spacing: .14em; text-transform: uppercase; }
 .page-title { margin: .4rem 0 0; font-size: clamp(2.1rem, 3.2vw, 3.55rem); line-height: .98; letter-spacing: -.06em; font-weight: 660; }
 .page-intro { max-width: 720px; margin: 1rem 0 0; color: var(--ink-600); font-size: 1.05rem; line-height: 1.78; }
 .section-title { margin: 0; font-size: 1.18rem; letter-spacing: -.035em; font-weight: 680; }
-.section-description { margin: .45rem 0 0; color: var(--ink-600); font-size: .92rem; line-height: 1.7; }
+.section-description { margin: .45rem 0 0; color: var(--ink-600); font-size: .973rem; line-height: 1.7; }
 
 .app-page > * { animation: app-rise .6s var(--ease-out) both; }
 .app-page > *:nth-child(2) { animation-delay: 60ms; }

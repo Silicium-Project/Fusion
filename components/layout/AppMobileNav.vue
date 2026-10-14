@@ -16,7 +16,7 @@ const items = computed(() => [
 .mobile-nav{display:none}
 @media(max-width:840px){
   .mobile-nav{display:grid;height:3.65rem;grid-template-columns:repeat(5,1fr);margin:0 .75rem;padding:0 .2rem;border:1px solid var(--glass-edge);border-radius:1rem;background:var(--glass-card);box-shadow:var(--glass-inset),0 12px 30px rgba(17,27,42,.1);-webkit-backdrop-filter:blur(24px) saturate(1.3);backdrop-filter:blur(24px) saturate(1.3)}
-  .mobile-nav a{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.2rem;color:var(--ink-500);font-size:.54rem;font-weight:760;transition:color .25s,transform .25s var(--ease-spring)}
+  .mobile-nav a{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.2rem;color:var(--ink-500);font-size:.843rem;font-weight:760;transition:color .25s,transform .25s var(--ease-spring)}
   .mobile-nav a:active{transform:scale(.92)}
   .mobile-nav svg{width:1rem;height:1rem}
   .mobile-nav a.router-link-active{color:var(--mint-700)}

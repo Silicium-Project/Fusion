@@ -44,7 +44,7 @@
   align-items: center;
   gap: .55rem;
   color: var(--mint-700);
-  font-size: .68rem;
+  font-size: .891rem;
   font-weight: 820;
   letter-spacing: .15em;
   line-height: 1.2;
@@ -153,7 +153,7 @@
 
 .marketing-note {
   color: var(--ink-600);
-  font-size: .78rem;
+  font-size: .925rem;
   line-height: 1.65;
 }
 
@@ -177,7 +177,7 @@
   .marketing-container { width: calc(100% - 1.25rem); }
   .marketing-section { padding-block: 3.5rem; }
   .marketing-title { font-size: clamp(2.55rem, 10.8vw, 3.2rem); line-height: .96; }
-  .marketing-lede { font-size: .98rem; line-height: 1.64; }
+  .marketing-lede { font-size: .993rem; line-height: 1.64; }
   .marketing-action-row { gap: .5rem; margin-top: 1.35rem; }
   .marketing-section-heading h2 { font-size: clamp(1.95rem, 9.6vw, 2.8rem); }
 }
