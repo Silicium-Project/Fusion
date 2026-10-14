@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/silicium/internal/models"
 	"github.com/silicium/internal/silicium"
 )
 
@@ -101,7 +102,30 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 		writeDocumentIndexExport(w, job)
 		return
 	}
-	http.ServeFile(w, r, job.ResultPath)
+	serveJobResult(w, r, job)
+}
+
+// serveJobResult sends the job result under a file name with its real
+// extension, as the browser-viewable copy when there is one: a render's PNG
+// rather than its PPM, which browsers neither display nor recognise.
+func serveJobResult(w http.ResponseWriter, r *http.Request, job models.Job) {
+	path := silicium.ViewableResultPath(job.Workload, job.ResultPath)
+	extension := strings.ToLower(filepath.Ext(path))
+	if contentType, ok := resultContentTypes[extension]; ok {
+		w.Header().Set("Content-Type", contentType)
+	}
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, "result"+extension))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeFile(w, r, path)
+}
+
+// resultContentTypes covers the result formats of the workloads; the minimal
+// container image has no system MIME table to fall back on.
+var resultContentTypes = map[string]string{
+	".png":  "image/png",
+	".ppm":  "image/x-portable-pixmap",
+	".json": "application/json",
+	".zip":  "application/zip",
 }
 
 func (h *Handler) GetJobFragmentPreview(w http.ResponseWriter, r *http.Request) {

@@ -161,7 +161,9 @@ func runNodeJob(ctx context.Context, job models.Job, cfg RunnerConfig, spec work
 		}
 		return RunResult{Status: "failed", ErrorMessage: err.Error()}
 	}
-	result := RunResult{Status: "completed", ResultPath: outputPath, SummaryPath: summaryPath, ComputeReceiptHash: task.ResultHash}
+	// The site shows and serves the viewable copy (PNG) when there is one.
+	resultPath := ViewableResultPath(spec.NodeID, outputPath)
+	result := RunResult{Status: "completed", ResultPath: resultPath, SummaryPath: summaryPath, ComputeReceiptHash: task.ResultHash}
 	return validateRaytracerCompletion(result)
 }
 

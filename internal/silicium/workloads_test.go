@@ -91,3 +91,31 @@ func TestJobStorageDirFollowsTheNodeLayout(t *testing.T) {
 		t.Fatal("unknown workload has a storage directory")
 	}
 }
+
+func TestViewableResultPathPrefersTheRenderPNG(t *testing.T) {
+	jobDir := t.TempDir()
+	ppm := filepath.Join(jobDir, "reassembled", "render.ppm")
+	if err := os.MkdirAll(filepath.Dir(ppm), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ppm, []byte("P6"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ViewableResultPath("raytracer", ppm); got != ppm {
+		t.Fatalf("without a PNG the PPM stays the result, got %s", got)
+	}
+	png := filepath.Join(jobDir, "reassembled", "render.png")
+	if err := os.WriteFile(png, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ViewableResultPath("raytracer", ppm); got != png {
+		t.Fatalf("want the PNG, got %s", got)
+	}
+	if got := ViewableResultPath("", ppm); got != png {
+		t.Fatalf("older jobs without a workload are renders too, got %s", got)
+	}
+	report := filepath.Join(jobDir, "result", "sha256.json")
+	if got := ViewableResultPath("calcul/integrity/sha256", report); got != report {
+		t.Fatalf("other workloads keep their result, got %s", got)
+	}
+}

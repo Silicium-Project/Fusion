@@ -8,6 +8,8 @@ package silicium
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -19,12 +21,16 @@ type workloadSpec struct {
 	StorageDir string
 	// ResultFile is the job result, relative to the job directory.
 	ResultFile string
+	// ViewableFile, when set, is a copy of the result in a format browsers
+	// display (the PNG of a render), written by the node with ResultFile.
+	ViewableFile string
 }
 
 var raytracerSpec = workloadSpec{
-	NodeID:     "raytracer",
-	StorageDir: "raytracer",
-	ResultFile: "reassembled/render.ppm",
+	NodeID:       "raytracer",
+	StorageDir:   "raytracer",
+	ResultFile:   "reassembled/render.ppm",
+	ViewableFile: "reassembled/render.png",
 }
 
 var sha256Spec = workloadSpec{
@@ -71,6 +77,26 @@ func ValidateWorkload(workload string) error {
 		return nil
 	}
 	return errors.New("unsupported workload")
+}
+
+// ViewableResultPath returns the browser-viewable copy of the result at
+// `resultPath` (the PNG next to a render's PPM) when the node wrote one, else
+// `resultPath` itself. Jobs saved with the PPM as their result keep working.
+func ViewableResultPath(workload, resultPath string) string {
+	spec, ok := workloadSpecFor(workload)
+	if !ok || spec.ViewableFile == "" || resultPath == "" {
+		return resultPath
+	}
+	suffix := filepath.FromSlash(spec.ResultFile)
+	if !strings.HasSuffix(filepath.Clean(resultPath), suffix) {
+		return resultPath
+	}
+	jobDir := strings.TrimSuffix(filepath.Clean(resultPath), suffix)
+	viewable := filepath.Join(jobDir, filepath.FromSlash(spec.ViewableFile))
+	if info, err := os.Stat(viewable); err == nil && info.Mode().IsRegular() {
+		return viewable
+	}
+	return resultPath
 }
 
 // JobStorageDir returns the directory, under the workload storage root, where
