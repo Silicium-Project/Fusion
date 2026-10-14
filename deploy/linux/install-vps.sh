@@ -20,11 +20,6 @@ apt-get install -y \
   sqlite3 \
   openssl \
   python3 \
-  python3-venv \
-  python3-pip \
-  python3-cryptography \
-  python3-protobuf \
-  python3-zmq \
   apt-utils \
   createrepo-c \
   gpg \

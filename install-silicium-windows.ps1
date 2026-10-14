@@ -135,20 +135,6 @@ function Invoke-NpmInstall($Path, $Name) {
     }
 }
 
-function Install-P2PDependencies {
-    $requirements = Join-Path $Root "Network\requirements-p2p.txt"
-    if (-not (Test-Path -LiteralPath $requirements -PathType Leaf)) {
-        Write-Warning "P2P requirements file not found: $requirements"
-        return
-    }
-    if (-not (Test-Command "py")) {
-        Write-Warning "Python launcher not found; automatic ICE support cannot be installed."
-        return
-    }
-    Write-Step "Installing automatic P2P transport"
-    py -m pip install --disable-pip-version-check --upgrade -r $requirements
-}
-
 function Find-RaytracerBinary {
     param([string]$ExplicitPath)
 
@@ -160,6 +146,8 @@ function Find-RaytracerBinary {
         $candidates += $env:SILICIUM_RAYTRACER_BIN
     }
     $candidates += @(
+        (Join-Path $Root "Network\bin\raytracer\silicium-raytracer.exe"),
+        (Join-Path $Root "Network\target\release\silicium-raytracer.exe"),
         (Join-Path $Root "Network\bin\raytracer\raytracer.exe"),
         (Join-Path $Root "Network\bin\raytracer\raytracer"),
         (Join-Path $Root "raytracer.exe"),
@@ -282,7 +270,6 @@ Write-Step "Checking system tools"
 Ensure-Tool "git" "Git.Git" "Git" | Out-Null
 Ensure-Tool "node" "OpenJS.NodeJS.LTS" "Node.js LTS" | Out-Null
 Ensure-Tool "npm.cmd" "OpenJS.NodeJS.LTS" "npm" | Out-Null
-Ensure-Tool "py" "Python.Python.3.10" "Python launcher" | Out-Null
 $opensslPath = Find-OpenSsl
 if ($opensslPath) {
     Write-Host "[ok] OpenSSL -> $opensslPath"
@@ -290,7 +277,7 @@ if ($opensslPath) {
     Ensure-Tool "openssl" "ShiningLight.OpenSSL.Light" "OpenSSL" | Out-Null
 }
 Ensure-Tool "go" "GoLang.Go" "Go" | Out-Null
-Ensure-Tool "rustup" "Rustlang.Rustup" "Rustup/Rust" -Optional | Out-Null
+Ensure-Tool "rustup" "Rustlang.Rustup" "Rustup/Rust" | Out-Null
 Ensure-Tool "cargo" "" "Cargo" -Optional | Out-Null
 
 Ensure-Submodules
@@ -312,14 +299,11 @@ Write-Step "Tool versions"
 Show-Version "git"
 Show-Version "node"
 Show-Version "npm.cmd" @("--version")
-Show-Version "py" @("--version")
 Show-Version "openssl" @("version")
 Show-Version "go" @("version")
 Show-Version "solana" @("--version")
 
 Write-Step "Installing JavaScript dependencies"
-Install-P2PDependencies
-Invoke-NpmInstall (Join-Path $Root "Network\silicium-layer-dashboard") "Network Devnet dashboard"
 Invoke-NpmInstall (Join-Path $Root "Network\solana-layer") "Solana layer scripts"
 Invoke-NpmInstall (Join-Path $Root "FrontEnd") "FrontEnd"
 Invoke-NpmInstall (Join-Path $Root "apps\silicium-node") "Silicium Node desktop app"
@@ -333,24 +317,8 @@ if ($detectedRaytracerBin) {
     Write-RaytracerEnv $installedRaytracerBin (Join-Path (Split-Path -Parent $installedRaytracerBin) "assets")
 } else {
     Write-Warning "Raytracer executable not found. Raytracer jobs need a packaged binary."
-    Write-Warning "Expected default path: Network\bin\raytracer\raytracer.exe"
+    Write-Warning "Build it with: cargo build --release --manifest-path Network\crates\raytracer\Cargo.toml"
     Write-Warning "Or run once: .\install-silicium-windows.cmd -RaytracerBin C:\path\to\raytracer.exe"
-}
-
-Write-Step "Checking Python files"
-if (Test-Command "py") {
-    Push-Location $Root
-    try {
-        py -m py_compile `
-            Network\tools\network_node.py `
-            Network\tools\mcp_server.py `
-            Network\demo\networked\networked_runtime.py `
-            Network\workloads\common.py `
-            Network\workloads\raytracer\run_network_job.py `
-            Network\workloads\raytracer\raytracer_workload.py
-    } finally {
-        Pop-Location
-    }
 }
 
 Write-Step "Next steps"

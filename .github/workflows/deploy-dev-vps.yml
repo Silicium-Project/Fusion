@@ -23,11 +23,6 @@ on:
         description: "Existing dev GitHub Release tag to install. Blank selects the newest published dev release."
         required: false
         default: ""
-      run_e2e:
-        description: "Run the long Docker end-to-end suite after deployment."
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -105,7 +100,7 @@ jobs:
               exit 22
             }
           fi
-          for env_file in orchestrator.env experiment-api.env backend.env frontend.env compose.env update-channels.env; do
+          for env_file in orchestrator.env backend.env frontend.env compose.env update-channels.env; do
             if [[ ! -f "/etc/silicium-dev/$env_file" ]]; then
               echo "Missing development config: /etc/silicium-dev/$env_file" >&2
             fi
@@ -178,7 +173,7 @@ jobs:
           rm -rf -- release-assets
           install -d -m 0755 release-assets
           gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" \
-            --pattern '*.AppImage' --pattern '*.deb' --pattern '*.rpm' \
+            --pattern '*.AppImage' --pattern '*.deb' --pattern '*.rpm' --pattern '*.exe' \
             --pattern 'release-channel.json' --dir release-assets --clobber
           python3 - "release-assets/release-channel.json" "$version" <<'PY'
           import json
@@ -201,9 +196,22 @@ jobs:
           (( ${#appimages[@]} == 1 )) || { echo "Expected exactly one dev AppImage." >&2; exit 1; }
           (( ${#debs[@]} == 1 )) || { echo "Expected exactly one dev .deb." >&2; exit 1; }
           (( ${#rpms[@]} == 1 )) || { echo "Expected exactly one dev .rpm." >&2; exit 1; }
-          mv -- "${appimages[0]}" release-assets/silicium-node-linux-dev.AppImage
-          mv -- "${debs[0]}" release-assets/silicium-node-linux-dev.deb
-          mv -- "${rpms[0]}" release-assets/silicium-node-linux-dev.rpm
+          if [[ "${appimages[0]}" != "release-assets/silicium-node-linux-dev.AppImage" ]]; then
+            mv -- "${appimages[0]}" release-assets/silicium-node-linux-dev.AppImage
+          fi
+          if [[ "${debs[0]}" != "release-assets/silicium-node-linux-dev.deb" ]]; then
+            mv -- "${debs[0]}" release-assets/silicium-node-linux-dev.deb
+          fi
+          if [[ "${rpms[0]}" != "release-assets/silicium-node-linux-dev.rpm" ]]; then
+            mv -- "${rpms[0]}" release-assets/silicium-node-linux-dev.rpm
+          fi
+          # Releases built before the Windows dev lane have no installer: deploy them anyway.
+          exes=(release-assets/*.exe)
+          (( ${#exes[@]} <= 1 )) || { echo "Expected at most one dev Windows installer." >&2; exit 1; }
+          if (( ${#exes[@]} == 1 )) && [[ "${exes[0]}" != "release-assets/silicium-node-windows-dev.exe" ]]; then
+            mv -- "${exes[0]}" release-assets/silicium-node-windows-dev.exe
+          fi
+          (( ${#exes[@]} == 1 )) || echo "::warning::This dev release has no Windows installer."
           release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' release-assets/release-channel.json)"
           release_build="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["commit"])' release-assets/release-channel.json)"
           release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -225,15 +233,22 @@ jobs:
           set -euo pipefail
           vps_user="${VPS_USER:-luis}"
           vps_port="${VPS_PORT:-22}"
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-            -i "$HOME/.ssh/id_ed25519" -p "$vps_port" \
+          # Same key and known_hosts as the other steps (written by "Configure SSH").
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile="$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
+            -o IdentitiesOnly=yes -i "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "$vps_port" \
             "$vps_user@$VPS_HOST" "install -d -m 700 '$RELEASE_STAGING'"
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-            -i "$HOME/.ssh/id_ed25519" -P "$vps_port" \
+          scp "${ssh_opts[@]}" -P "$vps_port" \
             release-assets/silicium-node-linux-dev.AppImage \
             release-assets/silicium-node-linux-dev.deb \
             release-assets/silicium-node-linux-dev.rpm \
             "$vps_user@$VPS_HOST:$RELEASE_STAGING/"
+          if [[ -f release-assets/silicium-node-windows-dev.exe ]]; then
+            scp "${ssh_opts[@]}" -P "$vps_port" \
+              release-assets/silicium-node-windows-dev.exe \
+              "$vps_user@$VPS_HOST:$RELEASE_STAGING/"
+          fi
 
       - name: Pull and deploy the dev channel
         shell: bash
@@ -249,7 +264,6 @@ jobs:
           RELEASE_BUILD: ${{ steps.release.outputs.release_build }}
           RELEASE_STAGING: ${{ steps.release.outputs.release_staging }}
           NODE_ARTIFACTS_STAGED: true
-          RUN_E2E: ${{ github.event.inputs.run_e2e || 'false' }}
         run: |
           set -euo pipefail
           vps_user="${VPS_USER:-luis}"
@@ -261,7 +275,7 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/silicium-dev-ssh/known_hosts"
             -o IdentitiesOnly=yes -i "$RUNNER_TEMP/silicium-dev-ssh/id_ed25519")
           ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
-            "VPS_ROOT='$vps_root' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_BUILD='$RELEASE_BUILD' RELEASE_STAGING='$RELEASE_STAGING' NODE_ARTIFACTS_STAGED='$NODE_ARTIFACTS_STAGED' RUN_E2E='$RUN_E2E' bash -s" <<'REMOTE'
+            "VPS_ROOT='$vps_root' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_BUILD='$RELEASE_BUILD' RELEASE_STAGING='$RELEASE_STAGING' NODE_ARTIFACTS_STAGED='$NODE_ARTIFACTS_STAGED' bash -s" <<'REMOTE'
           set -euo pipefail
           VPS_ROOT="${VPS_ROOT:?}"
           VPS_GITHUB_TOKEN="${VPS_GITHUB_TOKEN:?}"
@@ -301,6 +315,9 @@ jobs:
             sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.deb" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.deb
             sudo install -m 0755 "$RELEASE_STAGING/silicium-node-linux-dev.AppImage" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.AppImage
             sudo install -m 0644 "$RELEASE_STAGING/silicium-node-linux-dev.rpm" /var/lib/silicium-dev/downloads/silicium-node-linux-dev.rpm
+            if [[ -f "$RELEASE_STAGING/silicium-node-windows-dev.exe" ]]; then
+              sudo install -m 0644 "$RELEASE_STAGING/silicium-node-windows-dev.exe" /var/lib/silicium-dev/downloads/silicium-node-windows-dev.exe
+            fi
           fi
           sudo install -d -m 0755 /var/lib/silicium-dev/releases
           cat <<EOF | sudo tee /var/lib/silicium-dev/releases/current.env >/dev/null
@@ -319,12 +336,5 @@ jobs:
             SILICIUM_RELEASE_BUILD="$RELEASE_BUILD" bash "$VPS_ROOT/deploy/compose/deploy.sh" "$VPS_ROOT"
           sudo systemctl start silicium-update-manifest-dev.service
           sudo SILICIUM_RELEASE_CHANNEL=dev bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
-          if [[ "$RUN_E2E" == "true" ]]; then
-            sudo SILICIUM_RELEASE_CHANNEL=dev \
-              E2E_TIMEOUT_S=1200 E2E_WAIT_S=600 \
-              bash "$VPS_ROOT/deploy/compose/e2e.sh" "$VPS_ROOT"
-          else
-            echo "Skipping optional long dev E2E suite (run_e2e=false)."
-          fi
           echo "Development channel deployed: $RELEASE_VERSION ($RELEASE_BUILD)"
           REMOTE

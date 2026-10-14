@@ -9,14 +9,13 @@ export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
 channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
 channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
 channel_compose_project="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field compose_project)"
+channel_service_suffix="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field service_suffix)"
 channel_runtime_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field deployment_root)"
 backend_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field backend_http_port)"
 backend_p2p_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field backend_p2p_port)"
 frontend_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field frontend_http_port)"
-dashboard_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field dashboard_http_port)"
 reputation_http_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field reputation_http_port)"
 orchestrator_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field orchestrator_port)"
-experiment_events_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field experiment_events_port)"
 turn_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field turn_port)"
 turn_tls_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field turn_tls_port)"
 turn_relay_min_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field turn_relay_min_port)"
@@ -55,6 +54,13 @@ COMPOSE_ENV="${SILICIUM_COMPOSE_ENV:-$initial_config_dir/compose.env}"
 set -a
 # shellcheck disable=SC1090
 . "$COMPOSE_ENV"
+orchestrator_env_dir="${SILICIUM_CONFIG_DIR:-$initial_config_dir}"
+if [[ -f "$orchestrator_env_dir/orchestrator.env" ]]; then
+  # Keep the BackEnd's Rust control client on the same bearer token as the
+  # host-side p2p_node service.
+  # shellcheck disable=SC1090
+  . "$orchestrator_env_dir/orchestrator.env"
+fi
 set +a
 
 channel_or_legacy_default() {
@@ -76,10 +82,8 @@ export SILICIUM_COMPOSE_PROJECT_NAME="$(channel_or_legacy_default "${SILICIUM_CO
 export SILICIUM_BACKEND_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_BACKEND_HTTP_PORT:-}" "$backend_http_port" 8080)"
 export SILICIUM_BACKEND_P2P_PORT="$(channel_or_legacy_default "${SILICIUM_BACKEND_P2P_PORT:-}" "$backend_p2p_port" 46102)"
 export SILICIUM_FRONTEND_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_FRONTEND_HTTP_PORT:-}" "$frontend_http_port" 3000)"
-export SILICIUM_DASHBOARD_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_DASHBOARD_HTTP_PORT:-}" "$dashboard_http_port" 5174)"
 export SILICIUM_REPUTATION_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_REPUTATION_HTTP_PORT:-}" "$reputation_http_port" 9091)"
 export SILICIUM_ORCHESTRATOR_PORT="$(channel_or_legacy_default "${SILICIUM_ORCHESTRATOR_PORT:-}" "$orchestrator_port" 46100)"
-export SILICIUM_EXPERIMENT_EVENTS_PORT="$(channel_or_legacy_default "${SILICIUM_EXPERIMENT_EVENTS_PORT:-}" "$experiment_events_port" 9771)"
 export SILICIUM_TURN_PORT="$(channel_or_legacy_default "${SILICIUM_TURN_PORT:-}" "$turn_port" 3478)"
 export SILICIUM_TURN_TLS_PORT="$(channel_or_legacy_default "${SILICIUM_TURN_TLS_PORT:-}" "$turn_tls_port" 5349)"
 export SILICIUM_TURN_RELAY_MIN_PORT="$(channel_or_legacy_default "${SILICIUM_TURN_RELAY_MIN_PORT:-}" "$turn_relay_min_port" 49160)"
@@ -152,15 +156,20 @@ sed -i -e "s#host.docker.internal#$SILICIUM_HOST_GATEWAY#g" "$SILICIUM_NGINX_CON
 
 # UFW commonly denies traffic arriving from Docker bridges even when the host
 # itself can reach the service. Permit only this channel's bridge to reach the
-# two host-side control-plane sockets required by the backend/proxy. The
+# host-side orchestrator API required by the backend/proxy. The
 # precise source subnet and gateway keep the rule isolated from other Docker
 # projects and make repeated deployments converge without opening the ports
 # publicly.
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
-  for firewall_port in "$SILICIUM_ORCHESTRATOR_PORT" "$SILICIUM_EXPERIMENT_EVENTS_PORT"; do
-    ufw allow from "$backend_network_subnet" to "$host_gateway" port "$firewall_port" proto tcp \
-      comment "Silicium ${RELEASE_CHANNEL} container control plane" >/dev/null
-  done
+  ufw allow from "$backend_network_subnet" to "$host_gateway" port "$SILICIUM_ORCHESTRATOR_PORT" proto tcp \
+    comment "Silicium ${RELEASE_CHANNEL} container control plane" >/dev/null
+  if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+    p2p_port="${SILICIUM_P2P_PORT:-$((SILICIUM_ORCHESTRATOR_PORT + 1))}"
+    for protocol in tcp udp; do
+      ufw allow from "${SILICIUM_VPN_NETWORK:-10.77.0.0/24}" to "$SILICIUM_VPN_SERVER_ADDRESS" \
+        port "$p2p_port" proto "$protocol" comment "Silicium dev Rust P2P" >/dev/null
+    done
+  fi
 fi
 
 # The backend image deliberately runs as an unprivileged user while the
@@ -185,62 +194,60 @@ backend_uid="${backend_identity%%:*}"
 backend_gid="${backend_identity##*:}"
 install -d -m 0750 -o "$backend_uid" -g "$backend_gid" "$SILICIUM_DATA_ROOT/site/jobs" "$SILICIUM_DATA_ROOT/site/runtime"
 
-# Keep blockchain proofs disabled in both the legacy and current runtimes.
-# Existing installations may contain either setting, so replace both
-# deterministically instead of relying on defaults from a particular release.
+# Blockchain trace of jobs (BackEnd internal/chainproof): one Solana Memo
+# transaction per finished job, signed by the channel's wallet. The dev
+# channel creates its wallet; another channel is traced only once an
+# operator has put a wallet in its data root. Both settings are rewritten on
+# every deployment so an old value never lingers.
 backend_env="$SILICIUM_CONFIG_DIR/backend.env"
-sed -i -E '/^SILICIUM_DEVNET_TRACE(_MODE)?=/d' "$backend_env"
+solana_dir="$SILICIUM_DATA_ROOT/solana"
+solana_wallet="$solana_dir/id.json"
+if [[ "$RELEASE_CHANNEL" == "dev" && ! -s "$solana_wallet" ]]; then
+  install -d -m 0750 "$solana_dir"
+  python3 "$ROOT/deploy/release/solana_wallet.py" ensure "$solana_wallet" >/dev/null
+fi
+devnet_trace=0
+if [[ -s "$solana_wallet" ]]; then
+  chown "$backend_uid:$backend_gid" "$solana_dir" "$solana_wallet"
+  chmod 0750 "$solana_dir"
+  chmod 0400 "$solana_wallet"
+  devnet_trace=1
+  echo "Blockchain trace enabled; Solana wallet $(python3 "$ROOT/deploy/release/solana_wallet.py" address "$solana_wallet") (fund it on devnet: https://faucet.solana.com)."
+fi
+sed -i -E '/^SILICIUM_(DEVNET_TRACE(_MODE)?|SOLANA_WALLET)=/d' "$backend_env"
 printf '%s\n' \
-  'SILICIUM_DEVNET_TRACE=0' \
-  'SILICIUM_DEVNET_TRACE_MODE=devnet' >> "$backend_env"
+  "SILICIUM_DEVNET_TRACE=$devnet_trace" \
+  'SILICIUM_DEVNET_TRACE_MODE=devnet' \
+  'SILICIUM_SOLANA_WALLET=/var/lib/silicium/solana/id.json' >> "$backend_env"
 
-# The API submits task envelopes into the host-side orchestrator export. Keep
-# the shared control-plane directories writable by the container user while
-# leaving the rest of the export tree untouched.
-orchestrator_export_dir="$SILICIUM_DATA_ROOT/network/orchestrator/export"
-for shared_dir in \
-  "$orchestrator_export_dir" \
-  "$orchestrator_export_dir/tasks" \
-  "$orchestrator_export_dir/requests" \
-  "$orchestrator_export_dir/p2p"; do
-  install -d -m 0770 -o "$backend_uid" -g "$backend_gid" "$shared_dir"
-done
+# Releases before the Rust orchestrator built a tile pipeline for the Python
+# job runner and pointed the backend at it; nothing reads it any more.
+sed -i -E '/^SILICIUM_PIPELINE_BIN=/d' "$backend_env"
 
-# `install -d` only fixes directory ownership. Queue files created by the
-# host-side (root) orchestrator during an earlier release remain root:root and
-# make the unprivileged API fail while appending a task. Preserve their
-# contents, but hand every existing role queue to the backend identity. Create
-# the two canonical queues now so the first writer also gets the right owner.
-touch \
-  "$orchestrator_export_dir/tasks.queue.ndjson" \
-  "$orchestrator_export_dir/requests.queue.ndjson"
-for shared_queue in "$orchestrator_export_dir"/*.queue.ndjson; do
-  [[ -e "$shared_queue" ]] || continue
-  chown "$backend_uid:$backend_gid" "$shared_queue"
-  chmod 0660 "$shared_queue"
-done
-
-# The orchestrator runs on the host and keeps its private identity key mode
-# 0600. The API container must sign task-control messages as the same identity,
-# but it must not receive the host service's key path directly. Maintain a
-# private, UID-scoped copy for the unprivileged backend user.
-orchestrator_identity_dir="$SILICIUM_DATA_ROOT/network/orchestrator/state"
-orchestrator_identity="$orchestrator_identity_dir/peer_identity_ed25519.pem"
-orchestrator_public_identity="$orchestrator_identity_dir/peer_identity_ed25519.pub.pem"
-backend_identity_dir="$SILICIUM_DATA_ROOT/network/orchestrator/backend-identity"
-for _ in $(seq 1 30); do
-  if [[ -f "$orchestrator_identity" && -f "$orchestrator_public_identity" ]]; then
-    break
-  fi
-  sleep 1
-done
-if [[ ! -f "$orchestrator_identity" || ! -f "$orchestrator_public_identity" ]]; then
-  echo "Orchestrator identity key was not created at $orchestrator_identity" >&2
+# Build the Rust control/peer node in the same portable musl target used by
+# the host systemd service. The BackEnd container talks to its HTTP API on the
+# host.
+node_target="$SILICIUM_RUNTIME_ROOT/Network/target/node-alpine"
+if ! docker run --rm \
+  -v "$SILICIUM_RUNTIME_ROOT/Network:/src" \
+  -v silicium-cargo-registry:/usr/local/cargo/registry \
+  -w /src \
+  rust:1-alpine \
+  sh -c 'apk add --no-cache musl-dev >/dev/null && cargo build --release --locked -p p2p_node -p compute_daemon --target-dir /src/target/node-alpine' \
+  || [[ ! -x "$node_target/release/p2p_node" ]]; then
+  echo "Rust p2p node build failed; refusing to deploy." >&2
   exit 1
 fi
-install -d -m 0750 -o "$backend_uid" -g "$backend_gid" "$backend_identity_dir"
-install -o "$backend_uid" -g "$backend_gid" -m 0600 "$orchestrator_identity" "$backend_identity_dir/peer_identity_ed25519.pem"
-install -o "$backend_uid" -g "$backend_gid" -m 0644 "$orchestrator_public_identity" "$backend_identity_dir/peer_identity_ed25519.pub.pem"
+
+orchestrator_unit="silicium-orchestrator${channel_service_suffix}.service"
+if command -v systemctl >/dev/null 2>&1 && systemctl cat "$orchestrator_unit" >/dev/null 2>&1; then
+  systemctl restart "$orchestrator_unit"
+fi
+
+# The host-side orchestrator (root) writes the files read by the BackEnd
+# (heartbeat, peers) under its export directory; keep it reachable by the
+# unprivileged API container user.
+install -d -m 0770 -o "$backend_uid" -g "$backend_gid" "$SILICIUM_DATA_ROOT/network/orchestrator/export"
 
 # Older production installations ran these processes as host systemd
 # services. They may only be stopped during a production deployment; a dev

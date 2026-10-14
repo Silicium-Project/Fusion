@@ -10,8 +10,9 @@ This app is intentionally separate from:
 - `Site/`: public client website
 - `deploy/`: VPS deployment assets
 
-The app is a Tauri shell around the existing Silicium network node. It does not
-reimplement the node. The installer bundles a minimal runtime so a normal user
+The app is a Tauri shell around the Silicium network node, the Rust
+`p2p_node` binary (with `compute_daemon` and the native raytracer). It does not
+reimplement the node. The installer bundles these binaries so a normal user
 can install the app, click one button, and join the network with `compute,verify`
 capabilities. The network/orchestrator decides what work is assigned over time.
 
@@ -22,6 +23,32 @@ notification area. Its menu can start, stop or restart the managed service,
 open the dashboard, or quit the desktop shell without stopping the worker.
 The notification-area shell and supervisor are restored when the Windows
 session starts.
+
+## Rust backend layout (`src-tauri/src/`)
+
+| Module | Role |
+| --- | --- |
+| `main.rs` | Entry point: desktop app, `--supervisor` or `--cleanup` |
+| `lib.rs` | Shared imports, module list, `run()` (Tauri builder, command registration) |
+| `commands.rs` | Tauri commands called by the frontend |
+| `types.rs` | Data types sent to the frontend and persisted on disk |
+| `config.rs` | Constants, node id, orchestrator URL, service configuration file |
+| `runtime.rs` | Repository root, managed / packaged runtime, child process environment |
+| `node.rs` | Starting the node process and waiting for it to be ready |
+| `supervisor.rs` | Supervisor mode (restart on stale claim poll) |
+| `process.rs` | Stopping nodes, `--cleanup`, process trees |
+| `service.rs` | Windows service / Run key and Linux autostart |
+| `paths.rs` | PID files and application state directory |
+| `checks.rs` | Environment checks shown in the UI |
+| `activity/` | Logs, task history, per-machine activity (`machine.rs`) |
+| `update/` | Self-update: status and locks (`mod.rs`), manifest and signature (`manifest.rs`), download and install (`install.rs`) |
+| `http.rs`, `logging.rs` | `curl` helpers, hashing, app error log |
+| `tray.rs` | Windows notification-area menu |
+| `tests.rs` | Unit tests |
+
+Every module starts with `use crate::*;`: `lib.rs` holds the shared imports and
+glob-imports each module, so items only need `pub(crate)` to be visible across
+modules.
 
 ## Development
 
@@ -60,7 +87,7 @@ npm run tauri:build:linux
 
 This produces `silicium-node-*.AppImage`, `silicium-node-*.deb` and
 `silicium-node-*.rpm`. The Debian package is the recommended Linux install on
-Debian/Ubuntu because it declares the Python, OpenSSL, curl and certificate
+Debian/Ubuntu because it declares the OpenSSL, curl and certificate
 dependencies:
 
 ```bash
@@ -79,7 +106,7 @@ dependencies; the AppImage remains the portable option when those host
 dependencies are already present.
 
 The AppImage keeps the same bundled Network runtime and can be used without
-installation on a distribution that already provides Python 3, OpenSSL, curl,
+installation on a distribution that already provides OpenSSL, curl,
 certificates and the Tauri WebKit runtime. After downloading it, make it
 executable once before launching it:
 
@@ -92,15 +119,18 @@ Activation installs an XDG autostart entry under `~/.config/autostart`. When
 started from an AppImage, that entry points to the downloaded AppImage file,
 not to its temporary mounted directory.
 
-Before Tauri bundles the installer, `npm run prepare:runtime` stages a runtime
-under `src-tauri/resources/runtime` containing:
+Before Tauri bundles the installer, `npm run prepare:runtime` (Windows) or
+`npm run prepare:runtime:linux` stages a runtime under
+`src-tauri/resources/runtime` containing:
 
-- the minimal `Network/` runtime needed by the node
-- the raytracer executable and DLLs from `Network/bin/raytracer`
-- Python copied from `apps/silicium-node/vendor/python` when present, otherwise
-  from the local Windows Python install
-- OpenSSL copied from `apps/silicium-node/vendor/openssl` when present, otherwise
-  from the local Windows OpenSSL install
+- `Network/bin/p2p_node` and `Network/bin/compute_daemon`, built from
+  `Network/` with Cargo
+- the native raytracer in `Network/bin/raytracer/`
+- `.silicium/env/raytracer.env`, which points the compute daemon at it
+
+No Python and no OpenSSL are bundled. On start, the app removes from the
+managed runtime the files of older bundles that shipped the former Python node
+(`remove_legacy_runtime_assets`).
 
 The staged runtime is generated and ignored by Git. Rebuild it with:
 

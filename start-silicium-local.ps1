@@ -3,29 +3,23 @@ param(
     [switch]$NoBrowser,
     [switch]$DryRun,
     [switch]$SkipNetworkNodes,
-    [switch]$SkipDashboard,
     [switch]$SkipDatabase,
     [switch]$SkipBackend,
     [switch]$SkipFrontend,
-    [string]$HostAddress = "127.0.0.1",
     [int]$OrchestratorPort = 46100,
-    [int]$WorkerPort = 46101,
-    [int]$VerifierPort = 46102,
+    [int]$OrchestratorP2pPort = 46101,
+    [int]$WorkerPort = 9092,
+    [int]$ComputePort = 9090,
     [int]$DatabasePort = 15432,
-    [int]$DashboardPort = 5174,
     [int]$BackendPort = 8080,
     [int]$FrontendPort = 3000,
-    [string]$MeshKey = "demo-mesh",
-    [string]$WorkerReputation = "120",
-    [string]$VerifierReputation = "90",
+    [string]$ControlToken = "silicium-local-control-token",
     [ValidateSet("sqlite", "postgres")]
     [string]$DatabaseDriver = $env:DATABASE_DRIVER,
     [string]$DatabaseUrl = $env:DATABASE_URL,
     [string]$SqlitePath = "",
     [string]$JwtSecret = $env:JWT_SECRET_KEY,
-    [string]$RaytracerBin = $env:SILICIUM_RAYTRACER_BIN,
-    [string]$MinComputeReputation = "50",
-    [string]$MinVerifyReputation = "40"
+    [string]$RaytracerBin = $env:SILICIUM_RAYTRACER_BIN
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,7 +64,6 @@ function Ensure-Submodules {
 Ensure-Submodules
 
 $NetworkRoot = Join-Path $Root "Network"
-$DashboardRoot = Join-Path $NetworkRoot "silicium-layer-dashboard"
 $BackendRoot = Join-Path $Root "BackEnd"
 $FrontendRoot = Join-Path $Root "FrontEnd"
 $LogRoot = Join-Path $Root ".silicium\logs\local-start"
@@ -99,16 +92,6 @@ if (-not $RaytracerBin -and (Test-Path -LiteralPath $RaytracerEnvFile -PathType 
             $RaytracerBin = $Matches[1].Trim()
         }
     }
-}
-
-$RaytracerEnv = @()
-if ($RaytracerBin) {
-    if (-not (Test-Path -LiteralPath $RaytracerBin -PathType Leaf)) {
-        Write-Warning "SILICIUM_RAYTRACER_BIN does not point to an executable file: $RaytracerBin"
-    }
-    $RaytracerEnv = @("set `"SILICIUM_RAYTRACER_BIN=$RaytracerBin`"")
-} else {
-    Write-Warning "SILICIUM_RAYTRACER_BIN is not set. Raytracer jobs will fail until each worker points to a local raytracer executable."
 }
 
 function Assert-Directory {
@@ -230,7 +213,6 @@ function Start-LoggedProcess {
 }
 
 Assert-Directory $NetworkRoot "Network"
-Assert-Directory $DashboardRoot "Devnet dashboard"
 Assert-Directory $BackendRoot "BackEnd"
 Assert-Directory $FrontendRoot "FrontEnd"
 
@@ -241,43 +223,115 @@ Write-Host "Root:      $Root"
 Write-Host "Logs:      $LogRoot"
 Write-Host "Frontend:  http://localhost:$FrontendPort/"
 Write-Host "Backend:   http://localhost:$BackendPort"
-Write-Host "Devnet UI: http://localhost:$DashboardPort/"
 Write-Host "Database:  $DatabaseDriver"
 
 $npm = Get-Tool "npm.cmd"
-if (-not $npm -and (-not $SkipDashboard -or -not $SkipFrontend)) {
+if (-not $npm -and -not $SkipFrontend) {
     throw "npm.cmd was not found. Run .\install-silicium-windows.cmd -InstallSystemDeps first."
 }
 
-if (-not $SkipNetworkNodes) {
-    $nodeScript = Join-Path $NetworkRoot "networked\start-node.cmd"
-    if (-not (Test-Path -LiteralPath $nodeScript -PathType Leaf)) {
-        # throw "Network node launcher not found: $nodeScript"
+# Local Rust network: an orchestrator (API on $OrchestratorPort, libp2p on
+# $OrchestratorP2pPort, does not compute) and one desktop-like worker
+# (compute_daemon + p2p_node) that trusts it through the pinned bootstrap
+# address /p2p/<orchestrator peer id>, as the desktop app does.
+$NodeBin = Join-Path $NetworkRoot "target\release"
+$NodeDataRoot = Join-Path $Root ".silicium\local-network"
+$OrchestratorDir = Join-Path $NodeDataRoot "orchestrator"
+$WorkerDir = Join-Path $NodeDataRoot "worker"
+$OrchestratorLog = Join-Path $LogRoot "network-orchestrator.node.log"
+
+function Get-OrchestratorPeerId {
+    param([int]$TimeoutSeconds = 30)
+    if ($DryRun) {
+        return "<orchestrator-peer-id>"
     }
-    $workerCmd = Write-CmdLauncher `
-        -Name "network-worker" `
-        -WorkingDirectory $NetworkRoot `
-        -Environment $RaytracerEnv `
-        -Command ".\networked\start-node.cmd worker-1 compute $WorkerPort http://${HostAddress}:$OrchestratorPort $HostAddress $MeshKey $WorkerReputation"
-    $verifierCmd = Write-CmdLauncher `
-        -Name "network-verifier" `
-        -WorkingDirectory $NetworkRoot `
-        -Environment $RaytracerEnv `
-        -Command ".\networked\start-node.cmd verifier-1 verify $VerifierPort http://${HostAddress}:$OrchestratorPort $HostAddress $MeshKey $VerifierReputation"
-    Start-LoggedProcess -Name "network-worker" -CommandFile $workerCmd -Port $WorkerPort
-    Start-LoggedProcess -Name "network-verifier" -CommandFile $verifierCmd -Port $VerifierPort
-    Wait-ListeningPort -Port $WorkerPort -Name "network-worker" -TimeoutSeconds 20
-    Wait-ListeningPort -Port $VerifierPort -Name "network-verifier" -TimeoutSeconds 20
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-Path -LiteralPath $OrchestratorLog -PathType Leaf) {
+            $match = Select-String -LiteralPath $OrchestratorLog -Pattern "Local peer id: (\S+)" | Select-Object -First 1
+            if ($match) {
+                return $match.Matches[0].Groups[1].Value
+            }
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    throw "The orchestrator did not report its peer id after ${TimeoutSeconds}s. Check $OrchestratorLog."
 }
 
-if (-not $SkipDashboard) {
-    $dashboardCmd = Write-CmdLauncher `
-        -Name "devnet-dashboard" `
-        -WorkingDirectory $DashboardRoot `
-        -Environment @() `
-        -Command "npm.cmd run dev -- --host 127.0.0.1 --port $DashboardPort"
-    Start-LoggedProcess -Name "devnet-dashboard" -CommandFile $dashboardCmd -Port $DashboardPort
-    Wait-ListeningPort -Port $DashboardPort -Name "devnet-dashboard" -TimeoutSeconds 30
+if (-not $SkipNetworkNodes) {
+    $nodeBinaries = @("p2p_node.exe", "compute_daemon.exe", "silicium-raytracer.exe")
+    $missingBinaries = @($nodeBinaries | Where-Object { -not (Test-Path -LiteralPath (Join-Path $NodeBin $_) -PathType Leaf) })
+    if ($missingBinaries.Count -gt 0 -and -not $DryRun) {
+        if (-not (Get-Tool "cargo")) {
+            throw "Missing $($missingBinaries -join ', ') in $NodeBin and cargo was not found. Install Rust, then rerun."
+        }
+        Write-Host "Building the Rust node (cargo build --release)..."
+        & cargo build --release --locked --manifest-path (Join-Path $NetworkRoot "Cargo.toml") -p p2p_node -p compute_daemon -p silicium-raytracer
+        if ($LASTEXITCODE -ne 0) {
+            throw "cargo build failed for the Rust node."
+        }
+    }
+    if (-not $RaytracerBin) {
+        $RaytracerBin = Join-Path $NodeBin "silicium-raytracer.exe"
+    }
+    foreach ($dir in @("$OrchestratorDir\work", "$WorkerDir\work")) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+    $orchestratorCmd = Write-CmdLauncher `
+        -Name "network-orchestrator" `
+        -WorkingDirectory $OrchestratorDir `
+        -Environment @(
+            "set `"SILICIUM_NODE_ID=orchestrator-local`"",
+            "set `"SILICIUM_NODE_ROLES=resource,storage`"",
+            "set `"SILICIUM_RELEASE_CHANNEL=dev`"",
+            "set `"SILICIUM_DATA_DIR=$OrchestratorDir`"",
+            "set `"SILICIUM_COMPUTE_ROOT=$OrchestratorDir\work`"",
+            "set `"SILICIUM_WORKLOAD_STORAGE_DIR=$OrchestratorDir\work\jobs`"",
+            "set `"SILICIUM_EXPORT_DIR=$OrchestratorDir\export`"",
+            "set `"SILICIUM_NODE_CONTROL_TOKEN=$ControlToken`"",
+            "set `"SILICIUM_API_BIND=127.0.0.1`"",
+            "set `"API_PORT=$OrchestratorPort`"",
+            "set `"SILICIUM_P2P_BIND=127.0.0.1`"",
+            "set `"SILICIUM_P2P_PORT=$OrchestratorP2pPort`"",
+            "set `"SILICIUM_WORK_OWN_TASKS=0`""
+        ) `
+        -Command "`"$NodeBin\p2p_node.exe`" > `"$OrchestratorLog`" 2>&1"
+    Start-LoggedProcess -Name "network-orchestrator" -CommandFile $orchestratorCmd -Port $OrchestratorPort
+    $orchestratorPeerId = Get-OrchestratorPeerId
+
+    $computeCmd = Write-CmdLauncher `
+        -Name "network-compute" `
+        -WorkingDirectory $WorkerDir `
+        -Environment @(
+            "set `"SILICIUM_COMPUTE_BIND=127.0.0.1:$ComputePort`"",
+            "set `"SILICIUM_COMPUTE_ROOT=$WorkerDir\work`"",
+            "set `"SILICIUM_RAYTRACER_BIN=$RaytracerBin`""
+        ) `
+        -Command "`"$NodeBin\compute_daemon.exe`""
+    $workerCmd = Write-CmdLauncher `
+        -Name "network-worker" `
+        -WorkingDirectory $WorkerDir `
+        -Environment @(
+            "set `"SILICIUM_NODE_ID=worker-local`"",
+            "set `"SILICIUM_NODE_ROLES=compute,verify`"",
+            "set `"SILICIUM_RELEASE_CHANNEL=dev`"",
+            "set `"SILICIUM_DATA_DIR=$WorkerDir`"",
+            "set `"SILICIUM_COMPUTE_ROOT=$WorkerDir\work`"",
+            "set `"SILICIUM_WORKLOAD_STORAGE_DIR=$WorkerDir\work\jobs`"",
+            "set `"SILICIUM_EXPORT_DIR=$WorkerDir\export`"",
+            "set `"SILICIUM_API_BIND=127.0.0.1`"",
+            "set `"API_PORT=$WorkerPort`"",
+            "set `"SILICIUM_P2P_BIND=127.0.0.1`"",
+            "set `"SILICIUM_P2P_PORT=0`"",
+            "set `"SILICIUM_BOOTSTRAP_PEERS=/ip4/127.0.0.1/tcp/$OrchestratorP2pPort/p2p/$orchestratorPeerId`"",
+            "set `"SILICIUM_WORK_OWN_TASKS=1`"",
+            "set `"COMPUTE_DAEMON_URL=http://127.0.0.1:$ComputePort`""
+        ) `
+        -Command "`"$NodeBin\p2p_node.exe`""
+    Start-LoggedProcess -Name "network-compute" -CommandFile $computeCmd -Port $ComputePort
+    Start-LoggedProcess -Name "network-worker" -CommandFile $workerCmd -Port $WorkerPort
+    Wait-ListeningPort -Port $OrchestratorPort -Name "network-orchestrator" -TimeoutSeconds 20
+    Wait-ListeningPort -Port $WorkerPort -Name "network-worker" -TimeoutSeconds 20
 }
 
 if (-not $SkipBackend -and -not $SkipDatabase -and $DatabaseDriver -eq "postgres") {
@@ -301,13 +355,7 @@ if (-not $SkipBackend -and -not $SkipDatabase -and $DatabaseDriver -eq "postgres
                 "set `"POSTGRES_PORT=$DatabasePort`"",
                 "set `"HOST=db`"",
                 "set `"JWT_SECRET_KEY=$JwtSecret`"",
-                "set `"SILICIUM_NETWORK_ROOT=$NetworkRoot`"",
-                "set `"SILICIUM_SEED_PEERS=http://${HostAddress}:$WorkerPort,http://${HostAddress}:$VerifierPort`"",
-                "set `"SILICIUM_MESH_KEY=$MeshKey`"",
-                "set `"SILICIUM_ORCHESTRATOR_HOST=$HostAddress`"",
-                "set `"SILICIUM_DASHBOARD_URL=http://localhost:$DashboardPort/`"",
-                "set `"SILICIUM_DEVNET_TRACE=1`"",
-                "set `"SILICIUM_DEVNET_TX_DELAY_MS=2500`""
+                "set `"SILICIUM_NETWORK_ROOT=$NetworkRoot`""
             ) `
             -Command "docker compose up -d db"
         Start-LoggedProcess -Name "site-database" -CommandFile $databaseCmd
@@ -324,22 +372,18 @@ if (-not $SkipBackend) {
     } elseif ($goPath) {
         Write-Host "OK Go -> $goPath"
     }
-    $seedPeers = "http://${HostAddress}:$WorkerPort,http://${HostAddress}:$VerifierPort"
     $BackendEnv = @(
         "set `"DATABASE_DRIVER=$DatabaseDriver`"",
         "set `"DATABASE_URL=$DatabaseUrl`"",
         "set `"SQLITE_PATH=$SqlitePath`"",
         "set `"JWT_SECRET_KEY=$JwtSecret`"",
         "set `"SILICIUM_NETWORK_ROOT=$NetworkRoot`"",
-        "set `"SILICIUM_SEED_PEERS=$seedPeers`"",
-        "set `"SILICIUM_MESH_KEY=$MeshKey`"",
-        "set `"SILICIUM_ORCHESTRATOR_HOST=$HostAddress`"",
-        "set `"SILICIUM_DASHBOARD_URL=http://localhost:$DashboardPort/`"",
-        "set `"SILICIUM_DEVNET_TRACE=1`"",
-        "set `"SILICIUM_DEVNET_TX_DELAY_MS=2500`"",
-        "set `"SILICIUM_MIN_COMPUTE_REPUTATION=$MinComputeReputation`"",
-        "set `"SILICIUM_MIN_VERIFY_REPUTATION=$MinVerifyReputation`""
-    ) + $RaytracerEnv
+        "set `"SILICIUM_NODE_API_URL=http://127.0.0.1:$OrchestratorPort`"",
+        "set `"SILICIUM_NODE_CONTROL_TOKEN=$ControlToken`"",
+        "set `"SILICIUM_ORCHESTRATOR_NODE_ID=orchestrator-local`"",
+        "set `"SILICIUM_ORCHESTRATOR_EXPORT_DIR=$OrchestratorDir\export`"",
+        "set `"SILICIUM_WORKLOAD_STORAGE_DIR=$OrchestratorDir\work\jobs`""
+    )
     $backendCmd = Write-CmdLauncher `
         -Name "site-backend" `
         -WorkingDirectory $BackendRoot `
@@ -354,8 +398,7 @@ if (-not $SkipFrontend) {
         -Name "site-frontend" `
         -WorkingDirectory $FrontendRoot `
         -Environment @(
-            "set `"NUXT_PUBLIC_API_BASE=http://localhost:$BackendPort`"",
-            "set `"NUXT_PUBLIC_DEVNET_DASHBOARD_URL=http://localhost:$DashboardPort/`""
+            "set `"NUXT_PUBLIC_API_BASE=http://localhost:$BackendPort`""
         ) `
         -Command "npm.cmd run dev -- --host 127.0.0.1 --port $FrontendPort"
     Start-LoggedProcess -Name "site-frontend" -CommandFile $frontendCmd -Port $FrontendPort
@@ -369,7 +412,6 @@ if (-not $NoBrowser -and -not $DryRun) {
 Write-Host ""
 Write-Host "Local stack requested."
 Write-Host "Open site:      http://localhost:$FrontendPort/"
-Write-Host "Open dashboard: http://localhost:$DashboardPort/"
 Write-Host "Logs:           $LogRoot"
 Write-Host ""
 Write-Host "Use -Visible to keep each service in an interactive terminal."

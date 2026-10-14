@@ -10,7 +10,6 @@ channel_config_dir="$(channel_field config_dir)"
 channel_data_root="$(channel_field data_dir)"
 channel_service_suffix="$(channel_field service_suffix)"
 channel_orchestrator_port="$(channel_field orchestrator_port)"
-channel_experiment_api_port="$(channel_field experiment_api_port)"
 channel_backend_http_port="$(channel_field backend_http_port)"
 channel_frontend_http_port="$(channel_field frontend_http_port)"
 channel_reputation_http_port="$(channel_field reputation_http_port)"
@@ -30,12 +29,10 @@ CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
 DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
 COMPOSE_FILE="$ROOT/deploy/compose/docker-compose.yml"
 COMPOSE_ENV="${SILICIUM_COMPOSE_ENV:-$CONFIG_DIR/compose.env}"
-EXPERIMENT_API_ENV="$CONFIG_DIR/experiment-api.env"
 UPDATE_CHANNELS_ENV="$CONFIG_DIR/update-channels.env"
 ORCHESTRATOR_ENV="$CONFIG_DIR/orchestrator.env"
 RELEASE_MARKER="${SILICIUM_RELEASE_MARKER:-$DATA_ROOT/releases/current.env}"
 ORCHESTRATOR_UNIT="silicium-orchestrator${channel_service_suffix}.service"
-EXPERIMENT_API_UNIT="silicium-experiment-api${channel_service_suffix}.service"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run as root: sudo bash deploy/linux/post-deploy-check.sh $ROOT" >&2
@@ -44,7 +41,6 @@ fi
 
 [[ -f "$COMPOSE_FILE" ]] || { echo "Missing compose file: $COMPOSE_FILE" >&2; exit 1; }
 [[ -f "$COMPOSE_ENV" ]] || { echo "Missing compose env: $COMPOSE_ENV" >&2; exit 1; }
-[[ -f "$EXPERIMENT_API_ENV" ]] || { echo "Missing experiment API env: $EXPERIMENT_API_ENV" >&2; exit 1; }
 [[ -f "$ORCHESTRATOR_ENV" ]] || { echo "Missing orchestrator env: $ORCHESTRATOR_ENV" >&2; exit 1; }
 [[ -s "$RELEASE_MARKER" ]] || { echo "Missing release marker: $RELEASE_MARKER" >&2; exit 1; }
 
@@ -73,19 +69,11 @@ if [[ -f "$UPDATE_CHANNELS_ENV" ]]; then
 fi
 
 set -a
-. "$EXPERIMENT_API_ENV"
 . "$COMPOSE_ENV"
 # The checked-in compose example contains production defaults. The deployment
 # scripts export the channel-specific values before invoking this check.
 . "$RELEASE_MARKER"
 set +a
-if [[ -z "${SILICIUM_MCP_TOKEN:-}" ]]; then
-  echo "Missing SILICIUM_MCP_TOKEN in $EXPERIMENT_API_ENV" >&2
-  exit 1
-fi
-
-healthz_headers=(-H "Authorization: Bearer ${SILICIUM_MCP_TOKEN}")
-
 channel_or_legacy_default() {
   local current="$1"
   local value="$2"
@@ -100,7 +88,6 @@ backend_port="$(channel_or_legacy_default "${SILICIUM_BACKEND_HTTP_PORT:-}" "$ch
 frontend_port="$(channel_or_legacy_default "${SILICIUM_FRONTEND_HTTP_PORT:-}" "$channel_frontend_http_port" 3000)"
 reputation_port="$(channel_or_legacy_default "${SILICIUM_REPUTATION_HTTP_PORT:-}" "$channel_reputation_http_port" 9091)"
 orchestrator_port="${SILICIUM_NODE_PORT:-$channel_orchestrator_port}"
-experiment_api_port="${SILICIUM_EXPERIMENT_API_PORT:-$channel_experiment_api_port}"
 export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
 export SILICIUM_CONFIG_DIR="$CONFIG_DIR"
 export SILICIUM_DATA_ROOT="$DATA_ROOT"
@@ -165,7 +152,7 @@ if [[ -z "$orchestrator_health" ]]; then
   journalctl -u "$ORCHESTRATOR_UNIT" --no-pager -n 100 >&2 || true
   exit 1
 fi
-if [[ "$orchestrator_health" != *'"service":"network_node"'* ]]; then
+if [[ "$orchestrator_health" != *'"service":"p2p_node"'* ]]; then
   echo "The integrated network node is not serving the orchestrator port: $orchestrator_health" >&2
   exit 1
 fi
@@ -211,30 +198,6 @@ if mismatches:
 PY
 then
   echo "The orchestrator service is not running the marked release: $heartbeat_file" >&2
-  exit 1
-fi
-if systemctl cat "$EXPERIMENT_API_UNIT" >/dev/null 2>&1; then
-  if ! systemctl is-active --quiet "$EXPERIMENT_API_UNIT"; then
-    echo "$EXPERIMENT_API_UNIT is installed but not active." >&2
-    systemctl status --no-pager -l "$EXPERIMENT_API_UNIT" >&2 || true
-    journalctl -u "$EXPERIMENT_API_UNIT" --no-pager -n 100 >&2 || true
-    exit 1
-  fi
-else
-  echo "Skipping $EXPERIMENT_API_UNIT check: unit file is not installed on this host."
-fi
-
-echo "Waiting for experiment API on ${experiment_api_port}..."
-for _ in $(seq 1 30); do
-  if curl -fsS --max-time 3 "${healthz_headers[@]}" "http://127.0.0.1:${experiment_api_port}/healthz" >/dev/null; then
-    break
-  fi
-  sleep 2
-done
-if ! curl -fsS --max-time 8 "${healthz_headers[@]}" "http://127.0.0.1:${experiment_api_port}/healthz" >/dev/null; then
-  echo "Experiment API is not reachable on 127.0.0.1:${experiment_api_port} after waiting." >&2
-  systemctl status --no-pager -l "$EXPERIMENT_API_UNIT" >&2 || true
-  journalctl -u "$EXPERIMENT_API_UNIT" --no-pager -n 100 >&2 || true
   exit 1
 fi
 curl -fsS --max-time 8 "http://127.0.0.1:${reputation_port}/health" >/dev/null
@@ -287,15 +250,6 @@ for repository_metadata in \
   }
 done
 
-if [[ "$RELEASE_CHANNEL" == "prod" ]]; then
-  echo "Checking node service state..."
-  if systemctl list-unit-files --type service --all 2>/dev/null | awk '{print $1}' | grep -qx 'silicium-node.service'; then
-    systemctl is-active --quiet silicium-node.service
-  else
-    echo "Skipping silicium-node.service check: service is not installed on this host."
-  fi
-fi
-
 public_orchestrator_url="${SILICIUM_NODE_ADVERTISE_URL:-https://vps-910c1dbc.vps.ovh.net/orchestrator}"
 echo "Checking public orchestrator route: ${public_orchestrator_url%/}/healthz"
 read -r public_route_host public_route_port <<EOF
@@ -344,7 +298,7 @@ if ! public_health="$(curl -fsS --max-time 12 "${public_tls_args[@]}" "${public_
   fi
   exit 28
 fi
-if [[ "$public_health" != *'"service":"network_node"'* ]]; then
+if [[ "$public_health" != *'"service":"p2p_node"'* ]]; then
   echo "The public route does not reach the integrated network node: $public_health" >&2
   exit 1
 fi

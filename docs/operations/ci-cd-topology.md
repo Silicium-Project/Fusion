@@ -91,7 +91,8 @@ to the `10.77.0.0/24` VPN and is not a public Internet endpoint.
    available.
 3. `ci-fast.yml` is the short feedback path for pull requests and non-main
    branches. It runs only the affected web, Network core, and Silicium Node
-   lanes; Docker E2E, smoke, packaging, and deployment are excluded.
+   lanes; the network end-to-end check, smoke, packaging, and deployment are
+   excluded.
 4. `build.yml` and `test.yml` stay available as reusable PR/manual gates.
 5. `deploy-vps.yml` is the canonical mainline path: it validates and builds
    on the VPS runners, builds Windows installers on `windows-latest`, publishes
@@ -100,7 +101,8 @@ to the `10.77.0.0/24` VPN and is not a public Internet endpoint.
    only `dev`, provisions the isolated WireGuard ingress, prepares isolated
    development configuration, deploys to `/opt/silicium-dev`, and never stops
    or rewrites production units.
-7. `deploy/compose/e2e.sh` validates the real container path on the VPS.
+7. `deploy/linux/post-deploy-check.sh` validates the deployed services, the
+   orchestrator heartbeat and the public routes on the VPS.
 8. `mirror-epitech.yml` mirrors the exact Fusion tree into the Epitech repo
    after a successful `Deploy` on `main`.
 
@@ -131,9 +133,8 @@ pull request by surface before creating the expensive lanes:
   artifact instead of being rebuilt.
 - BackEnd runs Go tests and compilation only for Go, module, database, or
   container changes.
-- Network creates only the affected CodeQL, Rust-crate, workload, Python,
-  Docker, P2P, and performance lanes. The workload matrix still plans every
-  catalog entry when a Python/workload change is involved.
+- Network creates only the affected CodeQL, Rust-crate, end-to-end,
+  developer-tooling (pytest), Docker smoke and P2P lanes.
 - Fusion selects the web, network, and node lanes independently. A site-only
   deployment keeps the existing node installers, while node changes alone do
   not trigger the web/network test stack.
@@ -170,7 +171,7 @@ outputs without deleting those caches.
 - `ci-fast.yml`: cancelable short feedback path for branch and pull-request
   iterations.
 - `build.yml`: reusable Linux bundle build gate for PRs and manual runs.
-- `test.yml`: reusable web, Network core, Docker E2E, and P2P smoke gate for
+- `test.yml`: reusable web, Network core, network end-to-end and P2P smoke gate for
   PRs and manual runs.
 - `deploy-vps.yml`: canonical production deploy and VPS validation path. It
   also invokes the reusable build and test gates, packages Windows installers

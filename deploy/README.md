@@ -79,8 +79,9 @@ workflow does not run from `dev`.
 The canonical GitHub-visible pipeline is split into three stages:
 
 1. `build.yml` produces the Linux bundles on the VPS runner.
-2. `test.yml` runs the web stack, Network core, Docker E2E, and P2P smoke
-   checks on the VPS runner.
+2. `test.yml` runs the web stack, Network core, the Network end-to-end check
+   (Rust orchestrator and workers on loopback), and P2P smoke checks on the VPS
+   runner.
 3. `deploy-vps.yml` is the production `Deploy` stage.
 
 Recommended first public setup:
@@ -88,14 +89,11 @@ Recommended first public setup:
 1. One Linux VPS hosts:
    - Nuxt frontend on `127.0.0.1:3000`
    - Go backend on `127.0.0.1:8080`
-   - Devnet dashboard on `127.0.0.1:5174` for local/admin inspection only
    - Silicium orchestrator on host port `46100`, behind the HTTPS `/orchestrator/` route
 2. Remote worker/verifier machines connect to the HTTPS orchestrator rendezvous URL.
 3. Nginx exposes:
    - `https://silicium.example.com`
    - `https://api.silicium.example.com`
-4. The Devnet dashboard is not exposed publicly by default. Keep it local or put
-   it behind authentication before exposing it.
 
 ## VPS install
 
@@ -151,16 +149,16 @@ sudo bash deploy/linux/build-site.sh /opt/silicium
 sudo bash deploy/linux/install-services.sh /opt/silicium
 ```
 
-The public web/API/dashboard processes are owned only by Docker Compose:
+The public web/API processes are owned only by Docker Compose:
 
 ```bash
-sudo systemctl enable --now silicium-orchestrator silicium-experiment-api silicium-update-manifest.timer
+sudo systemctl enable --now silicium-orchestrator silicium-update-manifest.timer
 sudo bash deploy/compose/deploy.sh /opt/silicium
 ```
 
 Do not reinstall or enable the removed `silicium-backend`,
 `silicium-frontend`, or `silicium-dashboard` systemd units. They are legacy
-duplicates and would compete with Compose for ports 8080, 3000, and 5174.
+duplicates and would compete with Compose for ports 8080 and 3000.
 
 Install Nginx config after replacing domains:
 
@@ -265,13 +263,11 @@ Keep the existing `/etc/silicium/backend.env` and its secrets. Compose injects
 the container PostgreSQL URL at runtime; do not replace the backend environment
 file with the example file.
 
-The backend reaches the host-side orchestrator and experiment/MCP RPC event
-socket through `host.docker.internal`; the Compose deployment resolves that
-name to the gateway of the channel-specific Docker network. The reverse proxy
-uses the same isolated bridge and reaches the host-side orchestrator through
-that gateway. The HTTP experiment API and its control RPC remain private to
-the host; only the event socket needed by the backend is reachable from the
-backend container. The dev proxy itself is bound to `10.77.0.1:8443`, and UFW
+The backend reaches the host-side orchestrator API (`p2p_node`) through
+`host.docker.internal`; the Compose deployment resolves that name to the
+gateway of the channel-specific Docker network, and UFW lets only that bridge
+reach the orchestrator port. The reverse proxy uses the same isolated bridge
+and reaches the host-side orchestrator through that gateway. The dev proxy itself is bound to `10.77.0.1:8443`, and UFW
 permits it only to WireGuard clients in `10.77.0.0/24`.
 
 For the current legacy SQLite installation, the migration detects
@@ -357,12 +353,13 @@ where the production path executes. Any workflow that must touch production
 state should run on the VPS self-hosted runner or over SSH into the VPS.
 
 After each deployment, CI/CD runs `deploy/linux/post-deploy-check.sh` on the
-VPS. This validates Compose service state, local health endpoints, node service
-state, and release marker presence before marking the workflow as successful.
+VPS. This validates Compose service state, local health endpoints, the
+orchestrator heartbeat (roles and release), the published installers, and
+release marker presence before marking the workflow as successful.
 
-For version rollouts (`v*` tags), CI/CD pushes the exact tagged revision to the
-VPS and restarts `silicium-node.service` after Compose deployment to ensure the
-node stack and VPS move together at each version.
+A deployment also removes the services of the former Python runtime when a
+host still has them: `silicium-experiment-api` (by `install-services.sh`) and
+`silicium-node.service` (stopped by the deploy workflow).
 
 ## Manual rollback workflow
 
@@ -379,14 +376,7 @@ post-deploy checks as standard deployment, then rewrites
 
 ## Remote workers
 
-On a worker machine, install the repo and raytracer runtime, then start:
-
-```bash
-bash deploy/linux/start-node.sh worker-1 compute 46101 https://vps-910c1dbc.vps.ovh.net/orchestrator WORKER_PUBLIC_IP demo-mesh 120
-```
-
-On a verifier:
-
-```bash
-bash deploy/linux/start-node.sh verifier-1 verify 46102 https://vps-910c1dbc.vps.ovh.net/orchestrator VERIFIER_PUBLIC_IP demo-mesh 90
-```
+Workers run the desktop application (`apps/silicium-node`): the Windows
+installer, or the AppImage / `.deb` / `.rpm` on Linux. It starts `p2p_node` and
+`compute_daemon`, trusts the orchestrator through the pinned bootstrap address
+and restarts them at login. There is no separate server-side worker launcher.

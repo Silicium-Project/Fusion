@@ -15,13 +15,11 @@ if [[ -n "$free_kb" && "$free_kb" -lt "$minimum_free_kb" ]]; then
   echo "Low disk space (${free_kb} KiB free); reclaiming stale Rust build targets."
   rm -rf -- \
     apps/silicium-node/src-tauri/target \
-    Network/networked/p2p_node/target \
-    Network/networked/compute_daemon/target \
-    Network/workloads/raytracer/native/target
+    Network/target
 fi
 
-if [[ ! -d "apps/silicium-node" || ! -d "Network/networked/p2p_node" ]]; then
-  echo "Expected apps/silicium-node and Network/networked/p2p_node at $ROOT." >&2
+if [[ ! -d "apps/silicium-node" || ! -d "Network/crates/p2p-node" ]]; then
+  echo "Expected apps/silicium-node and Network/crates/p2p-node at $ROOT." >&2
   exit 1
 fi
 
@@ -32,6 +30,24 @@ export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 
 # Prime the exact AppImage tool cache before spending time compiling Rust.
 bash "$ROOT/deploy/ci/prepare-tauri-linux-tools.sh"
+
+# Printed when the bundle step fails: which linuxdeploy plugins answer, and
+# which host tools the GTK plugin needs.
+print_linuxdeploy_diagnostics() {
+  local tools="$1/cache/tauri"
+  echo "::group::linuxdeploy diagnostics"
+  ls -la -- "$tools" || true
+  local plugin
+  for plugin in "$tools"/linuxdeploy-plugin-*; do
+    echo "$plugin --plugin-api-version: $(TMPDIR="$1/tmp" APPIMAGE_EXTRACT_AND_RUN=1 "$plugin" --plugin-api-version 2>&1; echo " (exit $?)")"
+  done
+  TMPDIR="$1/tmp" APPIMAGE_EXTRACT_AND_RUN=1 "$tools/linuxdeploy-x86_64.AppImage" --appimage-extract-and-run --list-plugins || true
+  local tool
+  for tool in pkg-config pkgconf glib-compile-schemas gdk-pixbuf-query-loaders gtk-query-immodules-3.0 patchelf file ldd find; do
+    printf '%s: %s\n' "$tool" "$(command -v "$tool" || echo missing)"
+  done
+  echo "::endgroup::"
+}
 
 pushd apps/silicium-node >/dev/null
 export SILICIUM_RELEASE_CHANNEL="${SILICIUM_RELEASE_CHANNEL:-dev}"
@@ -65,9 +81,7 @@ npm run prepare:runtime:linux
 # release profile is reused by the tests and by the Tauri bundle below.
 rm -rf -- \
   src-tauri/target/debug \
-  ../../Network/networked/p2p_node/target/debug \
-  ../../Network/networked/compute_daemon/target/debug \
-  ../../Network/workloads/raytracer/native/target/debug
+  ../../Network/target/debug
 
 if [[ "${SILICIUM_RUN_RELEASE_TESTS:-0}" == "1" ]]; then
   echo "Testing silicium-node in release mode..."
@@ -78,12 +92,13 @@ fi
 rm -rf -- src-tauri/target/debug
 
 echo "Building p2p_node and compute_daemon..."
-cargo build --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/p2p_node/Cargo.toml
-cargo build --release --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/networked/compute_daemon/Cargo.toml
+# Network/ is a single Cargo workspace: one Cargo.lock, one target/ directory.
+cargo build --release --locked --jobs "$CARGO_BUILD_JOBS" --manifest-path ../../Network/Cargo.toml \
+  -p p2p_node -p compute_daemon
 
 mkdir -p src-tauri/resources/runtime/bin
-cp ../../Network/networked/p2p_node/target/release/p2p_node src-tauri/resources/runtime/bin/
-cp ../../Network/networked/compute_daemon/target/release/compute_daemon src-tauri/resources/runtime/bin/
+cp ../../Network/target/release/p2p_node src-tauri/resources/runtime/bin/
+cp ../../Network/target/release/compute_daemon src-tauri/resources/runtime/bin/
 
 # Keep the runtime targets available to the next build when disk allows it.
 # The CI lanes use `auto`: after copying the runtime binaries, reclaim the
@@ -94,8 +109,7 @@ if [[ "$reclaim_runtime_targets" == "1" ]] || \
    [[ "$reclaim_runtime_targets" == "auto" && -n "$runtime_free_kb" && "$runtime_free_kb" -lt "$minimum_free_kb" ]]; then
   rm -rf -- \
     src-tauri/target/raytracer-native \
-    ../../Network/networked/p2p_node/target \
-    ../../Network/networked/compute_daemon/target
+    ../../Network/target
 fi
 
 df -h "$ROOT"
@@ -103,7 +117,28 @@ df -h "$ROOT"
 # The frontend was already built above; avoid invoking Vite a second time from
 # Tauri's beforeBuildCommand.
 export SILICIUM_SKIP_FRONTEND_BUILD="1"
-npx tauri build --bundles deb,appimage,rpm "${tauri_config_args[@]}"
+# linuxdeploy is itself an AppImage: extract-and-run does not need FUSE, which
+# a shared self-hosted runner may not offer (missing or busy /dev/fuse). Its
+# bundled `strip` is also too old for the .relr.dyn sections of recent system
+# libraries and makes the AppImage step fail; the libraries stay unstripped.
+export APPIMAGE_EXTRACT_AND_RUN=1
+export NO_STRIP=true
+# Tauri runs linuxdeploy and its plugins from <XDG cache>/tauri, and each
+# AppImage extracts itself under $TMPDIR. Several runners share this host: a
+# parallel job can rewrite those tools or clean the extracted copy this one is
+# executing ("subprocess failed (exit code 127)"). The bundle step gets its own
+# copy of the tools and its own TMPDIR.
+bundle_tmp="$(mktemp -d "${RUNNER_TEMP:-/tmp}/silicium-bundle.XXXXXX")"
+trap 'rm -rf -- "$bundle_tmp"' EXIT
+mkdir -p "$bundle_tmp/cache/tauri" "$bundle_tmp/tmp"
+cp -a -- "${XDG_CACHE_HOME:-$HOME/.cache}/tauri/." "$bundle_tmp/cache/tauri/"
+
+# --verbose prints linuxdeploy's own output, the only place its errors appear.
+if ! XDG_CACHE_HOME="$bundle_tmp/cache" TMPDIR="$bundle_tmp/tmp" \
+  npx tauri build --verbose --bundles deb,appimage,rpm "${tauri_config_args[@]}"; then
+  print_linuxdeploy_diagnostics "$bundle_tmp"
+  exit 1
+fi
 
 appimage_path="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
 deb_path="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"

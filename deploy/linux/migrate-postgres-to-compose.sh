@@ -149,14 +149,14 @@ SQL
   fi
   "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 \
     -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-    -c "\\copy jobs (id, user_id, title, description, workload, priority, status, silicium_job_id, input_path, result_path, summary_path, devnet_trace_path, devnet_job, dashboard_url, error_message, started_at, completed_at, created_at, updated_at) FROM STDIN WITH (FORMAT csv, NULL '\\N')" < <(
+    -c "\\copy jobs (id, user_id, title, description, workload, priority, status, silicium_job_id, input_path, result_path, summary_path, devnet_trace_path, devnet_job, error_message, started_at, completed_at, created_at, updated_at) FROM STDIN WITH (FORMAT csv, NULL '\\N')" < <(
       sqlite3 "$SQLITE_PATH" <<'SQL'
 .mode csv
 .headers off
 .nullvalue \N
 SELECT id, user_id, title, description, workload, priority, status,
        silicium_job_id, input_path, result_path, summary_path,
-       devnet_trace_path, devnet_job, dashboard_url, error_message,
+       devnet_trace_path, devnet_job, error_message,
        started_at, completed_at, created_at, updated_at
 FROM jobs;
 SQL

@@ -8,7 +8,6 @@ CHANNEL_TOOL="$SILICIUM_ROOT/deploy/release/channel.py"
 python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" >/dev/null
 channel_config_dir="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field config_dir)"
 channel_data_root="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field data_dir)"
-channel_orchestrator_port="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field orchestrator_port)"
 channel_public_base_url="$(python3 "$CHANNEL_TOOL" "$RELEASE_CHANNEL" --field public_base_url)"
 CONFIG_DIR="${SILICIUM_CONFIG_DIR:-$channel_config_dir}"
 DATA_ROOT="${SILICIUM_DATA_ROOT:-$channel_data_root}"
@@ -38,13 +37,6 @@ export SILICIUM_PROD_RELEASE_BUILD="${SILICIUM_PROD_RELEASE_BUILD:-$SILICIUM_REL
 export SILICIUM_DEV_CHECK_INTERVAL_SECONDS="${SILICIUM_DEV_CHECK_INTERVAL_SECONDS:-30}"
 export SILICIUM_PROD_CHECK_INTERVAL_SECONDS="${SILICIUM_PROD_CHECK_INTERVAL_SECONDS:-21600}"
 export SILICIUM_UPDATE_SIGNING_KEY="${SILICIUM_UPDATE_SIGNING_KEY:-$CONFIG_DIR/update-signing-key.pem}"
-export SILICIUM_UPDATE_P2P_DIR="${SILICIUM_UPDATE_P2P_DIR:-$DATA_ROOT/network/orchestrator/export/p2p}"
-if [[ -z "${SILICIUM_UPDATE_GOSSIP_URL:-}" || "$SILICIUM_UPDATE_GOSSIP_URL" == "http://127.0.0.1:46100/gossip/publish" ]]; then
-  export SILICIUM_UPDATE_GOSSIP_URL="http://127.0.0.1:${channel_orchestrator_port}/gossip/publish"
-fi
-export SILICIUM_MESH_KEY="${SILICIUM_MESH_KEY:-demo-mesh}"
-export SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY="${SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY:-$DATA_ROOT/update-publisher/peer_identity_ed25519.pem}"
-export SILICIUM_UPDATE_GOSSIP_REQUIRED="${SILICIUM_UPDATE_GOSSIP_REQUIRED:-0}"
 export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
 python3 "$SILICIUM_ROOT/deploy/release/channel.py" "$SILICIUM_RELEASE_CHANNEL" >/dev/null
 
@@ -55,13 +47,9 @@ import hashlib
 import base64
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
-import time
-import urllib.request
-from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -79,10 +67,8 @@ existing_channels = (
     else {}
 )
 signing_key = Path(os.environ["SILICIUM_UPDATE_SIGNING_KEY"])
-p2p_dir = Path(os.environ["SILICIUM_UPDATE_P2P_DIR"])
 if not signing_key.is_file():
     raise SystemExit(f"update signing key not found: {signing_key}")
-p2p_dir.mkdir(parents=True, exist_ok=True)
 public_der = subprocess.run(
     ["openssl", "pkey", "-in", str(signing_key), "-pubout", "-outform", "DER"],
     check=True,
@@ -132,54 +118,6 @@ missing_artifacts = [
 if missing_artifacts:
     raise SystemExit("required node artifacts are missing: " + ", ".join(missing_artifacts))
 
-
-def signed_peer_headers(url: str, body: bytes) -> dict[str, str]:
-    private_key = Path(os.environ["SILICIUM_UPDATE_PUBLISHER_IDENTITY_KEY"])
-    public_key = private_key.with_suffix(".pub.pem")
-    private_key.parent.mkdir(parents=True, exist_ok=True)
-    if not private_key.is_file():
-        subprocess.run(
-            ["openssl", "genpkey", "-algorithm", "Ed25519", "-out", str(private_key)],
-            check=True,
-            capture_output=True,
-        )
-        private_key.chmod(0o600)
-    if not public_key.is_file():
-        subprocess.run(
-            ["openssl", "pkey", "-in", str(private_key), "-pubout", "-out", str(public_key)],
-            check=True,
-            capture_output=True,
-        )
-    public_pem = public_key.read_bytes()
-    public_key_b64 = base64.b64encode(public_pem).decode("ascii")
-    identity_id = hashlib.sha256(public_pem).hexdigest()[:32]
-    node_id = "update-publisher"
-    timestamp = str(int(time.time()))
-    body_hash = hashlib.sha256(body).hexdigest()
-    parsed = urlsplit(url)
-    request_path = parsed.path or "/"
-    if parsed.query:
-        request_path += "?" + parsed.query
-    signing_payload = "\n".join(
-        ["POST", request_path, timestamp, body_hash, node_id, identity_id]
-    ).encode("utf-8")
-    with tempfile.NamedTemporaryFile() as signing_input:
-        signing_input.write(signing_payload)
-        signing_input.flush()
-        signature = subprocess.run(
-            ["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(private_key), "-in", signing_input.name],
-            check=True,
-            capture_output=True,
-        ).stdout.hex()
-    return {
-        "Content-Type": "application/json",
-        "X-Silicium-Node-Id": node_id,
-        "X-Silicium-Identity-Id": identity_id,
-        "X-Silicium-Public-Key": public_key_b64,
-        "X-Silicium-Timestamp": timestamp,
-        "X-Silicium-Body-Hash": body_hash,
-        "X-Silicium-Signature": signature,
-    }
 
 releases = []
 existing_releases = existing_manifest.get("releases", []) if isinstance(existing_manifest, dict) else []
@@ -234,14 +172,6 @@ for channel, definition in definitions.items():
                 capture_output=True,
                 text=True,
             ).stdout.strip()
-        cached_artifact = p2p_dir / content_id
-        if not cached_artifact.is_file() or cached_artifact.stat().st_size != artifact.stat().st_size:
-            temporary_artifact = p2p_dir / f".{content_id}.tmp"
-            shutil.copyfile(artifact, temporary_artifact)
-            if hashlib.sha256(temporary_artifact.read_bytes()).hexdigest() != digest:
-                temporary_artifact.unlink(missing_ok=True)
-                raise SystemExit(f"P2P update cache verification failed: {artifact}")
-            temporary_artifact.replace(cached_artifact)
         release = {
             "version": version,
             "build": release_build,
@@ -296,24 +226,4 @@ payload = {
 temporary = downloads / ".update-manifest.json.tmp"
 temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 temporary.replace(manifest_path)
-
-gossip_url = os.environ.get("SILICIUM_UPDATE_GOSSIP_URL", "").strip()
-mesh_key = os.environ.get("SILICIUM_MESH_KEY", "").strip()
-if gossip_url:
-    gossip_failures = []
-    for release in releases:
-        body = json.dumps({"topic": "software_update", "payload": release}, separators=(",", ":")).encode("utf-8")
-        headers = signed_peer_headers(gossip_url, body)
-        if mesh_key:
-            headers["Authorization"] = f"Bearer {mesh_key}"
-        request = urllib.request.Request(gossip_url, data=body, method="POST", headers=headers)
-        try:
-            with urllib.request.urlopen(request, timeout=10) as response:
-                if response.status not in {200, 202}:
-                    raise RuntimeError(f"HTTP {response.status}")
-        except Exception as exc:
-            gossip_failures.append(f"{release['channel']}: {exc}")
-            print(f"warning: update gossip publication failed for {release['channel']}: {exc}", file=sys.stderr)
-    if gossip_failures and os.environ.get("SILICIUM_UPDATE_GOSSIP_REQUIRED", "1") == "1":
-        raise SystemExit("update gossip publication required: " + "; ".join(gossip_failures))
 PY
