@@ -99,7 +99,14 @@ df -h "$ROOT"
 # The frontend was already built above; avoid invoking Vite a second time from
 # Tauri's beforeBuildCommand.
 export SILICIUM_SKIP_FRONTEND_BUILD="1"
-npx tauri build --bundles deb,appimage,rpm "${tauri_config_args[@]}"
+# linuxdeploy is itself an AppImage: extract-and-run does not need FUSE, which
+# a shared self-hosted runner may not offer (missing or busy /dev/fuse). Its
+# bundled `strip` is also too old for the .relr.dyn sections of recent system
+# libraries and makes the AppImage step fail; the libraries stay unstripped.
+export APPIMAGE_EXTRACT_AND_RUN=1
+export NO_STRIP=true
+# --verbose prints linuxdeploy's own output, the only place its errors appear.
+npx tauri build --verbose --bundles deb,appimage,rpm "${tauri_config_args[@]}"
 
 appimage_path="$(find src-tauri/target/release/bundle/appimage -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
 deb_path="$(find src-tauri/target/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"

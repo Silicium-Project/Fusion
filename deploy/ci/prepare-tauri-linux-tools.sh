@@ -20,16 +20,29 @@ curl_args=(
   --retry-max-time 300
 )
 
+# A cached tool restored from an interrupted job can be truncated or be an HTML
+# error page: AppImages must be ELF executables, scripts must start with #!.
+tool_looks_complete() {
+  local path="$1"
+  local magic
+  magic="$(head -c 4 -- "$path" | od -An -tx1 | tr -d ' \n')"
+  case "$path" in
+    *.sh) [[ "$(head -c 2 -- "$path")" == "#!" ]] ;;
+    *) [[ "$magic" == "7f454c46" ]] ;;
+  esac
+}
+
 download_tool() {
   local destination="$1"
   local url="$2"
   local temporary="${destination}.download.$$"
 
-  if [[ -s "$destination" ]]; then
+  if [[ -s "$destination" ]] && tool_looks_complete "$destination"; then
     chmod +x "$destination"
     echo "Tauri bundler cache hit: $(basename "$destination")"
     return 0
   fi
+  rm -f -- "$destination"
 
   echo "Prefetching Tauri bundler tool: $(basename "$destination")"
   if curl "${curl_args[@]}" --output "$temporary" "$url"; then
