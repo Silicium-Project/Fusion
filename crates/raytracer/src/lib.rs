@@ -10,8 +10,9 @@
 //!
 //! The `silicium-raytracer` binary (`src/main.rs`) renders a scene (default) or
 //! runs one pipeline step (`split`, `milestones`, `verify`, `reassemble`,
-//! `validate`) and prints JSON.
+//! `validate`, `check`) and prints JSON.
 
+pub mod check;
 pub mod math;
 pub mod parser;
 pub mod pipeline;

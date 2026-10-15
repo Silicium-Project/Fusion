@@ -33,6 +33,7 @@ La crate fournit une bibliothèque (`silicium_raytracer`) et le binaire
 | `src/math.rs` | `Vec3`, `Ray` |
 | `src/scene.rs` | `Scene`, `Primitive`, `Material`, `Light`, intersections |
 | `src/parser.rs` | Lecture des fichiers `.cfg` |
+| `src/check.rs` | Vérification d'une scène (`check`) : clés inconnues ou mal écrites, valeurs hors limites, résolution que le découpage lirait autrement, etc. Les mêmes règles tournent dans le site (`FrontEnd/utils/sceneCheck.ts`) ; `tests/fixtures/check_cases.json` est partagé avec lui |
 | `src/trace.rs` | Lancer de rayons (ombres, Phong, réflexions) |
 | `src/render.rs` | `RenderOptions`, rendu multi-thread d'une tuile, progression |
 | `src/pipeline/` | Chaîne des tuiles : `tiles` (découpage centre → bords), `milestones` (engagement par blocs de lignes), `sampling` (vérification probabiliste), `reassemble`, `png`, `ppm` |
@@ -48,6 +49,7 @@ silicium-raytracer reassemble --fragment a.ppm --x-start 0 --y-start 0 --fragmen
 silicium-raytracer validate tuile.ppm [--task-id ID] [--width W] [--height H] [--expected-hash H]
 silicium-raytracer png tuile.ppm --output apercu.png        # code 1 si la tuile est invalide
 silicium-raytracer resolution scene.cfg                     # {"width", "height"} (1920x1080 par défaut)
+silicium-raytracer check scene.cfg                          # problèmes de la scène avec leur ligne (code 2 si erreur)
 ```
 
 Chaque étape affiche un objet JSON. C'est la **seule** implémentation de la

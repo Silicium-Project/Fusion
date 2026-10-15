@@ -8,19 +8,22 @@
 //! | `checks` | `milestones`, `verify`, `validate` |
 //! | `reassemble` | `reassemble` (final image) |
 //! | `image` | `png` (tile preview), `resolution` (scene size) |
+//! | `scene` | `check` (problems of a scene file, with line numbers) |
 //! | `options` | argument parsing and file helpers |
 
 mod checks;
 mod image;
 mod options;
 mod reassemble;
+mod scene;
 mod split;
 
 use options::Options;
 use serde_json::Value;
 
 /// Names handled here instead of rendering.
-pub const NAMES: [&str; 7] = [
+pub const NAMES: [&str; 8] = [
+    "check",
     "split",
     "milestones",
     "verify",
@@ -34,6 +37,7 @@ pub const NAMES: [&str; 7] = [
 pub fn run(name: &str, args: &[String]) -> Result<(Value, i32), String> {
     let options = Options::parse(args)?;
     match name {
+        "check" => scene::check_command(&options),
         "split" => split::run(&options),
         "milestones" => checks::milestones_command(&options),
         "verify" => checks::verify_command(&options),

@@ -94,7 +94,12 @@ fn material(source: &[String], default_reflectivity: f64) -> Material {
 /// Reads and parses a scene file.
 pub fn parse_scene(path: &Path) -> Result<Scene, String> {
     let text = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    let source = tokens(&text);
+    Ok(parse_scene_text(&text))
+}
+
+/// Parses the text of a scene file (never fails: missing keys take defaults).
+pub fn parse_scene_text(text: &str) -> Scene {
+    let source = tokens(text);
     let camera_block = blocks(&source, "camera")
         .into_iter()
         .next()
@@ -150,7 +155,7 @@ pub fn parse_scene(path: &Path) -> Result<Scene, String> {
             color: Vec3::new(1.0, 1.0, 1.0),
         });
     }
-    Ok(Scene {
+    Scene {
         width: scalar(&camera_block, "width", 320.0).max(1.0) as usize,
         height: scalar(&camera_block, "height", 200.0).max(1.0) as usize,
         fov: scalar(&camera_block, "fieldOfView", 55.0).clamp(1.0, 179.0),
@@ -161,7 +166,7 @@ pub fn parse_scene(path: &Path) -> Result<Scene, String> {
         ),
         primitives,
         lights,
-    })
+    }
 }
 
 #[cfg(test)]
