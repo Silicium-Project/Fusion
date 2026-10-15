@@ -23,6 +23,8 @@ test('a job can be submitted and opens its canonical detail route', async ({ pag
   const continueButton = page.getByRole('button', { name: 'Continuer' });
   await expect(continueButton).toBeVisible();
   await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Rendu architecture');
+  // Raytracer jobs open on the scene editor; an existing .cfg is imported.
+  await page.getByRole('radio', { name: /Importer un fichier/ }).click();
   await page.locator('input[type=file]').setInputFiles({
     name: 'demo-scene.cfg',
     mimeType: 'text/plain',
@@ -34,6 +36,8 @@ camera :
 }
 `),
   });
+  // Checked before sending: no object and no light are warnings, not errors.
+  await expect(page.getByText('2 points à vérifier')).toBeVisible();
   await continueButton.click();
   await page.getByRole('button', { name: 'Continuer' }).click();
   const submit = page.getByRole('button', { name: 'Lancer le calcul' });
@@ -41,6 +45,47 @@ camera :
   await submit.click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
   await expect(page.getByRole('heading', { name: 'Rendu architecture' })).toBeVisible();
+});
+
+test('a scene composed in the editor is sent as a .cfg file', async ({ page }) => {
+  let sent = '';
+  await page.route('**/api/jobs', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent = route.request().postData() || '';
+    return route.fulfill({ status: 202, json: job });
+  });
+  await page.goto('/jobs/new');
+  await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Mon studio');
+  await page.getByRole('button', { name: /Studio/ }).click();
+  await expect(page.getByText('Modèle « Studio » chargé.')).toBeVisible();
+  await expect(page.getByRole('img', { name: /Aperçu de la scène/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await expect(page.getByText('mon-studio.cfg')).toBeVisible();
+  await expect(page.getByText('1080 × 1080 · 3 objets · 2 lumières')).toBeVisible();
+  await page.getByRole('button', { name: 'Lancer le calcul' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
+  expect(sent).toContain('filename="mon-studio.cfg"');
+  expect(sent).toContain('resolution = { width = 1080 height = 1080 }');
+  expect(sent).toContain('sphere = {');
+});
+
+test('an imported scene with errors is blocked until it is fixed in the editor', async ({ page }) => {
+  await page.goto('/jobs/new');
+  await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Scène cassée');
+  await page.getByRole('radio', { name: /Importer un fichier/ }).click();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'broken.cfg',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('camera : {\n  resolution = { height = 32 width = 64 }\n};\nprimitives : {\n  sphere = { x = 5 radus = 1 }\n};\nlights : { point = { x = 1 } };\n'),
+  });
+  await expect(page.getByText('1 erreur à corriger')).toBeVisible();
+  await expect(page.getByText('Vouliez-vous dire « radius » ?')).toBeVisible();
+  const continueButton = page.getByRole('button', { name: 'Continuer' });
+  await expect(continueButton).toBeDisabled();
+  await page.getByRole('button', { name: 'Ouvrir dans l’éditeur' }).click();
+  await expect(page.getByRole('img', { name: /Aperçu de la scène/ })).toBeVisible();
+  await expect(continueButton).toBeEnabled();
 });
 
 test('a failed job keeps the worker traceback visible', async ({ page }) => {
