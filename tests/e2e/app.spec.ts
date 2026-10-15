@@ -55,7 +55,11 @@ test('a scene composed in the editor is sent as a .cfg file', async ({ page }) =
     return route.fulfill({ status: 202, json: job });
   });
   await page.goto('/jobs/new');
+  // Without a name, "Continue" is disabled and says why.
+  await expect(page.getByRole('button', { name: 'Continuer' })).toBeDisabled();
+  await expect(page.getByText('Donnez un nom à votre projet pour continuer.')).toBeVisible();
   await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Mon studio');
+  await expect(page.getByRole('button', { name: 'Continuer' })).toBeEnabled();
   await page.getByRole('button', { name: /Studio/ }).click();
   await expect(page.getByText('Modèle « Studio » chargé.')).toBeVisible();
   await expect(page.getByRole('img', { name: /Aperçu de la scène/ })).toBeVisible();

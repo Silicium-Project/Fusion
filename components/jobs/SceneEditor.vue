@@ -5,7 +5,7 @@
       <div class="scene-templates__list">
         <button v-for="name in SCENE_TEMPLATES" :key="name" type="button" class="scene-template" :class="{ 'scene-template--active': template === name }" @click="loadTemplate(name)">
           <span class="scene-template__thumb" :style="{ backgroundImage: thumbnails[name] ? `url(${thumbnails[name]})` : undefined }"></span>
-          <span>{{ t(`sceneEditor.templates.${name}`) }}</span>
+          <span class="scene-template__name">{{ t(`sceneEditor.templates.${name}`) }}</span>
         </button>
       </div>
       <p v-if="undoScene && cfg === loadedCfg" class="scene-templates__undo" role="status">{{ t('sceneEditor.loaded', { name: t(`sceneEditor.templates.${template}`) }) }} <button type="button" @click="undo">{{ t('sceneEditor.undo') }}</button></p>
@@ -291,12 +291,16 @@ watch(cfg, () => {
   timer = setTimeout(renderPreview, 30);
 });
 
+const THUMB_WIDTH = 128;
+const THUMB_HEIGHT = 80;
 function renderThumbnails(index = 0) {
   const name = SCENE_TEMPLATES[index];
   if (!name || !thumbnailRenderer) return;
   const model = sceneTemplate(name);
   const path = RENDER_QUALITIES[model.quality || 'draft'].mode === 'path';
-  thumbnailRenderer.render({ text: sceneToCfg(model), ...previewSize(model, 120, 75), target: path ? 6 : 1 });
+  // Every thumbnail has the frame of the cards (16:10), whatever the image size of the template.
+  const text = sceneToCfg(model).replace(/resolution = \{ width = \d+ height = \d+ \}/, `resolution = { width = ${THUMB_WIDTH} height = ${THUMB_HEIGHT} }`);
+  thumbnailRenderer.render({ text, width: THUMB_WIDTH, height: THUMB_HEIGHT, target: path ? 6 : 1 });
   pendingThumbnail = name;
 }
 let pendingThumbnail: SceneTemplate | undefined;
@@ -482,9 +486,10 @@ const fromHex = (hex: string): Rgb => [1, 3, 5].map((start) => parseInt(hex.slic
 <style scoped>
 .scene-editor{display:grid;min-width:0;gap:1rem;container-type:inline-size}.scene-editor>*{min-width:0}
 .scene-templates{display:grid;gap:.5rem}.scene-templates__list{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:.5rem}
-.scene-template{display:grid;gap:.35rem;padding:.35rem;border:1px solid var(--border);border-radius:.7rem;background:white;color:var(--ink-800);font:inherit;font-size:.82rem;font-weight:650;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.scene-template{display:grid;grid-template-rows:auto 1fr;align-content:start;gap:.35rem;min-width:0;padding:.35rem;border:1px solid var(--border);border-radius:.7rem;background:white;color:var(--ink-800);font:inherit;font-size:.82rem;font-weight:650;text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s}
 .scene-template:hover{border-color:var(--mint-500)}.scene-template--active{border-color:var(--mint-600);box-shadow:0 0 0 3px var(--mint-100)}
-.scene-template__thumb{display:block;aspect-ratio:16/10;border-radius:.45rem;background:linear-gradient(180deg,#5e8ad6,#a9c0e8) center/cover no-repeat}
+.scene-template__thumb{display:block;width:100%;aspect-ratio:16/10;border-radius:.45rem;background:linear-gradient(180deg,#5e8ad6,#a9c0e8) center/cover no-repeat}
+.scene-template__name{display:-webkit-box;min-height:2.4em;overflow:hidden;line-height:1.2;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .scene-templates__undo{margin:0;color:var(--ink-600);font-size:.84rem}.scene-templates__undo button{padding:0;border:0;background:none;color:var(--mint-700);font:inherit;font-weight:750;text-decoration:underline;cursor:pointer}
 
 .scene-workspace{display:grid;gap:1rem;align-items:start}.scene-workspace>*{min-width:0}
