@@ -109,7 +109,7 @@ const acknowledgeSharing = ref(false);
 const dragging = ref(false);
 /** Raytracer jobs: the scene is composed in the editor, or imported as a `.cfg`. */
 const sceneSource = ref<'compose' | 'import'>('compose');
-const scene = ref<SceneModel>(sceneTemplate('demo'));
+const scene = ref<SceneModel>(sceneTemplate('showcase'));
 /** Text of the imported `.cfg`, checked before it is sent. */
 const sceneText = ref('');
 /** Workloads the Rust node runs (BackEnd `ValidateWorkload`); `anchor` is their section of /workloads. */
@@ -130,8 +130,12 @@ const sceneReady = computed(() => (composeMode.value ? scene.value.objects.lengt
 /** Resolution, objects and lights of the scene, for the review step. */
 const reviewScene = computed(() => {
   if (!raytracerMode.value) return null;
-  const report = composeMode.value ? checkScene(sceneToCfg(scene.value)) : sceneReport.value;
-  return report ? sceneSummaryText(report.scene) : null;
+  if (composeMode.value) {
+    // Counted as the user sees them in the editor (a box is one object, not 6 faces).
+    const report = checkScene(sceneToCfg(scene.value));
+    return sceneSummaryText({ ...report.scene, triangles: 0 }, { objects: scene.value.objects.length, lights: scene.value.lights.length });
+  }
+  return sceneReport.value ? sceneSummaryText(sceneReport.value.scene) : null;
 });
 /** What the imported file uses that the editor cannot show. */
 const sceneLimits = computed(() => (sceneText.value ? editorLimits(sceneText.value) : []));

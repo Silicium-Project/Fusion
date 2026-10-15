@@ -1,7 +1,7 @@
 <template>
   <div class="app-page new-job-page">
-    <header><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>{{ t('newJob.back') }}</NuxtLink><span class="eyebrow">{{ t('common.newJob') }}</span><h1 class="page-title">{{ t('newJob.title') }}</h1><p class="page-intro">{{ t('newJob.intro') }}</p></header>
-    <div class="new-job-layout"><UiCard :title="t('newJob.card')" :description="t('newJob.cardText')" padded><JobForm :submitting="submitting" :error="error" :initial-workload="initialWorkload" :collection-id="collectionId" @submit="submit" /></UiCard><aside class="stack"><UiCard :title="t('newJob.journey')" padded><ol class="expectations"><li v-for="(item,index) in tl<{ title: string; text: string }>('newJob.expectations')" :key="index"><span>{{ index + 1 }}</span><div><strong>{{ item.title }}</strong><small>{{ item.text }}</small></div></li></ol></UiCard><UiNotice :title="t('newJob.help')">{{ t('newJob.helpText') }} <NuxtLink to="/workloads" class="inline-link">{{ t('newJob.helpLink') }}</NuxtLink></UiNotice><UiNotice :title="t('newJob.after')">{{ t('newJob.afterText') }}</UiNotice></aside></div>
+    <header><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>{{ t('newJob.back') }}</NuxtLink><span class="eyebrow">{{ t('common.newJob') }}</span><h1 class="page-title">{{ t('newJob.title') }}</h1><p class="page-intro">{{ t('newJob.intro') }}</p><p class="new-job-help">{{ t('newJob.help') }} {{ t('newJob.helpText') }} <NuxtLink to="/workloads" class="inline-link">{{ t('newJob.helpLink') }}</NuxtLink></p></header>
+    <UiCard :title="t('newJob.card')" :description="t('newJob.cardText')" padded><JobForm :submitting="submitting" :error="error" :initial-workload="initialWorkload" :collection-id="collectionId" @submit="submit" /></UiCard>
   </div>
 </template>
 
@@ -20,11 +20,11 @@ const initialWorkload = computed(() => {
   return typeof route.query.workload === 'string' && ['raytracer', 'calcul/integrity/sha256'].includes(route.query.workload) ? route.query.workload : '';
 });
 const router = useRouter(); const { createJob } = useJobs(); const submitting = ref(false); const error = ref('');
-const { t, tl } = useI18n();
+const { t } = useI18n();
 async function submit(input: CreateJobInput) { submitting.value = true; error.value = ''; try { const job = await createJob(input); await router.push(`/jobs/${job.id}`); } catch (failure) { error.value = extractJobError(failure); } finally { submitting.value = false; } }
 useSeoMeta({ title: () => `${t('common.newJob')} — Silicium` });
 </script>
 
 <style scoped>
-.new-job-page>header{display:grid;gap:.7rem;max-width:760px}.back-link{display:inline-flex;width:max-content;align-items:center;gap:.4rem;margin-bottom:.2rem;color:var(--ink-500);font-size:.881rem;font-weight:700}.back-link svg{width:.78rem;transform:rotate(180deg)}.new-job-page>header .eyebrow{display:block}.new-job-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr);gap:1rem}.expectations{display:grid;gap:.8rem;margin:0;padding:0;list-style:none}.expectations li{display:grid;grid-template-columns:1.8rem 1fr;gap:.7rem}.expectations li>span{display:grid;width:1.8rem;height:1.8rem;place-items:center;border-radius:.5rem;background:var(--mint-100);color:var(--mint-700);font-size:.864rem;font-weight:850}.expectations strong,.expectations small{display:block}.expectations strong{font-size:.891rem}.expectations small{margin-top:.2rem;color:var(--ink-500);font-size:.857rem;line-height:1.45}.inline-link{color:var(--mint-700);font-weight:750;text-decoration:underline;text-underline-offset:2px}@media(max-width:980px){.new-job-layout{grid-template-columns:1fr}}
+.new-job-page>header{display:grid;gap:.7rem;max-width:760px}.back-link{display:inline-flex;width:max-content;align-items:center;gap:.4rem;margin-bottom:.2rem;color:var(--ink-500);font-size:.881rem;font-weight:700}.back-link svg{width:.78rem;transform:rotate(180deg)}.new-job-page>header .eyebrow{display:block}.new-job-help{margin:0;color:var(--ink-500);font-size:.9rem;line-height:1.5}.inline-link{color:var(--mint-700);font-weight:750;text-decoration:underline;text-underline-offset:2px}
 </style>

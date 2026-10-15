@@ -80,6 +80,7 @@ test('the photorealistic quality sends an engine-2 scene to the network', async 
   await page.goto('/jobs/new');
   await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Miroirs photo');
   await page.getByRole('button', { name: /Miroirs/ }).click();
+  await page.getByRole('tab', { name: 'Rendu' }).click();
   await page.getByLabel('Qualité du rendu final').selectOption('photo');
   await expect(page.getByText(/256 rayons par pixel, éclairage global/)).toBeVisible();
   await page.getByRole('button', { name: 'Continuer' }).click();
@@ -127,13 +128,54 @@ test('an advanced scene is checked in the browser and sent as it is', async ({ p
       '  plane = { z = -1 type = diffuse }',
       '}',
       'lights : { area = { x = 2 y = -3 z = 4 radius = 0.5 intensity = 300 } }',
+      'animation : { frames = 24 fps = 24 }',
     ].join('\n')),
   });
   await expect(page.getByText('Fichier de scène valide')).toBeVisible();
   await expect(page.getByText('320 × 180 · 2 objets · 1 lumière · 6 triangles · 64 rayons par pixel')).toBeVisible();
-  await expect(page.getByText(/ne sait pas encore montrer/)).toBeVisible();
+  await expect(page.getByText(/ne sait pas encore montrer les animations/)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Ouvrir dans l’éditeur' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Continuer' })).toBeEnabled();
+});
+
+test('a scene with glass, boxes, area lights and an aimed camera opens in the editor', async ({ page }) => {
+  let sent = '';
+  await page.route('**/api/jobs', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent = route.request().postData() || '';
+    return route.fulfill({ status: 202, json: job });
+  });
+  await page.goto('/jobs/new');
+  await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Scène verre');
+  await page.getByRole('radio', { name: /Importer un fichier/ }).click();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'verre.cfg',
+    mimeType: 'text/plain',
+    buffer: Buffer.from([
+      'render : { mode = path samples = 64 }',
+      'camera : { resolution = { width = 320 height = 180 } position = { x = 0 y = 0 z = 1 } look_at = { x = 5 y = 0 z = 0 } }',
+      'materials : { material = { name = verre type = glass } }',
+      'primitives : {',
+      '  sphere = { x = 5 radius = 1 material = verre }',
+      '  box = { translate = { x = 6 y = 2 } rotate = { z = 30 } type = metal roughness = 0.2 }',
+      '  plane = { z = -1 type = diffuse }',
+      '}',
+      'lights : { area = { x = 2 y = -3 z = 4 radius = 0.5 intensity = 300 } }',
+    ].join('\n')),
+  });
+  await page.getByRole('button', { name: 'Ouvrir dans l’éditeur' }).click();
+  await expect(page.getByRole('img', { name: /Aperçu de la scène/ })).toBeVisible();
+  await expect(page.getByRole('tab', { name: /Objets/ })).toContainText('3');
+  await expect(page.getByRole('button', { name: /^Boîte 1/ })).toBeVisible();
+  await expect(page.getByText(/Aperçu terminé|Aperçu en cours/)).toBeVisible();
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await expect(page.getByText('320 × 180 · 3 objets · 1 lumière · 256 rayons par pixel')).toBeVisible();
+  await page.getByRole('button', { name: 'Lancer le calcul' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
+  expect(sent).toContain('type = glass');
+  expect(sent).toContain('box = {');
+  expect(sent).toContain('area = {');
 });
 
 test('a failed job keeps the worker traceback visible', async ({ page }) => {

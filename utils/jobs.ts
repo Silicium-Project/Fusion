@@ -2,12 +2,12 @@ import { translate } from './i18n';
 import type { SceneSummary } from './sceneCheck';
 
 /** "1280 × 720 · 3 objets · 2 lumières" (+ triangles and rays per pixel when there are some). */
-export function sceneSummaryText(scene: SceneSummary): string {
+export function sceneSummaryText(scene: SceneSummary, counts?: { objects: number; lights: number }): string {
   const parts = [translate('jobForm.sceneSummary', {
     width: scene.width,
     height: scene.height,
-    objects: translate('jobForm.objectCount', { count: scene.spheres + scene.planes }),
-    lights: translate('jobForm.lightCount', { count: scene.lights }),
+    objects: translate('jobForm.objectCount', { count: counts?.objects ?? scene.spheres + scene.planes }),
+    lights: translate('jobForm.lightCount', { count: counts?.lights ?? scene.lights }),
   })];
   if (scene.triangles) parts.push(translate('jobForm.triangleCount', { count: scene.triangles }));
   if (scene.samples > 1) parts.push(translate('jobForm.sceneQuality', { samples: scene.samples }));
