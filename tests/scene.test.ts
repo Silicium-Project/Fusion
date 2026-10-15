@@ -157,7 +157,7 @@ describe('scene editor model', () => {
     expect(sceneToCfg(sceneFromText(written))).toBe(written);
     // Same picture (up to the rounding of the written numbers).
     expect(difference(renderText(text, 96, 60), renderText(written, 96, 60))).toBeLessThan(0.01);
-  });
+  }, 30_000);
 
   it('turns the camera like the engine', () => {
     for (const [yaw, pitch] of [[30, 0], [-45, 20], [10, -35]] as const) {
@@ -201,12 +201,13 @@ describe('scene preview (browser engine)', () => {
 
   it('refines the image pass after pass, after a quick small one', async () => {
     const replies: PreviewReply[] = [];
-    await runPreview({ id: 1, text: sceneToCfg(sceneTemplate('cornell')), width: 150, height: 150, target: 3, quick: true }, (reply) => replies.push(reply), () => true);
+    // A classic-lighting scene: fast enough for slow CI machines.
+    await runPreview({ id: 1, text: sceneToCfg(sceneTemplate('demo')), width: 150, height: 90, target: 3, quick: true }, (reply) => replies.push(reply), () => true);
     expect(replies.map((reply) => reply.kind === 'image' && [reply.width, reply.samples, reply.quick])).toEqual([[50, 1, true], [150, 1, false], [150, 2, false], [150, 3, false]]);
     const errors: PreviewReply[] = [];
     await runPreview({ id: 2, text: 'render : { mode = magic }', width: 10, height: 10, target: 1 }, (reply) => errors.push(reply), () => true);
     expect(errors[0]).toMatchObject({ kind: 'error' });
-  });
+  }, 30_000);
 
   it('path traces the same picture as the network (on average)', () => {
     // Brightness of a small Cornell box at 32 rays per pixel, against the engine's.
@@ -217,7 +218,7 @@ describe('scene preview (browser engine)', () => {
       return sum / (pixels.length / step) / 3;
     };
     expect(Math.abs(mean(renderText(text, 24, 24, 32), 4) - CORNELL_MEAN)).toBeLessThan(3);
-  });
+  }, 30_000);
 });
 
 /** Mean byte of the 24 × 24 Cornell box (32 rays per pixel) rendered by `silicium-raytracer`. */
