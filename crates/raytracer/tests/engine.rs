@@ -251,3 +251,32 @@ fn scenes_written_by_the_site_editor_are_valid() {
     );
     assert_eq!(tile.len(), 4 * 2 * 3);
 }
+
+#[test]
+fn the_showcase_scene_of_the_site_is_valid() {
+    // FrontEnd/public/examples/silicium-demo-scene.cfg (the editor's
+    // "Vitrine" template): every shape, material and light of the engine.
+    let text = include_str!("../scenes/silicium-showcase-scene.cfg");
+    let report = check_scene(text);
+    assert!(report.issues.is_empty(), "{:#?}", report.issues);
+    assert_eq!(
+        (
+            report.scene.width,
+            report.scene.height,
+            report.scene.samples,
+            report.scene.mode
+        ),
+        (1280, 720, 256, "path")
+    );
+    let tile = render_scene(
+        &text.replace("samples = 256", "samples = 2"),
+        RenderOptions {
+            x_start: Some(640),
+            x_end: Some(644),
+            y_start: Some(360),
+            y_end: Some(362),
+            ..RenderOptions::default()
+        },
+    );
+    assert_eq!(tile.len(), 4 * 2 * 3);
+}
