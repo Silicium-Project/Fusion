@@ -8,7 +8,7 @@
 //! | `checks` | `milestones`, `verify`, `validate` |
 //! | `reassemble` | `reassemble` (final image) |
 //! | `image` | `png` (tile preview), `resolution` (scene size) |
-//! | `scene` | `check` (problems of a scene file, with line numbers) |
+//! | `scene` | `check` (problems of a scene file, with line numbers), `version` (engine version), `import-obj` (model → `mesh` block), `frames` (one scene file per animation frame) |
 //! | `options` | argument parsing and file helpers |
 
 mod checks;
@@ -22,8 +22,11 @@ use options::Options;
 use serde_json::Value;
 
 /// Names handled here instead of rendering.
-pub const NAMES: [&str; 8] = [
+pub const NAMES: [&str; 11] = [
     "check",
+    "version",
+    "import-obj",
+    "frames",
     "split",
     "milestones",
     "verify",
@@ -38,6 +41,9 @@ pub fn run(name: &str, args: &[String]) -> Result<(Value, i32), String> {
     let options = Options::parse(args)?;
     match name {
         "check" => scene::check_command(&options),
+        "version" => Ok((scene::version(), 0)),
+        "import-obj" => scene::import_obj_command(&options),
+        "frames" => scene::frames_command(&options),
         "split" => split::run(&options),
         "milestones" => checks::milestones_command(&options),
         "verify" => checks::verify_command(&options),

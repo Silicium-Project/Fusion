@@ -1,10 +1,6 @@
 //! Multi-threaded tile rendering with optional progress reporting.
+//! Pixels come from [`crate::engine::integrator::pixel`].
 
-use crate::{
-    math::{Ray, Vec3},
-    scene::Scene,
-    trace::trace,
-};
 use std::{
     env, fs,
     path::PathBuf,
@@ -71,20 +67,28 @@ fn write_progress(
     );
 }
 
-/// Renders the requested tile on a pool of threads.
+/// Renders the requested tile of a `full_width` × `full_height` image on a
+/// pool of threads, `pixel(x, y)` giving the bytes of each pixel (in image
+/// coordinates). Rows are handed out to threads as they finish, so `pixel`
+/// must depend only on its coordinates.
 ///
 /// Returns `(rgb_bytes, width, height, threads_used)`.
-pub fn render(scene: Arc<Scene>, args: &RenderOptions) -> (Vec<u8>, usize, usize, usize) {
-    let x_start = args.x_start.unwrap_or(0).min(scene.width);
-    let x_end = args
-        .x_end
-        .unwrap_or(scene.width)
-        .clamp(x_start, scene.width);
-    let y_start = args.y_start.unwrap_or(0).min(scene.height);
+pub fn render_pixels<F>(
+    full_width: usize,
+    full_height: usize,
+    args: &RenderOptions,
+    pixel: F,
+) -> (Vec<u8>, usize, usize, usize)
+where
+    F: Fn(usize, usize) -> [u8; 3] + Send + Sync + 'static,
+{
+    let x_start = args.x_start.unwrap_or(0).min(full_width);
+    let x_end = args.x_end.unwrap_or(full_width).clamp(x_start, full_width);
+    let y_start = args.y_start.unwrap_or(0).min(full_height);
     let y_end = args
         .y_end
-        .unwrap_or(scene.height)
-        .clamp(y_start, scene.height);
+        .unwrap_or(full_height)
+        .clamp(y_start, full_height);
     let width = x_end - x_start;
     let height = y_end - y_start;
     let available = thread::available_parallelism()
@@ -102,10 +106,9 @@ pub fn render(scene: Arc<Scene>, args: &RenderOptions) -> (Vec<u8>, usize, usize
     let next_row = Arc::new(AtomicUsize::new(0));
     let (sender, receiver) = mpsc::channel();
     let started = Instant::now();
-    let aspect = scene.width as f64 / scene.height as f64;
-    let scale = (scene.fov.to_radians() * 0.5).tan();
+    let pixel = Arc::new(pixel);
     for _ in 0..thread_count {
-        let scene = Arc::clone(&scene);
+        let pixel = Arc::clone(&pixel);
         let next_row = Arc::clone(&next_row);
         let sender = sender.clone();
         thread::spawn(move || loop {
@@ -116,20 +119,7 @@ pub fn render(scene: Arc<Scene>, args: &RenderOptions) -> (Vec<u8>, usize, usize
             let y = y_start + local_y;
             let mut row = Vec::with_capacity(width * 3);
             for x in x_start..x_end {
-                let px = (2.0 * (x as f64 + 0.5) / scene.width as f64 - 1.0) * aspect * scale;
-                let py = (1.0 - 2.0 * (y as f64 + 0.5) / scene.height as f64) * scale;
-                let color = trace(
-                    &scene,
-                    Ray {
-                        origin: scene.camera,
-                        direction: Vec3::new(1.0, -px, py).normalized(),
-                    },
-                    0,
-                )
-                .clamp();
-                for channel in [color.x, color.y, color.z] {
-                    row.push((channel.sqrt() * 255.0).round().clamp(0.0, 255.0) as u8);
-                }
+                row.extend_from_slice(&pixel(x, y));
             }
             if sender.send((local_y, row)).is_err() {
                 break;
@@ -170,14 +160,6 @@ mod tests {
 
     #[test]
     fn tile_render_is_parallel_and_has_exact_size() {
-        let scene = Arc::new(Scene {
-            width: 32,
-            height: 24,
-            fov: 55.0,
-            camera: Vec3::default(),
-            primitives: Vec::new(),
-            lights: Vec::new(),
-        });
         let args = RenderOptions {
             x_start: Some(4),
             x_end: Some(20),
@@ -186,8 +168,10 @@ mod tests {
             threads: Some(4),
             ..RenderOptions::default()
         };
-        let (pixels, width, height, threads) = render(scene, &args);
+        let (pixels, width, height, threads) =
+            render_pixels(32, 24, &args, |x, y| [x as u8, y as u8, 7]);
         assert_eq!((width, height, threads), (16, 12, 4));
         assert_eq!(pixels.len(), width * height * 3);
+        assert_eq!(&pixels[..3], &[4, 3, 7]);
     }
 }

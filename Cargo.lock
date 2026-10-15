@@ -4584,6 +4584,7 @@ name = "silicium-raytracer"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "libm",
  "regex",
  "serde",
  "serde_json",

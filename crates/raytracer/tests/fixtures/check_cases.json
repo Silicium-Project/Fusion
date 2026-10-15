@@ -1,5 +1,5 @@
 {
-  "_comment": "Scene checks shared by `silicium-raytracer check` (Network/crates/raytracer/tests/check_cases.rs) and the site (FrontEnd/tests/sceneCheck.test.ts, which keeps an identical copy). Each case lists every issue expected, as code@line (line 0 = whole scene). Change both copies together.",
+  "_comment": "Scene checks shared by `silicium-raytracer check` (Network/crates/raytracer/tests/check_cases.rs) and the site (FrontEnd/tests/scene.test.ts, which keeps an identical copy). Each case lists every issue expected, as code@line (line 0 = whole scene). Change both copies together.",
   "cases": [
     {
       "name": "valid scene",
@@ -271,7 +271,7 @@
       ]
     },
     {
-      "name": "camera rotation written before its position",
+      "name": "camera rotation and position in any order",
       "lines": [
         "camera : {",
         "  resolution = { width = 64 height = 32 }",
@@ -285,19 +285,10 @@
         "  point = { x = 2 y = -2 z = 4 }",
         "};"
       ],
-      "expected": [
-        {
-          "code": "camera_orientation_ignored",
-          "line": 3
-        },
-        {
-          "code": "camera_position_shadowed",
-          "line": 3
-        }
-      ]
+      "expected": []
     },
     {
-      "name": "assignment inside a comment",
+      "name": "comments are ignored",
       "lines": [
         "camera : {",
         "  # width = 999",
@@ -310,16 +301,7 @@
         "  point = { x = 2 y = -2 z = 4 }",
         "};"
       ],
-      "expected": [
-        {
-          "code": "comment_assignment",
-          "line": 2
-        },
-        {
-          "code": "resolution_mismatch",
-          "line": 3
-        }
-      ]
+      "expected": []
     },
     {
       "name": "plane without a normal",
@@ -384,7 +366,7 @@
       ]
     },
     {
-      "name": "colon instead of equals",
+      "name": "colon works like equals",
       "lines": [
         "camera : {",
         "  resolution = { width = 64 height = 32 }",
@@ -397,13 +379,7 @@
         "  point = { x = 2 y = -2 z = 4 }",
         "};"
       ],
-      "expected": [
-        {
-          "code": "use_equals",
-          "line": 3,
-          "key": "fieldOfView"
-        }
-      ]
+      "expected": []
     },
     {
       "name": "libconfig scene from another raytracer",
@@ -436,6 +412,27 @@
         {
           "code": "empty_scene",
           "line": 0
+        }
+      ]
+    },
+    {
+      "name": "libconfig list of lights",
+      "lines": [
+        "camera : {",
+        "  resolution = { width = 64 height = 32 }",
+        "};",
+        "primitives : {",
+        "  sphere = { x = 5 y = 0 z = 0 radius = 1 }",
+        "};",
+        "lights : {",
+        "  point = ( { x = 2 y = -2 z = 4 }, { x = 2 y = 2 z = 4 intensity = -1 } );",
+        "};"
+      ],
+      "expected": [
+        {
+          "code": "out_of_range",
+          "line": 8,
+          "key": "intensity"
         }
       ]
     }

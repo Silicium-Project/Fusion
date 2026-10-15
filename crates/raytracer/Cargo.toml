@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 flate2 = "1"
+libm = "0.2"
 regex = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
