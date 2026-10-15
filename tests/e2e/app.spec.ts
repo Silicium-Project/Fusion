@@ -70,6 +70,28 @@ test('a scene composed in the editor is sent as a .cfg file', async ({ page }) =
   expect(sent).toContain('sphere = {');
 });
 
+test('the photorealistic quality sends an engine-2 scene to the network', async ({ page }) => {
+  let sent = '';
+  await page.route('**/api/jobs', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent = route.request().postData() || '';
+    return route.fulfill({ status: 202, json: job });
+  });
+  await page.goto('/jobs/new');
+  await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Miroirs photo');
+  await page.getByRole('button', { name: /Miroirs/ }).click();
+  await page.getByLabel('Qualité du rendu final').selectOption('photo');
+  await expect(page.getByText(/256 rayons par pixel, éclairage global/)).toBeVisible();
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await expect(page.getByText('1280 × 720 · 5 objets · 2 lumières · 256 rayons par pixel')).toBeVisible();
+  await page.getByRole('button', { name: 'Lancer le calcul' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
+  expect(sent).toContain('mode = path');
+  expect(sent).toContain('samples = 256');
+  expect(sent).toContain('type = metal roughness = 0');
+});
+
 test('an imported scene with errors is blocked until it is fixed in the editor', async ({ page }) => {
   await page.goto('/jobs/new');
   await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Scène cassée');
@@ -86,6 +108,32 @@ test('an imported scene with errors is blocked until it is fixed in the editor',
   await page.getByRole('button', { name: 'Ouvrir dans l’éditeur' }).click();
   await expect(page.getByRole('img', { name: /Aperçu de la scène/ })).toBeVisible();
   await expect(continueButton).toBeEnabled();
+});
+
+test('an advanced scene is checked in the browser and sent as it is', async ({ page }) => {
+  await page.goto('/jobs/new');
+  await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Scène avancée');
+  await page.getByRole('radio', { name: /Importer un fichier/ }).click();
+  await page.locator('input[type=file]').setInputFiles({
+    name: 'advanced.cfg',
+    mimeType: 'text/plain',
+    buffer: Buffer.from([
+      'render : { mode = path samples = 64 }',
+      'camera : { resolution = { width = 320 height = 180 } position = { x = 0 y = 0 z = 1 } look_at = { x = 5 y = 0 z = 0 } }',
+      'materials : { material = { name = verre type = glass } }',
+      'primitives : {',
+      '  sphere = { x = 5 radius = 1 material = verre }',
+      '  box = { translate = { x = 6 y = 2 } rotate = { z = 30 } type = metal roughness = 0.2 }',
+      '  plane = { z = -1 type = diffuse }',
+      '}',
+      'lights : { area = { x = 2 y = -3 z = 4 radius = 0.5 intensity = 300 } }',
+    ].join('\n')),
+  });
+  await expect(page.getByText('Fichier de scène valide')).toBeVisible();
+  await expect(page.getByText('320 × 180 · 2 objets · 1 lumière · 6 triangles · 64 rayons par pixel')).toBeVisible();
+  await expect(page.getByText(/ne sait pas encore montrer/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Ouvrir dans l’éditeur' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Continuer' })).toBeEnabled();
 });
 
 test('a failed job keeps the worker traceback visible', async ({ page }) => {

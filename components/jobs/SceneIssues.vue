@@ -4,9 +4,9 @@
       <span class="scene-issues__icon"><UiIcon :name="tone === 'ok' ? 'check' : 'alert'"/></span>
       <div>
         <strong>{{ title }}</strong>
-        <small>{{ t('jobForm.sceneSummary', summary) }}</small>
+        <small>{{ summaryText }}</small>
       </div>
-      <UiButton v-if="report.scene.spheres + report.scene.planes > 0 || report.issues.length" size="small" variant="secondary" icon="sparkle" @click="emit('open-editor')">{{ t('sceneCheck.openEditor') }}</UiButton>
+      <UiButton v-if="editable" size="small" variant="secondary" icon="sparkle" @click="emit('open-editor')">{{ t('sceneCheck.openEditor') }}</UiButton>
     </div>
     <ul v-if="report.issues.length" class="scene-issues__list">
       <li v-for="(issue, index) in report.issues" :key="index" :class="`is-${issue.severity}`">
@@ -14,31 +14,32 @@
         <span>{{ t(`sceneCheck.codes.${issue.code}`, issue.params) }}<template v-if="issue.suggestion">{{ ` ${t('sceneCheck.suggestion', { suggestion: issue.suggestion })}` }}</template></span>
       </li>
     </ul>
-    <p v-if="report.issues.length" class="scene-issues__hint">{{ t('sceneCheck.openEditorHint') }}</p>
+    <p v-if="limits.length && !broken" class="scene-issues__hint">{{ t('sceneCheck.editorLimited', { what: limits.map((limit) => t(`sceneCheck.limits.${limit}`)).join(', ') }) }}</p>
+    <p v-else-if="report.issues.length && editable" class="scene-issues__hint">{{ t('sceneCheck.openEditorHint') }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
 // Result of the check of an imported `.cfg` (utils/sceneCheck.ts): errors and
-// warnings with their line, and a way to open the file in the scene editor.
+// warnings with their line, and a way to open the file in the scene editor
+// when the editor can show everything the file uses (`limits` is empty).
 import type { SceneReport } from '~/utils/sceneCheck';
+import { sceneSummaryText } from '~/utils/jobs';
 
-const props = defineProps<{ report: SceneReport }>();
+const props = withDefaults(defineProps<{ report: SceneReport; limits?: string[] }>(), { limits: () => [] });
 const emit = defineEmits<{ 'open-editor': [] }>();
 const { t } = useI18n();
 
+/** Broken syntax: the editor cannot read the file. */
+const broken = computed(() => props.report.issues.some((issue) => issue.code === 'syntax_error' || issue.code === 'unbalanced_braces'));
+const editable = computed(() => !broken.value && !props.limits.length);
 const tone = computed(() => (props.report.errors ? 'error' : props.report.warnings ? 'warning' : 'ok'));
 const title = computed(() => {
   if (props.report.errors) return t('sceneCheck.errorsTitle', { count: props.report.errors });
   if (props.report.warnings) return t('sceneCheck.warningsTitle', { count: props.report.warnings });
   return t('sceneCheck.ok');
 });
-const summary = computed(() => ({
-  width: props.report.scene.width,
-  height: props.report.scene.height,
-  objects: t('jobForm.objectCount', { count: props.report.scene.spheres + props.report.scene.planes }),
-  lights: t('jobForm.lightCount', { count: props.report.scene.lights }),
-}));
+const summaryText = computed(() => sceneSummaryText(props.report.scene));
 </script>
 
 <style scoped>

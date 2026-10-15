@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import checkCases from './fixtures/check_cases.json';
 import parity from './fixtures/preview_parity.json';
-import { parseRustFloat, parseSceneText, sceneFileName, sceneFromText, sceneToCfg } from '../utils/scene';
+import { editorLimits, parseRustFloat, parseSceneText, renderCost, renderSettings, sceneFileName, sceneFromText, sceneToCfg } from '../utils/scene';
 import { checkScene } from '../utils/sceneCheck';
 import { pickPrimitive, renderScene } from '../utils/sceneRender';
 import { SCENE_TEMPLATES, sceneTemplate } from '../utils/sceneTemplates';
@@ -25,7 +25,7 @@ describe('scene check (same cases as `silicium-raytracer check`)', () => {
 
   it('has a message for every issue it reports', () => {
     const codes = new Set(checkCases.cases.flatMap((testCase) => checkScene(testCase.lines.join('\n')).issues.map((issue) => issue.code)));
-    codes.add('misplaced').add('unexpected_token').add('resolution_large');
+    for (const code of ['misplaced', 'unexpected_token', 'resolution_large', 'syntax_error', 'invalid_value', 'unknown_material', 'engine_too_new', 'engine_error', 'bad_mesh', 'dark_scene']) codes.add(code);
     for (const code of codes) expect(translate(`sceneCheck.codes.${code}`, { key: 'x', min: 0, max: 1, value: 2 })).not.toContain('sceneCheck.');
   });
 
@@ -72,6 +72,43 @@ describe('scene editor model', () => {
     expect(parseRustFloat('0x10')).toBeUndefined();
     expect(parseRustFloat('big')).toBeUndefined();
     expect(parseRustFloat('')).toBeUndefined();
+  });
+
+  it('writes a render block only for the finer qualities', () => {
+    const draft = sceneToCfg(sceneTemplate('mirrors'));
+    expect(draft).not.toContain('render :');
+    expect(renderSettings(draft)).toEqual({ samples: 1, mode: 'whitted' });
+    for (const quality of ['smooth', 'photo'] as const) {
+      const text = sceneToCfg({ ...sceneTemplate('mirrors'), quality });
+      expect(renderSettings(text)).toEqual(quality === 'photo' ? { samples: 256, mode: 'path' } : { samples: 16, mode: 'whitted' });
+      const report = checkScene(text);
+      expect(report.issues).toEqual([]);
+      expect(report.scene).toMatchObject({ width: 1280, height: 720, spheres: 4, planes: 1, samples: quality === 'photo' ? 256 : 16 });
+      expect(sceneToCfg(sceneFromText(text))).toBe(text);
+    }
+    const photo = sceneToCfg({ ...sceneTemplate('mirrors'), quality: 'photo' });
+    expect(photo).toContain('type = metal roughness = 0');
+    expect(renderCost({ width: 100, height: 100, quality: 'photo' })).toBe(100 * 100 * 256 * 4);
+  });
+
+  it('tells what the editor cannot show', () => {
+    const base = 'camera : { resolution = { width = 8 height = 8 } }\n';
+    expect(editorLimits(sceneToCfg(sceneTemplate('demo')))).toEqual([]);
+    expect(editorLimits(`${base}primitives : { box = { } sphere = { x = { 0 = 1 9 = 2 } } }`).sort()).toEqual(['animation', 'shapes']);
+    expect(editorLimits('camera : { resolution = { width = 8 height = 8 } look_at = { x = 1 } }\nlights : { area = { } }').sort()).toEqual(['camera', 'lights']);
+    expect(editorLimits(`${base}materials : { material = { name = v type = glass } }\nprimitives : { sphere = { material = v } }`)).toEqual(['materials']);
+    expect(checkScene('render : { }\ncamera : {\n resolution = { width = 8 height = 8 }\n').issues[0]).toMatchObject({ code: 'unbalanced_braces', line: 2 });
+  });
+
+  it('opens libconfig lists and named materials', () => {
+    const scene = sceneFromText('camera : { resolution = { width = 64; height = 32; }; position = { x = 1; y = 0; z = 0; }; };\n'
+      + 'materials : { material = { name = rouge type = diffuse color = { r = 255 g = 0 b = 0 } } }\n'
+      + 'primitives : { sphere = ( { x = 5; radius = 1; material = rouge; }, { x = 6; y = 2; } ); };\n'
+      + 'lights : { point = ( { x = 2; y = -2; z = 4; } ); };');
+    expect(scene.camera.x).toBe(1);
+    expect(scene.objects).toHaveLength(2);
+    expect(scene.objects[0]).toMatchObject({ material: { color: [255, 0, 0], reflection: 0.04 } });
+    expect(scene.lights).toEqual([expect.objectContaining({ x: 2, y: -2, z: 4 })]);
   });
 
   it('names the file after the project', () => {

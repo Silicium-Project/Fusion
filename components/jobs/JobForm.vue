@@ -45,7 +45,7 @@
             <span><strong>{{ file ? file.name : t('jobForm.addInput') }}</strong><small>{{ file ? fileSize : t('jobForm.maxSize', { hint: selectedWorkload.fileHint }) }}</small></span>
             <span class="job-drop__action">{{ file ? t('jobForm.replace') : t('jobForm.browse') }}</span>
           </label>
-          <SceneIssues v-if="raytracerMode && sceneReport" :report="sceneReport" @open-editor="openInEditor" />
+          <SceneIssues v-if="raytracerMode && sceneReport" :report="sceneReport" :limits="sceneLimits" @open-editor="openInEditor" />
         </template>
       </template>
     </section>
@@ -68,7 +68,7 @@
       <div class="review-card">
         <div><span>{{ t('jobForm.project') }}</span><strong>{{ form.title || t('jobForm.untitled') }}</strong><small>{{ form.description || t('jobForm.noDescription') }}</small></div>
         <div v-if="documentMode"><span>{{ t('jobForm.documents') }}</span><strong>{{ t('jobForm.documentCount', { count: documents.length }) }}</strong><small>{{ documentsSize }}</small></div>
-        <div v-else><span>{{ raytracerMode ? t('jobForm.scene') : t('jobForm.file') }}</span><strong>{{ file?.name || t('jobForm.noFile') }}</strong><small>{{ reviewScene ? t('jobForm.sceneSummary', reviewScene) : fileSize }}</small></div>
+        <div v-else><span>{{ raytracerMode ? t('jobForm.scene') : t('jobForm.file') }}</span><strong>{{ file?.name || t('jobForm.noFile') }}</strong><small>{{ reviewScene || fileSize }}</small></div>
         <div><span>{{ t('jobForm.execution') }}</span><strong>{{ selectedWorkload.label }}</strong><small>{{ documentMode ? t('jobForm.autoSplit') : t('jobForm.partCount', { count: form.fragmentCount }) }} · {{ t('jobForm.maximum', { duration: runtimeLabel }) }}</small></div>
       </div>
       <UiNotice :title="t('jobForm.afterLaunch')">{{ t('jobForm.afterLaunchText') }}</UiNotice>
@@ -89,8 +89,8 @@
 <script setup lang="ts">
 import type { CreateJobInput } from '~/composables/useJobs';
 import { DOCUMENT_ACCEPT, DOCUMENT_SEARCH_WORKLOAD, documentSelectionError, isDocumentSearchWorkload, mergeDocumentSelection } from '~/utils/documents';
-import { isHashWorkload } from '~/utils/jobs';
-import { sceneFileName, sceneFromText, sceneToCfg, type SceneModel } from '~/utils/scene';
+import { isHashWorkload, sceneSummaryText } from '~/utils/jobs';
+import { editorLimits, sceneFileName, sceneFromText, sceneToCfg, type SceneModel } from '~/utils/scene';
 import { checkScene } from '~/utils/sceneCheck';
 import { sceneTemplate } from '~/utils/sceneTemplates';
 import { firstProblem, jobDescriptionProblem, jobTitleProblem, LIMITS } from '~/utils/validation';
@@ -131,9 +131,10 @@ const sceneReady = computed(() => (composeMode.value ? scene.value.objects.lengt
 const reviewScene = computed(() => {
   if (!raytracerMode.value) return null;
   const report = composeMode.value ? checkScene(sceneToCfg(scene.value)) : sceneReport.value;
-  if (!report) return null;
-  return { width: report.scene.width, height: report.scene.height, objects: t('jobForm.objectCount', { count: report.scene.spheres + report.scene.planes }), lights: t('jobForm.lightCount', { count: report.scene.lights }) };
+  return report ? sceneSummaryText(report.scene) : null;
 });
+/** What the imported file uses that the editor cannot show. */
+const sceneLimits = computed(() => (sceneText.value ? editorLimits(sceneText.value) : []));
 const selectedWorkload = computed(() => workloads.value.find((item) => item.id === form.workload) || workloads.value[0]!);
 const steps = computed(() => tl<{ title: string; detail: string }>('jobForm.steps').map((item, index) => ({ ...item, number: index + 1 })));
 const textProblem = computed(() => firstProblem(jobTitleProblem(form.title), jobDescriptionProblem(form.description)));
@@ -171,7 +172,11 @@ function setSceneSource(source: 'compose' | 'import') {
 /** Imported file → editor: keeps what the engine reads from it. */
 function openInEditor() {
   if (!sceneText.value) return;
-  scene.value = sceneFromText(sceneText.value);
+  try {
+    scene.value = sceneFromText(sceneText.value);
+  } catch {
+    return;
+  }
   setSceneSource('compose');
 }
 

@@ -13,12 +13,18 @@
 
     <figure class="scene-preview">
       <canvas ref="canvas" :width="canvasSize.width" :height="canvasSize.height" :style="{ aspectRatio: `${scene.width} / ${scene.height}` }" :aria-label="t('sceneEditor.previewAria')" role="img" @click="pick"></canvas>
-      <figcaption><span><UiIcon name="sparkle"/>{{ t('sceneEditor.previewCaption') }}</span><span class="scene-preview__size">{{ scene.width }} × {{ scene.height }}</span></figcaption>
+      <figcaption><span><UiIcon name="sparkle"/>{{ renderQuality === 'draft' ? t('sceneEditor.previewCaption') : t('sceneEditor.previewCaptionFinal', { quality: t(`sceneEditor.qualityNames.${renderQuality}`) }) }}</span><span class="scene-preview__size">{{ scene.width }} × {{ scene.height }}</span></figcaption>
     </figure>
 
     <div class="scene-panels">
       <section class="scene-panel" aria-labelledby="scene-image">
         <h3 id="scene-image">{{ t('sceneEditor.image') }}</h3>
+        <label class="field"><span>{{ t('sceneEditor.quality') }}</span>
+          <select class="select" :value="renderQuality" @change="setQuality(($event.target as HTMLSelectElement).value as RenderQuality)">
+            <option v-for="name in QUALITIES" :key="name" :value="name">{{ t(`sceneEditor.qualities.${name}`) }}</option>
+          </select>
+          <small>{{ t(`sceneEditor.qualityHints.${renderQuality}`) }} {{ t('sceneEditor.cost', { rays: costLabel }) }}</small>
+        </label>
         <label class="field"><span>{{ t('sceneEditor.resolution') }}</span>
           <select class="select" :value="resolutionId" @change="setResolution(($event.target as HTMLSelectElement).value)">
             <option v-for="preset in RESOLUTION_PRESETS" :key="preset.id" :value="preset.id">{{ t(`sceneEditor.resolutions.${preset.id}`) }}</option>
@@ -124,7 +130,8 @@
 // a port of the engine, and forms for the camera, objects and lights. The
 // parent gets the scene through `v-model` and writes the `.cfg` with
 // `sceneToCfg` when the job is sent.
-import { cloneScene, MATERIAL_PRESETS, materialPreset, newLight, newPlane, newSphere, parseSceneText, PLANE_ORIENTATIONS, planeOrientation, RESOLUTION_PRESETS, sceneFileName, sceneToCfg, type Rgb, type SceneMaterial, type SceneModel, type SceneObject, type ScenePlane } from '~/utils/scene';
+import { intlLocale } from '~/utils/i18n';
+import { cloneScene, MATERIAL_PRESETS, renderCost, type RenderQuality, materialPreset, newLight, newPlane, newSphere, parseSceneText, PLANE_ORIENTATIONS, planeOrientation, RESOLUTION_PRESETS, sceneFileName, sceneToCfg, type Rgb, type SceneMaterial, type SceneModel, type SceneObject, type ScenePlane } from '~/utils/scene';
 import { pickPrimitive, previewSize, renderScene, toRgba } from '~/utils/sceneRender';
 import { SCENE_TEMPLATES, sceneTemplate, type SceneTemplate } from '~/utils/sceneTemplates';
 
@@ -145,7 +152,14 @@ const cfg = computed(() => sceneToCfg(scene.value, props.title));
 const fileName = computed(() => sceneFileName(props.title));
 const downloadUrl = computed(() => `data:text/plain;charset=utf-8,${encodeURIComponent(cfg.value)}`);
 const resolutionId = computed(() => RESOLUTION_PRESETS.find((preset) => preset.width === scene.value.width && preset.height === scene.value.height)?.id || 'custom');
-const pixelLabel = computed(() => (scene.value.width * scene.value.height).toLocaleString());
+const QUALITIES: RenderQuality[] = ['draft', 'smooth', 'photo'];
+const renderQuality = computed<RenderQuality>(() => scene.value.quality || 'draft');
+const costLabel = computed(() => new Intl.NumberFormat(intlLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(renderCost(scene.value)));
+function setQuality(value: RenderQuality) {
+  if (value === 'draft') delete scene.value.quality;
+  else scene.value.quality = value;
+}
+const pixelLabel = computed(() => (scene.value.width * scene.value.height).toLocaleString(intlLocale()));
 
 // ------------------------------------------------------------ preview
 // Rendered small while the user drags a slider, sharper once they stop.

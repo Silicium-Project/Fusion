@@ -1,9 +1,12 @@
 // Raytracer scenes on the site: the model edited by the scene editor, the
-// `.cfg` text it writes, and a faithful port of the engine's parser
-// (Network/crates/raytracer/src/parser.rs) used by the preview and the checks.
+// `.cfg` text it writes, reading a `.cfg` back (`./sceneSyntax`, the engine's
+// syntax), and `parseSceneText`, the scene the preview draws from the
+// editor's own files.
 //
-// Coordinates are the engine's: the camera looks along +x, +z is up and +y is
-// on the LEFT of the image (the editor shows `-y` as "left ↔ right").
+// Coordinates are the engine's: by default the camera looks along +x, +z is
+// up and +y is on the LEFT of the image (the editor shows `-y` as "left ↔ right").
+
+import * as syntax from './sceneSyntax';
 
 export type Rgb = [number, number, number];
 
@@ -31,6 +34,27 @@ export interface SceneModel {
   camera: { x: number; y: number; z: number };
   objects: SceneObject[];
   lights: SceneLight[];
+  /**
+   * Quality of the final render, computed by the network: `draft` is what
+   * the preview shows (engine 1, one ray per pixel); `smooth` and `photo`
+   * use engine 2 (anti-aliasing; path tracing for `photo`).
+   */
+  quality?: RenderQuality;
+}
+
+export type RenderQuality = 'draft' | 'smooth' | 'photo';
+
+/** Engine-2 settings of each quality (`render` block). */
+export const RENDER_QUALITIES: Record<RenderQuality, { samples: number; mode: 'whitted' | 'path'; bounces?: number }> = {
+  draft: { samples: 1, mode: 'whitted' },
+  smooth: { samples: 16, mode: 'whitted' },
+  photo: { samples: 256, mode: 'path', bounces: 6 },
+};
+
+/** Rays traced for the final render (a rough cost: path tracing bounces more). */
+export function renderCost(scene: Pick<SceneModel, 'width' | 'height' | 'quality'>): number {
+  const quality = RENDER_QUALITIES[scene.quality || 'draft'];
+  return scene.width * scene.height * quality.samples * (quality.mode === 'path' ? 4 : 1);
 }
 
 /** Ready-made looks for a material. */
@@ -105,6 +129,16 @@ export function formatNumber(value: number, decimals = 3): string {
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
 const point = (item: { x: number; y: number; z: number }) => `x = ${formatNumber(item.x)} y = ${formatNumber(item.y)} z = ${formatNumber(item.z)}`;
 const color = (rgb: Rgb) => `color = { r = ${Math.round(clampNumber(rgb[0], 0, 255))} g = ${Math.round(clampNumber(rgb[1], 0, 255))} b = ${Math.round(clampNumber(rgb[2], 0, 255))} }`;
+/** Engine-2 material type of an editor material (photo quality). */
+function engine2Type(value: SceneMaterial): string {
+  switch (materialPreset(value)) {
+    case 'matte': return 'type = diffuse ';
+    case 'mirror': return 'type = metal roughness = 0 ';
+    case 'metal': return 'type = metal roughness = 0.3 ';
+    default: return 'type = phong ';
+  }
+}
+
 const material = (value: SceneMaterial) => `reflection = ${formatNumber(clampNumber(value.reflection, 0, 0.95))} specular = ${formatNumber(clampNumber(value.specular, 0, 2))} shininess = ${formatNumber(clampNumber(value.shininess, 1, 512), 1)} ${color(value.color)}`;
 
 /**
@@ -116,10 +150,26 @@ export function sceneToCfg(scene: SceneModel, title = ''): string {
   const width = Math.round(clampNumber(scene.width, 1, 16384));
   const height = Math.round(clampNumber(scene.height, 1, 16384));
   const name = title.replace(/[\r\n]+/g, ' ').trim();
+  const quality = scene.quality || 'draft';
+  const settings = RENDER_QUALITIES[quality];
+  const photo = quality === 'photo';
+  const look = (value: SceneMaterial) => `${photo ? engine2Type(value) : ''}${material(value)}`;
   const lines = [
     `# ${name || 'Silicium scene'}`,
     '# Written by the Silicium scene editor.',
     '',
+    // Engine 2 (anti-aliasing, path tracing) only when asked: a draft stays
+    // an engine-1 scene, rendered exactly like the preview.
+    ...(quality === 'draft' ? [] : [
+      'render :',
+      '{',
+      '\tengine = 2',
+      `\tmode = ${settings.mode}`,
+      `\tsamples = ${settings.samples}`,
+      ...(settings.bounces ? [`\tbounces = ${settings.bounces}`] : []),
+      '};',
+      '',
+    ]),
     'camera :',
     '{',
     `\tresolution = { width = ${width} height = ${height} }`,
@@ -131,8 +181,8 @@ export function sceneToCfg(scene: SceneModel, title = ''): string {
     'primitives :',
     '{',
     ...scene.objects.map((item) => item.kind === 'sphere'
-      ? `\tsphere = { ${point(item)} radius = ${formatNumber(Math.max(0.001, item.radius))} ${material(item.material)} }`
-      : `\tplane = { ${point(item)} normal_x = ${formatNumber(item.normal[0])} normal_y = ${formatNumber(item.normal[1])} normal_z = ${formatNumber(item.normal[2])} ${material(item.material)} }`),
+      ? `\tsphere = { ${point(item)} radius = ${formatNumber(Math.max(0.001, item.radius))} ${look(item.material)} }`
+      : `\tplane = { ${point(item)} normal_x = ${formatNumber(item.normal[0])} normal_y = ${formatNumber(item.normal[1])} normal_z = ${formatNumber(item.normal[2])} ${look(item.material)} }`),
     '};',
     '',
     'lights :',
@@ -144,9 +194,14 @@ export function sceneToCfg(scene: SceneModel, title = ''): string {
   return lines.join('\n');
 }
 
-// ---------------------------------------------------------------- parsing (port of parser.rs)
+// ---------------------------------------------------------------- preview scene
+//
+// Port of the first version of the engine's reader. It reads the files the
+// editor writes (spheres, planes, point lights, Phong materials, camera
+// looking along +x) exactly like the engine's default mode renders them, and
+// feeds the preview (`./sceneRender`).
 
-/** What the engine renders, as read by its parser (colours in 0–1). */
+/** What the preview renders (colours in 0–1). */
 export interface RenderMaterial { color: [number, number, number]; reflectivity: number; specular: number; shininess: number }
 export type RenderPrimitive =
   | { kind: 'sphere'; center: [number, number, number]; radius: number; material: RenderMaterial }
@@ -229,7 +284,7 @@ function parseMaterial(source: string[], defaultReflectivity: number): RenderMat
   };
 }
 
-/** The scene the engine would render from this text (missing keys take the engine's defaults). */
+/** The scene of an editor-written text (missing keys take the engine's defaults). */
 export function parseSceneText(text: string): RenderScene {
   const source = engineTokens(text);
   const camera = blocks(source, 'camera')[0] || [];
@@ -266,31 +321,137 @@ export function parseSceneText(text: string): RenderScene {
   };
 }
 
-const toRgb = (channels: [number, number, number]): Rgb => channels.map((value) => Math.round(rustClamp(value * 255, 0, 255))) as Rgb;
 const round = (value: number) => Number(value.toFixed(3));
 
+/** Rays per pixel and lighting mode of a scene (its `render` block). */
+export function renderSettings(text: string): { samples: number; mode: 'whitted' | 'path' } {
+  try {
+    const render = syntax.block(syntax.parse(text), 'render') || [];
+    return { samples: Math.max(1, Math.floor(syntax.number(render, 'samples', 1))), mode: syntax.word(render, 'mode') === 'path' ? 'path' : 'whitted' };
+  } catch {
+    return { samples: 1, mode: 'whitted' };
+  }
+}
+
+/** Material keys that can be written on an object itself. */
+const MATERIAL_KEYS = ['type', 'color', 'r', 'g', 'b', 'reflection', 'reflectivity', 'specular', 'shininess', 'roughness', 'ior', 'strength'];
+
+function namedMaterials(root: syntax.Entry[]): Map<string, syntax.Entry[]> {
+  const named = new Map<string, syntax.Entry[]>();
+  for (const item of syntax.all(syntax.block(root, 'materials') || [], 'material')) {
+    for (const part of syntax.items(item.value)) named.set(syntax.word(part, 'name') || '', part);
+  }
+  return named;
+}
+
+/** The keys describing an object's material: its own, else its named material's. */
+function materialSource(part: syntax.Entry[], named: Map<string, syntax.Entry[]>): syntax.Entry[] {
+  const own = MATERIAL_KEYS.some((key) => syntax.entry(part, key));
+  const name = syntax.word(part, 'material');
+  return !own && name !== undefined ? named.get(name) || part : part;
+}
+
 /**
- * An editable scene from a `.cfg` text: what the engine reads from it, so
- * opening a file in the editor also drops what the engine would ignore.
+ * What a scene uses that the editor cannot show (and would drop when it
+ * opens the file): `shapes`, `materials`, `camera`, `lights`, `animation`.
+ * Empty when the editor can edit the whole scene.
+ */
+export function editorLimits(text: string): string[] {
+  let root: syntax.Entry[];
+  try {
+    root = syntax.parse(text);
+  } catch {
+    return ['shapes'];
+  }
+  const limits = new Set<string>();
+  const hasKeyframes = (entries: syntax.Entry[]): boolean => entries.some((item) => item.value.kind === 'block'
+    && ((/^[-+]?[\d.]/.test(item.value.entries[0]?.key || '') && syntax.keyframes(item.value.entries) !== undefined) || hasKeyframes(item.value.entries)));
+  if (syntax.block(root, 'animation') || hasKeyframes(root)) limits.add('animation');
+  const camera = syntax.block(root, 'camera') || [];
+  const direction = syntax.block(camera, 'direction');
+  const rotation = syntax.block(camera, 'rotation');
+  const aimedElsewhere = direction !== undefined
+    && (syntax.number(direction, 'x', 1) <= 0 || syntax.number(direction, 'y', 0) !== 0 || syntax.number(direction, 'z', 0) !== 0);
+  const turned = rotation !== undefined && ['x', 'y', 'z'].some((key) => syntax.number(rotation, key, 0) !== 0);
+  if (syntax.block(camera, 'look_at') || syntax.block(camera, 'up') || syntax.number(camera, 'aperture', 0) > 0 || aimedElsewhere || turned) limits.add('camera');
+  const named = namedMaterials(root);
+  for (const item of syntax.block(root, 'primitives') || []) {
+    if (!item.key) continue;
+    if (item.key !== 'sphere' && item.key !== 'plane') limits.add('shapes');
+    for (const part of syntax.items(item.value)) {
+      if (['translate', 'rotate', 'scale'].some((key) => syntax.entry(part, key))) limits.add('shapes');
+      if (['glass', 'emissive'].includes(syntax.word(materialSource(part, named), 'type') || '')) limits.add('materials');
+    }
+  }
+  if ((syntax.block(root, 'lights') || []).some((item) => item.key === 'area')) limits.add('lights');
+  return [...limits];
+}
+
+/**
+ * An editable scene from a `.cfg` text, read like the engine reads it
+ * (spheres, planes and point lights; `editorLimits` tells what is dropped).
+ * Throws a `SyntaxError` on a broken file.
  */
 export function sceneFromText(text: string): SceneModel {
-  const parsed = parseSceneText(text);
-  const declaresLight = blocks(engineTokens(text), 'point').length > 0;
+  const root = syntax.parse(text);
+  const camera = syntax.block(root, 'camera') || [];
+  const resolution = syntax.block(camera, 'resolution') || [];
+  const position = syntax.block(camera, 'position') || camera;
+  const named = namedMaterials(root);
+  const colorOf = (entries: syntax.Entry[], fallback: number): Rgb => {
+    const block = syntax.block(entries, 'color');
+    const bare = block ? syntax.numbers(block) : [];
+    if (bare.length === 3) return bare.map((value) => Math.round(clampNumber(value, 0, 255))) as Rgb;
+    return (['r', 'g', 'b'] as const).map((key) => Math.round(clampNumber(syntax.number(block || entries, key, syntax.number(entries, key, fallback)), 0, 255))) as Rgb;
+  };
+  const lookOf = (part: syntax.Entry[], defaultReflection: number): SceneMaterial => {
+    const source = materialSource(part, named);
+    const color = colorOf(source, 200);
+    const type = syntax.word(source, 'type');
+    if (type === 'diffuse') return { color, ...MATERIAL_PRESETS.matte };
+    if (type === 'metal') return { color, ...(syntax.number(source, 'roughness', 0) < 0.15 ? MATERIAL_PRESETS.mirror : MATERIAL_PRESETS.metal) };
+    return {
+      color,
+      reflection: round(clampNumber(syntax.number(source, 'reflectivity', syntax.number(source, 'reflection', defaultReflection)), 0, 0.95)),
+      specular: round(clampNumber(syntax.number(source, 'specular', 0.65), 0, 2)),
+      shininess: round(clampNumber(syntax.number(source, 'shininess', 72), 1, 512)),
+    };
+  };
+  const objects: SceneObject[] = [];
+  for (const item of syntax.block(root, 'primitives') || []) {
+    for (const part of syntax.items(item.value)) {
+      const n = (key: string, fallback: number) => round(syntax.number(part, key, fallback));
+      if (item.key === 'sphere') objects.push({ id: newId(), kind: 'sphere', x: n('x', 0), y: n('y', 0), z: n('z', 0), radius: Math.max(0.001, n('radius', 1)), material: lookOf(part, 0.32) });
+      if (item.key === 'plane') {
+        const block = syntax.block(part, 'normal');
+        const raw: [number, number, number] = block
+          ? [syntax.number(block, 'x', 0), syntax.number(block, 'y', 0), syntax.number(block, 'z', 1)]
+          : [syntax.number(part, 'normal_x', 0), syntax.number(part, 'normal_y', 0), syntax.number(part, 'normal_z', 1)];
+        const length = Math.hypot(...raw) || 1;
+        objects.push({ id: newId(), kind: 'plane', x: n('x', 0), y: n('y', 0), z: n('z', 0), normal: raw.map((value) => round(value / length)) as [number, number, number], material: lookOf(part, 0.12) });
+      }
+    }
+  }
+  const lights: SceneLight[] = [];
+  for (const item of syntax.block(root, 'lights') || []) {
+    if (item.key !== 'point' && item.key !== 'area') continue;
+    for (const part of syntax.items(item.value)) {
+      lights.push({ id: newId(), x: round(syntax.number(part, 'x', 4)), y: round(syntax.number(part, 'y', 0)), z: round(syntax.number(part, 'z', 5)), intensity: round(Math.max(0, syntax.number(part, 'intensity', 450))), color: colorOf(part, 255) });
+    }
+  }
+  // The engine adds this light when there is none: the editor shows it, so
+  // the user sees (and can move) the light that will be used.
+  if (!lights.length) lights.push(newLight({ x: 4, y: 0, z: 5, intensity: 450 }));
+  const settings = renderSettings(text);
+  const quality: RenderQuality = settings.mode === 'path' ? 'photo' : settings.samples > 1 ? 'smooth' : 'draft';
   return {
-    width: parsed.width,
-    height: parsed.height,
-    fov: parsed.fov,
-    camera: { x: round(parsed.camera[0]), y: round(parsed.camera[1]), z: round(parsed.camera[2]) },
-    objects: parsed.primitives.map((primitive): SceneObject => {
-      const look: SceneMaterial = { color: toRgb(primitive.material.color), reflection: round(primitive.material.reflectivity), specular: round(primitive.material.specular), shininess: round(primitive.material.shininess) };
-      return primitive.kind === 'sphere'
-        ? { id: newId(), kind: 'sphere', x: round(primitive.center[0]), y: round(primitive.center[1]), z: round(primitive.center[2]), radius: round(primitive.radius), material: look }
-        : { id: newId(), kind: 'plane', x: round(primitive.point[0]), y: round(primitive.point[1]), z: round(primitive.point[2]), normal: primitive.normal.map(round) as [number, number, number], material: look };
-    }),
-    // The engine adds a light when there is none; the editor shows it, so the
-    // user sees (and can move) the light that will be used.
-    lights: parsed.lights.map((light) => ({ id: newId(), x: round(light.position[0]), y: round(light.position[1]), z: round(light.position[2]), intensity: round(light.intensity), color: toRgb(light.color) }))
-      .slice(0, declaresLight ? undefined : 1),
+    width: Math.floor(Math.max(1, syntax.number(resolution, 'width', 320))),
+    height: Math.floor(Math.max(1, syntax.number(resolution, 'height', 200))),
+    fov: clampNumber(syntax.number(camera, 'fieldOfView', 55), 1, 179),
+    camera: { x: round(syntax.number(position, 'x', 0)), y: round(syntax.number(position, 'y', 0)), z: round(syntax.number(position, 'z', 0)) },
+    objects,
+    lights,
+    ...(quality === 'draft' ? {} : { quality }),
   };
 }
 
