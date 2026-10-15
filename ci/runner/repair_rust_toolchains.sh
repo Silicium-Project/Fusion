@@ -22,6 +22,15 @@ fi
 rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
 solana_cache="$HOME/.cache/solana"
 
+# Same lock as install_rust_toolchain.sh: a toolchain being installed by
+# another job cannot run for a moment and must not be taken for broken.
+mkdir -p "$rustup_home"
+exec 9>"$rustup_home/.silicium-install.lock"
+if ! flock -w 1800 9; then
+  echo "::warning::Rust install lock busy; skipping the repair."
+  exit 0
+fi
+
 # The platform-tools directory a toolchain links into, if it is in the
 # Solana cache (nothing is deleted outside it).
 solana_platform_tools() {
@@ -35,6 +44,13 @@ while read -r toolchain _; do
   [[ -n "$toolchain" ]] || continue
   if rustup run "$toolchain" rustc --version >/dev/null 2>&1 &&
     rustup run "$toolchain" cargo --version >/dev/null 2>&1; then
+    continue
+  fi
+  # Only linked toolchains (Solana's) are removed: uninstalling `stable` or
+  # a pinned version would take cargo away from every runner's builds.
+  if [[ ! -L "$rustup_home/toolchains/$toolchain" ]]; then
+    echo "::warning::Toolchain $toolchain does not run; reinstalling it."
+    rustup toolchain install "$toolchain" --profile minimal --no-self-update --force || true
     continue
   fi
   echo "Removing broken toolchain: $toolchain"

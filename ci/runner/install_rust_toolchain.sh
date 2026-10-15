@@ -7,8 +7,15 @@
 # released, every job starting at that moment updates the same toolchain and
 # they break each other's downloads ("could not rename 'downloaded' file ...
 # .partial"). This takes an exclusive lock on the rustup home (waits up to
-# 15 min), installs, retries twice on a failed download, and sets `stable` as
+# 30 min), installs, retries twice on a failed download, and sets `stable` as
 # the default toolchain like dtolnay/rust-toolchain did.
+#
+# A toolchain that is already installed and runs is NOT updated (set
+# SILICIUM_RUST_UPDATE=1 to update it): on a Rust release day, updating
+# `stable` replaced cargo and rustc under the builds of the other runners,
+# which failed with "could not parse/generate dep info" and "'cargo' is
+# missing from PATH". Builds hold this lock shared (retry_on_corruption.sh),
+# so an update waits for them to finish.
 set -euo pipefail
 
 toolchain="${1:?toolchain required}"
@@ -23,7 +30,7 @@ fi
 
 mkdir -p "$rustup_home"
 exec 9>"$rustup_home/.silicium-install.lock"
-if ! flock -w 900 9; then
+if ! flock -w 1800 9; then
   echo "Timed out waiting for another job to finish installing Rust." >&2
   exit 1
 fi
@@ -42,8 +49,27 @@ else
 fi
 echo "Using $rustup for $(id -un)"
 
+# Components asked for that the installed toolchain does not have yet.
+missing_components() {
+  local installed component
+  installed="$("$rustup" component list --installed --toolchain "$toolchain" 2>/dev/null)" || return 0
+  IFS=',' read -ra wanted <<<"$components"
+  for component in "${wanted[@]}"; do
+    [[ -z "$component" ]] || grep -q "^$component" <<<"$installed" || echo "$component"
+  done
+}
+
+already_installed=false
+if [[ "${SILICIUM_RUST_UPDATE:-0}" != 1 ]] &&
+  "$rustup" run "$toolchain" rustc --version >/dev/null 2>&1 &&
+  "$rustup" run "$toolchain" cargo --version >/dev/null 2>&1 &&
+  [[ -z "$(missing_components)" ]]; then
+  echo "Rust $toolchain is already installed; not updating it (SILICIUM_RUST_UPDATE=1 to update)."
+  already_installed=true
+fi
+
 for attempt in 1 2 3; do
-  if "$rustup" "${args[@]}"; then
+  if "$already_installed" || "$rustup" "${args[@]}"; then
     break
   fi
   if [[ "$attempt" -eq 3 ]]; then

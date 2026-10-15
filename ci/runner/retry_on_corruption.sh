@@ -34,9 +34,16 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 
+# The build holds the Rust install lock shared: install_rust_toolchain.sh
+# (exclusive) cannot replace cargo or rustc while it runs.
 run() {
+  local lock="${RUSTUP_HOME:-$HOME/.rustup}/.silicium-install.lock"
   set +e
-  "$@" 2>&1 | tee "$log"
+  if [[ -e "$lock" ]] && command -v flock >/dev/null 2>&1; then
+    flock -s -w 1800 "$lock" "$@" 2>&1 | tee "$log"
+  else
+    "$@" 2>&1 | tee "$log"
+  fi
   local status=${PIPESTATUS[0]}
   set -e
   return "$status"
