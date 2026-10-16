@@ -137,6 +137,7 @@ pub fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Resul
         cleanup_node_installation(&root)?;
     } else {
         kill_known_silicium_processes(None);
+        stop_ollama();
         uninstall_autostart_task();
         remove_global_repo_root();
     }
@@ -249,6 +250,18 @@ pub fn app_defaults() -> AppDefaults {
             .map(|config| effective_node_id(&config.node_id))
             .unwrap_or_else(persistent_node_id),
     }
+}
+
+/// State of AI tasks on this PC (Ollama runtime, model).
+#[tauri::command]
+pub fn ai_tasks_status() -> AiStatus {
+    ai_status()
+}
+
+/// Turns AI tasks on (downloads Ollama in the background) or off.
+#[tauri::command]
+pub fn set_ai_tasks(enabled: bool) -> Result<AiStatus, String> {
+    set_ai_enabled(enabled)
 }
 
 #[tauri::command]

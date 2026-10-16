@@ -114,7 +114,10 @@ pub(crate) fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child,
         // Results are verified by another worker, or by the worker itself when
         // it is the only one on the network (node defaults).
         .env("SILICIUM_WORK_OWN_TASKS", "1")
-        .env("COMPUTE_DAEMON_URL", "http://127.0.0.1:9090");
+        .env("COMPUTE_DAEMON_URL", "http://127.0.0.1:9090")
+        // The app's Ollama (AI tasks, see ai.rs). When the user did not turn
+        // AI tasks on, nothing answers there and the node takes no AI task.
+        .env("SILICIUM_OLLAMA_URL", ollama_url());
     spawn_detached(command, repo_root)
 }
 

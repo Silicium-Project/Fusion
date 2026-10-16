@@ -8,6 +8,7 @@ fn crate_source() -> String {
     [
         include_str!("lib.rs"),
         include_str!("activity/mod.rs"),
+        include_str!("ai.rs"),
         include_str!("activity/machine.rs"),
         include_str!("checks.rs"),
         include_str!("commands.rs"),
@@ -659,4 +660,24 @@ fn runtime_telemetry_parser_preserves_resource_metrics() {
     assert_eq!(telemetry.runtime_thread_count, 7);
     assert!((telemetry.process_cpu_percent - 37.25).abs() < f64::EPSILON);
     assert!((telemetry.system_memory_percent - 50.0).abs() < f64::EPSILON);
+}
+
+#[test]
+fn ollama_is_pinned_for_every_desktop_platform() {
+    for (os, arch) in [("windows", "x86_64"), ("linux", "x86_64"), ("linux", "aarch64"), ("macos", "aarch64")] {
+        let asset = asset_for(os, arch).unwrap_or_else(|| panic!("no Ollama for {os} {arch}"));
+        assert_eq!(asset.sha256.len(), 64);
+        assert!(asset.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert!(asset.name.starts_with("ollama-"));
+    }
+    assert!(asset_for("freebsd", "x86_64").is_none());
+    assert_eq!(ollama_url(), "http://127.0.0.1:11435", "never the user's own Ollama (11434)");
+}
+
+#[test]
+fn the_node_is_always_told_where_the_apps_ollama_is() {
+    let source = crate_source();
+    assert!(source.contains(".env(\"SILICIUM_OLLAMA_URL\", ollama_url())"));
+    assert!(source.contains("ensure_ollama(&repo_root);"), "the supervisor starts Ollama");
+    assert!(source.contains("stop_ollama();"), "stopping the node stops Ollama");
 }

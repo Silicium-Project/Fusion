@@ -40,6 +40,7 @@ session starts.
 | `service.rs` | Windows service / Run key and Linux autostart |
 | `paths.rs` | PID files and application state directory |
 | `checks.rs` | Environment checks shown in the UI |
+| `ai.rs` | AI tasks (opt-in): downloads the pinned Ollama release (hash checked), runs it on `127.0.0.1:11435` next to the node, stops it with the node |
 | `activity/` | Logs, task history, per-machine activity (`machine.rs`) |
 | `update/` | Self-update: status and locks (`mod.rs`), manifest and signature (`manifest.rs`), download and install (`install.rs`) |
 | `http.rs`, `logging.rs` | `curl` helpers, hashing, app error log |

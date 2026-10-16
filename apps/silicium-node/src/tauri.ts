@@ -205,6 +205,24 @@ export type UpdateStatus = {
   checkIntervalSeconds: number;
 };
 
+/** AI tasks: the Ollama runtime the app runs for the node (see ai.rs). */
+export type AiStatus = {
+  enabled: boolean;
+  state: 'off' | 'downloading' | 'installing' | 'installed' | 'running' | 'unsupported' | 'error';
+  message: string;
+  downloadedBytes: number;
+  version: string;
+  modelReady: boolean;
+};
+
+export async function aiTasksStatus(): Promise<AiStatus> {
+  return await invoke<AiStatus>('ai_tasks_status');
+}
+
+export async function setAiTasks(enabled: boolean): Promise<AiStatus> {
+  return await invoke<AiStatus>('set_ai_tasks', { enabled });
+}
+
 export async function startNode(config: NodeConfig): Promise<string> {
   return await invoke<string>('start_node', { config });
 }
