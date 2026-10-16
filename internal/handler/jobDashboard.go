@@ -85,6 +85,9 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 		payload["documentIndex"] = index
 		payload["collectionDocuments"] = h.collectionDocuments(job)
 	}
+	if batchAI := batchAIDashboard(job); batchAI != nil {
+		payload["batchAI"] = batchAI
+	}
 	writeJSON(w, http.StatusOK, payload)
 }
 
@@ -100,6 +103,10 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	}
 	if silicium.IsDocumentSearch(job.Workload) {
 		writeDocumentIndexExport(w, job)
+		return
+	}
+	if silicium.IsBatchAI(job.Workload) {
+		writeBatchAIResult(w, r, job)
 		return
 	}
 	serveJobResult(w, r, job)

@@ -50,6 +50,17 @@ var documentSearchSpec = workloadSpec{
 	ResultFile: "index/index.json",
 }
 
+// BatchAIWorkload is the workload of "Traitement par IA": the network
+// applies one instruction to every item of a list with a pinned language
+// model run by Ollama on the workers.
+const BatchAIWorkload = "ai/llm/qwen2.5-1.5b-instruct"
+
+var batchAISpec = workloadSpec{
+	NodeID:     BatchAIWorkload,
+	StorageDir: "llm",
+	ResultFile: "answers/result.json",
+}
+
 // workloadSpecs lists the accepted workload names, aliases included.
 var workloadSpecs = map[string]workloadSpec{
 	"":                        raytracerSpec,
@@ -57,12 +68,19 @@ var workloadSpecs = map[string]workloadSpec{
 	"calcul/integrity/sha256": sha256Spec,
 	"calcul/hash/sha256":      sha256Spec,
 	DocumentSearchWorkload:    documentSearchSpec,
+	BatchAIWorkload:           batchAISpec,
 }
 
 // IsDocumentSearch reports whether `workload` is a document search.
 func IsDocumentSearch(workload string) bool {
 	spec, ok := workloadSpecFor(workload)
 	return ok && spec.NodeID == DocumentSearchWorkload
+}
+
+// IsBatchAI reports whether `workload` is a batch AI job.
+func IsBatchAI(workload string) bool {
+	spec, ok := workloadSpecFor(workload)
+	return ok && spec.NodeID == BatchAIWorkload
 }
 
 // workloadSpecFor returns the spec of a workload name.

@@ -224,7 +224,7 @@ paths:
   /jobs/{id}/dashboard:
     get:
       summary: Lire le détail métier et technique d’une exécution
-      description: Pour une recherche dans des documents terminée, `documentIndex` (documents lus, fichiers ignorés, nombre de passages de cette tâche) et `collectionDocuments` (tous les documents couverts par une recherche, `{jobId, name, pages, passages}`, 500 au plus).
+      description: Pour une recherche dans des documents terminée, `documentIndex` (documents lus, fichiers ignorés, nombre de passages de cette tâche) et `collectionDocuments` (tous les documents couverts par une recherche, `{jobId, name, pages, passages}`, 500 au plus). Pour un traitement par IA, `batchAI` : `request` (`task`, `instruction`, `output`, `maxTokens`, `itemCount`, `source`) et, une fois terminé, `result` (`model`, `itemCount`, `answered`).
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -240,9 +240,10 @@ paths:
   /jobs/{id}/result:
     get:
       summary: Télécharger le résultat final
-      description: Pour une recherche dans des documents, un ZIP de l’index (index.json, vectors.f32, passages.jsonl, LISEZMOI.txt).
+      description: Pour une recherche dans des documents, un ZIP de l’index (index.json, vectors.f32, passages.jsonl, LISEZMOI.txt). Pour un traitement par IA, le tableau des réponses en CSV (UTF-8 avec BOM), ou en JSON Lines avec `format=jsonl`.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: format, in: query, schema: { type: string, enum: [csv, jsonl] }, description: Traitement par IA seulement }
       responses:
         '200': { description: Artefact final }
   /jobs/{id}/search:
@@ -279,6 +280,35 @@ paths:
         '404': { description: Tâche introuvable ou qui n’est pas une recherche dans des documents }
         '502': { description: Recherche indisponible }
         '503': { description: Le modèle se prépare ; réessayer après `Retry-After` secondes }
+  /jobs/{id}/answers:
+    get:
+      summary: Lire les réponses d’un traitement par IA
+      description: Éléments répondus, dans l’ordre. Tant que la tâche tourne, seuls ceux des parties déjà vérifiées par le réseau sont là (`complete` faux).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        '200':
+          description: Une page de réponses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer, description: Éléments de la demande }
+                  available: { type: integer, description: Éléments répondus et vérifiés à ce jour }
+                  complete: { type: boolean }
+                  offset: { type: integer }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        input: { type: string }
+                        output: { description: "Texte, catégorie, objet `{champ: texte}` ou null" }
+        '404': { description: Tâche introuvable ou qui n’est pas un traitement par IA }
   /jobs/{id}/documents:
     get:
       summary: Ouvrir un document envoyé

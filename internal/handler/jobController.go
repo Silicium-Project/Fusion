@@ -59,6 +59,13 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		inputPath, collectionID, defaultTitle = stored, collection, documentSearchTitle
+	} else if silicium.IsBatchAI(options.workload) {
+		stored, status, key, args := storeBatchAIInput(r, inputDir)
+		if key != "" {
+			writeMessage(w, r, status, key, args...)
+			return
+		}
+		inputPath, defaultTitle = stored, batchAITitle
 	} else {
 		stored, status, key := storeUploadedJobInput(r, jobID, inputDir)
 		if key != "" {
