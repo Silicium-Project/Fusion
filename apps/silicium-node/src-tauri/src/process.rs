@@ -21,6 +21,7 @@ pub(crate) fn stop_node_processes(repo_root: &Path) -> Result<(), String> {
         kill_process_tree(pid)?;
     }
     kill_known_silicium_processes(Some(repo_root));
+    stop_ollama();
     remove_pid(repo_root);
     remove_supervisor_pid(repo_root);
     Ok(())
@@ -67,6 +68,7 @@ pub(crate) fn notify_peer_leave(config: &NodeConfig) {
 pub fn run_cleanup_cli() -> i32 {
     let Some(repo_root) = resolve_optional_repo_root(None) else {
         kill_known_silicium_processes(None);
+        stop_ollama();
         uninstall_autostart_task();
         remove_global_repo_root();
         return 0;

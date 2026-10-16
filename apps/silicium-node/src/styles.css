@@ -1529,3 +1529,58 @@ label {
 .reputation-card small {
   color: rgba(226, 232, 240, 0.64);
 }
+
+/* Taches IA (Ollama) */
+.ai-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ai-head p,
+.ai-note {
+  margin: 6px 0 0;
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ai-switch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-switch input {
+  width: 18px;
+  height: 18px;
+  accent-color: #22c55e;
+}
+
+.ai-state {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.12);
+  font-size: 13px;
+}
+
+.ai-state.running {
+  background: rgba(34, 197, 94, 0.12);
+  color: #bbf7d0;
+}
+
+.ai-state.error {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+}

@@ -216,6 +216,21 @@
         </section>
       </section>
 
+      <section class="panel ai-panel">
+        <div class="ai-head">
+          <div>
+            <h2>Taches IA</h2>
+            <p>Votre PC aide aussi a traiter des listes de textes avec une IA (resumer, traduire, classer). Le modele tourne en local avec Ollama.</p>
+          </div>
+          <label class="ai-switch">
+            <input type="checkbox" :checked="ai.enabled" :disabled="aiBusy || ai.state === 'unsupported'" @change="toggleAi(($event.target as HTMLInputElement).checked)">
+            <span>{{ ai.enabled ? 'Active' : 'Desactive' }}</span>
+          </label>
+        </div>
+        <p class="ai-state" :class="ai.state">{{ aiStateLabel }}</p>
+        <p v-if="!ai.enabled && ai.state !== 'unsupported'" class="ai-note">Activer telecharge Ollama {{ ai.version }} (environ 1,4 Go) puis le modele Qwen 2.5 1,5B (1,1 Go) a la premiere tache. Les textes traites viennent d autres utilisateurs ; vos fichiers ne sont pas lus.</p>
+      </section>
+
       <section class="panel network-directory">
         <div class="directory-heading">
           <div>
@@ -470,6 +485,9 @@ import {
   stopNode,
   checkForUpdates,
   updateStatus,
+  aiTasksStatus,
+  setAiTasks,
+  type AiStatus,
   type NodeActivity,
   type NodeDiagnostics,
   type UpdateStatus,
@@ -516,6 +534,39 @@ const form = reactive({
 });
 
 const status = reactive({ running: false, roles: 'compute,verify' });
+const ai = reactive<AiStatus>({ enabled: false, state: 'off', message: '', downloadedBytes: 0, version: '', modelReady: false });
+const aiBusy = ref(false);
+const aiStateLabel = computed(() => {
+  switch (ai.state) {
+    case 'downloading': return `Telechargement d Ollama... ${formatBytes(ai.downloadedBytes)}`;
+    case 'installing': return 'Installation d Ollama...';
+    case 'installed': return 'Ollama installe, demarrage avec le noeud...';
+    case 'running': return ai.modelReady ? 'Pret : ce PC prend des taches IA.' : 'Ollama demarre. Le modele sera telecharge a la premiere tache IA.';
+    case 'unsupported': return ai.message || 'Ollama n est pas disponible pour ce systeme.';
+    case 'error': return `Echec de l installation : ${ai.message}. Desactivez puis reactivez pour reessayer.`;
+    default: return 'Ce PC ne prend pas de taches IA.';
+  }
+});
+
+async function refreshAi() {
+  try {
+    Object.assign(ai, await aiTasksStatus());
+  } catch {
+    // Etat IA indisponible : nouvel essai au prochain rafraichissement.
+  }
+}
+
+async function toggleAi(enabled: boolean) {
+  aiBusy.value = true;
+  try {
+    Object.assign(ai, await setAiTasks(enabled));
+  } catch (error) {
+    ai.state = 'error';
+    ai.message = friendlyError(error);
+  } finally {
+    aiBusy.value = false;
+  }
+}
 const activity = reactive<NodeActivity>({
   knownResults: 0,
   knownTasks: 0,
@@ -801,6 +852,7 @@ async function refreshAll() {
     await refreshStatus();
     await refreshActivity();
     await refreshUpdateStatus();
+    await refreshAi();
     refreshError.value = '';
   } catch (error) {
     refreshError.value = `Impossible de lire l etat local : ${friendlyError(error)}`;

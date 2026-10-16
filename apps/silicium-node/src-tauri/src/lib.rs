@@ -30,6 +30,7 @@ use std::{
 use tauri::State;
 
 mod activity;
+mod ai;
 mod checks;
 mod commands;
 mod config;
@@ -59,6 +60,7 @@ use windows_sys::Win32::{
 };
 
 use activity::*;
+use ai::*;
 use checks::*;
 use config::*;
 use http::*;
@@ -107,7 +109,9 @@ pub fn run() {
             commands::node_diagnostics,
             commands::app_defaults,
             commands::update_status,
-            commands::check_for_updates
+            commands::check_for_updates,
+            commands::ai_tasks_status,
+            commands::set_ai_tasks
         ])
         .run(tauri::generate_context!())
     {
