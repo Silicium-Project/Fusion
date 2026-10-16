@@ -9,14 +9,17 @@
 import type { CreateJobInput } from '~/composables/useJobs';
 import { extractJobError } from '~/utils/jobs';
 import { DOCUMENT_SEARCH_WORKLOAD } from '~/utils/documents';
+import { BATCH_AI_WORKLOAD } from '~/utils/batchAI';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const route = useRoute();
 // `?workload=documents` opens the document search; `&collection=…` adds
-// documents to an existing one ("Ajouter des documents").
+// documents to an existing one ("Ajouter des documents"); `?workload=ai`
+// opens the batch AI processing.
 const collectionId = computed(() => typeof route.query.collection === 'string' ? route.query.collection : '');
 /** `?workload=` preselects a type (from the job types page). */
 const initialWorkload = computed(() => {
   if (route.query.workload === 'documents' || collectionId.value) return DOCUMENT_SEARCH_WORKLOAD;
+  if (route.query.workload === 'ai') return BATCH_AI_WORKLOAD;
   return typeof route.query.workload === 'string' && ['raytracer', 'calcul/integrity/sha256'].includes(route.query.workload) ? route.query.workload : '';
 });
 const router = useRouter(); const { createJob } = useJobs(); const submitting = ref(false); const error = ref('');

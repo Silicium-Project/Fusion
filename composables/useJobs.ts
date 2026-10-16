@@ -1,5 +1,6 @@
 import { resultExtension } from '~/utils/jobs';
 import { isDocumentSearchWorkload, type DocumentHit } from '~/utils/documents';
+import { isBatchAIWorkload, type BatchAnswersPage } from '~/utils/batchAI';
 import type { Job, JobDashboard, JobList } from '~/types/api';
 import { clientCache } from '~/services/cache';
 import { translate } from '~/utils/i18n';
@@ -82,12 +83,17 @@ export function useJobs() {
       for (const document of input.files || []) form.append('files', document);
       form.append('acknowledge_sharing', input.acknowledgeSharing ? '1' : '0');
       if (input.collectionId) form.append('collection_id', input.collectionId);
+    } else if (isBatchAIWorkload(input.workload)) {
+      // The request (`request.json`) is built in the browser; the network
+      // splits the list itself.
+      if (input.file) form.append('file', input.file);
+      form.append('acknowledge_sharing', input.acknowledgeSharing ? '1' : '0');
     } else {
       form.append('fragment_count', String(input.fragmentCount));
       if (input.file) form.append('file', input.file);
     }
     // Documents can weigh 64 Mo: leave time for slow uploads.
-    const job = await authorizedFetch<Job>('/jobs', { method: 'POST', body: form, timeout: isDocumentSearchWorkload(input.workload) ? 300_000 : 30_000 });
+    const job = await authorizedFetch<Job>('/jobs', { method: 'POST', body: form, timeout: isDocumentSearchWorkload(input.workload) || isBatchAIWorkload(input.workload) ? 300_000 : 30_000 });
     clientCache.invalidate('jobs:');
     return job;
   }
@@ -99,11 +105,13 @@ export function useJobs() {
     return job;
   }
 
-  async function downloadResult(job: Job): Promise<void> {
+  /** Downloads the result; `format` picks one of the formats a job offers (`jsonl` for batch AI answers). */
+  async function downloadResult(job: Job, format?: string): Promise<void> {
     const token = await ensureAccessToken();
     if (!token) throw new Error(translate('common.sessionExpired'));
     const config = useRuntimeConfig();
-    const response = await fetch(`${config.public.apiBase}/jobs/${job.id}/result`, { headers: { Authorization: `Bearer ${token}` } });
+    const query = format ? `?format=${encodeURIComponent(format)}` : '';
+    const response = await fetch(`${config.public.apiBase}/jobs/${job.id}/result${query}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) throw new Error(translate('errors.resultUnavailable'));
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
@@ -112,6 +120,11 @@ export function useJobs() {
     link.download = `${safeDownloadName(job.title)}-${job.id}.${resultExtension(blob.type, response.headers.get('content-disposition'))}`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  /** A page of the answers of a batch AI job (verified ones while it runs). */
+  async function loadAnswers(id: number, offset = 0, limit = 50): Promise<BatchAnswersPage> {
+    return authorizedFetch<BatchAnswersPage>(`/jobs/${id}/answers`, { query: { offset, limit } });
   }
 
   /** The passages of the job's collection closest to `query`, best first. */
@@ -141,5 +154,5 @@ export function useJobs() {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
-  return { jobs, total, loading, error, loadJobs, getJobDashboard, createJob, cancelJob, downloadResult, searchDocuments, openDocument };
+  return { jobs, total, loading, error, loadJobs, getJobDashboard, createJob, cancelJob, downloadResult, loadAnswers, searchDocuments, openDocument };
 }

@@ -285,6 +285,62 @@ test('documents are sent for a document search only after the sharing consent', 
   expect(sent).not.toContain('name="fragment_count"');
 });
 
+test('a list is read in the browser and sent as an AI request after the consent', async ({ page }) => {
+  let sent = '';
+  await page.route('**/api/jobs', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent = route.request().postData() || '';
+    return route.fulfill({ status: 202, json: { ...job, workload: 'ai/llm/qwen2.5-1.5b-instruct' } });
+  });
+  await page.goto('/jobs/new?workload=ai');
+  await page.getByPlaceholder('Ex. Rendu intérieur — version 4').fill('Avis clients');
+  await page.locator('input[type=file]').setInputFiles({ name: 'avis.csv', mimeType: 'text/csv', buffer: Buffer.from('date;avis\n2026-09-01;Très bien, je recommande.\n2026-09-02;\n2026-09-03;Colis abîmé.\n') });
+  await expect(page.getByText('2 éléments · 1 ligne vide ignorée')).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Colonne à traiter' })).toHaveValue('1');
+  await page.getByRole('radio', { name: /Classer/ }).click();
+  await expect(page.getByPlaceholder('positif, négatif, neutre')).toHaveValue('positif, négatif, neutre');
+  const continueButton = page.getByRole('button', { name: 'Continuer' });
+  await expect(continueButton).toBeDisabled();
+  await page.getByText('Les machines du réseau peuvent lire ma liste').click();
+  await continueButton.click();
+  await expect(page.locator('.advanced-options')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await expect(page.getByText('2 éléments')).toBeVisible();
+  await page.getByRole('button', { name: 'Lancer le calcul' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs/1');
+  expect(sent).toContain('name="workload"\r\n\r\nai/llm/qwen2.5-1.5b-instruct');
+  expect(sent).toContain('name="acknowledge_sharing"\r\n\r\n1');
+  expect(sent).toContain('filename="request.json"');
+  expect(sent).toContain('"labels":["positif","négatif","neutre"]');
+  expect(sent).toContain('"items":["Très bien, je recommande.","Colis abîmé."]');
+  expect(sent).not.toContain('name="fragment_count"');
+});
+
+test('AI answers appear as parts are verified, then the table can be downloaded', async ({ page }) => {
+  const aiJob = { ...job, title: 'Avis clients', workload: 'ai/llm/qwen2.5-1.5b-instruct', status: 'running', completedAt: undefined };
+  const request = { task: 'classify', instruction: 'Classe cet avis client selon son ton.', output: { kind: 'label', labels: ['positif', 'négatif', 'neutre'] }, maxTokens: 32, itemCount: 3, source: { name: 'avis.csv', column: 'avis' } };
+  let finished = false;
+  await page.route('**/api/jobs/1/dashboard', route => route.fulfill({ json: {
+    ...dashboard, job: finished ? { ...aiJob, status: 'completed' } : aiJob, resultReady: finished,
+    summary: { fragmentCount: 2, fragments: [{ fragment_index: 0, status: 'completed', items: 2 }, { fragment_index: 1, status: finished ? 'completed' : 'running', items: 1 }] },
+    batchAI: finished ? { request, result: { model: { id: 'qwen2.5-1.5b-instruct' }, itemCount: 3, answered: 3 } } : { request },
+  } }));
+  await page.route('**/api/jobs/1/answers?*', route => route.fulfill({ json: finished
+    ? { total: 3, available: 3, complete: true, offset: 0, items: [{ id: 0, input: 'Très bien.', output: 'positif' }, { id: 1, input: 'Colis abîmé.', output: 'négatif' }, { id: 2, input: 'Correct.', output: 'neutre' }] }
+    : { total: 3, available: 2, complete: false, offset: 0, items: [{ id: 0, input: 'Très bien.', output: 'positif' }, { id: 1, input: 'Colis abîmé.', output: 'négatif' }] } }));
+  await page.goto('/jobs/1');
+  await expect(page.getByText('« Classe cet avis client selon son ton. »')).toBeVisible();
+  await expect(page.getByText('2 / 3 réponses vérifiées', { exact: false })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Colis abîmé.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Télécharger le tableau (CSV)' })).toHaveCount(0);
+  finished = true;
+  await page.getByRole('button', { name: 'Rafraîchir' }).click();
+  await expect(page.getByText('3 éléments traités, 3 avec une réponse', { exact: false })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'neutre' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Télécharger le tableau (CSV)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Télécharger', exact: true })).toHaveCount(0);
+});
+
 test('a finished document search answers questions with the source of each passage', async ({ page }) => {
   const documentJob = { ...job, title: 'Cours de droit', workload: 'ai/embedding/multilingual-e5-small', collectionId: 'site-docs-1' };
   await page.route('**/api/jobs/1/dashboard', route => route.fulfill({ json: {
@@ -366,10 +422,10 @@ test('the site switches to English and German, and the API is asked in that lang
 
 test('the job types page explains each type and offers its example file', async ({ page }) => {
   await page.goto('/workloads');
-  for (const name of ['Rendu d’image', 'Empreinte SHA-256', 'Recherche dans mes documents']) {
+  for (const name of ['Rendu d’image', 'Empreinte SHA-256', 'Recherche dans mes documents', 'Traitement par IA']) {
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
   }
-  for (const file of ['silicium-demo-scene.cfg', 'silicium-hash-example.txt', 'silicium-documents-example.zip']) {
+  for (const file of ['silicium-demo-scene.cfg', 'silicium-hash-example.txt', 'silicium-documents-example.zip', 'silicium-avis-clients.csv']) {
     const link = page.locator(`a[href="/examples/${file}"]`);
     await expect(link).toHaveAttribute('download', file);
     const response = await page.request.get(`/examples/${file}`);

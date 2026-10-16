@@ -1,4 +1,5 @@
 import type { CollectionDocument, DocumentIndexSummary } from '~/utils/documents';
+import type { BatchAIDashboard } from '~/utils/batchAI';
 
 export type JobStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'expired' | string;
 
@@ -228,6 +229,8 @@ export interface JobDashboard {
   documentIndex?: DocumentIndexSummary;
   /** Every document a search of this job covers (the whole collection). */
   collectionDocuments?: CollectionDocument[] | null;
+  /** The request of a batch AI job and, once done, its model and counts. */
+  batchAI?: BatchAIDashboard;
   diagnostics?: Record<string, unknown>;
   summary?: {
     success?: boolean;

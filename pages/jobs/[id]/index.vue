@@ -3,18 +3,18 @@
     <template v-if="dashboard">
       <header class="job-head">
         <div><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>{{ t('jobDetail.allProjects') }}</NuxtLink><div class="job-head__title"><span class="job-head__cube"><UiIcon name="cube"/></span><div><div class="cluster"><h1>{{ dashboard.job.title }}</h1><UiStatusBadge :status="dashboard.job.status" /></div><p>{{ dashboard.job.description || t('jobDetail.defaultDescription') }}</p></div></div></div>
-        <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">{{ t('common.refresh') }}</UiButton><UiButton v-if="dashboard.resultReady && !documentJob" icon="download" size="small" @click="download">{{ t('common.download') }}</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">{{ t('jobDetail.stop') }}</UiButton></div>
+        <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">{{ t('common.refresh') }}</UiButton><UiButton v-if="dashboard.resultReady && !documentJob && !batchJob" icon="download" size="small" @click="download">{{ t('common.download') }}</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">{{ t('jobDetail.stop') }}</UiButton></div>
       </header>
       <UiNotice v-if="jobErrorDetail" tone="danger" :title="t('jobDetail.errorTitle')">{{ compactJobError(jobErrorDetail) }}</UiNotice>
       <section class="metric-grid">
-        <MetricCard :label="t('jobDetail.parts')" :value="fragmentTotal || (documentJob ? t('jobDetail.partsAuto') : 0)" :detail="!fragmentTotal && documentJob ? t('jobDetail.partsAutoText') : t('jobDetail.partsDone', { count: fragmentDone })" icon="layers" tone="mint" />
+        <MetricCard :label="t('jobDetail.parts')" :value="fragmentTotal || (documentJob || batchJob ? t('jobDetail.partsAuto') : 0)" :detail="!fragmentTotal && (documentJob || batchJob) ? t('jobDetail.partsAutoText') : t('jobDetail.partsDone', { count: fragmentDone })" icon="layers" tone="mint" />
         <MetricCard :label="t('jobDetail.machines')" :value="nodeCount" :detail="t('jobDetail.machinesText')" icon="nodes" tone="ink" />
         <MetricCard :label="t('jobDetail.duration')" :value="duration" :detail="t('jobDetail.sinceStart')" icon="clock" tone="violet" />
         <MetricCard :label="t('jobDetail.efficiency')" :value="computeShare" :detail="performanceDetail" icon="activity" tone="mint" />
         <MetricCard :label="t('jobDetail.proofs')" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? t('jobDetail.tracing') : t('jobDetail.noTracing')" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
-        <UiCard id="result" :title="documentJob ? t('jobDetail.searchTitle') : t('jobDetail.resultTitle')" :description="resultDescription" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><DocumentSearch v-else-if="documentJob" :dashboard="dashboard" /><UiEmptyState v-else :title="t('jobDetail.downloadableTitle')" :description="t('jobDetail.downloadableText')" icon="download" /></UiCard>
+        <UiCard id="result" :title="documentJob ? t('jobDetail.searchTitle') : batchJob ? t('jobDetail.answersTitle') : t('jobDetail.resultTitle')" :description="resultDescription" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><DocumentSearch v-else-if="documentJob" :dashboard="dashboard" /><BatchAIAnswers v-else-if="batchJob" :dashboard="dashboard" /><UiEmptyState v-else :title="t('jobDetail.downloadableTitle')" :description="t('jobDetail.downloadableText')" icon="download" /></UiCard>
         <UiCard :title="t('jobDetail.steps')" :description="t('jobDetail.stepsText')" padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
       </div>
       <div class="job-detail-grid job-detail-grid--bottom">
@@ -39,6 +39,7 @@
 import type { JobDashboard, JobFragment } from '~/types/api';
 import { compactIdentifier, formatDuration, formatPerformanceMultiple, formatPerformancePercent } from '~/utils/format';
 import { isDocumentSearchWorkload } from '~/utils/documents';
+import { isBatchAIWorkload } from '~/utils/batchAI';
 import { awaitingChainAnchor, compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, jobPartCount, shouldRefreshJob } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const { t } = useI18n();
@@ -48,7 +49,8 @@ const visibleLimit = 80;
 const imageJob = computed(() => isImageWorkload(dashboard.value?.job.workload));
 const hashJob = computed(() => isHashWorkload(dashboard.value?.job.workload));
 const documentJob = computed(() => isDocumentSearchWorkload(dashboard.value?.job.workload));
-const resultDescription = computed(() => imageJob.value ? t('jobDetail.imageDescription') : documentJob.value ? t('jobDetail.documentsDescription') : t('jobDetail.hashDescription'));
+const batchJob = computed(() => isBatchAIWorkload(dashboard.value?.job.workload));
+const resultDescription = computed(() => imageJob.value ? t('jobDetail.imageDescription') : documentJob.value ? t('jobDetail.documentsDescription') : batchJob.value ? t('jobDetail.answersDescription') : t('jobDetail.hashDescription'));
 const fragments = computed(() => dashboard.value?.summary?.fragments || []);
 const visibleFragments = computed(() => fragments.value.slice(-visibleLimit).reverse());
 const jobErrorDetail = computed(() => dashboard.value?.job.errorMessage || dashboard.value?.summary?.failureDetail || dashboard.value?.summary?.traceback || dashboard.value?.summary?.error || '');
