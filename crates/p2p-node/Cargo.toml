@@ -15,6 +15,7 @@ reqwest.workspace = true
 sha2 = "0.10.9"
 silicium_node_core.workspace = true
 silicium-embedding = { path = "../embedding" }
+silicium-llm = { path = "../llm" }
 silicium-raytracer = { path = "../raytracer" }
 sysinfo = { version = "0.37", default-features = false, features = ["system", "disk"] }
 
@@ -24,8 +25,13 @@ libc = "0.2"
 
 [dev-dependencies]
 silicium-embedding = { path = "../embedding", features = ["test-model"] }
+silicium-llm = { path = "../llm", features = ["test-ollama"] }
 
 [features]
 # Adds the `ai/embedding/test-tiny` workload (tiny in-memory model) for the
 # local end-to-end check (`scripts/e2e-local.sh`). Never in a release.
 test-model = ["silicium-embedding/test-model"]
+# Adds the `ai/llm/test-tiny` workload (a test model answered by the fake
+# Ollama of `silicium-llm fake-ollama`) for the local end-to-end check.
+# Never in a release.
+test-ollama = ["silicium-llm/test-ollama"]

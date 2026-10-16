@@ -11,12 +11,16 @@
 #
 # WORKLOAD selects the workload (default `raytracer`, input = a scene;
 # `calcul/integrity/sha256`, input = any file, checked against Python's
-# hashlib; or `ai/embedding/test-tiny`, input = documents (.txt, .md, .pdf,
-# .docx or .zip), checked by a search through the control API).
+# hashlib; `ai/embedding/test-tiny`, input = documents (.txt, .md, .pdf,
+# .docx or .zip), checked by a search through the control API; or
+# `ai/llm/test-tiny`, input = a `silicium-llm-request/1` JSON file, answered
+# by a fake Ollama per worker, checked item by item).
 #
 # Usage: crates/p2p-node/scripts/e2e-local.sh <input file> [out dir]
 # Needs: cargo build --release -p p2p_node -p compute_daemon -p silicium-raytracer
-#        (with `--features p2p_node/test-model` for ai/embedding/test-tiny)
+#        (with `--features p2p_node/test-model` for ai/embedding/test-tiny;
+#        with `--features p2p_node/test-ollama -p silicium-llm --features
+#        silicium-llm/test-ollama` for ai/llm/test-tiny)
 # Ports: API 19092, libp2p 46201, workers 19100+n and 19200+n, all shifted by
 # E2E_PORT_OFFSET (default 0) so that parallel runs on one host do not collide.
 set -u
@@ -31,9 +35,11 @@ API=$((19092 + OFFSET))
 P2P=$((46201 + OFFSET))
 COMPUTE_BASE=$((19100 + OFFSET))
 WORKER_API_BASE=$((19200 + OFFSET))
+OLLAMA_BASE=$((19300 + OFFSET))
 case "$WORKLOAD" in
   raytracer) FINAL_EXTENSION=png ;;
   ai/embedding/*) FINAL_EXTENSION=index.json ;;
+  ai/llm/*) FINAL_EXTENSION=result.json ;;
   *) FINAL_EXTENSION=json ;;
 esac
 # The input keeps its name: document search reads the format from it.
@@ -52,6 +58,7 @@ start_orchestrator() {
     API_PORT=$API SILICIUM_P2P_BIND=127.0.0.1 SILICIUM_P2P_PORT=$P2P \
     SILICIUM_ENABLE_QUIC_LISTENER=0 SILICIUM_WORK_OWN_TASKS=0 SILICIUM_MAX_FRAGMENTS=4 \
     SILICIUM_EMBEDDING_PASSAGES_PER_FRAGMENT="${PASSAGES_PER_FRAGMENT:-8}" \
+    SILICIUM_LLM_ITEMS_PER_FRAGMENT="${ITEMS_PER_FRAGMENT:-4}" \
     SILICIUM_TARGET_BYTES_PER_FRAGMENT="${TARGET_BYTES:-4194304}" \
     "$BIN/p2p_node" >"$OUT/orchestrator.log" 2>&1) &
   pids+=($!)
@@ -59,8 +66,13 @@ start_orchestrator() {
 
 # start_worker <n> <orchestrator peer id>
 start_worker() {
-  local n=$1 dir="$OUT/w$1"
+  local n=$1 dir="$OUT/w$1" ollama=()
   mkdir -p "$dir/work"
+  if [[ "$WORKLOAD" == ai/llm/* ]]; then
+    "$BIN/silicium-llm" fake-ollama --bind "127.0.0.1:$((OLLAMA_BASE + n))" >"$dir/ollama.log" 2>&1 &
+    pids+=($!)
+    ollama=(SILICIUM_OLLAMA_URL="http://127.0.0.1:$((OLLAMA_BASE + n))")
+  fi
   (cd "$dir" && exec env -i PATH="$PATH" HOME="$HOME" \
     SILICIUM_COMPUTE_BIND="127.0.0.1:$((COMPUTE_BASE + n))" SILICIUM_COMPUTE_ROOT="$dir/work" \
     SILICIUM_RAYTRACER_BIN="$BIN/silicium-raytracer" \
@@ -73,7 +85,7 @@ start_worker() {
     SILICIUM_ENABLE_QUIC_LISTENER=0 \
     SILICIUM_BOOTSTRAP_PEERS="/ip4/127.0.0.1/tcp/$P2P/p2p/$2" \
     COMPUTE_DAEMON_URL="http://127.0.0.1:$((COMPUTE_BASE + n))" \
-    REPUTATION_BRIDGE_URL=http://127.0.0.1:1 \
+    REPUTATION_BRIDGE_URL=http://127.0.0.1:1 "${ollama[@]}" \
     "$BIN/p2p_node" >"$dir/node.log" 2>&1) &
   pids+=($!)
 }
@@ -122,6 +134,18 @@ hits = json.load(open(sys.argv[1]))["hits"]
 index = json.load(open(sys.argv[2]))
 assert hits and all(h["score"] >= hits[-1]["score"] for h in hits), hits
 print(f"search: {index['passage_count']} passages of {len(index['documents'])} document(s), best: {hits[0]['document']} p.{hits[0]['page']} ({hits[0]['score']:.3f})")
+PY
+    elif [[ "$WORKLOAD" == ai/llm/* ]]; then
+      python3 - "$OUT/o/work/results/$JOB.answers.jsonl" "$OUT/o/work/results/$JOB.result.json" "$SCENE" <<'PY' || exit 1
+import json, sys
+answers = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
+result = json.load(open(sys.argv[2], encoding="utf-8"))
+request = json.load(open(sys.argv[3], encoding="utf-8"))
+assert [a["id"] for a in answers] == list(range(len(request["items"]))), "every item, in order"
+assert [a["input"] for a in answers] == [item.strip() for item in request["items"]]
+assert all(a["output"] not in (None, "") for a in answers), answers
+assert result["item_count"] == len(answers) and result["answered"] == len(answers)
+print(f"llm: {len(answers)} items answered, first: {answers[0]['output']!r}")
 PY
     elif [[ "$WORKLOAD" != raytracer ]]; then
       python3 - "$OUT/o/work/results/$JOB.json" "$SCENE" <<'PY' || exit 1

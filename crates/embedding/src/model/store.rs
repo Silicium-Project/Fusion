@@ -126,39 +126,57 @@ impl ModelStore {
     /// Downloads the missing or damaged files of `spec` and returns their
     /// paths.
     pub fn ensure(&self, spec: &ModelSpec) -> Result<ModelPaths> {
-        fs::create_dir_all(&self.root)?;
         for file in spec.files() {
-            let path = self.file_path(&file);
-            if path.exists() {
-                if verify_file(&path, &file).is_ok() {
-                    continue;
-                }
-                fs::remove_file(&path)?;
-            }
-            self.download(spec, &file, &path)?;
+            self.ensure_file(spec.repository, spec.revision, &file)?;
         }
         Ok(self.paths(spec))
     }
 
-    /// URL of a file of `spec`.
-    pub fn url(&self, spec: &ModelSpec, file: &ModelFile) -> String {
-        format!(
-            "{}/{}/resolve/{}/{}",
-            self.base_url, spec.repository, spec.revision, file.name
-        )
+    /// Downloads `file` of `repository` at `revision` unless it is already
+    /// here and intact, and returns its path. Any pinned file can be kept
+    /// here: the language model of the `ai/llm/…` workload is too.
+    pub fn ensure_file(
+        &self,
+        repository: &str,
+        revision: &str,
+        file: &ModelFile,
+    ) -> Result<PathBuf> {
+        fs::create_dir_all(&self.root)?;
+        let path = self.file_path(file);
+        if path.exists() {
+            if verify_file(&path, file).is_ok() {
+                return Ok(path);
+            }
+            fs::remove_file(&path)?;
+        }
+        self.download(&self.file_url(repository, revision, file), file, &path)?;
+        Ok(path)
     }
 
-    fn file_path(&self, file: &ModelFile) -> PathBuf {
+    /// Where `file` is (or will be).
+    pub fn file_path(&self, file: &ModelFile) -> PathBuf {
         self.root.join(file.sha256)
     }
 
-    fn download(&self, spec: &ModelSpec, file: &ModelFile, path: &Path) -> Result<()> {
+    /// URL of a file of `spec`.
+    pub fn url(&self, spec: &ModelSpec, file: &ModelFile) -> String {
+        self.file_url(spec.repository, spec.revision, file)
+    }
+
+    fn file_url(&self, repository: &str, revision: &str, file: &ModelFile) -> String {
+        format!(
+            "{}/{}/resolve/{}/{}",
+            self.base_url, repository, revision, file.name
+        )
+    }
+
+    fn download(&self, url: &str, file: &ModelFile, path: &Path) -> Result<()> {
         let lock = DownloadLock::acquire(&path.with_extension("lock"))?;
         let partial = path.with_extension("partial");
         let mut sink = HashingWriter::new(File::create(&partial)?)
             .bounded(file.size)
             .touching(lock.path.clone());
-        let fetched = self.fetcher.fetch(&self.url(spec, file), &mut sink);
+        let fetched = self.fetcher.fetch(url, &mut sink);
         let (written, sha256) = sink.finish()?;
         let checked = fetched.and_then(|()| check(file, written, &sha256));
         if let Err(err) = checked {

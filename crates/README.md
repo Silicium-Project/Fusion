@@ -12,9 +12,10 @@ remplacé l'ancien runtime Python, supprimé (voir
 | [`reputation-bridge/`](reputation-bridge/) | `reputation_bridge` | binaire `reputation_bridge` | Scores de réputation, vérification de stake Solana | Prototype |
 | [`raytracer/`](raytracer/) | `silicium-raytracer` | binaire `silicium-raytracer` | Moteur de rendu déterministe, utilisé en production | Production |
 | [`embedding/`](embedding/) | `silicium-embedding` | bibliothèque + binaire `silicium-embed` | Recherche dans des documents : lecture des documents, passages, modèle épinglé, vecteurs, index | Nouveau (dev) |
+| [`llm/`](llm/) | `silicium-llm` | bibliothèque + binaire `silicium-llm` | Traitement par IA : demande, lot, prompt, réponses, vérification par similarité, client Ollama | Nouveau (dev) |
 
 Dépendances entre crates : `p2p-node` dépend de `node-core`, du raytracer
-(pipeline de tuiles) et de `embedding` (dépendances par chemin). Les autres crates sont indépendantes et communiquent en HTTP local.
+(pipeline de tuiles) de `embedding` et de `llm` (dépendances par chemin). Les autres crates sont indépendantes et communiquent en HTTP local.
 
 ## Construire et tester
 

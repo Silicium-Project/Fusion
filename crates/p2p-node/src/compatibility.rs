@@ -5,8 +5,9 @@
 //! progress, summaries, previews and node telemetry during the dev rollout.
 
 use crate::{
+    content::ContentStore,
     control::{ControlRegistry, ControlTask},
-    jobs::{JobManifest, JobStore, result_file},
+    jobs::{FragmentRef, JobManifest, JobStore, result_file},
     peers::profile_is_worker,
     storage::TaskBookState,
     task::PeerProfile,
@@ -343,6 +344,10 @@ impl CompatibilityWriter {
                 if source.is_file() && job.workload == workload::raytracer::ID {
                     self.write_fragment_preview(index, &source, job_dir);
                 }
+                // Verified answers of a batch AI job, shown while it runs.
+                if status == "completed" && source.is_file() && workload::llm::find(&job.workload).is_some() {
+                    self.write_answers_preview(index, job, fragment, &source, jobs, job_dir);
+                }
                 json!({
                     "fragment_index": index,
                     "fragment_count": job.fragments.len(),
@@ -414,6 +419,36 @@ impl CompatibilityWriter {
                 .join(format!("fragment-{index:03}.png")),
             &png,
         );
+    }
+
+    /// Writes `fragments/fragment-NNN.jsonl`, the answered items of a
+    /// verified fragment of a batch AI job (`{"id","input","output"}` per
+    /// line), once.
+    fn write_answers_preview(
+        &self,
+        index: usize,
+        job: &JobManifest,
+        fragment: &FragmentRef,
+        source: &Path,
+        jobs: &JobStore,
+        job_dir: &Path,
+    ) {
+        let target = job_dir
+            .join("fragments")
+            .join(format!("fragment-{index:03}.jsonl"));
+        if target.is_file() {
+            return;
+        }
+        let Some(sha256) = job.scene_sha256.as_deref() else {
+            return;
+        };
+        let input = jobs.root().join(ContentStore::relative_path(sha256));
+        let Ok(answers) = fs::read(source) else {
+            return;
+        };
+        if let Some(preview) = workload::llm::fragment_preview(&input, fragment, &answers) {
+            write_bytes(&target, &preview);
+        }
     }
 
     /// Copies a final result file for the BackEnd. Result files never change

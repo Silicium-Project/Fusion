@@ -100,6 +100,9 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_EMBEDDING_PREPARE_MEMORY_MB` | `2048` | Mémoire du processus enfant qui lit les documents (Unix) |
 | `SILICIUM_EMBEDDING_PREPARE_PARALLEL` | `2` | Lectures de documents en même temps |
 | `SILICIUM_EMBEDDING_PREPARE_IN_PROCESS` | `0` | `1` : lire les documents dans le processus du nœud (débogage uniquement) |
+| `SILICIUM_OLLAMA_URL` | — | Serveur Ollama du worker (l'app desktop lance le sien sur `http://127.0.0.1:11435`) ; sans lui, le nœud ne prend aucune tâche IA |
+| `SILICIUM_LLM_ITEMS_PER_FRAGMENT` | `8` | Éléments par fragment d'un traitement par IA |
+| `SILICIUM_LLM_MAX_FRAGMENTS` | `128` | Fragments par traitement par IA au plus (256 au maximum) |
 | `SILICIUM_PARALLEL_TASKS` | `1` | Tâches calculées en même temps par ce nœud |
 | `SILICIUM_WORK_OWN_TASKS` | `1` | `0` : ne pas calculer les tâches publiées par ce nœud (éditeur sans compute-daemon) |
 | `SILICIUM_ALLOW_SELF_VERIFICATION` | `1` | `0` : interdire l'auto-vérification quand ce nœud est le seul pair compute/verify (l'orchestrateur ne compte pas) |
@@ -154,10 +157,12 @@ sont communs. Ce qui change d'un calcul à l'autre est derrière le trait
 | `raytracer` (défaut) | scène `.cfg` | tuile d'image, rendue par le compute-daemon | blocs de lignes tirés au sort et re-rendus | `reassembled/render.ppm` + `.png` |
 | `calcul/integrity/sha256` (alias `calcul/hash/sha256`) | n'importe quel fichier (64 Mio max : taille d'un contenu échangé entre pairs ; chaque worker télécharge l'entrée entière) | morceau d'octets, haché dans le nœud | recalcul complet du morceau | `result/sha256.json` : empreinte de chaque morceau, empreinte de la liste, `input_hash` si un seul morceau |
 | `ai/embedding/multilingual-e5-small` | documents (PDF, `.docx`, texte, Markdown ou ZIP), transformés par l'éditeur en corpus de passages (`silicium-corpus/1`) dans un processus enfant | passages entiers, vectorisés par le modèle épinglé (crate `silicium-embedding`) | forme et normes du bloc, puis 3 à 8 passages tirés au sort recalculés et comparés par similarité cosinus (≥ 0,999) | `index/` : `index.json`, `vectors.f32`, `passages.jsonl` ; recherche par `/v1/embedding/search` |
+| `ai/llm/qwen2.5-1.5b-instruct` | demande `silicium-llm-request/1` (consigne + liste d'éléments), transformée par l'éditeur en lot canonique (`silicium-llm-batch/1`) | éléments entiers, répondus un par un par le modèle épinglé via l'Ollama du worker (crate `silicium-llm`) ; bail de 5 min renouvelable | ids et forme des réponses, puis 2 à 6 éléments tirés au sort recalculés et comparés par similarité (ROUGE-L des mots, égalité des catégories) | `answers/` : `answers.jsonl`, `answers.csv`, `result.json` ; parties vérifiées dans `fragments/fragment-NNN.jsonl` pendant le calcul |
 
 Le workload de recherche dans des documents est décrit en détail dans
 `docs/architecture/embedding-workload.md` : formats, modèle épinglé,
-vérification et sa probabilité de détection, exploitation, limites.
+vérification et sa probabilité de détection, exploitation, limites. Le
+traitement par IA l'est dans `docs/architecture/llm-workload.md`.
 
 L'identifiant voyage avec chaque tâche (`TaskEnvelope::workload`, absent =
 raytracer pour les éditeurs plus anciens) ; un nœud refuse une tâche d'un
@@ -178,7 +183,7 @@ ses tests ; le BackEnd doit aussi l'accepter (`ValidateWorkload`).
 | `src/activity.rs` | Travail en cours (envoyé dans le heartbeat) et journal `node.events.ndjson` lu par l'app desktop |
 | `src/content.rs` | Magasin de contenus par hash (scènes, images), commandes vers la boucle |
 | `src/fetch/` | Téléchargement entre pairs : fournisseurs DHT, requête-réponse, service ; test à deux nœuds dans `tests.rs` |
-| `src/workload/` | Workloads (voir ci-dessous) : `raytracer/` (tuiles, rendu, jalons, réassemblage), `sha256.rs` (morceaux d'octets), `embedding/` (préparation des documents, modèle en mémoire, calcul et vérification des vecteurs, recherche) |
+| `src/workload/` | Workloads (voir ci-dessous) : `raytracer/` (tuiles, rendu, jalons, réassemblage), `sha256.rs` (morceaux d'octets), `embedding/` (préparation des documents, modèle en mémoire, calcul et vérification des vecteurs, recherche), `llm/` (lot, Ollama et modèle épinglé, réponses, vérification par similarité) |
 | `src/jobs/` | Manifestes de jobs sur disque, assemblage du résultat par le workload du job ; tests dans `tests.rs` |
 | `src/publishing.rs` | Publication d'une tâche de l'API : scène partagée, découpage, proposition, DHT, gossip |
 | `src/results.rs` | Image finale d'une tâche finalisée : téléchargement, contrôle contre les jalons |
@@ -212,6 +217,14 @@ minuscule construit en mémoire (fonctionnalité `test-model`, jamais livrée) :
 ```bash
 cargo build --release -p p2p_node --features p2p_node/test-model -p compute_daemon -p silicium-raytracer
 WORKERS=2 WORKLOAD=ai/embedding/test-tiny crates/p2p-node/scripts/e2e-local.sh documents.zip
+```
+
+Le traitement par IA se teste avec un faux Ollama par worker
+(`silicium-llm fake-ollama`, fonctionnalité `test-ollama`, jamais livrée) :
+
+```bash
+cargo build --release -p p2p_node -p compute_daemon -p silicium-raytracer -p silicium-llm --features p2p_node/test-ollama,silicium-llm/test-ollama
+WORKERS=2 WORKLOAD=ai/llm/test-tiny crates/p2p-node/scripts/e2e-local.sh request.json
 ```
 
 ```bash

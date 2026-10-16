@@ -8,6 +8,7 @@
 //! | turn the submitted file into the shared input (optional) | publisher | [`Workload::prepare_input`] |
 //! | split a submitted task into fragments | publisher | [`Workload::split`] |
 //! | get ready to run it (e.g. download a model) | worker, verifier | [`Workload::ensure_ready`] |
+//! | lease of its tasks (long computations) | publisher | [`Workload::terms`] |
 //! | compute a fragment | worker | [`Workload::execute`] |
 //! | check another node's fragment | verifier | [`Workload::verify`] |
 //! | check a downloaded fragment result | publisher | [`Workload::accepts_result`] |
@@ -19,6 +20,7 @@
 //! not know.
 
 pub(crate) mod embedding;
+pub(crate) mod llm;
 pub(crate) mod raytracer;
 pub(crate) mod sha256;
 
@@ -28,7 +30,7 @@ use crate::{
     task::NetworkTask,
 };
 use futures::future::BoxFuture;
-use silicium_node_core::taskbook::{MilestoneSample, ResultState};
+use silicium_node_core::taskbook::{MilestoneSample, ResultState, TaskTerms};
 use std::path::Path;
 
 /// A result computed by this node, with the commitment published with it.
@@ -69,6 +71,12 @@ pub(crate) trait Workload: Send + Sync {
     /// Files of the final result, in the order [`Workload::assemble`]
     /// returns them; the last one is written last and marks the job done.
     fn published_outputs(&self) -> &'static [PublishedOutput];
+
+    /// Terms of this workload's tasks, from the node's (`base`): a workload
+    /// whose fragments take long gets a longer lease.
+    fn terms(&self, base: TaskTerms) -> TaskTerms {
+        base
+    }
 
     /// Turns the file submitted to the publisher into the input shared with
     /// the workers, or `Ok(None)` to share it as is (the default). Runs
@@ -140,22 +148,17 @@ pub(crate) trait Workload: Send + Sync {
     ) -> Result<Vec<OutputFile>, String>;
 }
 
-/// Every workload this node can run.
-#[cfg(not(any(test, feature = "test-model")))]
+/// Every workload this node can run, with the test workloads in tests and in
+/// the local end-to-end builds (never released).
 pub(crate) static REGISTRY: &[&dyn Workload] = &[
     &raytracer::Raytracer,
     &sha256::Sha256,
     &embedding::MULTILINGUAL_E5_SMALL,
-];
-
-/// With the tiny test model (tests and the local end-to-end check, never
-/// released).
-#[cfg(any(test, feature = "test-model"))]
-pub(crate) static REGISTRY: &[&dyn Workload] = &[
-    &raytracer::Raytracer,
-    &sha256::Sha256,
-    &embedding::MULTILINGUAL_E5_SMALL,
+    &llm::QWEN2_5_1_5B_INSTRUCT,
+    #[cfg(any(test, feature = "test-model"))]
     &embedding::TEST_TINY,
+    #[cfg(any(test, feature = "test-ollama"))]
+    &llm::TEST_TINY,
 ];
 
 /// Identifier of tasks that carry no workload (older publishers).

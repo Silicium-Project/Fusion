@@ -6,6 +6,7 @@ resolver = "3"
 members = [
     "crates/compute-daemon",
     "crates/embedding",
+    "crates/llm",
     "crates/node-core",
     "crates/p2p-node",
     "crates/raytracer",

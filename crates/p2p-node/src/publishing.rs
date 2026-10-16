@@ -162,7 +162,8 @@ fn publish_one(
             uri: DhtRecordEnvelope::task_record_key(&task.task_id),
             sha256: TaskEvent::payload_hash(&task_bytes),
         },
-        terms: settings.terms,
+        terms: crate::workload::of(task)
+            .map_or(settings.terms, |workload| workload.terms(settings.terms)),
     };
     match context.taskbook.append_signed(&task.task_id, proposal) {
         Ok(event) => publish_taskbook_event(swarm, topic, &event),
