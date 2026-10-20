@@ -31,7 +31,7 @@ fn runtime_work_dir(repo_root: &Path) -> PathBuf {
     runtime_node_dir(repo_root).join("work")
 }
 
-fn runtime_state_dir(repo_root: &Path) -> PathBuf {
+pub(crate) fn runtime_state_dir(repo_root: &Path) -> PathBuf {
     runtime_node_dir(repo_root).join("state")
 }
 
@@ -117,7 +117,10 @@ pub(crate) fn spawn_node(repo_root: &Path, config: &NodeConfig) -> Result<Child,
         .env("COMPUTE_DAEMON_URL", "http://127.0.0.1:9090")
         // The app's Ollama (AI tasks, see ai.rs). When the user did not turn
         // AI tasks on, nothing answers there and the node takes no AI task.
-        .env("SILICIUM_OLLAMA_URL", ollama_url());
+        .env("SILICIUM_OLLAMA_URL", ollama_url())
+        // The app's AI runtime (AI catalogue, see ai_runtime.rs), same rule.
+        .env("SILICIUM_AI_RUNTIME_URL", ai_runtime_url())
+        .env("SILICIUM_AI_RUNTIME_TOKEN", ai_runtime_token());
     spawn_detached(command, repo_root)
 }
 

@@ -124,6 +124,7 @@ pub fn run_supervisor_cli() -> i32 {
             }
         }
         ensure_ollama(&repo_root);
+        ensure_ai_runtime(&repo_root);
         let delay = if restart_attempts > 3 { 20 } else { 5 };
         thread::sleep(Duration::from_secs(delay));
     }

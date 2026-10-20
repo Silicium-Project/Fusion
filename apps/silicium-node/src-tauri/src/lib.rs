@@ -31,6 +31,7 @@ use tauri::State;
 
 mod activity;
 mod ai;
+mod ai_runtime;
 mod checks;
 mod commands;
 mod config;
@@ -61,6 +62,7 @@ use windows_sys::Win32::{
 
 use activity::*;
 use ai::*;
+use ai_runtime::*;
 use checks::*;
 use config::*;
 use http::*;

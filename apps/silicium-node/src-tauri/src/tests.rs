@@ -9,6 +9,7 @@ fn crate_source() -> String {
         include_str!("lib.rs"),
         include_str!("activity/mod.rs"),
         include_str!("ai.rs"),
+        include_str!("ai_runtime.rs"),
         include_str!("activity/machine.rs"),
         include_str!("checks.rs"),
         include_str!("commands.rs"),
@@ -680,4 +681,26 @@ fn the_node_is_always_told_where_the_apps_ollama_is() {
     assert!(source.contains(".env(\"SILICIUM_OLLAMA_URL\", ollama_url())"));
     assert!(source.contains("ensure_ollama(&repo_root);"), "the supervisor starts Ollama");
     assert!(source.contains("stop_ollama();"), "stopping the node stops Ollama");
+}
+
+#[test]
+fn the_ai_runtime_is_pinned_and_locked_for_every_supported_platform() {
+    for (os, arch) in [("windows", "x86_64"), ("linux", "x86_64"), ("macos", "aarch64")] {
+        let wheel = uv_wheel_for(os, arch).unwrap_or_else(|| panic!("no uv for {os} {arch}"));
+        assert_eq!(wheel.sha256.len(), 64);
+        assert!(wheel.sha256.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert!(wheel.url.starts_with("https://files.pythonhosted.org/") && wheel.url.ends_with(".whl"));
+    }
+    assert!(uv_wheel_for("freebsd", "x86_64").is_none());
+    assert_eq!(ai_runtime_url(), "http://127.0.0.1:11436", "next to the app's Ollama (11435)");
+}
+
+#[test]
+fn the_node_is_always_told_where_the_ai_runtime_is() {
+    let source = crate_source();
+    assert!(source.contains(".env(\"SILICIUM_AI_RUNTIME_URL\", ai_runtime_url())"));
+    assert!(source.contains(".env(\"SILICIUM_AI_RUNTIME_TOKEN\", ai_runtime_token())"));
+    assert!(source.contains("ensure_ai_runtime(&repo_root);"), "the supervisor starts the runtime");
+    assert!(source.contains("stop_ai_runtime();"), "stopping the node stops the runtime");
+    assert!(source.contains("\"--require-hashes\""), "every package is checked by hash");
 }

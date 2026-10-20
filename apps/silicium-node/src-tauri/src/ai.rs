@@ -91,6 +91,12 @@ pub(crate) struct AiStatus {
     pub(crate) version: String,
     /// The node has imported the model into Ollama.
     pub(crate) model_ready: bool,
+    /// The AI runtime of the catalogue (`ai_runtime.rs`): `off`,
+    /// `installing`, `installed`, `running`, `unsupported` or `error`.
+    #[serde(default)]
+    pub(crate) catalog_runtime: String,
+    #[serde(default)]
+    pub(crate) catalog_runtime_message: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -185,7 +191,10 @@ pub(crate) fn ai_status() -> AiStatus {
         downloaded_bytes: 0,
         version: OLLAMA_VERSION.into(),
         model_ready: false,
+        catalog_runtime: String::new(),
+        catalog_runtime_message: String::new(),
     };
+    (status.catalog_runtime, status.catalog_runtime_message) = ai_runtime_state();
     if ollama_asset().is_none() {
         status.state = "unsupported".into();
         status.message = format!("Ollama n'est pas disponible pour {} {}", env::consts::OS, env::consts::ARCH);
@@ -225,8 +234,10 @@ pub(crate) fn set_ai_enabled(enabled: bool) -> Result<AiStatus, String> {
     write_settings(enabled)?;
     if enabled {
         start_installer();
+        start_ai_runtime_installer();
     } else {
         stop_ollama();
+        stop_ai_runtime();
         write_progress("off", "");
     }
     Ok(ai_status())

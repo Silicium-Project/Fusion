@@ -138,6 +138,7 @@ pub fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Resul
     } else {
         kill_known_silicium_processes(None);
         stop_ollama();
+        stop_ai_runtime();
         uninstall_autostart_task();
         remove_global_repo_root();
     }
