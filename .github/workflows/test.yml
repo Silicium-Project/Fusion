@@ -287,6 +287,14 @@ jobs:
 
       - name: Run core checks
         shell: bash
+        env:
+          # The shared VPS runners build the full Rust workspace. Keep test
+          # artifacts small and compilation bounded so parallel lanes do not
+          # exhaust the runner's shared filesystem.
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_INCREMENTAL: "0"
+          CARGO_BUILD_JOBS: "2"
         run: |
           set -euo pipefail
           # Docker/proxy coverage is isolated in network-smoke and the
