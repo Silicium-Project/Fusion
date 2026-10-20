@@ -91,7 +91,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: fusion-test-${{ github.event.pull_request.number || github.ref }}
+  # Separate callers that share this reusable workflow. Fast CI and the
+  # development deployment may validate the same branch at the same time.
+  group: fusion-test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -287,6 +289,14 @@ jobs:
 
       - name: Run core checks
         shell: bash
+        env:
+          # The shared VPS runners build the full Rust workspace. Keep test
+          # artifacts small and compilation bounded so parallel lanes do not
+          # exhaust the runner's shared filesystem.
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_INCREMENTAL: "0"
+          CARGO_BUILD_JOBS: "2"
         run: |
           set -euo pipefail
           # Docker/proxy coverage is isolated in network-smoke and the
@@ -342,6 +352,16 @@ jobs:
       - name: Run the network end-to-end check
         shell: bash
         run: bash Network/ci/e2e.sh
+
+      - name: Upload network end-to-end logs
+        if: ${{ failure() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-e2e-logs-${{ github.run_id }}
+          path: Network/target/e2e/**/*.log
+          if-no-files-found: ignore
+          retention-days: 5
 
   network-smoke:
     needs: [submodule-ci-gate]

@@ -102,8 +102,9 @@ if published_channel not in definitions:
     raise SystemExit(f"unsupported release channel: {published_channel}")
 required_definitions = list(definitions.values()) if require_all_artifacts else [definitions[published_channel]]
 # Development releases currently publish the Linux AppImage as the updater
-# target; native .deb/.rpm packages remain direct-install assets. Production
-# must always contain all three Linux bundles plus the Windows installer.
+# target. Native Linux packages are installed through the signed APT and DNF
+# repositories and are not update-manifest targets. Production must always
+# contain the AppImage and Windows installer.
 required_artifacts = [
     (platform, filename)
     for definition in required_definitions

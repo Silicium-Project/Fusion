@@ -63,6 +63,7 @@ jobs:
           DISPATCH_ACTION: ${{ github.event.action || '' }}
         run: |
           set -euo pipefail
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
           channel="${RELEASE_CHANNEL_INPUT:-prod}"
           if [[ "$DISPATCH_ACTION" == "submodule-dev-updated" ]]; then
             channel=dev
@@ -72,7 +73,8 @@ jobs:
             prod) target_branch=main ;;
             *) echo "Unsupported release channel: $channel" >&2; exit 1 ;;
           esac
-          git fetch --no-tags --depth=1 origin "$target_branch"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: Basic ${git_auth}" \
+            fetch --no-tags --depth=1 origin "$target_branch"
           git checkout --detach "origin/$target_branch"
           changed=false
           while read -r name path; do
@@ -156,7 +158,8 @@ jobs:
           set -euo pipefail
           git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
 
-          git fetch --no-tags origin "$TARGET_BRANCH"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: Basic ${git_auth}" \
+            fetch --no-tags origin "$TARGET_BRANCH"
           git switch --detach "origin/$TARGET_BRANCH"
           summary_file="$RUNNER_TEMP/submodule-summary.md"
           : > "$summary_file"

@@ -5,7 +5,7 @@ use crate::*;
 
 pub(crate) const NODE_API_PORT: u16 = 9092;
 
-fn runtime_binary(repo_root: &Path, name: &str) -> PathBuf {
+pub(crate) fn runtime_binary(repo_root: &Path, name: &str) -> PathBuf {
     let suffix = if cfg!(target_os = "windows") {
         ".exe"
     } else {

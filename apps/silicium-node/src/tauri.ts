@@ -223,6 +223,10 @@ export async function setAiTasks(enabled: boolean): Promise<AiStatus> {
   return await invoke<AiStatus>('set_ai_tasks', { enabled });
 }
 
+export async function pairDevice(repoRoot: string, nodeId: string, code: string): Promise<void> {
+  await invoke<void>('pair_device', { repoRoot, nodeId, code });
+}
+
 export async function startNode(config: NodeConfig): Promise<string> {
   return await invoke<string>('start_node', { config });
 }

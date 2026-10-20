@@ -22,6 +22,7 @@ apt-get install -y \
   python3 \
   apt-utils \
   createrepo-c \
+  rpm \
   gpg \
   golang-go
 

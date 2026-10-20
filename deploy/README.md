@@ -178,69 +178,114 @@ sudo certbot --nginx -d silicium.example.com -d api.silicium.example.com
 
 ## Node installers
 
-The deployment workflow builds and publishes the Windows and Linux node
-artifacts both to the GitHub Release and to the persistent VPS directory. The
-public site uses these stable paths:
+The deployment workflow publishes Windows installers and Linux AppImages as
+direct downloads. It also retains the `.deb` and `.rpm` build artifacts under
+the VPS downloads directory for repository publication and compatibility.
+Debian/Ubuntu and Fedora/RHEL installations should use APT or DNF, so users do
+not need to download or point the package manager at a local `.deb` or `.rpm`.
+The repositories host the package payloads on the VPS.
 
 ```text
 /downloads/silicium-node-windows.exe
 /downloads/silicium-node-windows-dev.exe
 /downloads/silicium-node-linux.AppImage
-/downloads/silicium-node-linux.deb
-/downloads/silicium-node-linux.rpm
 /downloads/silicium-node-linux-dev.AppImage
-/downloads/silicium-node-linux-dev.deb
-/downloads/silicium-node-linux-dev.rpm
 ```
 
-The `.deb` is the native installation path on Debian/Ubuntu:
+### Production repositories
 
-```bash
-sudo apt install ./silicium-node-linux-dev.deb
-```
-
-The `.rpm` is the native installation path on Fedora/RHEL:
-
-```bash
-sudo dnf install ./silicium-node-linux-dev.rpm
-```
-
-Production also exposes native package repositories:
+Debian and Ubuntu:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
 curl -fsSL https://vps-910c1dbc.vps.ovh.net/downloads/apt/silicium-packages.asc \
-  | sudo gpg --dearmor -o /etc/apt/keyrings/silicium-prod.gpg
-echo 'deb [arch=amd64 signed-by=/etc/apt/keyrings/silicium-prod.gpg] https://vps-910c1dbc.vps.ovh.net/downloads/apt stable main' \
-  | sudo tee /etc/apt/sources.list.d/silicium-node.list >/dev/null
-sudo apt update && sudo apt install silicium-node
-
-sudo install -d -m 0755 /etc/yum.repos.d
-sudo curl -fsSL https://vps-910c1dbc.vps.ovh.net/downloads/rpm/silicium-node.repo \
-  -o /etc/yum.repos.d/silicium-node.repo
-sudo dnf makecache && sudo dnf install silicium-node
+  | sudo gpg --dearmor --yes -o /etc/apt/keyrings/silicium-prod.gpg
+curl -fsSL https://vps-910c1dbc.vps.ovh.net/downloads/apt/silicium.sources \
+  | sudo tee /etc/apt/sources.list.d/silicium-prod.sources >/dev/null
+sudo apt update
+sudo apt install silicium-node
 ```
 
-The development repository uses the same paths behind WireGuard at
-`https://10.77.0.1:8443/downloads` and the APT suite `dev`.
+Fedora and RHEL:
+
+```bash
+sudo install -d -m 0755 /etc/yum.repos.d
+sudo curl -fsSL https://vps-910c1dbc.vps.ovh.net/downloads/rpm/silicium-node.repo \
+  -o /etc/yum.repos.d/silicium-prod.repo
+sudo dnf makecache
+sudo dnf install silicium-node
+```
+
+### Development repositories
+
+Development repositories are reachable only after the WireGuard tunnel is
+connected. Install the development CA on the authorized machine once, using
+the existing VPS SSH access:
+
+```bash
+ssh -i ~/.ssh/silicium-vps-luis_codex_ed25519 \
+  luis@vps-910c1dbc.vps.ovh.net \
+  'sudo -n cat /var/lib/silicium-dev/tls/dev-ca.crt.pem' \
+  > /tmp/silicium-dev-ca.crt.pem
+```
+
+Debian and Ubuntu:
+
+```bash
+sudo install -m 0644 /tmp/silicium-dev-ca.crt.pem /usr/local/share/ca-certificates/silicium-dev-ca.crt
+sudo update-ca-certificates
+```
+
+Fedora and RHEL:
+
+```bash
+sudo install -d -m 0755 /etc/pki/ca-trust/source/anchors
+sudo install -D -m 0644 /tmp/silicium-dev-ca.crt.pem /etc/pki/ca-trust/source/anchors/silicium-dev-ca.crt
+sudo update-ca-trust
+```
+
+Debian and Ubuntu:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://10.77.0.1:8443/downloads/apt/silicium-packages.asc \
+  | sudo gpg --dearmor --yes -o /etc/apt/keyrings/silicium-dev.gpg
+curl -fsSL https://10.77.0.1:8443/downloads/apt/silicium.sources \
+  | sudo tee /etc/apt/sources.list.d/silicium-dev.sources >/dev/null
+sudo apt update
+sudo apt install silicium-node
+```
+
+Fedora and RHEL:
+
+```bash
+sudo install -d -m 0755 /etc/yum.repos.d
+sudo curl -fsSL https://10.77.0.1:8443/downloads/rpm/silicium-node.repo \
+  -o /etc/yum.repos.d/silicium-dev.repo
+sudo dnf makecache
+sudo dnf install silicium-node
+```
+
+Choose either the production or development repository for a machine; both
+publish the same package name. APT and DNF cache packages according to local
+policy. To remove cached package files after installation, run `sudo apt clean`
+or `sudo dnf clean packages`.
 
 An AppImage downloaded from a browser must be made executable once with
 `chmod +x silicium-node-linux-dev.AppImage` before it is launched.
 
-Verify every public asset after a deployment:
+Verify direct downloads and the package-repository indexes after a deployment:
 
 ```bash
 for artifact in \
   silicium-node-windows.exe \
   silicium-node-windows-dev.exe \
   silicium-node-linux.AppImage \
-  silicium-node-linux.deb \
-  silicium-node-linux.rpm \
-  silicium-node-linux-dev.AppImage \
-  silicium-node-linux-dev.deb \
-  silicium-node-linux-dev.rpm; do
+  silicium-node-linux-dev.AppImage; do
   curl -fI "https://vps-910c1dbc.vps.ovh.net/downloads/$artifact"
 done
+curl -fI https://vps-910c1dbc.vps.ovh.net/downloads/apt/dists/stable/InRelease
+curl -fI https://vps-910c1dbc.vps.ovh.net/downloads/rpm/repodata/repomd.xml
 ```
 
 ## Containerized VPS deployment
@@ -377,6 +422,8 @@ post-deploy checks as standard deployment, then rewrites
 ## Remote workers
 
 Workers run the desktop application (`apps/silicium-node`): the Windows
-installer, or the AppImage / `.deb` / `.rpm` on Linux. It starts `p2p_node` and
-`compute_daemon`, trusts the orchestrator through the pinned bootstrap address
-and restarts them at login. There is no separate server-side worker launcher.
+installer or the AppImage on Linux. Debian/Ubuntu and Fedora/RHEL users install
+the native Linux package through the signed APT or DNF repository. The app
+starts `p2p_node` and `compute_daemon`, trusts the orchestrator through the
+pinned bootstrap address and restarts them at login. There is no separate
+server-side worker launcher.

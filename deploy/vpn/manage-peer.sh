@@ -95,7 +95,7 @@ PY
 )"
   for candidate in $(seq 10 254); do
     address="${subnet_base}.${candidate}"
-    if ! grep -RhsE "^[[:space:]]*Address[[:space:]]*=[[:space:]]*${address}/32([[:space:]]|$)" "$PEER_DIR"/*.conf 2>/dev/null; then
+    if ! grep -RhsqE "^[[:space:]]*Address[[:space:]]*=[[:space:]]*${address}/32([[:space:]]|$)" "$PEER_DIR"/*.conf 2>/dev/null; then
       printf '%s\n' "$address"
       return 0
     fi
@@ -107,7 +107,7 @@ PY
 add_peer() {
   [[ ! -e "$peer_file" ]] || { echo "Peer already exists: $NAME" >&2; exit 1; }
   local server_public_key client_private_key client_public_key client_address endpoint
-  local client_tmp server_tmp backup
+  local client_tmp="" server_tmp="" backup=""
   server_public_key="$(wg show "$VPN_INTERFACE" public-key)"
   client_private_key="$(wg genkey | tr -d '\r\n')"
   client_public_key="$(printf '%s' "$client_private_key" | wg pubkey)"
@@ -116,7 +116,7 @@ add_peer() {
   client_tmp="$(mktemp "$PEER_DIR/.${NAME}.client.XXXXXX")"
   server_tmp="$(mktemp "$WG_DIR/.${VPN_INTERFACE}.conf.XXXXXX")"
   backup="$(mktemp "$WG_DIR/.${VPN_INTERFACE}.backup.XXXXXX")"
-  trap 'rm -f "$client_tmp" "$server_tmp" "$backup"' EXIT
+  trap 'rm -f -- "${client_tmp:-}" "${server_tmp:-}" "${backup:-}"' EXIT
   cp -p "$CONFIG_FILE" "$backup"
   cp "$CONFIG_FILE" "$server_tmp"
   printf '\n# silicium-peer: %s\n[Peer]\nPublicKey = %s\nAllowedIPs = %s/32\n' "$NAME" "$client_public_key" "$client_address" >> "$server_tmp"

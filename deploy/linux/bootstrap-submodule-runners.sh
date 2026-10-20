@@ -80,9 +80,35 @@ configure_runner_runtime() {
 configure_runner_runtime
 
 # A previous Docker build may have created root-owned files in the shared
-# runner worktree. GitHub's checkout action must be able to clean that tree.
+# runner worktree. Normalize ownership before checkout, but tolerate transient
+# Rust artifacts disappearing while another runner is cleaning its workspace.
 if [[ -d "$RUNNER_ROOT/_work" ]]; then
-  chown -R "$RUNNER_USER":"$RUNNER_USER" "$RUNNER_ROOT/_work"
+  python3 - "$RUNNER_ROOT/_work" "$RUNNER_USER" <<'PY'
+import errno
+import grp
+import os
+import pwd
+import sys
+
+work_root, runner_user = sys.argv[1:]
+uid = pwd.getpwnam(runner_user).pw_uid
+gid = grp.getgrnam(runner_user).gr_gid
+
+def ignore_transient_removal(error):
+    if error.errno in (errno.ENOENT, errno.ENOTDIR):
+        return
+    raise error
+
+for directory, subdirectories, files in os.walk(work_root, onerror=ignore_transient_removal):
+    for name in (None, *subdirectories, *files):
+        path = directory if name is None else os.path.join(directory, name)
+        try:
+            metadata = os.lstat(path)
+            if metadata.st_uid != uid or metadata.st_gid != gid:
+                os.chown(path, uid, gid, follow_symlinks=False)
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+PY
 fi
 
 install -d -m 0755 /var/lock

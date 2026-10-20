@@ -44,6 +44,16 @@ for tool in dpkg-deb dpkg-scanpackages apt-ftparchive gpg; do
   command -v "$tool" >/dev/null || { echo "$tool is required to publish the APT repository." >&2; exit 1; }
 done
 
+if ! command -v rpm >/dev/null 2>&1 || ! command -v rpmsign >/dev/null 2>&1 || ! command -v rpmkeys >/dev/null 2>&1; then
+  command -v apt-get >/dev/null || { echo "rpmsign and rpmkeys are required to publish a signed DNF repository." >&2; exit 1; }
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y --no-install-recommends rpm
+fi
+for tool in rpm rpmsign rpmkeys; do
+  command -v "$tool" >/dev/null || { echo "$tool is required to publish the DNF repository." >&2; exit 1; }
+done
+
 apt_root="$DOWNLOADS_DIR/apt"
 apt_pool="$apt_root/pool/main"
 apt_distribution="$apt_root/dists/$PACKAGE_SUITE"
@@ -67,8 +77,14 @@ popd >/dev/null
 gzip -9c "$apt_binary/Packages" > "$apt_binary/Packages.gz"
 
 apt_config="$(mktemp)"
+rpm_package_tmp=""
+rpm_verify_db=""
 key_home="$CONFIG_DIR/package-signing-gnupg"
-cleanup() { rm -f -- "$apt_config"; }
+cleanup() {
+  rm -f -- "$apt_config"
+  [[ -z "$rpm_package_tmp" ]] || rm -f -- "$rpm_package_tmp"
+  [[ -z "$rpm_verify_db" ]] || rm -rf -- "$rpm_verify_db"
+}
 trap cleanup EXIT
 install -d -m 0700 "$key_home"
 cat > "$apt_config" <<EOF
@@ -95,6 +111,7 @@ gpg --batch --yes --homedir "$key_home" --local-user "$key_id" \
   --armor --detach-sign --output "$apt_distribution/Release.gpg" "$apt_distribution/Release"
 gpg --batch --homedir "$key_home" --armor --export "$key_id" > "$apt_root/silicium-packages.asc"
 chmod 0644 "$apt_root/silicium-packages.asc" "$apt_distribution/InRelease" "$apt_distribution/Release.gpg"
+gpg --batch --homedir "$key_home" --verify "$apt_distribution/InRelease"
 
 cat > "$apt_root/silicium.sources" <<EOF
 Types: deb
@@ -117,18 +134,50 @@ if ! command -v createrepo_c >/dev/null 2>&1; then
   fi
 fi
 rpm_package="$rpm_root/silicium-node${package_suffix}.rpm"
-ln -f -- "$rpm_source" "$rpm_package" 2>/dev/null || cp -f -- "$rpm_source" "$rpm_package"
+rpm_key_home="$CONFIG_DIR/package-signing-rpm-gnupg"
+rpm_key_uid="Silicium RPM Packages ($RELEASE_CHANNEL) <packages-rpm-${RELEASE_CHANNEL}@silicium.invalid>"
+install -d -m 0700 "$rpm_key_home"
+rpm_key_id="$(gpg --batch --homedir "$rpm_key_home" --with-colons --list-secret-keys "$rpm_key_uid" 2>/dev/null | awk -F: '$1 == "sec" {print $5; exit}' || true)"
+if [[ -z "$rpm_key_id" ]]; then
+  gpg --batch --pinentry-mode loopback --passphrase "" --homedir "$rpm_key_home" \
+    --quick-generate-key "$rpm_key_uid" rsa3072 sign 0
+  rpm_key_id="$(gpg --batch --homedir "$rpm_key_home" --with-colons --list-secret-keys "$rpm_key_uid" 2>/dev/null | awk -F: '$1 == "sec" {print $5; exit}' || true)"
+fi
+[[ -n "$rpm_key_id" ]] || { echo "Could not resolve the DNF signing key." >&2; exit 1; }
+install -d -m 0755 "$rpm_root"
+rpm_package_tmp="$(mktemp --suffix=.rpm "$rpm_root/.silicium-node${package_suffix}.XXXXXX")"
+cp -- "$rpm_source" "$rpm_package_tmp"
+GNUPGHOME="$rpm_key_home" rpmsign \
+  --define "_gpg_name $rpm_key_uid" \
+  --define "_gpg_path $rpm_key_home" \
+  --define "__gpg $(command -v gpg)" \
+  --addsign "$rpm_package_tmp"
+gpg --batch --homedir "$rpm_key_home" --armor --export "$rpm_key_id" > "$rpm_root/silicium-rpm-signing.asc"
+rpm_verify_db="$(mktemp -d "$CONFIG_DIR/.rpm-verify.XXXXXX")"
+rpmkeys --dbpath "$rpm_verify_db" --import "$rpm_root/silicium-rpm-signing.asc"
+rpm --dbpath "$rpm_verify_db" --checksig "$rpm_package_tmp"
+chmod 0644 "$rpm_package_tmp"
+mv -f -- "$rpm_package_tmp" "$rpm_package"
+rpm_package_tmp=""
+rm -rf -- "$rpm_verify_db"
+rpm_verify_db=""
 createrepo_c "$rpm_root"
+gpg --batch --yes --homedir "$rpm_key_home" --local-user "$rpm_key_id" \
+  --armor --detach-sign --output "$rpm_root/repodata/repomd.xml.asc" \
+  "$rpm_root/repodata/repomd.xml"
+gpg --batch --homedir "$rpm_key_home" --verify \
+  "$rpm_root/repodata/repomd.xml.asc" "$rpm_root/repodata/repomd.xml"
 cat > "$rpm_root/silicium-node.repo" <<EOF
 [silicium-${RELEASE_CHANNEL}]
 name=Silicium Node (${RELEASE_CHANNEL})
 baseurl=${PUBLIC_BASE_URL%/}/rpm
 enabled=1
-gpgcheck=0
-repo_gpgcheck=0
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=${PUBLIC_BASE_URL%/}/rpm/silicium-rpm-signing.asc
 metadata_expire=300
 EOF
-chmod 0644 "$rpm_root/silicium-node.repo"
+chmod 0644 "$rpm_root/silicium-node.repo" "$rpm_root/silicium-rpm-signing.asc" "$rpm_root/repodata/repomd.xml.asc"
 
 echo "Package repositories published for $RELEASE_CHANNEL ($PACKAGE_SUITE)."
 echo "  APT: ${PUBLIC_BASE_URL%/}/apt"
