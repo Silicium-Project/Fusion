@@ -250,6 +250,24 @@ for repository_metadata in \
   }
 done
 
+apt_signing_home="$CONFIG_DIR/package-signing-gnupg"
+rpm_signing_home="$CONFIG_DIR/package-signing-rpm-gnupg"
+gpg --batch --homedir "$apt_signing_home" --verify \
+  "$downloads_dir/apt/dists/$package_suite/InRelease"
+gpg --batch --homedir "$rpm_signing_home" --verify \
+  "$downloads_dir/rpm/repodata/repomd.xml.asc" \
+  "$downloads_dir/rpm/repodata/repomd.xml"
+rpm_package_suffix=""
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  rpm_package_suffix="-dev"
+fi
+rpm_verification_db="$(mktemp -d)"
+trap 'rm -rf -- "$rpm_verification_db"' EXIT
+rpmkeys --dbpath "$rpm_verification_db" --import \
+  "$downloads_dir/rpm/silicium-rpm-signing.asc"
+rpm --dbpath "$rpm_verification_db" --checksig \
+  "$downloads_dir/rpm/silicium-node${rpm_package_suffix}.rpm"
+
 public_orchestrator_url="${SILICIUM_NODE_ADVERTISE_URL:-https://vps-910c1dbc.vps.ovh.net/orchestrator}"
 echo "Checking public orchestrator route: ${public_orchestrator_url%/}/healthz"
 read -r public_route_host public_route_port <<EOF

@@ -8,6 +8,8 @@ pub(crate) const SUPERVISOR_TASK_NAME: &str = "SiliciumNodeService";
 pub(crate) const SUPERVISOR_RUN_KEY_NAME: &str = "SiliciumNodeService";
 
 pub(crate) const PROD_ORCHESTRATOR_URL: &str = "https://vps-910c1dbc.vps.ovh.net/orchestrator";
+pub(crate) const PROD_API_BASE_URL: &str = "https://vps-910c1dbc.vps.ovh.net/api";
+pub(crate) const DEV_API_BASE_URL: &str = "https://10.77.0.1:8443/api";
 
 /// Dev channel orchestrator, reachable through the WireGuard VPN
 /// (`public_base_url` of the dev channel in deploy/release/channels.json).
@@ -21,6 +23,14 @@ pub(crate) fn default_orchestrator_url() -> &'static str {
         Some(url) if !url.trim().is_empty() => url,
         _ if release_channel() == "prod" => PROD_ORCHESTRATOR_URL,
         _ => DEV_ORCHESTRATOR_URL,
+    }
+}
+
+pub(crate) fn default_api_base_url() -> &'static str {
+    match option_env!("SILICIUM_DEFAULT_API_BASE_URL") {
+        Some(url) if !url.trim().is_empty() => url,
+        _ if release_channel() == "prod" => PROD_API_BASE_URL,
+        _ => DEV_API_BASE_URL,
     }
 }
 

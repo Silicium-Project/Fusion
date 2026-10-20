@@ -87,24 +87,14 @@ npm run tauri:build:linux
 ```
 
 This produces `silicium-node-*.AppImage`, `silicium-node-*.deb` and
-`silicium-node-*.rpm`. The Debian package is the recommended Linux install on
-Debian/Ubuntu because it declares the OpenSSL, curl and certificate
-dependencies:
+`silicium-node-*.rpm`. The `.deb` and `.rpm` outputs are published into signed
+APT and DNF repositories on the VPS. Install from the repository so the
+package manager selects and fetches the package; no manual local installer
+file is needed. Production and development repository setup commands are in
+[`deploy/README.md`](../../deploy/README.md).
 
-```bash
-sudo apt install ./silicium-node-*.deb
-```
-
-On Fedora/RHEL, install the RPM with the native package manager:
-
-```bash
-sudo dnf install ./silicium-node-*.rpm
-```
-
-The published `.deb` and `.rpm` files are also directly installable from the
-site after downloading them. The package managers resolve their declared
-dependencies; the AppImage remains the portable option when those host
-dependencies are already present.
+The AppImage remains the portable option when its host dependencies are
+already present.
 
 The AppImage keeps the same bundled Network runtime and can be used without
 installation on a distribution that already provides OpenSSL, curl,

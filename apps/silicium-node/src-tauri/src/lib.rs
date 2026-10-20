@@ -111,7 +111,8 @@ pub fn run() {
             commands::update_status,
             commands::check_for_updates,
             commands::ai_tasks_status,
-            commands::set_ai_tasks
+            commands::set_ai_tasks,
+            commands::pair_device
         ])
         .run(tauri::generate_context!())
     {

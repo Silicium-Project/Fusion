@@ -1,0 +1,148 @@
+{
+  "direction": "Precision, readable typography, simplified Si diamond, observed telemetry and worker space",
+  "generatedBeforeImplementation": true,
+  "tool": "imagegen built-in",
+  "pages": [
+    {
+      "slug": "01-accueil",
+      "route": "/",
+      "title": "Accueil",
+      "body": "Desktop landing page, 1440px wide, full page view. Clean header links Produit, Workers, Installer, À propos, FR, Connexion, Lancer un calcul. Hero large headline 'Du calcul distribué. Des résultats mesurables.' Short body 'Lancez vos calculs, suivez les ressources mobilisées et retrouvez les résultats vérifiés.' Two buttons Lancer un calcul and Espace worker. On right a real software telemetry panel with header 'Réseau en direct', status En ligne, rows Machines en ligne 4, Tâches actives 0, File d’attente 124, CPU — with label Non communiqué. No illustrative picture. Under hero generous section 'Voyez où passent vos ressources.' Three airy columns: Travail vérifié / Temps mesurés / Suivi en direct, with copy stressing actual work units and measured durations, no euro price or savings. Four supported uses Rendu 3D, Recherche documentaire, IA par lots, Intégrité SHA-256. Large airy worker callout 'Votre machine. Une contribution visible.' Link 'Découvrir l’espace worker'. Do not cram every section into tiny type.",
+      "promptFile": "prompts/01-accueil.txt",
+      "file": "01-accueil.png",
+      "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-48679c45-fac8-4537-a0c7-57abe66c3ae1.png"
+    },
+    {
+      "slug": "02-produit",
+      "route": "/service",
+      "title": "Produit et mesure",
+      "body": "Desktop product page. Large title 'Comprendre chaque calcul.' Intro about distributing tasks, checking results and observing actual execution. Airy horizontal technical process built from four sober rectangular labels connected with crisp orthogonal lines, no isometric drawings: Entrée, Calcul, Vérification, Résultat. Secondary section 'Le coût commence par le travail mesuré.' Large ledger panel with three rows: Unités de travail vérifiées / Durée d’exécution / Montant payé — Non communiqué. Short note 'Les unités de travail ne sont pas une devise.' Two columns showing live resource status and supported workloads. CTA Voir les métriques then bottom real network status.",
+      "promptFile": "prompts/02-produit.txt",
+      "file": "02-produit.png",
+      "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-e14bd1c3-e507-4265-81ca-6bb59fffbbb8.png"
+    },
+    {
+      "slug": "03-workers",
+      "route": "/workers",
+      "title": "Participer au réseau",
+      "body": "Public worker page, distinctly airy. Large title 'Votre machine. Une contribution visible.' Friendly short copy 'Participez au réseau et suivez l’activité de votre nœud dans un espace dédié.' Two buttons Installer Silicium Node, Ouvrir l’espace worker. Right a simple product preview listing node worker-01, availability En ligne, CPU 31 %, RAM 46 %, active tasks 2, last observation time. Under it label Aperçu de l’espace worker. Three large separated onboarding steps: Installer, Choisir ses rôles, Suivre sa machine. Bottom two-column transparent participation section explaining observed data, no guaranteed financial reward and 'Récompenses : montant non communiqué'. Linux APT / DNF and Windows references with readable spacing. No illustrated laptop, only software dashboard UI.",
+      "promptFile": "prompts/03-workers.txt",
+      "file": "03-workers.png",
+      "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-1f9300cb-3b8c-40ab-89df-d08fe66a257d.png"
+    },
+    {
+      "slug": "04-espace-worker",
+      "route": "/workers/overview",
+      "title": "Espace worker",
+      "body": "Authenticated desktop application, left quiet 240px sidebar with Vue d’ensemble, Mes projets, Espace worker active, Machines du réseau, Types de calcul, État du réseau. Main airy heading 'Espace worker' and description 'Une vue claire de la machine que vous suivez.' Wide clearly labeled select Machine suivie with worker-01. Large availability status and last observation date. Four spacious stats: CPU 31 %, Mémoire 46 %, Tâches actives 2, En attente 0. Spacious precision line graph 'Ressources observées' with two thin CPU blue and RAM navy lines, simple labeled time and percent axes; note 'Échantillons reçus depuis l’ouverture'. No smooth illustrative waves. Below left 'Contribution observée' table Tâches traitées 128, Échecs 1; below right 'Configuration' roles Calcul / Vérification, Version 0.2.9-dev.28. Quiet low priority bottom note Récompenses / Montant non communiqué. Lots of whitespace, labels at least16px. No fake personal ownership claim.",
+      "promptFile": "prompts/04-espace-worker.txt",
+      "file": "04-espace-worker.png",
+      "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-2510037e-c5f2-4cdb-86c4-d5f72cf60ddf.png"
+    },
+    {
+      "slug": "05-worker-mobile",
+      "route": "/workers/overview",
+      "title": "Espace worker mobile",
+      "body": "MOBILE portrait mockup width390px, very tall screenshot. A single mobile screen full-page product UI not a phone frame. Top small simple blue Si logo, title Espace worker, profile avatar. Heading Espace worker size32px. Clear labelled fullwidth select Machine suivie / worker-01. En ligne and observed time. Stats in2columns: CPU31%, Mémoire46%, Tâchesactives2, Enattente0. White glass chart card with crisp blue CPU and navy RAM straight-line time series, normal18px labels, no tiny crowded ticks. Contribution summary as separate clear rows, no wide tables. Configuration expandable. Button Installer le nœud min48px. Fixed bottom navigation Vue d’ensemble, Projets, Worker, Réseau, 15px labels, large touch areas. All body text18px, captions16px; enough padding for bottom bar. Footer note Maquette · données d’exemple.",
+      "promptFile": "prompts/05-worker-mobile.txt",
+      "file": "05-worker-mobile.png",
+      "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-30c13d1a-72f6-4128-b1ff-742d9509f161.png"
+    },
+    {
+      "slug": "06-reseau",
+      "route": "/network",
+      "title": "Supervision du réseau",
+      "body": "Authenticated desktop network page with quiet leftsidebar. Main title 'Le réseau, en direct.' Last refresh time and actual polling label 'Toutes les 5 s'. Four large key metrics Machines en ligne4, Tâches actives0, En attente124, Nœuds instrumentés4. Main engineering telemetry panel 'Ressources du réseau' thin blue/navy time-series CPU and RAM since opening, sober grid axes and substantial whitespace, no cartoon topology map. Beneath precise horizontal role counts Calcul4, Vérification3, Persistance1, Orchestration1, subtitle 'Un nœud peut annoncer plusieurs rôles'. Bottom current project list with zero-state 'Aucun calcul actif'. Link Voir les machines. Avoid orbital nodes, drawn computer glyph clusters, moving particles.",
+      "promptFile": "prompts/06-reseau.txt",
+      "file": "06-reseau.png",
+      "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-8036db08-e886-46d4-a758-e59edb3b355a.png"
+    },
+    {
+      "slug": "07-projet-mesure",
+      "route": "/jobs/:id",
+      "title": "Projet et coûts mesurés",
+      "body": "Authenticated desktop project detail for 'Rendu de démonstration'. Header status Terminé and Télécharger. Four clear summary metrics Fragments16, Machines3, Durée2min14s, Vérifications16. Large result panel showing an understated render thumbnail of a reflective object but subordinate, not decorative. PROMINENT plain white ledger panel 'Travail mesuré' with rows Unités de travail vérifiées 1048576, Durée du calcul 1min48s, Temps réseau 26s, Montant payé — Non communiqué. Explicit explanatory line 'Les unités de travail ne sont pas une devise.' Receipt hash clearly marked Reçu vérifié, copy icon. No dollar, euro, fake savings or invented comparative cloud price. Below accessible execution timeline and collapsible technical details. Every label16px+.",
+      "promptFile": "prompts/07-projet-mesure.txt",
+      "file": "07-projet-mesure.png",
+      "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-15c02093-2b28-40ff-bf47-63da0b9e7b05.png"
+    },
+    {
+      "slug": "08-installer",
+      "route": "/download",
+      "title": "Installation et identité simplifiée",
+      "body": "Desktop download page with quiet public header, very simple highcontrast blue Si diamond logo size32. Large title 'Installez une fois. Gardez votre nœud à jour.' Large OS tabs Linux and Windows, then clearly separated Stable and Développement. Linux DNF selected, secondary APT tab. Spacious code panel label 'Fedora · DNF', exact readable command lines 'sudo dnf makecache' and 'sudo dnf install silicium-node' plus Télécharger le fichier .repo action; copybutton at least44px. Secondary instructions for Updates 'sudo dnf upgrade silicium-node'. Wide clearly marked dev environment notice WireGuard + CA requis when choosing Développement. Sidebar link Découvrir l’espace worker. Body18px, code16px, controls17px. New simplified icon used at all small sizes, old complex brand mark absent.",
+      "promptFile": "prompts/08-installer.txt",
+      "file": "08-installer.png",
+      "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-9d7dc0b6-ae1c-4a90-9d57-869667dd8947.png"
+    }
+  ],
+  "complements": "../glass-v3-2026-10-20/index.html",
+  "implementationConstraints": [
+    "Only received telemetry; no fabricated 24h history.",
+    "Work units are not a currency; no payment amount in the API.",
+    "Supported workloads: raytracer, document search, batch text AI, SHA256.",
+    "Worker selection observes a node and does not establish ownership.",
+    "Repository commands retain their existing signing and CA requirements."
+  ],
+  "implementation": {
+    "frontendRoutes": [
+      "/",
+      "/service",
+      "/workers",
+      "/workers/overview",
+      "/network",
+      "/nodes",
+      "/jobs/:id",
+      "/download"
+    ],
+    "icon": "FrontEnd/public/brand/silicium-icon.svg",
+    "localeSupport": [
+      "fr",
+      "en",
+      "de"
+    ],
+    "typography": {
+      "bodyDefaultPx": "17–18",
+      "smallLabelsDefaultPx": 15
+    },
+    "dataRules": [
+      "Only received API values",
+      "No invented monetary amount",
+      "No synthetic history",
+      "Worker selection does not establish ownership"
+    ]
+  },
+  "deployment": {
+    "url": "https://10.77.0.1:8443",
+    "workerUrl": "https://10.77.0.1:8443/workers/overview",
+    "image": "sha256:f64ad4d3337d8f3a6efffda7bf566c1a76afa5ebf7652d0acb053f4a1c772106",
+    "sourceSha256": "c6875ddee86264d8828152ac7e5d468dbce8bcf6d140e0c73b94dd05c47efcbd",
+    "checkedAt": "2026-10-20T13:51:17.434458+00:00",
+    "publicHttp200": 9,
+    "containerHealth": "healthy"
+  },
+  "renderedImplementation": [
+    {
+      "file": "implementation/home-desktop.png",
+      "title": "Accueil implémenté",
+      "data": "Example API data used for local rendering; not live production values."
+    },
+    {
+      "file": "implementation/worker-desktop.png",
+      "title": "Espace worker implémenté",
+      "data": "Example API data used for local rendering; not live production values."
+    },
+    {
+      "file": "implementation/worker-mobile.png",
+      "title": "Espace worker mobile",
+      "data": "Example API data used for local rendering; not live production values."
+    }
+  ],
+  "renderReview": {
+    "previews": 25,
+    "data": "Example API fixtures, read-only browser rendering",
+    "typeScript": "compiled without diagnostics",
+    "build": "Nuxt and Docker builds complete",
+    "testSuitesRun": false
+  }
+}

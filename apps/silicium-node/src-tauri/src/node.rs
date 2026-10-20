@@ -5,7 +5,7 @@ use crate::*;
 
 pub(crate) const NODE_API_PORT: u16 = 9092;
 
-fn runtime_binary(repo_root: &Path, name: &str) -> PathBuf {
+pub(crate) fn runtime_binary(repo_root: &Path, name: &str) -> PathBuf {
     let suffix = if cfg!(target_os = "windows") {
         ".exe"
     } else {
@@ -31,7 +31,7 @@ fn runtime_work_dir(repo_root: &Path) -> PathBuf {
     runtime_node_dir(repo_root).join("work")
 }
 
-fn runtime_state_dir(repo_root: &Path) -> PathBuf {
+pub(crate) fn runtime_state_dir(repo_root: &Path) -> PathBuf {
     runtime_node_dir(repo_root).join("state")
 }
 

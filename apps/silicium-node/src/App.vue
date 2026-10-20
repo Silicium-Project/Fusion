@@ -89,6 +89,22 @@
         <button class="danger" :disabled="busy" @click="deactivateNode">Retirer ce PC</button>
       </section>
 
+      <section class="panel device-link-panel">
+        <div>
+          <p class="eyebrow">Compte Silicium</p>
+          <h2>Associer ce PC à votre compte</h2>
+          <p>Depuis l’espace worker du site, générez un code puis collez-le ici. Ce PC signe le code avec son identité réseau persistante.</p>
+        </div>
+        <form class="device-link-form" @submit.prevent="associateCurrentDevice">
+          <label for="device-link-code">Code à usage unique · valide 10 minutes</label>
+          <input id="device-link-code" v-model.trim="deviceLinkCode" class="device-link-code" type="text" inputmode="text" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" maxlength="64" placeholder="Collez le code généré sur le site" :disabled="deviceLinkBusy">
+          <button class="secondary-action" type="submit" :disabled="deviceLinkBusy || !deviceLinkCode">
+            {{ deviceLinkBusy ? 'Association…' : 'Associer ce PC' }}
+          </button>
+        </form>
+        <p v-if="deviceLinkMessage" class="device-link-message" :class="{ error: deviceLinkFailed }" role="status">{{ deviceLinkMessage }}</p>
+      </section>
+
       <section v-if="localMachine" class="panel telemetry-panel">
         <div class="panel-row">
           <div>
@@ -487,6 +503,7 @@ import {
   updateStatus,
   aiTasksStatus,
   setAiTasks,
+  pairDevice,
   type AiStatus,
   type NodeActivity,
   type NodeDiagnostics,
@@ -567,6 +584,27 @@ async function toggleAi(enabled: boolean) {
     aiBusy.value = false;
   }
 }
+async function associateCurrentDevice() {
+  const code = deviceLinkCode.value.replace(/\s+/g, '').toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(code)) {
+    deviceLinkFailed.value = true;
+    deviceLinkMessage.value = 'Le code doit contenir 64 caractères hexadécimaux.';
+    return;
+  }
+  deviceLinkBusy.value = true;
+  deviceLinkFailed.value = false;
+  deviceLinkMessage.value = '';
+  try {
+    await pairDevice(form.repoRoot, form.nodeId, code);
+    deviceLinkCode.value = '';
+    deviceLinkMessage.value = 'Ce PC est maintenant associé à votre compte. Son activité apparaîtra dans votre espace worker.';
+  } catch (error) {
+    deviceLinkFailed.value = true;
+    deviceLinkMessage.value = friendlyError(error);
+  } finally {
+    deviceLinkBusy.value = false;
+  }
+}
 const activity = reactive<NodeActivity>({
   knownResults: 0,
   knownTasks: 0,
@@ -605,6 +643,10 @@ const busy = ref(false);
 const userMessage = ref('');
 const refreshError = ref('');
 const networkQuery = ref('');
+const deviceLinkCode = ref('');
+const deviceLinkBusy = ref(false);
+const deviceLinkMessage = ref('');
+const deviceLinkFailed = ref(false);
 let refreshTimer: number | undefined;
 let refreshInFlight = false;
 

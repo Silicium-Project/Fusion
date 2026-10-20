@@ -1,6 +1,6 @@
 # Publish Silicium Node
 
-The public site exposes these VPS download paths:
+The release workflow stages these artifacts under the VPS downloads path:
 
 ```text
 /downloads/silicium-node-windows.exe
@@ -13,12 +13,14 @@ The public site exposes these VPS download paths:
 /downloads/silicium-node-linux-dev.rpm
 ```
 
-The AppImage, Debian package and RPM are built from the same Linux release and
-contain the same Network runtime. Use the AppImage for a portable test run;
-use the `.deb` on Debian/Ubuntu with `apt`, or the `.rpm` on Fedora/RHEL with
-`dnf`, so host dependencies are installed by the native package manager. The
-Linux client resolves Tauri's `/usr/lib/<binary>/resources` layout in all three
-formats.
+The `.deb` and `.rpm` outputs are published inside signed APT and DNF
+repositories. Install the package named `silicium-node` through the system
+package manager; setup commands for both channels are in
+[`deploy/README.md`](../../deploy/README.md), so there is no need to download a
+local installer file. The direct artifact paths remain available for
+compatibility. The AppImage remains available for portable testing. All three
+formats contain the same Network runtime, and the Linux client resolves
+Tauri's `/usr/lib/<binary>/resources` layout in each format.
 
 Recommended production flow:
 
@@ -92,15 +94,18 @@ The status must be `Valid`. Keep the Tauri identifier
 published installer so NSIS can repair or upgrade an existing installation.
 
 5. Let the Fusion deployment workflow publish the generated artifacts to
-the GitHub Release and stage them under the persistent VPS downloads path. The
-public site uses the VPS paths above, so the web links and the updater use the
-same files.
+the GitHub Release and stage the Linux packages under the persistent VPS
+downloads path. The package repository publisher adds the current package to
+the signed APT and DNF indexes. The updater continues to use the Windows and
+AppImage artifacts.
 
-Production package repositories are generated beside the direct downloads. The
-APT repository is signed with the channel key published at
-`/downloads/apt/silicium-packages.asc`; the DNF repository definition is at
+Production and development repositories are generated on each deployment.
+APT metadata is signed with the channel key published at
+`/downloads/apt/silicium-packages.asc`. RPM packages and DNF metadata are signed
+with the channel key published at
+`/downloads/rpm/silicium-rpm-signing.asc`; the DNF repository definition is at
 `/downloads/rpm/silicium-node.repo`. The dev repository uses the private
-WireGuard URL and the suite `dev`.
+WireGuard URL and the APT suite `dev`.
 
 For local site testing, copy the installer to:
 

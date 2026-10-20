@@ -3,6 +3,24 @@
 
 use crate::*;
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceLinkProof {
+    peer_id: String,
+    public_key: String,
+    signature: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DevicePairRequest {
+    code: String,
+    node_id: String,
+    peer_id: String,
+    public_key: String,
+    signature: String,
+}
+
 #[tauri::command]
 pub fn node_status(
     repo_root: Option<String>,
@@ -250,6 +268,112 @@ pub fn app_defaults() -> AppDefaults {
             .map(|config| effective_node_id(&config.node_id))
             .unwrap_or_else(persistent_node_id),
     }
+}
+
+/// Associates the running desktop installation to the account that issued
+/// the one-time code. The P2P process signs the code with its stored identity.
+#[tauri::command]
+pub fn pair_device(repo_root: String, node_id: String, code: String) -> Result<(), String> {
+    let code = code.trim().to_ascii_lowercase();
+    let node_id = node_id.trim().to_string();
+    if code.len() != 64
+        || !code.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || node_id.is_empty()
+        || node_id.len() > 64
+        || !node_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err("Code ou identifiant de machine invalide.".to_string());
+    }
+
+    let repo_root = resolve_repo_root(&repo_root)?;
+    validate_repo_root(&repo_root)?;
+    let binary = runtime_binary(&repo_root, "p2p_node");
+    if !binary.is_file() {
+        return Err(format!("Runtime P2P absent : {}", binary.display()));
+    }
+
+    let mut signer = Command::new(binary);
+    signer
+        .arg("--sign-device-link")
+        .current_dir(&repo_root)
+        .env("SILICIUM_DEVICE_LINK_CODE", &code)
+        .env("SILICIUM_NODE_ID", &node_id)
+        .env("SILICIUM_DATA_DIR", runtime_state_dir(&repo_root));
+    configure_detached_process(&mut signer);
+    let proof_output = signer
+        .output()
+        .map_err(|error| format!("Impossible de préparer la preuve de l’appareil : {error}"))?;
+    if !proof_output.status.success() {
+        return Err("L’identité persistante du nœud n’a pas pu signer le code.".to_string());
+    }
+    let proof: DeviceLinkProof = serde_json::from_slice(&proof_output.stdout)
+        .map_err(|_| "La preuve renvoyée par le nœud est invalide.".to_string())?;
+    let request = DevicePairRequest {
+        code,
+        node_id,
+        peer_id: proof.peer_id,
+        public_key: proof.public_key,
+        signature: proof.signature,
+    };
+    let request_body = serde_json::to_vec(&request).map_err(|error| error.to_string())?;
+    let request_path = app_state_dir().join(format!(
+        "device-pairing-{}-{}.json",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    if let Some(parent) = request_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let mut request_file = OpenOptions::new();
+    request_file.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        request_file.mode(0o600);
+    }
+    let mut file = request_file
+        .open(&request_path)
+        .map_err(|error| format!("Impossible de préparer la requête d’association : {error}"))?;
+    if let Err(error) = file.write_all(&request_body) {
+        drop(file);
+        let _ = fs::remove_file(&request_path);
+        return Err(format!("Impossible de préparer la requête d’association : {error}"));
+    }
+    drop(file);
+
+    let url = format!("{}/devices/pair", default_api_base_url().trim_end_matches('/'));
+    let mut post = Command::new(curl_command());
+    apply_tls_options(&mut post);
+    post.arg("--fail-with-body")
+        .arg("--silent")
+        .arg("--show-error")
+        .arg("--location")
+        .arg("--max-time")
+        .arg("20")
+        .arg("--header")
+        .arg("Content-Type: application/json")
+        .arg("--data-binary")
+        .arg(format!("@{}", request_path.display()))
+        .arg(url)
+        .stdin(Stdio::null());
+    configure_detached_process(&mut post);
+    let response = post.output();
+    let _ = fs::remove_file(&request_path);
+    let response = response.map_err(|error| format!("Impossible de joindre l’API : {error}"))?;
+    if !response.status.success() {
+        let message = serde_json::from_slice::<Value>(&response.stdout)
+            .ok()
+            .and_then(|value| value.get("message").and_then(Value::as_str).map(str::to_string));
+        return Err(message.unwrap_or_else(|| {
+            "L’association a échoué. Vérifiez le code et la connexion réseau.".to_string()
+        }));
+    }
+    Ok(())
 }
 
 /// State of AI tasks on this PC (Ollama runtime, model).
