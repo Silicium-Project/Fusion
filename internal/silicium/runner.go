@@ -139,7 +139,7 @@ func runNodeJob(ctx context.Context, job models.Job, cfg RunnerConfig, spec work
 		// The node refuses unreadable documents or requests with a message
 		// for the user.
 		var refused *ControlError
-		if errors.As(err, &refused) && refused.Status == http.StatusBadRequest && (IsDocumentSearch(job.Workload) || IsBatchAI(job.Workload)) {
+		if errors.As(err, &refused) && refused.Status == http.StatusBadRequest && (IsDocumentSearch(job.Workload) || IsBatchAI(job.Workload) || IsHF(job.Workload)) {
 			return RunResult{Status: "failed", ErrorMessage: refused.Message}
 		}
 		return RunResult{Status: "failed", ErrorMessage: "rust_node_submission_failed: " + err.Error()}

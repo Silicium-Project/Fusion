@@ -88,6 +88,9 @@ func (h *Handler) GetJobDashboard(w http.ResponseWriter, r *http.Request) {
 	if batchAI := batchAIDashboard(job); batchAI != nil {
 		payload["batchAI"] = batchAI
 	}
+	if hf := hfDashboard(job); hf != nil {
+		payload["hf"] = hf
+	}
 	writeJSON(w, http.StatusOK, payload)
 }
 
@@ -107,6 +110,10 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	}
 	if silicium.IsBatchAI(job.Workload) {
 		writeBatchAIResult(w, r, job)
+		return
+	}
+	if silicium.IsHF(job.Workload) {
+		writeHFResult(w, r, job)
 		return
 	}
 	serveJobResult(w, r, job)

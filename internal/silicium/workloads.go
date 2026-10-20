@@ -83,9 +83,42 @@ func IsBatchAI(workload string) bool {
 	return ok && spec.NodeID == BatchAIWorkload
 }
 
+// HFPrefix starts the workloads of the AI catalogue: `ai/hf/<task>/<model
+// key>`, one per model (Network, `workload/hf`).
+const HFPrefix = "ai/hf/"
+
+// IsHF reports whether `workload` is a job of the AI catalogue.
+func IsHF(workload string) bool {
+	_, _, ok := ParseHF(workload)
+	return ok
+}
+
+// ParseHF splits `ai/hf/<task>/<key>`; the task and the key are checked
+// against the catalogue by the caller.
+func ParseHF(workload string) (task, key string, ok bool) {
+	rest, found := strings.CutPrefix(strings.TrimSpace(workload), HFPrefix)
+	if !found {
+		return "", "", false
+	}
+	task, key, found = strings.Cut(rest, "/")
+	if !found || task == "" || len(key) < 14 || len(key) > 120 || strings.ContainsAny(key, "/\\") {
+		return "", "", false
+	}
+	for _, c := range task + key {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_') {
+			return "", "", false
+		}
+	}
+	return task, key, true
+}
+
 // workloadSpecFor returns the spec of a workload name.
 func workloadSpecFor(workload string) (workloadSpec, bool) {
-	spec, ok := workloadSpecs[strings.TrimSpace(workload)]
+	workload = strings.TrimSpace(workload)
+	if IsHF(workload) {
+		return workloadSpec{NodeID: workload, StorageDir: "hf", ResultFile: "answers/result.json"}, true
+	}
+	spec, ok := workloadSpecs[workload]
 	return spec, ok
 }
 

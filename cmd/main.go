@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"github.com/silicium/internal/auth"
+	"github.com/silicium/internal/catalog"
 	"github.com/silicium/internal/db"
 	"github.com/silicium/internal/handler"
 	"github.com/silicium/internal/middleware"
@@ -34,6 +35,9 @@ func main() {
 	database := db.Init()
 	h := handler.New(database)
 	go h.RunTerminalJobControlReconciler(applicationContext, 30*time.Second)
+	if syncer := catalog.SyncFromEnv(catalog.Store{DB: database}); syncer != nil {
+		go syncer.Loop(applicationContext, catalog.SyncInterval())
+	}
 
 	router := mux.NewRouter()
 	router.UseEncodedPath()
@@ -41,6 +45,7 @@ func main() {
 	routes.RegisterHealthRoutes(router, h)
 	routes.RegisterUserRoutes(router, h)
 	routes.RegisterJobRoutes(router, h)
+	routes.RegisterCatalogRoutes(router, h)
 
 	origins := splitValues(envDefault("CORS_ALLOWED_ORIGINS", "*"))
 	allowCredentials := true

@@ -89,6 +89,10 @@ func (h *Handler) GetJobAnswers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if silicium.IsHF(job.Workload) {
+		h.getHFAnswers(w, r, job)
+		return
+	}
 	if !silicium.IsBatchAI(job.Workload) {
 		http.Error(w, "Not a batch AI job", http.StatusNotFound)
 		return
