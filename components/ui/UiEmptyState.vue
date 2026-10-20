@@ -16,5 +16,5 @@ withDefaults(defineProps<{ icon?: string; title: string; description: string }>(
 .empty-state__icon { display: grid; width: 3rem; height: 3rem; place-items: center; border: 1px solid var(--border); border-radius: .9rem; background: var(--surface-soft); color: var(--violet-600); }
 .empty-state__icon :deep(svg) { width: 1.25rem; }
 .empty-state h3 { margin: 1rem 0 .35rem; font-size: .983rem; }
-.empty-state p { margin: 0 0 1rem; color: var(--ink-600); font-size: .925rem; line-height: 1.6; }
+.empty-state p { margin: 0 0 1rem; color: var(--ink-600); font-size: 1rem; line-height: 1.6; }
 </style>

@@ -31,11 +31,11 @@ export default defineNuxtConfig({
       meta: [
         { name: 'description', content: 'Silicium coordonne vos machines, distribue vos calculs et centralise le suivi des résultats.' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-        { name: 'theme-color', content: '#f4f5f1' },
+        { name: 'theme-color', content: '#f7f9fc' },
         { name: 'color-scheme', content: 'light' },
       ],
       link: [
-        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+        { rel: 'icon', type: 'image/svg+xml', href: '/brand/silicium-icon.svg' },
       ],
     },
   },
@@ -58,6 +58,7 @@ export default defineNuxtConfig({
       '/network': { headers: { 'Cache-Control': 'no-store' } },
       '/nodes': { headers: { 'Cache-Control': 'no-store' } },
       '/profile': { headers: { 'Cache-Control': 'no-store' } },
+      '/workers/overview': { headers: { 'Cache-Control': 'no-store' } },
       '/downloads/update-manifest.json': { headers: { 'Cache-Control': 'no-cache, must-revalidate' } },
     },
     externals: { external: ['@solana/web3.js'] },

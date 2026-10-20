@@ -6,12 +6,14 @@
     <template v-else-if="name === 'nodes'"><rect x="3" y="4" width="7" height="7" rx="2"/><rect x="14" y="4" width="7" height="7" rx="2"/><rect x="8.5" y="15" width="7" height="6" rx="2"/><path d="M6.5 11v2h11v-2M12 13v2"/></template>
     <template v-else-if="name === 'account'"><circle cx="12" cy="8" r="3.5"/><path d="M5 21c.5-4 3-6 7-6s6.5 2 7 6"/></template>
     <template v-else-if="name === 'plus'"><path d="M12 5v14M5 12h14"/></template>
+    <template v-else-if="name === 'eye' || name === 'eye-off'"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path v-if="name === 'eye-off'" d="M3 3 21 21"/></template>
     <template v-else-if="name === 'arrow'"><path d="M5 12h14m-5-5 5 5-5 5"/></template>
     <template v-else-if="name === 'chevron'"><path d="m9 6 6 6-6 6"/></template>
     <template v-else-if="name === 'refresh'"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9m2 6a7 7 0 0 0 12 2.5L20 15"/></template>
     <template v-else-if="name === 'play'"><path d="m8 5 11 7-11 7V5Z" fill="currentColor" stroke="none"/></template>
     <template v-else-if="name === 'pause'"><path d="M8 5h3v14H8zM13 5h3v14h-3z" fill="currentColor" stroke="none"/></template>
     <template v-else-if="name === 'activity'"><path d="M3 12h4l2-7 4 14 2-7h6"/></template>
+    <template v-else-if="name === 'copy'"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></template>
     <template v-else-if="name === 'check'"><path d="m5 12 4 4L19 6"/></template>
     <template v-else-if="name === 'clock'"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></template>
     <template v-else-if="name === 'alert'"><path d="M10.3 4.1 2.7 17.2A2 2 0 0 0 4.4 20h15.2a2 2 0 0 0 1.7-2.8L13.7 4.1a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/></template>

@@ -15,9 +15,10 @@ du compte dans une seule expérience responsive.
 - `types/` et `utils/` centralisent les contrats et le formatage.
 - `assets/css/` contient les tokens, fondations et composants visuels.
 
-Les couleurs de statut sont sémantiques : menthe pour un état actif, ambre pour
-une attente, rouge pour un échec. Le violet est réservé aux micro-accents. Les
-actions principales utilisent le graphite de la marque.
+La direction visuelle associe un fond perle, du verre discret et des contrôles
+en relief. Les actions principales sont bleues. Les statuts conservent leurs
+couleurs sémantiques : vert pour une réussite, ambre pour une attente et rouge
+pour un échec. Le logo provient du nouveau visuel fourni dans Téléchargements.
 
 ## Parcours
 
@@ -66,6 +67,23 @@ le proxy relatif `/api`. Les variables disponibles sont documentées dans
 
 ## Vérifications
 
+La vitrine présente les quatre types de calcul et affiche les états renvoyés
+par le service. Le visuel d'accueil est identifié comme une illustration de
+rendu. Sur `/service`, le schéma explique la répartition ; le parcours 3D se
+déplie et se charge à la demande. `/workloads#documents` (ou `#raytracer`,
+`#sha256`, `#batchAI`) ouvre directement le guide du calcul choisi.
+
+La liste des projets devient une liste de blocs sur mobile. Le tableau de bord
+emploie une présentation compacte des projets récents. Les champs de mot de
+passe partagent `UiPasswordInput`, avec une action afficher/masquer. Le choix de
+langue reste disponible sur petit écran dans un sélecteur natif.
+
+La page `/download` regroupe les installations Linux et Windows. Les commandes
+APT/DNF sont centralisées dans `utils/packageRepositories.ts` et correspondent
+aux fichiers publiés par Fusion. Le canal `dev` nécessite WireGuard et la CA
+fournie avec l'accès. Les paramètres `platform=linux|windows`, `channel=prod|dev`
+et `manager=apt|dnf` permettent de partager une configuration d'installation.
+
 ```shell
 npm test
 npm run build
@@ -77,6 +95,17 @@ Les tests unitaires couvrent notamment la session, le cache et les fonctions de
 présentation. Les tests Playwright valident les parcours publics et privés sur
 desktop et smartphone avec une API simulée.
 
+Pour utiliser un serveur de test déjà lancé :
+
+```shell
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 npm run test:functional
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4173 npm run test:visual
+```
+
+Les tests d'installation vérifient les liens de dépôt, les chemins de confiance,
+la copie des commandes, le changement de canal et les dimensions des blocs sur
+petit écran. Ils ne lancent pas les commandes APT/DNF sur le poste.
+
 ## Conteneur
 
 ```shell
@@ -86,3 +115,14 @@ docker compose up --build
 L'image de production est construite en plusieurs étapes et n'embarque que la
 sortie Nitro et les dépendances nécessaires à l'exécution. Un contrôle de santé
 HTTP est inclus dans l'image.
+
+## Supervision et espace worker
+
+- `/workers` présente la participation au réseau ; `/workers/overview` ouvre le suivi authentifié d’un nœud.
+- Le sélecteur utilise les identifiants annoncés par le réseau. Le choix est conservé dans ce navigateur, par compte ; il ne lie pas la propriété d’un nœud au compte.
+- Les ressources et compteurs proviennent des réponses réseau. Une télémétrie absente reste indisponible, et un nœud hors ligne n’affiche pas d’utilisation actuelle.
+- Les courbes conservent au maximum cinq minutes de mesures reçues depuis l’ouverture de la vue. Elles interrompent le tracé lors d’une donnée absente ou d’une interruption prolongée.
+- Le récapitulatif d’un projet montre les unités de travail et les temps fournis par le service. L’API ne fournit actuellement aucun montant payé : les unités ne sont pas converties en euros ou en SOL.
+- L’icône compacte `public/brand/silicium-icon.svg` dérive du monogramme Si. Le visuel de marque complet est conservé séparément.
+
+La direction et les huit maquettes révisées sont dans `../design/mockups/precision-v4-2026-10-20/`. Le texte courant utilise 17–18 px à taille de navigateur par défaut ; les petits libellés utilisent au moins 15 px. Les tailles restent relatives au réglage du lecteur.

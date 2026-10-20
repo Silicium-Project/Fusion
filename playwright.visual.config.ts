@@ -2,12 +2,13 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/visual',
+  outputDir: './artifacts/test-results/visual',
   timeout: 45_000,
   fullyParallel: false,
   workers: 1,
   reporter: 'line',
   use: {
-    baseURL: 'http://127.0.0.1:3001',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://127.0.0.1:3001',
     trace: 'retain-on-failure',
   },
   projects: [
@@ -18,7 +19,7 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['Desktop Chrome'], viewport: { width: 390, height: 844 } } },
     { name: 'iphone-se', use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 667 } } },
   ],
-  webServer: {
+  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: 'npm run dev',
     url: 'http://127.0.0.1:3001',
     reuseExistingServer: true,

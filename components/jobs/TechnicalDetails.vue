@@ -21,7 +21,7 @@ const items = computed(() => {
     { label: t('technical.networkTime'), value: formatMilliseconds(performance?.network_ms), mono: true },
     { label: t('technical.computeShare'), value: formatPerformancePercent(performance?.compute_to_total_ratio), mono: true },
     { label: t('technical.computeRatio'), value: formatPerformanceMultiple(performance?.compute_to_network_ratio), mono: true },
-    { label: t('technical.billable'), value: String(props.dashboard.job.billableWorkUnits || 0), mono: true },
+    { label: t('technical.billable'), value: props.dashboard.job.computeReceiptHash && props.dashboard.job.billableWorkUnits !== undefined ? String(props.dashboard.job.billableWorkUnits) : '—', mono: true },
     { label: t('technical.receipt'), value: compactIdentifier(props.dashboard.job.computeReceiptHash, 12, 8), mono: true },
     { label: t('technical.program'), value: compactIdentifier(props.dashboard.devnet?.programId, 12, 8), mono: true },
     { label: t('technical.transactions'), value: String(props.dashboard.devnet?.signatures?.length || 0), mono: true },
@@ -31,5 +31,5 @@ const items = computed(() => {
 </script>
 
 <style scoped>
-.technical-details{margin:0}.technical-details>div{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr);gap:1rem;padding:.72rem 0;border-bottom:1px solid var(--border)}.technical-details>div:last-child{border:0}.technical-details dt{color:var(--ink-500);font-size:.877rem}.technical-details dd{overflow:hidden;margin:0;color:var(--ink-800);font-size:.891rem;font-weight:650;text-align:right;text-overflow:ellipsis;white-space:nowrap}
+.technical-details{margin:0}.technical-details>div{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(0,1.2fr);gap:1rem;padding:.72rem 0;border-bottom:1px solid var(--border)}.technical-details>div:last-child{border:0}.technical-details dt{color:var(--ink-500);font-size:.9375rem}.technical-details dd{overflow:hidden;margin:0;color:var(--ink-800);font-size:.9375rem;font-weight:650;text-align:right;text-overflow:ellipsis;white-space:nowrap}
 </style>

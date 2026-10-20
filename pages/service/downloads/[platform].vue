@@ -1,33 +1,14 @@
-<template>
-  <div class="download-page marketing-page">
-    <section class="download-page__inner marketing-container">
-      <NuxtLink to="/download" class="back-link"><UiIcon name="arrow" />{{ t('platformDownload.back') }}</NuxtLink>
-      <div class="download-page__intro"><span class="marketing-kicker">{{ t('platformDownload.kicker') }}</span><h1 class="marketing-title">{{ t('platformDownload.title') }}<br><em>{{ t('platformDownload.titleEm') }}</em></h1><p class="marketing-lede">{{ download.detail }}</p></div>
-      <section class="download-card marketing-glass" aria-labelledby="download-title"><div class="download-card__top"><span class="download-card__index">{{ t('platformDownload.versionTag') }}</span><span class="download-card__status"><i></i>{{ t('platformDownload.available') }}</span></div><div class="download-card__body"><div class="download-card__icon"><UiIcon :name="download.icon" /></div><div class="download-card__copy"><span class="marketing-kicker">{{ download.channel }}</span><h2 id="download-title">{{ download.label }}</h2><p>{{ download.note }}</p></div></div><div class="download-card__meta"><span>{{ t('platformDownload.version') }} <strong>{{ download.version }}</strong></span><span>{{ t('platformDownload.for') }} <strong>{{ download.usage }}</strong></span><span>{{ t('platformDownload.format') }} <strong>{{ download.format }}</strong></span></div></section>
-      <div class="download-page__actions"><UiButton :href="download.url" target="_blank" icon="download">{{ t('platformDownload.downloadVersion', { version: download.version }) }}</UiButton><UiButton v-if="download.secondaryUrl" :href="download.secondaryUrl" target="_blank" variant="secondary" icon="download">{{ download.secondaryLabel }}</UiButton><UiButton v-if="download.rpmUrl" :href="download.rpmUrl" target="_blank" variant="secondary" icon="download">{{ download.rpmLabel }}</UiButton><UiButton to="/download" variant="secondary" icon="arrow">{{ t('platformDownload.allVersions') }}</UiButton><UiButton to="/contact" variant="secondary">{{ t('platformDownload.proposeIdea') }}</UiButton></div>
-    </section>
-  </div>
-</template>
+<template><div /></template>
 
 <script setup lang="ts">
-import { resolveNodeDownloadUrl } from '~/utils/downloads';
-const route = useRoute();
-const config = useRuntimeConfig();
-const { manifest } = useSystemStatus();
 definePageMeta({ layout: 'public' });
-type Download = { label: string; channel: string; detail: string; note: string; icon: string; version: string; usage: string; format: string; url: string; secondaryUrl?: string; secondaryLabel?: string; rpmUrl?: string; rpmLabel?: string };
-const { t } = useI18n();
-const copy = (key: string) => ({ label: t(`platformDownload.${key}.label`), detail: t(`platformDownload.${key}.detail`), note: t(`platformDownload.${key}.note`) });
-const downloads = computed<Record<string, Download>>(() => ({
-  windows: { ...copy('windows'), channel: t('platformDownload.stableChannel'), icon: 'windows', version: manifest.value?.channels?.prod?.version || 'stable', usage: t('platformDownload.dailyUse'), format: 'Windows', url: resolveNodeDownloadUrl(config.public.nodeAppWindowsUrl, '/downloads/silicium-node-windows.exe') },
-  'windows-dev': { ...copy('windowsDev'), channel: t('platformDownload.testChannel'), icon: 'windows', version: manifest.value?.channels?.dev?.version || 'dev', usage: t('platformDownload.trial'), format: 'Windows', url: resolveNodeDownloadUrl(config.public.nodeAppWindowsDevUrl, '/downloads/silicium-node-windows-dev.exe') },
-  'linux-dev': { ...copy('linuxDev'), channel: t('platformDownload.testChannel'), icon: 'linux', version: manifest.value?.channels?.dev?.version || 'dev', usage: t('platformDownload.trial'), format: 'AppImage', url: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevUrl, '/downloads/silicium-node-linux-dev.AppImage'), secondaryUrl: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevDebUrl, '/downloads/silicium-node-linux-dev.deb'), secondaryLabel: t('platformDownload.downloadDeb'), rpmUrl: resolveNodeDownloadUrl(config.public.nodeAppLinuxDevRpmUrl, '/downloads/silicium-node-linux-dev.rpm'), rpmLabel: t('platformDownload.downloadRpm') },
-}));
-const download = computed(() => downloads.value[String(route.params.platform)] || downloads.value.windows);
-useSeoMeta({ title: () => `${download.value.label} — Silicium`, description: () => t('platformDownload.seoDescription') });
+const route = useRoute();
+const platform = String(route.params.platform);
+if (!['windows', 'windows-dev', 'linux-dev'].includes(platform)) {
+  throw createError({ statusCode: 404, statusMessage: 'Not found' });
+}
+await navigateTo({
+  path: '/download',
+  query: { platform: platform.startsWith('windows') ? 'windows' : 'linux', channel: platform === 'windows' ? 'prod' : 'dev' },
+}, { redirectCode: 301, replace: true });
 </script>
-
-<style scoped>
-.download-page__inner{min-height:calc(100svh - 5rem);padding-block:clamp(3rem,7vw,6rem)}.back-link{display:inline-flex;align-items:center;gap:.45rem;color:var(--ink-600);font-size:.891rem;font-weight:720}.back-link svg{width:.8rem;transform:rotate(180deg)}.download-page__intro{max-width:800px;margin-top:clamp(3.5rem,7vw,6rem)}.download-page__intro .marketing-title{max-width:650px;font-size:clamp(3rem,5vw,5.4rem)}.download-card{max-width:960px;margin-top:4rem;border-radius:1.7rem;background:linear-gradient(145deg,rgba(255,255,255,.82),rgba(225,248,243,.46));}.download-card__top{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.1rem 1.35rem;border-bottom:1px solid var(--border);color:var(--ink-500);font-family:var(--font-mono);font-size:.85rem}.download-card__status{display:inline-flex;align-items:center;gap:.45rem;color:var(--mint-700);font-family:var(--font-body);font-size:.87rem;font-weight:740}.download-card__status i{width:.4rem;height:.4rem;border-radius:50%;background:var(--mint-500);box-shadow:0 0 0 .22rem rgba(18,191,174,.1)}.download-card__body{display:grid;grid-template-columns:auto 1fr;gap:1.25rem;padding:1.5rem}.download-card__icon{display:grid;width:3.5rem;height:3.5rem;place-items:center;border-radius:1rem;background:var(--mint-100);color:var(--mint-700)}.download-card__icon svg{width:1.45rem;height:1.45rem}.download-card__copy h2{margin:.45rem 0 0;color:var(--ink-900);font-size:1.4rem;letter-spacing:-.05em}.download-card__copy p{max-width:660px;margin:.5rem 0 0;color:var(--ink-700);font-size:.966rem;line-height:1.7}.download-card__meta{display:flex;flex-wrap:wrap;gap:0;padding:0 1.5rem 1.35rem}.download-card__meta span{min-width:8.5rem;padding:.7rem 1rem;border-top:1px solid var(--border);color:var(--ink-500);font-size:.877rem}.download-card__meta span:first-child{padding-left:0}.download-card__meta strong{display:block;margin-top:.25rem;color:var(--ink-900);font-size:.898rem}.download-page__actions{display:flex;flex-wrap:wrap;gap:.7rem;margin-top:1.2rem}
-@media(max-width:620px){.download-page__inner{padding-block:2.75rem 4rem}.download-page__intro{margin-top:3rem}.download-card{margin-top:2.75rem;border-radius:1.3rem}.download-card__top,.download-card__body,.download-card__meta{padding-inline:1.1rem}.download-card__body{gap:1rem}.download-card__meta{display:grid;grid-template-columns:1fr 1fr}.download-card__meta span{min-width:0}.download-card__meta span:first-child{padding-left:1rem}.download-page__actions{align-items:stretch;flex-direction:column}.download-page__actions :deep(.ui-button){width:100%}}
-</style>

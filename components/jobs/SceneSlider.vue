@@ -21,5 +21,5 @@ function onInput(event: Event) {
 </script>
 
 <style scoped>
-.scene-slider{display:grid;grid-template-columns:minmax(0,1fr) 4.6rem;align-items:center;gap:.25rem .6rem}.scene-slider__label{grid-column:1/-1;display:flex;justify-content:space-between;gap:.5rem;color:var(--ink-700);font-size:.84rem;font-weight:650}.scene-slider__label small{color:var(--ink-500);font-weight:500}.scene-slider__range{width:100%;accent-color:var(--mint-600)}.scene-slider__number{width:100%;padding:.3rem .4rem;border:1px solid var(--border-strong);border-radius:.45rem;background:white;color:var(--ink-900);font-family:var(--font-mono);font-size:.82rem}
+.scene-slider{display:grid;grid-template-columns:minmax(0,1fr) 4.6rem;align-items:center;gap:.25rem .6rem}.scene-slider__label{grid-column:1/-1;display:flex;justify-content:space-between;gap:.5rem;color:var(--ink-700);font-size:.9375rem;font-weight:650}.scene-slider__label small{color:var(--ink-500);font-weight:500}.scene-slider__range{width:100%;accent-color:var(--mint-600)}.scene-slider__number{width:100%;padding:.3rem .4rem;border:1px solid var(--border-strong);border-radius:.45rem;background:white;color:var(--ink-900);font-family:var(--font-mono);font-size:.9375rem}
 </style>

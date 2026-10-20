@@ -1,26 +1,25 @@
 <template>
   <footer class="public-footer">
     <div class="marketing-container public-footer__top">
-      <div class="public-footer__brand"><BrandLogo /><p>{{ t('footer.tagline') }}</p></div>
-      <div class="public-footer__links"><strong>{{ t('footer.explore') }}</strong><NuxtLink to="/service">{{ t('nav.product') }}</NuxtLink><NuxtLink to="/download">{{ t('nav.downloadNode') }}</NuxtLink><NuxtLink to="/blockchain">{{ t('nav.blockchain') }}</NuxtLink><NuxtLink to="/about">{{ t('nav.about') }}</NuxtLink><NuxtLink to="/contact">{{ t('nav.ideas') }}</NuxtLink></div>
-      <div class="public-footer__links"><strong>{{ t('footer.access') }}</strong><NuxtLink to="/auth?mode=login">{{ t('auth.login') }}</NuxtLink><NuxtLink to="/auth?mode=register">{{ t('nav.signUp') }}</NuxtLink><NuxtLink to="/download">{{ t('footer.installMachine') }}</NuxtLink></div>
-      <div class="public-footer__status"><span class="public-footer__status-dot"></span><div><strong>{{ t('footer.devnet') }}</strong><small>{{ t('footer.experimental') }}</small></div></div>
+      <div class="public-footer__brand"><BrandLogo /><h2>{{ t('experience.footer.title') }}</h2><p>{{ t('experience.footer.description') }}</p></div>
+      <div class="public-footer__links"><strong>{{ t('experience.footer.product') }}</strong><NuxtLink to="/service">{{ t('nav.product') }}</NuxtLink><NuxtLink to="/#usages">{{ t('experience.footer.uses') }}</NuxtLink><NuxtLink to="/about">{{ t('nav.about') }}</NuxtLink></div>
+      <div class="public-footer__links"><strong>{{ t('experience.footer.participate') }}</strong><NuxtLink to="/jobs/new">{{ t('experience.home.start') }}</NuxtLink><NuxtLink to="/workers">{{ t('observability.worker.nav') }}</NuxtLink><NuxtLink to="/download">{{ t('experience.install') }} Silicium Node</NuxtLink><NuxtLink to="/auth?mode=login">{{ t('nav.signIn') }}</NuxtLink></div>
+      <div class="public-footer__links"><strong>{{ t('experience.footer.resources') }}</strong><NuxtLink to="/blockchain">{{ t('nav.blockchain') }}</NuxtLink><NuxtLink to="/service#status">{{ t('experience.footer.network') }}</NuxtLink><NuxtLink to="/contact">{{ t('experience.contact') }}</NuxtLink></div>
     </div>
-    <div class="marketing-container public-footer__bottom"><span>© {{ new Date().getFullYear() }} Silicium Project</span><span>{{ t('footer.motto') }}</span></div>
+    <div class="marketing-container public-footer__bottom"><span>© {{ new Date().getFullYear() }} Silicium Project <i>/</i> {{ t('experience.footer.source') }}</span><NuxtLink to="/service#status" class="public-footer__status"><UiStatusBadge :status="status?.network.status || 'unknown'" /><span>{{ t('experience.live.label') }} ↗</span></NuxtLink></div>
   </footer>
 </template>
-
 <script setup lang="ts">
 const { t } = useI18n();
+const { status, refresh } = useSystemStatus();
+onMounted(() => { if (!status.value) refresh(); });
 </script>
-
 <style scoped>
-.public-footer{margin-top:6rem;border-top:1px solid var(--border);background:rgba(235,240,237,.55)}
-.public-footer__top{display:grid;grid-template-columns:1.7fr .65fr .65fr .9fr;gap:2.5rem;padding-block:3.6rem}
-.public-footer__brand p{max-width:350px;margin:1rem 0 0;color:var(--ink-700);font-size:.952rem;line-height:1.72}
-.public-footer__links{display:grid;align-content:start;gap:.65rem;color:var(--ink-700);font-size:.925rem}.public-footer__links strong{margin-bottom:.3rem;color:var(--ink-900);font-size:.881rem;letter-spacing:.12em;text-transform:uppercase}.public-footer__links a:hover{color:var(--mint-700)}
-.public-footer__status{display:flex;align-items:flex-start;gap:.65rem;align-self:start;padding:.85rem;border:1px solid rgba(255,255,255,.8);border-radius:.9rem;background:rgba(255,255,255,.5);box-shadow:inset 0 0 0 1px var(--border)}.public-footer__status-dot{width:.48rem;height:.48rem;margin-top:.22rem;border-radius:50%;background:var(--mint-500);box-shadow:0 0 0 .25rem rgba(18,191,174,.12)}.public-footer__status strong,.public-footer__status small{display:block}.public-footer__status strong{font-size:.898rem}.public-footer__status small{margin-top:.2rem;color:var(--ink-500);font-size:.87rem;line-height:1.4}
-.public-footer__bottom{display:flex;justify-content:space-between;padding-block:1.2rem;border-top:1px solid var(--border);color:var(--ink-500);font-size:.891rem}
-@media(max-width:900px){.public-footer__top{grid-template-columns:1.4fr .8fr .8fr}.public-footer__status{grid-column:1/-1;justify-self:start}}
-@media(max-width:620px){.public-footer{margin-top:4rem}.public-footer__top{grid-template-columns:1fr 1fr;gap:2.25rem;padding-block:2.75rem}.public-footer__brand{grid-column:1/-1}.public-footer__status{grid-column:1/-1}.public-footer__bottom{align-items:flex-start;flex-direction:column;gap:.45rem}}
+.public-footer{margin-top:clamp(4rem,7vw,6rem);border-top:1px solid var(--border);background:rgba(245,249,254,.72);color:var(--ink-600)}
+.public-footer__top{display:grid;grid-template-columns:1.8fr repeat(3,1fr);gap:2.5rem;padding-block:3.5rem}
+.public-footer__brand h2{margin:1.4rem 0 0;color:var(--ink-900);font-size:1.25rem;font-weight:550;letter-spacing:-.03em}.public-footer__brand p{max-width:20rem;margin:.7rem 0 0;font-size:1rem;line-height:1.8}
+.public-footer__links{display:grid;align-content:start;gap:.8rem;padding-top:.4rem;font-size:.9375rem;line-height:1.5}.public-footer__links strong{margin-bottom:.4rem;color:var(--ink-900);font-size:.9375rem;font-weight:600}.public-footer__links a:hover{color:var(--mint-700);text-decoration:underline;text-underline-offset:.3rem}
+.public-footer__bottom{display:flex;justify-content:space-between;gap:1.5rem;align-items:center;padding-block:1.4rem;border-top:1px solid var(--border);font-size:.9375rem;line-height:1.7}.public-footer__bottom i{margin-inline:.5rem;font-style:normal;color:var(--ink-300)}.public-footer__status{display:flex;align-items:center;gap:.65rem}.public-footer__status>span{white-space:nowrap}
+@media(max-width:950px){.public-footer__top{grid-template-columns:1.5fr 1fr 1fr}.public-footer__brand{grid-column:1/-1}.public-footer__brand p{max-width:30rem}.public-footer__bottom{align-items:start;flex-direction:column}}
+@media(max-width:520px){.public-footer__top{grid-template-columns:1fr 1fr;gap:2rem;padding-block:2.5rem}.public-footer__links:last-child{grid-column:1/-1}.public-footer__bottom i{display:none}.public-footer__status{flex-wrap:wrap}}
 </style>

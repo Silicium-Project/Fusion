@@ -46,13 +46,13 @@ const summaryText = computed(() => sceneSummaryText(props.report.scene));
 .scene-issues{display:grid;gap:.7rem;padding:.9rem 1rem;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--green-100)}
 .scene-issues--warning{border-color:rgba(166,89,20,.25);background:var(--amber-100)}.scene-issues--error{border-color:rgba(191,61,61,.28);background:var(--red-100)}
 .scene-issues__head{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.75rem}
-.scene-issues__head strong,.scene-issues__head small{display:block}.scene-issues__head strong{color:var(--ink-950);font-size:.92rem}.scene-issues__head small{margin-top:.2rem;color:var(--ink-600);font-size:.84rem}
+.scene-issues__head strong,.scene-issues__head small{display:block}.scene-issues__head strong{color:var(--ink-950);font-size:.9375rem}.scene-issues__head small{margin-top:.2rem;color:var(--ink-600);font-size:.9375rem}
 .scene-issues__icon{display:grid;width:2.2rem;height:2.2rem;place-items:center;border-radius:.65rem;background:white;color:var(--green-600)}.scene-issues__icon svg{width:1rem}
 .scene-issues--warning .scene-issues__icon{color:var(--amber-600)}.scene-issues--error .scene-issues__icon{color:var(--red-600)}
 .scene-issues__list{display:grid;gap:.35rem;margin:0;padding:0;list-style:none}
-.scene-issues__list li{display:grid;grid-template-columns:5.2rem 1fr;gap:.6rem;padding:.5rem .65rem;border-left:3px solid var(--amber-600);border-radius:.45rem;background:white;color:var(--ink-800);font-size:.85rem;line-height:1.45}
+.scene-issues__list li{display:grid;grid-template-columns:5.2rem 1fr;gap:.6rem;padding:.5rem .65rem;border-left:3px solid var(--amber-600);border-radius:.45rem;background:white;color:var(--ink-800);font-size:.9375rem;line-height:1.45}
 .scene-issues__list li.is-error{border-left-color:var(--red-600)}
-.scene-issues__line{color:var(--ink-500);font-family:var(--font-mono);font-size:.8rem}
-.scene-issues__hint{margin:0;color:var(--ink-600);font-size:.82rem;line-height:1.45}
+.scene-issues__line{color:var(--ink-500);font-family:var(--font-mono);font-size:.9375rem}
+.scene-issues__hint{margin:0;color:var(--ink-600);font-size:.9375rem;line-height:1.45}
 @media(max-width:620px){.scene-issues__head{grid-template-columns:auto 1fr}.scene-issues__head :deep(.ui-button){grid-column:1/-1}.scene-issues__list li{grid-template-columns:1fr;gap:.15rem}}
 </style>

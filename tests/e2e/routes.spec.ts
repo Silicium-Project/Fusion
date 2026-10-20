@@ -4,12 +4,12 @@ import { authenticate, mockAPI } from './fixtures';
 type RouteCase = { path: string; heading: string; authenticated?: boolean; canonicalPath?: string };
 
 const firstPartyRoutes: RouteCase[] = [
-  { path: '/', heading: 'Ne soyez plus limité' },
+  { path: '/', heading: 'Vos calculs.' },
   { path: '/service', heading: 'Votre projet avance' },
   { path: '/blockchain', heading: 'Du calcul au paiement' },
-  { path: '/service/downloads/windows', heading: 'Faites participer' },
-  { path: '/service/downloads/windows-dev', heading: 'Faites participer' },
-  { path: '/service/downloads/linux-dev', heading: 'Faites participer' }, { path: '/download', heading: 'Une machine prête' },
+  { path: '/service/downloads/windows', heading: 'Installez une fois' },
+  { path: '/service/downloads/windows-dev', heading: 'Installez une fois' },
+  { path: '/service/downloads/linux-dev', heading: 'Installez une fois' }, { path: '/download', heading: 'Installez une fois' },
   { path: '/about', heading: 'Plusieurs machines' },
   { path: '/contact', heading: 'Une idée pour le réseau' },
   { path: '/auth?mode=login', heading: 'Connectez-vous' },

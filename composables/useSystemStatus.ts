@@ -27,7 +27,7 @@ export function useSystemStatus() {
           release_version: String(config.public.releaseVersion || 'unknown'),
           release_build: String(config.public.releaseBuild || 'local'),
         },
-        backend: { status: 'unavailable' }, network: { status: 'unknown', peers: 0, activePeers: 0, outdatedPeers: 0 },
+        backend: { status: 'unavailable' }, network: { status: 'unavailable', peers: 0, activePeers: 0, outdatedPeers: 0 },
         blockchain: { status: 'unknown', network: 'unknown', configured: false },
       };
       error.value = translate('errors.statusLoad');

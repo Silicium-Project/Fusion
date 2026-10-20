@@ -120,14 +120,14 @@ onMounted(load);
 
 <style scoped>
 .batch-answers{display:grid;gap:1rem}
-.batch-answers__request{display:grid;gap:.55rem;padding:.9rem 1rem;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-soft)}.batch-answers__task p{margin:.3rem 0 0;color:var(--ink-900);font-size:.93rem;line-height:1.5;overflow-wrap:anywhere}.batch-answers__request small{color:var(--ink-500);font-size:.85rem}
-.batch-answers__names{display:flex;flex-wrap:wrap;gap:.35rem;margin:0;padding:0;list-style:none}.batch-answers__names li,.batch-answers__label{display:inline-block;padding:.2rem .55rem;border-radius:999px;background:var(--mint-100);color:var(--mint-700);font-size:.82rem;font-weight:750}
-.batch-answers__progress{display:grid;gap:.45rem}.batch-answers__progress strong{color:var(--ink-900);font-size:.93rem}.batch-answers__progress small{color:var(--ink-500);font-size:.85rem}.batch-answers__bar{height:.5rem;overflow:hidden;border-radius:999px;background:var(--surface-soft)}.batch-answers__bar i{display:block;height:100%;border-radius:inherit;background:var(--mint-500);transition:width .4s}
-.batch-answers__done{margin:0;color:var(--ink-700);font-size:.9rem}
+.batch-answers__request{display:grid;gap:.55rem;padding:.9rem 1rem;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-soft)}.batch-answers__task p{margin:.3rem 0 0;color:var(--ink-900);font-size:1rem;line-height:1.5;overflow-wrap:anywhere}.batch-answers__request small{color:var(--ink-500);font-size:.9375rem}
+.batch-answers__names{display:flex;flex-wrap:wrap;gap:.35rem;margin:0;padding:0;list-style:none}.batch-answers__names li,.batch-answers__label{display:inline-block;padding:.2rem .55rem;border-radius:999px;background:var(--mint-100);color:var(--mint-700);font-size:.9375rem;font-weight:750}
+.batch-answers__progress{display:grid;gap:.45rem}.batch-answers__progress strong{color:var(--ink-900);font-size:.9375rem}.batch-answers__progress small{color:var(--ink-500);font-size:.9375rem}.batch-answers__bar{height:.5rem;overflow:hidden;border-radius:999px;background:var(--surface-soft)}.batch-answers__bar i{display:block;height:100%;border-radius:inherit;background:var(--mint-500);transition:width .4s}
+.batch-answers__done{margin:0;color:var(--ink-700);font-size:.9375rem}
 .batch-answers__table{max-height:560px;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-md)}.batch-answers__table table{min-width:560px}.batch-answers__table td{vertical-align:top}.batch-answers__index{width:3.2rem;color:var(--ink-500)}
-.batch-answers__cell{display:-webkit-box;margin:0;overflow:hidden;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;color:var(--ink-800);font-size:.87rem;line-height:1.5;cursor:pointer;white-space:pre-line}.batch-answers__cell.is-open{display:block}
-.batch-answers__none{color:var(--ink-400);font-size:.85rem;font-style:italic}
-.batch-answers__fields{display:grid;gap:.15rem;margin:0;font-size:.85rem}.batch-answers__fields dt{color:var(--ink-500);font-size:.78rem;font-weight:700;letter-spacing:.02em}.batch-answers__fields dd{margin:0 0 .3rem;overflow-wrap:break-word;color:var(--ink-900)}
+.batch-answers__cell{display:-webkit-box;margin:0;overflow:hidden;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;color:var(--ink-800);font-size:.9375rem;line-height:1.5;cursor:pointer;white-space:pre-line}.batch-answers__cell.is-open{display:block}
+.batch-answers__none{color:var(--ink-400);font-size:.9375rem;font-style:italic}
+.batch-answers__fields{display:grid;gap:.15rem;margin:0;font-size:.9375rem}.batch-answers__fields dt{color:var(--ink-500);font-size:.9375rem;font-weight:700;letter-spacing:.02em}.batch-answers__fields dd{margin:0 0 .3rem;overflow-wrap:break-word;color:var(--ink-900)}
 .batch-answers__table th:nth-child(2),.batch-answers__table td:nth-child(2){width:48%}
-.batch-answers__footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.7rem}.batch-answers__pager span{color:var(--ink-500);font-size:.85rem}
+.batch-answers__footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.7rem}.batch-answers__pager span{color:var(--ink-500);font-size:.9375rem}
 </style>

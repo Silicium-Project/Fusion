@@ -29,5 +29,5 @@ useSeoMeta({ title: () => `${t('common.newJob')} — Silicium` });
 </script>
 
 <style scoped>
-.new-job-page>header{display:grid;gap:.7rem;max-width:760px}.back-link{display:inline-flex;width:max-content;align-items:center;gap:.4rem;margin-bottom:.2rem;color:var(--ink-500);font-size:.881rem;font-weight:700}.back-link svg{width:.78rem;transform:rotate(180deg)}.new-job-page>header .eyebrow{display:block}.new-job-help{margin:0;color:var(--ink-500);font-size:.9rem;line-height:1.5}.inline-link{color:var(--mint-700);font-weight:750;text-decoration:underline;text-underline-offset:2px}
+.new-job-page>header{display:grid;gap:.7rem;max-width:760px}.back-link{display:inline-flex;width:max-content;align-items:center;gap:.4rem;margin-bottom:.2rem;color:var(--ink-500);font-size:.9375rem;font-weight:700}.back-link svg{width:.78rem;transform:rotate(180deg)}.new-job-page>header .eyebrow{display:block}.new-job-help{margin:0;color:var(--ink-500);font-size:.9375rem;line-height:1.5}.inline-link{color:var(--mint-700);font-weight:750;text-decoration:underline;text-underline-offset:2px}
 </style>

@@ -2,7 +2,7 @@
   <div class="render-preview">
     <img v-if="imageUrl" :src="imageUrl" :alt="t('render.alt')">
     <div v-else class="render-preview__placeholder">
-      <div class="render-preview__tiles" :style="tileGridStyle">
+      <div class="render-preview__tiles" :style="tileGridStyle" role="img" :aria-label="t('render.progress', { done: doneCount, total: total || '—' })">
         <i
           v-for="tile in tiles"
           :key="tile.index"
@@ -33,14 +33,14 @@ const fragments = computed(() => props.dashboard.summary?.fragments || []);
 const total = computed(() => Number(props.dashboard.summary?.fragmentCount || props.dashboard.job.fragmentCount || fragments.value.length || 0));
 const width = computed(() => props.dashboard.summary?.image?.width || '—');
 const height = computed(() => props.dashboard.summary?.image?.height || '—');
-const tileCount = computed(() => Math.min(256, Math.max(1, total.value || fragments.value.length || 24)));
+const tileCount = computed(() => Math.min(256, Math.max(0, total.value || fragments.value.length || 0)));
 const fragmentByIndex = computed(() => new Map(fragments.value.map((fragment, fallback) => [fragmentIndex(fragment, fallback), fragment])));
 const tiles = computed(() => Array.from({ length: tileCount.value }, (_, index) => {
   const fragment = fragmentByIndex.value.get(index);
   const state = fragmentVisualState(fragment?.status);
   return { index, state, label: fragmentStateLabel(fragment?.status) };
 }));
-const stateCount = (state: ReturnType<typeof fragmentVisualState>) => tiles.value.filter(tile => tile.state === state).length;
+const stateCount = (state: ReturnType<typeof fragmentVisualState>) => fragments.value.filter(fragment => fragmentVisualState(fragment.status) === state).length;
 const computingCount = computed(() => stateCount('computing'));
 const validatingCount = computed(() => stateCount('validating'));
 const doneCount = computed(() => stateCount('done'));
@@ -65,6 +65,5 @@ function fragmentIndex(fragment: JobFragment, fallback: number): number {
 </script>
 
 <style scoped>
-.render-preview{overflow:hidden;border-radius:var(--radius-md);background:#172231;color:white}.render-preview>img{width:100%;min-height:280px;max-height:470px;object-fit:contain;background:#101925}.render-preview__placeholder{display:grid;min-height:310px;place-items:center;align-content:center;padding:2rem}.render-preview__tiles{display:grid;width:min(86%,460px);grid-template-columns:repeat(var(--tile-columns),1fr);gap:3px;transform:perspective(600px) rotateX(48deg) rotateZ(-7deg);filter:drop-shadow(0 18px 16px rgba(0,0,0,.2))}.render-preview__tiles>i{aspect-ratio:1;border:1px solid rgba(255,255,255,.08);border-radius:2px;background:#253447;transition:background .35s ease,box-shadow .35s ease,opacity .35s ease}.render-preview__tiles>i.is-computing{background:linear-gradient(135deg,#227ba7,#42bed3);box-shadow:inset 0 0 0 1px rgba(130,231,247,.28);animation:tile-pulse 1.35s ease-in-out infinite}.render-preview__tiles>i.is-validating{background:linear-gradient(135deg,#6556d9,#a493ef);box-shadow:inset 0 0 0 1px rgba(218,209,255,.3);animation:tile-pulse 1.1s ease-in-out infinite}.render-preview__tiles>i.is-done{background:linear-gradient(135deg,#18b5a5,#78d9cd)}.render-preview__tiles>i.is-failed{background:#c44747}.render-preview__placeholder>strong{margin-top:2.2rem;font-size:.939rem}.render-preview__placeholder>small{margin-top:.35rem;color:rgba(255,255,255,.55);font-size:.877rem}.render-preview__legend{display:flex;flex-wrap:wrap;justify-content:center;gap:.55rem 1rem;margin-top:1rem;color:rgba(255,255,255,.58);font-size:.85rem}.render-preview__legend span{display:inline-flex;align-items:center;gap:.35rem}.render-preview__legend i{width:.45rem;height:.45rem;border-radius:2px;background:#253447}.render-preview__legend .is-computing{background:#42bed3}.render-preview__legend .is-validating{background:#8e7ee9}.render-preview__legend .is-done{background:#49c9ba}.render-preview__legend .is-failed{background:#c44747}.render-preview__meta{display:flex;justify-content:space-between;padding:.7rem .9rem;border-top:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.48);font-size:.857rem}.render-preview__meta span{display:flex;align-items:center;gap:.4rem}.render-preview__meta i{width:.4rem;height:.4rem;border-radius:50%;background:var(--mint-500)}@keyframes tile-pulse{0%,100%{filter:brightness(.88);opacity:.78}50%{filter:brightness(1.24);opacity:1}}
-@media(prefers-reduced-motion:reduce){.render-preview__tiles>i{animation:none!important}}
+.render-preview{overflow:hidden;border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--surface-soft);color:var(--ink-900)}.render-preview>img{width:100%;min-height:260px;max-height:470px;object-fit:contain;background:#172231}.render-preview__placeholder{display:grid;min-height:280px;place-items:center;align-content:center;padding:2rem}.render-preview__tiles{display:grid;width:min(86%,420px);grid-template-columns:repeat(var(--tile-columns),1fr);gap:4px}.render-preview__tiles>i{aspect-ratio:1;border:1px solid var(--border-strong);border-radius:2px;background:#e0e8f2}.render-preview__tiles>i.is-computing{background:#3485e9}.render-preview__tiles>i.is-validating{background:#14294a}.render-preview__tiles>i.is-done{background:#479b78}.render-preview__tiles>i.is-failed{background:var(--red-600)}.render-preview__placeholder>strong{margin-top:1.5rem;font-size:1rem;font-weight:600}.render-preview__placeholder>small{margin-top:.5rem;color:var(--ink-600);font-size:.9375rem}.render-preview__legend{display:flex;flex-wrap:wrap;justify-content:center;gap:.7rem 1rem;margin-top:1.2rem;color:var(--ink-600);font-size:.9375rem}.render-preview__legend span{display:inline-flex;align-items:center;gap:.4rem}.render-preview__legend i{width:.5rem;height:.5rem;border-radius:2px;background:#e0e8f2}.render-preview__legend .is-computing{background:#3485e9}.render-preview__legend .is-validating{background:#14294a}.render-preview__legend .is-done{background:#479b78}.render-preview__legend .is-failed{background:var(--red-600)}.render-preview__meta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.5rem;padding:.8rem 1rem;border-top:1px solid var(--border-strong);color:var(--ink-600);font-size:.9375rem}.render-preview__meta span{display:flex;align-items:center;gap:.5rem}.render-preview__meta i{width:.4rem;height:.4rem;border-radius:50%;background:var(--mint-700)}
 </style>

@@ -39,14 +39,12 @@ for (const [name, route] of privatePages) {
   test(`capture private ${name}`, async ({ page }, testInfo) => capture(page, testInfo.project.name, name, route, true));
 }
 
-test('network panel keeps the live visual hierarchy', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'desktop', 'The network panel hierarchy is checked once on the desktop project.');
+test('home distinguishes the diagram from observed network status', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop', 'Checked once on desktop.');
   await mockAPI(page);
   await page.goto('/');
-  const visual = page.locator('.network-panel');
-  await expect(visual).toBeVisible();
-  await expect(visual.getByText('Opérationnel', { exact: true })).toBeVisible();
-  await expect(visual.locator('.network-panel__route').first()).toBeVisible();
+  await expect(page.locator('.network-blueprint')).toContainText('Schéma de fonctionnement');
+  await expect(page.locator('.network-status-strip')).toContainText('Opérationnel');
 });
 
 test('live network telemetry displays the API snapshot', async ({ page }, testInfo) => {
@@ -63,7 +61,7 @@ test('live network telemetry displays the API snapshot', async ({ page }, testIn
 test('scroll story keeps the 3D network visible and changes its stage', async ({ page }, testInfo) => {
   test.skip(!['desktop-wide', 'iphone-se'].includes(testInfo.project.name), 'The scroll story is checked on wide desktop and iPhone SE.');
   await mockAPI(page);
-  await page.goto('/', { waitUntil: 'networkidle' });
+  await page.goto('/service', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1000);
   const story = page.locator('.process-story');
   const network = page.locator('.process-graph-3d');

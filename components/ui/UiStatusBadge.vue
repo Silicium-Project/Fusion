@@ -12,7 +12,7 @@ const resolvedTone = computed(() => props.tone || statusTone(props.status));
 </script>
 
 <style scoped>
-.status-badge { display: inline-flex; width: max-content; align-items: center; gap: .42rem; border-radius: 999px; padding: .34rem .58rem; font-size: .884rem; font-weight: 800; line-height: 1; white-space: nowrap; }
+.status-badge { display: inline-flex; width: max-content; align-items: center; gap: .42rem; border-radius: 999px; padding: .34rem .58rem; font-size: .9375rem; font-weight: 800; line-height: 1; white-space: nowrap; }
 .status-badge__dot { width: .38rem; height: .38rem; border-radius: 50%; background: currentColor; }
 .status-badge--success { background: var(--green-100); color: var(--green-600); }
 .status-badge--warning { background: var(--amber-100); color: var(--amber-600); }

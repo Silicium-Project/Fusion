@@ -3,5 +3,5 @@
 </template>
 
 <style scoped>
-.auth-layout{position:relative;min-height:100vh;overflow:hidden;background:var(--paper-warm)}.auth-layout::before{position:absolute;inset:0;opacity:.38;background:linear-gradient(rgba(21,40,61,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(21,40,61,.04) 1px,transparent 1px);background-size:5rem 5rem;mask-image:linear-gradient(125deg,#000,transparent 82%);content:''}.auth-layout__material{position:absolute;top:0;right:0;width:min(50vw,42rem);height:36rem;background:radial-gradient(circle at 70% 10%,rgba(18,191,174,.16),transparent 68%);filter:blur(18px);opacity:.75}.auth-layout__brand{position:absolute;top:1.5rem;left:clamp(1rem,4vw,3.5rem);z-index:3}.auth-layout__locale{position:absolute;top:1.55rem;right:clamp(1rem,4vw,3.5rem);z-index:3}
+.auth-layout{position:relative;min-height:100vh;overflow:clip;background:var(--paper-warm)}.auth-layout::before,.auth-layout__material{display:none}.auth-layout__brand{position:absolute;top:1.6rem;left:clamp(1rem,4vw,3.5rem);z-index:3}.auth-layout__locale{position:absolute;top:1.8rem;right:clamp(1rem,4vw,3.5rem);z-index:3}
 </style>

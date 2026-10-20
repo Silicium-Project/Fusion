@@ -2,14 +2,14 @@ import type { NetworkMetrics, NetworkPeer, NetworkPeersResponse, NetworkRuntimeT
 import { clientCache } from '~/services/cache';
 import { peerRoles } from '~/utils/format';
 import { translate } from '~/utils/i18n';
+import { metricNumber } from '~/utils/telemetry';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
 function asNumber(value: unknown): number | undefined {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return metricNumber(value) ?? undefined;
 }
 
 function peerRuntime(peer: NetworkPeer): NetworkRuntimeTelemetry | undefined {
@@ -41,7 +41,7 @@ function deriveNetworkMetrics(peers: NetworkPeer[]): NetworkMetrics {
     telemetry_nodes: telemetry.length,
     active_tasks: activityCount,
     queue_depth: queueDepth,
-    logical_cpu_count: logicalCpuCount,
+    logical_cpu_count: logicalCpuCount > 0 ? logicalCpuCount : undefined,
     system_cpu_percent: average('system_cpu_percent'),
     system_memory_percent: average('system_memory_percent'),
     storage_used_percent: average('storage_used_percent'),
@@ -80,7 +80,6 @@ export function useNetwork() {
 
   async function loadNetwork(force = false): Promise<void> {
     loading.value = true;
-    error.value = '';
     const scope = String(user.value?.id || 'current');
     try {
       const [nextPeers, nextTasks] = await Promise.all([
@@ -89,6 +88,7 @@ export function useNetwork() {
       ]);
       peersPayload.value = nextPeers;
       tasksPayload.value = nextTasks;
+      error.value = '';
       lastUpdatedAt.value = String(nextPeers.updated_utc || nextPeers.metrics?.updated_utc || new Date().toISOString());
     } catch (failure) {
       error.value = translate('errors.networkLoad');
