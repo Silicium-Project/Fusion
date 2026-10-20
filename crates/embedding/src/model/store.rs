@@ -330,5 +330,8 @@ fn env_value(key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+mod pinned;
+pub use pinned::{PinnedFile, PinnedHash, verify_pinned};
+
 #[cfg(test)]
 mod tests;

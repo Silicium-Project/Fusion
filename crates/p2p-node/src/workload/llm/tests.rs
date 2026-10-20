@@ -128,7 +128,11 @@ async fn model_ready(node: &Node) {
     let client =
         runtime::wait_for(&TEST_TINY, &node.context.data_dir, Duration::from_secs(30)).await;
     assert!(client.is_some(), "the model is imported into Ollama");
-    assert!(TEST_TINY.ensure_ready(&node.context).await);
+    assert!(
+        TEST_TINY
+            .ensure_ready(&node.context, &submitted(&"0".repeat(64)))
+            .await
+    );
 }
 
 async fn computed(node: &Node, task: &NetworkTask) -> (Vec<u8>, ResultState) {

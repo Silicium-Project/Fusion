@@ -169,7 +169,11 @@ impl Workload for Llm {
         true
     }
 
-    fn ensure_ready<'a>(&'a self, context: &'a NodeContext) -> BoxFuture<'a, bool> {
+    fn ensure_ready<'a>(
+        &'a self,
+        context: &'a NodeContext,
+        _task: &'a NetworkTask,
+    ) -> BoxFuture<'a, bool> {
         Box::pin(async move {
             runtime::client(self.as_static(), &context.data_dir)
                 .await

@@ -18,6 +18,8 @@ sans erreur.
 | `<workload_storage>/llm/<job>/raytracer-progress.json` et `raytracer-summary.json` | `compatibility.rs`, traitement par IA | `jobArtifacts.go`, `runner.go` | comme ci-dessus, plus `fragments[].items` et `answers_path` / `table_path` / `result_path` |
 | `<workload_storage>/llm/<job>/fragments/fragment-NNN.jsonl` | `compatibility.rs` (`write_answers_preview`), une fois la partie vérifiée | `batchAIJobs.go` (`GET /jobs/{id}/answers` pendant le calcul) | `{"id","input","output"}` par ligne |
 | `<workload_storage>/llm/<job>/answers/{answers.jsonl,answers.csv,result.json}` | nœud Rust | `batchAIJobs.go` (réponses, téléchargement CSV / JSON Lines), `jobDashboard.go` (`item_count`, `answered`, `model` de `result.json`) | format `silicium-llm-result/1` (`docs/architecture/llm-workload.md`) |
+| `<workload_storage>/hf/<job>/raytracer-progress.json` et `raytracer-summary.json` | `compatibility.rs`, catalogue IA | `jobArtifacts.go`, `runner.go` | comme ci-dessus, plus `fragments[].items` et `answers_path` / `result_path` |
+| `<workload_storage>/hf/<job>/answers/{answers.jsonl,result.json}` | nœud Rust | (étape suivante du BackEnd) | format `silicium-hf-result/1` (`docs/architecture/hf-workload.md`) |
 | `<export orchestrateur>/node.<id>.peers.json` | `compatibility.rs` (`write_peer_files`) | `networkController.go` | liste des pairs connus |
 | `<export orchestrateur>/node.<id>.heartbeat.json` | `compatibility.rs` (`write_peer_files`) | `networkTelemetry.go` | `roles`, `app_version`, `release_channel`, `release_build`, `capacity`, `activity`, `task_queue`, `telemetry` |
 | `<export orchestrateur>/node.<id>.metrics.json` | `compatibility.rs` (`write_peer_files`) | `networkTelemetry.go` | horodatage et métriques du pair |

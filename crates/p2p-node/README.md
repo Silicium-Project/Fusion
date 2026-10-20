@@ -158,11 +158,13 @@ sont communs. Ce qui change d'un calcul à l'autre est derrière le trait
 | `calcul/integrity/sha256` (alias `calcul/hash/sha256`) | n'importe quel fichier (64 Mio max : taille d'un contenu échangé entre pairs ; chaque worker télécharge l'entrée entière) | morceau d'octets, haché dans le nœud | recalcul complet du morceau | `result/sha256.json` : empreinte de chaque morceau, empreinte de la liste, `input_hash` si un seul morceau |
 | `ai/embedding/multilingual-e5-small` | documents (PDF, `.docx`, texte, Markdown ou ZIP), transformés par l'éditeur en corpus de passages (`silicium-corpus/1`) dans un processus enfant | passages entiers, vectorisés par le modèle épinglé (crate `silicium-embedding`) | forme et normes du bloc, puis 3 à 8 passages tirés au sort recalculés et comparés par similarité cosinus (≥ 0,999) | `index/` : `index.json`, `vectors.f32`, `passages.jsonl` ; recherche par `/v1/embedding/search` |
 | `ai/llm/qwen2.5-1.5b-instruct` | demande `silicium-llm-request/1` (consigne + liste d'éléments), transformée par l'éditeur en lot canonique (`silicium-llm-batch/1`) | éléments entiers, répondus un par un par le modèle épinglé via l'Ollama du worker (crate `silicium-llm`) ; bail de 5 min renouvelable | ids et forme des réponses, puis 2 à 6 éléments tirés au sort recalculés et comparés par similarité (ROUGE-L des mots, égalité des catégories) | `answers/` : `answers.jsonl`, `answers.csv`, `result.json` ; parties vérifiées dans `fragments/fragment-NNN.jsonl` pendant le calcul |
+| `ai/hf/<tâche>/<clé du modèle>` (un par modèle du catalogue) | demande `silicium-hf-request/1` (tâche, fiche du modèle `silicium-model/1`, paramètres, éléments), transformée par l'éditeur en lot `silicium-hf-batch/1` | éléments entiers, exécutés par le runtime IA du worker (`SILICIUM_AI_RUNTIME_URL`) avec les fichiers épinglés de la fiche, téléchargés et vérifiés par hash ; bail de 5 min renouvelable | ids et forme des réponses, puis 3 à 8 éléments refaits et comparés avec la métrique de la tâche (étiquette, ROUGE-L, WER, cosinus, IoU…) | `answers/` : `answers.jsonl`, `result.json` |
 
 Le workload de recherche dans des documents est décrit en détail dans
 `docs/architecture/embedding-workload.md` : formats, modèle épinglé,
 vérification et sa probabilité de détection, exploitation, limites. Le
-traitement par IA l'est dans `docs/architecture/llm-workload.md`.
+traitement par IA l'est dans `docs/architecture/llm-workload.md`, le catalogue
+IA dans `docs/architecture/hf-workload.md`.
 
 L'identifiant voyage avec chaque tâche (`TaskEnvelope::workload`, absent =
 raytracer pour les éditeurs plus anciens) ; un nœud refuse une tâche d'un

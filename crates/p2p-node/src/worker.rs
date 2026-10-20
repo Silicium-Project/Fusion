@@ -53,7 +53,7 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
     // A workload needing local resources (a model to download) gets them
     // first; the publisher announces the task again until someone claims it.
     if let Some(workload) = crate::workload::of(&task)
-        && !workload.ensure_ready(&context).await
+        && !workload.ensure_ready(&context, &task).await
     {
         println!(" Not ready for task {task_id} yet; claiming it when announced again");
         return;

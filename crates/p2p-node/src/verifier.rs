@@ -68,7 +68,7 @@ pub(crate) async fn sweep(context: &NodeContext, memory: &VerifierMemory) {
         // verification ask, so finished tasks do not keep a model loaded.
         if state.status == DerivedTaskStatus::Completed
             && let Some(workload) = crate::workload::of(&task)
-            && !workload.ensure_ready(context).await
+            && !workload.ensure_ready(context, &task).await
         {
             continue;
         }

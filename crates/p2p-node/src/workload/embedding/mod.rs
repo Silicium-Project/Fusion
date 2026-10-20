@@ -125,7 +125,11 @@ impl Workload for Embedding {
         true
     }
 
-    fn ensure_ready<'a>(&'a self, context: &'a NodeContext) -> BoxFuture<'a, bool> {
+    fn ensure_ready<'a>(
+        &'a self,
+        context: &'a NodeContext,
+        _task: &'a NetworkTask,
+    ) -> BoxFuture<'a, bool> {
         let ready = runtime::encoder(self.as_static(), &context.data_dir).is_ready();
         Box::pin(async move { ready })
     }
