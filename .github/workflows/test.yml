@@ -91,7 +91,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: fusion-test-${{ github.event.pull_request.number || github.ref }}
+  # Separate callers that share this reusable workflow. Fast CI and the
+  # development deployment may validate the same branch at the same time.
+  group: fusion-test-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
