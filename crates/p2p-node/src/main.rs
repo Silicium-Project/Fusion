@@ -64,6 +64,7 @@ use crate::{
     },
     task::{GossipMessage, NetworkTask, local_peer_profile},
 };
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use futures::prelude::*;
 use libp2p::{PeerId, gossipsub, identify, mdns, swarm::SwarmEvent};
 use silicium_node_core::{
@@ -78,6 +79,10 @@ use tokio::{net::TcpListener, select, sync::mpsc};
 /// tasks queued by the API, and swarm events.
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if handle_device_link_cli()? {
+        return Ok(());
+    }
+
     // Child process parsing submitted documents (see
     // `workload::embedding::prepare`): it never starts the node.
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -360,4 +365,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+}
+
+/// Creates the one-time account-pairing proof with this installation's
+/// persistent libp2p identity. The desktop app invokes this without starting
+/// the node runtime.
+fn handle_device_link_cli() -> Result<bool, Box<dyn std::error::Error>> {
+    if !std::env::args().any(|argument| argument == "--sign-device-link") {
+        return Ok(false);
+    }
+
+    let code = std::env::var("SILICIUM_DEVICE_LINK_CODE")?;
+    let node_id = std::env::var("SILICIUM_NODE_ID")?;
+    if code.len() != 64
+        || !code.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || node_id.is_empty()
+        || node_id.len() > 64
+        || !node_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err("device_link_input_invalid".into());
+    }
+
+    let data_dir = std::path::PathBuf::from(std::env::var("SILICIUM_DATA_DIR")?);
+    let local_key = load_or_generate_identity(&data_dir)?;
+    let peer_id = PeerId::from(local_key.public()).to_string();
+    let payload = format!("silicium-device-link-v1\n{code}\n{node_id}\n{peer_id}");
+    let signature = local_key.sign(payload.as_bytes())?;
+    let public_key = local_key.public().encode_protobuf();
+
+    println!(
+        "{}",
+        serde_json::json!({
+            "peerId": peer_id,
+            "publicKey": BASE64_STANDARD.encode(public_key),
+            "signature": signature.iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
+        })
+    );
+    Ok(true)
 }

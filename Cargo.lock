@@ -3495,6 +3495,7 @@ name = "p2p_node"
 version = "0.1.0"
 dependencies = [
  "axum",
+	"base64 0.22.1",
  "ed25519-dalek",
  "futures",
  "libc",
