@@ -32,6 +32,7 @@ pub(crate) struct P2pBehaviour {
     pub(crate) content: crate::fetch::ContentBehaviour,
 }
 
+#[cfg(test)]
 pub(crate) fn build_swarm(
     local_key: libp2p::identity::Keypair,
     local_peer_id: PeerId,
