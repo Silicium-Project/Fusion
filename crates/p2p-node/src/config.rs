@@ -300,6 +300,16 @@ pub(crate) fn read_enable_quic_listener_from_env() -> bool {
         .unwrap_or(true)
 }
 
+pub(crate) fn read_enable_mdns_from_env() -> bool {
+    !matches!(
+        env::var("SILICIUM_ENABLE_MDNS")
+            .ok()
+            .as_deref()
+            .map(str::trim),
+        Some("0" | "false" | "no" | "off")
+    )
+}
+
 pub(crate) fn merge_bootstrap_peers(
     mut bootstrap_peers: Vec<Multiaddr>,
     additional_peers: Vec<Multiaddr>,
@@ -440,6 +450,26 @@ mod tests {
         match original {
             Some(value) => unsafe { std::env::set_var("SILICIUM_ENABLE_QUIC_LISTENER", value) },
             None => unsafe { std::env::remove_var("SILICIUM_ENABLE_QUIC_LISTENER") },
+        }
+    }
+
+    #[test]
+    fn read_enable_mdns_from_env_accepts_false_values() {
+        let _guard = env_lock();
+        let original = std::env::var("SILICIUM_ENABLE_MDNS").ok();
+
+        unsafe { std::env::set_var("SILICIUM_ENABLE_MDNS", "0") };
+        assert!(!read_enable_mdns_from_env());
+
+        unsafe { std::env::set_var("SILICIUM_ENABLE_MDNS", "false") };
+        assert!(!read_enable_mdns_from_env());
+
+        unsafe { std::env::set_var("SILICIUM_ENABLE_MDNS", "1") };
+        assert!(read_enable_mdns_from_env());
+
+        match original {
+            Some(value) => unsafe { std::env::set_var("SILICIUM_ENABLE_MDNS", value) },
+            None => unsafe { std::env::remove_var("SILICIUM_ENABLE_MDNS") },
         }
     }
 

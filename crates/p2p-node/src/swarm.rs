@@ -7,8 +7,9 @@ use crate::{
     task::{GossipMessage, NetworkTask},
 };
 use libp2p::{
-    PeerId, autonat, gossipsub, identify, kad, mdns, noise, relay, swarm::NetworkBehaviour, tcp,
-    yamux,
+    PeerId, autonat, gossipsub, identify, kad, mdns, noise, relay,
+    swarm::{NetworkBehaviour, behaviour::toggle::Toggle},
+    tcp, yamux,
 };
 use silicium_node_core::{beta::BetaPosterior, p2p::DhtRecordEnvelope, taskbook::TaskEvent};
 use std::{
@@ -24,7 +25,7 @@ pub(crate) const TOPIC: &str = "silicium-network";
 pub(crate) struct P2pBehaviour {
     pub(crate) gossipsub: gossipsub::Behaviour,
     pub(crate) kademlia: kad::Behaviour<kad::store::MemoryStore>,
-    pub(crate) mdns: mdns::tokio::Behaviour,
+    pub(crate) mdns: Toggle<mdns::tokio::Behaviour>,
     pub(crate) identify: identify::Behaviour,
     pub(crate) autonat: autonat::Behaviour,
     pub(crate) relay: relay::Behaviour,
@@ -34,6 +35,14 @@ pub(crate) struct P2pBehaviour {
 pub(crate) fn build_swarm(
     local_key: libp2p::identity::Keypair,
     local_peer_id: PeerId,
+) -> Result<libp2p::Swarm<P2pBehaviour>, Box<dyn std::error::Error>> {
+    build_swarm_with_mdns(local_key, local_peer_id, true)
+}
+
+pub(crate) fn build_swarm_with_mdns(
+    local_key: libp2p::identity::Keypair,
+    local_peer_id: PeerId,
+    enable_mdns: bool,
 ) -> Result<libp2p::Swarm<P2pBehaviour>, Box<dyn std::error::Error>> {
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(local_key.clone())
         .with_tokio()
@@ -71,8 +80,10 @@ pub(crate) fn build_swarm(
             let mut kademlia = kad::Behaviour::new(local_peer_id, store);
             kademlia.set_mode(Some(kad::Mode::Server));
 
-            let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)
-                .expect("Valid mdns");
+            let mdns = Toggle::from(enable_mdns.then(|| {
+                mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)
+                    .expect("Valid mdns")
+            }));
 
             let identify = identify::Behaviour::new(identify::Config::new(
                 "/silicium/1.0.0".into(),

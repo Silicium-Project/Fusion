@@ -54,6 +54,7 @@ trap cleanup EXIT
 start_orchestrator() {
   (cd "$OUT/o" && exec env -i PATH="$PATH" HOME="$HOME" \
     SILICIUM_NODE_ID=orchestrator SILICIUM_NODE_ROLES=resource,storage \
+    SILICIUM_ENABLE_MDNS=0 \
     SILICIUM_RELEASE_CHANNEL=dev SILICIUM_DATA_DIR="$OUT/o" SILICIUM_COMPUTE_ROOT="$OUT/o/work" \
     API_PORT=$API SILICIUM_P2P_BIND=127.0.0.1 SILICIUM_P2P_PORT=$P2P \
     SILICIUM_ENABLE_QUIC_LISTENER=0 SILICIUM_WORK_OWN_TASKS=0 SILICIUM_MAX_FRAGMENTS=4 \
@@ -80,6 +81,7 @@ start_worker() {
   pids+=($!)
   (cd "$dir" && exec env -i PATH="$PATH" HOME="$HOME" \
     SILICIUM_NODE_ID="desktop$n" SILICIUM_NODE_ROLES=compute,verify \
+    SILICIUM_ENABLE_MDNS=0 \
     SILICIUM_RELEASE_CHANNEL=dev SILICIUM_DATA_DIR="$dir" SILICIUM_COMPUTE_ROOT="$dir/work" \
     SILICIUM_EXPORT_DIR="$dir/export" API_PORT=$((WORKER_API_BASE + n)) SILICIUM_P2P_BIND=127.0.0.1 SILICIUM_P2P_PORT=0 \
     SILICIUM_ENABLE_QUIC_LISTENER=0 \
@@ -173,4 +175,5 @@ echo "FAIL: no reassembled image after 120 s (logs in $OUT)"
 curl -s --max-time 5 "http://127.0.0.1:$API/jobs/$JOB"; echo
 tail -n 40 "$OUT/orchestrator.log"
 for n in $(seq "$WORKERS"); do echo "--- worker $n"; tail -n 20 "$OUT/w$n/node.log"; done
+for n in $(seq "$WORKERS"); do echo "--- worker $n compute daemon"; tail -n 40 "$OUT/w$n/compute.log"; done
 exit 1

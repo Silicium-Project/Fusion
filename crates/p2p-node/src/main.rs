@@ -50,8 +50,8 @@ use crate::{
     compatibility::CompatibilityWriter,
     config::{
         NodeConfig, read_allow_self_verification_from_env, read_compute_root_from_env,
-        read_hardware_bucket, read_parallel_tasks_from_env, read_verifications_required_from_env,
-        read_work_own_tasks_from_env,
+        read_enable_mdns_from_env, read_hardware_bucket, read_parallel_tasks_from_env,
+        read_verifications_required_from_env, read_work_own_tasks_from_env,
     },
     content::ContentStore,
     control::ControlRegistry,
@@ -59,7 +59,7 @@ use crate::{
     processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
-        P2pBehaviourEvent, TOPIC, build_swarm, publish_gossip, publish_hardware_record,
+        P2pBehaviourEvent, TOPIC, build_swarm_with_mdns, publish_gossip, publish_hardware_record,
         publish_taskbook_event,
     },
     task::{GossipMessage, NetworkTask, local_peer_profile},
@@ -155,7 +155,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         control: control.clone(),
     };
 
-    let mut swarm = build_swarm(local_key.clone(), local_peer_id)?;
+    let mut swarm = build_swarm_with_mdns(
+        local_key.clone(),
+        local_peer_id,
+        read_enable_mdns_from_env(),
+    )?;
     let topic = gossipsub::IdentTopic::new(TOPIC);
 
     let p2p_protocol = match config.p2p_bind {
