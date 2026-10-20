@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/glebarez/sqlite"
+	"github.com/silicium/internal/catalog"
 	"github.com/silicium/internal/models" // Import the models package
 	"github.com/silicium/internal/utils"
 	"gorm.io/driver/postgres"
@@ -56,6 +57,9 @@ func Init() *gorm.DB {
 
 	err = db.AutoMigrate(&models.User{}, &models.Job{}, &models.UserDevice{}, &models.DevicePairingCode{})
 	utils.LogFatal(err, "Failed to migrate database")
+
+	err = catalog.Migrate(db)
+	utils.LogFatal(err, "Failed to migrate the AI catalog")
 
 	return db
 }
