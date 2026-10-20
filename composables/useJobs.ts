@@ -1,6 +1,7 @@
 import { resultExtension } from '~/utils/jobs';
 import { isDocumentSearchWorkload, type DocumentHit } from '~/utils/documents';
 import { isBatchAIWorkload, type BatchAnswersPage } from '~/utils/batchAI';
+import { isHFWorkload } from '~/utils/hfCatalog';
 import type { Job, JobDashboard, JobList } from '~/types/api';
 import { clientCache } from '~/services/cache';
 import { translate } from '~/utils/i18n';
@@ -83,7 +84,7 @@ export function useJobs() {
       for (const document of input.files || []) form.append('files', document);
       form.append('acknowledge_sharing', input.acknowledgeSharing ? '1' : '0');
       if (input.collectionId) form.append('collection_id', input.collectionId);
-    } else if (isBatchAIWorkload(input.workload)) {
+    } else if (isBatchAIWorkload(input.workload) || isHFWorkload(input.workload)) {
       // The request (`request.json`) is built in the browser; the network
       // splits the list itself.
       if (input.file) form.append('file', input.file);
@@ -93,7 +94,7 @@ export function useJobs() {
       if (input.file) form.append('file', input.file);
     }
     // Documents can weigh 64 Mo: leave time for slow uploads.
-    const job = await authorizedFetch<Job>('/jobs', { method: 'POST', body: form, timeout: isDocumentSearchWorkload(input.workload) || isBatchAIWorkload(input.workload) ? 300_000 : 30_000 });
+    const job = await authorizedFetch<Job>('/jobs', { method: 'POST', body: form, timeout: isDocumentSearchWorkload(input.workload) || isBatchAIWorkload(input.workload) || isHFWorkload(input.workload) ? 300_000 : 30_000 });
     clientCache.invalidate('jobs:');
     return job;
   }

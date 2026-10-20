@@ -1,5 +1,6 @@
 import type { CollectionDocument, DocumentIndexSummary } from '~/utils/documents';
 import type { BatchAIDashboard } from '~/utils/batchAI';
+import type { CatalogDashboard } from '~/utils/hfCatalog';
 
 export type JobStatus = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled' | 'expired' | string;
 
@@ -231,6 +232,8 @@ export interface JobDashboard {
   collectionDocuments?: CollectionDocument[] | null;
   /** The request of a batch AI job and, once done, its model and counts. */
   batchAI?: BatchAIDashboard;
+  /** A job of the AI catalogue (`ai/hf/…`). */
+  hf?: CatalogDashboard;
   diagnostics?: Record<string, unknown>;
   summary?: {
     success?: boolean;

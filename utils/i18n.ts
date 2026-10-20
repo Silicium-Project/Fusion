@@ -74,9 +74,10 @@ function messageFor(key: string, locale: Locale): unknown {
 /** The message `key` in the current language, with its placeholders filled. */
 export function translate(key: string, params: MessageParams = {}, locale: Locale = currentLocale()): string {
   const value = messageFor(key, locale);
-  if (typeof value === 'function') return (value as (params: MessageParams) => string)(params);
-  if (typeof value !== 'string') return key;
-  return value.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
+  // A plural is a function; what it returns may hold placeholders too.
+  const text = typeof value === 'function' ? (value as (params: MessageParams) => string)(params) : value;
+  if (typeof text !== 'string') return key;
+  return text.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
 }
 
 /** A list of the catalog (steps, cards…) in the current language. */
