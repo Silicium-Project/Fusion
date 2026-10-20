@@ -107,6 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let taskbook = load_taskbook_state(&data_dir, &local_key)?;
     println!(" Local peer id: {local_peer_id}");
     println!(" Data dir: {}", data_dir.display());
+    workload::hf::scan_warm_models(&data_dir);
     println!(" Task book: {}", taskbook.path.display());
 
     let (tx_events, mut rx_events) = mpsc::channel(64);

@@ -75,5 +75,6 @@ module.
 
 - Organisation des dossiers : [`repository-layout.md`](repository-layout.md)
 - Recherche dans des documents : [`embedding-workload.md`](embedding-workload.md)
+- Catalogue IA (modèles Hugging Face) : [`hf-workload.md`](hf-workload.md)
 - API du nœud : `crates/p2p-node/README.md`
 - Contrats (fichiers, programme Solana) : [`../contracts/`](../contracts/)

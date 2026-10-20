@@ -21,6 +21,7 @@ quick-xml = "0.42"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
 serde.workspace = true
 serde_json.workspace = true
+sha1 = "0.10"
 sha2 = "0.10.9"
 tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 zip = { version = "8.6", default-features = false, features = ["deflate"] }

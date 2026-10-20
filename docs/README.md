@@ -24,6 +24,7 @@
 - [rust-migration.md](architecture/rust-migration.md)
 - [interface-policy.md](architecture/interface-policy.md) — quand introduire une interface
 - [embedding-workload.md](architecture/embedding-workload.md) — recherche dans des documents : formats, modèle épinglé, vérification, exploitation
+- [hf-workload.md](architecture/hf-workload.md) — catalogue IA (`ai/hf/…`) : fiche du modèle, formats, tâches, vérification, runtime IA
 
 ### Contrats
 - [backend-files.md](contracts/backend-files.md)

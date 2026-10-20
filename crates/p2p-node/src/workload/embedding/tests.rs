@@ -117,7 +117,11 @@ async fn model_ready(node: &Node) {
     let readiness =
         runtime::wait_for(&TEST_TINY, &node.context.data_dir, Duration::from_secs(30)).await;
     assert!(readiness.is_ready());
-    assert!(TEST_TINY.ensure_ready(&node.context).await);
+    assert!(
+        TEST_TINY
+            .ensure_ready(&node.context, &submitted(&"0".repeat(64)))
+            .await
+    );
 }
 
 /// Computes `task` and returns the published result.

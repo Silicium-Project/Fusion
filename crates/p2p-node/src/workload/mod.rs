@@ -15,11 +15,13 @@
 //! | build the job result from the fragments | publisher | [`Workload::assemble`] |
 //!
 //! Adding a workload: write a module implementing [`Workload`] and add it to
-//! [`REGISTRY`]. Its identifier travels with each task
+//! [`REGISTRY`] (the Hugging Face workloads, one per model, are found by
+//! [`hf::find`]). Its identifier travels with each task
 //! (`TaskEnvelope::workload`); a node refuses tasks of a workload it does
 //! not know.
 
 pub(crate) mod embedding;
+pub(crate) mod hf;
 pub(crate) mod llm;
 pub(crate) mod raytracer;
 pub(crate) mod sha256;
@@ -86,11 +88,16 @@ pub(crate) trait Workload: Send + Sync {
         Ok(None)
     }
 
-    /// True when this node can run the workload now. A workload that needs
-    /// local resources (a model to download) starts getting them and answers
-    /// false meanwhile: the node does not claim the task, and claims it when
-    /// the publisher announces it again.
-    fn ensure_ready<'a>(&'a self, _context: &'a NodeContext) -> BoxFuture<'a, bool> {
+    /// True when this node can run `task` now. A workload that needs local
+    /// resources (a model to download) starts getting them and answers false
+    /// meanwhile: the node does not claim the task, and claims it when the
+    /// publisher announces it again. The task's input is already here (a
+    /// workload whose model comes with the job reads it there).
+    fn ensure_ready<'a>(
+        &'a self,
+        _context: &'a NodeContext,
+        _task: &'a NetworkTask,
+    ) -> BoxFuture<'a, bool> {
         Box::pin(async { true })
     }
 
@@ -175,6 +182,7 @@ pub(crate) fn find(id: &str) -> Option<&'static dyn Workload> {
         .iter()
         .copied()
         .find(|workload| workload.id() == id)
+        .or_else(|| hf::find(id).map(|workload| workload as &'static dyn Workload))
 }
 
 /// The workload of `task`.
@@ -187,6 +195,7 @@ pub(crate) fn known_ids() -> String {
     REGISTRY
         .iter()
         .map(|workload| workload.id())
+        .chain(["ai/hf/<task>/<model key>"])
         .collect::<Vec<_>>()
         .join(", ")
 }

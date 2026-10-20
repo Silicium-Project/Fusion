@@ -67,7 +67,13 @@ pub(crate) fn local_peer_profile(
             .unwrap_or_else(|_| "dev".to_string()),
         release_build: std::env::var("SILICIUM_RELEASE_BUILD")
             .unwrap_or_else(|_| "local".to_string()),
-        capacity: json!({"logical_cpu_count": logical_cpu_count}),
+        // `ai_models`: models of the AI catalogue whose files are on this
+        // node (the site prices a job lower when workers already have its
+        // model).
+        capacity: json!({
+            "logical_cpu_count": logical_cpu_count,
+            "ai_models": crate::workload::hf::warm_models(),
+        }),
         activity: json!({
             "status": if active_tasks.is_empty() { "idle" } else { "working" },
             "active_tasks": active_tasks,
