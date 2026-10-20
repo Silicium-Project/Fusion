@@ -353,6 +353,16 @@ jobs:
         shell: bash
         run: bash Network/ci/e2e.sh
 
+      - name: Upload network end-to-end logs
+        if: ${{ failure() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: network-e2e-logs-${{ github.run_id }}
+          path: Network/target/e2e/**/*.log
+          if-no-files-found: ignore
+          retention-days: 5
+
   network-smoke:
     needs: [submodule-ci-gate]
     if: ${{ always() && inputs.run_network_smoke && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') }}
