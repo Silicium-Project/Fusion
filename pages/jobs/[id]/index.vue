@@ -14,7 +14,7 @@
         <MetricCard :label="t('jobDetail.proofs')" :value="dashboard.devnet?.signatures?.length || 0" :detail="dashboard.devnet?.enabled ? t('jobDetail.tracing') : t('jobDetail.noTracing')" icon="shield" :tone="dashboard.devnet?.ok ? 'mint' : 'amber'" />
       </section>
       <div class="job-detail-grid">
-        <UiCard id="result" :title="documentJob ? t('jobDetail.searchTitle') : batchJob ? t('jobDetail.answersTitle') : t('jobDetail.resultTitle')" :description="resultDescription" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><DocumentSearch v-else-if="documentJob" :dashboard="dashboard" /><BatchAIAnswers v-else-if="batchJob" :dashboard="dashboard" /><UiEmptyState v-else :title="t('jobDetail.downloadableTitle')" :description="t('jobDetail.downloadableText')" icon="download" /></UiCard>
+        <UiCard id="result" :title="documentJob ? t('jobDetail.searchTitle') : batchJob || catalogJob ? t('jobDetail.answersTitle') : t('jobDetail.resultTitle')" :description="resultDescription" padded><RenderPreview v-if="imageJob" :dashboard="dashboard" :image-url="resultPreview" /><HashResult v-else-if="hashJob" :dashboard="dashboard" /><DocumentSearch v-else-if="documentJob" :dashboard="dashboard" /><BatchAIAnswers v-else-if="batchJob" :dashboard="dashboard" /><CatalogAnswers v-else-if="catalogJob" :dashboard="dashboard" /><UiEmptyState v-else :title="t('jobDetail.downloadableTitle')" :description="t('jobDetail.downloadableText')" icon="download" /></UiCard>
         <UiCard :title="t('jobDetail.steps')" :description="t('jobDetail.stepsText')" padded><ExecutionTimeline :dashboard="dashboard" /></UiCard>
       </div>
       <div class="job-detail-grid job-detail-grid--bottom">
@@ -40,6 +40,7 @@ import type { JobDashboard, JobFragment } from '~/types/api';
 import { compactIdentifier, formatDuration, formatPerformanceMultiple, formatPerformancePercent } from '~/utils/format';
 import { isDocumentSearchWorkload } from '~/utils/documents';
 import { isBatchAIWorkload } from '~/utils/batchAI';
+import { isHFWorkload } from '~/utils/hfCatalog';
 import { awaitingChainAnchor, compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, jobPartCount, shouldRefreshJob } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const { t } = useI18n();
@@ -50,7 +51,8 @@ const imageJob = computed(() => isImageWorkload(dashboard.value?.job.workload));
 const hashJob = computed(() => isHashWorkload(dashboard.value?.job.workload));
 const documentJob = computed(() => isDocumentSearchWorkload(dashboard.value?.job.workload));
 const batchJob = computed(() => isBatchAIWorkload(dashboard.value?.job.workload));
-const resultDescription = computed(() => imageJob.value ? t('jobDetail.imageDescription') : documentJob.value ? t('jobDetail.documentsDescription') : batchJob.value ? t('jobDetail.answersDescription') : t('jobDetail.hashDescription'));
+const catalogJob = computed(() => isHFWorkload(dashboard.value?.job.workload));
+const resultDescription = computed(() => imageJob.value ? t('jobDetail.imageDescription') : documentJob.value ? t('jobDetail.documentsDescription') : batchJob.value || catalogJob.value ? t('jobDetail.answersDescription') : t('jobDetail.hashDescription'));
 const fragments = computed(() => dashboard.value?.summary?.fragments || []);
 const visibleFragments = computed(() => fragments.value.slice(-visibleLimit).reverse());
 const jobErrorDetail = computed(() => dashboard.value?.job.errorMessage || dashboard.value?.summary?.failureDetail || dashboard.value?.summary?.traceback || dashboard.value?.summary?.error || '');

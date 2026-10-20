@@ -14,7 +14,8 @@
         <label class="field job-form__wide"><span>{{ t('jobForm.description') }} <small>{{ t('common.optional') }}</small></span><textarea v-model.trim="form.description" class="textarea" :maxlength="LIMITS.jobDescription" :placeholder="t('jobForm.descriptionPlaceholder')"></textarea></label>
         <label class="field job-form__wide"><span>{{ t('jobForm.type') }}</span><select v-model="form.workload" class="select" :disabled="Boolean(collectionId)"><option v-for="item in workloads" :key="item.id" :value="item.id">{{ item.label }}</option></select><small>{{ selectedWorkload.hint }} <NuxtLink :to="`/workloads#${selectedWorkload.anchor}`" class="job-form__help">{{ t('jobForm.typeHelp') }}</NuxtLink></small></label>
       </div>
-      <BatchAIForm v-if="batchMode" @update="batchState = $event" />
+      <CatalogAIForm v-if="catalogMode" @update="catalogState = $event" />
+      <BatchAIForm v-else-if="batchMode" @update="batchState = $event" />
       <template v-else-if="documentMode">
         <UiNotice v-if="collectionId" :title="t('jobForm.addingTitle')">{{ t('jobForm.addingText') }}</UiNotice>
         <label class="job-drop" :class="{ 'job-drop--ready': documents.length, 'job-drop--over': dragging }" @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
@@ -53,8 +54,8 @@
 
     <section v-else-if="step === 2" class="wizard-step" aria-labelledby="job-step-options">
       <div class="wizard-step__intro"><span class="eyebrow">{{ t('jobForm.stepOf', { step: 2 }) }}</span><h2 id="job-step-options">{{ t('jobForm.optionsTitle') }}</h2><p>{{ t('jobForm.optionsText') }}</p></div>
-      <div class="recommended-option"><span class="recommended-option__icon"><UiIcon name="sparkle"/></span><div><strong>{{ t('jobForm.recommended') }}</strong><p>{{ documentMode ? t('jobForm.recommendedDocuments') : batchMode ? t('jobForm.recommendedBatchAI') : t('jobForm.recommendedDefault') }}</p></div><UiStatusBadge status="operational" :label="t('jobForm.recommendedBadge')" /></div>
-      <details v-if="!documentMode && !batchMode" class="advanced-options">
+      <div class="recommended-option"><span class="recommended-option__icon"><UiIcon name="sparkle"/></span><div><strong>{{ t('jobForm.recommended') }}</strong><p>{{ documentMode ? t('jobForm.recommendedDocuments') : batchMode ? t('jobForm.recommendedBatchAI') : catalogMode ? t('jobForm.recommendedCatalogAI') : t('jobForm.recommendedDefault') }}</p></div><UiStatusBadge status="operational" :label="t('jobForm.recommendedBadge')" /></div>
+      <details v-if="!documentMode && !batchMode && !catalogMode" class="advanced-options">
         <summary><span><UiIcon name="code"/>{{ t('jobForm.advanced') }}</span><UiIcon name="chevron"/></summary>
         <div class="job-form__configuration">
           <label><span class="field-label">{{ t('jobForm.parts') }}</span><strong>{{ form.fragmentCount }}</strong><input v-model.number="form.fragmentCount" type="range" min="1" max="256" step="1" :aria-label="t('jobForm.parts')"><small>{{ t('jobForm.partsHint') }}<template v-if="hashMode"> {{ t('jobForm.hashOnePart') }}</template></small></label>
@@ -68,10 +69,11 @@
       <div class="wizard-step__intro"><span class="eyebrow">{{ t('jobForm.stepOf', { step: 3 }) }}</span><h2 id="job-step-review">{{ t('jobForm.reviewTitle') }}</h2><p>{{ t('jobForm.reviewText') }}</p></div>
       <div class="review-card">
         <div><span>{{ t('jobForm.project') }}</span><strong>{{ form.title || t('jobForm.untitled') }}</strong><small>{{ form.description || t('jobForm.noDescription') }}</small></div>
-        <div v-if="batchMode"><span>{{ t('jobForm.batchItems') }}</span><strong>{{ t('batchAI.itemCount', { count: batchState?.itemCount || 0 }) }}</strong><small>{{ batchState ? t(`batchAI.tasks.${batchState.task}.label`) : '' }}</small></div>
+        <div v-if="catalogMode"><span>{{ t('jobForm.batchItems') }}</span><strong>{{ t('catalogAI.itemCount', { count: catalogState?.itemCount || 0 }) }}</strong><small>{{ catalogState?.modelName }}<template v-if="catalogState?.quote"> · {{ t('catalogAI.credits', { count: catalogState.quote.totalCredits }) }}</template></small></div>
+        <div v-else-if="batchMode"><span>{{ t('jobForm.batchItems') }}</span><strong>{{ t('batchAI.itemCount', { count: batchState?.itemCount || 0 }) }}</strong><small>{{ batchState ? t(`batchAI.tasks.${batchState.task}.label`) : '' }}</small></div>
         <div v-else-if="documentMode"><span>{{ t('jobForm.documents') }}</span><strong>{{ t('jobForm.documentCount', { count: documents.length }) }}</strong><small>{{ documentsSize }}</small></div>
         <div v-else><span>{{ raytracerMode ? t('jobForm.scene') : t('jobForm.file') }}</span><strong>{{ file?.name || t('jobForm.noFile') }}</strong><small>{{ reviewScene || fileSize }}</small></div>
-        <div><span>{{ t('jobForm.execution') }}</span><strong>{{ selectedWorkload.label }}</strong><small>{{ documentMode || batchMode ? t('jobForm.autoSplit') : t('jobForm.partCount', { count: form.fragmentCount }) }} · {{ t('jobForm.maximum', { duration: runtimeLabel }) }}</small></div>
+        <div><span>{{ t('jobForm.execution') }}</span><strong>{{ selectedWorkload.label }}</strong><small>{{ documentMode || batchMode || catalogMode ? t('jobForm.autoSplit') : t('jobForm.partCount', { count: form.fragmentCount }) }} · {{ t('jobForm.maximum', { duration: runtimeLabel }) }}</small></div>
       </div>
       <UiNotice :title="t('jobForm.afterLaunch')">{{ t('jobForm.afterLaunchText') }}</UiNotice>
     </section>
@@ -93,6 +95,7 @@
 import type { CreateJobInput } from '~/composables/useJobs';
 import { DOCUMENT_ACCEPT, DOCUMENT_SEARCH_WORKLOAD, documentSelectionError, isDocumentSearchWorkload, mergeDocumentSelection } from '~/utils/documents';
 import { BATCH_AI_WORKLOAD, isBatchAIWorkload, type BatchAIState } from '~/utils/batchAI';
+import { HF_WORKLOAD, type CatalogAIState } from '~/utils/hfCatalog';
 import { isHashWorkload, sceneSummaryText } from '~/utils/jobs';
 import { editorLimits, sceneFileName, sceneFromText, sceneToCfg, type SceneModel } from '~/utils/scene';
 import { checkScene } from '~/utils/sceneCheck';
@@ -122,6 +125,7 @@ const workloads = computed(() => [
   { id: 'calcul/integrity/sha256', anchor: 'sha256', ...workloadCopy('sha256'), accept: '' },
   { id: DOCUMENT_SEARCH_WORKLOAD, anchor: 'documents', ...workloadCopy('documents'), accept: DOCUMENT_ACCEPT },
   { id: BATCH_AI_WORKLOAD, anchor: 'batchAI', ...workloadCopy('batchAI'), accept: '' },
+  { id: HF_WORKLOAD, anchor: 'catalogAI', ...workloadCopy('catalogAI'), accept: '' },
 ]);
 function workloadCopy(key: string) {
   return { label: t(`jobForm.workloads.${key}.label`), hint: t(`jobForm.workloads.${key}.hint`), fileHint: t(`jobForm.workloads.${key}.fileHint`) };
@@ -130,6 +134,9 @@ const documentMode = computed(() => isDocumentSearchWorkload(form.workload));
 const batchMode = computed(() => isBatchAIWorkload(form.workload));
 /** The request of a batch AI job, as step 1 builds it. */
 const batchState = ref<BatchAIState | null>(null);
+/** A job of the AI catalogue: task, model and request, as step 1 builds them. */
+const catalogMode = computed(() => form.workload === HF_WORKLOAD);
+const catalogState = ref<CatalogAIState | null>(null);
 const hashMode = computed(() => isHashWorkload(form.workload));
 const raytracerMode = computed(() => form.workload === 'raytracer');
 const composeMode = computed(() => raytracerMode.value && sceneSource.value === 'compose');
@@ -150,7 +157,7 @@ const sceneLimits = computed(() => (sceneText.value ? editorLimits(sceneText.val
 const selectedWorkload = computed(() => workloads.value.find((item) => item.id === form.workload) || workloads.value[0]!);
 const steps = computed(() => tl<{ title: string; detail: string }>('jobForm.steps').map((item, index) => ({ ...item, number: index + 1 })));
 const textProblem = computed(() => firstProblem(jobTitleProblem(form.title), jobDescriptionProblem(form.description)));
-const stepOneReady = computed(() => Boolean(form.title.trim() && !localError.value && !textProblem.value && sceneReady.value && (batchMode.value ? batchState.value && !batchState.value.problem && batchState.value.consent : documentMode.value ? documents.value.length && acknowledgeSharing.value : composeMode.value || file.value)));
+const stepOneReady = computed(() => Boolean(form.title.trim() && !localError.value && !textProblem.value && sceneReady.value && (catalogMode.value ? catalogState.value && !catalogState.value.problem && catalogState.value.consent : batchMode.value ? batchState.value && !batchState.value.problem && batchState.value.consent : documentMode.value ? documents.value.length && acknowledgeSharing.value : composeMode.value || file.value)));
 const documentsSize = computed(() => formatBytes(documents.value.reduce((total, document) => total + document.size, 0)));
 const runtimeLabel = computed(() => form.maxRuntimeSeconds < 3600 ? `${Math.round(form.maxRuntimeSeconds / 60)} min` : `${(form.maxRuntimeSeconds / 3600).toFixed(form.maxRuntimeSeconds % 3600 ? 1 : 0)} h`);
 const fileSize = computed(() => (file.value ? formatBytes(file.value.size) : ''));
@@ -159,6 +166,7 @@ const blockedReason = computed(() => {
   if (stepOneReady.value) return '';
   if (!form.title.trim()) return t('jobForm.nameRequired');
   if (localError.value || textProblem.value) return '';
+  if (catalogMode.value) return catalogState.value?.problem || (!catalogState.value?.consent ? t('catalogAI.consentRequired') : '');
   if (batchMode.value) return batchState.value?.problem || (!batchState.value?.consent ? t('batchAI.consentRequired') : '');
   if (documentMode.value) return documentSelectionError(documents.value) || (!acknowledgeSharing.value ? t('jobForm.consentRequired') : '');
   if (composeMode.value) return scene.value.objects.length ? '' : t('jobForm.sceneEmpty');
@@ -232,7 +240,10 @@ function nextStep() {
   if (step.value === 1) {
     if (!form.title.trim()) { localError.value = t('jobForm.nameRequired'); return; }
     if (textProblem.value) return;
-    if (batchMode.value) {
+    if (catalogMode.value) {
+      if (!catalogState.value || catalogState.value.problem) { localError.value = catalogState.value?.problem || t('catalogAI.problems.noTask'); return; }
+      if (!catalogState.value.consent) { localError.value = t('catalogAI.consentRequired'); return; }
+    } else if (batchMode.value) {
       if (!batchState.value || batchState.value.problem) { localError.value = batchState.value?.problem || t('batchAI.problems.noFile'); return; }
       if (!batchState.value.consent) { localError.value = t('batchAI.consentRequired'); return; }
     } else if (documentMode.value) {
@@ -248,8 +259,15 @@ function nextStep() {
   step.value = Math.min(3, step.value + 1);
 }
 
-function submit() {
+async function submit() {
   if (step.value !== 3 || props.submitting || localError.value || textProblem.value) return;
+  if (catalogMode.value) {
+    const state = catalogState.value;
+    const request = state?.consent ? await state.build() : null;
+    if (!state || !request) return;
+    emit('submit', { ...form, workload: state.workload, file: request, acknowledgeSharing: true });
+    return;
+  }
   if (batchMode.value) {
     const request = batchState.value?.consent ? batchState.value.build() : null;
     if (!request) return;
