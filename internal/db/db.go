@@ -54,7 +54,7 @@ func Init() *gorm.DB {
 	db, err := gorm.Open(dialector, &gorm.Config{})
 	utils.LogFatal(err, "Failed to connect to database")
 
-	err = db.AutoMigrate(&models.User{}, &models.Job{})
+	err = db.AutoMigrate(&models.User{}, &models.Job{}, &models.UserDevice{}, &models.DevicePairingCode{})
 	utils.LogFatal(err, "Failed to migrate database")
 
 	return db
