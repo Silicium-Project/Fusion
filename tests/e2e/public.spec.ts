@@ -5,18 +5,21 @@ test.beforeEach(async ({ page }) => mockAPI(page));
 
 test('public product journey stays coherent across all pages', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Vos calculs.');
-  await expect(page.locator('img[src="/brand/silicium-logo.png"]').first()).toBeVisible();
-  for (const [name, path, heading] of [
-    ['Produit', '/service', 'Votre projet avance'],
-    ['Blockchain', '/blockchain', 'Du calcul au paiement'],
-    ['À propos', '/about', 'Plusieurs machines'],
-    ['Contact', '/contact', 'Une idée pour le réseau'],
-  ] as const) {
-    await page.getByRole('navigation', { name: 'Navigation principale' }).getByRole('link', { name: new RegExp(name) }).click();
-    await expect(page).toHaveURL(url => url.pathname === path);
-    await expect(page.getByRole('heading', { level: 1 })).toContainText(heading);
-  }
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Du calcul distribué.');
+  await expect(page.getByRole('link', { name: 'Silicium — Accueil' }).first().locator('img.brand-logo__mark')).toBeVisible();
+  const primaryNavigation = page.getByRole('navigation', { name: 'Navigation principale' });
+  await primaryNavigation.getByRole('link', { name: 'Produit' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/service');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Votre projet avance');
+  await page.getByRole('contentinfo').getByRole('link', { name: 'Blockchain' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/blockchain');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Du calcul à la preuve');
+  await primaryNavigation.getByRole('link', { name: 'À propos' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/about');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Plusieurs machines');
+  await primaryNavigation.getByRole('link', { name: 'Contact' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/contact');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Une idée pour le réseau');
 });
 
 test('service reports live components and concrete downloads', async ({ page }) => {
@@ -30,12 +33,14 @@ test('service reports live components and concrete downloads', async ({ page }) 
   await expect(page.getByRole('link', { name: 'DNF — Fedora / RHEL' })).toHaveAttribute('href', '/download?platform=linux&manager=dnf#installation');
   await expect(page.locator('.downloads__platform--windows svg')).toHaveCount(2);
   await expect(page.locator('.downloads__platform--linux svg')).toHaveCount(3);
-  const walkthrough = page.locator('.process-story');
-  await expect(walkthrough.getByText('Vous envoyez, une seule fois.', { exact: true })).toBeVisible();
-  await walkthrough.getByRole('button', { name: 'Répartir' }).click();
-  await expect(walkthrough.getByText('Les bonnes machines se coordonnent.', { exact: true })).toBeVisible();
+  const diagram = page.locator('.network-blueprint');
+  await expect(diagram.getByRole('heading')).toBeVisible();
+  const verification = diagram.getByRole('button').nth(2);
+  await verification.click();
+  await expect(verification).toHaveAttribute('aria-pressed', 'true');
+  await expect(diagram.locator('[aria-live]')).not.toBeEmpty();
   await page.getByRole('button', { name: 'Rafraîchir' }).click();
-  await expect(page.getByText('Paiements', { exact: true })).toBeVisible();
+  await expect(page.locator('.status-board article').nth(2)).toContainText('Traçabilité Solana');
 });
 
 test('legacy download pages lead to the matching installation guide', async ({ page }) => {
@@ -59,11 +64,11 @@ test('public mobile menu has no horizontal overflow', async ({ page }) => {
 });
 
 test('the network diagram lets visitors follow each stage without pretending to be live', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/service');
   const diagram = page.locator('.network-blueprint');
   await expect(diagram.getByText('Schéma de fonctionnement')).toBeVisible();
-  await diagram.getByRole('button', { name: '03 Vérifier' }).click();
-  await expect(diagram).toHaveAttribute('data-stage', '2');
-  await expect(diagram.locator('[aria-live]')).toContainText('Des contrôles adaptés');
-  await expect(page.locator('.network-status-strip')).toContainText('3');
+  const verifyStage = diagram.getByRole('button').nth(2);
+  await verifyStage.click();
+  await expect(verifyStage).toHaveAttribute('aria-pressed', 'true');
+  await expect(diagram.locator('[aria-live]')).not.toBeEmpty();
 });

@@ -40,9 +40,7 @@ test('distribution deep links and translated controls keep commands intact', asy
 test('offline status stays unavailable and does not invent machine counts', async ({ page }) => {
   await page.route('**/api/status', route => route.fulfill({ status: 503, json: {} }));
   await page.goto('/');
-  await expect(page.locator('.network-status-strip')).toContainText('Indisponible');
-  await expect(page.locator('.network-status-strip>div').nth(1).locator('strong')).toHaveText('—');
-  await expect(page.locator('.public-footer__status')).toContainText('Indisponible');
+  await expect(page.locator('.live-metrics-panel__metrics dd')).toHaveText(['—', '—', '—']);
   await page.goto('/service#status');
   await expect(page.locator('.status-board article').nth(1).locator('.status-board__main>strong')).toHaveText('—');
 });

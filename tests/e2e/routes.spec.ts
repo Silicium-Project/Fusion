@@ -4,14 +4,15 @@ import { authenticate, mockAPI } from './fixtures';
 type RouteCase = { path: string; heading: string; authenticated?: boolean; canonicalPath?: string };
 
 const firstPartyRoutes: RouteCase[] = [
-  { path: '/', heading: 'Vos calculs.' },
+  { path: '/', heading: 'Du calcul distribué.' },
   { path: '/service', heading: 'Votre projet avance' },
-  { path: '/blockchain', heading: 'Du calcul au paiement' },
+  { path: '/blockchain', heading: 'Du calcul à la preuve' },
   { path: '/service/downloads/windows', heading: 'Installez une fois' },
   { path: '/service/downloads/windows-dev', heading: 'Installez une fois' },
   { path: '/service/downloads/linux-dev', heading: 'Installez une fois' }, { path: '/download', heading: 'Installez une fois' },
   { path: '/about', heading: 'Plusieurs machines' },
   { path: '/contact', heading: 'Une idée pour le réseau' },
+  { path: '/workers', heading: 'Votre machine.' },
   { path: '/auth?mode=login', heading: 'Connectez-vous' },
   { path: '/dashboard', heading: 'Accueil', authenticated: true },
   { path: '/jobs', heading: 'Mes projets', authenticated: true },
@@ -23,9 +24,10 @@ const firstPartyRoutes: RouteCase[] = [
   { path: '/nodes', heading: 'Machines', authenticated: true },
   { path: '/workloads', heading: 'Types de calcul', authenticated: true },
   { path: '/profile', heading: 'Paramètres', authenticated: true },
+  { path: '/workers/overview', heading: 'Espace worker', authenticated: true },
 ];
 
-const knownRoute = /^(?:\/|\/service|\/blockchain|\/service\/downloads\/(?:windows|windows-dev|linux-dev)|\/download|\/about|\/contact|\/auth|\/dashboard|\/jobs|\/jobs\/new|\/jobs\/\d+(?:\/dashboard|\/result)?|\/network|\/nodes|\/workloads|\/profile)$/;
+const knownRoute = /^(?:\/|\/service|\/blockchain|\/service\/downloads\/(?:windows|windows-dev|linux-dev)|\/download|\/about|\/contact|\/workers(?:\/overview)?|\/auth|\/dashboard|\/jobs|\/jobs\/new|\/jobs\/\d+(?:\/dashboard|\/result)?|\/network|\/nodes|\/workloads|\/profile)$/;
 
 // This test opens all 20 routes one after the other: about 16 s on a fast
 // machine, more than the default 30 s on the shared CI runner.

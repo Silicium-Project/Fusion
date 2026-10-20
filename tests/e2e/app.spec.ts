@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => { await mockAPI(page); await authenticate(pa
 for (const pageCase of [
   { path: '/dashboard', heading: 'Accueil' }, { path: '/jobs', heading: 'Mes projets' },
   { path: '/jobs/new', heading: 'Lancer un calcul' }, { path: '/jobs/1', heading: 'Rendu architecture' },
-  { path: '/network', heading: 'Santé du réseau' }, { path: '/nodes', heading: 'Machines' }, { path: '/workloads', heading: 'Types de calcul' }, { path: '/profile', heading: 'Paramètres' },
+  { path: '/network', heading: 'Santé du réseau' }, { path: '/nodes', heading: 'Machines du réseau' }, { path: '/workloads', heading: 'Types de calcul' }, { path: '/profile', heading: 'Paramètres' },
 ]) {
   test(`${pageCase.path} renders without browser errors`, async ({ page }) => {
     const errors: string[] = [];
@@ -227,12 +227,14 @@ test('connected mobile navigation remains usable and does not overflow', async (
   await page.goto('/dashboard');
   const navigation = page.getByRole('navigation', { name: 'Navigation mobile de l’application' });
   await expect(navigation.getByRole('link', { name: 'Mes projets' })).toBeVisible();
-  await navigation.getByRole('link', { name: 'Nouveau calcul' }).click();
+  await navigation.getByRole('link', { name: 'Mes projets' }).click();
+  await expect(page).toHaveURL(url => url.pathname === '/jobs');
+  await page.getByRole('main').getByRole('link', { name: 'Nouveau calcul' }).click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/new');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test('mobile navigation stays in flow instead of obscuring content', async ({ page }) => {
+test('fixed mobile navigation has enough content clearance', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/nodes');
   const layout = await page.evaluate(() => {
@@ -240,12 +242,12 @@ test('mobile navigation stays in flow instead of obscuring content', async ({ pa
     const main = document.querySelector('.app-layout__main');
     if (!navigation || !main) return null;
     const navigationRect = navigation.getBoundingClientRect();
-    const mainRect = main.getBoundingClientRect();
-    return { position: getComputedStyle(navigation).position, navigationBottom: navigationRect.bottom, mainTop: mainRect.top };
+    const mainStyle = getComputedStyle(main);
+    return { position: getComputedStyle(navigation).position, navigationHeight: navigationRect.height, mainPaddingBottom: Number.parseFloat(mainStyle.paddingBottom) };
   });
   expect(layout).not.toBeNull();
-  expect(layout?.position).not.toBe('fixed');
-  expect(layout?.navigationBottom).toBeLessThanOrEqual((layout?.mainTop || 0) + 1);
+  expect(layout?.position).toBe('fixed');
+  expect(layout?.mainPaddingBottom).toBeGreaterThan((layout?.navigationHeight || 0) + 16);
 });
 
 test('logout clears the session and returns to the public homepage', async ({ page }) => {
@@ -422,15 +424,21 @@ test('the site switches to English and German, and the API is asked in that lang
 
 test('the job types page explains each type and offers its example file', async ({ page }) => {
   await page.goto('/workloads');
-  for (const name of ['Rendu d’image', 'Empreinte SHA-256', 'Recherche dans mes documents', 'Traitement par IA']) {
-    await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
-  }
-  for (const file of ['silicium-demo-scene.cfg', 'silicium-hash-example.txt', 'silicium-documents-example.zip', 'silicium-avis-clients.csv']) {
-    const link = page.locator(`a[href="/examples/${file}"]`);
+  for (const [name, file] of [
+    ['Rendu d’image', 'silicium-demo-scene.cfg'],
+    ['Empreinte SHA-256', 'silicium-hash-example.txt'],
+    ['Recherche dans mes documents', 'silicium-documents-example.zip'],
+    ['Traitement par IA', 'silicium-avis-clients.csv'],
+  ]) {
+    await page.locator('.workloads-toc').getByRole('link', { name: new RegExp(name) }).click();
+    const workload = page.locator('.workload:visible');
+    await expect(workload.getByRole('heading', { name, exact: true })).toBeVisible();
+    const link = workload.locator(`a[href="/examples/${file}"]`);
     await expect(link).toHaveAttribute('download', file);
     const response = await page.request.get(`/examples/${file}`);
     expect(response.ok()).toBe(true);
   }
+  await page.locator('.workloads-toc').getByRole('link', { name: /Empreinte SHA-256/ }).click();
   await page.locator('#sha256').getByRole('link', { name: 'Essayer avec ce type' }).click();
   await expect(page).toHaveURL(url => url.pathname === '/jobs/new' && url.searchParams.get('workload') === 'calcul/integrity/sha256');
   await expect(page.getByRole('combobox').first()).toHaveValue('calcul/integrity/sha256');
