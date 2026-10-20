@@ -288,7 +288,10 @@ pub fn pair_device(repo_root: String, node_id: String, code: String) -> Result<(
         return Err("Code ou identifiant de machine invalide.".to_string());
     }
 
-    let repo_root = resolve_repo_root(&repo_root)?;
+    // Pairing only reads the persistent identity and starts the signer. Do not
+    // refresh the managed runtime here: replacing p2p_node while the node is
+    // running fails with ETXTBSY on Linux.
+    let repo_root = resolve_repo_root_readonly(&repo_root)?;
     validate_repo_root(&repo_root)?;
     let binary = runtime_binary(&repo_root, "p2p_node");
     if !binary.is_file() {
