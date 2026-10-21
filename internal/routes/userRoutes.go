@@ -26,6 +26,7 @@ func RegisterUserRoutes(router *mux.Router, h handler.Handler) {
 	authRouter.HandleFunc("/wallet", h.ConnectWallet).Methods("POST")
 	authRouter.HandleFunc("/devices", h.ListUserDevices).Methods("GET")
 	authRouter.HandleFunc("/devices/pairing-code", h.CreateDevicePairingCode).Methods("POST")
+	authRouter.HandleFunc("/devices/pairing-codes", h.CreateDevicePairingCodes).Methods("POST")
 	authRouter.HandleFunc("/devices/{id}", h.UnlinkUserDevice).Methods("DELETE")
 
 	// The desktop node completes a short-lived pairing with a signature from

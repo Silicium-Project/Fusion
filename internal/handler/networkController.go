@@ -98,6 +98,98 @@ func controlTaskMap(control silicium.ControlTask) map[string]any {
 	return item
 }
 
+func controlTaskWorkload(control silicium.ControlTask, item map[string]any) string {
+	if workload := strings.TrimSpace(control.Workload); workload != "" {
+		return workload
+	}
+	if task, ok := item["task"].(map[string]any); ok {
+		if workload := stringField(task, "workload"); workload != "" {
+			return workload
+		}
+	}
+	return "raytracer"
+}
+
+func networkPeerCanCompute(peer map[string]any) bool {
+	roles, exists := peer["roles"].([]any)
+	if !exists {
+		return true // Older peers default to compute,verify.
+	}
+	for _, raw := range roles {
+		if role, ok := raw.(string); ok && strings.EqualFold(strings.TrimSpace(role), "compute") {
+			return true
+		}
+	}
+	return false
+}
+
+func networkPeerSupportsWorkload(peer map[string]any, workload string) bool {
+	capacity := mapField(peer, "capacity")
+	if capacity == nil {
+		return true // Legacy workers did not advertise an allowlist.
+	}
+	items, exists := capacity["supported_workloads"].([]any)
+	if !exists {
+		return true
+	}
+	for _, raw := range items {
+		if supported, ok := raw.(string); ok && strings.EqualFold(strings.TrimSpace(supported), workload) {
+			return true
+		}
+	}
+	return false
+}
+
+func networkQueueDiagnostic(queued int, workloads map[string]bool, peers []map[string]any, peerErr error, oldestWait int64) map[string]any {
+	result := map[string]any{
+		"queued": queued,
+		"oldest_wait_seconds": oldestWait,
+		"online_compute_workers": 0,
+		"compatible_workers": 0,
+		"workloads": []string{},
+		"reason": "",
+	}
+	if queued == 0 {
+		return result
+	}
+	workloadNames := make([]string, 0, len(workloads))
+	for workload := range workloads {
+		workloadNames = append(workloadNames, workload)
+	}
+	sort.Strings(workloadNames)
+	result["workloads"] = workloadNames
+	if peerErr != nil {
+		result["reason"] = "network_state_unavailable"
+		return result
+	}
+	online, compatible := 0, 0
+	for _, peer := range peers {
+		isOnline, _ := peer["online"].(bool)
+		self, _ := peer["self"].(bool)
+		if !isOnline || self || !networkPeerCanCompute(peer) {
+			continue
+		}
+		online++
+		for _, workload := range workloadNames {
+			if networkPeerSupportsWorkload(peer, workload) {
+				compatible++
+				break
+			}
+		}
+	}
+	result["online_compute_workers"] = online
+	result["compatible_workers"] = compatible
+	switch {
+	case online == 0:
+		result["reason"] = "no_compute_workers"
+	case compatible == 0:
+		result["reason"] = "no_compatible_workers"
+	default:
+		result["reason"] = "workers_not_claiming"
+	}
+	return result
+}
+
 func (h *Handler) userNetworkJobIDs(userID uint) (map[string]struct{}, error) {
 	var jobs []models.Job
 	if result := h.DB.Select("silicium_job_id").Where("user_id = ?", userID).Find(&jobs); result.Error != nil {
@@ -132,6 +224,10 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 	emitterID := silicium.ConfigFromEnv().OrchestratorNodeID
 	active, recent := []map[string]any{}, []map[string]any{}
 	groups := map[string]map[string]any{}
+	queued := 0
+	oldestWait := int64(0)
+	queuedWorkloads := map[string]bool{}
+	nowUnix := time.Now().Unix()
 	for _, controlTask := range controlTasks {
 		item := controlTaskMap(controlTask)
 		rootID := networkRootJobID(item)
@@ -143,6 +239,17 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		status := strings.ToLower(stringField(item, "status"))
+		if status == "queued" || status == "proposed" {
+			queued++
+			queuedWorkloads[controlTaskWorkload(controlTask, item)] = true
+			created := controlTask.CreatedUnix
+			if created <= 0 {
+				created = controlTask.UpdatedUnix
+			}
+			if created > 0 && (oldestWait == 0 || nowUnix-created > oldestWait) {
+				oldestWait = nowUnix - created
+			}
+		}
 		if terminal[status] {
 			recent = append(recent, item)
 		} else {
@@ -223,9 +330,15 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(activeWorkloads, func(i, j int) bool {
 		return stringField(activeWorkloads[i], "updated_at") > stringField(activeWorkloads[j], "updated_at")
 	})
+	peerResponse, peerErr := silicium.ListControlPeers(r.Context(), silicium.ConfigFromEnv())
+	var networkPeers []map[string]any
+	if peerErr == nil {
+		networkPeers, _ = peerResponse["peers"].([]map[string]any)
+	}
+	queue := networkQueueDiagnostic(queued, queuedWorkloads, networkPeers, peerErr, oldestWait)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": activeWorkloads, "emitter_node_id": emitterID})
+	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": activeWorkloads, "emitter_node_id": emitterID, "queue": queue})
 }
 
 func (h *Handler) CancelNetworkTask(w http.ResponseWriter, r *http.Request) {
