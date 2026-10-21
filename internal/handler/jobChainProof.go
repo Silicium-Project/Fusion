@@ -3,7 +3,7 @@
 // When SILICIUM_DEVNET_TRACE=1, every completed job is anchored on Solana
 // by internal/chainproof (one Memo transaction carrying the Merkle root of
 // the job's signed task traces). A failure to anchor never fails the job:
-// the computation is done and paid for; the trace says why it is missing.
+// the job status is unchanged; the trace says why the proof is missing.
 
 package handler
 
