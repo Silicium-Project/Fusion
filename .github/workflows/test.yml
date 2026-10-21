@@ -107,7 +107,10 @@ jobs:
   web-stack:
     needs: [submodule-ci-gate]
     if: ${{ always() && inputs.run_web_stack && (inputs.skip_submodule_ci_gate || needs.submodule-ci-gate.result == 'success') && !inputs.web_stack_already_validated }}
-    runs-on: [self-hosted, fusion-linux]
+    # This validation needs only Node.js and Go. Keep its dependency installs
+    # on an isolated GitHub runner so they cannot exhaust the VPS disk needed
+    # by the live worker pool and the Docker/Rust network jobs.
+    runs-on: ubuntu-latest
     steps:
       - name: Create GitHub App token
         id: app-token

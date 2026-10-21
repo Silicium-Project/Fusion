@@ -200,6 +200,67 @@ then
   echo "The orchestrator service is not running the marked release: $heartbeat_file" >&2
   exit 1
 fi
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  miniworkers_env="${SILICIUM_DEV_MINIWORKERS_ENV:-$CONFIG_DIR/miniworkers.env}"
+  [[ -s "$miniworkers_env" ]] || {
+    echo "Missing persistent miniworker configuration: $miniworkers_env" >&2
+    exit 1
+  }
+  miniworker_count="$(sed -n 's/^SILICIUM_DEV_MINIWORKERS=//p' "$miniworkers_env" | head -n 1)"
+  miniworker_count="${miniworker_count:-20}"
+  [[ "$miniworker_count" =~ ^[0-9]+$ ]] && (( miniworker_count >= 20 && miniworker_count <= 24 )) || {
+    echo "Invalid SILICIUM_DEV_MINIWORKERS value in $miniworkers_env: $miniworker_count" >&2
+    exit 1
+  }
+
+  mapfile -t expected_workers < <(for index in $(seq -w 1 "$miniworker_count"); do printf 'miniworker-%s\n' "$index"; done)
+  mapfile -t running_workers < <(
+    docker compose --env-file "$miniworkers_env" \
+      -f "$ROOT/deploy/compose/dev-miniworkers.yml" ps --services --filter status=running
+  )
+  for service in "${expected_workers[@]}"; do
+    if ! printf '%s\n' "${running_workers[@]}" | grep -Fxq "$service"; then
+      echo "Dev miniworker container is not running: $service" >&2
+      docker compose --env-file "$miniworkers_env" \
+        -f "$ROOT/deploy/compose/dev-miniworkers.yml" ps >&2 || true
+      exit 1
+    fi
+  done
+
+  peer_file="$export_dir/node.$(printf '%s' "${SILICIUM_NODE_ID:-orchestrator-1}" | tr -c 'A-Za-z0-9_.-' '_').peers.json"
+  missing_workers=""
+  peers_ready=0
+  for _ in $(seq 1 60); do
+    if [[ -s "$peer_file" ]] && missing_workers="$(python3 - "$peer_file" "$miniworker_count" <<'PY'
+import json
+import sys
+
+path, count = sys.argv[1:]
+with open(path, encoding="utf-8") as stream:
+    peers = json.load(stream).get("peers", [])
+online_compute = {
+    str(peer.get("node_id", ""))
+    for peer in peers
+    if peer.get("online") is True
+    and "compute" in {str(role).strip().lower() for role in peer.get("roles", [])}
+}
+expected = {f"miniworker-{index:02d}" for index in range(1, int(count) + 1)}
+missing = sorted(expected - online_compute)
+print(" ".join(missing))
+raise SystemExit(1 if missing else 0)
+PY
+    )"; then
+      peers_ready=1
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$peers_ready" -ne 1 ]]; then
+    echo "Dev miniworkers are running but not all visible to the orchestrator after 120 seconds: ${missing_workers:-peer list not available}" >&2
+    exit 1
+  fi
+  echo "Verified $miniworker_count running dev miniworker containers and P2P peers."
+fi
 curl -fsS --max-time 8 "http://127.0.0.1:${reputation_port}/health" >/dev/null
 
 downloads_dir="${SILICIUM_DOWNLOADS_DIR:-$DATA_ROOT/downloads}"
