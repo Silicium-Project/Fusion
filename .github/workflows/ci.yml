@@ -355,10 +355,24 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: "1.89.0"
         run: |
+          set -euo pipefail
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup run 1.89.0 cargo --version
           rustup run 1.89.0 rustc --version
-          bash "$GITHUB_WORKSPACE/ci/runner/retry_on_corruption.sh" -- rustup run 1.89.0 anchor test --provider.cluster localnet
+          if ! bash "$GITHUB_WORKSPACE/ci/runner/retry_on_corruption.sh" -- rustup run 1.89.0 anchor test --provider.cluster localnet; then
+            echo "Anchor localnet test failed; validator diagnostics follow."
+            for log_file in .anchor/test-ledger/test-ledger-log.txt .anchor/test-ledger/validator.log; do
+              if [[ -f "$log_file" ]]; then
+                echo "--- $log_file ---"
+                tail -n 200 "$log_file"
+              fi
+            done
+            echo "--- validator processes ---"
+            pgrep -af 'solana-test-validator' || true
+            echo "--- local RPC listeners ---"
+            ss -ltnp '( sport = :8899 or sport = :8900 )' || true
+            exit 1
+          fi
 
       - name: Upload IDL artifact
         continue-on-error: true
