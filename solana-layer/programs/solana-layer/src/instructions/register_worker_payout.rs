@@ -1,8 +1,7 @@
 use anchor_lang::{
     prelude::*,
-    solana_program::{
-        ed25519_program,
-        sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
+    solana_program::sysvar::instructions::{
+        load_current_index_checked, load_instruction_at_checked,
     },
 };
 
@@ -151,7 +150,11 @@ fn verify_worker_proof(
     require!(current_index > 0, SiliciumError::NotAuthorized);
     let proof = load_instruction_at_checked(current_index - 1, instructions_sysvar)
         .map_err(|_| error!(SiliciumError::NotAuthorized))?;
-    require_keys_eq!(proof.program_id, ed25519_program::ID, SiliciumError::NotAuthorized);
+    require_keys_eq!(
+        proof.program_id,
+        pubkey!("Ed25519SigVerify111111111111111111111111111"),
+        SiliciumError::NotAuthorized
+    );
 
     let data = proof.data;
     require!(data.len() >= 112 && data[0] == 1 && data[1] == 0, SiliciumError::NotAuthorized);
