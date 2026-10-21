@@ -111,7 +111,7 @@ fn split_job(
     context: &NodeContext,
     jobs: &JobStore,
     settings: &PublishSettings,
-    task: NetworkTask,
+    mut task: NetworkTask,
 ) -> Vec<NetworkTask> {
     let input = context.content.absolute(&task.scene_path);
     let workload = crate::workload::of(&task);

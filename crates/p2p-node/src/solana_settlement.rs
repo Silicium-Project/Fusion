@@ -34,7 +34,8 @@ async fn run(command: &str, payment: &SolanaPaymentRef, value: Option<(&str, &st
     };
     let script = std::env::var("SILICIUM_SOLANA_SETTLEMENT_SCRIPT")
         .unwrap_or_else(|_| DEFAULT_SETTLEMENT_SCRIPT.to_string());
-    let mut child = Command::new("node")
+    let mut child = Command::new("node");
+    child
         .arg(script)
         .arg(command)
         .arg(&payment.job)
