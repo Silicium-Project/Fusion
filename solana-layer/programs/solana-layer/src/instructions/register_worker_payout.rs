@@ -6,7 +6,15 @@ use anchor_lang::{
     },
 };
 
-use crate::{error::SiliciumError, state::worker_payout::WorkerPayout};
+use crate::{
+    error::SiliciumError,
+    events::WorkerRegistered,
+    state::{
+        reputation::init_bayesian_reputation,
+        worker::{Worker, WorkerStatus, ROLE_AUTO, ROLE_COMPUTE, ROLE_VERIFY},
+        worker_payout::WorkerPayout,
+    },
+};
 
 #[derive(Accounts)]
 pub struct RegisterWorkerPayout<'info> {
@@ -17,9 +25,17 @@ pub struct RegisterWorkerPayout<'info> {
     /// CHECK: worker identity is authenticated by the preceding Ed25519 proof.
     pub worker: UncheckedAccount<'info>,
 
-    /// CHECK: must be the canonical Worker PDA for `worker`.
-    #[account(seeds = [b"worker", worker.key().as_ref()], bump)]
-    pub worker_account: UncheckedAccount<'info>,
+    /// Create the worker profile on behalf of the proved device identity.
+    /// The linked account wallet pays rent; the worker key is authenticated
+    /// by the Ed25519 proof below and remains the profile owner.
+    #[account(
+        init_if_needed,
+        payer = payout_wallet,
+        space = Worker::SPACE,
+        seeds = [b"worker", worker.key().as_ref()],
+        bump
+    )]
+    pub worker_account: Account<'info, Worker>,
 
     #[account(
         init_if_needed,
@@ -48,6 +64,32 @@ pub fn handler(
 ) -> Result<()> {
     let worker = ctx.accounts.worker.key();
     let payout_wallet = ctx.accounts.payout_wallet.key();
+
+    let worker_account = &mut ctx.accounts.worker_account;
+    if worker_account.owner == Pubkey::default() {
+        worker_account.owner = worker;
+        worker_account.stake_mint = Pubkey::default();
+        worker_account.stake_vault = Pubkey::default();
+        worker_account.stake_amount = 0;
+        worker_account.total_submitted = 0;
+        worker_account.total_verified = 0;
+        worker_account.total_rejected = 0;
+        worker_account.active_claims = 0;
+        worker_account.roles = ROLE_COMPUTE | ROLE_VERIFY;
+        worker_account.preferred_role = ROLE_AUTO;
+        worker_account.status = WorkerStatus::Active;
+        worker_account.bump = ctx.bumps.worker_account;
+        init_bayesian_reputation(worker_account);
+        emit!(WorkerRegistered {
+            worker,
+            worker_account: worker_account.key(),
+            roles: worker_account.roles,
+            status: worker_account.status as u8,
+        });
+    } else {
+        require_keys_eq!(worker_account.owner, worker, SiliciumError::NotAuthorized);
+    }
+
     if payout_wallet != worker {
         require!(
             pairing_code.len() == 64 && pairing_code.bytes().all(|byte| byte.is_ascii_hexdigit()),
