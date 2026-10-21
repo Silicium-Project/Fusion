@@ -4,7 +4,9 @@ x-miniworker-environment: &miniworker-environment
   SILICIUM_RELEASE_CHANNEL: dev
   SILICIUM_RELEASE_BUILD: vps-miniworker
   SILICIUM_NODE_ROLES: compute,verify
-  SILICIUM_ALLOWED_WORKLOADS: raytracer
+  # SHA-256 is also compiled into the miniworker and stays within the small
+  # CPU/memory budget. Keep model workloads disabled on these containers.
+  SILICIUM_ALLOWED_WORKLOADS: raytracer,calcul/integrity/sha256
   SILICIUM_PARALLEL_TASKS: "1"
   SILICIUM_BOOTSTRAP_PEERS: ${SILICIUM_DEV_BOOTSTRAP_PEER:?Set SILICIUM_DEV_BOOTSTRAP_PEER}
   SILICIUM_P2P_BIND: 0.0.0.0
