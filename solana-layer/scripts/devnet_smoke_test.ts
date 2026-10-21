@@ -149,6 +149,10 @@ async function main() {
       .accounts({
         worker: wallet.publicKey,
         workerAccount,
+        workerPayout: PublicKey.findProgramAddressSync(
+          [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+          program.programId,
+        )[0],
         systemProgram: SystemProgram.programId,
       })
       .rpc();

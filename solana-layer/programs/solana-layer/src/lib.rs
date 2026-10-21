@@ -69,6 +69,15 @@ pub mod solana_layer {
         crate::instructions::register_worker::handler(ctx)
     }
 
+    pub fn register_worker_payout(
+        ctx: Context<RegisterWorkerPayout>,
+        pairing_code: String,
+        node_id: String,
+        peer_id: String,
+    ) -> Result<()> {
+        crate::instructions::register_worker_payout::handler(ctx, pairing_code, node_id, peer_id)
+    }
+
     pub fn stake_worker(ctx: Context<StakeWorker>, amount: u64) -> Result<()> {
         crate::instructions::stake_worker::handler(ctx, amount)
     }

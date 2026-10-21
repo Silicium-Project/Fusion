@@ -149,6 +149,13 @@ function workerPda(owner: PublicKey): PublicKey {
   )[0];
 }
 
+function workerPayoutPda(workerAccount: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+    PROGRAM_ID,
+  )[0];
+}
+
 function stakeAuthPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("stake_auth"), workerAccount.toBuffer()],
@@ -297,6 +304,10 @@ async function ensureWorkerRegistered(program: any, owner: Keypair, label: strin
     .accounts({
       worker: owner.publicKey,
       workerAccount,
+      workerPayout: PublicKey.findProgramAddressSync(
+        [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+        program.programId,
+      )[0],
       systemProgram: SystemProgram.programId,
     })
     .signers([owner])
@@ -531,6 +542,8 @@ export async function main() {
       escrowAuth,
       escrow: escrow.publicKey,
       workerToken: computeToken,
+      workerPayout: workerPayoutPda(computeWorkerAccount),
+      workerPayoutToken: computeToken,
       tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
@@ -553,6 +566,8 @@ export async function main() {
       escrowAuth,
       escrow: escrow.publicKey,
       workerToken: computeToken,
+      workerPayout: workerPayoutPda(computeWorkerAccount),
+      workerPayoutToken: computeToken,
       tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
@@ -574,6 +589,8 @@ export async function main() {
       escrowAuth,
       escrow: escrow.publicKey,
       verifierToken: verifier1Token,
+      verifierPayout: workerPayoutPda(verifier1WorkerAccount),
+      verifierPayoutToken: verifier1Token,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .signers([verifier1])
@@ -593,6 +610,8 @@ export async function main() {
       escrowAuth,
       escrow: escrow.publicKey,
       verifierToken: verifier2Token,
+      verifierPayout: workerPayoutPda(verifier2WorkerAccount),
+      verifierPayoutToken: verifier2Token,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .signers([verifier2])

@@ -15,7 +15,8 @@ pair_account() {
 			sleep 30
 			continue
 		fi
-		pairing_code="$(tr -d '[:space:]' < "$pairing_code_file")"
+		pairing_code="$(sed -n '1p' "$pairing_code_file" | tr -d '[:space:]')"
+		payout_wallet="$(sed -n '2p' "$pairing_code_file" | tr -d '[:space:]')"
 		if [[ -z "$pairing_code" ]]; then
 			sleep 30
 			continue
@@ -25,14 +26,20 @@ pair_account() {
 			sleep 30
 			continue
 		fi
+		if [[ ! "$payout_wallet" =~ ^[1-9A-HJ-NP-Za-km-z]{32,44}$ ]]; then
+			echo ' Account reward wallet is missing; waiting for a fresh account-link request.'
+			sleep 30
+			continue
+		fi
 
-		pairing_hash="$(printf '%s' "$pairing_code" | sha256sum | cut -d ' ' -f 1)"
+		pairing_hash="$(printf '%s\n%s' "$pairing_code" "$payout_wallet" | sha256sum | cut -d ' ' -f 1)"
 		stored_pairing_hash="$(cat "$pairing_marker" 2>/dev/null || true)"
 		if [[ "$pairing_hash" == "$stored_pairing_hash" ]]; then return; fi
 
 		proof_file="$(mktemp /tmp/device-pairing.XXXXXX.json)"
 		chmod 0600 "$proof_file"
 		if SILICIUM_DEVICE_LINK_CODE="$pairing_code" \
+		  SILICIUM_DEVICE_LINK_PAYOUT_WALLET="$payout_wallet" \
 		  SILICIUM_NODE_ID="${SILICIUM_NODE_ID:-}" \
 		  SILICIUM_DATA_DIR="${SILICIUM_DATA_DIR:-/data}" \
 		  /usr/local/bin/p2p_node --sign-device-link > "$proof_file" 2>/dev/null; then

@@ -59,6 +59,15 @@ export interface RegisterWorkerParams {
   signers?: Signer[];
 }
 
+export interface RegisterWorkerPayoutParams {
+  worker: PublicKey;
+  pairingCode?: string;
+  nodeId?: string;
+  peerId?: string;
+  workerProofSignature?: Uint8Array;
+  payoutWallet?: PublicKey;
+}
+
 export interface StakeWorkerParams {
   worker?: PublicKey;
   workerToken: PublicKey;
@@ -91,6 +100,7 @@ export interface VoteFragmentParams {
   fragment: PublicKey;
   escrow: PublicKey;
   workerToken: PublicKey;
+  workerPayoutToken?: PublicKey;
   choice: boolean;
   round?: number;
   computeWorker?: PublicKey;
@@ -103,6 +113,7 @@ export interface ClaimVerifierRewardParams {
   fragment: PublicKey;
   escrow: PublicKey;
   verifierToken: PublicKey;
+  verifierPayoutToken?: PublicKey;
   round?: number;
   signers?: Signer[];
 }

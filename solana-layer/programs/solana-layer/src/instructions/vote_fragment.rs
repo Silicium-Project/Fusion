@@ -13,6 +13,7 @@ use crate::{
             update_compute_reputation, update_compute_reputation_weighted, MIN_VERIFY_REPUTATION,
             ReputationEvent,
         },
+        worker_payout::WorkerPayout,
         worker::{Worker, WorkerStatus, ROLE_VERIFY},
     },
 };
@@ -102,6 +103,20 @@ pub struct VoteFragment<'info> {
         constraint = worker_token.mint == job.mint @ SiliciumError::InvalidParams
     )]
     pub worker_token: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        seeds = [b"worker_payout", compute_worker.key().as_ref()],
+        bump = worker_payout.bump,
+        constraint = worker_payout.worker == fragment.worker @ SiliciumError::NotAuthorized
+    )]
+    pub worker_payout: Box<Account<'info, WorkerPayout>>,
+
+    #[account(
+        mut,
+        constraint = worker_payout_token.owner == worker_payout.payout_wallet @ SiliciumError::NotAuthorized,
+        constraint = worker_payout_token.mint == job.mint @ SiliciumError::InvalidParams
+    )]
+    pub worker_payout_token: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -248,11 +263,13 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
         let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
         let signer_seeds: &[&[&[u8]]] = &[seeds];
 
+        let worker_reward_account = ctx.accounts.worker_payout_token.to_account_info();
+
         let worker_transfer_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.escrow.to_account_info(),
-                to: ctx.accounts.worker_token.to_account_info(),
+                to: worker_reward_account,
                 authority: ctx.accounts.escrow_auth.to_account_info(),
             },
             signer_seeds,

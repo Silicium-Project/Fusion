@@ -47,6 +47,13 @@ export function workerPda(programId: PublicKey, worker: PublicKey): PublicKey {
   )[0];
 }
 
+export function workerPayoutPda(programId: PublicKey, workerAccount: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+    programId,
+  )[0];
+}
+
 export function escrowAuthPda(programId: PublicKey, job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("escrow_auth"), job.toBuffer()],

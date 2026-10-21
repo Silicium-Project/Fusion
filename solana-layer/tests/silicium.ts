@@ -80,6 +80,13 @@ function workerPda(worker: PublicKey): PublicKey {
   )[0];
 }
 
+function workerPayoutPda(workerAccount: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+    program.programId
+  )[0];
+}
+
 function escrowAuthPda(job: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("escrow_auth"), job.toBuffer()],
@@ -135,12 +142,14 @@ async function airdrop(pubkey: PublicKey, lamports = 2_000_000_000) {
 
 async function registerWorker(workerKeypair: anchor.web3.Keypair): Promise<PublicKey> {
   const workerAccount = workerPda(workerKeypair.publicKey);
+  const workerPayout = workerPayoutPda(workerAccount);
 
   await program.methods
     .registerWorker()
     .accounts({
       worker: workerKeypair.publicKey,
       workerAccount: workerAccount,
+      workerPayout,
       systemProgram: SystemProgram.programId,
     })
     .signers([workerKeypair])
@@ -412,6 +421,8 @@ async function voteOnFragment(
       escrowAuth: escrowAuth,
       escrow: escrow,
       workerToken: workerToken,
+      workerPayout: workerPayoutPda(computeWorker),
+      workerPayoutToken: workerToken,
       tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
@@ -434,6 +445,7 @@ describe("silicium", () => {
       .accounts({
         worker: worker,
         workerAccount: workerAccount,
+        workerPayout: workerPayoutPda(workerAccount),
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -666,6 +678,8 @@ describe("silicium", () => {
         escrowAuth: escrowAuth,
         escrow: sharedEscrow,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(computeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -717,6 +731,8 @@ describe("silicium", () => {
         escrowAuth: escrowAuth,
         escrow: sharedEscrow,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(computeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -841,6 +857,8 @@ describe("silicium", () => {
         escrowAuth: escrowAuth,
         escrow: rejectedEscrow,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(computeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -863,6 +881,8 @@ describe("silicium", () => {
         escrowAuth: escrowAuth,
         escrow: rejectedEscrow,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(computeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -1023,6 +1043,8 @@ describe("silicium", () => {
         escrowAuth: escrowAuth,
         escrow: finalizeEscrow,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(computeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -1047,6 +1069,8 @@ describe("silicium", () => {
         escrowAuth: escrowAuth,
         escrow: finalizeEscrow,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(computeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -1094,6 +1118,8 @@ describe("silicium", () => {
         escrowAuth: escrowAuth,
         escrow: finalizeEscrow,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(computeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -1118,6 +1144,8 @@ describe("silicium", () => {
         escrowAuth: escrowAuth,
         escrow: finalizeEscrow,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(computeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -1163,6 +1191,8 @@ await program.methods
     escrowAuth: escrowAuth,
     escrow: finalizeEscrow,
     verifierToken: verifierToken1Claim,
+    verifierPayout: workerPayoutPda(verifierWorker1),
+    verifierPayoutToken: verifierToken1Claim,
     tokenProgram: TOKEN_PROGRAM_ID,
   })
   .signers([finalizeVerifier1])
@@ -1180,6 +1210,8 @@ await program.methods
     escrowAuth: escrowAuth,
     escrow: finalizeEscrow,
     verifierToken: verifierToken2Claim,
+    verifierPayout: workerPayoutPda(verifierWorker2),
+    verifierPayoutToken: verifierToken2Claim,
     tokenProgram: TOKEN_PROGRAM_ID,
   })
   .signers([finalizeVerifier2])
@@ -1213,6 +1245,8 @@ await program.methods
       escrowAuth: escrowAuth,
       escrow: finalizeEscrow,
       verifierToken: verifierToken1Claim,
+      verifierPayout: workerPayoutPda(verifierWorker1),
+      verifierPayoutToken: verifierToken1Claim,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .signers([finalizeVerifier1])
@@ -1230,6 +1264,8 @@ await program.methods
       escrowAuth: escrowAuth,
       escrow: finalizeEscrow,
       verifierToken: verifierToken2Claim,
+      verifierPayout: workerPayoutPda(verifierWorker2),
+      verifierPayoutToken: verifierToken2Claim,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .signers([finalizeVerifier2])
@@ -1557,6 +1593,8 @@ await program.methods
         escrowAuth: escrowAuthPda(job),
         escrow: escrow,
         verifierToken: verifier1.workerToken,
+        verifierPayout: workerPayoutPda(verifier1.workerAccount),
+        verifierPayoutToken: verifier1.workerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .signers([verifier1.keypair])
@@ -1769,6 +1807,8 @@ await program.methods
         escrowAuth: escrowAuth,
         escrow: escrow.publicKey,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(badVoteComputeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -1799,6 +1839,8 @@ await program.methods
         escrowAuth: escrowAuth,
         escrow: escrow.publicKey,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(goodVote1ComputeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -1829,6 +1871,8 @@ await program.methods
         escrowAuth: escrowAuth,
         escrow: escrow.publicKey,
         workerToken: sharedWorkerToken,
+        workerPayout: workerPayoutPda(goodVote2ComputeWorker),
+        workerPayoutToken: sharedWorkerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -2056,6 +2100,8 @@ await program.methods
         escrowAuth: escrowAuthPda(job),
         escrow: escrow,
         workerToken: computeWorker.workerToken,
+        workerPayout: workerPayoutPda(computeWorkerPda),
+        workerPayoutToken: computeWorker.workerToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -2110,6 +2156,8 @@ await program.methods
             escrowAuth: escrowAuthPda(job),
             escrow: escrow,
             workerToken: computeWorker.workerToken,
+            workerPayout: workerPayoutPda(computeWorkerPda),
+            workerPayoutToken: computeWorker.workerToken,
             tokenProgram: TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
           })
@@ -2155,6 +2203,8 @@ await program.methods
             escrowAuth: escrowAuthPda(job),
             escrow: escrow,
             workerToken: computeWorker.workerToken,
+            workerPayout: workerPayoutPda(computeWorker.workerAccount),
+            workerPayoutToken: computeWorker.workerToken,
             tokenProgram: TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
           })

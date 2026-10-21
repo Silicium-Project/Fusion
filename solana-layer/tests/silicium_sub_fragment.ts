@@ -66,6 +66,13 @@ function workerPda(worker: PublicKey): PublicKey {
   )[0];
 }
 
+function workerPayoutPda(workerAccount: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+    program.programId
+  )[0];
+}
+
 function stakeAuthPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("stake_auth"), workerAccount.toBuffer()],
@@ -116,12 +123,14 @@ function assertAnchorError(error: any, expectedCode: string) {
 
 async function registerWorker(workerKeypair: anchor.web3.Keypair): Promise<PublicKey> {
   const workerAccount = workerPda(workerKeypair.publicKey);
+  const workerPayout = workerPayoutPda(workerAccount);
 
   await program.methods
     .registerWorker()
     .accounts({
       worker: workerKeypair.publicKey,
       workerAccount,
+      workerPayout,
       systemProgram: SystemProgram.programId,
     })
     .signers([workerKeypair])
@@ -350,6 +359,8 @@ async function voteOnFragment(
       escrowAuth,
       escrow,
       workerToken,
+      workerPayout: workerPayoutPda(computeWorker),
+      workerPayoutToken: workerToken,
       tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
@@ -385,6 +396,8 @@ async function claimVerifierReward(
       escrowAuth,
       escrow,
       verifierToken,
+      verifierPayout: workerPayoutPda(verifierWorker),
+      verifierPayoutToken: verifierToken,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .signers([verifier])

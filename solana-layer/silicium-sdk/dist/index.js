@@ -10,16 +10,31 @@ var __createBinding = (this && this.__createBinding) || (Object.create ? (functi
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
 }));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SiliciumLayerSdk = exports.SOLANA_LAYER_LOCALNET_RPC_URL = exports.SOLANA_LAYER_DEVNET_RPC_URL = exports.SOLANA_LAYER_PROGRAM_ID = exports.SOLANA_LAYER_LOCALNET_PROGRAM_ID = exports.SOLANA_LAYER_DEVNET_PROGRAM_ID = void 0;
+exports.SiliciumLayerSdk = exports.DEVNET_FRAGMENT_QUORUM = exports.SIL_BASE_UNITS = exports.SIL_DECIMALS = exports.SOLANA_LAYER_LOCALNET_RPC_URL = exports.SOLANA_LAYER_DEVNET_RPC_URL = exports.SOLANA_LAYER_PROGRAM_ID = exports.SOLANA_LAYER_LOCALNET_PROGRAM_ID = exports.SOLANA_LAYER_DEVNET_PROGRAM_ID = void 0;
+exports.quoteDevnetSilFragments = quoteDevnetSilFragments;
 exports.getSolanaLayerProgramId = getSolanaLayerProgramId;
 exports.getSolanaLayerRpcUrl = getSolanaLayerRpcUrl;
 exports.createSolanaLayerConnection = createSolanaLayerConnection;
+const anchor = __importStar(require("@coral-xyz/anchor"));
 const web3_js_1 = require("@solana/web3.js");
 const spl_token_1 = require("@solana/spl-token");
+const buffer_1 = require("buffer");
 const events_1 = require("./events");
 const pdas_1 = require("./pdas");
 __exportStar(require("./pdas"), exports);
@@ -30,6 +45,27 @@ exports.SOLANA_LAYER_LOCALNET_PROGRAM_ID = new web3_js_1.PublicKey("A9bxX9KwPHFP
 exports.SOLANA_LAYER_PROGRAM_ID = exports.SOLANA_LAYER_DEVNET_PROGRAM_ID;
 exports.SOLANA_LAYER_DEVNET_RPC_URL = "https://api.devnet.solana.com";
 exports.SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
+/** Devnet SIL mint denomination: one SIL is 10^6 SPL base units. */
+exports.SIL_DECIMALS = 6;
+exports.SIL_BASE_UNITS = 1000000n;
+exports.DEVNET_FRAGMENT_QUORUM = 2;
+/** The selected test quote: 1 SIL compute + 1 SIL per accepted verifier. */
+function quoteDevnetSilFragments(expectedFragments) {
+    if (!Number.isSafeInteger(expectedFragments) || expectedFragments < 1 || expectedFragments > 1000) {
+        throw new Error("expectedFragments must be an integer from 1 through 1000");
+    }
+    const count = BigInt(expectedFragments);
+    const rewardPerFragment = exports.SIL_BASE_UNITS;
+    const verifierRewardPerVote = exports.SIL_BASE_UNITS;
+    const verifierRewardBudget = count * BigInt(exports.DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote;
+    return {
+        rewardPerFragment,
+        verifierRewardPerVote,
+        verifierRewardBudget,
+        fragmentQuorum: exports.DEVNET_FRAGMENT_QUORUM,
+        totalEscrow: count * (rewardPerFragment + BigInt(exports.DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote),
+    };
+}
 function getSolanaLayerProgramId(cluster = "devnet") {
     return cluster === "localnet" ? exports.SOLANA_LAYER_LOCALNET_PROGRAM_ID : exports.SOLANA_LAYER_DEVNET_PROGRAM_ID;
 }
@@ -47,7 +83,7 @@ function asHash32(value) {
     return arr;
 }
 function asBytes(value) {
-    return typeof value === "string" ? Buffer.from(value) : Buffer.from(value);
+    return typeof value === "string" ? buffer_1.Buffer.from(value) : buffer_1.Buffer.from(value);
 }
 function appendSigners(builder, signers) {
     return signers?.length ? builder.signers(signers) : builder;
@@ -56,8 +92,10 @@ class SiliciumLayerSdk {
     constructor(params) {
         this.pdas = {
             job: (client, jobId) => (0, pdas_1.jobPda)(this.programId, client, jobId),
+            jobStorage: (job) => (0, pdas_1.jobStoragePda)(this.programId, job),
             fragment: (job, fragmentIndex) => (0, pdas_1.fragmentPda)(this.programId, job, fragmentIndex),
             worker: (worker) => (0, pdas_1.workerPda)(this.programId, worker),
+            workerPayout: (workerAccount) => (0, pdas_1.workerPayoutPda)(this.programId, workerAccount),
             escrowAuth: (job) => (0, pdas_1.escrowAuthPda)(this.programId, job),
             stakeAuth: (workerAccount) => (0, pdas_1.stakeAuthPda)(this.programId, workerAccount),
             stakeVault: (worker) => (0, pdas_1.stakeVaultPda)(this.programId, worker),
@@ -91,15 +129,52 @@ class SiliciumLayerSdk {
     async registerWorker(params = {}) {
         const worker = params.worker ?? this.walletPubkey();
         const workerAccount = this.pdas.worker(worker);
+        const workerPayout = this.pdas.workerPayout(workerAccount);
         let builder = this.methods
             .registerWorker()
             .accounts({
             worker,
             workerAccount,
+            workerPayout,
             systemProgram: web3_js_1.SystemProgram.programId,
         });
         builder = appendSigners(builder, params.signers);
         return builder.rpc();
+    }
+    async registerWorkerPayout(params) {
+        const payoutWallet = params.payoutWallet ?? this.walletPubkey();
+        const workerAccount = this.pdas.worker(params.worker);
+        if (!payoutWallet.equals(this.walletPubkey())) {
+            throw new Error("The connected wallet must be the payout wallet signer.");
+        }
+        const selfPayout = payoutWallet.equals(params.worker);
+        const proofSignature = params.workerProofSignature;
+        if (!selfPayout && (!proofSignature || !params.pairingCode || !params.nodeId || !params.peerId)) {
+            throw new Error("A linked worker requires its signed account-pairing proof.");
+        }
+        const register = await this.methods
+            .registerWorkerPayout(params.pairingCode ?? "", params.nodeId ?? "", params.peerId ?? "")
+            .accounts({
+            payoutWallet,
+            worker: params.worker,
+            workerAccount,
+            workerPayout: this.pdas.workerPayout(workerAccount),
+            previousPayoutWallet: params.worker,
+            instructions: web3_js_1.SYSVAR_INSTRUCTIONS_PUBKEY,
+            systemProgram: web3_js_1.SystemProgram.programId,
+        })
+            .instruction();
+        const transaction = new anchor.web3.Transaction();
+        if (!selfPayout && proofSignature) {
+            const message = new TextEncoder().encode(`silicium-device-payout-v1\n${params.pairingCode}\n${params.nodeId}\n${params.peerId}\n${params.worker.toBase58()}\n${payoutWallet.toBase58()}`);
+            transaction.add(web3_js_1.Ed25519Program.createInstructionWithPublicKey({
+                publicKey: buffer_1.Buffer.from(params.worker.toBytes()),
+                message: buffer_1.Buffer.from(message),
+                signature: buffer_1.Buffer.from(proofSignature),
+            }));
+        }
+        transaction.add(register);
+        return this.provider.sendAndConfirm(transaction, []);
     }
     async stakeWorker(params) {
         const worker = params.worker ?? this.walletPubkey();
@@ -142,6 +217,22 @@ class SiliciumLayerSdk {
             .signers([params.escrow]);
         const signature = await builder.rpc();
         return { signature, job, escrowAuth };
+    }
+    async declareJobStorage(params) {
+        const client = params.client ?? this.walletPubkey();
+        const jobStorage = this.pdas.jobStorage(params.job);
+        const encryptionRefHash = params.encryptionRefHash ?? new Uint8Array(32);
+        let builder = this.methods
+            .declareJobStorage(asHash32(params.manifestHash), asHash32(params.inputRootHash), asHash32(params.storageRefHash), asHash32(encryptionRefHash))
+            .accounts({
+            client,
+            job: params.job,
+            jobStorage,
+            systemProgram: web3_js_1.SystemProgram.programId,
+        });
+        builder = appendSigners(builder, params.signers);
+        const signature = await builder.rpc();
+        return { signature, jobStorage };
     }
     async claimFragment(params) {
         const worker = params.worker ?? this.walletPubkey();
@@ -263,6 +354,13 @@ class SiliciumLayerSdk {
         const vote = this.pdas.vote(params.fragment, verifier, round);
         const roundResolution = this.pdas.roundResolution(params.fragment, round);
         const escrowAuth = this.pdas.escrowAuth(params.job);
+        const workerPayout = this.pdas.workerPayout(computeWorker);
+        const payoutRecord = await this.accounts.workerPayout.fetchNullable(workerPayout);
+        if (!payoutRecord)
+            throw new Error("Compute worker payout is not registered on-chain.");
+        const jobAccount = await this.accounts.job.fetch(params.job);
+        const workerPayoutToken = params.workerPayoutToken
+            ?? (0, spl_token_1.getAssociatedTokenAddressSync)(jobAccount.mint, payoutRecord.payoutWallet);
         let builder = this.methods
             .voteFragment(params.choice)
             .accounts({
@@ -276,6 +374,8 @@ class SiliciumLayerSdk {
             escrowAuth,
             escrow: params.escrow,
             workerToken: params.workerToken,
+            workerPayout,
+            workerPayoutToken,
             tokenProgram: spl_token_1.TOKEN_PROGRAM_ID,
             systemProgram: web3_js_1.SystemProgram.programId,
         });
@@ -293,6 +393,13 @@ class SiliciumLayerSdk {
         const vote = this.pdas.vote(params.fragment, verifier, round);
         const roundResolution = this.pdas.roundResolution(params.fragment, round);
         const escrowAuth = this.pdas.escrowAuth(params.job);
+        const workerPayout = this.pdas.workerPayout(verifierWorker);
+        const payoutRecord = await this.accounts.workerPayout.fetchNullable(workerPayout);
+        if (!payoutRecord)
+            throw new Error("Verifier payout is not registered on-chain.");
+        const jobAccount = await this.accounts.job.fetch(params.job);
+        const verifierPayoutToken = params.verifierPayoutToken
+            ?? (0, spl_token_1.getAssociatedTokenAddressSync)(jobAccount.mint, payoutRecord.payoutWallet);
         let builder = this.methods
             .claimVerifierReward()
             .accounts({
@@ -305,6 +412,8 @@ class SiliciumLayerSdk {
             escrowAuth,
             escrow: params.escrow,
             verifierToken: params.verifierToken,
+            verifierPayout: workerPayout,
+            verifierPayoutToken,
             tokenProgram: spl_token_1.TOKEN_PROGRAM_ID,
         });
         builder = appendSigners(builder, params.signers);
@@ -508,6 +617,10 @@ class SiliciumLayerSdk {
     }
     async fetchJob(job) {
         return this.accounts.job.fetch(job);
+    }
+    async fetchJobStorage(jobOrJobStorage, isJobStorageAccount = false) {
+        const account = isJobStorageAccount ? jobOrJobStorage : this.pdas.jobStorage(jobOrJobStorage);
+        return this.accounts.jobStorage.fetch(account);
     }
     async fetchFragment(fragment) {
         return this.accounts.fragment.fetch(fragment);

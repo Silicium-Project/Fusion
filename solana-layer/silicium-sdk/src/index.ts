@@ -1,12 +1,15 @@
 import * as anchor from "@coral-xyz/anchor";
 import {
   Connection,
+  Ed25519Program,
   PublicKey,
   SystemProgram,
+  SYSVAR_INSTRUCTIONS_PUBKEY,
   SYSVAR_RENT_PUBKEY,
   TransactionSignature,
 } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { getAssociatedTokenAddressSync, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { Buffer } from "buffer";
 
 import { SiliciumEventClient } from "./events";
 import {
@@ -27,6 +30,7 @@ import {
   treasuryStatePda,
   votePda,
   workerPda,
+  workerPayoutPda,
 } from "./pdas";
 import type {
   CancelJobParams,
@@ -47,6 +51,7 @@ import type {
   CreateSubFragmentParams,
   ReclaimFragmentParams,
   RegisterWorkerParams,
+  RegisterWorkerPayoutParams,
   RequestUnstakeParams,
   SlashVoteParams,
   StakeNetworkParams,
@@ -155,6 +160,7 @@ export class SiliciumLayerSdk {
     jobStorage: (job: PublicKey) => jobStoragePda(this.programId, job),
     fragment: (job: PublicKey, fragmentIndex: number) => fragmentPda(this.programId, job, fragmentIndex),
     worker: (worker: PublicKey) => workerPda(this.programId, worker),
+    workerPayout: (workerAccount: PublicKey) => workerPayoutPda(this.programId, workerAccount),
     escrowAuth: (job: PublicKey) => escrowAuthPda(this.programId, job),
     stakeAuth: (workerAccount: PublicKey) => stakeAuthPda(this.programId, workerAccount),
     stakeVault: (worker: PublicKey) => stakeVaultPda(this.programId, worker),
@@ -172,17 +178,57 @@ export class SiliciumLayerSdk {
   async registerWorker(params: RegisterWorkerParams = {}): Promise<TransactionSignature> {
     const worker = params.worker ?? this.walletPubkey();
     const workerAccount = this.pdas.worker(worker);
+    const workerPayout = this.pdas.workerPayout(workerAccount);
 
     let builder = this.methods
       .registerWorker()
       .accounts({
         worker,
         workerAccount,
+        workerPayout,
         systemProgram: SystemProgram.programId,
       });
 
     builder = appendSigners(builder, params.signers);
     return builder.rpc();
+  }
+
+  async registerWorkerPayout(params: RegisterWorkerPayoutParams): Promise<TransactionSignature> {
+    const payoutWallet = params.payoutWallet ?? this.walletPubkey();
+    const workerAccount = this.pdas.worker(params.worker);
+    if (!payoutWallet.equals(this.walletPubkey())) {
+      throw new Error("The connected wallet must be the payout wallet signer.");
+    }
+    const selfPayout = payoutWallet.equals(params.worker);
+    const proofSignature = params.workerProofSignature;
+    if (!selfPayout && (!proofSignature || !params.pairingCode || !params.nodeId || !params.peerId)) {
+      throw new Error("A linked worker requires its signed account-pairing proof.");
+    }
+    const register = await this.methods
+      .registerWorkerPayout(params.pairingCode ?? "", params.nodeId ?? "", params.peerId ?? "")
+      .accounts({
+        payoutWallet,
+        worker: params.worker,
+        workerAccount,
+        workerPayout: this.pdas.workerPayout(workerAccount),
+        previousPayoutWallet: params.worker,
+        instructions: SYSVAR_INSTRUCTIONS_PUBKEY,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+    const transaction = new anchor.web3.Transaction();
+    if (!selfPayout && proofSignature) {
+      const message = new TextEncoder().encode(
+        `silicium-device-payout-v1\n${params.pairingCode}\n${params.nodeId}\n${params.peerId}\n${params.worker.toBase58()}\n${payoutWallet.toBase58()}`,
+      );
+      transaction.add(Ed25519Program.createInstructionWithPublicKey({
+        publicKey: Buffer.from(params.worker.toBytes()),
+        message: Buffer.from(message),
+        signature: Buffer.from(proofSignature),
+      }));
+    }
+    transaction.add(register);
+    return this.provider.sendAndConfirm(transaction, []);
   }
 
   async stakeWorker(params: StakeWorkerParams): Promise<TransactionSignature> {
@@ -424,6 +470,12 @@ export class SiliciumLayerSdk {
     const vote = this.pdas.vote(params.fragment, verifier, round);
     const roundResolution = this.pdas.roundResolution(params.fragment, round);
     const escrowAuth = this.pdas.escrowAuth(params.job);
+    const workerPayout = this.pdas.workerPayout(computeWorker);
+    const payoutRecord = await this.accounts.workerPayout.fetchNullable(workerPayout);
+    if (!payoutRecord) throw new Error("Compute worker payout is not registered on-chain.");
+    const jobAccount = await this.accounts.job.fetch(params.job);
+    const workerPayoutToken = params.workerPayoutToken
+      ?? getAssociatedTokenAddressSync(jobAccount.mint, payoutRecord.payoutWallet);
 
     let builder = this.methods
       .voteFragment(params.choice)
@@ -438,6 +490,8 @@ export class SiliciumLayerSdk {
         escrowAuth,
         escrow: params.escrow,
         workerToken: params.workerToken,
+        workerPayout,
+        workerPayoutToken,
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       });
@@ -457,6 +511,12 @@ export class SiliciumLayerSdk {
     const vote = this.pdas.vote(params.fragment, verifier, round);
     const roundResolution = this.pdas.roundResolution(params.fragment, round);
     const escrowAuth = this.pdas.escrowAuth(params.job);
+    const workerPayout = this.pdas.workerPayout(verifierWorker);
+    const payoutRecord = await this.accounts.workerPayout.fetchNullable(workerPayout);
+    if (!payoutRecord) throw new Error("Verifier payout is not registered on-chain.");
+    const jobAccount = await this.accounts.job.fetch(params.job);
+    const verifierPayoutToken = params.verifierPayoutToken
+      ?? getAssociatedTokenAddressSync(jobAccount.mint, payoutRecord.payoutWallet);
 
     let builder = this.methods
       .claimVerifierReward()
@@ -470,6 +530,8 @@ export class SiliciumLayerSdk {
         escrowAuth,
         escrow: params.escrow,
         verifierToken: params.verifierToken,
+        verifierPayout: workerPayout,
+        verifierPayoutToken,
         tokenProgram: TOKEN_PROGRAM_ID,
       });
 

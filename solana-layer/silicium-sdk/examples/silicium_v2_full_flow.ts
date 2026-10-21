@@ -99,6 +99,13 @@ function workerPda(worker: PublicKey): PublicKey {
   )[0];
 }
 
+function workerPayoutPda(workerAccount: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+    programAny.programId,
+  )[0];
+}
+
 function stakeAuthPda(workerAccount: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("stake_auth"), workerAccount.toBuffer()],
@@ -152,6 +159,10 @@ async function registerWorker(worker: anchor.web3.Keypair): Promise<PublicKey> {
     .accounts({
       worker: worker.publicKey,
       workerAccount,
+      workerPayout: PublicKey.findProgramAddressSync(
+        [Buffer.from("worker_payout"), workerAccount.toBuffer()],
+        programAny.programId,
+      )[0],
       systemProgram: SystemProgram.programId,
     })
     .signers([worker])
@@ -392,6 +403,8 @@ async function voteOnFragment(params: {
       escrowAuth,
       escrow: params.escrow,
       workerToken: params.workerToken,
+      workerPayout: workerPayoutPda(computeWorker),
+      workerPayoutToken: params.workerToken,
       tokenProgram: TOKEN_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     })
@@ -465,6 +478,8 @@ async function claimVerifierReward(params: {
       escrowAuth,
       escrow: params.escrow,
       verifierToken: params.verifier.workerToken,
+      verifierPayout: workerPayoutPda(params.verifier.workerAccount),
+      verifierPayoutToken: params.verifier.workerToken,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .signers([params.verifier.keypair])

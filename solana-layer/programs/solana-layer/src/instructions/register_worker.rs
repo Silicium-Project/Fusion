@@ -5,6 +5,7 @@ use crate::{
     state::{
         reputation::init_bayesian_reputation,
         worker::{Worker, WorkerStatus, ROLE_AUTO, ROLE_COMPUTE, ROLE_VERIFY},
+        worker_payout::WorkerPayout,
     },
 };
 
@@ -21,6 +22,15 @@ pub struct RegisterWorker<'info> {
         bump
     )]
     pub worker_account: Account<'info, Worker>,
+
+    #[account(
+        init_if_needed,
+        payer = worker,
+        space = WorkerPayout::SPACE,
+        seeds = [b"worker_payout", worker_account.key().as_ref()],
+        bump
+    )]
+    pub worker_payout: Account<'info, WorkerPayout>,
 
     pub system_program: Program<'info, System>,
 }
@@ -48,6 +58,15 @@ pub fn handler(ctx: Context<RegisterWorker>) -> Result<()> {
     w.bump = ctx.bumps.worker_account;
 
     init_bayesian_reputation(w);
+
+    let payout = &mut ctx.accounts.worker_payout;
+    if payout.worker == Pubkey::default() {
+        payout.worker = worker_key;
+        payout.payout_wallet = worker_key;
+        payout.bump = ctx.bumps.worker_payout;
+    } else {
+        require_keys_eq!(payout.worker, worker_key, crate::error::SiliciumError::InvalidParams);
+    }
 
     emit!(WorkerRegistered {
         worker: worker_key,

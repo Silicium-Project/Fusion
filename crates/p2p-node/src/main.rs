@@ -422,7 +422,7 @@ fn handle_device_link_cli() -> Result<bool, Box<dyn std::error::Error>> {
     let data_dir = std::path::PathBuf::from(std::env::var("SILICIUM_DATA_DIR")?);
     let local_key = load_or_generate_identity(&data_dir)?;
     let peer_id = PeerId::from(local_key.public()).to_string();
-    let (payload, solana_wallet, solana_signature) = match std::env::var("SILICIUM_SOLANA_WALLET_PATH") {
+    let (payload, solana_wallet, solana_signature, payout_wallet) = match std::env::var("SILICIUM_SOLANA_WALLET_PATH") {
         Ok(wallet_path) if !wallet_path.trim().is_empty() => {
             let secret: Vec<u8> = serde_json::from_slice(&std::fs::read(wallet_path)?)?;
             let keypair: [u8; 64] = secret
@@ -430,16 +430,26 @@ fn handle_device_link_cli() -> Result<bool, Box<dyn std::error::Error>> {
                 .map_err(|_| "solana wallet must contain exactly 64 bytes")?;
             let wallet_key = SigningKey::from_keypair_bytes(&keypair)?;
             let wallet = bs58::encode(wallet_key.verifying_key().to_bytes()).into_string();
-            let message = format!("silicium-device-link-v2\n{code}\n{node_id}\n{peer_id}\n{wallet}");
+            let payout_wallet = std::env::var("SILICIUM_DEVICE_LINK_PAYOUT_WALLET")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty());
+            let message = if let Some(payout_wallet) = payout_wallet.as_ref() {
+                format!("silicium-device-payout-v1\n{code}\n{node_id}\n{peer_id}\n{wallet}\n{payout_wallet}")
+            } else {
+                format!("silicium-device-link-v2\n{code}\n{node_id}\n{peer_id}\n{wallet}")
+            };
             let wallet_signature = wallet_key.sign(message.as_bytes());
             (
                 message,
                 Some(wallet),
                 Some(wallet_signature.to_bytes().to_vec()),
+                payout_wallet,
             )
         }
         _ => (
             format!("silicium-device-link-v1\n{code}\n{node_id}\n{peer_id}"),
+            None,
             None,
             None,
         ),
@@ -458,6 +468,9 @@ fn handle_device_link_cli() -> Result<bool, Box<dyn std::error::Error>> {
         proof["solanaSignature"] = serde_json::Value::String(
             wallet_signature.iter().map(|byte| format!("{byte:02x}")).collect(),
         );
+    }
+    if let Some(payout_wallet) = payout_wallet {
+        proof["payoutWallet"] = serde_json::Value::String(payout_wallet);
     }
     println!("{}", proof);
     Ok(true)

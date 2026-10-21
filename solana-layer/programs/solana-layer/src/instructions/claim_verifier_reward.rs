@@ -11,6 +11,7 @@ use crate::{
         job::{Job, JobStatus},
         reputation::{update_verify_reputation, ReputationEvent},
         worker::Worker,
+        worker_payout::WorkerPayout,
     },
 };
 
@@ -93,6 +94,20 @@ pub struct ClaimVerifierReward<'info> {
     )]
     pub verifier_token: Box<Account<'info, TokenAccount>>,
 
+    #[account(
+        seeds = [b"worker_payout", verifier_worker.key().as_ref()],
+        bump = verifier_payout.bump,
+        constraint = verifier_payout.worker == verifier.key() @ SiliciumError::NotAuthorized
+    )]
+    pub verifier_payout: Box<Account<'info, WorkerPayout>>,
+
+    #[account(
+        mut,
+        constraint = verifier_payout_token.owner == verifier_payout.payout_wallet @ SiliciumError::NotAuthorized,
+        constraint = verifier_payout_token.mint == job.mint @ SiliciumError::InvalidParams
+    )]
+    pub verifier_payout_token: Box<Account<'info, TokenAccount>>,
+
     pub token_program: Program<'info, Token>,
 }
 
@@ -144,11 +159,13 @@ pub fn handler(ctx: Context<ClaimVerifierReward>) -> Result<()> {
     let seeds: &[&[u8]] = &[b"escrow_auth", job_key.as_ref(), &[bump]];
     let signer_seeds: &[&[&[u8]]] = &[seeds];
 
+    let verifier_reward_account = ctx.accounts.verifier_payout_token.to_account_info();
+
     let cpi_ctx = CpiContext::new_with_signer(
         ctx.accounts.token_program.to_account_info(),
         Transfer {
             from: ctx.accounts.escrow.to_account_info(),
-            to: ctx.accounts.verifier_token.to_account_info(),
+            to: verifier_reward_account,
             authority: ctx.accounts.escrow_auth.to_account_info(),
         },
         signer_seeds,
