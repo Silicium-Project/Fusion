@@ -3,6 +3,7 @@
     <header class="app-page-head"><div><span class="eyebrow">{{ t('network.eyebrow') }}</span><h1 class="page-title">{{ t('nav.networkHealth') }}</h1><p class="page-intro">{{ t('network.intro') }}</p></div><div class="cluster"><UiStatusBadge v-if="emitterNodeId" status="operational" :label="t('network.emitter', { id: compactIdentifier(emitterNodeId, 14, 6) })" /><UiButton to="/nodes" variant="secondary" icon="nodes">{{ t('network.seeMachines') }}</UiButton><UiButton variant="secondary" icon="refresh" :loading="loading" @click="loadNetwork(true)">{{ t('common.refresh') }}</UiButton></div></header>
     <UiNotice v-if="error" tone="warning">{{ error }}</UiNotice>
     <LiveNetworkMap :total-nodes="onlinePeers.length" :active-nodes="onlineCount" :active-workloads="activeCount" :role-groups="onlineRoleGroups" :network-metrics="networkMetrics" :last-updated-at="lastUpdatedAt" :stale="Boolean(error)" />
+    <UiNotice v-if="queueNotice" tone="warning">{{ queueNotice }}</UiNotice>
     <section class="network-flow surface">
       <div class="network-flow__copy"><span class="eyebrow">{{ t('network.readKicker') }}</span><h2>{{ t('network.readTitle') }}</h2><p>{{ t('network.readText') }}</p></div>
       <div class="network-flow__diagram"><div v-for="(stage,index) in flow" :key="index"><span><UiIcon :name="stage.icon"/></span><strong>{{ stage.title }}</strong><small>{{ stage.detail }}</small><UiIcon v-if="index < flow.length - 1" name="arrow" class="network-flow__arrow"/></div></div>
@@ -28,8 +29,20 @@ import { compactJobError } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const { t, tl } = useI18n();
 const network = useNetwork();
-const { onlinePeers, onlineRoleGroups, outdatedCount, onlineCount, loading, error, workloads: networkWorkloads, emitterNodeId: payloadEmitterNodeId, networkMetrics, lastUpdatedAt, loadNetwork } = network;
+const { onlinePeers, onlineRoleGroups, outdatedCount, onlineCount, loading, error, workloads: networkWorkloads, emitterNodeId: payloadEmitterNodeId, networkMetrics, lastUpdatedAt, tasksPayload, loadNetwork } = network;
 const workloads = computed(() => networkWorkloads.value.filter(item => Number(item.active || 0) > 0));
+const queueNotice = computed(() => {
+  const queue = tasksPayload.value.queue;
+  const count = Number(queue?.queued || 0);
+  if (!count) return '';
+  const values = { count, online: Number(queue?.online_compute_workers || 0), compatible: Number(queue?.compatible_workers || 0), workloads: (queue?.workloads || []).join(', ') || '—', seconds: Number(queue?.oldest_wait_seconds || 0) };
+  switch (queue?.reason) {
+    case 'no_compute_workers': return t('network.queueNoWorkers', values);
+    case 'no_compatible_workers': return t('network.queueNoCompatible', values);
+    case 'workers_not_claiming': return t('network.queueNotClaiming', values);
+    default: return t('network.queueUnknown', values);
+  }
+});
 const emitterNodeId = computed(() => payloadEmitterNodeId.value || workloads.value.find(item => item.emitter_node_id)?.emitter_node_id || '');
 const activeCount = computed(() => workloads.value.length);
 function taskFailure(task: NetworkSubtask): string { return String(task.failureDetail || task.failure_detail || task.error || task.error_message || task.traceback || task.error_traceback || ''); }

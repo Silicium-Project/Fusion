@@ -14,12 +14,39 @@ export function useWallet() {
   const config = useRuntimeConfig();
   const connecting = ref(false);
   const balance = ref<number | null>(null);
+  const silBalance = ref<number | null>(null);
   const error = ref('');
 
   async function balanceFor(address: string): Promise<number> {
     const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import('@solana/web3.js');
     const connection = new Connection(String(config.public.solanaRpc), 'confirmed');
     return (await connection.getBalance(new PublicKey(address))) / LAMPORTS_PER_SOL;
+  }
+
+  async function silBalanceFor(address: string): Promise<number | null> {
+    const mintAddress = String(config.public.silMint || '').trim();
+    if (!mintAddress) return null;
+    const { Connection, PublicKey } = await import('@solana/web3.js');
+    const connection = new Connection(String(config.public.solanaRpc), 'confirmed');
+    const accounts = await connection.getParsedTokenAccountsByOwner(
+      new PublicKey(address),
+      { mint: new PublicKey(mintAddress) },
+      'confirmed',
+    );
+    let rawAmount = 0n;
+    let decimals = 6;
+    for (const account of accounts.value) {
+      const tokenAmount = account.account.data.parsed.info.tokenAmount;
+      rawAmount += BigInt(tokenAmount.amount || '0');
+      decimals = Number(tokenAmount.decimals ?? decimals);
+    }
+    return Number(rawAmount) / (10 ** decimals);
+  }
+
+  async function refreshBalances(address: string): Promise<void> {
+    const [sol, sil] = await Promise.allSettled([balanceFor(address), silBalanceFor(address)]);
+    balance.value = sol.status === 'fulfilled' ? sol.value : null;
+    silBalance.value = sil.status === 'fulfilled' ? sil.value : null;
   }
 
   async function connect(): Promise<string> {
@@ -42,7 +69,7 @@ export function useWallet() {
         method: 'POST',
         body: { walletAddress, challenge: challenge.challenge, signature: bytesToBase64(signed.signature) },
       });
-      balance.value = await balanceFor(walletAddress).catch(() => null);
+      await refreshBalances(walletAddress);
       await loadUser(true);
       return walletAddress;
     } catch (failure) {
@@ -57,8 +84,8 @@ export function useWallet() {
 
   async function loadBalance(address?: string): Promise<void> {
     if (!address || !import.meta.client) return;
-    balance.value = await balanceFor(address).catch(() => null);
+    await refreshBalances(address);
   }
 
-  return { connecting, balance, error, connect, loadBalance };
+  return { connecting, balance, silBalance, error, connect, loadBalance };
 }

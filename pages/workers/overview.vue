@@ -22,6 +22,7 @@
         <div><dt>{{ t('observability.worker.accountRole') }}</dt><dd>{{ user?.role || t('profile.defaultRole') }}</dd></div>
         <div><dt>{{ t('observability.worker.accountSince') }}</dt><dd>{{ formatDate(user?.createdAt, false) }}</dd></div>
         <div><dt>{{ t('observability.worker.accountWallet') }}</dt><dd class="mono">{{ user?.walletAddress || '—' }}</dd></div>
+        <div><dt>{{ t('observability.worker.accountSilBalance') }}</dt><dd>{{ silBalance === null ? '—' : `${silBalance.toFixed(2)} SIL` }}</dd></div>
       </dl>
     </section>
 
@@ -34,10 +35,15 @@
         </div>
         <div class="worker-section-head__actions">
           <UiButton variant="secondary" icon="refresh" :loading="devicesLoading" @click="loadDevices()">{{ t('observability.worker.refreshDevices') }}</UiButton>
-          <UiButton icon="plus" :loading="pairingLoading" @click="generatePairingCode">{{ t('observability.worker.generateCode') }}</UiButton>
+          <UiButton v-if="isDevChannel" variant="secondary" icon="nodes" :loading="bulkPairingLoading" :disabled="!user?.walletAddress" @click="generateMiniworkerCodes">{{ t('observability.worker.linkMiniworkers') }}</UiButton>
+          <UiButton icon="plus" :loading="pairingLoading" :disabled="!user?.walletAddress" @click="generatePairingCode">{{ t('observability.worker.generateCode') }}</UiButton>
         </div>
       </div>
 
+      <p v-if="!user?.walletAddress" class="worker-wallet-required">
+        {{ t('observability.worker.walletRequired') }}
+        <NuxtLink to="/profile">{{ t('observability.worker.openProfile') }}</NuxtLink>
+      </p>
       <UiNotice v-if="deviceError" tone="danger">{{ deviceError }}</UiNotice>
 
       <div v-if="pairingCode" class="worker-pairing-code">
@@ -51,6 +57,16 @@
         </div>
         <small>{{ t('observability.worker.codeExpires', { time: formatDate(pairingExpiresAt) }) }}</small>
       </div>
+      <div v-if="isDevChannel && miniworkerCodes.length" class="worker-bulk-pairing">
+        <div class="worker-bulk-pairing__head">
+          <div><strong>{{ t('observability.worker.miniworkerCodesTitle') }}</strong><p>{{ t('observability.worker.miniworkerCodesText', { count: miniworkerCodes.length }) }}</p></div>
+          <UiButton variant="secondary" icon="download" @click="downloadMiniworkerCodes">{{ t('observability.worker.downloadCodes') }}</UiButton>
+        </div>
+        <p class="worker-bulk-pairing__command">{{ t('observability.worker.miniworkerPairingCommand') }}<br><code>sudo bash /opt/silicium-dev/deploy/linux/manage-dev-miniworkers.sh pair /tmp/silicium-miniworker-pairing.json</code></p>
+        <div class="worker-bulk-pairing__list" role="list">
+          <div v-for="item in miniworkerCodes" :key="item.nodeId" role="listitem"><strong>{{ item.nodeId }}</strong><code>{{ item.code }}</code><small>{{ formatDate(item.expiresAt) }}</small></div>
+        </div>
+      </div>
       <UiNotice v-if="pairingMessage" :tone="pairingMessageTone">{{ pairingMessage }}</UiNotice>
 
       <div v-if="devices.length" class="worker-device-list" role="list" :aria-label="t('observability.worker.devicesTitle')">
@@ -61,13 +77,15 @@
               <UiStatusBadge :status="deviceAvailability(device)" />
             </span>
             <span class="worker-device__meta">{{ t('observability.worker.linkedAt', { date: formatDate(device.linkedAt) }) }}</span>
+            <span v-if="device.solanaWallet" class="worker-device__wallet mono">{{ t('observability.worker.workerWallet') }} · {{ compactIdentifier(device.solanaWallet, 9, 7) }}</span>
+            <span v-if="device.payoutWallet" class="worker-device__wallet mono">{{ t('observability.worker.rewardWallet') }} · {{ compactIdentifier(device.payoutWallet, 9, 7) }}</span>
             <span class="worker-device__peer mono">{{ compactIdentifier(device.peerId, 12, 8) }}</span>
           </button>
           <UiButton variant="ghost" size="small" icon="close" :loading="unlinkingId === device.id" :aria-label="t('observability.worker.unlinkDevice', { node: device.nodeId })" @click="unlinkDevice(device)">{{ t('observability.worker.unlink') }}</UiButton>
         </article>
       </div>
       <UiEmptyState v-else-if="!devicesLoading && !deviceError" :title="t('observability.worker.noDevicesTitle')" :description="t('observability.worker.noDevicesText')" icon="nodes">
-        <UiButton icon="plus" :loading="pairingLoading" @click="generatePairingCode">{{ t('observability.worker.generateCode') }}</UiButton>
+        <UiButton icon="plus" :loading="pairingLoading" :disabled="!user?.walletAddress" @click="generatePairingCode">{{ t('observability.worker.generateCode') }}</UiButton>
       </UiEmptyState>
     </section>
 
@@ -131,14 +149,20 @@ interface UserDevice {
   userId: number;
   nodeId: string;
   peerId: string;
+  solanaWallet?: string;
+  payoutWallet?: string;
   linkedAt: string;
 }
 
 interface PairingCodeResponse { code: string; expiresAt: string }
+interface MiniworkerPairingCode { nodeId: string; code: string; expiresAt: string }
 
 const { t } = useI18n();
 const route = useRoute();
+const runtimeConfig = useRuntimeConfig();
+const isDevChannel = computed(() => runtimeConfig.public.releaseChannel === 'dev');
 const { user, displayName, loadUser, authorizedFetch } = useSession();
+const { silBalance, loadBalance: loadWalletBalance } = useWallet();
 const { peers, loading, error, lastUpdatedAt, loadNetwork } = useNetwork();
 const devices = ref<UserDevice[]>([]);
 const devicesLoading = ref(false);
@@ -150,6 +174,8 @@ const pairingExpiresAt = ref('');
 const pairingCopied = ref(false);
 const pairingMessage = ref('');
 const pairingMessageTone = ref<'success' | 'warning' | 'danger'>('success');
+const bulkPairingLoading = ref(false);
+const miniworkerCodes = ref<MiniworkerPairingCode[]>([]);
 const unlinkingId = ref<number | null>(null);
 const selectedId = ref('');
 const selectedDevice = computed(() => devices.value.find(device => device.nodeId === selectedId.value) || null);
@@ -259,6 +285,38 @@ async function generatePairingCode(): Promise<void> {
   }
 }
 
+async function generateMiniworkerCodes(): Promise<void> {
+  bulkPairingLoading.value = true;
+  miniworkerCodes.value = [];
+  pairingMessage.value = '';
+  const nodeIds = Array.from({ length: 20 }, (_, index) => `miniworker-${String(index + 1).padStart(2, '0')}`);
+  try {
+    const response = await authorizedFetch<{ items: MiniworkerPairingCode[] }>('/user/devices/pairing-codes', {
+      method: 'POST',
+      body: { nodeIds },
+    });
+    miniworkerCodes.value = response.items || [];
+    pairingMessageTone.value = 'success';
+    pairingMessage.value = t('observability.worker.miniworkerCodesReady', { count: miniworkerCodes.value.length });
+  } catch (failure) {
+    pairingMessageTone.value = 'danger';
+    pairingMessage.value = apiMessage(failure, t('observability.worker.pairingFailed'));
+  } finally {
+    bulkPairingLoading.value = false;
+  }
+}
+
+function downloadMiniworkerCodes(): void {
+  if (!miniworkerCodes.value.length) return;
+  const payload = JSON.stringify({ items: miniworkerCodes.value }, null, 2);
+  const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'silicium-miniworker-pairing.json';
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 async function copyPairingCode(): Promise<void> {
   try {
     await navigator.clipboard.writeText(pairingCode.value);
@@ -299,6 +357,7 @@ watch([selectedId, lastUpdatedAt], () => {
 
 let timer: ReturnType<typeof setInterval> | undefined;
 let devicesTimer: ReturnType<typeof setInterval> | undefined;
+let walletTimer: ReturnType<typeof setInterval> | undefined;
 let disposed = false;
 async function refreshNetwork(): Promise<void> {
   if (!loading.value) await loadNetwork(true).catch(() => undefined);
@@ -306,6 +365,7 @@ async function refreshNetwork(): Promise<void> {
 
 onMounted(async () => {
   await Promise.all([loadUser().catch(() => undefined), loadDevices(), refreshNetwork()]);
+  await loadWalletBalance(user.value?.walletAddress);
   if (disposed) return;
   timer = setInterval(() => {
     if (document.visibilityState !== 'visible') return;
@@ -314,12 +374,16 @@ onMounted(async () => {
   devicesTimer = setInterval(() => {
     if (document.visibilityState === 'visible') loadDevices(true);
   }, 10_000);
+  walletTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') loadWalletBalance(user.value?.walletAddress);
+  }, 30_000);
 });
 
 onBeforeUnmount(() => {
   disposed = true;
   if (timer) clearInterval(timer);
   if (devicesTimer) clearInterval(devicesTimer);
+  if (walletTimer) clearInterval(walletTimer);
 });
 
 useSeoMeta({ title: () => t('observability.worker.nav') + ' — Silicium' });
@@ -332,7 +396,7 @@ useSeoMeta({ title: () => t('observability.worker.nav') + ' — Silicium' });
 .worker-account__avatar{display:grid;width:3.5rem;height:3.5rem;flex:0 0 auto;place-items:center;border:1px solid var(--glass-edge);border-radius:1.1rem;background:linear-gradient(145deg,rgba(255,255,255,.9),var(--mint-100));box-shadow:var(--glass-inset),var(--shadow-xs);color:var(--mint-700);font-size:1.2rem;font-weight:650}
 .worker-account__identity h2,.worker-section-head h2{margin:.2rem 0;font-size:1.25rem;line-height:1.35;font-weight:620;letter-spacing:-.025em}
 .worker-account__identity p,.worker-section-head p{margin:.3rem 0 0;color:var(--ink-600);font-size:1rem;line-height:1.6;overflow-wrap:anywhere}
-.worker-account__facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin:0}
+.worker-account__facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1rem;margin:0}
 .worker-account__facts>div{min-width:0;padding-left:1rem;border-left:1px solid var(--border)}
 .worker-account__facts dt{color:var(--ink-600);font-size:1rem}
 .worker-account__facts dd{margin:.4rem 0 0;color:var(--ink-950);font-size:1rem;font-weight:550;line-height:1.5;overflow-wrap:anywhere}
@@ -355,6 +419,9 @@ useSeoMeta({ title: () => t('observability.worker.nav') + ' — Silicium' });
 .worker-device__heading strong{min-width:0;font-size:1rem;font-weight:550;overflow-wrap:anywhere}
 .worker-device__meta,.worker-device__peer{color:var(--ink-600);font-size:.95rem;line-height:1.5}
 .worker-device__peer{overflow-wrap:anywhere}
+.worker-device__wallet{color:var(--ink-600);font-size:.88rem;line-height:1.5;overflow-wrap:anywhere}
+.worker-wallet-required{margin:0;padding:.9rem 1rem;border:1px solid var(--border);border-radius:.8rem;color:var(--ink-700);font-size:1rem;line-height:1.6}
+.worker-wallet-required a{color:var(--mint-700);font-weight:650;text-decoration:underline;text-underline-offset:.2em}
 .worker-devices :deep(.empty-state h3){font-size:1.2rem}
 .worker-summary{display:grid;grid-template-columns:minmax(180px,.75fr) minmax(0,2fr);align-items:center;gap:2rem;padding:1.7rem}.worker-summary__state{display:grid;justify-items:start;min-width:0;gap:.75rem}.worker-summary__state>strong{max-width:100%;overflow-wrap:anywhere;font-size:1rem;font-weight:500}.worker-summary__state>span{font-size:.9375rem;line-height:1.6;color:var(--ink-600)}.worker-summary dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr));gap:1.5rem 1rem;margin:0}.worker-summary dl>div{min-width:0}.worker-summary dt{color:var(--ink-600);font-size:1rem;line-height:1.5}.worker-summary dd{margin:.65rem 0 0;font:500 clamp(1.5rem,2.2vw,2.2rem)/1.2 var(--font-mono);color:var(--ink-950)}
 .worker-chart{padding:1.7rem}.worker-chart__scope{margin:1.3rem 0 0;padding-top:1rem;border-top:1px solid var(--border);font-size:.9375rem;line-height:1.7;color:var(--ink-600)}.worker-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.5rem;align-items:start}.worker-facts{margin:0}.worker-facts>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,8rem),1fr));align-items:baseline;gap:.7rem 1.5rem;padding:.9rem 0;border-bottom:1px solid var(--border);font-size:1rem;line-height:1.6}.worker-facts>div:first-child{padding-top:0}.worker-facts>div:last-child{border-bottom:0}.worker-facts dt{overflow-wrap:anywhere;color:var(--ink-600)}.worker-facts dd{margin:0;text-align:right;overflow-wrap:anywhere;color:var(--ink-950);font-weight:500}.worker-card-note{margin:1.2rem 0 0;padding-top:1rem;border-top:1px solid var(--border);color:var(--ink-600);font-size:.9375rem;line-height:1.7}
@@ -363,4 +430,5 @@ useSeoMeta({ title: () => t('observability.worker.nav') + ' — Silicium' });
 @media(max-width:850px){.worker-device-list{grid-template-columns:1fr}.worker-summary{grid-template-columns:1fr}.worker-summary__state{grid-template-columns:auto minmax(0,1fr);align-items:center}.worker-summary__state>span{grid-column:1/-1}.worker-summary dl>div:first-child{padding-left:0;border:0}}
 @media(max-width:760px){.worker-detail-grid{grid-template-columns:1fr}.worker-summary{padding:1.3rem}.worker-summary dl{grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr));gap:1.5rem 1rem}.worker-chart{padding:1.25rem}.worker-account,.worker-devices{padding:1.25rem}.worker-account__facts{grid-template-columns:1fr;gap:.8rem}.worker-account__facts>div{padding:.8rem 0 0;border-top:1px solid var(--border);border-left:0}.worker-account__facts>div:first-child{padding-top:0;border-top:0}.worker-pairing-code__row{align-items:stretch;flex-direction:column}.worker-pairing-code__row .ui-button{align-self:flex-start}}
 @media(max-width:400px){.worker-summary__state{grid-template-columns:1fr}.worker-summary__state>strong{font-size:.9375rem}.worker-overview__footer{align-items:start;flex-direction:column}.worker-facts>div{grid-template-columns:repeat(auto-fit,minmax(min(100%,7rem),1fr));gap:.6rem}}
+.worker-bulk-pairing{display:grid;gap:.8rem;margin-top:1rem;padding:1rem;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-soft)}.worker-bulk-pairing__head{display:flex;align-items:center;justify-content:space-between;gap:1rem}.worker-bulk-pairing__head p{margin:.25rem 0 0;color:var(--ink-600);font-size:1rem;line-height:1.5}.worker-bulk-pairing__command{margin:0;color:var(--ink-700);font-size:.95rem;line-height:1.7;overflow-wrap:anywhere}.worker-bulk-pairing__command code{display:inline-block;margin-top:.25rem;padding:.3rem .45rem;border:1px solid var(--border);border-radius:.35rem;background:white;color:var(--ink-900);font-size:.88rem}.worker-bulk-pairing__list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,25rem),1fr));gap:.5rem;max-height:20rem;overflow:auto}.worker-bulk-pairing__list>div{display:grid;grid-template-columns:minmax(8rem,.7fr) minmax(0,1.3fr);gap:.35rem .7rem;padding:.65rem;border:1px solid var(--border);border-radius:.55rem;background:white}.worker-bulk-pairing__list strong{font-size:.9375rem}.worker-bulk-pairing__list code{overflow-wrap:anywhere;color:var(--ink-800);font-size:.875rem}.worker-bulk-pairing__list small{grid-column:1/-1;color:var(--ink-500);font-size:.875rem}@media(max-width:620px){.worker-bulk-pairing__head{align-items:flex-start;flex-direction:column}.worker-bulk-pairing__head :deep(.ui-button){width:100%}}
 </style>
