@@ -22,6 +22,16 @@ export function publishedCount(value: unknown): number | null {
   return Array.isArray(value) ? value.length : null;
 }
 
+/** Only waiting or retryable tasks belong in the queue count. */
+export function pendingTaskCount(value: unknown): number | null {
+  if (!Array.isArray(value)) return null;
+  return value.filter((task) => {
+    if (!task || typeof task !== 'object' || Array.isArray(task)) return false;
+    const status = String((task as Record<string, unknown>).status || '').trim().toLowerCase();
+    return ['queued', 'proposed', 'retrying'].includes(status);
+  }).length;
+}
+
 export interface TelemetrySample {
   at: number;
   cpu: number | null;

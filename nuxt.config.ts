@@ -15,6 +15,7 @@ export default defineNuxtConfig({
       releaseBuild: process.env.NUXT_PUBLIC_RELEASE_BUILD || 'local',
       solanaRpc: process.env.NUXT_PUBLIC_SOLANA_RPC || 'https://api.devnet.solana.com',
       silMint: process.env.NUXT_PUBLIC_SIL_MINT || '',
+      solanaPaymentsEnabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.NUXT_PUBLIC_SOLANA_PAYMENTS_ENABLED || '').trim().toLowerCase()),
       updateManifestUrl: process.env.NUXT_PUBLIC_UPDATE_MANIFEST_URL || '/downloads/update-manifest.json',
       statusRefreshSeconds: process.env.NUXT_PUBLIC_STATUS_REFRESH_SECONDS || '30',
       nodeAppWindowsUrl: directDownloadUrl(process.env.NUXT_PUBLIC_NODE_APP_WINDOWS_URL, '/downloads/silicium-node-windows.exe'),

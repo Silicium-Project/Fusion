@@ -66,7 +66,8 @@
         <p class="worker-bulk-pairing__progress">{{ t('observability.worker.miniworkerNetworkProgress', { online: miniworkerOnlineCount, total: 20 }) }}</p>
         <p v-if="missingMiniworkerIds.length" class="worker-bulk-pairing__missing">{{ t('observability.worker.miniworkerMissing', { nodes: missingMiniworkerIds.join(', ') }) }}</p>
         <p class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutProofProgress', { ready: payoutProofDeviceCount, total: 20 }) }}</p>
-        <UiButton v-if="payoutProofDeviceCount" variant="secondary" icon="wallet" :loading="payoutRegisterLoading" :disabled="!user?.walletAddress" @click="registerMiniworkerPayouts">{{ t('observability.worker.registerMiniworkerPayouts') }}</UiButton>
+        <p class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutReadyProgress', { ready: payoutReadyCount, total: 20 }) }}</p>
+        <UiButton v-if="payoutProofDeviceCount > payoutReadyCount" variant="secondary" icon="wallet" :loading="payoutRegisterLoading" :disabled="!user?.walletAddress || payoutStatusLoading" @click="registerMiniworkerPayouts">{{ t('observability.worker.registerMiniworkerPayouts') }}</UiButton>
       </div>
       <UiNotice v-if="pairingMessage" :tone="pairingMessageTone">{{ pairingMessage }}</UiNotice>
 
@@ -141,7 +142,7 @@
 
 <script setup lang="ts">
 import { compactIdentifier, formatDate, formatDuration, networkRoleGroup, peerAvailability, peerId, peerRoles } from '~/utils/format';
-import { metricNumber, metricPercent, peerTelemetry, publishedCount } from '~/utils/telemetry';
+import { metricNumber, metricPercent, peerTelemetry, pendingTaskCount, publishedCount } from '~/utils/telemetry';
 import { intlLocale } from '~/utils/i18n';
 import { phantomProvider } from '~/utils/wallet';
 
@@ -180,6 +181,9 @@ const pairingMessage = ref('');
 const pairingMessageTone = ref<'success' | 'warning' | 'danger'>('success');
 const bulkPairingLoading = ref(false);
 const payoutRegisterLoading = ref(false);
+const payoutStatusLoading = ref(false);
+const payoutReadyIds = ref<string[]>([]);
+const payoutStatusFingerprint = ref('');
 const unlinkingId = ref<number | null>(null);
 const selectedId = ref('');
 const selectedDevice = computed(() => devices.value.find(device => device.nodeId === selectedId.value) || null);
@@ -187,6 +191,7 @@ const linkedMiniworkerCount = computed(() => devices.value.filter(device => mini
 const payoutProofDeviceCount = computed(() => devices.value.filter(device =>
   miniworkerNodeIDPattern.test(device.nodeId) && Boolean(device.solanaWallet && device.payoutWallet && device.workerPayoutProof),
 ).length);
+const payoutReadyCount = computed(() => payoutReadyIds.value.length);
 const miniworkerOnlineCount = computed(() => peers.value.filter(peer => miniworkerNodeIDPattern.test(peerId(peer)) && peerAvailability(peer) === 'online').length);
 const missingMiniworkerIds = computed(() => {
   const online = new Set(peers.value.filter(peer => miniworkerNodeIDPattern.test(peerId(peer)) && peerAvailability(peer) === 'online').map(peer => peerId(peer)));
@@ -215,7 +220,7 @@ const summary = computed(() => [
   { label: t('observability.telemetry.cpu'), value: fresh.value ? percent(runtime.value?.system_cpu_percent) : '—' },
   { label: t('observability.telemetry.memory'), value: fresh.value ? percent(runtime.value?.system_memory_percent) : '—' },
   { label: t('observability.telemetry.active'), value: fresh.value ? number(publishedCount(selectedPeer.value?.activity?.active_tasks)) : '—' },
-  { label: t('observability.telemetry.queue'), value: fresh.value ? number(publishedCount(selectedPeer.value?.task_queue)) : '—' },
+  { label: t('observability.telemetry.queue'), value: fresh.value ? number(pendingTaskCount(selectedPeer.value?.task_queue)) : '—' },
 ]);
 const contribution = computed(() => [
   { label: t('observability.worker.handled'), value: number(selectedPeer.value?.metrics?.handled) },
@@ -261,6 +266,7 @@ async function loadDevices(background = false): Promise<void> {
     const response = await authorizedFetch<{ items: UserDevice[] }>('/user/devices');
     deviceError.value = '';
     devices.value = Array.isArray(response.items) ? response.items : [];
+    await refreshPayoutStatus(devices.value);
     if (!devices.value.some(device => device.nodeId === selectedId.value)) {
       const queryNode = typeof route.query.node === 'string' ? route.query.node : '';
       selectedId.value = devices.value.find(device => device.nodeId === queryNode)?.nodeId || devices.value[0]?.nodeId || '';
@@ -277,6 +283,35 @@ async function loadDevices(background = false): Promise<void> {
   } finally {
     devicesRequestInFlight.value = false;
     if (!background) devicesLoading.value = false;
+  }
+}
+
+async function refreshPayoutStatus(targets: UserDevice[], force = false): Promise<void> {
+  const walletAddress = user.value?.walletAddress;
+  const runtime = useRuntimeConfig();
+  const mint = String(runtime.public.silMint || '').trim();
+  const eligible = targets.filter(device => miniworkerNodeIDPattern.test(device.nodeId) && device.solanaWallet && device.payoutWallet === walletAddress);
+  if (!walletAddress || !mint || !eligible.length) {
+    payoutReadyIds.value = [];
+    payoutStatusFingerprint.value = '';
+    return;
+  }
+  const fingerprint = `${walletAddress}:${eligible.map(device => `${device.nodeId}:${device.solanaWallet}`).sort().join('|')}`;
+  if (!force && fingerprint === payoutStatusFingerprint.value) return;
+  if (payoutStatusLoading.value) return;
+  payoutStatusLoading.value = true;
+  try {
+    const [{ Connection }, { inspectWorkerPayouts }] = await Promise.all([
+      import('@solana/web3.js'),
+      import('~/utils/workerPayout'),
+    ]);
+    const connection = new Connection(String(runtime.public.solanaRpc), 'confirmed');
+    payoutReadyIds.value = await inspectWorkerPayouts(connection, walletAddress, mint, eligible);
+    payoutStatusFingerprint.value = fingerprint;
+  } catch {
+    payoutReadyIds.value = [];
+  } finally {
+    payoutStatusLoading.value = false;
   }
 }
 
@@ -338,7 +373,7 @@ async function registerMiniworkerPayouts(): Promise<void> {
     const config = useRuntimeConfig();
     const mint = String(config.public.silMint || '').trim();
     if (!mint) throw new Error(t('errors.walletBalanceUnavailable'));
-    const [{ Connection }, { buildWorkerPayoutTransactions }] = await Promise.all([
+    const [{ Connection }, { buildWorkerPayoutTransactions, inspectWorkerPayouts }] = await Promise.all([
       import('@solana/web3.js'),
       import('~/utils/workerPayout'),
     ]);
@@ -367,6 +402,8 @@ async function registerMiniworkerPayouts(): Promise<void> {
     pairingMessage.value = built.registered
       ? t('observability.worker.workerPayoutComplete', { count: built.registered, already: built.alreadyLinked })
       : t('observability.worker.workerPayoutAlreadyLinked', { count: built.alreadyLinked });
+    payoutReadyIds.value = await inspectWorkerPayouts(connection, user.value.walletAddress, mint, targets);
+    payoutStatusFingerprint.value = '';
     await Promise.all([loadDevices(true), loadWalletBalance(user.value.walletAddress)]);
   } catch (failure) {
     pairingMessageTone.value = 'danger';
@@ -409,7 +446,7 @@ watch([selectedId, lastUpdatedAt], () => {
     at: at !== null ? at * 1_000 : Date.parse(lastUpdatedAt.value || ''),
     cpu: fresh.value ? metricPercent(runtime.value?.system_cpu_percent) : null,
     memory: fresh.value ? metricPercent(runtime.value?.system_memory_percent) : null,
-    queue: fresh.value ? publishedCount(selectedPeer.value.task_queue) : null,
+    queue: fresh.value ? pendingTaskCount(selectedPeer.value.task_queue) : null,
     active: fresh.value ? publishedCount(selectedPeer.value.activity?.active_tasks) : null,
   });
 });
@@ -425,6 +462,7 @@ async function refreshNetwork(): Promise<void> {
 onMounted(async () => {
   await Promise.all([loadUser().catch(() => undefined), loadDevices(), refreshNetwork()]);
   await loadWalletBalance(user.value?.walletAddress);
+  await refreshPayoutStatus(devices.value, true);
   if (disposed) return;
   timer = setInterval(() => {
     if (document.visibilityState !== 'visible') return;

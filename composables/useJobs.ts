@@ -1,10 +1,11 @@
-import { resultExtension } from '~/utils/jobs';
+import { extractJobError, isHashWorkload, resultExtension } from '~/utils/jobs';
 import { isDocumentSearchWorkload, type DocumentHit } from '~/utils/documents';
 import { isBatchAIWorkload, type BatchAnswersPage } from '~/utils/batchAI';
 import { isHFWorkload } from '~/utils/hfCatalog';
 import type { Job, JobDashboard, JobList } from '~/types/api';
 import { clientCache } from '~/services/cache';
 import { translate } from '~/utils/i18n';
+import { phantomProvider } from '~/utils/wallet';
 
 export interface CreateJobInput {
   title: string;
@@ -34,6 +35,7 @@ const safeDownloadName = (title: string): string =>
 
 export function useJobs() {
   const { authorizedFetch, authorizedFetchRaw, ensureAccessToken, user } = useSession();
+  const walletState = useWallet();
   const jobs = useState<Job[]>('jobs:items', () => []);
   const total = useState<number>('jobs:total', () => 0);
   const loading = useState<boolean>('jobs:loading', () => false);
@@ -73,6 +75,32 @@ export function useJobs() {
   }
 
   async function createJob(input: CreateJobInput): Promise<Job> {
+    const runtime = useRuntimeConfig();
+    let payment: { jobAddress: string; signature: string; expectedFragments: number } | null = null;
+    if (Boolean(runtime.public.solanaPaymentsEnabled)) {
+      if (!isHashWorkload(input.workload) || !input.file) throw new Error(translate('jobForm.paymentHashOnly'));
+      if (!user.value?.walletAddress) throw new Error(translate('jobForm.paymentWalletRequired'));
+      if (!import.meta.client) throw new Error(translate('jobForm.paymentBrowserRequired'));
+      const provider = phantomProvider(window);
+      if (!provider?.signTransaction) throw new Error(translate('jobForm.paymentPhantomRequired'));
+      const connected = await provider.connect();
+      if (connected.publicKey.toString() !== user.value.walletAddress) throw new Error(translate('jobForm.paymentWalletMismatch'));
+      const [{ Connection }, { createSILEscrow }] = await Promise.all([
+        import('@solana/web3.js'),
+        import('~/utils/solanaJobs'),
+      ]);
+      const expectedFragments = Math.min(256, Math.max(1, Math.trunc(input.fragmentCount)), Math.max(1, input.file.size));
+      const deadlineUnix = Math.floor(Date.now() / 1000) + Math.min(7 * 24 * 60 * 60, Math.max(600, input.maxRuntimeSeconds + 120));
+      const escrow = await createSILEscrow(
+        new Connection(String(runtime.public.solanaRpc), 'confirmed'),
+        provider,
+        user.value.walletAddress,
+        expectedFragments,
+        deadlineUnix,
+        String(runtime.public.silMint || 'F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP'),
+      );
+      payment = { ...escrow, expectedFragments };
+    }
     const form = new FormData();
     form.append('title', input.title.trim());
     form.append('description', input.description.trim());
@@ -93,14 +121,96 @@ export function useJobs() {
       form.append('fragment_count', String(input.fragmentCount));
       if (input.file) form.append('file', input.file);
     }
+    if (payment) {
+      form.append('solana_job', payment.jobAddress);
+      form.append('solana_expected_fragments', String(payment.expectedFragments));
+      form.append('solana_create_signature', payment.signature);
+    }
     // Documents can weigh 64 Mo: leave time for slow uploads.
-    const job = await authorizedFetch<Job>('/jobs', { method: 'POST', body: form, timeout: isDocumentSearchWorkload(input.workload) || isBatchAIWorkload(input.workload) || isHFWorkload(input.workload) ? 300_000 : 30_000 });
+    let job: Job;
+    try {
+      job = await authorizedFetch<Job>('/jobs', { method: 'POST', body: form, timeout: isDocumentSearchWorkload(input.workload) || isBatchAIWorkload(input.workload) || isHFWorkload(input.workload) ? 300_000 : 30_000 });
+    } catch (failure) {
+      if (payment && import.meta.client) {
+        const status = Number((failure as { statusCode?: unknown; status?: unknown })?.statusCode || (failure as { status?: unknown })?.status || 0);
+        if (status > 0 && status < 502) {
+          try {
+            const provider = phantomProvider(window);
+            if (provider?.signTransaction && user.value?.walletAddress) {
+              const [{ Connection }, { cancelSILEscrow }] = await Promise.all([
+                import('@solana/web3.js'),
+                import('~/utils/solanaJobs'),
+              ]);
+              await provider.connect();
+              await cancelSILEscrow(new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider, user.value.walletAddress, payment.jobAddress, payment.expectedFragments);
+              await walletState.loadBalance(user.value.walletAddress);
+            }
+          } catch {
+            throw new Error(`${extractJobError(failure)} ${translate('jobForm.paymentRefundRecovery', { job: payment.jobAddress })}`);
+          }
+        } else {
+          const possibleJob = await authorizedFetchRaw<Job[]>('/jobs', { query: { page: 1, page_size: 100 } }).catch(() => null);
+          if (!possibleJob || (possibleJob._data || []).some((item: Job) => item.solanaJob === payment!.jobAddress)) {
+            throw new Error(`${extractJobError(failure)} ${translate('jobForm.paymentSubmissionCheck', { job: payment.jobAddress })}`);
+          }
+        }
+      }
+      throw failure;
+    }
+    if (payment && user.value?.walletAddress) await walletState.loadBalance(user.value.walletAddress);
     clientCache.invalidate('jobs:');
     return job;
   }
 
   async function cancelJob(id: number, reason = translate('errors.cancelReason')): Promise<Job> {
-    const job = await authorizedFetch<Job>(`/jobs/${id}/cancel`, { method: 'POST', body: { reason } });
+    const existing = await authorizedFetch<Job>(`/jobs/${id}`);
+    let solanaRefundSignature = '';
+    if (existing.solanaJob && existing.solanaExpectedFragments && !existing.solanaRefunded) {
+      if (!user.value?.walletAddress || !import.meta.client) throw new Error(translate('jobForm.paymentWalletRequired'));
+      const provider = phantomProvider(window);
+      if (!provider?.signTransaction) throw new Error(translate('jobForm.paymentPhantomRequired'));
+      await provider.connect();
+      const runtime = useRuntimeConfig();
+      const [{ Connection }, { cancelSILEscrow }] = await Promise.all([
+        import('@solana/web3.js'),
+        import('~/utils/solanaJobs'),
+      ]);
+      const signature = await cancelSILEscrow(
+        new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider,
+        user.value.walletAddress, existing.solanaJob, existing.solanaExpectedFragments,
+      );
+      solanaRefundSignature = signature || '';
+      await walletState.loadBalance(user.value.walletAddress);
+    }
+    const job = await authorizedFetch<Job>(`/jobs/${id}/cancel`, {
+      method: 'POST', body: { reason, ...(solanaRefundSignature ? { solana_refund_signature: solanaRefundSignature } : {}) },
+    });
+    clientCache.invalidate('jobs:');
+    clientCache.invalidate(`job:${identity()}:${id}`);
+    return job;
+  }
+
+  async function finalizeJob(id: number, resultHash: string): Promise<Job> {
+    const existing = await authorizedFetch<Job>(`/jobs/${id}`);
+    if (!existing.solanaJob || !existing.solanaExpectedFragments) throw new Error(translate('jobForm.paymentJobMissing'));
+    if (existing.solanaFinalized) return existing;
+    if (!user.value?.walletAddress || !import.meta.client) throw new Error(translate('jobForm.paymentWalletRequired'));
+    const provider = phantomProvider(window);
+    if (!provider?.signTransaction) throw new Error(translate('jobForm.paymentPhantomRequired'));
+    await provider.connect();
+    const runtime = useRuntimeConfig();
+    const [{ Connection }, { finalizeSILEscrow }] = await Promise.all([
+      import('@solana/web3.js'),
+      import('~/utils/solanaJobs'),
+    ]);
+    const signature = await finalizeSILEscrow(
+      new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider,
+      user.value.walletAddress, existing.solanaJob, existing.solanaExpectedFragments, resultHash,
+    );
+    const job = await authorizedFetch<Job>(`/jobs/${id}/finalize`, {
+      method: 'POST', body: signature ? { signature } : {},
+    });
+    await walletState.loadBalance(user.value.walletAddress);
     clientCache.invalidate('jobs:');
     clientCache.invalidate(`job:${identity()}:${id}`);
     return job;
@@ -155,5 +265,5 @@ export function useJobs() {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
-  return { jobs, total, loading, error, loadJobs, getJobDashboard, createJob, cancelJob, downloadResult, loadAnswers, searchDocuments, openDocument };
+  return { jobs, total, loading, error, loadJobs, getJobDashboard, createJob, cancelJob, finalizeJob, downloadResult, loadAnswers, searchDocuments, openDocument };
 }

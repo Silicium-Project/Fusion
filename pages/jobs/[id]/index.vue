@@ -5,6 +5,17 @@
         <div><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>{{ t('jobDetail.allProjects') }}</NuxtLink><div class="job-head__title"><span class="job-head__cube"><UiIcon name="cube"/></span><div><div class="cluster"><h1>{{ dashboard.job.title }}</h1><UiStatusBadge :status="dashboard.job.status" /></div><p>{{ dashboard.job.description || t('jobDetail.defaultDescription') }}</p></div></div></div>
         <div class="job-head__actions"><UiButton variant="secondary" icon="refresh" size="small" :loading="loading" @click="load(true)">{{ t('common.refresh') }}</UiButton><UiButton v-if="dashboard.resultReady && !documentJob && !batchJob" icon="download" size="small" @click="download">{{ t('common.download') }}</UiButton><UiButton v-if="cancellable" variant="danger" size="small" @click="confirmOpen = true">{{ t('jobDetail.stop') }}</UiButton></div>
       </header>
+      <UiNotice v-if="paymentError" tone="danger">{{ paymentError }}</UiNotice>
+      <UiNotice v-if="paymentMessage" tone="success">{{ paymentMessage }}</UiNotice>
+      <UiCard v-if="dashboard.job.solanaJob" :title="t('jobForm.paymentFinalizeTitle')" :description="t('jobForm.paymentFinalizeText')" padded>
+        <div class="payment-actions">
+          <span v-if="dashboard.job.solanaFinalized">{{ t('jobForm.paymentFinalizeButton') }} · {{ dashboard.job.solanaFinalizeSignature ? compactIdentifier(dashboard.job.solanaFinalizeSignature, 12, 8) : t('status.completed') }}</span>
+          <span v-else-if="dashboard.job.solanaRefunded">{{ t('jobForm.paymentRefundButton') }} · {{ dashboard.job.solanaRefundSignature ? compactIdentifier(dashboard.job.solanaRefundSignature, 12, 8) : t('status.completed') }}</span>
+          <span v-else>{{ dashboard.job.solanaExpectedFragments || 0 }} fragments · {{ (dashboard.job.solanaExpectedFragments || 0) * 3 }} SIL · Devnet</span>
+          <UiButton v-if="canFinalizePayment" variant="secondary" icon="wallet" :loading="paymentSettling" @click="finalizePayment">{{ t('jobForm.paymentFinalizeButton') }}</UiButton>
+          <UiButton v-else-if="canRefundPayment" variant="secondary" icon="wallet" :loading="paymentSettling" @click="refundPayment">{{ t('jobForm.paymentRefundButton') }}</UiButton>
+        </div>
+      </UiCard>
       <UiNotice v-if="jobErrorDetail" tone="danger" :title="t('jobDetail.errorTitle')">{{ compactJobError(jobErrorDetail) }}</UiNotice>
       <section class="metric-grid">
         <MetricCard :label="t('jobDetail.parts')" :value="fragmentTotal || (documentJob || batchJob ? t('jobDetail.partsAuto') : 0)" :detail="!fragmentTotal && (documentJob || batchJob) ? t('jobDetail.partsAutoText') : t('jobDetail.partsDone', { count: fragmentDone })" icon="layers" tone="mint" />
@@ -42,10 +53,12 @@ import { isDocumentSearchWorkload } from '~/utils/documents';
 import { isBatchAIWorkload } from '~/utils/batchAI';
 import { isHFWorkload } from '~/utils/hfCatalog';
 import { awaitingChainAnchor, compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, jobPartCount, shouldRefreshJob } from '~/utils/jobs';
+import { parseHashReport } from '~/utils/jobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const { t } = useI18n();
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();
 const dashboard = ref<JobDashboard | null>(null); const loading = ref(true); const error = ref(''); const confirmOpen = ref(false); const cancelling = ref(false); const resultPreview = ref(''); const previewAttempts = ref(0);
+const paymentSettling = ref(false); const paymentError = ref(''); const paymentMessage = ref('');
 const visibleLimit = 80;
 const imageJob = computed(() => isImageWorkload(dashboard.value?.job.workload));
 const hashJob = computed(() => isHashWorkload(dashboard.value?.job.workload));
@@ -67,6 +80,8 @@ const computeShare = computed(() => formatPerformancePercent(performance.value?.
 const computeNetwork = computed(() => formatPerformanceMultiple(performance.value?.compute_to_network_ratio));
 const performanceDetail = computed(() => computeNetwork.value === '—' ? t('jobDetail.noNetworkMeasure') : t('jobDetail.computeVsNetwork', { value: computeNetwork.value }));
 const cancellable = computed(() => Boolean(dashboard.value && isJobCancellable(dashboard.value.job.status)));
+const canFinalizePayment = computed(() => Boolean(dashboard.value?.job.solanaJob && dashboard.value.job.status === 'completed' && !dashboard.value.job.solanaFinalized && !dashboard.value.job.solanaRefunded));
+const canRefundPayment = computed(() => Boolean(dashboard.value?.job.solanaJob && ['failed', 'expired', 'cancelled'].includes(dashboard.value.job.status) && !dashboard.value.job.solanaRefunded && !dashboard.value.job.solanaFinalized));
 const shouldPoll = computed(() => Boolean(dashboard.value && (shouldRefreshJob(dashboard.value.job.status, dashboard.value.resultReady) || awaitingChainAnchor(dashboard.value) || (imageJob.value && dashboard.value.resultReady && !resultPreview.value && previewAttempts.value < 5))));
 function fragmentIndex(fragment: JobFragment, fallback: number) { return fragment.fragment_index ?? fragment.fragmentIndex ?? fallback; }
 function fragmentNode(fragment: JobFragment) { return String(fragment.handled_by || fragment.handledBy || fragment.worker || ''); }
@@ -94,7 +109,25 @@ function load(force = false, background = false): Promise<void> {
 }
 async function loadPreview() { if (!dashboard.value?.resultReady || !imageJob.value || !import.meta.client) return; previewAttempts.value += 1; const token = await session.ensureAccessToken(); if (!token) return; const response = await fetch(`${config.public.apiBase}/jobs/${route.params.id}/result`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }); if (!response.ok || !response.headers.get('content-type')?.startsWith('image/')) return; const next = URL.createObjectURL(await response.blob()); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); resultPreview.value = next; }
 async function download() { if (dashboard.value) await jobsStore.downloadResult(dashboard.value.job); }
-async function cancel() { if (!dashboard.value) return; cancelling.value = true; try { await jobsStore.cancelJob(dashboard.value.job.id); confirmOpen.value = false; await load(true); } finally { cancelling.value = false; } }
+async function cancel() { if (!dashboard.value) return; cancelling.value = true; paymentError.value = ''; try { await jobsStore.cancelJob(dashboard.value.job.id); confirmOpen.value = false; await load(true); } catch (failure) { paymentError.value = failure instanceof Error ? failure.message : t('errors.submitFailed'); } finally { cancelling.value = false; } }
+async function refundPayment() { if (!dashboard.value) return; paymentSettling.value = true; paymentError.value = ''; paymentMessage.value = ''; try { await jobsStore.cancelJob(dashboard.value.job.id, 'SIL escrow refund'); paymentMessage.value = t('jobForm.paymentRefundButton'); await load(true); } catch (failure) { paymentError.value = failure instanceof Error ? failure.message : t('errors.submitFailed'); } finally { paymentSettling.value = false; } }
+async function finalizePayment() {
+  if (!dashboard.value) return;
+  paymentSettling.value = true; paymentError.value = ''; paymentMessage.value = '';
+  try {
+    const token = await session.ensureAccessToken();
+    if (!token) throw new Error(t('common.sessionExpired'));
+    const response = await fetch(`${config.public.apiBase}/jobs/${dashboard.value.job.id}/result`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+    if (!response.ok) throw new Error(t('errors.resultUnavailable'));
+    const report = parseHashReport(await response.json().catch(() => null));
+    const finalHash = report?.input_hash || report?.chunk_list_sha256 || '';
+    if (!finalHash) throw new Error(t('jobForm.paymentJobMissing'));
+    await jobsStore.finalizeJob(dashboard.value.job.id, finalHash);
+    paymentMessage.value = t('jobForm.paymentFinalizeButton');
+    await Promise.all([load(true), session.loadUser(true)]);
+  } catch (failure) { paymentError.value = failure instanceof Error ? failure.message : t('errors.submitFailed'); }
+  finally { paymentSettling.value = false; }
+}
 let timer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => { load(); timer = setInterval(() => { if (shouldPoll.value) load(true, true); }, 2_000); });
 onBeforeUnmount(() => { if (timer) clearInterval(timer); if (resultPreview.value) URL.revokeObjectURL(resultPreview.value); });
@@ -103,5 +136,6 @@ useSeoMeta({ title: () => dashboard.value ? `${dashboard.value.job.title} — Si
 
 <style scoped>
 .job-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem}.job-head>div:first-child{min-width:0}.back-link{display:inline-flex;align-items:center;gap:.4rem;margin-bottom:1rem;color:var(--ink-500);font-size:.9375rem;font-weight:700}.back-link svg{width:.75rem;transform:rotate(180deg)}.job-head__title{display:flex;align-items:center;gap:.9rem;min-width:0}.job-head__title>div{min-width:0}.job-head__cube{display:grid;width:3.25rem;height:3.25rem;flex:0 0 auto;place-items:center;border-radius:.9rem;background:var(--violet-100);color:var(--violet-600)}.job-head__cube svg{width:1.3rem}.job-head h1{margin:0;overflow-wrap:anywhere;font-size:clamp(1.65rem,3vw,2.4rem);letter-spacing:-.05em}.job-head p{display:-webkit-box;margin:.35rem 0 0;overflow:hidden;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;color:var(--ink-600);font-size:1rem}.job-head__actions{display:flex;gap:.45rem}.job-detail-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);gap:1rem}.job-detail-grid--bottom{align-items:start}.fragments-table{min-width:520px}.card-footer{padding:.75rem 1rem;border-top:1px solid var(--border);color:var(--ink-500);font-size:.9375rem}.modal-copy{margin:0;color:var(--ink-600);font-size:.9375rem;line-height:1.7}.modal-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:1.5rem}.detail-loading{display:grid;gap:1rem}.detail-loading>.skeleton:first-child{height:90px}.detail-loading .metric-grid .skeleton{height:110px}.detail-loading .large{height:420px}
+.payment-actions{display:flex;align-items:center;justify-content:space-between;gap:1rem;color:var(--ink-700);font-size:1rem;line-height:1.5}.payment-actions span{min-width:0;overflow-wrap:anywhere}
 @media(max-width:980px){.job-detail-grid{grid-template-columns:1fr}.job-head{align-items:stretch;flex-direction:column}.job-head__actions{justify-content:flex-end}}@media(max-width:560px){.job-head__title{align-items:flex-start}.job-head__actions{overflow-x:auto;justify-content:flex-start;padding-bottom:.2rem}.job-head__cube{width:2.7rem;height:2.7rem}.job-head__title .cluster{gap:.45rem}.modal-actions{align-items:stretch;flex-direction:column}}
 </style>

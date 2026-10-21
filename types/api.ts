@@ -33,6 +33,13 @@ export interface Job {
   status: JobStatus;
   siliciumJobId: string;
   devnetJob?: string;
+  solanaJob?: string;
+  solanaExpectedFragments?: number;
+  solanaCreateSignature?: string;
+  solanaRefundSignature?: string;
+  solanaRefunded?: boolean;
+  solanaFinalizeSignature?: string;
+  solanaFinalized?: boolean;
   errorMessage?: string;
   deadlineAt?: string;
   cancelRequestedAt?: string;

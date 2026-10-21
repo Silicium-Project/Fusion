@@ -1,7 +1,7 @@
 <template>
   <div class="app-page new-job-page">
     <header><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>{{ t('newJob.back') }}</NuxtLink><span class="eyebrow">{{ t('common.newJob') }}</span><h1 class="page-title">{{ t('newJob.title') }}</h1><p class="page-intro">{{ t('newJob.intro') }}</p><p class="new-job-help">{{ t('newJob.help') }} {{ t('newJob.helpText') }} <NuxtLink to="/workloads" class="inline-link">{{ t('newJob.helpLink') }}</NuxtLink></p></header>
-    <UiCard :title="t('newJob.card')" :description="t('newJob.cardText')" padded><JobForm :submitting="submitting" :error="error" :initial-workload="initialWorkload" :collection-id="collectionId" @submit="submit" /></UiCard>
+    <UiCard :title="t('newJob.card')" :description="t('newJob.cardText')" padded><JobForm :submitting="submitting" :error="error" :initial-workload="initialWorkload" :collection-id="collectionId" :payments-enabled="paymentsEnabled" :sil-balance="silBalance" :wallet-address="user?.walletAddress || ''" @submit="submit" /></UiCard>
   </div>
 </template>
 
@@ -13,12 +13,19 @@ import { BATCH_AI_WORKLOAD } from '~/utils/batchAI';
 import { HF_WORKLOAD } from '~/utils/hfCatalog';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const route = useRoute();
+const runtimeConfig = useRuntimeConfig();
+const paymentsEnabled = computed(() => Boolean(runtimeConfig.public.solanaPaymentsEnabled));
+const session = useSession();
+const wallet = useWallet();
+const { user } = session;
+const { silBalance } = wallet;
 // `?workload=documents` opens the document search; `&collection=…` adds
 // documents to an existing one ("Ajouter des documents"); `?workload=ai`
 // opens the batch AI processing, `?workload=catalog` the AI catalogue.
 const collectionId = computed(() => typeof route.query.collection === 'string' ? route.query.collection : '');
 /** `?workload=` preselects a type (from the job types page). */
 const initialWorkload = computed(() => {
+  if (paymentsEnabled.value) return 'calcul/integrity/sha256';
   if (route.query.workload === 'documents' || collectionId.value) return DOCUMENT_SEARCH_WORKLOAD;
   if (route.query.workload === 'ai') return BATCH_AI_WORKLOAD;
   if (route.query.workload === 'catalog') return HF_WORKLOAD;
@@ -26,6 +33,10 @@ const initialWorkload = computed(() => {
 });
 const router = useRouter(); const { createJob } = useJobs(); const submitting = ref(false); const error = ref('');
 const { t } = useI18n();
+onMounted(async () => {
+  await session.loadUser().catch(() => undefined);
+  await wallet.loadBalance(user.value?.walletAddress);
+});
 async function submit(input: CreateJobInput) { submitting.value = true; error.value = ''; try { const job = await createJob(input); await router.push(`/jobs/${job.id}`); } catch (failure) { error.value = extractJobError(failure); } finally { submitting.value = false; } }
 useSeoMeta({ title: () => `${t('common.newJob')} — Silicium` });
 </script>

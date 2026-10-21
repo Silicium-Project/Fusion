@@ -2,7 +2,7 @@ import type { NetworkMetrics, NetworkPeer, NetworkPeersResponse, NetworkRuntimeT
 import { clientCache } from '~/services/cache';
 import { peerRoles } from '~/utils/format';
 import { translate } from '~/utils/i18n';
-import { metricNumber } from '~/utils/telemetry';
+import { metricNumber, pendingTaskCount } from '~/utils/telemetry';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -34,7 +34,7 @@ function deriveNetworkMetrics(peers: NetworkPeer[]): NetworkMetrics {
     return values.length ? Number((values.reduce((total, value) => total + value, 0) / values.length).toFixed(2)) : undefined;
   };
   const activityCount = onlinePeers.reduce((total, peer) => total + arrayLength(asRecord(peer.activity)?.active_tasks), 0);
-  const queueDepth = onlinePeers.reduce((total, peer) => total + arrayLength(peer.task_queue), 0);
+  const queueDepth = onlinePeers.reduce((total, peer) => total + (pendingTaskCount(peer.task_queue) || 0), 0);
   const logicalCpuCount = telemetry.reduce((total, item) => total + (asNumber(item.logical_cpu_count) || 0), 0);
   return {
     online_peers: peers.filter(peer => peer.online === true).length,

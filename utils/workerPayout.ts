@@ -22,6 +22,52 @@ export interface SignedPayoutTransaction {
   lastValidBlockHeight: number;
 }
 
+export async function inspectWorkerPayouts(
+  connection: Connection,
+  payoutWalletAddress: string,
+  mintAddress: string,
+  devices: WorkerPayoutDevice[],
+): Promise<string[]> {
+  const payoutWallet = new PublicKey(payoutWalletAddress);
+  const mint = new PublicKey(mintAddress);
+  const candidates = devices.filter(device => device.solanaWallet && device.payoutWallet === payoutWalletAddress);
+  if (!candidates.length) return [];
+  const accountRows = candidates.map(device => {
+    const worker = new PublicKey(device.solanaWallet!);
+    return {
+      device,
+      worker,
+      workerAccount: workerAccountForPayout(worker),
+      payout: PublicKey.findProgramAddressSync(
+        [new TextEncoder().encode('worker_payout'), workerAccountForPayout(worker).toBytes()],
+        SILICIUM_PROGRAM_ID,
+      )[0],
+      workerToken: associatedTokenAddress(worker, mint),
+      payoutToken: associatedTokenAddress(payoutWallet, mint),
+    };
+  });
+  const infos = await connection.getMultipleAccountsInfo(accountRows.flatMap(row => [row.payout, row.workerAccount, row.workerToken, row.payoutToken]), 'confirmed');
+  const ready: string[] = [];
+  accountRows.forEach((row, index) => {
+    const payoutInfo = infos[index * 4];
+    const workerInfo = infos[index * 4 + 1];
+    const workerTokenInfo = infos[index * 4 + 2];
+    const payoutTokenInfo = infos[index * 4 + 3];
+    if (!payoutInfo?.owner.equals(SILICIUM_PROGRAM_ID) || payoutInfo.data.length < 73
+      || !payoutInfo.data.subarray(8, 40).equals(row.worker.toBuffer())
+      || !payoutInfo.data.subarray(40, 72).equals(payoutWallet.toBuffer())) return;
+    if (!workerInfo?.owner.equals(SILICIUM_PROGRAM_ID) || workerInfo.data.length < 199
+      || !workerInfo.data.subarray(8, 40).equals(row.worker.toBuffer())
+      || workerInfo.data[198] !== 0 || (workerInfo.data[196]! & 3) !== 3) return;
+    if (!workerTokenInfo?.owner.equals(TOKEN_PROGRAM_ID) || workerTokenInfo.data.length < 72
+      || !workerTokenInfo.data.subarray(0, 32).equals(mint.toBuffer())) return;
+    if (!payoutTokenInfo?.owner.equals(TOKEN_PROGRAM_ID) || payoutTokenInfo.data.length < 72
+      || !payoutTokenInfo.data.subarray(0, 32).equals(mint.toBuffer())) return;
+    ready.push(row.device.nodeId);
+  });
+  return ready;
+}
+
 const SILICIUM_PROGRAM_ID = new PublicKey('A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2');
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
