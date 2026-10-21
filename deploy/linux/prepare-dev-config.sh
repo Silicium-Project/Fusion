@@ -161,6 +161,7 @@ set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_LINUX_DEV_RPM_URL "$PUBLIC_BA
 
 set_env_value "$orchestrator_env" SILICIUM_NODE_ID orchestrator-dev-1
 set_env_value "$orchestrator_env" SILICIUM_NODE_ROLES resource,storage
+set_env_value "$orchestrator_env" SILICIUM_ENABLE_MDNS 0
 set_env_value "$orchestrator_env" SILICIUM_NODE_PORT "$ORCHESTRATOR_PORT"
 set_env_value "$orchestrator_env" SILICIUM_P2P_PORT "$((ORCHESTRATOR_PORT + 1))"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_CHANNEL dev

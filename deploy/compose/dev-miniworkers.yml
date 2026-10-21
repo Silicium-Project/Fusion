@@ -9,6 +9,7 @@ x-miniworker-environment: &miniworker-environment
   SILICIUM_ALLOWED_WORKLOADS: raytracer,calcul/integrity/sha256
   SILICIUM_PARALLEL_TASKS: "1"
   SILICIUM_BOOTSTRAP_PEERS: ${SILICIUM_DEV_BOOTSTRAP_PEER:?Set SILICIUM_DEV_BOOTSTRAP_PEER}
+  SILICIUM_ENABLE_MDNS: "0"
   SILICIUM_P2P_BIND: 0.0.0.0
   SILICIUM_P2P_PORT: "0"
   SILICIUM_API_BIND: 127.0.0.1
@@ -28,6 +29,11 @@ x-miniworker-defaults: &miniworker-defaults
     context: ../../Network
     dockerfile: infra/miniworker.Dockerfile
   restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
   init: true
   stop_grace_period: 20s
   depends_on:
