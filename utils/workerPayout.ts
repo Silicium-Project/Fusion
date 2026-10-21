@@ -97,7 +97,7 @@ function registerWorkerPayoutInstruction(
     keys: [
       { pubkey: payoutWallet, isSigner: true, isWritable: true },
       { pubkey: worker, isSigner: false, isWritable: false },
-      { pubkey: workerAccountForPayout(worker), isSigner: false, isWritable: false },
+      { pubkey: workerAccountForPayout(worker), isSigner: false, isWritable: true },
       { pubkey: workerPayout, isSigner: false, isWritable: true },
       { pubkey: worker, isSigner: false, isWritable: false }, // previous destination is the worker's default wallet
       { pubkey: INSTRUCTIONS_SYSVAR_ID, isSigner: false, isWritable: false },
@@ -147,7 +147,13 @@ export async function buildWorkerPayoutTransactions(
         [new TextEncoder().encode('worker_payout'), workerAccountForPayout(worker).toBytes()],
         SILICIUM_PROGRAM_ID,
       );
-      const info = await connection.getAccountInfo(pda, 'confirmed');
+      const workerAccount = workerAccountForPayout(worker);
+      const workerTokenAddress = associatedTokenAddress(worker, mint);
+      const [info, workerInfo, workerTokenInfo] = await Promise.all([
+        connection.getAccountInfo(pda, 'confirmed'),
+        connection.getAccountInfo(workerAccount, 'confirmed'),
+        connection.getAccountInfo(workerTokenAddress, 'confirmed'),
+      ]);
       let alreadyLinked = false;
       if (info) {
         if (!info.owner.equals(SILICIUM_PROGRAM_ID) || info.data.length < 73
@@ -160,45 +166,75 @@ export async function buildWorkerPayoutTransactions(
           throw new Error(`The payout for ${device.nodeId} is already assigned to another wallet. Both wallet owners must authorize a change.`);
         }
       }
-      return { device, worker, info, alreadyLinked };
+      return { device, worker, info, workerAccount, workerTokenAddress, workerInfo, workerTokenInfo, alreadyLinked };
     })),
   ]);
 
-  const rows = accountRows.filter(row => !row.alreadyLinked);
-  const alreadyLinked = accountRows.length - rows.length;
+  // Older versions could store the payout PDA without creating the Worker
+  // profile. Re-submit the proof-bound instruction in that case so the
+  // contract can accept this device in compute and verification calls.
+  const rows = accountRows.filter(row => !row.alreadyLinked || !row.workerInfo);
+  const alreadyLinked = accountRows.filter(row => row.alreadyLinked).length;
+  const tokenRows = accountRows.filter(row => !row.workerTokenInfo);
   const missingTokenAccount = tokenAccountInfo === null;
-  if (!rows.length && !missingTokenAccount) return { transactions: [], registered: 0, alreadyLinked };
+  if (!rows.length && !tokenRows.length && !missingTokenAccount) {
+    return { transactions: [], registered: 0, alreadyLinked };
+  }
 
   const pending: Array<{ transaction: Transaction; blockhash: string; lastValidBlockHeight: number }> = [];
-  if (!rows.length && missingTokenAccount) {
+  const registrationByWorker = new Map(rows.map(row => [row.worker.toBase58(), row]));
+  const rowsByWorker = new Map(accountRows.map(row => [row.worker.toBase58(), row]));
+  const transactionWorkers = new Set([...registrationByWorker.keys(), ...tokenRows.map(row => row.worker.toBase58())]);
+  if (!transactionWorkers.size && missingTokenAccount) {
     const block = await connection.getLatestBlockhash('confirmed');
     const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
     transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
     pending.push({ transaction, ...block });
   }
 
-  for (const [index, row] of rows.entries()) {
-    const proof = row.device.workerPayoutProof!;
-    const message = new TextEncoder().encode(proof.message);
-    const signature = decodeHex(proof.signature, 64);
-    const proofInstruction = Ed25519Program.createInstructionWithPublicKey({
-      publicKey: Buffer.from(row.worker.toBytes()),
-      message: Buffer.from(message),
-      signature: Buffer.from(signature),
-    });
-    const anchorInstruction = registerWorkerPayoutInstruction(
-      payoutWallet,
-      row.worker,
-      proof.message.split('\n')[1]!,
-      row.device.nodeId,
-      row.device.peerId,
-    );
+  let payoutAtaAdded = !missingTokenAccount;
+  for (const workerAddress of transactionWorkers) {
+    const row = rowsByWorker.get(workerAddress)!;
+    const registration = registrationByWorker.get(workerAddress);
     const block = await connection.getLatestBlockhash('confirmed');
     const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
-    if (index === 0 && missingTokenAccount) {
+    if (!payoutAtaAdded) {
       transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
+      payoutAtaAdded = true;
     }
-    transaction.add(proofInstruction, anchorInstruction);
+    if (tokenRows.some(tokenRow => tokenRow.worker.toBase58() === workerAddress)) {
+      transaction.add(createAssociatedTokenInstruction(
+        payoutWallet,
+        row.worker,
+        mint,
+        row.workerTokenAddress,
+      ));
+    }
+    if (registration) {
+      const proof = row.device.workerPayoutProof!;
+      const message = new TextEncoder().encode(proof.message);
+      const signature = decodeHex(proof.signature, 64);
+      const proofInstruction = Ed25519Program.createInstructionWithPublicKey({
+        publicKey: Buffer.from(row.worker.toBytes()),
+        message: Buffer.from(message),
+        signature: Buffer.from(signature),
+      });
+      const anchorInstruction = registerWorkerPayoutInstruction(
+        payoutWallet,
+        row.worker,
+        proof.message.split('\n')[1]!,
+        row.device.nodeId,
+        row.device.peerId,
+      );
+      transaction.add(proofInstruction, anchorInstruction);
+    }
+    pending.push({ transaction, ...block });
+  }
+
+  if (missingTokenAccount && !payoutAtaAdded) {
+    const block = await connection.getLatestBlockhash('confirmed');
+    const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
+    transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
     pending.push({ transaction, ...block });
   }
 
