@@ -101,6 +101,14 @@ pub(crate) trait Workload: Send + Sync {
         Box::pin(async { true })
     }
 
+    /// True when this node can run `task` without downloading anything
+    /// first (its model, if any, is already here). A verifier without the
+    /// model waits a little before downloading it: a node that already has
+    /// it usually takes the check (see [`crate::verifier`]).
+    fn is_warm(&self, _task: &NetworkTask) -> bool {
+        true
+    }
+
     /// True when a task of this workload cannot run unsplit: a failed split
     /// then fails the job instead of publishing it whole.
     fn requires_split(&self) -> bool {
@@ -144,6 +152,19 @@ pub(crate) trait Workload: Send + Sync {
         bytes: &[u8],
         milestones: &[MilestoneSample],
     ) -> bool;
+
+    /// Publisher's own check of a fragment result awaiting verification,
+    /// before any verifier: `Some(reason)` when it must be rejected (the
+    /// Hugging Face workloads check their canaries there). `input` is the
+    /// job's shared input.
+    fn audit(&self, _fragment: &FragmentRef, _input: &Path, _bytes: &[u8]) -> Option<String> {
+        None
+    }
+
+    /// Learns from a finalized fragment result: `checked` are the item
+    /// indices (in the fragment) that independent approving verifiers ran
+    /// again.
+    fn learn(&self, _fragment: &FragmentRef, _input: &Path, _bytes: &[u8], _checked: &[usize]) {}
 
     /// Builds the final result of `job` from its shared input (`input`) and
     /// its fragment results, in fragment order.

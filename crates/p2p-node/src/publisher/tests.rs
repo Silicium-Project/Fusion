@@ -45,6 +45,8 @@ fn view(book: &TaskBook, now: u64) -> SweepView<'_> {
         now,
         records: book.author_records(now),
         workers: WORKERS,
+        tasks: &[],
+        job_workers: Default::default(),
     }
 }
 
@@ -501,4 +503,164 @@ fn a_single_worker_behind_an_orchestrator_may_verify_itself() {
         local_is_worker: false,
     };
     assert_eq!(seen_by(two_workers), None, "another worker must verify");
+}
+
+/// A verifier that worked on another fragment of the same job (its model is
+/// loaded) is preferred to an older offer from a node new to the job.
+#[test]
+fn a_worker_of_the_same_job_verifies_first() {
+    let publisher = SigningKey::from_bytes(&[40; 32]);
+    let worker = SigningKey::from_bytes(&[41; 32]);
+    let sibling = SigningKey::from_bytes(&[42; 32]);
+    let stranger = SigningKey::from_bytes(&[43; 32]);
+    let me = TaskEvent::author_id(&publisher);
+    let job = TaskEvent::task_id_for(&me, "job");
+    let (first, second) = (format!("{job}.f000"), format!("{job}.f001"));
+    let mut book = TaskBook::default();
+    let terms = TaskTerms {
+        lease_ms: 10_000,
+        verifications_required: 1,
+        ..TaskTerms::default()
+    };
+    for task in [&first, &second] {
+        let spec = PayloadRef {
+            uri: format!("silicium/task/v1/{task}"),
+            sha256: TaskEvent::payload_hash(task.as_bytes()),
+        };
+        emit(
+            &mut book,
+            &publisher,
+            task,
+            TaskEventBody::TaskProposed { spec, terms },
+            0,
+        );
+    }
+    for (task, key) in [(&first, &sibling), (&second, &worker)] {
+        let claim = emit(
+            &mut book,
+            key,
+            task,
+            TaskEventBody::ClaimProposed { attempt: 1 },
+            1,
+        );
+        emit(
+            &mut book,
+            &publisher,
+            task,
+            TaskEventBody::ClaimAccepted { attempt: 1, claim },
+            2,
+        );
+    }
+    let result = PayloadRef {
+        uri: "result://second".to_string(),
+        sha256: TaskEvent::payload_hash(b"r"),
+    };
+    let body = TaskEventBody::ResultPublished {
+        attempt: 1,
+        result,
+        milestones: Vec::new(),
+    };
+    emit(&mut book, &worker, &second, body, 10);
+    let offer = TaskEventBody::VerificationClaimed { attempt: 1 };
+    emit(&mut book, &stranger, &second, offer.clone(), 11);
+    let warm = emit(&mut book, &sibling, &second, offer, 12);
+    let tasks = book.tasks_published_by(&me);
+    let view = SweepView {
+        me: &me,
+        tasks: &tasks,
+        ..view(&book, 30)
+    };
+    let Some(Decision::Sign(TaskEventBody::VerifierAccepted { claim, .. })) =
+        decide(&view, &second)
+    else {
+        panic!("expected a verifier acceptance");
+    };
+    assert_eq!(claim, warm);
+}
+
+/// A result that fails the publisher's own check (a canary): the publisher
+/// records itself as verifier with a negative verdict; the attempt fails and
+/// the task is open again.
+#[test]
+fn the_publisher_may_reject_a_result_itself() {
+    let publisher = SigningKey::from_bytes(&[60; 32]);
+    let worker = SigningKey::from_bytes(&[61; 32]);
+    let me = TaskEvent::author_id(&publisher);
+    let mut book = TaskBook::default();
+    let task = TaskEvent::task_id_for(&me, "audited");
+    let spec = PayloadRef {
+        uri: "silicium/task/v1/audited".to_string(),
+        sha256: TaskEvent::payload_hash(b"spec"),
+    };
+    let terms = TaskTerms {
+        lease_ms: 10_000,
+        max_attempts: 2,
+        verifications_required: 1,
+        ..TaskTerms::default()
+    };
+    emit(
+        &mut book,
+        &publisher,
+        &task,
+        TaskEventBody::TaskProposed { spec, terms },
+        0,
+    );
+    let claim = emit(
+        &mut book,
+        &worker,
+        &task,
+        TaskEventBody::ClaimProposed { attempt: 1 },
+        1,
+    );
+    emit(
+        &mut book,
+        &publisher,
+        &task,
+        TaskEventBody::ClaimAccepted { attempt: 1, claim },
+        2,
+    );
+    let result = PayloadRef {
+        uri: "result://audited".to_string(),
+        sha256: TaskEvent::payload_hash(b"r"),
+    };
+    let body = TaskEventBody::ResultPublished {
+        attempt: 1,
+        result,
+        milestones: Vec::new(),
+    };
+    let result_event = emit(&mut book, &worker, &task, body, 3);
+    let offer = emit(
+        &mut book,
+        &publisher,
+        &task,
+        TaskEventBody::VerificationClaimed { attempt: 1 },
+        4,
+    );
+    let accept = TaskEventBody::VerifierAccepted {
+        attempt: 1,
+        claim: offer,
+    };
+    emit(&mut book, &publisher, &task, accept, 4);
+    let verdict = TaskEventBody::VerificationPublished {
+        attempt: 1,
+        result_event,
+        approved: false,
+    };
+    emit(&mut book, &publisher, &task, verdict, 4);
+    let state = book.task_state(&task, 5).unwrap();
+    assert_eq!(
+        state.attempts[0].result.as_ref().unwrap().rejections.len(),
+        1
+    );
+    assert_eq!(
+        state.next_attempt,
+        Some(2),
+        "the fragment goes to another attempt"
+    );
+    let record = book.author_records(5);
+    assert!(
+        record
+            .get(&TaskEvent::author_id(&worker))
+            .is_some_and(|r| r.score() < 0.5)
+    );
 }

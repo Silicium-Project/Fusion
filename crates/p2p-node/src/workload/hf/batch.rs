@@ -33,6 +33,10 @@ struct RawRequest {
     #[serde(default)]
     parameters: Option<Value>,
     items: Vec<Value>,
+    /// Public examples of the model mixed with the items (see
+    /// [`super::canary`]).
+    #[serde(default)]
+    canaries: Vec<Value>,
 }
 
 /// The header line of a batch.
@@ -59,9 +63,18 @@ pub(crate) struct Answer {
     pub(crate) output: Value,
 }
 
+/// Largest batch with canaries (a content is at most 64 MiB): above, the
+/// batch is built without them.
+const MAX_BATCH_WITH_CANARIES: usize = 62 << 20;
+
 /// Turns a request into the canonical batch, after checking it is for
-/// `task` with the model `key`. The error is a message for the user.
-pub(crate) fn build(request: &[u8], task: &str, key: &str) -> Result<Vec<u8>, String> {
+/// `task` with the model `key`, and returns it with its canaries (see
+/// [`super::canary`]). The error is a message for the user.
+pub(crate) fn build(
+    request: &[u8],
+    task: &str,
+    key: &str,
+) -> Result<(Vec<u8>, Vec<super::canary::Placed>), String> {
     let raw: RawRequest = serde_json::from_slice(request)
         .map_err(|_| "La demande n'a pas pu être lue.".to_string())?;
     if raw.format != REQUEST_FORMAT {
@@ -87,30 +100,62 @@ pub(crate) fn build(request: &[u8], task: &str, key: &str) -> Result<Vec<u8>, St
     if serde_json::to_vec(&parameters).map_or(true, |p| p.len() > MAX_PARAMETERS_BYTES) {
         return Err("Les paramètres sont trop gros.".into());
     }
-    let header = Header {
-        format: BATCH_FORMAT.into(),
-        task: task.into(),
-        model: raw.model,
-        parameters,
-        item_count: raw.items.len() as u64,
-    };
-    let mut bytes = serde_json::to_vec(&header).map_err(|err| err.to_string())?;
-    bytes.push(b'\n');
-    for (id, inputs) in raw.items.into_iter().enumerate() {
+    for (index, inputs) in raw.items.iter().enumerate() {
         if inputs.is_null() {
-            return Err(format!("L'élément {} est vide.", id + 1));
+            return Err(format!("L'élément {} est vide.", index + 1));
         }
+        // An id takes at most 20 digits more than this one.
         let line = serde_json::to_vec(&Item {
-            id: id as u64,
-            inputs,
+            id: u64::MAX,
+            inputs: inputs.clone(),
         })
         .map_err(|err| err.to_string())?;
         if line.len() > MAX_ITEM_BYTES {
             return Err(format!(
                 "L'élément {} est trop gros (8 Mo au plus).",
-                id + 1
+                index + 1
             ));
         }
+    }
+    let canaries: Vec<Value> = raw
+        .canaries
+        .into_iter()
+        .filter(|canary| {
+            serde_json::to_vec(canary).is_ok_and(|bytes| bytes.len() + 64 <= MAX_ITEM_BYTES)
+        })
+        .collect();
+    let (items, placed) = super::canary::mix(raw.items.clone(), &canaries, key, &parameters);
+    let bytes = encode(task, &raw.model, &parameters, items)?;
+    if !placed.is_empty() && bytes.len() > MAX_BATCH_WITH_CANARIES {
+        return Ok((
+            encode(task, &raw.model, &parameters, raw.items)?,
+            Vec::new(),
+        ));
+    }
+    Ok((bytes, placed))
+}
+
+fn encode(
+    task: &str,
+    model: &Manifest,
+    parameters: &Map<String, Value>,
+    items: Vec<Value>,
+) -> Result<Vec<u8>, String> {
+    let header = Header {
+        format: BATCH_FORMAT.into(),
+        task: task.into(),
+        model: model.clone(),
+        parameters: parameters.clone(),
+        item_count: items.len() as u64,
+    };
+    let mut bytes = serde_json::to_vec(&header).map_err(|err| err.to_string())?;
+    bytes.push(b'\n');
+    for (id, inputs) in items.into_iter().enumerate() {
+        let line = serde_json::to_vec(&Item {
+            id: id as u64,
+            inputs,
+        })
+        .map_err(|err| err.to_string())?;
         bytes.extend_from_slice(&line);
         bytes.push(b'\n');
     }

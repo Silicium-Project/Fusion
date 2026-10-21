@@ -4,17 +4,38 @@
 //! ([`crate::workload::Workload::accepts_result`]), and keep it as
 //! `results/<task_id>.<extension>` in the work directory; the last fragment
 //! of a job triggers the assembly of the job result ([`crate::jobs`]).
+//!
+//! A result downloaded while it awaits verification is first checked by the
+//! publisher itself ([`crate::workload::Workload::audit`], the canaries of
+//! the Hugging Face workloads): a failed check is recorded as the
+//! publisher's own negative verification, so the attempt fails at once and
+//! another worker gets the fragment. Once finalized, the result teaches the
+//! workload what the independent verifiers checked
+//! ([`crate::workload::Workload::learn`]).
 
 use crate::{
+    content::ContentStore,
     jobs::{JobStore, result_file, store::write_atomic},
     processing::NodeContext,
     workload::{self, Workload},
 };
-use silicium_node_core::taskbook::DerivedTaskStatus;
+use silicium_embedding::sampling::{sample_indices, sample_size};
+use silicium_node_core::taskbook::{DerivedTaskStatus, TaskEventBody};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Mutex},
+    sync::{Arc, LazyLock, Mutex},
 };
+
+/// Attempts the publisher is rejecting itself, by `(task id, attempt)`: its
+/// sweep does not take its own offer there for an ordinary verification.
+static REJECTING: LazyLock<Mutex<BTreeSet<(String, u32)>>> = LazyLock::new(Mutex::default);
+
+/// True while this node rejects `attempt` of `task_id` itself.
+pub(crate) fn rejecting(task_id: &str, attempt: u32) -> bool {
+    REJECTING
+        .lock()
+        .is_ok_and(|rejecting| rejecting.contains(&(task_id.to_string(), attempt)))
+}
 
 /// URI scheme of result payloads stored in the content store.
 pub(crate) const CONTENT_SCHEME: &str = "content://";
@@ -73,9 +94,11 @@ impl Collector {
             }
             let content = context.content.clone();
             let prefetched = self.prefetched.clone();
+            let (context, jobs) = (context.clone(), self.jobs.clone());
             tokio::spawn(async move {
                 if content.ensure(&sha256).await {
                     content.provide(&sha256).await;
+                    audit(&context, &jobs, &task_id, &sha256).await;
                 } else if let Ok(mut seen) = prefetched.lock() {
                     // Not downloaded: a later sweep tries again.
                     seen.remove(&sha256);
@@ -171,6 +194,26 @@ async fn collect_one(context: &NodeContext, jobs: &JobStore, task_id: &str) -> O
         println!(" Result of {task_id} does not match its verified commitment");
         return None;
     }
+    if let (Some((_, fragment)), Some(input)) = (
+        &job,
+        job.as_ref().and_then(|(job, _)| input_of(context, job)),
+    ) {
+        let me = context.taskbook.author();
+        let count = fragment.items.map_or(0, |items| items.count as usize);
+        let mut checked = BTreeSet::new();
+        for verifier in &attempt.verifiers {
+            let independent = verifier.author != attempt.claimant && verifier.author != me;
+            if independent && verifier.verdict == Some(true) && count > 0 {
+                checked.extend(sample_indices(
+                    &verifier.acceptance_event,
+                    count,
+                    sample_size(count),
+                ));
+            }
+        }
+        let checked: Vec<usize> = checked.into_iter().collect();
+        workload.learn(fragment, &input, &bytes, &checked);
+    }
     let relative = match &job {
         Some((job, _)) => JobStore::fragment_result_path(job, task_id),
         None => result_file(task_id, workload.fragment_extension()),
@@ -185,6 +228,88 @@ async fn collect_one(context: &NodeContext, jobs: &JobStore, task_id: &str) -> O
             println!(" Could not save the result of {task_id}: {err}");
             Some(false)
         }
+    }
+}
+
+/// Path of the shared input of `job`, when it has one.
+fn input_of(context: &NodeContext, job: &crate::jobs::JobManifest) -> Option<std::path::PathBuf> {
+    let sha256 = job.scene_sha256.as_deref()?;
+    Some(
+        context
+            .content
+            .absolute(&ContentStore::relative_path(sha256)),
+    )
+}
+
+/// The publisher's own check of a result awaiting verification (see the
+/// module documentation); rejects it when the workload finds it wrong.
+async fn audit(context: &NodeContext, jobs: &JobStore, task_id: &str, sha256: &str) {
+    let me = context.taskbook.author();
+    let Some(state) = context.taskbook.state(task_id).ok().flatten() else {
+        return;
+    };
+    let Some(attempt) = state.attempts.last() else {
+        return;
+    };
+    let Some(result) = attempt.result.as_ref() else {
+        return;
+    };
+    if state.status != DerivedTaskStatus::Completed
+        || attempt.claimant == me
+        || result.result.uri.strip_prefix(CONTENT_SCHEME) != Some(sha256)
+        || attempt.verifiers.iter().any(|v| v.author == me)
+    {
+        return;
+    }
+    let Some((job, fragment)) = jobs.fragment(task_id) else {
+        return;
+    };
+    let (Some(workload), Some(input), Some(bytes)) = (
+        workload::find(&job.workload),
+        input_of(context, &job),
+        context.content.get(sha256),
+    ) else {
+        return;
+    };
+    let Some(reason) = workload.audit(&fragment, &input, &bytes) else {
+        return;
+    };
+    println!(" Result of {task_id} rejected by its publisher: {reason}");
+    reject(context, task_id, attempt.attempt, &result.event_hash).await;
+}
+
+/// Records the publisher as verifier of `attempt` with a negative verdict.
+async fn reject(context: &NodeContext, task_id: &str, attempt: u32, result_event: &str) {
+    let key = (task_id.to_string(), attempt);
+    if let Ok(mut rejecting) = REJECTING.lock() {
+        rejecting.insert(key.clone());
+    }
+    let sign = |body| match context.taskbook.append_signed(task_id, body) {
+        Ok(event) => Some(event),
+        Err(err) => {
+            println!(" Could not reject {task_id}: {err}");
+            None
+        }
+    };
+    let mut events = Vec::new();
+    if let Some(offer) = sign(TaskEventBody::VerificationClaimed { attempt }) {
+        let claim = offer.event_hash();
+        events.push(offer);
+        if let Some(accepted) = sign(TaskEventBody::VerifierAccepted { attempt, claim }) {
+            events.push(accepted);
+            let verdict = TaskEventBody::VerificationPublished {
+                attempt,
+                result_event: result_event.to_string(),
+                approved: false,
+            };
+            events.extend(sign(verdict));
+        }
+    }
+    for event in events {
+        let _ = context.tx_events.send(event).await;
+    }
+    if let Ok(mut rejecting) = REJECTING.lock() {
+        rejecting.remove(&key);
     }
 }
 

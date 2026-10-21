@@ -7,6 +7,10 @@
 //! (finalized vs failed attempts), then by age. The claimant's offer to
 //! verify itself is only accepted when it is the only worker this node sees
 //! (lone-worker rule, see [`crate::peers`]) and the task terms allow it.
+//!
+//! Among verification offers, those of nodes that worked on another fragment
+//! of the same job come first: they already have the job's model loaded, so
+//! the check does not load it again on one more machine.
 
 mod announce;
 
@@ -19,7 +23,10 @@ use crate::{
 use silicium_node_core::taskbook::{
     AuthorRecord, DerivedTaskStatus, OpenClaim, TaskBook, TaskEventBody,
 };
-use std::collections::BTreeMap;
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+};
 
 /// How long the publisher's own claim waits for other nodes' claims.
 const OWN_CLAIM_GRACE_MS: u64 = 5_000;
@@ -31,9 +38,35 @@ struct SweepView<'a> {
     now: u64,
     records: BTreeMap<String, AuthorRecord>,
     workers: WorkerView,
+    /// Tasks published by this node (fragments of a job share its id).
+    tasks: &'a [String],
+    /// Claimants of the fragments of a job, by job id (filled on demand).
+    job_workers: RefCell<BTreeMap<String, BTreeSet<String>>>,
 }
 
 impl SweepView<'_> {
+    /// Nodes that claimed a fragment of the job `task_id` belongs to.
+    fn job_workers(&self, task_id: &str) -> BTreeSet<String> {
+        let Some((job_id, _)) = task_id.rsplit_once(".f") else {
+            return BTreeSet::new();
+        };
+        if let Some(workers) = self.job_workers.borrow().get(job_id) {
+            return workers.clone();
+        }
+        let prefix = format!("{job_id}.f");
+        let workers: BTreeSet<String> = self
+            .tasks
+            .iter()
+            .filter(|id| id.starts_with(&prefix))
+            .filter_map(|id| self.book.task_state(id, self.now))
+            .flat_map(|state| state.attempts.into_iter().map(|a| a.claimant))
+            .collect();
+        self.job_workers
+            .borrow_mut()
+            .insert(job_id.to_string(), workers.clone());
+        workers
+    }
+
     fn score(&self, author: &str) -> f64 {
         self.records
             .get(author)
@@ -85,16 +118,19 @@ pub(crate) fn sweep(
     let now = now_ms();
     let decisions = taskbook
         .with_book(|book| {
+            let tasks = book.tasks_published_by(&me);
             let view = SweepView {
                 book,
                 me: &me,
                 now,
                 records: book.author_records(now),
                 workers,
+                tasks: &tasks,
+                job_workers: RefCell::default(),
             };
-            book.tasks_published_by(&me)
-                .into_iter()
-                .filter_map(|task_id| decide(&view, &task_id).map(|d| (task_id, d)))
+            tasks
+                .iter()
+                .filter_map(|task_id| decide(&view, task_id).map(|d| (task_id.clone(), d)))
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -166,18 +202,31 @@ fn eligible_claims(view: &SweepView, claims: Vec<OpenClaim>) -> Vec<OpenClaim> {
 /// Accepts the best verification offer while a verifier slot is open. An
 /// independent verifier is always preferred; the claimant's own offer is
 /// accepted only when it is the only worker on the network (lone-worker
-/// rule). With no acceptable offer, the task is announced again so that
-/// verifiers which missed it learn about it.
+/// rule). Among independent offers, a node that worked on another fragment
+/// of the same job (its model is loaded) comes first. With no acceptable
+/// offer, the task is announced again so that verifiers which missed it
+/// learn about it.
 fn accept_verifier(view: &SweepView, task_id: &str, attempt: u32) -> Option<Decision> {
     if view.book.verification_slots_open(task_id, view.now) == 0 {
         return None;
     }
-    let offers = view.book.open_verifications(task_id, view.now);
+    // The publisher's own offer while it rejects the result itself (a
+    // failed canary, see `crate::results`) is accepted there, not here.
+    let offers: Vec<_> = view
+        .book
+        .open_verifications(task_id, view.now)
+        .into_iter()
+        .filter(|o| !(o.author == view.me && crate::results::rejecting(task_id, attempt)))
+        .collect();
     let independent: Vec<_> = offers.iter().filter(|o| !o.self_offer).cloned().collect();
     let pool = if independent.is_empty() && view.workers.lone_worker() {
         offers
     } else {
-        independent
+        let job_workers = view.job_workers(task_id);
+        let (warm, cold): (Vec<_>, Vec<_>) = independent
+            .into_iter()
+            .partition(|o| job_workers.contains(&o.author));
+        if warm.is_empty() { cold } else { warm }
     };
     let Some(offer) = view.best(&pool, |o| (&o.author, o.issued_at_ms, &o.event_hash)) else {
         return Some(Decision::Regossip);

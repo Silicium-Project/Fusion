@@ -73,6 +73,9 @@ pub(crate) fn local_peer_profile(
         capacity: json!({
             "logical_cpu_count": logical_cpu_count,
             "ai_models": crate::workload::hf::warm_models(),
+            // Models for which the Hub sent a file that is not the pinned
+            // one (the BackEnd quarantines a model two nodes report).
+            "ai_model_faults": crate::workload::hf::model_faults(),
         }),
         activity: json!({
             "status": if active_tasks.is_empty() { "idle" } else { "working" },

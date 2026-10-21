@@ -1,5 +1,5 @@
 //! libp2p swarm: the network behaviour (Gossipsub, Kademlia, mDNS, Identify,
-//! AutoNAT, relay server, content request-response), its construction, and the helpers that publish
+//! AutoNAT, relay server, content and model-file request-response), its construction, and the helpers that publish
 //! records to the DHT and events to gossipsub.
 
 use crate::{
@@ -30,6 +30,7 @@ pub(crate) struct P2pBehaviour {
     pub(crate) autonat: autonat::Behaviour,
     pub(crate) relay: relay::Behaviour,
     pub(crate) content: crate::fetch::ContentBehaviour,
+    pub(crate) models: crate::model_share::ModelBehaviour,
 }
 
 #[cfg(test)]
@@ -120,6 +121,7 @@ pub(crate) fn build_swarm_with_mdns(
                 autonat,
                 relay,
                 content: crate::fetch::behaviour(),
+                models: crate::model_share::behaviour(),
             }
         })?
         .with_swarm_config(|c| c.with_idle_connection_timeout(Duration::from_secs(60)))

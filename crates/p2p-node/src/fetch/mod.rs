@@ -212,7 +212,7 @@ pub(crate) fn serve(store: &ContentStore, request: ContentRequest) -> ContentRes
 
 /// CBOR byte strings for `Option<Vec<u8>>` (a plain `Vec<u8>` would be
 /// encoded as an array of integers, several times larger).
-mod serde_bytes_compat {
+pub(crate) mod serde_bytes_compat {
     use serde::{Deserialize, Deserializer, Serializer, de};
 
     pub(crate) fn serialize<S: Serializer>(

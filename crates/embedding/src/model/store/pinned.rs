@@ -55,12 +55,42 @@ impl PinnedFile<'_> {
         Ok(())
     }
 
-    fn store_name(&self) -> String {
+    /// Name of the file in the store: `<sha256>` or `git-<sha1>` (also its
+    /// name between peers, which serve the store to each other).
+    pub fn store_name(&self) -> String {
         match self.hash {
             PinnedHash::Sha256(hash) => hash.to_string(),
             PinnedHash::GitBlob(hash) => format!("git-{hash}"),
         }
     }
+}
+
+/// Why a pinned file could not be fetched from the Hub.
+#[derive(Debug)]
+pub enum PinnedFetchError {
+    /// The Hub could not be reached or refused the download.
+    Unavailable(Error),
+    /// The Hub sent a file that is not the pinned one (other size or hash):
+    /// the repository changed under the pinned commit, or the source is
+    /// wrong.
+    Mismatch(Error),
+}
+
+impl From<PinnedFetchError> for Error {
+    fn from(err: PinnedFetchError) -> Self {
+        match err {
+            PinnedFetchError::Unavailable(err) | PinnedFetchError::Mismatch(err) => err,
+        }
+    }
+}
+
+/// True for the name of a pinned file in the store (`<sha256>` or
+/// `git-<sha1>`), the only names served to peers.
+pub fn is_pinned_name(name: &str) -> bool {
+    is_hex(name, 64)
+        || name
+            .strip_prefix("git-")
+            .is_some_and(|hash| is_hex(hash, 40))
 }
 
 impl ModelStore {
@@ -87,30 +117,109 @@ impl ModelStore {
         revision: &str,
         file: &PinnedFile,
     ) -> Result<PathBuf> {
+        Ok(self.fetch_pinned(repository, revision, file)?)
+    }
+
+    /// The path of `file` when it is here and intact (a damaged copy is
+    /// removed).
+    pub fn intact_pinned(&self, file: &PinnedFile) -> Result<Option<PathBuf>> {
         let path = self.pinned_path(file)?;
-        fs::create_dir_all(&self.root)?;
-        if path.exists() {
-            if verify_pinned(&path, file).is_ok() {
-                return Ok(path);
-            }
-            fs::remove_file(&path)?;
+        if !path.exists() {
+            return Ok(None);
+        }
+        if verify_pinned(&path, file).is_ok() {
+            return Ok(Some(path));
+        }
+        fs::remove_file(&path)?;
+        Ok(None)
+    }
+
+    /// Like [`ModelStore::ensure_pinned`], telling a file the Hub could not
+    /// send from a file that is not the pinned one.
+    pub fn fetch_pinned(
+        &self,
+        repository: &str,
+        revision: &str,
+        file: &PinnedFile,
+    ) -> std::result::Result<PathBuf, PinnedFetchError> {
+        let path = self
+            .pinned_path(file)
+            .map_err(PinnedFetchError::Unavailable)?;
+        fs::create_dir_all(&self.root).map_err(|err| PinnedFetchError::Unavailable(err.into()))?;
+        if let Some(path) = self
+            .intact_pinned(file)
+            .map_err(PinnedFetchError::Unavailable)?
+        {
+            return Ok(path);
         }
         let url = format!(
             "{}/{}/resolve/{}/{}",
             self.base_url, repository, revision, file.path
         );
-        let lock = DownloadLock::acquire(&path.with_extension("lock"))?;
+        let unavailable = |err: Error| PinnedFetchError::Unavailable(err);
+        let lock = DownloadLock::acquire(&path.with_extension("lock")).map_err(unavailable)?;
         let partial = path.with_extension("partial");
-        let mut sink = PinnedWriter::new(File::create(&partial)?, file);
-        let fetched = self.fetcher.fetch(&url, &mut sink);
-        let checked = fetched.and_then(|()| sink.finish(file));
+        let created = File::create(&partial).map_err(|err| unavailable(err.into()))?;
+        let mut sink = PinnedWriter::new(created, file);
+        let checked = match self.fetcher.fetch(&url, &mut sink) {
+            Ok(()) => sink.finish(file).map_err(PinnedFetchError::Mismatch),
+            Err(err) if sink.oversized => Err(PinnedFetchError::Mismatch(err)),
+            Err(err) => Err(PinnedFetchError::Unavailable(err)),
+        };
         drop(lock);
         if let Err(err) = checked {
             let _ = fs::remove_file(&partial);
             return Err(err);
         }
-        fs::rename(&partial, &path)?;
+        fs::rename(&partial, &path).map_err(|err| unavailable(err.into()))?;
         Ok(path)
+    }
+
+    /// Where a copy of `file` received from peers is written before
+    /// [`ModelStore::install_pinned`] checks it.
+    pub fn peer_partial_path(&self, file: &PinnedFile) -> Result<PathBuf> {
+        let path = self.pinned_path(file)?;
+        fs::create_dir_all(&self.root)?;
+        Ok(path.with_extension("peer"))
+    }
+
+    /// Checks `received` (a copy of `file` from a peer) against the pinned
+    /// size and hash and moves it into the store; removes it otherwise.
+    pub fn install_pinned(&self, file: &PinnedFile, received: &Path) -> Result<PathBuf> {
+        let path = self.pinned_path(file)?;
+        if let Err(err) = verify_pinned(received, file) {
+            let _ = fs::remove_file(received);
+            return Err(err);
+        }
+        let lock = DownloadLock::acquire(&path.with_extension("lock"))?;
+        let moved = fs::rename(received, &path);
+        drop(lock);
+        moved?;
+        Ok(path)
+    }
+
+    /// Names and sizes of the complete pinned files of the store.
+    pub fn pinned_files(&self) -> Vec<(String, u64)> {
+        let Ok(entries) = fs::read_dir(&self.root) else {
+            return Vec::new();
+        };
+        let mut files: Vec<(String, u64)> = entries
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().into_string().ok()?;
+                let meta = entry.metadata().ok()?;
+                (is_pinned_name(&name) && meta.is_file()).then_some((name, meta.len()))
+            })
+            .collect();
+        files.sort();
+        files
+    }
+
+    /// Path of the pinned file named `name` (see [`is_pinned_name`]), when
+    /// it is in the store.
+    pub fn pinned_file_by_name(&self, name: &str) -> Option<PathBuf> {
+        let path = self.root.join(name);
+        (is_pinned_name(name) && path.is_file()).then_some(path)
     }
 }
 
@@ -137,6 +246,8 @@ struct PinnedWriter<W: Write> {
     hasher: Hasher,
     written: u64,
     limit: u64,
+    /// The source sent more than the pinned size.
+    oversized: bool,
 }
 
 impl<W: Write> PinnedWriter<W> {
@@ -154,6 +265,7 @@ impl<W: Write> PinnedWriter<W> {
             hasher,
             written: 0,
             limit: file.size,
+            oversized: false,
         }
     }
 
@@ -185,6 +297,7 @@ fn hex(bytes: &[u8]) -> String {
 impl<W: Write> Write for PinnedWriter<W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.written.saturating_add(buf.len() as u64) > self.limit {
+            self.oversized = true;
             return Err(std::io::Error::other("larger than the pinned size"));
         }
         let written = self.inner.write(buf)?;
@@ -276,5 +389,61 @@ mod tests {
             hash: PinnedHash::Sha256("../../etc"),
         };
         assert!(store.pinned_path(&bad_form).is_err());
+    }
+
+    #[test]
+    fn a_wrong_file_from_the_hub_is_told_apart_from_an_unreachable_hub() {
+        let (wrong, _) = store("mismatch", b"other\n");
+        let lfs = PinnedFile {
+            path: "model.safetensors",
+            size: 6,
+            hash: PinnedHash::Sha256(HELLO_SHA256),
+        };
+        assert!(matches!(
+            wrong.fetch_pinned("org/model", "abc", &lfs),
+            Err(PinnedFetchError::Mismatch(_))
+        ));
+        let (larger, _) = store("larger", b"hello world\n");
+        assert!(matches!(
+            larger.fetch_pinned("org/model", "abc", &lfs),
+            Err(PinnedFetchError::Mismatch(_))
+        ));
+        assert!(larger.pinned_files().is_empty(), "nothing kept");
+    }
+
+    #[test]
+    fn a_copy_from_a_peer_is_checked_before_it_is_kept() {
+        let (store, urls) = store("peer", b"unused");
+        let lfs = PinnedFile {
+            path: "model.safetensors",
+            size: 6,
+            hash: PinnedHash::Sha256(HELLO_SHA256),
+        };
+        let received = store.peer_partial_path(&lfs).unwrap();
+        fs::write(&received, b"wrong\n").unwrap();
+        assert!(store.install_pinned(&lfs, &received).is_err());
+        assert!(!received.exists() && !store.has_pinned(&lfs));
+        fs::write(&received, b"hello\n").unwrap();
+        let path = store.install_pinned(&lfs, &received).unwrap();
+        assert_eq!(store.intact_pinned(&lfs).unwrap(), Some(path.clone()));
+        assert_eq!(store.pinned_files(), vec![(HELLO_SHA256.to_string(), 6)]);
+        assert_eq!(store.pinned_file_by_name(HELLO_SHA256), Some(path));
+        assert_eq!(store.pinned_file_by_name("../etc/passwd"), None);
+        assert!(urls.lock().unwrap().is_empty(), "the Hub was not asked");
+    }
+
+    #[test]
+    fn only_store_names_are_served() {
+        assert!(is_pinned_name(HELLO_SHA256));
+        assert!(is_pinned_name(&format!("git-{HELLO_GIT}")));
+        for name in [
+            "",
+            "git-",
+            "x.partial",
+            &format!("{HELLO_SHA256}.lock"),
+            "../git-a",
+        ] {
+            assert!(!is_pinned_name(name), "{name}");
+        }
     }
 }

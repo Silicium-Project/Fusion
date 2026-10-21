@@ -31,6 +31,7 @@ mod control;
 mod fetch;
 mod gossip;
 mod jobs;
+mod model_share;
 mod peers;
 mod processing;
 mod publisher;
@@ -108,10 +109,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(" Local peer id: {local_peer_id}");
     println!(" Data dir: {}", data_dir.display());
     workload::hf::scan_warm_models(&data_dir);
+    workload::hf::canary::init(&data_dir);
     println!(" Task book: {}", taskbook.path.display());
 
     let (tx_events, mut rx_events) = mpsc::channel(64);
     let (tx_content, mut rx_content) = mpsc::channel(64);
+    let (tx_models, mut rx_models) = mpsc::channel(256);
+    model_share::connect(tx_models);
+    let model_store_root = Some(workload::hf::shared_store_root(&data_dir));
 
     let context = NodeContext {
         local_peer_id,
@@ -231,6 +236,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut announcer = publisher::Reannouncer::default();
     let mut gap_requests = BTreeMap::new();
     let mut fetcher = fetch::Fetcher::default();
+    let mut model_share = model_share::ModelShare::default();
+    if let Some(root) = model_store_root.clone() {
+        // Announce the model files kept from earlier runs, and again now and
+        // then (the DHT may have had no peer to hold the first announces).
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(Duration::from_secs(30 * 60));
+            loop {
+                every.tick().await;
+                model_share::provide_store(&root).await;
+            }
+        });
+    }
     let collector = results::Collector::new(jobs.clone());
 
     loop {
@@ -300,6 +317,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(command) = rx_content.recv() => {
                 fetch::handle_command(&mut swarm, &mut fetcher, command);
             }
+            Some(command) = rx_models.recv() => {
+                model_share.handle_command(&mut swarm, command);
+            }
             Some(task) = rx_publish.recv() => {
                 let published = publishing::publish_request(
                     &mut swarm, &topic, &context, &jobs, &publish_settings, task,
@@ -361,7 +381,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let _ = swarm.behaviour_mut().kademlia.bootstrap();
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(event)) => {
-                    fetch::handle_kademlia(&mut swarm, &mut fetcher, event);
+                    if let Some(event) = model_share.on_kademlia(&swarm, event) {
+                        fetch::handle_kademlia(&mut swarm, &mut fetcher, event);
+                    }
+                }
+                SwarmEvent::Behaviour(P2pBehaviourEvent::Models(event)) => {
+                    model_share.on_event(&mut swarm, model_store_root.as_deref(), event);
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Content(event)) => {
                     fetch::handle_content(&mut swarm, &mut fetcher, &context.content, event);

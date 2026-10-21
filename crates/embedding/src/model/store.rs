@@ -331,7 +331,7 @@ fn env_value(key: &str) -> Option<String> {
 }
 
 mod pinned;
-pub use pinned::{PinnedFile, PinnedHash, verify_pinned};
+pub use pinned::{PinnedFetchError, PinnedFile, PinnedHash, is_pinned_name, verify_pinned};
 
 #[cfg(test)]
 mod tests;

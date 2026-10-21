@@ -14,6 +14,15 @@
 //! there). Meanwhile the node does not claim the task; the publisher
 //! announces it again.
 //!
+//! Each file comes from the Hub or from peers that have it
+//! ([`crate::model_share`]), in the order of `SILICIUM_AI_MODEL_SOURCES`
+//! (`hub,peers` by default; `peers,hub` spares the Hub, `hub` or `peers`
+//! alone use one source). A file the Hub sends that is not the pinned one
+//! (other size or hash) is never kept; the node remembers the model and
+//! reports it in its heartbeat ([`model_faults`]), and the BackEnd puts the
+//! model in quarantine once two nodes report it. Peers' copies are checked
+//! against the same pinned hashes.
+//!
 //! Models whose files are here are "warm": the node announces their keys in
 //! its heartbeat ([`warm_models`]), and the site prices a job lower when
 //! enough workers have the model.
@@ -21,11 +30,11 @@
 use super::manifest::Manifest;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use silicium_embedding::model::store::ModelStore;
+use silicium_embedding::model::store::{ModelStore, PinnedFetchError};
 use std::{
     collections::{BTreeSet, HashMap},
     path::{Path, PathBuf},
-    sync::{LazyLock, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     time::{Duration, Instant},
 };
 
@@ -69,6 +78,40 @@ fn model_store(data_dir: &Path) -> Result<ModelStore, String> {
         ));
     }
     ModelStore::from_env(data_dir).map_err(|err| err.to_string())
+}
+
+/// Directory of the model store of this node (as
+/// [`ModelStore::from_env`]), shared with peers (see [`crate::model_share`]).
+pub(crate) fn shared_store_root(data_dir: &Path) -> PathBuf {
+    #[cfg(test)]
+    if TEST_URLS.get().is_some() {
+        return data_dir.join("models");
+    }
+    env_value("SILICIUM_MODEL_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("models"))
+}
+
+/// The model store, dropped on a blocking thread: its Hub client must not
+/// be dropped by an async task.
+struct Store(Option<Arc<ModelStore>>);
+
+impl std::ops::Deref for Store {
+    type Target = Arc<ModelStore>;
+    fn deref(&self) -> &Arc<ModelStore> {
+        self.0.as_ref().expect("store present until dropped")
+    }
+}
+
+impl Drop for Store {
+    fn drop(&mut self) {
+        if let Some(store) = self.0.take() {
+            match tokio::runtime::Handle::try_current() {
+                Ok(handle) => drop(handle.spawn_blocking(move || drop(store))),
+                Err(_) => drop(store),
+            }
+        }
+    }
 }
 
 /// Directory of the model `key` for the runtime.
@@ -256,11 +299,58 @@ static SLOTS: LazyLock<Mutex<HashMap<String, Slot>>> = LazyLock::new(Mutex::defa
 /// Keys of the models whose files are on this node.
 static WARM: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(Mutex::default);
 
+/// Keys of the models for which the Hub sent a file that is not the pinned
+/// one, since this node started.
+static FAULTS: LazyLock<Mutex<BTreeSet<String>>> = LazyLock::new(Mutex::default);
+
+/// Models for which the Hub sent a wrong file, announced in the heartbeat.
+pub(crate) fn model_faults() -> Vec<String> {
+    FAULTS
+        .lock()
+        .map(|faults| faults.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+/// Where a model file can come from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Source {
+    Hub,
+    Peers,
+}
+
+/// Sources of model files, in order (`SILICIUM_AI_MODEL_SOURCES`).
+pub(crate) fn sources(value: Option<&str>) -> Vec<Source> {
+    let parsed: Vec<Source> = value
+        .unwrap_or("hub,peers")
+        .split(',')
+        .filter_map(|source| match source.trim() {
+            "hub" => Some(Source::Hub),
+            "peers" => Some(Source::Peers),
+            _ => None,
+        })
+        .fold(Vec::new(), |mut sources, source| {
+            if !sources.contains(&source) {
+                sources.push(source);
+            }
+            sources
+        });
+    if parsed.is_empty() {
+        vec![Source::Hub, Source::Peers]
+    } else {
+        parsed
+    }
+}
+
 /// Models whose files are on this node, announced in the heartbeat.
 pub(crate) fn warm_models() -> Vec<String> {
     WARM.lock()
         .map(|warm| warm.iter().cloned().collect())
         .unwrap_or_default()
+}
+
+/// True when the files of model `key` are on this node.
+pub(crate) fn is_warm(key: &str) -> bool {
+    WARM.lock().is_ok_and(|warm| warm.contains(key))
 }
 
 /// Finds the models prepared by an earlier run of the node.
@@ -321,27 +411,40 @@ pub(crate) async fn ensure_model(runtime: &Runtime, manifest: &Manifest, data_di
 
 async fn prepare(runtime: &Runtime, manifest: &Manifest, data_dir: &Path) -> Result<(), String> {
     let dir = model_dir(data_dir, &manifest.key);
-    let (files, data) = (manifest.clone(), data_dir.to_path_buf());
-    let dir_for_files = dir.clone();
-    tokio::task::spawn_blocking(move || install_files(&files, &data, &dir_for_files))
-        .await
-        .map_err(|err| err.to_string())??;
+    let marker = dir.join(READY_MARKER);
+    let ready =
+        std::fs::read_to_string(&marker).is_ok_and(|digest| digest.trim() == manifest.digest);
+    if !ready {
+        let store = {
+            let data_dir = data_dir.to_path_buf();
+            let created = tokio::task::spawn_blocking(move || model_store(&data_dir))
+                .await
+                .map_err(|err| err.to_string())??;
+            Store(Some(Arc::new(created)))
+        };
+        obtain_files(&store, manifest).await?;
+        let (files, dir_for_files) = (manifest.clone(), dir.clone());
+        let linked = Arc::clone(&store);
+        tokio::task::spawn_blocking(move || link_files(&files, &linked, &dir_for_files))
+            .await
+            .map_err(|err| err.to_string())??;
+        for file in &manifest.files {
+            let name = file.pinned().store_name();
+            crate::model_share::announce(name).await;
+        }
+    }
     if let Ok(mut warm) = WARM.lock() {
         warm.insert(manifest.key.clone());
     }
     runtime.load(&dir, manifest).await
 }
 
-/// Downloads the pinned files (or finds them in the store) and links them
-/// into the model directory with the repository layout.
-fn install_files(manifest: &Manifest, data_dir: &Path, dir: &Path) -> Result<(), String> {
-    let marker = dir.join(READY_MARKER);
-    if std::fs::read_to_string(&marker).is_ok_and(|digest| digest.trim() == manifest.digest) {
-        return Ok(());
-    }
-    let store = model_store(data_dir)?;
+/// Gets every pinned file of `manifest` into the store, from the sources in
+/// order (see the module documentation).
+async fn obtain_files(store: &Arc<ModelStore>, manifest: &Manifest) -> Result<(), String> {
+    let order = sources(std::env::var("SILICIUM_AI_MODEL_SOURCES").ok().as_deref());
     println!(
-        " Downloading model {} ({} files, {} MB)",
+        " Getting model {} ({} files, {} MB)",
         manifest.key,
         manifest.files.len(),
         manifest.total_bytes / (1 << 20)
@@ -350,9 +453,82 @@ fn install_files(manifest: &Manifest, data_dir: &Path, dir: &Path) -> Result<(),
         if !super::manifest::safe_path(&file.path) {
             return Err(format!("unsafe path {}", file.path));
         }
+        let here = {
+            let (store, file) = (store.clone(), file.clone());
+            tokio::task::spawn_blocking(move || store.intact_pinned(&file.pinned()))
+                .await
+                .map_err(|err| err.to_string())?
+                .map_err(|err| err.to_string())?
+        };
+        if here.is_some() {
+            continue;
+        }
+        let mut reasons = Vec::new();
+        let mut obtained = false;
+        for source in &order {
+            match source {
+                Source::Hub => match from_hub(store, manifest, file).await {
+                    Ok(()) => obtained = true,
+                    Err(PinnedFetchError::Mismatch(err)) => {
+                        println!(
+                            " The Hub sent a wrong {} for {}: {err}",
+                            file.path, manifest.key
+                        );
+                        if let Ok(mut faults) = FAULTS.lock() {
+                            faults.insert(manifest.key.clone());
+                        }
+                        reasons.push(format!("Hub: wrong file ({err})"));
+                    }
+                    Err(PinnedFetchError::Unavailable(err)) => reasons.push(format!("Hub: {err}")),
+                },
+                Source::Peers => {
+                    if crate::model_share::download(store.root(), &file.pinned()).await {
+                        obtained = true;
+                    } else {
+                        reasons.push("no peer sent it".into());
+                    }
+                }
+            }
+            if obtained {
+                break;
+            }
+        }
+        if !obtained {
+            return Err(format!("{}: {}", file.path, reasons.join("; ")));
+        }
+    }
+    Ok(())
+}
+
+async fn from_hub(
+    store: &Arc<ModelStore>,
+    manifest: &Manifest,
+    file: &super::manifest::ManifestFile,
+) -> Result<(), PinnedFetchError> {
+    let (store, manifest, file) = (store.clone(), manifest.clone(), file.clone());
+    tokio::task::spawn_blocking(move || {
+        store
+            .fetch_pinned(&manifest.repository, &manifest.revision, &file.pinned())
+            .map(|_| ())
+    })
+    .await
+    .map_err(|err| {
+        PinnedFetchError::Unavailable(silicium_embedding::Error::Model(err.to_string()))
+    })?
+}
+
+/// Links the pinned files (all in the store) into the model directory with
+/// the repository layout.
+fn link_files(manifest: &Manifest, store: &ModelStore, dir: &Path) -> Result<(), String> {
+    let marker = dir.join(READY_MARKER);
+    for file in &manifest.files {
+        if !super::manifest::safe_path(&file.path) {
+            return Err(format!("unsafe path {}", file.path));
+        }
         let stored = store
-            .ensure_pinned(&manifest.repository, &manifest.revision, &file.pinned())
-            .map_err(|err| err.to_string())?;
+            .intact_pinned(&file.pinned())
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| format!("{} missing from the store", file.path))?;
         let target = dir.join(&file.path);
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;

@@ -24,6 +24,7 @@
 //! time an identifier is seen and kept for the life of the process.
 
 mod batch;
+pub(crate) mod canary;
 mod compare;
 mod compute;
 pub(crate) mod manifest;
@@ -50,7 +51,7 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
-pub(crate) use runtime::{scan_warm_models, warm_models};
+pub(crate) use runtime::{model_faults, scan_warm_models, shared_store_root, warm_models};
 
 /// Prefix of the workload identifiers.
 pub(crate) const PREFIX: &str = "ai/hf/";
@@ -173,7 +174,17 @@ impl Workload for Hf {
                 "La demande est trop grosse (60 Mo au plus) : envoie-la en plusieurs fois.".into(),
             );
         }
-        batch::build(&bytes, self.task, self.key).map(Some)
+        let (batch, canaries) = batch::build(&bytes, self.task, self.key)?;
+        if !canaries.is_empty() {
+            let sha256 = crate::content::sha256_hex(&batch);
+            let plan = canary::new_plan(self.task, self.key, canaries);
+            // Without its plan, the batch is still valid: the canaries are
+            // then answered like any item, and not checked.
+            if let Err(err) = canary::save_plan(&sha256, &plan) {
+                println!(" Canaries of a {} batch not kept: {err}", self.task);
+            }
+        }
+        Ok(Some(batch))
     }
 
     fn requires_split(&self) -> bool {
@@ -200,6 +211,10 @@ impl Workload for Hf {
             };
             runtime::ensure_model(&runtime, &header.model, &context.data_dir).await
         })
+    }
+
+    fn is_warm(&self, _task: &NetworkTask) -> bool {
+        runtime::is_warm(self.key)
     }
 
     fn split(
@@ -294,6 +309,25 @@ impl Workload for Hf {
         batch::parse_answers(bytes, items.first, items.count).is_ok()
     }
 
+    fn audit(&self, fragment: &FragmentRef, input: &Path, bytes: &[u8]) -> Option<String> {
+        let plan = canary::plan_of(&input_sha256(input)?)?;
+        let items = fragment.items?;
+        let answers = batch::parse_answers(bytes, items.first, items.count).ok()?;
+        canary::wrong_canary(&plan, &answers)
+    }
+
+    fn learn(&self, fragment: &FragmentRef, input: &Path, bytes: &[u8], checked: &[usize]) {
+        let Some(plan) = input_sha256(input).and_then(|sha256| canary::plan_of(&sha256)) else {
+            return;
+        };
+        let Some(items) = fragment.items else {
+            return;
+        };
+        if let Ok(answers) = batch::parse_answers(bytes, items.first, items.count) {
+            canary::learn(&plan, &answers, &canary::ids_at(items.first, checked));
+        }
+    }
+
     fn assemble(
         &self,
         job: &JobManifest,
@@ -317,6 +351,11 @@ impl Workload for Hf {
                 header.item_count
             ));
         }
+        // The canaries are the publisher's: the user gets its items only.
+        let answers = match input_sha256(input).and_then(|sha256| canary::plan_of(&sha256)) {
+            Some(plan) => canary::strip(&plan, answers),
+            None => answers,
+        };
         let model = &header.model;
         let result = json!({
             "format": batch::RESULT_FORMAT,
@@ -328,7 +367,7 @@ impl Workload for Hf {
                 "licence": model.licence,
                 "url": format!("https://huggingface.co/{}/tree/{}", model.repository, model.revision),
             },
-            "item_count": header.item_count,
+            "item_count": answers.len(),
             "parameters": header.parameters,
         });
         Ok(vec![
@@ -342,6 +381,13 @@ impl Workload for Hf {
             },
         ])
     }
+}
+
+/// SHA-256 of the shared input, from its name in the content store
+/// (`content/<sha256>`).
+fn input_sha256(input: &Path) -> Option<String> {
+    let name = input.file_name()?.to_str()?;
+    crate::content::is_sha256(name).then(|| name.to_string())
 }
 
 fn env_count(name: &str) -> Option<usize> {

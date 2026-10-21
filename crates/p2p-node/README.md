@@ -46,6 +46,11 @@ C'est le seul runtime réseau ; l'ancien nœud Python a été supprimé.
     pairs connectés), le demande à l'un après l'autre par le protocole
     requête-réponse `/silicium/content/1` (64 Mio au plus) et ne garde que des
     octets dont le hash correspond ;
+  - **fichiers des modèles** (`src/model_share.rs`) : les fichiers épinglés
+    du magasin de modèles sont annoncés dans la DHT
+    (`silicium/models/v1/<nom>`) et servis par morceaux de 4 Mio par
+    `/silicium/model/1` ; un fichier reçu n'entre dans le magasin que si sa
+    taille et son hash sont ceux épinglés ;
   - **jobs** (`src/jobs/`, `src/publishing.rs`) : une tâche publiée par
     l'API est découpée par son workload (voir « Workloads ») : tuiles d'image
     pour le raytracer (centre d'abord), morceaux d'octets pour sha256 ;
@@ -93,6 +98,8 @@ finaliser ou annuler ces tâches.
 | `SILICIUM_TARGET_BYTES_PER_FRAGMENT` | `4194304` | Taille visée d'un morceau d'entrée, en octets (sha256) |
 | `SILICIUM_EMBEDDING_PASSAGES_PER_FRAGMENT` | `128` | Passages par fragment d'une recherche dans des documents |
 | `SILICIUM_MODEL_DIR` | `$SILICIUM_DATA_DIR/models` | Fichiers des modèles (téléchargés une fois, rangés par SHA-256) |
+| `SILICIUM_AI_MODEL_SOURCES` | `hub,peers` | Ordre des sources des fichiers des modèles du catalogue IA (`hub`, `peers`) ; les hashes épinglés sont vérifiés quelle que soit la source |
+| `SILICIUM_COLD_VERIFY_GRACE_SECS` | `60` | Attente d'un vérificateur qui n'a pas le modèle avant de le télécharger (plus un délai propre au nœud) |
 | `SILICIUM_MODEL_BASE_URL` | `https://huggingface.co` | Source des modèles (un miroir de même arborescence convient : les hashes sont vérifiés quelle que soit la source) |
 | `SILICIUM_EMBEDDING_IDLE_UNLOAD_S` | `900` | Un modèle inutilisé depuis ce délai est déchargé de la mémoire |
 | `SILICIUM_EMBEDDING_INDEX_CACHE_MB` | `512` | Mémoire des index gardés pour la recherche (éditeur) |

@@ -324,6 +324,8 @@ async fn a_model_whose_files_do_not_match_is_never_ready() {
     let (_, tasks, _) = published_job(&node, workload, &request(&manifest, &TEXTS[..2])).await;
     assert!(!wait_ready(&node, workload, &tasks[0]).await);
     assert!(!warm_models().contains(&manifest.key));
+    // The Hub sent another file than the pinned one: reported for quarantine.
+    assert!(runtime::model_faults().contains(&manifest.key));
     assert!(
         !runtime::model_dir(&node.context.data_dir, &manifest.key)
             .join("weights")
@@ -378,4 +380,83 @@ fn identifiers_name_a_known_task_and_a_well_formed_key() {
         "existing workloads still found"
     );
     assert!(workload::find("raytracer").is_some());
+}
+
+#[test]
+fn model_files_come_from_the_hub_then_from_peers_by_default() {
+    use runtime::{Source, sources};
+    assert_eq!(sources(None), vec![Source::Hub, Source::Peers]);
+    assert_eq!(
+        sources(Some("peers, hub")),
+        vec![Source::Peers, Source::Hub]
+    );
+    assert_eq!(sources(Some("peers,peers")), vec![Source::Peers]);
+    assert_eq!(sources(Some("hub")), vec![Source::Hub]);
+    assert_eq!(sources(Some("nowhere")), vec![Source::Hub, Source::Peers]);
+}
+
+#[tokio::test]
+async fn canaries_are_hidden_checked_and_removed() {
+    canary::set_root_for_tests(
+        std::env::temp_dir().join(format!("silicium-hf-canaries-{}", std::process::id())),
+    );
+    let node = node("canaries");
+    let manifest = manifest_for("org/tiny-classifier");
+    let workload = workload_for(&manifest);
+    let texts: Vec<&str> = TEXTS.iter().copied().cycle().take(40).collect();
+    let mut with_canary = request(&manifest, &texts);
+    with_canary["canaries"] = json!(["Canari : exemple public."]);
+    let (job, tasks, input) = published_job(&node, workload, &with_canary).await;
+    let header = batch::read_header_file(&input).unwrap();
+    assert_eq!(header.item_count, 41, "one canary among the items");
+    let sha256 = input.file_name().unwrap().to_str().unwrap().to_string();
+    let plan = canary::plan_of(&sha256).expect("plan kept by the publisher");
+    assert_eq!(plan.canaries.len(), 1);
+    assert!(
+        wait_ready(&node, workload, &tasks[0]).await,
+        "model prepared"
+    );
+
+    let mut results = Vec::new();
+    for task in &tasks {
+        workload
+            .execute(&node.context, task)
+            .await
+            .expect("computed");
+        results.push(std::fs::read(node.context.content.absolute(&task.output_path)).unwrap());
+    }
+    let canary_id = plan.canaries[0].id;
+    let (index, fragment) = job
+        .fragments
+        .iter()
+        .enumerate()
+        .find(|(_, f)| {
+            let items = f.items.unwrap();
+            (items.first..items.first + items.count).contains(&canary_id)
+        })
+        .unwrap();
+    let honest = &results[index];
+    let forged = String::from_utf8(honest.clone())
+        .unwrap()
+        .replace(r#""label":"canari""#, r#""label":"positif""#);
+    // Nothing learned yet: nothing to reject.
+    assert_eq!(workload.audit(fragment, &input, forged.as_bytes()), None);
+    // An independent verifier ran the canary again and approved.
+    let at = (canary_id - fragment.items.unwrap().first) as usize;
+    workload.learn(fragment, &input, honest, &[at]);
+    assert_eq!(workload.audit(fragment, &input, honest), None);
+    assert!(
+        workload
+            .audit(fragment, &input, forged.as_bytes())
+            .is_some()
+    );
+
+    // The user gets its 40 answers, numbered from 0, without the canary.
+    let outputs = workload.assemble(&job, &input, &results).unwrap();
+    let answers = String::from_utf8(outputs[0].bytes.clone()).unwrap();
+    assert_eq!(answers.lines().count(), 40);
+    assert!(!answers.contains("canari"));
+    assert!(answers.lines().last().unwrap().starts_with(r#"{"id":39,"#));
+    let result: Value = serde_json::from_slice(&outputs[1].bytes).unwrap();
+    assert_eq!(result["item_count"], 40);
 }
