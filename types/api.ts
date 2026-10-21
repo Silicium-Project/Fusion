@@ -340,6 +340,7 @@ export interface SystemStatus {
     telemetryNodes?: number;
     activeTasks?: number;
     queueDepth?: number;
+    knownTasks?: number;
     logicalCpuCount?: number;
     systemCpuPercent?: number;
     systemMemoryPercent?: number;
