@@ -47,7 +47,7 @@ jobs:
             changed_paths="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
           fi
           javascript=false
-          if [[ "$force_all" == true ]] || printf '%s\n' "$changed_paths" | grep -Eq '(^|/)(pages|components|composables|layouts|middleware|plugins|public|server|assets|tests|types|utils|services|stores)/|(^|/)(app|nuxt|tsconfig|vitest|playwright)\.(config\.)?[cm]?[jt]s$|(^|/)(package|package-lock)\.json$|^\.github/workflows/'; then
+          if [[ "$force_all" == true ]] || printf '%s\n' "$changed_paths" | grep -Eq '(^|/)(pages|components|composables|layouts|middleware|plugins|public|server|assets|tests|types|utils|services|stores|locales)/|(^|/)(app|nuxt|tsconfig|vitest|playwright)\.(config\.)?[cm]?[jt]s$|(^|/)(package|package-lock)\.json$|^\.github/workflows/'; then
             javascript=true
           fi
           printf 'Changed paths:\n%s\n' "$changed_paths"
