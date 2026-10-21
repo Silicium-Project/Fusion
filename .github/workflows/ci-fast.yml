@@ -97,7 +97,9 @@ jobs:
 
   fast-tests:
     needs: [changes]
-    if: ${{ needs.changes.outputs.validate == 'true' }}
+    # The Development channel workflow runs the full matrix on every dev push.
+    # Do not start the same disk-heavy VPS jobs a second time in parallel.
+    if: ${{ needs.changes.outputs.validate == 'true' && (github.event_name != 'push' || github.ref != 'refs/heads/dev') }}
     uses: ./.github/workflows/test.yml
     with:
       skip_submodule_ci_gate: ${{ needs.changes.outputs.skip_submodule_ci_gate == 'true' }}
