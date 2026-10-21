@@ -244,6 +244,25 @@ pub(crate) fn known_ids() -> String {
         .join(", ")
 }
 
+/// Workloads this node is configured to accept, advertised for queue
+/// diagnostics. An empty allowlist means every compiled-in workload.
+pub(crate) fn advertised_ids() -> Vec<String> {
+    let configured = std::env::var("SILICIUM_ALLOWED_WORKLOADS").unwrap_or_default();
+    if configured.trim().is_empty() {
+        return REGISTRY
+            .iter()
+            .map(|workload| workload.id().to_string())
+            .collect();
+    }
+    configured
+        .split(',')
+        .map(str::trim)
+        .filter_map(|id| find(id).map(|workload| workload.id().to_string()))
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

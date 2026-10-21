@@ -76,6 +76,7 @@ pub(crate) fn local_peer_profile(
             // Models for which the Hub sent a file that is not the pinned
             // one (the BackEnd quarantines a model two nodes report).
             "ai_model_faults": crate::workload::hf::model_faults(),
+            "supported_workloads": crate::workload::advertised_ids(),
         }),
         activity: json!({
             "status": if active_tasks.is_empty() { "idle" } else { "working" },
