@@ -159,9 +159,22 @@ impl CompatibilityWriter {
             &payload,
         );
 
-        let queue: Vec<Value> = tasks
+        let active_tasks: Vec<Value> = tasks
             .iter()
             .filter(|task| is_active(&task.status))
+            .map(|task| {
+                json!({
+                    "task_id": task.task_id,
+                    "root_job_id": task.root_job_id,
+                    "status": task.status,
+                    "handled_by": task.handled_by,
+                    "workload": task.workload,
+                })
+            })
+            .collect();
+        let task_queue: Vec<Value> = tasks
+            .iter()
+            .filter(|task| is_queued(&task.status))
             .map(|task| {
                 json!({
                     "task_id": task.task_id,
@@ -186,8 +199,8 @@ impl CompatibilityWriter {
             "release_channel": self.release_channel.clone(),
             "release_build": self.release_build.clone(),
             "capacity": {"logical_cpu_count": telemetry["logical_cpu_count"]},
-            "activity": {"active_tasks": queue, "telemetry": telemetry},
-            "task_queue": queue,
+            "activity": {"active_tasks": active_tasks, "telemetry": telemetry},
+            "task_queue": task_queue,
             "telemetry": telemetry,
             "updated_utc": utc_now(),
         });
@@ -510,6 +523,10 @@ fn write_bytes(path: &Path, bytes: &[u8]) {
 
 fn is_active(status: &str) -> bool {
     matches!(status, "running" | "verifying")
+}
+
+fn is_queued(status: &str) -> bool {
+    matches!(status, "queued" | "proposed" | "retrying")
 }
 
 fn path_id(value: &str) -> String {

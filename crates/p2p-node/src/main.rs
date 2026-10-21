@@ -37,6 +37,7 @@ mod processing;
 mod publisher;
 mod publishing;
 mod results;
+mod solana_settlement;
 mod storage;
 mod swarm;
 mod task;

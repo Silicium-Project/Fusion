@@ -125,6 +125,8 @@ pub(crate) struct NetworkTask {
     /// older publishers, which are raytracer renders.
     #[serde(default)]
     pub(crate) workload: Option<String>,
+    #[serde(default)]
+    pub(crate) solana_payment: Option<silicium_node_core::p2p::SolanaPaymentRef>,
     /// Chunk of the input to process (workloads splitting a file).
     #[serde(default)]
     pub(crate) byte_range: Option<ByteRange>,
@@ -152,6 +154,7 @@ impl From<TaskEnvelope> for NetworkTask {
             scene_sha256: value.scene_sha256,
             region: value.region,
             workload: value.workload,
+            solana_payment: value.solana_payment,
             byte_range: value.byte_range,
             requested_fragment_count: None,
         }
@@ -221,6 +224,7 @@ impl From<NetworkTask> for TaskEnvelope {
             scene_sha256: value.scene_sha256,
             region: value.region,
             workload: value.workload,
+            solana_payment: value.solana_payment,
             byte_range: value.byte_range,
         }
     }

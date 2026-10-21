@@ -54,6 +54,10 @@ pub(crate) struct Submission {
     pub(crate) seed: String,
     #[serde(default)]
     pub(crate) fragment_count: Option<usize>,
+    #[serde(default)]
+    pub(crate) solana_job: Option<String>,
+    #[serde(default)]
+    pub(crate) solana_expected_fragments: Option<u32>,
 }
 
 /// JSON-compatible task status returned to the BackEnd.

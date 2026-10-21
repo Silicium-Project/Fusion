@@ -26,6 +26,7 @@ fn task() -> NetworkTask {
         scene_sha256: Some("b".repeat(64)),
         region: None,
         workload: None,
+        solana_payment: None,
         byte_range: None,
         requested_fragment_count: None,
     }

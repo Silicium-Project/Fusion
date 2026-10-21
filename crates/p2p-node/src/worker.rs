@@ -53,6 +53,12 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
         // Verify-only node: it keeps the task to check results, not to claim it.
         return;
     }
+    if let Some(payment) = task.solana_payment.as_ref()
+        && !crate::solana_settlement::ready(payment).await
+    {
+        println!(" Paid task {task_id} is waiting for a linked Devnet wallet and valid escrow");
+        return;
+    }
     // A workload needing local resources (a model to download) gets them
     // first; the publisher announces the task again until someone claims it.
     if let Some(workload) = crate::workload::of(&task)
@@ -85,11 +91,21 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
     renewer.stop();
     let body = match outcome {
         Some(outcome) => match share_result(&context, &task).await {
-            Some(result) => TaskEventBody::ResultPublished {
-                attempt,
-                result,
-                milestones: outcome.milestones,
-            },
+            Some(result) => {
+                let settled = match task.solana_payment.as_ref() {
+                    Some(payment) => crate::solana_settlement::submit(payment, &result.sha256).await,
+                    None => true,
+                };
+                if settled {
+                    TaskEventBody::ResultPublished {
+                        attempt,
+                        result,
+                        milestones: outcome.milestones,
+                    }
+                } else {
+                    TaskEventBody::ClaimReleased { attempt }
+                }
+            }
             None => TaskEventBody::ClaimReleased { attempt },
         },
         None => TaskEventBody::ClaimReleased { attempt },

@@ -299,6 +299,7 @@ mod tests {
             scene_sha256: None,
             region: None,
             workload: Some(sha256::ID.to_string()),
+            solana_payment: None,
             byte_range: None,
             requested_fragment_count: None,
         };

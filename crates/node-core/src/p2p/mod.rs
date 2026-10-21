@@ -123,10 +123,23 @@ pub struct TaskEnvelope {
     /// absent for tasks of older publishers, which are raytracer renders.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workload: Option<String>,
+    /// Public Solana escrow reference for an explicitly paid Devnet task.
+    /// The worker still verifies every account and state against the program
+    /// before signing a settlement transaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solana_payment: Option<SolanaPaymentRef>,
     /// Part of the input to process, for workloads that split a file into
     /// byte chunks; the whole input when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub byte_range: Option<ByteRange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SolanaPaymentRef {
+    pub job: String,
+    pub expected_fragments: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fragment_index: Option<u32>,
 }
 
 /// What a node accepts from tasks published by other peers.
@@ -255,6 +268,7 @@ impl TaskEnvelope {
                 region => region,
             },
             workload,
+            solana_payment: self.solana_payment.clone(),
             byte_range: match self.byte_range {
                 Some(range) if !range.is_valid() => return Err(RemoteTaskError::InvalidByteRange),
                 range => range,

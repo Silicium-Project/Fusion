@@ -36,6 +36,17 @@ use tokio::sync::mpsc;
 
 const PEER_STALE_AFTER_SECONDS: i64 = 15;
 
+fn solana_payments_enabled() -> bool {
+    matches!(
+        std::env::var("SILICIUM_SOLANA_PAYMENTS_ENABLED")
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase()
+            .as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
 #[derive(Clone)]
 pub(crate) struct ApiState {
     pub(crate) tx_publish: mpsc::Sender<NetworkTask>,
@@ -183,6 +194,36 @@ async fn submit_control_task(
             return api_error(StatusCode::INTERNAL_SERVER_ERROR, "input_not_stored");
         }
     };
+    let solana_payment = match (
+        submission.solana_job.as_deref(),
+        submission.solana_expected_fragments,
+    ) {
+        (Some(job), Some(expected_fragments))
+            if !job.trim().is_empty()
+                && expected_fragments > 0
+                && expected_fragments as usize <= MAX_FRAGMENTS_LIMIT =>
+        {
+            if !solana_payments_enabled() {
+                return api_error(StatusCode::SERVICE_UNAVAILABLE, "solana_payments_disabled");
+            }
+            if workload.id() != "calcul/integrity/sha256" {
+                return api_error(
+                    StatusCode::BAD_REQUEST,
+                    "solana_payments_currently_support_sha256",
+                );
+            }
+            Some(silicium_node_core::p2p::SolanaPaymentRef {
+                job: job.trim().to_string(),
+                expected_fragments,
+                fragment_index: None,
+            })
+        }
+        (None, None) if !solana_payments_enabled() => None,
+        (None, None) => {
+            return api_error(StatusCode::PAYMENT_REQUIRED, "solana_payment_required");
+        }
+        _ => return api_error(StatusCode::BAD_REQUEST, "invalid_solana_payment_reference"),
+    };
     let envelope = silicium_node_core::p2p::TaskEnvelope {
         task_id: owned_task_id.clone(),
         scene_path,
@@ -202,6 +243,7 @@ async fn submit_control_task(
         scene_sha256,
         region: None,
         workload: Some(workload.id().to_string()),
+        solana_payment,
         byte_range: None,
     };
     let Ok(mut task) = state.security.admit_local(envelope) else {

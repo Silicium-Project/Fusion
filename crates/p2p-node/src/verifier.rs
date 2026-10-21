@@ -242,6 +242,15 @@ async fn check(context: &NodeContext, job: &Job) -> bool {
         .await;
     match verdict {
         Some(approved) => {
+            if let Some(payment) = job.task.solana_payment.as_ref()
+                && !crate::solana_settlement::vote(payment, approved).await
+            {
+                println!(
+                    " Paid task {} awaits a successful Devnet verification vote",
+                    job.task.task_id
+                );
+                return false;
+            }
             publish_verdict(context, job, approved).await;
             true
         }

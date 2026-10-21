@@ -187,6 +187,7 @@ fn submitted(sha256: &str, workload: &Hf) -> NetworkTask {
         scene_sha256: Some(sha256.into()),
         region: None,
         workload: Some(workload.id.into()),
+        solana_payment: None,
         byte_range: None,
         requested_fragment_count: Some(2),
     }

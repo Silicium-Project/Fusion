@@ -125,9 +125,48 @@ fn split_job(
                 .mark_failed(&task.task_id, "input_not_split");
             return Vec::new();
         }
+        if let Some(payment) = task.solana_payment.as_mut() {
+            if payment.expected_fragments != 1 {
+                println!(
+                    " Paid job {} expected {} fragments but this workload is not split",
+                    task.task_id, payment.expected_fragments
+                );
+                settings
+                    .control
+                    .mark_failed(&task.task_id, "solana_fragment_count_mismatch");
+                return Vec::new();
+            }
+            payment.fragment_index = Some(0);
+        }
         return vec![task];
     };
     let count = fragments.len();
+    let fragments = if let Some(payment) = task.solana_payment.as_ref() {
+        if payment.expected_fragments as usize != count {
+            println!(
+                " Paid job {} expected {} fragments but the workload split into {count}",
+                task.task_id, payment.expected_fragments
+            );
+            settings
+                .control
+                .mark_failed(&task.task_id, "solana_fragment_count_mismatch");
+            return Vec::new();
+        }
+        fragments
+            .into_iter()
+            .enumerate()
+            .map(|(index, mut fragment)| {
+                fragment.solana_payment = Some(silicium_node_core::p2p::SolanaPaymentRef {
+                    job: payment.job.clone(),
+                    expected_fragments: payment.expected_fragments,
+                    fragment_index: Some(index as u32),
+                });
+                fragment
+            })
+            .collect()
+    } else {
+        fragments
+    };
     match jobs.add(manifest) {
         Ok(()) => {
             // The control-plane request represents the logical job. Once it

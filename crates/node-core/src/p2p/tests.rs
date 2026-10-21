@@ -40,6 +40,7 @@ fn remote_task() -> TaskEnvelope {
         scene_sha256: Some("not-a-hash".to_string()),
         region: None,
         workload: None,
+        solana_payment: None,
         byte_range: None,
     }
 }

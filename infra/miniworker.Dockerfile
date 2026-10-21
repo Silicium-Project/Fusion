@@ -8,7 +8,13 @@ ARG CARGO_BUILD_JOBS=2
 RUN cargo fetch --locked \
     && CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS} cargo build --release --locked -p p2p_node -p compute_daemon -p silicium-raytracer
 
-FROM debian:bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS solana-deps
+WORKDIR /opt/worker-solana
+COPY infra/worker-solana/package.json infra/worker-solana/package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+COPY infra/solana-worker-settlement.mjs ./solana-worker-settlement.mjs
+
+FROM node:22-bookworm-slim AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash ca-certificates curl \
@@ -20,6 +26,7 @@ COPY --from=builder /work/target/release/p2p_node /usr/local/bin/p2p_node
 COPY --from=builder /work/target/release/compute_daemon /usr/local/bin/compute_daemon
 COPY --from=builder /work/target/release/silicium-raytracer /usr/local/bin/silicium-raytracer
 COPY --from=builder /work/target/release/solana_worker_wallet /usr/local/bin/solana-worker-wallet
+COPY --from=solana-deps /opt/worker-solana /opt/worker-solana
 COPY infra/miniworker-entrypoint.sh /usr/local/bin/miniworker-entrypoint
 RUN chmod 0555 /usr/local/bin/miniworker-entrypoint
 

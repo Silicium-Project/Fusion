@@ -165,6 +165,7 @@ mod tests {
             scene_sha256: None,
             region: None,
             workload: None,
+            solana_payment: None,
             byte_range: None,
         }
     }
