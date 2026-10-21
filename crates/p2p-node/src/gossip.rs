@@ -35,8 +35,11 @@ pub(crate) fn handle(
             Vec::new()
         }
         Ok(GossipMessage::PeerHeartbeat(mut profile)) => {
-            let expected_peer_id = peer_id.to_string();
-            if profile.peer_id.as_str() != expected_peer_id.as_str()
+            // `peer_id` is the immediate propagation source, which may be a
+            // relay forwarding another peer's signed heartbeat. Bind the
+            // profile to the gossipsub message author instead.
+            let expected_peer_id = message.source.map(|source| source.to_string());
+            if expected_peer_id.as_deref() != Some(profile.peer_id.as_str())
                 || profile.node_id.trim().is_empty()
             {
                 println!(" Ignored invalid heartbeat from {peer_id}");

@@ -40,14 +40,10 @@ pub struct CancelJob<'info> {
 }
 
 pub fn handler(ctx: Context<CancelJob>) -> Result<()> {
-    let now = Clock::get()?.unix_timestamp;
-
-    let nothing_started =
-        ctx.accounts.job.verified_fragments == 0 && ctx.accounts.job.paid_amount == 0;
-    let deadline_passed = now > ctx.accounts.job.deadline_unix;
-
-    require!(nothing_started || deadline_passed, SiliciumError::JobNotCancellable);
-
+    // A client may stop an open job after partial work. Rewards already
+    // transferred for verified fragments stay paid; all remaining escrow is
+    // returned below. Winning verifier rewards must be claimed first so they
+    // cannot be erased by closing the escrow.
     require!(
         ctx.accounts.job.claimed_verifier_rewards_total
             == ctx.accounts.job.claimable_verifier_rewards_total,

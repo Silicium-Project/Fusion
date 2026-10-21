@@ -35,6 +35,9 @@ pub(crate) async fn record_task_event(context: &NodeContext, task_id: &str, body
 
 /// Handles a task received from the network (see the module documentation).
 pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
+    if !crate::workload::is_allowed(&task) {
+        return;
+    }
     let task_id = task.task_id.clone();
     // The publisher announces an unclaimed task again until someone claims
     // it: handle each task once at a time.

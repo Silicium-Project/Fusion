@@ -250,6 +250,23 @@ fragment_quorum = 2
 verifier_reward_budget >= verifier_reward_per_vote * 2
 ```
 
+The Devnet test quote is fixed at six decimal places: one SIL (1,000,000
+base units) for the accepted compute result and one SIL for each of two
+accepted verifier votes. The escrow reserves 3 SIL per expected fragment.
+Finalization returns any unspent balance. The cancellation refund rule is
+present in local program source and takes effect on Devnet only after that
+program update is deployed.
+
+From `Network/solana-layer/`, run:
+
+```bash
+npx ts-node scripts/create_devnet_sil_mint.ts
+```
+
+The script stores the mint authority key in the ignored
+`Network/.silicium/solana/` directory and prints only the public address. The
+authority needs Devnet SOL for account creation and mint fees.
+
 ---
 
 ## 8. SDK initialization
@@ -553,6 +570,11 @@ await sdk.cancelJob({
   clientToken,
 });
 ```
+
+An open job can be cancelled even after partial verified work. Rewards already
+transferred for verified fragments remain paid. Any outstanding winning
+verifier rewards must be claimed first; the rest of the escrow is refunded to
+the client by the cancellation transaction.
 
 ---
 
