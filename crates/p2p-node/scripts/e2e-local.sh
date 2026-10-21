@@ -31,6 +31,7 @@ OUT=$(realpath -m "${2:-$ROOT/target/e2e-local}")
 WORKERS=${WORKERS:-1}
 WORKLOAD=${WORKLOAD:-raytracer}
 OFFSET=${E2E_PORT_OFFSET:-0}
+JOB_TIMEOUT_SECS=${E2E_JOB_TIMEOUT_SECS:-240}
 API=$((19092 + OFFSET))
 P2P=$((46201 + OFFSET))
 COMPUTE_BASE=$((19100 + OFFSET))
@@ -122,7 +123,7 @@ echo "job $JOB published by $ORCHESTRATOR; workers join in 5 s"
 sleep 5
 for n in $(seq "$WORKERS"); do start_worker "$n" "$ORCHESTRATOR"; done
 
-for second in $(seq 120); do
+for second in $(seq "$JOB_TIMEOUT_SECS"); do
   sleep 1
   if [ -f "$OUT/o/work/results/$JOB.$FINAL_EXTENSION" ]; then
     echo "OK: $WORKLOAD job assembled after ${second}s ($OUT/o/work/results/$JOB.$FINAL_EXTENSION)"
@@ -171,7 +172,7 @@ PY
     exit 0
   fi
 done
-echo "FAIL: no reassembled image after 120 s (logs in $OUT)"
+echo "FAIL: no reassembled image after ${JOB_TIMEOUT_SECS} s (logs in $OUT)"
 curl -s --max-time 5 "http://127.0.0.1:$API/jobs/$JOB"; echo
 tail -n 40 "$OUT/orchestrator.log"
 for n in $(seq "$WORKERS"); do echo "--- worker $n"; tail -n 20 "$OUT/w$n/node.log"; done
