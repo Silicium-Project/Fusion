@@ -13,8 +13,19 @@ registered with the Solana program by Compose.
 These containers increase test concurrency on one host. They are not separate
 machines and do not add host-level availability.
 
-On the VPS, copy `deploy/env/dev-miniworkers.env.example` to
-`deploy/env/dev-miniworkers.env`, then run:
+To attach all 20 workers to the signed-in website account, open **Espace
+worker → Associer les 20 miniworkers**, download the one-use JSON, transfer it
+to the VPS, then run `manage-dev-miniworkers.sh pair <json-file>`. The codes
+expire after 10 minutes, are each bound to a `miniworker-NN` identity, and are
+installed as root-only files. Each container signs its own code with its
+persistent libp2p key and calls a path-limited relay; the workers never join
+the backend service network and no website session token is copied to a worker. The manager clears
+each code after the backend confirms the link. Devices then appear in that
+account's worker space when they announce themselves to the orchestrator.
+
+The dev bootstrap keeps the worker settings in `/etc/silicium-dev/miniworkers.env`,
+outside the Git checkout so a deployment cannot delete them. It creates that
+file from `deploy/env/dev-miniworkers.env.example` on first setup. Run:
 
 ```sh
 sudo ./deploy/linux/manage-dev-miniworkers.sh up

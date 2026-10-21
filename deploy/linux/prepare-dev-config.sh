@@ -73,6 +73,7 @@ copy_if_missing "$CONFIG_DIR/frontend.env" deploy/env/frontend.example.env
 copy_if_missing "$CONFIG_DIR/orchestrator.env" deploy/env/orchestrator.example.env
 copy_if_missing "$CONFIG_DIR/compose.env" deploy/env/compose.example.env
 copy_if_missing "$CONFIG_DIR/update-channels.env" deploy/env/update-channels.example.env
+copy_if_missing "$CONFIG_DIR/miniworkers.env" deploy/env/dev-miniworkers.env.example
 
 compose_env="$CONFIG_DIR/compose.env"
 backend_env="$CONFIG_DIR/backend.env"
@@ -93,6 +94,7 @@ set_env_value "$compose_env" POSTGRES_DB silicium_dev
 set_env_value "$compose_env" POSTGRES_USER silicium_dev
 set_env_value "$compose_env" POSTGRES_PASSWORD "$db_password"
 set_env_value "$compose_env" SILICIUM_RELEASE_CHANNEL dev
+set_env_value "$compose_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
 set_env_value "$compose_env" SILICIUM_RELEASE_VERSION "$release_version"
 set_env_value "$compose_env" SILICIUM_RELEASE_BUILD "$release_build"
 set_env_value "$compose_env" SILICIUM_COMPOSE_PROJECT_NAME silicium-dev
@@ -158,6 +160,7 @@ set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_LINUX_DEV_RPM_URL "$PUBLIC_BA
 set_env_value "$orchestrator_env" SILICIUM_NODE_ID orchestrator-dev-1
 set_env_value "$orchestrator_env" SILICIUM_NODE_ROLES resource,storage
 set_env_value "$orchestrator_env" SILICIUM_NODE_PORT "$ORCHESTRATOR_PORT"
+set_env_value "$orchestrator_env" SILICIUM_P2P_PORT "$((ORCHESTRATOR_PORT + 1))"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_CHANNEL dev
 set_env_value "$orchestrator_env" SILICIUM_APP_VERSION "$release_version"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_BUILD "$release_build"
@@ -226,4 +229,5 @@ install -D -m 0600 "$tls_key" "$DATA_ROOT/coturn/privkey.pem"
 
 chmod 0750 "$CONFIG_DIR"
 chmod 0640 "$CONFIG_DIR"/*.env
+chmod 0600 "$CONFIG_DIR/miniworkers.env"
 echo "Development configuration prepared in $CONFIG_DIR with isolated data under $DATA_ROOT."

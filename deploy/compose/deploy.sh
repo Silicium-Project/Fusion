@@ -61,6 +61,14 @@ if [[ -f "$orchestrator_env_dir/orchestrator.env" ]]; then
   # shellcheck disable=SC1090
   . "$orchestrator_env_dir/orchestrator.env"
 fi
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  SILICIUM_DEV_MINIWORKERS_ENV="${SILICIUM_DEV_MINIWORKERS_ENV:-$orchestrator_env_dir/miniworkers.env}"
+  if [[ -f "$SILICIUM_DEV_MINIWORKERS_ENV" ]]; then
+    # shellcheck disable=SC1090
+    . "$SILICIUM_DEV_MINIWORKERS_ENV"
+  fi
+  export SILICIUM_DEV_MINIWORKERS_ENV
+fi
 set +a
 
 channel_or_legacy_default() {
@@ -168,6 +176,9 @@ if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: 
     for protocol in tcp udp; do
       ufw allow from "${SILICIUM_VPN_NETWORK:-10.77.0.0/24}" to "$SILICIUM_VPN_SERVER_ADDRESS" \
         port "$p2p_port" proto "$protocol" comment "Silicium dev Rust P2P" >/dev/null
+      ufw allow from "${SILICIUM_DEV_MINIWORKER_SUBNET:-172.23.0.0/24}" \
+        to "${SILICIUM_DEV_MINIWORKER_GATEWAY:-172.23.0.1}" \
+        port "$p2p_port" proto "$protocol" comment "Silicium dev miniworker P2P" >/dev/null
     done
   fi
 fi
@@ -266,6 +277,15 @@ fi
 # containers so its upstream IPs cannot remain stale after a deployment.
 "${compose[@]}" up -d --force-recreate proxy
 "${compose[@]}" ps
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  [[ -f "$SILICIUM_DEV_MINIWORKERS_ENV" ]] || {
+    echo "Missing persistent miniworker configuration: $SILICIUM_DEV_MINIWORKERS_ENV" >&2
+    exit 1
+  }
+  SILICIUM_CONFIG_DIR="$SILICIUM_CONFIG_DIR" \
+    SILICIUM_DEV_MINIWORKERS_ENV="$SILICIUM_DEV_MINIWORKERS_ENV" \
+    bash "$ROOT/deploy/linux/manage-dev-miniworkers.sh" up
+fi
 "$ROOT/deploy/linux/publish-update-manifest.sh"
 if [[ -f "$ROOT/deploy/linux/publish-package-repositories.sh" ]]; then
   bash "$ROOT/deploy/linux/publish-package-repositories.sh" "$ROOT"

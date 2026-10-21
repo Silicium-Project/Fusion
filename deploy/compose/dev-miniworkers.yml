@@ -1,5 +1,25 @@
 name: silicium-dev-miniworkers
 
+x-miniworker-environment: &miniworker-environment
+  SILICIUM_RELEASE_CHANNEL: dev
+  SILICIUM_RELEASE_BUILD: vps-miniworker
+  SILICIUM_NODE_ROLES: compute,verify
+  SILICIUM_ALLOWED_WORKLOADS: raytracer
+  SILICIUM_PARALLEL_TASKS: "1"
+  SILICIUM_BOOTSTRAP_PEERS: ${SILICIUM_DEV_BOOTSTRAP_PEER:?Set SILICIUM_DEV_BOOTSTRAP_PEER}
+  SILICIUM_P2P_BIND: 0.0.0.0
+  SILICIUM_P2P_PORT: "0"
+  SILICIUM_API_BIND: 127.0.0.1
+  API_PORT: "9092"
+  SILICIUM_DATA_DIR: /data
+  SILICIUM_COMPUTE_ROOT: /data/work
+  SILICIUM_DEVICE_PAIRING_API_URL: ${SILICIUM_DEVICE_PAIRING_API_URL:-http://pairing-relay:8080/devices/pair}
+  SILICIUM_DEVICE_PAIRING_CODE_FILE: /run/secrets/device-pairing-code
+  SILICIUM_SOLANA_CLUSTER: devnet
+  SILICIUM_SOLANA_WALLET_PATH: /data/solana-wallet.json
+  SILICIUM_RAYTRACER_BIN: /usr/local/bin/silicium-raytracer
+  SILICIUM_COMPUTE_BIND: 127.0.0.1:9090
+
 x-miniworker-defaults: &miniworker-defaults
   image: silicium-dev-miniworker:local
   build:
@@ -8,6 +28,9 @@ x-miniworker-defaults: &miniworker-defaults
   restart: unless-stopped
   init: true
   stop_grace_period: 20s
+  depends_on:
+    pairing-relay:
+      condition: service_started
   read_only: true
   cap_drop: [ALL]
   security_opt:
@@ -21,23 +44,6 @@ x-miniworker-defaults: &miniworker-defaults
         pids: 64
   tmpfs:
     - /tmp:rw,noexec,nosuid,size=16m,mode=1777
-  environment:
-    SILICIUM_RELEASE_CHANNEL: dev
-    SILICIUM_RELEASE_BUILD: vps-miniworker
-    SILICIUM_NODE_ROLES: compute,verify
-    SILICIUM_ALLOWED_WORKLOADS: raytracer
-    SILICIUM_PARALLEL_TASKS: "1"
-    SILICIUM_BOOTSTRAP_PEERS: ${SILICIUM_DEV_BOOTSTRAP_PEER:?Set SILICIUM_DEV_BOOTSTRAP_PEER}
-    SILICIUM_P2P_BIND: 0.0.0.0
-    SILICIUM_P2P_PORT: "0"
-    SILICIUM_API_BIND: 127.0.0.1
-    API_PORT: "9092"
-    SILICIUM_DATA_DIR: /data
-    SILICIUM_COMPUTE_ROOT: /data/work
-    SILICIUM_SOLANA_CLUSTER: devnet
-    SILICIUM_SOLANA_WALLET_PATH: /data/solana-wallet.json
-    SILICIUM_RAYTRACER_BIN: /usr/local/bin/silicium-raytracer
-    SILICIUM_COMPUTE_BIND: 127.0.0.1:9090
   healthcheck:
     test: [CMD-SHELL, "curl -fsS http://127.0.0.1:9092/health && curl -fsS http://127.0.0.1:9090/health"]
     interval: 30s
@@ -48,124 +54,186 @@ x-miniworker-defaults: &miniworker-defaults
     - dev-workers
 
 services:
+  pairing-relay:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=8m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,size=8m,mode=0750,uid=101,gid=101
+      - /var/run:rw,noexec,nosuid,size=1m,mode=0750,uid=101,gid=101
+    volumes:
+      - ./dev-miniworker-pairing-relay.conf:/etc/nginx/conf.d/default.conf:ro
+    expose:
+      - "8080"
+    networks:
+      - dev-workers
+      - backend-api
   miniworker-01:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-01
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-01}
     volumes:
       - miniworker-01-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-01.code:/run/secrets/device-pairing-code:ro
   miniworker-02:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-02
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-02}
     volumes:
       - miniworker-02-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-02.code:/run/secrets/device-pairing-code:ro
   miniworker-03:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-03
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-03}
     volumes:
       - miniworker-03-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-03.code:/run/secrets/device-pairing-code:ro
   miniworker-04:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-04
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-04}
     volumes:
       - miniworker-04-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-04.code:/run/secrets/device-pairing-code:ro
   miniworker-05:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-05
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-05}
     volumes:
       - miniworker-05-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-05.code:/run/secrets/device-pairing-code:ro
   miniworker-06:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-06
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-06}
     volumes:
       - miniworker-06-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-06.code:/run/secrets/device-pairing-code:ro
   miniworker-07:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-07
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-07}
     volumes:
       - miniworker-07-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-07.code:/run/secrets/device-pairing-code:ro
   miniworker-08:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-08
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-08}
     volumes:
       - miniworker-08-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-08.code:/run/secrets/device-pairing-code:ro
   miniworker-09:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-09
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-09}
     volumes:
       - miniworker-09-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-09.code:/run/secrets/device-pairing-code:ro
   miniworker-10:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-10
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-10}
     volumes:
       - miniworker-10-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-10.code:/run/secrets/device-pairing-code:ro
   miniworker-11:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-11
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-11}
     volumes:
       - miniworker-11-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-11.code:/run/secrets/device-pairing-code:ro
   miniworker-12:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-12
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-12}
     volumes:
       - miniworker-12-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-12.code:/run/secrets/device-pairing-code:ro
   miniworker-13:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-13
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-13}
     volumes:
       - miniworker-13-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-13.code:/run/secrets/device-pairing-code:ro
   miniworker-14:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-14
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-14}
     volumes:
       - miniworker-14-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-14.code:/run/secrets/device-pairing-code:ro
   miniworker-15:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-15
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-15}
     volumes:
       - miniworker-15-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-15.code:/run/secrets/device-pairing-code:ro
   miniworker-16:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-16
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-16}
     volumes:
       - miniworker-16-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-16.code:/run/secrets/device-pairing-code:ro
   miniworker-17:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-17
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-17}
     volumes:
       - miniworker-17-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-17.code:/run/secrets/device-pairing-code:ro
   miniworker-18:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-18
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-18}
     volumes:
       - miniworker-18-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-18.code:/run/secrets/device-pairing-code:ro
   miniworker-19:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-19
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-19}
     volumes:
       - miniworker-19-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-19.code:/run/secrets/device-pairing-code:ro
   miniworker-20:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-20
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-20}
     volumes:
       - miniworker-20-data:/data
+      - ${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}/miniworker-20.code:/run/secrets/device-pairing-code:ro
   miniworker-21:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-21
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-21}
     volumes:
       - miniworker-21-data:/data
   miniworker-22:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-22
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-22}
     volumes:
       - miniworker-22-data:/data
   miniworker-23:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-23
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-23}
     volumes:
       - miniworker-23-data:/data
   miniworker-24:
     <<: *miniworker-defaults
     container_name: silicium-dev-miniworker-24
+    environment: {<<: *miniworker-environment, SILICIUM_NODE_ID: miniworker-24}
     volumes:
       - miniworker-24-data:/data
 
@@ -175,8 +243,11 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.23.0.0/24
-          gateway: 172.23.0.1
+        - subnet: ${SILICIUM_DEV_MINIWORKER_SUBNET:-172.23.0.0/24}
+          gateway: ${SILICIUM_DEV_MINIWORKER_GATEWAY:-172.23.0.1}
+  backend-api:
+    name: ${SILICIUM_DEV_BACKEND_NETWORK:-silicium-dev-backend}
+    external: true
 
 volumes:
   miniworker-01-data:
