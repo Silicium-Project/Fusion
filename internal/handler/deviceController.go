@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,6 +27,7 @@ import (
 const devicePairingLifetime = 10 * time.Minute
 
 var deviceNodeIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+var miniworkerNodeIDPattern = regexp.MustCompile(`^miniworker-(0[1-9]|1[0-9]|2[0-4])$`)
 
 type pairDeviceRequest struct {
 	Code            string `json:"code"`
@@ -43,6 +46,12 @@ type devicePairingCodesRequest struct {
 type devicePairingCodeResponse struct {
 	NodeID    string    `json:"nodeId"`
 	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type devicePairingQueuedResponse struct {
+	NodeIDs   []string  `json:"nodeIds"`
+	Count     int       `json:"count"`
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
@@ -95,8 +104,8 @@ func (h *Handler) CreateDevicePairingCode(w http.ResponseWriter, r *http.Request
 }
 
 // CreateDevicePairingCodes issues independent, one-use codes bound to the
-// requested miniworker IDs. This lets a user authorize a whole private worker
-// pool without putting an account session token in any container.
+// requested miniworker IDs and writes each code only to that worker's private
+// pairing mount. The browser never receives the codes or an account token.
 func (h *Handler) CreateDevicePairingCodes(w http.ResponseWriter, r *http.Request) {
 	userID, ok := userIDFromRequest(r)
 	if !ok {
@@ -108,6 +117,11 @@ func (h *Handler) CreateDevicePairingCodes(w http.ResponseWriter, r *http.Reques
 		writeAuthJSON(w, http.StatusConflict, map[string]string{"message": "Associez d’abord un wallet Solana vérifié à votre compte pour recevoir les récompenses."})
 		return
 	}
+	pairingDir := strings.TrimSpace(os.Getenv("SILICIUM_DEVICE_PAIRING_DIR"))
+	if !filepath.IsAbs(pairingDir) {
+		writeAuthJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "L’association directe du pool de machines n’est pas disponible sur ce serveur."})
+		return
+	}
 	var req devicePairingCodesRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&req); err != nil || len(req.NodeIDs) < 1 || len(req.NodeIDs) > 24 {
 		writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "La liste des machines doit contenir entre 1 et 24 identifiants."})
@@ -116,11 +130,12 @@ func (h *Handler) CreateDevicePairingCodes(w http.ResponseWriter, r *http.Reques
 	seen := make(map[string]struct{}, len(req.NodeIDs))
 	items := make([]devicePairingCodeResponse, 0, len(req.NodeIDs))
 	rows := make([]models.DevicePairingCode, 0, len(req.NodeIDs))
+	nodeIDs := make([]string, 0, len(req.NodeIDs))
 	now := time.Now().UTC()
 	for _, rawNodeID := range req.NodeIDs {
 		nodeID := strings.TrimSpace(rawNodeID)
-		if !deviceNodeIDPattern.MatchString(nodeID) {
-			writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "Un identifiant de machine est invalide."})
+		if !miniworkerNodeIDPattern.MatchString(nodeID) {
+			writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "Un identifiant de miniworker est invalide."})
 			return
 		}
 		if _, exists := seen[nodeID]; exists {
@@ -128,6 +143,12 @@ func (h *Handler) CreateDevicePairingCodes(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		seen[nodeID] = struct{}{}
+		workerDir := filepath.Join(pairingDir, nodeID)
+		info, statErr := os.Stat(workerDir)
+		if statErr != nil || !info.IsDir() {
+			writeAuthJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "Les emplacements privés des miniworkers ne sont pas prêts sur ce serveur."})
+			return
+		}
 		secret := make([]byte, 32)
 		if _, err := rand.Read(secret); err != nil {
 			writeAuthJSON(w, http.StatusInternalServerError, map[string]string{"message": "Les codes d’association ne peuvent pas être créés."})
@@ -137,9 +158,22 @@ func (h *Handler) CreateDevicePairingCodes(w http.ResponseWriter, r *http.Reques
 		digest := sha256.Sum256([]byte(code))
 		expiresAt := now.Add(devicePairingLifetime)
 		items = append(items, devicePairingCodeResponse{NodeID: nodeID, Code: code, ExpiresAt: expiresAt})
+		nodeIDs = append(nodeIDs, nodeID)
 		rows = append(rows, models.DevicePairingCode{UserID: userID, NodeID: nodeID, PayoutWallet: payoutWallet, CodeHash: hex.EncodeToString(digest[:]), ExpiresAt: expiresAt})
 	}
 	err = h.DB.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+		var linkedElsewhere models.UserDevice
+		if err := tx.Where("node_id IN ? AND user_id <> ?", nodeIDs, userID).First(&linkedElsewhere).Error; err == nil {
+			return errors.New("miniworker_already_linked")
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var pendingElsewhere models.DevicePairingCode
+		if err := tx.Where("node_id IN ? AND user_id <> ? AND consumed_at IS NULL AND expires_at > ?", nodeIDs, userID, now).First(&pendingElsewhere).Error; err == nil {
+			return errors.New("miniworker_pairing_active")
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
 		if err := tx.Where("user_id = ? AND (consumed_at IS NOT NULL OR expires_at <= ?)", userID, now).Delete(&models.DevicePairingCode{}).Error; err != nil {
 			return err
 		}
@@ -151,11 +185,29 @@ func (h *Handler) CreateDevicePairingCodes(w http.ResponseWriter, r *http.Reques
 		return tx.Create(&rows).Error
 	})
 	if err != nil {
+		if err.Error() == "miniworker_already_linked" {
+			writeAuthJSON(w, http.StatusConflict, map[string]string{"message": "Au moins un miniworker est déjà associé à un autre compte."})
+			return
+		}
+		if err.Error() == "miniworker_pairing_active" {
+			writeAuthJSON(w, http.StatusConflict, map[string]string{"message": "Un autre compte a déjà demandé l’association de ce pool."})
+			return
+		}
 		writeAuthJSON(w, http.StatusInternalServerError, map[string]string{"message": "Les codes d’association ne peuvent pas être enregistrés."})
 		return
 	}
+	for _, item := range items {
+		if err := writeMiniworkerPairingCode(pairingDir, item.NodeID, item.Code); err != nil {
+			for _, nodeID := range nodeIDs {
+				_ = clearMiniworkerPairingCode(pairingDir, nodeID)
+			}
+			_ = h.DB.WithContext(r.Context()).Where("user_id = ? AND node_id IN ? AND consumed_at IS NULL", userID, nodeIDs).Delete(&models.DevicePairingCode{}).Error
+			writeAuthJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "Les codes sécurisés n’ont pas pu être transmis aux miniworkers."})
+			return
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeAuthJSON(w, http.StatusCreated, map[string]any{"items": items})
+	writeAuthJSON(w, http.StatusAccepted, devicePairingQueuedResponse{NodeIDs: nodeIDs, Count: len(nodeIDs), ExpiresAt: now.Add(devicePairingLifetime)})
 }
 
 func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
@@ -221,6 +273,7 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 	codeHash := devicePairingCodeHash(req.Code)
 	now := time.Now().UTC()
 	var linked models.UserDevice
+	directPairingNodeID := ""
 	err = h.DB.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
 		var pairing models.DevicePairingCode
 		if err := tx.Where("code_hash = ?", codeHash).First(&pairing).Error; err != nil {
@@ -228,6 +281,9 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		if pairing.NodeID != "" && pairing.NodeID != req.NodeID {
 			return errors.New("pairing_code_node_mismatch")
+		}
+		if miniworkerNodeIDPattern.MatchString(pairing.NodeID) {
+			directPairingNodeID = pairing.NodeID
 		}
 		if pairing.NodeID != "" && (solanaWallet == nil || pairing.PayoutWallet == nil || strings.TrimSpace(*pairing.PayoutWallet) == "") {
 			return errors.New("pairing_wallet_proof_required")
@@ -352,6 +408,9 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if directPairingNodeID != "" {
+		_ = clearMiniworkerPairingCode(strings.TrimSpace(os.Getenv("SILICIUM_DEVICE_PAIRING_DIR")), directPairingNodeID)
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeAuthJSON(w, http.StatusOK, map[string]any{"device": linked})
 }
@@ -409,4 +468,48 @@ func sameWallet(a, b *string) bool {
 func devicePairingCodeHash(code string) string {
 	digest := sha256.Sum256([]byte(code))
 	return hex.EncodeToString(digest[:])
+}
+
+func writeMiniworkerPairingCode(root, nodeID, code string) error {
+	if !miniworkerNodeIDPattern.MatchString(nodeID) {
+		return errors.New("miniworker_node_id_invalid")
+	}
+	dir := filepath.Join(root, nodeID)
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return errors.New("miniworker_pairing_directory_missing")
+	}
+	temporary, err := os.CreateTemp(dir, ".pairing-*")
+	if err != nil {
+		return err
+	}
+	name := temporary.Name()
+	defer os.Remove(name)
+	if err := temporary.Chmod(0640); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if _, err := temporary.WriteString(code); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, filepath.Join(dir, "device-pairing-code"))
+}
+
+func clearMiniworkerPairingCode(root, nodeID string) error {
+	if !filepath.IsAbs(root) || !miniworkerNodeIDPattern.MatchString(nodeID) {
+		return nil
+	}
+	err := os.Remove(filepath.Join(root, nodeID, "device-pairing-code"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
