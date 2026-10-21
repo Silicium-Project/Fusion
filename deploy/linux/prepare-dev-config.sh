@@ -80,6 +80,7 @@ backend_env="$CONFIG_DIR/backend.env"
 frontend_env="$CONFIG_DIR/frontend.env"
 orchestrator_env="$CONFIG_DIR/orchestrator.env"
 updates_env="$CONFIG_DIR/update-channels.env"
+miniworkers_env="$CONFIG_DIR/miniworkers.env"
 
 db_password="$(grep -E '^POSTGRES_PASSWORD=' "$compose_env" | tail -n 1 | cut -d= -f2- || true)"
 if [[ -z "$db_password" || "$db_password" == GENERATE_* || "$db_password" == CHANGE_* ]]; then
@@ -121,6 +122,7 @@ set_env_value "$compose_env" SILICIUM_PROXY_HTTPS_PORT 8443
 set_env_value "$compose_env" SILICIUM_BACKEND_NETWORK_NAME silicium-dev-backend
 set_env_value "$compose_env" SILICIUM_FRONTEND_NETWORK_NAME silicium-dev-frontend
 set_env_value "$compose_env" SILICIUM_TLS_ROOT "$DATA_ROOT/tls"
+set_env_value "$miniworkers_env" SILICIUM_DEV_MINIWORKERS_PAIRING_DIR "$DATA_ROOT/miniworker-pairing"
 set_env_value "$compose_env" SILICIUM_TURN_EXTERNAL_IP "$VPN_SERVER_ADDRESS"
 set_env_value "$compose_env" SILICIUM_PUBLIC_ORCHESTRATOR_URL "$PUBLIC_BASE_URL/orchestrator"
 set_env_value "$compose_env" SILICIUM_CORS_ALLOWED_ORIGINS "$PUBLIC_BASE_URL"

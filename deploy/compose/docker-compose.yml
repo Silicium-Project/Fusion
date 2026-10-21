@@ -71,6 +71,7 @@ services:
       SILICIUM_ORCHESTRATOR_EXPORT_DIR: /var/lib/silicium/network/orchestrator/export
       SILICIUM_SITE_STORAGE_DIR: /var/lib/silicium/site/jobs
       SILICIUM_WORKLOAD_STORAGE_DIR: /var/lib/silicium/site/runtime
+      SILICIUM_DEVICE_PAIRING_DIR: /var/lib/silicium/miniworker-pairing
     depends_on:
       postgres:
         condition: service_healthy

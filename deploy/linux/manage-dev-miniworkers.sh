@@ -19,7 +19,7 @@ fi
 SILICIUM_DEV_BOOTSTRAP_PEER="$(sed -n 's/^SILICIUM_DEV_BOOTSTRAP_PEER=//p' "$ENV_FILE" | head -n 1)"
 BACKEND_NETWORK="${SILICIUM_DEV_BACKEND_NETWORK:-$(sed -n 's/^SILICIUM_DEV_BACKEND_NETWORK=//p' "$ENV_FILE" | head -n 1)}"
 PAIRING_DIR="${SILICIUM_DEV_MINIWORKERS_PAIRING_DIR:-$(sed -n 's/^SILICIUM_DEV_MINIWORKERS_PAIRING_DIR=//p' "$ENV_FILE" | head -n 1)}"
-PAIRING_DIR="${PAIRING_DIR:-/etc/silicium-dev/miniworker-pairing}"
+PAIRING_DIR="${PAIRING_DIR:-${SILICIUM_DATA_ROOT:-/var/lib/silicium-dev}/miniworker-pairing}"
 if [[ -z "$SILICIUM_DEV_BOOTSTRAP_PEER" ]]; then
   echo "SILICIUM_DEV_BOOTSTRAP_PEER is empty in $ENV_FILE." >&2
   exit 2
@@ -38,13 +38,24 @@ for ((index = 1; index <= 24; index += 1)); do
 done
 
 ensure_pairing_mounts() {
-  sudo install -d -m 0700 "$PAIRING_DIR"
-  for ((index = 1; index <= 24; index += 1)); do
-    path="$PAIRING_DIR/miniworker-$(printf '%02d' "$index").code"
-    if ! sudo test -e "$path"; then
-      sudo install -m 0600 /dev/null "$path"
-    fi
-    sudo chmod 0600 "$path"
+	local backend_identity backend_uid backend_gid
+	backend_uid="${SILICIUM_BACKEND_UID:-}"
+	backend_gid="${SILICIUM_BACKEND_GID:-}"
+	if [[ -z "$backend_uid" || -z "$backend_gid" ]]; then
+		backend_identity="$(sudo docker run --rm --entrypoint sh silicium-backend:latest -c 'printf "%s:%s" "$(id -u)" "$(id -g)"')"
+		backend_uid="${backend_identity%%:*}"
+		backend_gid="${backend_identity##*:}"
+	fi
+	if [[ ! "$backend_uid" =~ ^[0-9]+$ || ! "$backend_gid" =~ ^[0-9]+$ ]]; then
+		echo "Could not resolve the backend's numeric UID/GID for secure miniworker pairing mounts." >&2
+		return 2
+	fi
+	sudo install -d -o "$backend_uid" -g "$backend_gid" -m 0711 "$PAIRING_DIR"
+	for ((index = 1; index <= 24; index += 1)); do
+		local worker_id worker_gid
+		worker_id="miniworker-$(printf '%02d' "$index")"
+		worker_gid=$((20000 + index))
+		sudo install -d -o "$backend_uid" -g "$worker_gid" -m 2750 "$PAIRING_DIR/$worker_id"
   done
 }
 
@@ -118,11 +129,17 @@ pair_workers() {
     return 2
   fi
   ensure_pairing_mounts
-  local row node_id code path
+	local row node_id code path backend_identity backend_uid backend_gid worker_gid
+	backend_identity="$(sudo docker run --rm --entrypoint sh silicium-backend:latest -c 'printf "%s:%s" "$(id -u)" "$(id -g)"')"
+	backend_uid="${backend_identity%%:*}"
+	backend_gid="${backend_identity##*:}"
   for row in "${rows[@]}"; do
     IFS=$'\t' read -r node_id code <<< "$row"
-    path="$PAIRING_DIR/$node_id.code"
-    printf '%s' "$code" | sudo sh -c 'umask 077; cat > "$1"; chmod 0600 "$1"' sh "$path"
+		worker_gid=$((20000 + 10#${node_id##*-}))
+		path="$PAIRING_DIR/$node_id/device-pairing-code"
+		printf '%s' "$code" | sudo tee "$path" >/dev/null
+		sudo chown "$backend_uid:$worker_gid" "$path"
+		sudo chmod 0640 "$path"
   done
   sudo "${compose[@]}" up -d --build --force-recreate "${active_services[@]}"
   local all_linked=0
@@ -144,7 +161,7 @@ pair_workers() {
   fi
   for row in "${rows[@]}"; do
     IFS=$'\t' read -r node_id _ <<< "$row"
-    : | sudo tee "$PAIRING_DIR/$node_id.code" >/dev/null
+		sudo rm -f "$PAIRING_DIR/$node_id/device-pairing-code"
   done
   echo "Linked ${#rows[@]} miniworkers to the signed-in account. Pairing codes cleared."
 }

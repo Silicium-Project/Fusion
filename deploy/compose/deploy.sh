@@ -85,6 +85,16 @@ channel_or_legacy_default() {
 export SILICIUM_RUNTIME_ROOT="$(channel_or_legacy_default "${SILICIUM_RUNTIME_ROOT:-}" "$channel_runtime_root" /opt/silicium)"
 export SILICIUM_DATA_ROOT="$(channel_or_legacy_default "${SILICIUM_DATA_ROOT:-}" "$channel_data_root" /var/lib/silicium)"
 export SILICIUM_CONFIG_DIR="$(channel_or_legacy_default "${SILICIUM_CONFIG_DIR:-}" "$channel_config_dir" /etc/silicium)"
+if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
+  export SILICIUM_DEV_MINIWORKERS_PAIRING_DIR="$SILICIUM_DATA_ROOT/miniworker-pairing"
+  if [[ -f "$SILICIUM_DEV_MINIWORKERS_ENV" ]]; then
+    if grep -q '^SILICIUM_DEV_MINIWORKERS_PAIRING_DIR=' "$SILICIUM_DEV_MINIWORKERS_ENV"; then
+      sed -i "s#^SILICIUM_DEV_MINIWORKERS_PAIRING_DIR=.*#SILICIUM_DEV_MINIWORKERS_PAIRING_DIR=$SILICIUM_DEV_MINIWORKERS_PAIRING_DIR#" "$SILICIUM_DEV_MINIWORKERS_ENV"
+    else
+      printf 'SILICIUM_DEV_MINIWORKERS_PAIRING_DIR=%s\n' "$SILICIUM_DEV_MINIWORKERS_PAIRING_DIR" >> "$SILICIUM_DEV_MINIWORKERS_ENV"
+    fi
+  fi
+fi
 export SILICIUM_RELEASE_CHANNEL="$RELEASE_CHANNEL"
 export SILICIUM_COMPOSE_PROJECT_NAME="$(channel_or_legacy_default "${SILICIUM_COMPOSE_PROJECT_NAME:-}" "$channel_compose_project" silicium)"
 export SILICIUM_BACKEND_HTTP_PORT="$(channel_or_legacy_default "${SILICIUM_BACKEND_HTTP_PORT:-}" "$backend_http_port" 8080)"
