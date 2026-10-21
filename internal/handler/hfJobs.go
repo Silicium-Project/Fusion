@@ -74,7 +74,7 @@ func (h *Handler) storeHFInput(r *http.Request, inputDir, workload string) (stri
 		Key: row.Key, Repository: row.Repository, Revision: row.Revision,
 		Licence: row.Licence, HardwareClass: row.HardwareClass,
 	}
-	path, err := aijobs.Store(inputDir, data, task, json.RawMessage(row.Manifest), model)
+	path, err := aijobs.Store(inputDir, data, task, json.RawMessage(row.Manifest), model, row.CanaryItems())
 	if err == nil {
 		return path, 0, "", nil
 	}

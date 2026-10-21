@@ -35,12 +35,24 @@ type Model struct {
 	// Examples are the Hub's widget examples (JSON), the inputs of the
 	// admission test and of the canary tasks.
 	Examples string `gorm:"type:text"`
+	// Canaries are the examples as items of the task (JSON array), added
+	// to each request of the model (see canaries.go).
+	Canaries string `gorm:"type:text"`
 	// Superseded: the Hub has a newer commit of the repository in the
 	// catalogue (kept: jobs may still name this one).
 	Superseded bool
 	CheckedAt  time.Time
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+}
+
+// CanaryItems returns the canaries of the model (none when unreadable).
+func (m Model) CanaryItems() []json.RawMessage {
+	var items []json.RawMessage
+	if strings.TrimSpace(m.Canaries) == "" || json.Unmarshal([]byte(m.Canaries), &items) != nil {
+		return nil
+	}
+	return items
 }
 
 // TableName keeps the catalogue tables together.
@@ -191,7 +203,7 @@ func (s Store) Save(row Model) error {
 		DoUpdates: clause.AssignmentColumns([]string{
 			"status", "reasons", "notes", "manifest", "hardware_class", "total_bytes",
 			"parameters", "licence", "downloads", "likes", "examples", "library", "runtime",
-			"superseded", "checked_at", "updated_at",
+			"canaries", "superseded", "checked_at", "updated_at",
 		}),
 	}).Create(&row).Error
 }

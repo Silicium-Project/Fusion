@@ -20,6 +20,7 @@ import (
 	"github.com/silicium/internal/middleware"
 	"github.com/silicium/internal/release"
 	"github.com/silicium/internal/routes"
+	"github.com/silicium/internal/silicium"
 )
 
 func main() {
@@ -38,6 +39,10 @@ func main() {
 	if syncer := catalog.SyncFromEnv(catalog.Store{DB: database}); syncer != nil {
 		go syncer.Loop(applicationContext, catalog.SyncInterval())
 	}
+	// Models the nodes got wrong files for from the Hub are quarantined.
+	go catalog.Store{DB: database}.WatchFaults(applicationContext, time.Minute, func(ctx context.Context) (map[string]any, error) {
+		return silicium.ListControlPeers(ctx, silicium.ConfigFromEnv())
+	})
 
 	router := mux.NewRouter()
 	router.UseEncodedPath()

@@ -10,6 +10,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -248,6 +249,9 @@ func (s *Syncer) syncModel(ctx context.Context, listed ModelInfo, report *Report
 	}
 	decision := Admit(info, tree, s.Policy)
 	row := rowFor(info, decision, s.now())
+	if decision.Status == StatusAdmitted {
+		row.Canaries = s.canaries(ctx, row.Task, info.WidgetData)
+	}
 	if err := s.Store.Save(row); err != nil {
 		return err
 	}
@@ -284,7 +288,27 @@ func (s *Syncer) recheck(ctx context.Context, row Model, report *Report) error {
 		log.Printf("Catalog: model %s quarantined (%s)", row.Key, reason)
 		return s.Store.Quarantine(row.Key, reason)
 	}
-	return s.Store.DB.Model(&Model{}).Where("key = ?", row.Key).Update("checked_at", s.now()).Error
+	updates := map[string]any{"checked_at": s.now()}
+	if row.Canaries == "" && row.Examples != "" {
+		// Admitted before canaries existed.
+		var examples []json.RawMessage
+		if json.Unmarshal([]byte(row.Examples), &examples) == nil {
+			updates["canaries"] = s.canaries(ctx, row.Task, examples)
+		}
+	}
+	return s.Store.DB.Model(&Model{}).Where("key = ?", row.Key).Updates(updates).Error
+}
+
+// canaries converts the examples of an admitted model (see canaries.go),
+// downloading their files from the Hub at the sync's pace.
+func (s *Syncer) canaries(ctx context.Context, task string, examples []json.RawMessage) string {
+	items := CanaryItems(task, examples, func(source string) ([]byte, error) {
+		if err := s.pause(ctx); err != nil {
+			return nil, err
+		}
+		return s.Hub.Example(ctx, source)
+	})
+	return encode(items)
 }
 
 // contradiction returns why `tree` contradicts the pinned files, or "".

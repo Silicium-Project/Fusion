@@ -89,7 +89,7 @@ type Summary struct {
 // Store checks the site request `data` for `task`, writes the request of the
 // node (with `manifest`, the catalogue's JSON) and its summary under
 // `inputDir`, and returns the request's path.
-func Store(inputDir string, data []byte, task string, manifest json.RawMessage, model Model) (string, error) {
+func Store(inputDir string, data []byte, task string, manifest json.RawMessage, model Model, canaries []json.RawMessage) (string, error) {
 	var site SiteRequest
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(&site); err != nil || site.Format != SiteFormat {
@@ -129,13 +129,19 @@ func Store(inputDir string, data []byte, task string, manifest json.RawMessage, 
 		site.Source.Name = site.Source.Name[:200]
 	}
 
-	request, err := json.Marshal(map[string]any{
+	node := map[string]any{
 		"format":     NodeFormat,
 		"task":       task,
 		"model":      manifest,
 		"parameters": json.RawMessage(parameters),
 		"items":      site.Items,
-	})
+	}
+	if len(canaries) > 0 {
+		// Public examples of the model the node mixes with the items and
+		// checks (never shown to the user, removed from the answers).
+		node["canaries"] = canaries
+	}
+	request, err := json.Marshal(node)
 	if err != nil {
 		return "", err
 	}
