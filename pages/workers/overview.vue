@@ -144,8 +144,6 @@ import { compactIdentifier, formatDate, formatDuration, networkRoleGroup, peerAv
 import { metricNumber, metricPercent, peerTelemetry, publishedCount } from '~/utils/telemetry';
 import { intlLocale } from '~/utils/i18n';
 import { phantomProvider } from '~/utils/wallet';
-import { buildWorkerPayoutTransactions } from '~/utils/workerPayout';
-import { Connection } from '@solana/web3.js';
 
 definePageMeta({ layout: 'app', middleware: 'auth' });
 
@@ -340,6 +338,10 @@ async function registerMiniworkerPayouts(): Promise<void> {
     const config = useRuntimeConfig();
     const mint = String(config.public.silMint || '').trim();
     if (!mint) throw new Error(t('errors.walletBalanceUnavailable'));
+    const [{ Connection }, { buildWorkerPayoutTransactions }] = await Promise.all([
+      import('@solana/web3.js'),
+      import('~/utils/workerPayout'),
+    ]);
     const connection = new Connection(String(config.public.solanaRpc), 'confirmed');
     const built = await buildWorkerPayoutTransactions(connection, user.value.walletAddress, mint, targets);
     if (!built.transactions.length) {
