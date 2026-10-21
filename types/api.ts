@@ -191,8 +191,18 @@ export interface NetworkTasksResponse {
     online_compute_workers?: number;
     compatible_workers?: number;
     workloads?: string[];
-    reason?: 'no_compute_workers' | 'no_compatible_workers' | 'workers_not_claiming' | 'network_state_unavailable' | string;
+    reason?: 'no_compute_workers' | 'no_compatible_workers' | 'workers_not_claiming' | 'network_state_unavailable' | 'mixed_workload_blockers' | string;
+    workload_diagnostics?: NetworkQueueWorkloadDiagnostic[];
   };
+}
+
+export interface NetworkQueueWorkloadDiagnostic {
+  workload: string;
+  queued: number;
+  oldest_wait_seconds?: number;
+  online_compute_workers?: number;
+  compatible_workers?: number;
+  reason?: string;
 }
 
 export interface JobFragment {

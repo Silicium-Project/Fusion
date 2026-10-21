@@ -64,6 +64,9 @@
         </div>
         <p class="worker-bulk-pairing__progress">{{ t('observability.worker.miniworkerProgress', { linked: linkedMiniworkerCount, total: 20 }) }}</p>
         <p class="worker-bulk-pairing__progress">{{ t('observability.worker.miniworkerNetworkProgress', { online: miniworkerOnlineCount, total: 20 }) }}</p>
+        <p v-if="missingMiniworkerIds.length" class="worker-bulk-pairing__missing">{{ t('observability.worker.miniworkerMissing', { nodes: missingMiniworkerIds.join(', ') }) }}</p>
+        <p class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutProofProgress', { ready: payoutProofDeviceCount, total: 20 }) }}</p>
+        <UiButton v-if="payoutProofDeviceCount" variant="secondary" icon="wallet" :loading="payoutRegisterLoading" :disabled="!user?.walletAddress" @click="registerMiniworkerPayouts">{{ t('observability.worker.registerMiniworkerPayouts') }}</UiButton>
       </div>
       <UiNotice v-if="pairingMessage" :tone="pairingMessageTone">{{ pairingMessage }}</UiNotice>
 
@@ -140,6 +143,9 @@
 import { compactIdentifier, formatDate, formatDuration, networkRoleGroup, peerAvailability, peerId, peerRoles } from '~/utils/format';
 import { metricNumber, metricPercent, peerTelemetry, publishedCount } from '~/utils/telemetry';
 import { intlLocale } from '~/utils/i18n';
+import { phantomProvider } from '~/utils/wallet';
+import { buildWorkerPayoutTransactions } from '~/utils/workerPayout';
+import { Connection } from '@solana/web3.js';
 
 definePageMeta({ layout: 'app', middleware: 'auth' });
 
@@ -150,6 +156,7 @@ interface UserDevice {
   peerId: string;
   solanaWallet?: string;
   payoutWallet?: string;
+  workerPayoutProof?: { message: string; signature: string };
   linkedAt: string;
 }
 
@@ -174,11 +181,19 @@ const pairingCopied = ref(false);
 const pairingMessage = ref('');
 const pairingMessageTone = ref<'success' | 'warning' | 'danger'>('success');
 const bulkPairingLoading = ref(false);
+const payoutRegisterLoading = ref(false);
 const unlinkingId = ref<number | null>(null);
 const selectedId = ref('');
 const selectedDevice = computed(() => devices.value.find(device => device.nodeId === selectedId.value) || null);
 const linkedMiniworkerCount = computed(() => devices.value.filter(device => miniworkerNodeIDPattern.test(device.nodeId)).length);
+const payoutProofDeviceCount = computed(() => devices.value.filter(device =>
+  miniworkerNodeIDPattern.test(device.nodeId) && Boolean(device.solanaWallet && device.payoutWallet && device.workerPayoutProof),
+).length);
 const miniworkerOnlineCount = computed(() => peers.value.filter(peer => miniworkerNodeIDPattern.test(peerId(peer)) && peerAvailability(peer) === 'online').length);
+const missingMiniworkerIds = computed(() => {
+  const online = new Set(peers.value.filter(peer => miniworkerNodeIDPattern.test(peerId(peer)) && peerAvailability(peer) === 'online').map(peer => peerId(peer)));
+  return Array.from({ length: 20 }, (_, index) => `miniworker-${String(index + 1).padStart(2, '0')}`).filter(nodeId => !online.has(nodeId));
+});
 const selectedPeer = computed(() => {
   if (!selectedDevice.value) return undefined;
   return peers.value.find(peer => peerId(peer) === selectedDevice.value?.nodeId || String(peer.peer_id || peer.peerId || '') === selectedDevice.value?.peerId);
@@ -302,6 +317,60 @@ async function linkMiniworkers(): Promise<void> {
     pairingMessage.value = apiMessage(failure, t('observability.worker.pairingFailed'));
   } finally {
     bulkPairingLoading.value = false;
+  }
+}
+
+async function registerMiniworkerPayouts(): Promise<void> {
+  if (!import.meta.client || !user.value?.walletAddress || payoutRegisterLoading.value) return;
+  const targets = devices.value.filter(device =>
+    miniworkerNodeIDPattern.test(device.nodeId) && device.solanaWallet && device.payoutWallet && device.workerPayoutProof,
+  );
+  if (!targets.length) return;
+  payoutRegisterLoading.value = true;
+  pairingMessage.value = '';
+  try {
+    const provider = phantomProvider(window);
+    if (!provider?.signAllTransactions) {
+      throw new Error('Phantom is required and must support signing the worker-link transactions as a group.');
+    }
+    const connected = await provider.connect();
+    if (connected.publicKey.toString() !== user.value.walletAddress) {
+      throw new Error(t('observability.worker.workerPayoutWalletMismatch'));
+    }
+    const config = useRuntimeConfig();
+    const mint = String(config.public.silMint || '').trim();
+    if (!mint) throw new Error(t('errors.walletBalanceUnavailable'));
+    const connection = new Connection(String(config.public.solanaRpc), 'confirmed');
+    const built = await buildWorkerPayoutTransactions(connection, user.value.walletAddress, mint, targets);
+    if (!built.transactions.length) {
+      pairingMessageTone.value = 'success';
+      pairingMessage.value = t('observability.worker.workerPayoutAlreadyLinked', { count: built.alreadyLinked });
+      return;
+    }
+    pairingMessageTone.value = 'warning';
+    pairingMessage.value = t('observability.worker.workerPayoutSubmitting', { count: built.transactions.length });
+    const signed = await provider.signAllTransactions(built.transactions.map(item => item.transaction));
+    if (signed.length !== built.transactions.length) throw new Error('Phantom returned an incomplete transaction batch.');
+    for (const [index, signedTransaction] of signed.entries()) {
+      const details = built.transactions[index]!;
+      const signature = await connection.sendRawTransaction(signedTransaction.serialize(), { maxRetries: 3 });
+      const confirmation = await connection.confirmTransaction({
+        signature,
+        blockhash: details.blockhash,
+        lastValidBlockHeight: details.lastValidBlockHeight,
+      }, 'confirmed');
+      if (confirmation.value.err) throw new Error(`Solana rejected worker payout transaction ${index + 1}.`);
+    }
+    pairingMessageTone.value = 'success';
+    pairingMessage.value = built.registered
+      ? t('observability.worker.workerPayoutComplete', { count: built.registered, already: built.alreadyLinked })
+      : t('observability.worker.workerPayoutAlreadyLinked', { count: built.alreadyLinked });
+    await Promise.all([loadDevices(true), loadWalletBalance(user.value.walletAddress)]);
+  } catch (failure) {
+    pairingMessageTone.value = 'danger';
+    pairingMessage.value = apiMessage(failure, t('observability.worker.workerPayoutFailed'));
+  } finally {
+    payoutRegisterLoading.value = false;
   }
 }
 
