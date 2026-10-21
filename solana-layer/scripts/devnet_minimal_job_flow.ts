@@ -32,8 +32,9 @@ import {
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccount,
+  getOrCreateAssociatedTokenAccount,
   createMint,
+  getMint,
   getAccount,
   mintTo,
 } from "@solana/spl-token";
@@ -74,6 +75,19 @@ function defaultWalletPath(): string {
     path.join(os.homedir(), ".config/solana/id.json"),
   ];
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[candidates.length - 1];
+}
+
+function projectSilMint(): PublicKey | null {
+  const configured = process.env.SILICIUM_SIL_MINT?.trim();
+  if (configured) return new PublicKey(configured);
+
+  const statePath = path.resolve(process.cwd(), "../.silicium/solana/test-sil-mint.json");
+  if (!fs.existsSync(statePath)) return null;
+  const state = JSON.parse(fs.readFileSync(statePath, "utf8")) as { cluster?: string; mint?: string; decimals?: number };
+  if (state.cluster !== "devnet" || !state.mint || state.decimals !== 6) {
+    throw new Error(`Unexpected SIL mint state in ${statePath}`);
+  }
+  return new PublicKey(state.mint);
 }
 
 async function loadIdl(provider: anchor.AnchorProvider): Promise<any> {
@@ -385,11 +399,15 @@ export async function main() {
     throw new Error("Wallet balance is low. Add Devnet SOL before running this write flow.");
   }
 
-  logStep("Create test SPL mint and token accounts");
-  const mint = await createMint(connection, payer, wallet.publicKey, null, 6);
-  console.log("mint:", mint.toBase58());
+  logStep("Prepare the SIL mint and test token accounts");
+  const mint = projectSilMint() ?? await createMint(connection, payer, wallet.publicKey, null, 6);
+  const mintState = await getMint(connection, mint, "confirmed");
+  if (mintState.decimals !== 6 || !mintState.mintAuthority?.equals(wallet.publicKey)) {
+    throw new Error("The selected mint must have six decimals and be controlled by ANCHOR_WALLET.");
+  }
+  console.log("SIL mint:", mint.toBase58());
 
-  const clientToken = await createAssociatedTokenAccount(connection, payer, mint, wallet.publicKey);
+  const clientToken = (await getOrCreateAssociatedTokenAccount(connection, payer, mint, wallet.publicKey)).address;
   await mintTo(connection, payer, mint, clientToken, wallet.publicKey, 30_000_000);
   console.log("client token:", clientToken.toBase58());
   console.log("minted 30 tokens to client token account");
@@ -402,9 +420,9 @@ export async function main() {
   await fundParticipant(provider, verifier1.publicKey, "verifier 1");
   await fundParticipant(provider, verifier2.publicKey, "verifier 2");
 
-  const computeToken = await createAssociatedTokenAccount(connection, payer, mint, computeWorker.publicKey);
-  const verifier1Token = await createAssociatedTokenAccount(connection, payer, mint, verifier1.publicKey);
-  const verifier2Token = await createAssociatedTokenAccount(connection, payer, mint, verifier2.publicKey);
+  const computeToken = (await getOrCreateAssociatedTokenAccount(connection, payer, mint, computeWorker.publicKey)).address;
+  const verifier1Token = (await getOrCreateAssociatedTokenAccount(connection, payer, mint, verifier1.publicKey)).address;
+  const verifier2Token = (await getOrCreateAssociatedTokenAccount(connection, payer, mint, verifier2.publicKey)).address;
 
   await mintTo(connection, payer, mint, computeToken, wallet.publicKey, 5_000_000);
   await mintTo(connection, payer, mint, verifier1Token, wallet.publicKey, 5_000_000);
