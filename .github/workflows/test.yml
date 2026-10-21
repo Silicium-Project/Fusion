@@ -253,7 +253,11 @@ jobs:
 
       - name: Set up Rust
         shell: bash
-        run: bash "$GITHUB_WORKSPACE/deploy/ci/install-rust-toolchain.sh" stable
+        run: |
+          set -euo pipefail
+          toolchain_script="$RUNNER_TEMP/silicium-install-rust-toolchain.sh"
+          git -C "$GITHUB_WORKSPACE" show HEAD:deploy/ci/install-rust-toolchain.sh > "$toolchain_script"
+          bash "$toolchain_script" stable
 
       # Python is only used by Network's developer tooling tests (pytest).
       - name: Set up Python dependencies
@@ -343,7 +347,11 @@ jobs:
 
       - name: Set up Rust
         shell: bash
-        run: bash "$GITHUB_WORKSPACE/deploy/ci/install-rust-toolchain.sh" stable
+        run: |
+          set -euo pipefail
+          toolchain_script="$RUNNER_TEMP/silicium-install-rust-toolchain.sh"
+          git -C "$GITHUB_WORKSPACE" show HEAD:deploy/ci/install-rust-toolchain.sh > "$toolchain_script"
+          bash "$toolchain_script" stable
 
       - name: Cache Network Rust target
         uses: Swatinem/rust-cache@v2
@@ -430,7 +438,11 @@ jobs:
 
       - name: Set up Rust
         shell: bash
-        run: bash "$GITHUB_WORKSPACE/deploy/ci/install-rust-toolchain.sh" stable
+        run: |
+          set -euo pipefail
+          toolchain_script="$RUNNER_TEMP/silicium-install-rust-toolchain.sh"
+          git -C "$GITHUB_WORKSPACE" show HEAD:deploy/ci/install-rust-toolchain.sh > "$toolchain_script"
+          bash "$toolchain_script" stable
 
       - name: Verify pinned Network CI coverage
         shell: bash
