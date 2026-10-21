@@ -181,8 +181,8 @@ func shortRevision(revision string) string {
 // Save inserts or updates a row. A quarantined row keeps its status.
 func (s Store) Save(row Model) error {
 	var existing Model
-	err := s.DB.Where("key = ?", row.Key).First(&existing).Error
-	if err == nil && existing.Status == string(StatusQuarantined) {
+	found := s.DB.Where("key = ?", row.Key).Limit(1).Find(&existing)
+	if found.Error == nil && found.RowsAffected == 1 && existing.Status == string(StatusQuarantined) {
 		row.Status = existing.Status
 		row.Reasons = existing.Reasons
 	}
@@ -200,8 +200,10 @@ func (s Store) Save(row Model) error {
 // and returns its row.
 func (s Store) Known(repository, revision string) (Model, bool) {
 	var row Model
-	err := s.DB.Where("repository = ? AND revision = ?", repository, revision).Order("checked_at desc").First(&row).Error
-	return row, err == nil
+	// Find, not First: a model not stored yet is the usual case during a
+	// sync, and First would log it as an error.
+	found := s.DB.Where("repository = ? AND revision = ?", repository, revision).Order("checked_at desc").Limit(1).Find(&row)
+	return row, found.Error == nil && found.RowsAffected == 1
 }
 
 // MarkSuperseded flags the other commits of `repository`.
@@ -288,7 +290,7 @@ func (s Store) AdmittedCounts() (map[string]int64, error) {
 // State returns the sync state (zero when never synced).
 func (s Store) State() SyncState {
 	var state SyncState
-	_ = s.DB.Where("id = ?", 1).First(&state).Error
+	_ = s.DB.Where("id = ?", 1).Limit(1).Find(&state).Error
 	return state
 }
 
