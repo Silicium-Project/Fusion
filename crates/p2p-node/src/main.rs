@@ -342,7 +342,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                     for (peer_id, multiaddr) in list {
-                        println!(" mDNS discovered peer: {peer_id}");
                         swarm.behaviour_mut().kademlia.add_address(&peer_id, multiaddr.clone());
                         let _ = swarm.dial(multiaddr.clone());
                         swarm.behaviour_mut().gossipsub.add_explicit_peer(&peer_id);
@@ -358,7 +357,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     message,
                     ..
                 })) => {
-                    println!(" Received message from {peer_id}");
                     let replies = gossip::handle(
                         &context,
                         &security,
@@ -422,7 +420,9 @@ fn handle_device_link_cli() -> Result<bool, Box<dyn std::error::Error>> {
     let data_dir = std::path::PathBuf::from(std::env::var("SILICIUM_DATA_DIR")?);
     let local_key = load_or_generate_identity(&data_dir)?;
     let peer_id = PeerId::from(local_key.public()).to_string();
-    let (payload, solana_wallet, solana_signature, payout_wallet) = match std::env::var("SILICIUM_SOLANA_WALLET_PATH") {
+    let (payload, solana_wallet, solana_signature, payout_wallet) = match std::env::var(
+        "SILICIUM_SOLANA_WALLET_PATH",
+    ) {
         Ok(wallet_path) if !wallet_path.trim().is_empty() => {
             let secret: Vec<u8> = serde_json::from_slice(&std::fs::read(wallet_path)?)?;
             let keypair: [u8; 64] = secret
@@ -435,7 +435,9 @@ fn handle_device_link_cli() -> Result<bool, Box<dyn std::error::Error>> {
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty());
             let message = if let Some(payout_wallet) = payout_wallet.as_ref() {
-                format!("silicium-device-payout-v1\n{code}\n{node_id}\n{peer_id}\n{wallet}\n{payout_wallet}")
+                format!(
+                    "silicium-device-payout-v1\n{code}\n{node_id}\n{peer_id}\n{wallet}\n{payout_wallet}"
+                )
             } else {
                 format!("silicium-device-link-v2\n{code}\n{node_id}\n{peer_id}\n{wallet}")
             };
@@ -466,7 +468,10 @@ fn handle_device_link_cli() -> Result<bool, Box<dyn std::error::Error>> {
     if let (Some(wallet), Some(wallet_signature)) = (solana_wallet, solana_signature) {
         proof["solanaWallet"] = serde_json::Value::String(wallet);
         proof["solanaSignature"] = serde_json::Value::String(
-            wallet_signature.iter().map(|byte| format!("{byte:02x}")).collect(),
+            wallet_signature
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
         );
     }
     if let Some(payout_wallet) = payout_wallet {

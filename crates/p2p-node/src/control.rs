@@ -218,25 +218,24 @@ fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
     let unpublished_timed_out = state.is_none()
         && entry.failure.is_none()
         && unix_seconds().saturating_sub(entry.created_unix) >= UNPUBLISHED_TASK_TIMEOUT_SECS;
-    let (status, handled_by, result_hash, error) = if let (Some(reason), None) =
-        (&entry.failure, &state)
-    {
-        (
-            "failed".to_string(),
-            String::new(),
-            String::new(),
-            reason.clone(),
-        )
-    } else if unpublished_timed_out {
-        (
-            "failed".to_string(),
-            String::new(),
-            String::new(),
-            "task_publish_timeout".to_string(),
-        )
-    } else {
-        state_summary(state.as_ref())
-    };
+    let (status, handled_by, result_hash, error) =
+        if let (Some(reason), None) = (&entry.failure, &state) {
+            (
+                "failed".to_string(),
+                String::new(),
+                String::new(),
+                reason.clone(),
+            )
+        } else if unpublished_timed_out {
+            (
+                "failed".to_string(),
+                String::new(),
+                String::new(),
+                "task_publish_timeout".to_string(),
+            )
+        } else {
+            state_summary(state.as_ref())
+        };
     let mut task = serde_json::to_value(&entry.task).unwrap_or_else(|_| serde_json::json!({}));
     if let Some(object) = task.as_object_mut() {
         object.insert(

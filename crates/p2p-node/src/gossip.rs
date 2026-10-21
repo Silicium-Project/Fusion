@@ -28,7 +28,6 @@ pub(crate) fn handle(
     message: gossipsub::Message,
     peer_profiles: &PeerProfiles,
 ) -> Vec<GossipMessage> {
-    println!(" Received message from {peer_id}");
     match serde_json::from_slice::<GossipMessage>(&message.data) {
         Ok(GossipMessage::TaskEvent(event)) => {
             receive_event(context, peer_id, event);
@@ -100,6 +99,7 @@ fn receive_event(context: &NodeContext, peer_id: PeerId, event: TaskEvent) {
         Ok(received) if received.pending => {
             println!(" Task book event from {peer_id} waits for its predecessors")
         }
+        Ok(received) if received.accepted.is_empty() => {}
         Ok(received) => println!(
             " Accepted {} task book event(s) from {peer_id}",
             received.accepted.len()

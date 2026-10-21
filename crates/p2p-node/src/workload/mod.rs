@@ -218,7 +218,12 @@ pub(crate) fn of(task: &NetworkTask) -> Option<&'static dyn Workload> {
 /// not download models or run workloads outside their resource budget. An
 /// unset or empty value keeps the normal unrestricted behavior.
 pub(crate) fn is_allowed(task: &NetworkTask) -> bool {
-    let Ok(configured) = std::env::var("SILICIUM_ALLOWED_WORKLOADS") else {
+    let configured = std::env::var("SILICIUM_ALLOWED_WORKLOADS").ok();
+    is_allowed_with_config(task, configured.as_deref())
+}
+
+fn is_allowed_with_config(task: &NetworkTask, configured: Option<&str>) -> bool {
+    let Some(configured) = configured else {
         return true;
     };
     if configured.trim().is_empty() {
@@ -231,7 +236,7 @@ pub(crate) fn is_allowed(task: &NetworkTask) -> bool {
         .split(',')
         .map(str::trim)
         .filter(|id| !id.is_empty())
-        .any(|id| id == workload.id())
+        .any(|id| find(id).is_some_and(|configured| configured.id() == workload.id()))
 }
 
 /// Identifiers of the known workloads, for error messages.
@@ -274,6 +279,33 @@ mod tests {
         assert_eq!(find(sha256::ID).unwrap().id(), sha256::ID);
         assert_eq!(find("calcul/hash/sha256").unwrap().id(), sha256::ID);
         assert!(find("calcul/unknown").is_none());
+    }
+
+    #[test]
+    fn allowed_workloads_accept_canonical_ids_and_documented_aliases() {
+        let task = NetworkTask {
+            task_id: "sha256-1".to_string(),
+            root_job_id: None,
+            scene_path: "input.txt".to_string(),
+            output_path: String::new(),
+            seed: String::new(),
+            hardware_hint: None,
+            runtime_hint: None,
+            runtime_args: Vec::new(),
+            runtime_env: Default::default(),
+            runtime_workdir: None,
+            runtime_module_path: None,
+            runtime_image: None,
+            scene_sha256: None,
+            region: None,
+            workload: Some(sha256::ID.to_string()),
+            byte_range: None,
+            requested_fragment_count: None,
+        };
+
+        assert!(is_allowed_with_config(&task, Some(sha256::ID)));
+        assert!(is_allowed_with_config(&task, Some(sha256::ALIAS)));
+        assert!(!is_allowed_with_config(&task, Some("raytracer")));
     }
 
     #[test]

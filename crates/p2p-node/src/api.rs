@@ -360,9 +360,7 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
         .count();
     let queue_depth = tasks
         .iter()
-        .filter(|task| {
-            matches!(task.status.as_str(), "queued" | "proposed" | "retrying")
-        })
+        .filter(|task| matches!(task.status.as_str(), "queued" | "proposed" | "retrying"))
         .count();
     (
         StatusCode::OK,

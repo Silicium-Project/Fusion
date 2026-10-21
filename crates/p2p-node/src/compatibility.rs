@@ -142,9 +142,7 @@ impl CompatibilityWriter {
         let active = tasks.iter().filter(|task| is_active(&task.status)).count();
         let queue_depth = tasks
             .iter()
-            .filter(|task| {
-                matches!(task.status.as_str(), "queued" | "proposed" | "retrying")
-            })
+            .filter(|task| matches!(task.status.as_str(), "queued" | "proposed" | "retrying"))
             .count();
         let metrics = json!({
             "online_peers": peer_rows.len(),
