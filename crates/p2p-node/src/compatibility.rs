@@ -140,11 +140,15 @@ impl CompatibilityWriter {
         );
         let tasks = control.tasks_for_root(taskbook, None);
         let active = tasks.iter().filter(|task| is_active(&task.status)).count();
+        let queue_depth = tasks
+            .iter()
+            .filter(|task| matches!(task.status.as_str(), "queued" | "proposed"))
+            .count();
         let metrics = json!({
             "online_peers": peer_rows.len(),
             "known_tasks": tasks.len(),
             "active_tasks": active,
-            "queue_depth": tasks.iter().filter(|task| task.status == "queued").count(),
+            "queue_depth": queue_depth,
             "updated_utc": utc_now(),
         });
         let payload = json!({"schema_version": 1, "node_id": self.node_id.clone(), "peers": peer_rows, "metrics": metrics});

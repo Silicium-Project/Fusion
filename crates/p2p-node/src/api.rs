@@ -358,6 +358,10 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
         .iter()
         .filter(|peer| peer["online"].as_bool().unwrap_or(false))
         .count();
+    let queue_depth = tasks
+        .iter()
+        .filter(|task| matches!(task.status.as_str(), "queued" | "proposed"))
+        .count();
     (
         StatusCode::OK,
         Json(serde_json::json!({
@@ -365,6 +369,7 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
             "metrics": {
                 "online_peers": peer_count,
                 "known_tasks": tasks.len(),
+                "queue_depth": queue_depth,
                 "active_tasks": tasks.iter().filter(|task| !matches!(task.status.as_str(), "completed" | "failed" | "cancelled")).count(),
                 "updated_utc": utc_now(),
             }
