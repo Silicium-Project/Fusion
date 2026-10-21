@@ -43,6 +43,12 @@ jobs:
     with:
       release_channel: ${{ inputs.release_channel || 'dev' }}
       skip_submodule_ci_gate: true
+      # The gate above validates the exact pinned BackEnd, FrontEnd, and
+      # Network commits. Do not repeat their full suites in the Fusion release
+      # lane; web-stack remains the Fusion integration check here.
+      run_network_core: false
+      run_network_e2e: false
+      run_network_smoke: false
     secrets: inherit
 
   build-linux:

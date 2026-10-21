@@ -75,14 +75,8 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
-          RELEASE_CHANNEL: ${{ inputs.release_channel || 'dev' }}
         run: |
           set -euo pipefail
-          case "$RELEASE_CHANNEL" in
-            dev) submodule_ref=dev ;;
-            prod) submodule_ref=main ;;
-            *) echo "Unsupported release channel: $RELEASE_CHANNEL" >&2; exit 1 ;;
-          esac
           deadline=$(( $(date +%s) + 2700 ))
           report="$RUNNER_TEMP/submodule-ci-gate.log"
           while true; do
@@ -93,8 +87,13 @@ jobs:
               repo="${url#https://github.com/}"
               repo="${repo#git@github.com:}"
               repo="${repo%.git}"
+              pinned_sha="$(git ls-tree HEAD -- "$path" | awk 'NR == 1 { print $3 }')"
+              [[ "$pinned_sha" =~ ^[0-9a-fA-F]{40}$ ]] || {
+                echo "Could not resolve the pinned commit for $path from this Fusion checkout." >&2
+                exit 1
+              }
               if ! node .github/scripts/check-submodule-ci.mjs \
-                --repo "$repo" --ref "$submodule_ref" --latest-green --label "$path" >>"$report" 2>&1; then
+                --repo "$repo" --sha "$pinned_sha" --label "$path" >>"$report" 2>&1; then
                 gate_failed=1
               fi
             done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | sed -E 's/^submodule\.([^ ]+)\.path[[:space:]]+([^ ]+)$/\1 \2/')
@@ -105,6 +104,10 @@ jobs:
             cat "$report"
             if grep -Eqi 'has no green commit candidate|has no visible Actions workflow runs|Cannot resolve |GitHub API .* failed' "$report"; then
               echo "No green submodule commit candidate is currently available." >&2
+              exit 1
+            fi
+            if grep -Eqi 'has non-green workflow runs' "$report" && ! grep -Eqi ':(queued|in_progress)/' "$report"; then
+              echo "Pinned submodule CI has completed without a green result." >&2
               exit 1
             fi
             if [[ "$(date +%s)" -ge "$deadline" ]]; then

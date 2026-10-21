@@ -13,15 +13,20 @@ registered with the Solana program by Compose.
 These containers increase test concurrency on one host. They are not separate
 machines and do not add host-level availability.
 
-To attach all 20 workers to the signed-in website account, open **Espace
-worker → Associer les 20 miniworkers**, download the one-use JSON, transfer it
-to the VPS, then run `manage-dev-miniworkers.sh pair <json-file>`. The codes
-expire after 10 minutes, are each bound to a `miniworker-NN` identity, and are
-installed as root-only files. Each container signs its own code with its
-persistent libp2p key and calls a path-limited relay; the workers never join
-the backend service network and no website session token is copied to a worker. The manager clears
-each code after the backend confirms the link. Devices then appear in that
-account's worker space when they announce themselves to the orchestrator.
+To link all 20 workers to the signed-in website account, open **Espace
+worker → Associer les 20 miniworkers**. The verified account wallet is bound to
+the request. The backend writes a distinct short-lived authorization into each
+worker's private mount; each container signs it with its persistent identity
+and calls the path-limited relay. The user never downloads or manually copies
+a code or website session token to the VPS. A worker appears under the account
+after the backend verifies its identity and the node reports it to the
+orchestrator. The page shows linked devices separately from miniworkers
+currently visible on the network.
+
+The single-device code flow is for a separately installed desktop Silicium
+Node. Do not use `manage-dev-miniworkers.sh pair` for the pool-link button; that
+legacy command accepts a manually supplied JSON file and is not part of the
+website flow.
 
 The dev bootstrap keeps the worker settings in `/etc/silicium-dev/miniworkers.env`,
 outside the Git checkout so a deployment cannot delete them. It creates that
