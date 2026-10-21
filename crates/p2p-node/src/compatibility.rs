@@ -142,7 +142,9 @@ impl CompatibilityWriter {
         let active = tasks.iter().filter(|task| is_active(&task.status)).count();
         let queue_depth = tasks
             .iter()
-            .filter(|task| matches!(task.status.as_str(), "queued" | "proposed"))
+            .filter(|task| {
+                matches!(task.status.as_str(), "queued" | "proposed" | "retrying")
+            })
             .count();
         let metrics = json!({
             "online_peers": peer_rows.len(),
@@ -509,7 +511,7 @@ fn write_bytes(path: &Path, bytes: &[u8]) {
 }
 
 fn is_active(status: &str) -> bool {
-    !matches!(status, "completed" | "failed" | "cancelled")
+    matches!(status, "running" | "verifying")
 }
 
 fn path_id(value: &str) -> String {

@@ -20,6 +20,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// A submission that never acquired a task-book state is not a live queue
+/// item forever. The publisher should propose accepted work within seconds;
+/// after five minutes, expose a terminal publish failure instead of counting
+/// a stale registry record as waiting work.
+const UNPUBLISHED_TASK_TIMEOUT_SECS: i64 = 5 * 60;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Entry {
     root_job_id: String,
@@ -209,14 +215,27 @@ impl ControlRegistry {
 
 fn to_control_task(entry: &Entry, taskbook: &TaskBookState) -> ControlTask {
     let state = taskbook.state(&entry.task.task_id).ok().flatten();
-    let (status, handled_by, result_hash, error) = match (&entry.failure, &state) {
-        (Some(reason), None) => (
+    let unpublished_timed_out = state.is_none()
+        && entry.failure.is_none()
+        && unix_seconds().saturating_sub(entry.created_unix) >= UNPUBLISHED_TASK_TIMEOUT_SECS;
+    let (status, handled_by, result_hash, error) = if let (Some(reason), None) =
+        (&entry.failure, &state)
+    {
+        (
             "failed".to_string(),
             String::new(),
             String::new(),
             reason.clone(),
-        ),
-        _ => state_summary(state.as_ref()),
+        )
+    } else if unpublished_timed_out {
+        (
+            "failed".to_string(),
+            String::new(),
+            String::new(),
+            "task_publish_timeout".to_string(),
+        )
+    } else {
+        state_summary(state.as_ref())
     };
     let mut task = serde_json::to_value(&entry.task).unwrap_or_else(|_| serde_json::json!({}));
     if let Some(object) = task.as_object_mut() {

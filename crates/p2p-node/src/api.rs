@@ -360,7 +360,9 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
         .count();
     let queue_depth = tasks
         .iter()
-        .filter(|task| matches!(task.status.as_str(), "queued" | "proposed"))
+        .filter(|task| {
+            matches!(task.status.as_str(), "queued" | "proposed" | "retrying")
+        })
         .count();
     (
         StatusCode::OK,
@@ -370,7 +372,10 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
                 "online_peers": peer_count,
                 "known_tasks": tasks.len(),
                 "queue_depth": queue_depth,
-                "active_tasks": tasks.iter().filter(|task| !matches!(task.status.as_str(), "completed" | "failed" | "cancelled")).count(),
+                "active_tasks": tasks
+                    .iter()
+                    .filter(|task| matches!(task.status.as_str(), "running" | "verifying"))
+                    .count(),
                 "updated_utc": utc_now(),
             }
         })),
