@@ -77,7 +77,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          deadline=$(( $(date +%s) + 2700 ))
+          # The Solana Anchor build and the FrontEnd browser suite can take
+          # longer than 45 minutes on the shared VPS runners. Keep the exact
+          # commit checks, but give those required validations room to finish.
+          deadline=$(( $(date +%s) + 5400 ))
           report="$RUNNER_TEMP/submodule-ci-gate.log"
           while true; do
             : > "$report"
@@ -111,7 +114,7 @@ jobs:
               exit 1
             fi
             if [[ "$(date +%s)" -ge "$deadline" ]]; then
-              echo "Timed out waiting for submodule CI to complete." >&2
+              echo "Timed out waiting 90 minutes for submodule CI to complete." >&2
               exit 1
             fi
             echo "Submodule CI is still queued or running; retrying in 30 seconds."
