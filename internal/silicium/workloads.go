@@ -93,6 +93,13 @@ func IsHF(workload string) bool {
 	return ok
 }
 
+// IsSHA256 reports whether a workload is the deterministic chunk-hash job
+// supported by the Devnet escrow pilot.
+func IsSHA256(workload string) bool {
+	spec, ok := workloadSpecFor(workload)
+	return ok && spec.NodeID == sha256Spec.NodeID
+}
+
 // ParseHF splits `ai/hf/<task>/<key>`; the task and the key are checked
 // against the catalogue by the caller.
 func ParseHF(workload string) (task, key string, ok bool) {

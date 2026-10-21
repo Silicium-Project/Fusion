@@ -134,6 +134,8 @@ func runNodeJob(ctx context.Context, job models.Job, cfg RunnerConfig, spec work
 		OutputPath:    outputPath,
 		Seed:          job.SiliciumJobID,
 		FragmentCount: job.FragmentCount,
+		SolanaJob:     job.SolanaJob,
+		SolanaExpectedFragments: job.SolanaExpected,
 	})
 	if err != nil {
 		// The node refuses unreadable documents or requests with a message

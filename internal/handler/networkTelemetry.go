@@ -251,9 +251,13 @@ func aggregateNetworkMetrics(peers []any) map[string]any {
 			continue
 		}
 		if queue, ok := peer["task_queue"].([]any); ok {
-			result["queue_depth"] = result["queue_depth"].(int) + len(queue)
+			result["queue_depth"] = result["queue_depth"].(int) + pendingTaskCount(queue)
 		} else if queue, ok := peer["task_queue"].([]map[string]any); ok {
-			result["queue_depth"] = result["queue_depth"].(int) + len(queue)
+			items := make([]any, 0, len(queue))
+			for _, task := range queue {
+				items = append(items, task)
+			}
+			result["queue_depth"] = result["queue_depth"].(int) + pendingTaskCount(items)
 		}
 		if activity := mapField(peer, "activity"); len(activity) > 0 {
 			if tasks, ok := activity["active_tasks"].([]any); ok {
@@ -299,6 +303,21 @@ func aggregateNetworkMetrics(peers []any) map[string]any {
 		result["updated_utc"] = latest.Format(time.RFC3339Nano)
 	}
 	return result
+}
+
+func pendingTaskCount(tasks []any) int {
+	count := 0
+	for _, raw := range tasks {
+		task, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(stringField(task, "status"))) {
+		case "queued", "proposed", "retrying":
+			count++
+		}
+	}
+	return count
 }
 
 func roundNetworkMetric(value float64) float64 {

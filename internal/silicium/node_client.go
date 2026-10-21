@@ -41,6 +41,8 @@ type ControlTaskSubmission struct {
 	OutputPath    string   `json:"output_path"`
 	Seed          string   `json:"seed"`
 	FragmentCount int      `json:"fragment_count,omitempty"`
+	SolanaJob     string   `json:"solana_job,omitempty"`
+	SolanaExpectedFragments int `json:"solana_expected_fragments,omitempty"`
 }
 
 type controlTasksResponse struct {

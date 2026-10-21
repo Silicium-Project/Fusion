@@ -17,6 +17,13 @@ type Job struct {
 	SummaryPath        string     `gorm:"type:text" json:"summaryPath,omitempty"`
 	DevnetTracePath    string     `gorm:"type:text" json:"devnetTracePath,omitempty"`
 	DevnetJob          string     `gorm:"size:128" json:"devnetJob,omitempty"`
+	SolanaJob          string     `gorm:"size:64;uniqueIndex:idx_jobs_solana_job,where:solana_job <> ''" json:"solanaJob,omitempty"`
+	SolanaExpected     int        `gorm:"not null;default:0" json:"solanaExpectedFragments,omitempty"`
+	SolanaCreateTx     string     `gorm:"size:128" json:"solanaCreateSignature,omitempty"`
+	SolanaRefundTx     string     `gorm:"size:128" json:"solanaRefundSignature,omitempty"`
+	SolanaRefunded     bool       `gorm:"not null;default:false" json:"solanaRefunded,omitempty"`
+	SolanaFinalizeTx   string     `gorm:"size:128" json:"solanaFinalizeSignature,omitempty"`
+	SolanaFinalized    bool       `gorm:"not null;default:false" json:"solanaFinalized,omitempty"`
 	ErrorMessage       string     `gorm:"type:text" json:"errorMessage,omitempty"`
 	DeadlineAt         *time.Time `json:"deadlineAt,omitempty"`
 	CancelRequestedAt  *time.Time `json:"cancelRequestedAt,omitempty"`

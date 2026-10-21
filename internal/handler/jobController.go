@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/silicium/internal/chainproof"
 	"github.com/silicium/internal/models"
 	"github.com/silicium/internal/silicium"
 )
@@ -40,6 +41,21 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	if key != "" {
 		writeMessage(w, r, http.StatusBadRequest, key, args...)
 		return
+	}
+	solanaJob, solanaCreateTx, solanaExpected := "", "", 0
+	if chainproof.PaymentsEnabled() {
+		if !silicium.IsSHA256(options.workload) {
+			writeMessage(w, r, http.StatusBadRequest, "job.payment_workload_unsupported")
+			return
+		}
+		var parseErr error
+		solanaJob = strings.TrimSpace(r.FormValue("solana_job"))
+		solanaCreateTx = strings.TrimSpace(r.FormValue("solana_create_signature"))
+		solanaExpected, parseErr = strconv.Atoi(strings.TrimSpace(r.FormValue("solana_expected_fragments")))
+		if parseErr != nil || solanaJob == "" || solanaCreateTx == "" || solanaExpected < 1 || solanaExpected > 256 {
+			writeMessage(w, r, http.StatusPaymentRequired, "job.payment_required")
+			return
+		}
 	}
 
 	jobID := silicium.NewJobID(userID)
@@ -92,6 +108,42 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		writeMessage(w, r, http.StatusInternalServerError, "job.input_store_failed")
 		return
 	}
+	if chainproof.PaymentsEnabled() {
+		info, statErr := os.Stat(absoluteInput)
+		if statErr != nil {
+			writeMessage(w, r, http.StatusBadRequest, "job.payment_input_invalid")
+			return
+		}
+		requested := options.fragmentCount
+		if requested < 1 {
+			requested = 1
+		}
+		actual := uint64(requested)
+		if size := info.Size(); size > 0 && uint64(size) < actual {
+			actual = uint64(size)
+		}
+		if actual == 0 {
+			actual = 1
+		}
+		if uint64(solanaExpected) != actual {
+			writeMessage(w, r, http.StatusBadRequest, "job.payment_quote_mismatch")
+			return
+		}
+		wallet, walletErr := verifiedPayoutWallet(h.DB.WithContext(r.Context()), userID)
+		if walletErr != nil {
+			writeMessage(w, r, http.StatusConflict, "job.payment_wallet_required")
+			return
+		}
+		config := chainproof.ConfigFromEnv()
+		programID := envDefault("SILICIUM_SOLANA_PROGRAM_ID", chainproof.DefaultProgramID)
+		mint := strings.TrimSpace(os.Getenv("SILICIUM_SIL_MINT"))
+		if err := chainproof.VerifyOpenSILEscrow(r.Context(), config.RPCURL, programID, solanaJob, *wallet, mint, solanaCreateTx, uint32(solanaExpected)); err != nil {
+			log.Printf("job %s Devnet escrow verification failed: %v", jobID, err)
+			writeMessage(w, r, http.StatusPaymentRequired, "job.payment_invalid")
+			return
+		}
+		options.fragmentCount = solanaExpected
+	}
 	title, key := validJobTitle(options.title, defaultTitle)
 	if key != "" {
 		writeMessage(w, r, http.StatusBadRequest, key)
@@ -108,6 +160,9 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		CollectionID:  collectionID,
 		Status:        "queued",
 		SiliciumJobID: jobID,
+		SolanaJob:    solanaJob,
+		SolanaExpected: solanaExpected,
+		SolanaCreateTx: solanaCreateTx,
 		InputPath:     absoluteInput,
 		DeadlineAt:    &deadline,
 	}
@@ -207,7 +262,8 @@ func (h *Handler) ListJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 type cancelJobRequest struct {
-	Reason string `json:"reason"`
+	Reason               string `json:"reason"`
+	SolanaRefundSignature string `json:"solana_refund_signature"`
 }
 
 func (h *Handler) CancelJob(w http.ResponseWriter, r *http.Request) {
@@ -215,12 +271,50 @@ func (h *Handler) CancelJob(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled" || job.Status == "expired" {
+	var request cancelJobRequest
+	_ = json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&request)
+	request.SolanaRefundSignature = strings.TrimSpace(request.SolanaRefundSignature)
+	if job.SolanaJob != "" {
+		if job.Status == "completed" {
+			writeMessage(w, r, http.StatusConflict, "job.payment_finalize_instead")
+			return
+		}
+		if job.SolanaRefunded {
+			writeJSON(w, http.StatusOK, job)
+			return
+		}
+		wallet, walletErr := verifiedPayoutWallet(h.DB.WithContext(r.Context()), job.UserID)
+		if walletErr != nil {
+			writeMessage(w, r, http.StatusConflict, "job.payment_wallet_required")
+			return
+		}
+		config := chainproof.ConfigFromEnv()
+		programID := envDefault("SILICIUM_SOLANA_PROGRAM_ID", chainproof.DefaultProgramID)
+		mint := strings.TrimSpace(os.Getenv("SILICIUM_SIL_MINT"))
+		if err := chainproof.VerifyClosedSILEscrow(
+			r.Context(), config.RPCURL, programID, job.SolanaJob, *wallet, mint,
+			uint32(job.SolanaExpected), request.SolanaRefundSignature, "cancel_job", 2,
+		); err != nil {
+			log.Printf("job %d Devnet refund verification failed: %v", job.ID, err)
+			writeMessage(w, r, http.StatusConflict, "job.payment_refund_required")
+			return
+		}
+		job.SolanaRefundTx = request.SolanaRefundSignature
+		job.SolanaRefunded = true
+		if err := h.DB.Model(&job).Updates(map[string]any{"solana_refund_tx": job.SolanaRefundTx, "solana_refunded": true}).Error; err != nil {
+			writeMessage(w, r, http.StatusInternalServerError, "job.payment_record_failed")
+			return
+		}
+	} else if job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled" || job.Status == "expired" {
 		writeJSON(w, http.StatusOK, job)
 		return
 	}
-	var request cancelJobRequest
-	_ = json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&request)
+	if job.Status == "completed" || job.Status == "failed" || job.Status == "cancelled" || job.Status == "expired" {
+		if job.SolanaJob != "" {
+			writeJSON(w, http.StatusOK, job)
+			return
+		}
+	}
 	reason := strings.TrimSpace(request.Reason)
 	if reason == "" {
 		reason = "cancelled by payer"
@@ -260,6 +354,58 @@ func (h *Handler) CancelJob(w http.ResponseWriter, r *http.Request) {
 	})
 	h.DB.First(&job, job.ID)
 	writeJSON(w, http.StatusAccepted, job)
+}
+
+type finalizeJobRequest struct {
+	Signature string `json:"signature"`
+}
+
+// FinalizeJob closes a fully verified paid escrow and returns unused SIL to
+// the account wallet. The browser signs the on-chain transaction with Phantom.
+func (h *Handler) FinalizeJob(w http.ResponseWriter, r *http.Request) {
+	job, ok := h.jobForRequest(w, r)
+	if !ok {
+		return
+	}
+	if job.SolanaJob == "" || job.SolanaExpected < 1 {
+		writeMessage(w, r, http.StatusConflict, "job.payment_job_missing")
+		return
+	}
+	if job.SolanaFinalized {
+		writeJSON(w, http.StatusOK, job)
+		return
+	}
+	if job.Status != "completed" {
+		writeMessage(w, r, http.StatusConflict, "job.payment_job_not_complete")
+		return
+	}
+	var request finalizeJobRequest
+	_ = json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&request)
+	request.Signature = strings.TrimSpace(request.Signature)
+	wallet, walletErr := verifiedPayoutWallet(h.DB.WithContext(r.Context()), job.UserID)
+	if walletErr != nil {
+		writeMessage(w, r, http.StatusConflict, "job.payment_wallet_required")
+		return
+	}
+	config := chainproof.ConfigFromEnv()
+	programID := envDefault("SILICIUM_SOLANA_PROGRAM_ID", chainproof.DefaultProgramID)
+	mint := strings.TrimSpace(os.Getenv("SILICIUM_SIL_MINT"))
+	if err := chainproof.VerifyClosedSILEscrow(
+		r.Context(), config.RPCURL, programID, job.SolanaJob, *wallet, mint,
+		uint32(job.SolanaExpected), request.Signature, "finalize_job", 1,
+	); err != nil {
+		log.Printf("job %d Devnet finalization verification failed: %v", job.ID, err)
+		writeMessage(w, r, http.StatusConflict, "job.payment_finalize_required")
+		return
+	}
+	job.SolanaFinalizeTx = request.Signature
+	job.SolanaFinalized = true
+	if err := h.DB.Model(&job).Updates(map[string]any{"solana_finalize_tx": job.SolanaFinalizeTx, "solana_finalized": true}).Error; err != nil {
+		writeMessage(w, r, http.StatusInternalServerError, "job.payment_record_failed")
+		return
+	}
+	h.DB.First(&job, job.ID)
+	writeJSON(w, http.StatusOK, job)
 }
 
 func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {

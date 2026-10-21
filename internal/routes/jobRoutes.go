@@ -17,6 +17,7 @@ func RegisterJobRoutes(router *mux.Router, h handler.Handler) {
 	jobsRouter.HandleFunc("/network/tasks/{id}/cancel", h.CancelNetworkTask).Methods("POST")
 	jobsRouter.HandleFunc("/{id}", h.GetJob).Methods("GET")
 	jobsRouter.HandleFunc("/{id}/cancel", h.CancelJob).Methods("POST")
+	jobsRouter.HandleFunc("/{id}/finalize", h.FinalizeJob).Methods("POST")
 	jobsRouter.HandleFunc("/{id}/dashboard", h.GetJobDashboard).Methods("GET")
 	jobsRouter.HandleFunc("/{id}/result", h.GetJobResult).Methods("GET")
 	jobsRouter.HandleFunc("/{id}/search", h.SearchJobDocuments).Methods("GET")
