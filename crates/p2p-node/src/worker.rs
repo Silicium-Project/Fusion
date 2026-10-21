@@ -93,7 +93,9 @@ pub(crate) async fn process_task(context: NodeContext, mut task: NetworkTask) {
         Some(outcome) => match share_result(&context, &task).await {
             Some(result) => {
                 let settled = match task.solana_payment.as_ref() {
-                    Some(payment) => crate::solana_settlement::submit(payment, &result.sha256).await,
+                    Some(payment) => {
+                        crate::solana_settlement::submit(payment, &result.sha256).await
+                    }
                     None => true,
                 };
                 if settled {

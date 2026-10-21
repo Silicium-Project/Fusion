@@ -70,7 +70,10 @@ async fn run(command: &str, payment: &SolanaPaymentRef, value: Option<(&str, &st
             false
         }
         Err(_) => {
-            println!(" Paid task {} settlement helper is unavailable", payment.job);
+            println!(
+                " Paid task {} settlement helper is unavailable",
+                payment.job
+            );
             false
         }
     }
