@@ -1,0 +1,229 @@
+name: silicium-dev-miniworkers
+
+x-miniworker-defaults: &miniworker-defaults
+  image: silicium-dev-miniworker:local
+  build:
+    context: ../../Network
+    dockerfile: infra/miniworker.Dockerfile
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 20s
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 64
+  deploy:
+    resources:
+      limits:
+        cpus: "0.10"
+        memory: 160M
+        pids: 64
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=16m,mode=1777
+  environment:
+    SILICIUM_RELEASE_CHANNEL: dev
+    SILICIUM_RELEASE_BUILD: vps-miniworker
+    SILICIUM_NODE_ROLES: compute,verify
+    SILICIUM_ALLOWED_WORKLOADS: raytracer
+    SILICIUM_PARALLEL_TASKS: "1"
+    SILICIUM_BOOTSTRAP_PEERS: ${SILICIUM_DEV_BOOTSTRAP_PEER:?Set SILICIUM_DEV_BOOTSTRAP_PEER}
+    SILICIUM_P2P_BIND: 0.0.0.0
+    SILICIUM_P2P_PORT: "0"
+    SILICIUM_API_BIND: 127.0.0.1
+    API_PORT: "9092"
+    SILICIUM_DATA_DIR: /data
+    SILICIUM_COMPUTE_ROOT: /data/work
+    SILICIUM_SOLANA_CLUSTER: devnet
+    SILICIUM_SOLANA_WALLET_PATH: /data/solana-wallet.json
+    SILICIUM_RAYTRACER_BIN: /usr/local/bin/silicium-raytracer
+    SILICIUM_COMPUTE_BIND: 127.0.0.1:9090
+  healthcheck:
+    test: [CMD-SHELL, "curl -fsS http://127.0.0.1:9092/health && curl -fsS http://127.0.0.1:9090/health"]
+    interval: 30s
+    timeout: 5s
+    start_period: 30s
+    retries: 3
+  networks:
+    - dev-workers
+
+services:
+  miniworker-01:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-01
+    volumes:
+      - miniworker-01-data:/data
+  miniworker-02:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-02
+    volumes:
+      - miniworker-02-data:/data
+  miniworker-03:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-03
+    volumes:
+      - miniworker-03-data:/data
+  miniworker-04:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-04
+    volumes:
+      - miniworker-04-data:/data
+  miniworker-05:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-05
+    volumes:
+      - miniworker-05-data:/data
+  miniworker-06:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-06
+    volumes:
+      - miniworker-06-data:/data
+  miniworker-07:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-07
+    volumes:
+      - miniworker-07-data:/data
+  miniworker-08:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-08
+    volumes:
+      - miniworker-08-data:/data
+  miniworker-09:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-09
+    volumes:
+      - miniworker-09-data:/data
+  miniworker-10:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-10
+    volumes:
+      - miniworker-10-data:/data
+  miniworker-11:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-11
+    volumes:
+      - miniworker-11-data:/data
+  miniworker-12:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-12
+    volumes:
+      - miniworker-12-data:/data
+  miniworker-13:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-13
+    volumes:
+      - miniworker-13-data:/data
+  miniworker-14:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-14
+    volumes:
+      - miniworker-14-data:/data
+  miniworker-15:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-15
+    volumes:
+      - miniworker-15-data:/data
+  miniworker-16:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-16
+    volumes:
+      - miniworker-16-data:/data
+  miniworker-17:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-17
+    volumes:
+      - miniworker-17-data:/data
+  miniworker-18:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-18
+    volumes:
+      - miniworker-18-data:/data
+  miniworker-19:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-19
+    volumes:
+      - miniworker-19-data:/data
+  miniworker-20:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-20
+    volumes:
+      - miniworker-20-data:/data
+  miniworker-21:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-21
+    volumes:
+      - miniworker-21-data:/data
+  miniworker-22:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-22
+    volumes:
+      - miniworker-22-data:/data
+  miniworker-23:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-23
+    volumes:
+      - miniworker-23-data:/data
+  miniworker-24:
+    <<: *miniworker-defaults
+    container_name: silicium-dev-miniworker-24
+    volumes:
+      - miniworker-24-data:/data
+
+networks:
+  dev-workers:
+    name: silicium-dev-miniworkers
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.23.0.0/24
+          gateway: 172.23.0.1
+
+volumes:
+  miniworker-01-data:
+    name: silicium-dev-miniworker-01-data
+  miniworker-02-data:
+    name: silicium-dev-miniworker-02-data
+  miniworker-03-data:
+    name: silicium-dev-miniworker-03-data
+  miniworker-04-data:
+    name: silicium-dev-miniworker-04-data
+  miniworker-05-data:
+    name: silicium-dev-miniworker-05-data
+  miniworker-06-data:
+    name: silicium-dev-miniworker-06-data
+  miniworker-07-data:
+    name: silicium-dev-miniworker-07-data
+  miniworker-08-data:
+    name: silicium-dev-miniworker-08-data
+  miniworker-09-data:
+    name: silicium-dev-miniworker-09-data
+  miniworker-10-data:
+    name: silicium-dev-miniworker-10-data
+  miniworker-11-data:
+    name: silicium-dev-miniworker-11-data
+  miniworker-12-data:
+    name: silicium-dev-miniworker-12-data
+  miniworker-13-data:
+    name: silicium-dev-miniworker-13-data
+  miniworker-14-data:
+    name: silicium-dev-miniworker-14-data
+  miniworker-15-data:
+    name: silicium-dev-miniworker-15-data
+  miniworker-16-data:
+    name: silicium-dev-miniworker-16-data
+  miniworker-17-data:
+    name: silicium-dev-miniworker-17-data
+  miniworker-18-data:
+    name: silicium-dev-miniworker-18-data
+  miniworker-19-data:
+    name: silicium-dev-miniworker-19-data
+  miniworker-20-data:
+    name: silicium-dev-miniworker-20-data
+  miniworker-21-data:
+    name: silicium-dev-miniworker-21-data
+  miniworker-22-data:
+    name: silicium-dev-miniworker-22-data
+  miniworker-23-data:
+    name: silicium-dev-miniworker-23-data
+  miniworker-24-data:
+    name: silicium-dev-miniworker-24-data
