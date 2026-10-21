@@ -27,6 +27,7 @@ type networkStatus struct {
 	TelemetryNodes      int     `json:"telemetryNodes"`
 	ActiveTasks         int     `json:"activeTasks"`
 	QueueDepth          int     `json:"queueDepth"`
+	KnownTasks          int     `json:"knownTasks"`
 	LogicalCPUCount     int     `json:"logicalCpuCount"`
 	SystemCPUPercent    float64 `json:"systemCpuPercent,omitempty"`
 	SystemMemoryPercent float64 `json:"systemMemoryPercent,omitempty"`
@@ -136,7 +137,8 @@ func (h *Handler) buildSystemStatus(ctx context.Context, now time.Time) systemSt
 		if metrics, ok := payload["metrics"].(map[string]any); ok {
 			value.Network.TelemetryNodes = value.Network.Peers
 			value.Network.ActiveTasks = int(networkInt64Value(metrics["active_tasks"]))
-			value.Network.QueueDepth = int(networkInt64Value(metrics["known_tasks"]))
+			value.Network.QueueDepth = int(networkInt64Value(metrics["queue_depth"]))
+			value.Network.KnownTasks = int(networkInt64Value(metrics["known_tasks"]))
 			value.Network.UpdatedAt = now.UTC().Format(time.RFC3339)
 		}
 		if value.Network.Peers == 0 || value.Network.ActivePeers == 0 {

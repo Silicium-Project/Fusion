@@ -14,7 +14,7 @@ func TestSystemStatusAggregatesPeersAndConfiguration(t *testing.T) {
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"peers":[{"node_id":"node-a","online":true},{"node_id":"node-b","online":true},{"node_id":"node-c","online":false}],"metrics":{"active_tasks":1,"known_tasks":2}}`))
+		_, _ = w.Write([]byte(`{"peers":[{"node_id":"node-a","online":true},{"node_id":"node-b","online":true},{"node_id":"node-c","online":false}],"metrics":{"active_tasks":1,"known_tasks":140,"queue_depth":0}}`))
 	}))
 	defer server.Close()
 	t.Setenv("SILICIUM_NODE_API_URL", server.URL)
@@ -22,7 +22,11 @@ func TestSystemStatusAggregatesPeersAndConfiguration(t *testing.T) {
 	t.Setenv("SILICIUM_SOLANA_PROGRAM_ID", "program-id")
 
 	value := (&Handler{}).buildSystemStatus(context.Background(), time.Now())
-	if value.Network.Peers != 3 || value.Network.ActivePeers != 2 || value.Network.ActiveTasks != 1 || value.Network.QueueDepth != 2 {
+	if value.Network.Peers != 3 ||
+		value.Network.ActivePeers != 2 ||
+		value.Network.ActiveTasks != 1 ||
+		value.Network.QueueDepth != 0 ||
+		value.Network.KnownTasks != 140 {
 		t.Fatalf("unexpected peer summary: %#v", value.Network)
 	}
 	if !value.Blockchain.Configured || value.Blockchain.Network != "devnet" {
