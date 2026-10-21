@@ -72,6 +72,10 @@ services:
       SILICIUM_SITE_STORAGE_DIR: /var/lib/silicium/site/jobs
       SILICIUM_WORKLOAD_STORAGE_DIR: /var/lib/silicium/site/runtime
       SILICIUM_DEVICE_PAIRING_DIR: /var/lib/silicium/miniworker-pairing
+      SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://api.devnet.solana.com}
+      SILICIUM_SOLANA_PROGRAM_ID: ${SILICIUM_SOLANA_PROGRAM_ID:-A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2}
+      SILICIUM_SIL_MINT: ${SILICIUM_SIL_MINT:-F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP}
+      SILICIUM_SOLANA_PAYMENTS_ENABLED: ${SILICIUM_SOLANA_PAYMENTS_ENABLED:-0}
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,6 +110,8 @@ services:
       NUXT_PUBLIC_RELEASE_VERSION: ${SILICIUM_RELEASE_VERSION:-unknown}
       NUXT_PUBLIC_RELEASE_BUILD: ${SILICIUM_RELEASE_BUILD:-local}
       NUXT_PUBLIC_SIL_MINT: ${SILICIUM_SIL_MINT:-}
+      NUXT_PUBLIC_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://api.devnet.solana.com}
+      NUXT_PUBLIC_SOLANA_PAYMENTS_ENABLED: ${SILICIUM_SOLANA_PAYMENTS_ENABLED:-0}
     ports:
     - 127.0.0.1:${SILICIUM_FRONTEND_HTTP_PORT:-3000}:3000
     networks:

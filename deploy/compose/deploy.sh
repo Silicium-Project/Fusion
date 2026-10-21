@@ -297,6 +297,7 @@ if [[ "$RELEASE_CHANNEL" == "dev" ]]; then
     bash "$ROOT/deploy/linux/manage-dev-miniworkers.sh" up
 fi
 "$ROOT/deploy/linux/publish-update-manifest.sh"
-if [[ -f "$ROOT/deploy/linux/publish-package-repositories.sh" ]]; then
+if [[ "${SILICIUM_SKIP_PACKAGE_REPOSITORY_PUBLISH:-0}" != "1" \
+  && -f "$ROOT/deploy/linux/publish-package-repositories.sh" ]]; then
   bash "$ROOT/deploy/linux/publish-package-repositories.sh" "$ROOT"
 fi

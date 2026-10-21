@@ -19,6 +19,9 @@ x-miniworker-environment: &miniworker-environment
   SILICIUM_DEVICE_PAIRING_API_URL: ${SILICIUM_DEVICE_PAIRING_API_URL:-http://pairing-relay:8080/devices/pair}
   SILICIUM_DEVICE_PAIRING_CODE_FILE: /run/secrets/device-pairing-code
   SILICIUM_SOLANA_CLUSTER: devnet
+  SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://api.devnet.solana.com}
+  SILICIUM_SOLANA_MINT: ${SILICIUM_SIL_MINT:-F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP}
+  SILICIUM_SOLANA_PROGRAM_ID: ${SILICIUM_SOLANA_PROGRAM_ID:-A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2}
   SILICIUM_SOLANA_WALLET_PATH: /data/solana-wallet.json
   SILICIUM_RAYTRACER_BIN: /usr/local/bin/silicium-raytracer
   SILICIUM_COMPUTE_BIND: 127.0.0.1:9090
@@ -48,7 +51,7 @@ x-miniworker-defaults: &miniworker-defaults
     resources:
       limits:
         cpus: "0.10"
-        memory: 160M
+        memory: 256M
         pids: 64
   tmpfs:
     - /tmp:rw,noexec,nosuid,size=16m,mode=1777

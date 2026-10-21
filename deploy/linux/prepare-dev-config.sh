@@ -82,6 +82,10 @@ orchestrator_env="$CONFIG_DIR/orchestrator.env"
 updates_env="$CONFIG_DIR/update-channels.env"
 miniworkers_env="$CONFIG_DIR/miniworkers.env"
 
+set_env_value "$miniworkers_env" SILICIUM_SOLANA_RPC https://api.devnet.solana.com
+set_env_value "$miniworkers_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
+set_env_value "$miniworkers_env" SILICIUM_SOLANA_PROGRAM_ID A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+
 db_password="$(grep -E '^POSTGRES_PASSWORD=' "$compose_env" | tail -n 1 | cut -d= -f2- || true)"
 if [[ -z "$db_password" || "$db_password" == GENERATE_* || "$db_password" == CHANGE_* ]]; then
   db_password="$(openssl rand -hex 32)"
@@ -96,6 +100,9 @@ set_env_value "$compose_env" POSTGRES_USER silicium_dev
 set_env_value "$compose_env" POSTGRES_PASSWORD "$db_password"
 set_env_value "$compose_env" SILICIUM_RELEASE_CHANNEL dev
 set_env_value "$compose_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
+set_env_value "$compose_env" SILICIUM_SOLANA_RPC https://api.devnet.solana.com
+set_env_value "$compose_env" SILICIUM_SOLANA_PROGRAM_ID A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+set_env_value "$compose_env" SILICIUM_SOLANA_PAYMENTS_ENABLED 1
 set_env_value "$compose_env" SILICIUM_RELEASE_VERSION "$release_version"
 set_env_value "$compose_env" SILICIUM_RELEASE_BUILD "$release_build"
 set_env_value "$compose_env" SILICIUM_COMPOSE_PROJECT_NAME silicium-dev
@@ -144,6 +151,10 @@ set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_HOST "$VPN_SERVER_ADDRESS"
 set_env_value "$backend_env" SILICIUM_SOLANA_WALLET /var/lib/silicium/solana/id.json
 set_env_value "$backend_env" SILICIUM_DEVNET_TRACE 0
 set_env_value "$backend_env" SILICIUM_DEVNET_TRACE_MODE devnet
+set_env_value "$backend_env" SILICIUM_SOLANA_RPC https://api.devnet.solana.com
+set_env_value "$backend_env" SILICIUM_SOLANA_PROGRAM_ID A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+set_env_value "$backend_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
+set_env_value "$backend_env" SILICIUM_SOLANA_PAYMENTS_ENABLED 1
 
 set_env_value "$frontend_env" HOST 0.0.0.0
 set_env_value "$frontend_env" PORT 3000
@@ -151,6 +162,9 @@ set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_CHANNEL dev
 set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_VERSION "$release_version"
 set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_BUILD "$release_build"
 set_env_value "$frontend_env" NUXT_PUBLIC_API_BASE /api
+set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_RPC https://api.devnet.solana.com
+set_env_value "$frontend_env" NUXT_PUBLIC_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
+set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_PAYMENTS_ENABLED 1
 set_env_value "$frontend_env" NUXT_PUBLIC_UPDATE_MANIFEST_URL /downloads/update-manifest.json
 set_env_value "$frontend_env" NUXT_PUBLIC_ORCHESTRATOR_URL "$PUBLIC_BASE_URL/orchestrator"
 set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_WINDOWS_URL "$PUBLIC_BASE_URL/downloads/silicium-node-windows.exe"
@@ -162,6 +176,7 @@ set_env_value "$frontend_env" NUXT_PUBLIC_NODE_APP_LINUX_DEV_RPM_URL "$PUBLIC_BA
 set_env_value "$orchestrator_env" SILICIUM_NODE_ID orchestrator-dev-1
 set_env_value "$orchestrator_env" SILICIUM_NODE_ROLES resource,storage
 set_env_value "$orchestrator_env" SILICIUM_ENABLE_MDNS 0
+set_env_value "$orchestrator_env" SILICIUM_SOLANA_PAYMENTS_ENABLED 1
 set_env_value "$orchestrator_env" SILICIUM_NODE_PORT "$ORCHESTRATOR_PORT"
 set_env_value "$orchestrator_env" SILICIUM_P2P_PORT "$((ORCHESTRATOR_PORT + 1))"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_CHANNEL dev
