@@ -37,6 +37,17 @@ type pairDeviceRequest struct {
 	Signature       string `json:"signature"`
 	SolanaWallet    string `json:"solanaWallet"`
 	SolanaSignature string `json:"solanaSignature"`
+	PayoutWallet    string `json:"payoutWallet"`
+}
+
+type workerPayoutProofResponse struct {
+	Message   string `json:"message"`
+	Signature string `json:"signature"`
+}
+
+type userDeviceResponse struct {
+	models.UserDevice
+	WorkerPayoutProof *workerPayoutProofResponse `json:"workerPayoutProof,omitempty"`
 }
 
 type devicePairingCodesRequest struct {
@@ -66,7 +77,18 @@ func (h *Handler) ListUserDevices(w http.ResponseWriter, r *http.Request) {
 		writeAuthJSON(w, http.StatusInternalServerError, map[string]string{"message": "Les appareils du compte sont indisponibles."})
 		return
 	}
-	writeAuthJSON(w, http.StatusOK, map[string]any{"items": devices})
+	items := make([]userDeviceResponse, 0, len(devices))
+	for _, device := range devices {
+		item := userDeviceResponse{UserDevice: device}
+		if device.WorkerPayoutProofMessage != "" && device.WorkerPayoutProofSignature != "" {
+			item.WorkerPayoutProof = &workerPayoutProofResponse{
+				Message:   device.WorkerPayoutProofMessage,
+				Signature: device.WorkerPayoutProofSignature,
+			}
+		}
+		items = append(items, item)
+	}
+	writeAuthJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *Handler) CreateDevicePairingCode(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +219,7 @@ func (h *Handler) CreateDevicePairingCodes(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	for _, item := range items {
-		if err := writeMiniworkerPairingCode(pairingDir, item.NodeID, item.Code); err != nil {
+		if err := writeMiniworkerPairingCode(pairingDir, item.NodeID, item.Code, *payoutWallet); err != nil {
 			for _, nodeID := range nodeIDs {
 				_ = clearMiniworkerPairingCode(pairingDir, nodeID)
 			}
@@ -250,6 +272,8 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	pairingPayload := devicePairingPayload(req.Code, req.NodeID, req.PeerID)
 	var solanaWallet *string
+	var payoutProofMessage string
+	var payoutProofSignature string
 	if req.SolanaWallet != "" || req.SolanaSignature != "" {
 		req.SolanaWallet = strings.TrimSpace(req.SolanaWallet)
 		wallet, walletErr := validateWalletAddress(req.SolanaWallet)
@@ -258,7 +282,18 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 			writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "La preuve du portefeuille du worker est invalide."})
 			return
 		}
-		pairingPayload = devicePairingWalletPayload(req.Code, req.NodeID, req.PeerID, req.SolanaWallet)
+		if strings.TrimSpace(req.PayoutWallet) != "" {
+			req.PayoutWallet = strings.TrimSpace(req.PayoutWallet)
+			if _, payoutErr := validateWalletAddress(req.PayoutWallet); payoutErr != nil {
+				writeAuthJSON(w, http.StatusBadRequest, map[string]string{"message": "Le wallet de compte destiné aux récompenses est invalide."})
+				return
+			}
+			pairingPayload = devicePairingPayoutPayload(req.Code, req.NodeID, req.PeerID, req.SolanaWallet, req.PayoutWallet)
+			payoutProofMessage = string(pairingPayload)
+			payoutProofSignature = hex.EncodeToString(walletSignature)
+		} else {
+			pairingPayload = devicePairingWalletPayload(req.Code, req.NodeID, req.PeerID, req.SolanaWallet)
+		}
 		if !ed25519.Verify(wallet[:], pairingPayload, walletSignature) {
 			writeAuthJSON(w, http.StatusUnauthorized, map[string]string{"message": "La signature du portefeuille du worker ne correspond pas à cette machine."})
 			return
@@ -287,6 +322,9 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		if pairing.NodeID != "" && (solanaWallet == nil || pairing.PayoutWallet == nil || strings.TrimSpace(*pairing.PayoutWallet) == "") {
 			return errors.New("pairing_wallet_proof_required")
+		}
+		if pairing.NodeID != "" && (req.PayoutWallet == "" || pairing.PayoutWallet == nil || !sameWallet(pairing.PayoutWallet, &req.PayoutWallet)) {
+			return errors.New("pairing_payout_wallet_mismatch")
 		}
 		if pairing.PayoutWallet != nil {
 			if _, err := validateWalletAddress(*pairing.PayoutWallet); err != nil {
@@ -369,6 +407,10 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 				existing.SolanaWallet = solanaWallet
 			}
 			existing.PayoutWallet = pairing.PayoutWallet
+			if payoutProofMessage != "" && payoutProofSignature != "" {
+				existing.WorkerPayoutProofMessage = payoutProofMessage
+				existing.WorkerPayoutProofSignature = payoutProofSignature
+			}
 			existing.LinkedAt = now
 			if err := tx.Save(&existing).Error; err != nil {
 				return err
@@ -376,7 +418,13 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 			linked = existing
 			return nil
 		}
-		linked = models.UserDevice{UserID: pairing.UserID, NodeID: req.NodeID, PeerID: req.PeerID, SolanaWallet: solanaWallet, PayoutWallet: pairing.PayoutWallet, LinkedAt: now}
+		linked = models.UserDevice{
+			UserID: pairing.UserID, NodeID: req.NodeID, PeerID: req.PeerID,
+			SolanaWallet: solanaWallet, PayoutWallet: pairing.PayoutWallet,
+			WorkerPayoutProofMessage: payoutProofMessage,
+			WorkerPayoutProofSignature: payoutProofSignature,
+			LinkedAt: now,
+		}
 		return tx.Create(&linked).Error
 	})
 	if err != nil {
@@ -391,6 +439,8 @@ func (h *Handler) PairDevice(w http.ResponseWriter, r *http.Request) {
 			writeAuthJSON(w, http.StatusConflict, map[string]string{"message": "Cette machine doit prouver le contrôle de son wallet de récompenses."})
 		case "pairing_payout_wallet_invalid":
 			writeAuthJSON(w, http.StatusConflict, map[string]string{"message": "Le wallet de récompense lié au code est invalide. Générez un nouveau code."})
+		case "pairing_payout_wallet_mismatch":
+			writeAuthJSON(w, http.StatusConflict, map[string]string{"message": "La preuve de la machine ne vise pas le wallet de ce compte."})
 		case "device_binding_conflict":
 			writeAuthJSON(w, http.StatusConflict, map[string]string{"message": "Ce code a déjà été utilisé pour une autre liaison de machine ou de wallet."})
 		case "device_wallet_conflict", "worker_wallet_already_linked":
@@ -446,6 +496,10 @@ func devicePairingWalletPayload(code, nodeID, peerID, solanaWallet string) []byt
 	return []byte(fmt.Sprintf("silicium-device-link-v2\n%s\n%s\n%s\n%s", code, nodeID, peerID, solanaWallet))
 }
 
+func devicePairingPayoutPayload(code, nodeID, peerID, solanaWallet, payoutWallet string) []byte {
+	return []byte(fmt.Sprintf("silicium-device-payout-v1\n%s\n%s\n%s\n%s\n%s", code, nodeID, peerID, solanaWallet, payoutWallet))
+}
+
 func verifiedPayoutWallet(db *gorm.DB, userID uint) (*string, error) {
 	var user models.User
 	if err := db.Select("wallet_address").First(&user, userID).Error; err != nil || user.WalletAddress == nil {
@@ -470,7 +524,7 @@ func devicePairingCodeHash(code string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func writeMiniworkerPairingCode(root, nodeID, code string) error {
+func writeMiniworkerPairingCode(root, nodeID, code, payoutWallet string) error {
 	if !miniworkerNodeIDPattern.MatchString(nodeID) {
 		return errors.New("miniworker_node_id_invalid")
 	}
@@ -489,7 +543,7 @@ func writeMiniworkerPairingCode(root, nodeID, code string) error {
 		_ = temporary.Close()
 		return err
 	}
-	if _, err := temporary.WriteString(code); err != nil {
+	if _, err := fmt.Fprintf(temporary, "%s\n%s\n", code, strings.TrimSpace(payoutWallet)); err != nil {
 		_ = temporary.Close()
 		return err
 	}

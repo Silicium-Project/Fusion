@@ -11,6 +11,8 @@ type UserDevice struct {
 	PeerID       string    `gorm:"size:128;not null;uniqueIndex" json:"peerId"`
 	SolanaWallet *string   `gorm:"size:44;uniqueIndex" json:"solanaWallet,omitempty"`
 	PayoutWallet *string   `gorm:"size:44;index" json:"payoutWallet,omitempty"`
+	WorkerPayoutProofMessage   string `gorm:"type:text" json:"-"`
+	WorkerPayoutProofSignature string `gorm:"size:128" json:"-"`
 	LinkedAt     time.Time `json:"linkedAt"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`

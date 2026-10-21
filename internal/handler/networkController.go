@@ -140,52 +140,97 @@ func networkPeerSupportsWorkload(peer map[string]any, workload string) bool {
 	return false
 }
 
-func networkQueueDiagnostic(queued int, workloads map[string]bool, peers []map[string]any, peerErr error, oldestWait int64) map[string]any {
+func networkQueueDiagnostic(queuedByWorkload map[string]int, oldestByWorkload map[string]int64, peers []map[string]any, peerErr error, oldestWait int64) map[string]any {
+	queued := 0
+	for _, count := range queuedByWorkload {
+		queued += count
+	}
 	result := map[string]any{
 		"queued": queued,
 		"oldest_wait_seconds": oldestWait,
 		"online_compute_workers": 0,
 		"compatible_workers": 0,
 		"workloads": []string{},
+		"workload_diagnostics": []map[string]any{},
 		"reason": "",
 	}
 	if queued == 0 {
 		return result
 	}
-	workloadNames := make([]string, 0, len(workloads))
-	for workload := range workloads {
+	workloadNames := make([]string, 0, len(queuedByWorkload))
+	for workload := range queuedByWorkload {
 		workloadNames = append(workloadNames, workload)
 	}
 	sort.Strings(workloadNames)
 	result["workloads"] = workloadNames
 	if peerErr != nil {
 		result["reason"] = "network_state_unavailable"
+		diagnostics := make([]map[string]any, 0, len(workloadNames))
+		for _, workload := range workloadNames {
+			diagnostics = append(diagnostics, map[string]any{
+				"workload": workload,
+				"queued": queuedByWorkload[workload],
+				"oldest_wait_seconds": oldestByWorkload[workload],
+				"online_compute_workers": 0,
+				"compatible_workers": 0,
+				"reason": "network_state_unavailable",
+			})
+		}
+		result["workload_diagnostics"] = diagnostics
 		return result
 	}
-	online, compatible := 0, 0
+	onlineWorkers := make([]map[string]any, 0, len(peers))
 	for _, peer := range peers {
 		isOnline, _ := peer["online"].(bool)
 		self, _ := peer["self"].(bool)
 		if !isOnline || self || !networkPeerCanCompute(peer) {
 			continue
 		}
-		online++
-		for _, workload := range workloadNames {
+		onlineWorkers = append(onlineWorkers, peer)
+	}
+	diagnostics := make([]map[string]any, 0, len(workloadNames))
+	compatiblePeers := map[string]struct{}{}
+	workloadReasons := map[string]int{}
+	for _, workload := range workloadNames {
+		compatible := 0
+		for workerIndex, peer := range onlineWorkers {
 			if networkPeerSupportsWorkload(peer, workload) {
 				compatible++
-				break
+				peerID := stringField(peer, "peer_id")
+				if peerID == "" {
+					peerID = stringField(peer, "node_id")
+				}
+				if peerID == "" {
+					peerID = strconv.Itoa(workerIndex)
+				}
+				compatiblePeers[peerID] = struct{}{}
 			}
 		}
+		reason := "workers_not_claiming"
+		if len(onlineWorkers) == 0 {
+			reason = "no_compute_workers"
+		} else if compatible == 0 {
+			reason = "no_compatible_workers"
+		}
+		workloadReasons[reason]++
+		diagnostics = append(diagnostics, map[string]any{
+			"workload": workload,
+			"queued": queuedByWorkload[workload],
+			"oldest_wait_seconds": oldestByWorkload[workload],
+			"online_compute_workers": len(onlineWorkers),
+			"compatible_workers": compatible,
+			"reason": reason,
+		})
 	}
-	result["online_compute_workers"] = online
-	result["compatible_workers"] = compatible
-	switch {
-	case online == 0:
-		result["reason"] = "no_compute_workers"
-	case compatible == 0:
-		result["reason"] = "no_compatible_workers"
-	default:
-		result["reason"] = "workers_not_claiming"
+	result["online_compute_workers"] = len(onlineWorkers)
+	result["compatible_workers"] = len(compatiblePeers)
+	result["workload_diagnostics"] = diagnostics
+	if len(workloadReasons) == 1 {
+		for reason := range workloadReasons {
+			result["reason"] = reason
+		}
+	} else {
+		result["reason"] = "mixed_workload_blockers"
 	}
 	return result
 }
@@ -224,9 +269,9 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 	emitterID := silicium.ConfigFromEnv().OrchestratorNodeID
 	active, recent := []map[string]any{}, []map[string]any{}
 	groups := map[string]map[string]any{}
-	queued := 0
+	queuedByWorkload := map[string]int{}
+	oldestByWorkload := map[string]int64{}
 	oldestWait := int64(0)
-	queuedWorkloads := map[string]bool{}
 	nowUnix := time.Now().Unix()
 	for _, controlTask := range controlTasks {
 		item := controlTaskMap(controlTask)
@@ -240,14 +285,20 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		status := strings.ToLower(stringField(item, "status"))
 		if status == "queued" || status == "proposed" {
-			queued++
-			queuedWorkloads[controlTaskWorkload(controlTask, item)] = true
+			workload := controlTaskWorkload(controlTask, item)
+			queuedByWorkload[workload]++
 			created := controlTask.CreatedUnix
 			if created <= 0 {
 				created = controlTask.UpdatedUnix
 			}
-			if created > 0 && (oldestWait == 0 || nowUnix-created > oldestWait) {
-				oldestWait = nowUnix - created
+			if created > 0 {
+				age := nowUnix - created
+				if oldestWait == 0 || age > oldestWait {
+					oldestWait = age
+				}
+				if oldestByWorkload[workload] == 0 || age > oldestByWorkload[workload] {
+					oldestByWorkload[workload] = age
+				}
 			}
 		}
 		if terminal[status] {
@@ -335,7 +386,7 @@ func (h *Handler) GetNetworkTasks(w http.ResponseWriter, r *http.Request) {
 	if peerErr == nil {
 		networkPeers, _ = peerResponse["peers"].([]map[string]any)
 	}
-	queue := networkQueueDiagnostic(queued, queuedWorkloads, networkPeers, peerErr, oldestWait)
+	queue := networkQueueDiagnostic(queuedByWorkload, oldestByWorkload, networkPeers, peerErr, oldestWait)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]any{"active": active, "recent": recent, "workloads": activeWorkloads, "emitter_node_id": emitterID, "queue": queue})
