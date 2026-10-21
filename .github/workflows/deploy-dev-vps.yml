@@ -105,32 +105,133 @@ jobs:
         id: release
         shell: bash
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           RELEASE_TAG_INPUT: ${{ github.event.inputs.release_tag }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           version="$(node -p "require('./apps/silicium-node/package.json').version")"
-          release_tag="${RELEASE_TAG_INPUT:-}"
-          if [[ -z "$release_tag" ]]; then
-            preferred="dev-${version}-${GITHUB_SHA:0:12}"
-            if gh release view "$preferred" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              release_tag="$preferred"
-            else
-              release_tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
-                --json tagName,isPrerelease,isDraft,createdAt \
-                --jq '[.[] | select(.isPrerelease == true and .isDraft == false and (.tagName | startswith("dev-")))] | sort_by(.createdAt) | last | .tagName')"
-            fi
-          fi
-          [[ "$release_tag" =~ ^dev-[A-Za-z0-9._+-]+-[0-9a-fA-F]{7,64}$ ]] || {
-            echo "No valid published dev release was found. Pass release_tag explicitly." >&2
-            exit 1
-          }
           rm -rf -- release-assets
           install -d -m 0755 release-assets
-          gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" \
-            --pattern '*.AppImage' --pattern '*.deb' --pattern '*.rpm' --pattern '*.exe' \
-            --pattern 'release-channel.json' --dir release-assets --clobber
+          python3 - "$version" <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          version = sys.argv[1]
+          repository = os.environ["GITHUB_REPOSITORY"]
+          token = os.environ["GITHUB_TOKEN"]
+          input_tag = os.environ.get("RELEASE_TAG_INPUT", "").strip()
+          preferred_tag = f"dev-{version}-{os.environ['GITHUB_SHA'][:12]}"
+          api_root = f"https://api.github.com/repos/{repository}"
+          api_headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "silicium-dev-deployer",
+          }
+
+          def origin(url):
+              parsed = urllib.parse.urlsplit(url)
+              return parsed.scheme, parsed.hostname, parsed.port
+
+          class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+                  redirected = super().redirect_request(request, file_pointer, code, message, headers, new_url)
+                  if redirected is not None and origin(request.full_url) != origin(new_url):
+                      redirected.remove_header("Authorization")
+                      redirected.remove_header("X-GitHub-Api-Version")
+                  return redirected
+
+          opener = urllib.request.build_opener(SafeRedirectHandler())
+
+          def get_json(url):
+              request = urllib.request.Request(url, headers=api_headers)
+              with opener.open(request, timeout=60) as response:
+                  return json.load(response)
+
+          def get_release(tag):
+              encoded_tag = urllib.parse.quote(tag, safe="")
+              return get_json(f"{api_root}/releases/tags/{encoded_tag}")
+
+          if input_tag:
+              tag = input_tag
+              release = get_release(tag)
+          else:
+              release = None
+              try:
+                  candidate = get_release(preferred_tag)
+                  if candidate.get("prerelease") and not candidate.get("draft"):
+                      release = candidate
+              except urllib.error.HTTPError as error:
+                  if error.code != 404:
+                      raise
+              if release is None:
+                  releases = get_json(f"{api_root}/releases?per_page=100")
+                  candidates = [item for item in releases
+                                if item.get("prerelease") and not item.get("draft")
+                                and item.get("tag_name", "").startswith(f"dev-{version}-")]
+                  candidates.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+                  if not candidates:
+                      raise SystemExit(f"No published dev release for checkout version {version}.")
+                  release = candidates[0]
+              tag = release.get("tag_name", "")
+
+          if not re.fullmatch(r"dev-[A-Za-z0-9._+-]+-[0-9a-fA-F]{7,64}", tag):
+              raise SystemExit("Release tag is not a valid dev tag.")
+          if release.get("draft") or not release.get("prerelease"):
+              raise SystemExit("Selected release is not a published dev prerelease.")
+
+          os.makedirs("release-assets", exist_ok=True)
+          selected = {}
+          for asset in release.get("assets", []):
+              name = asset.get("name", "")
+              if name == "release-channel.json" or name.endswith((".AppImage", ".deb", ".rpm", ".exe")):
+                  suffix = "release-channel.json" if name == "release-channel.json" else name.rsplit(".", 1)[-1]
+                  if suffix in selected:
+                      raise SystemExit(f"Release contains multiple .{suffix} assets.")
+                  selected[suffix] = asset
+
+          for required in ("release-channel.json", "AppImage", "deb", "rpm"):
+              if required not in selected:
+                  raise SystemExit(f"Release is missing required asset: {required}")
+
+          for suffix, asset in selected.items():
+              request = urllib.request.Request(
+                  asset["url"],
+                  headers={**api_headers, "Accept": "application/octet-stream"},
+              )
+              with opener.open(request, timeout=300) as response:
+                  data = response.read()
+              if not data:
+                  raise SystemExit(f"Release asset {asset['name']} is empty.")
+              target = os.path.join("release-assets", asset["name"])
+              with open(target, "wb") as output:
+                  output.write(data)
+
+          with open("release-assets/release-channel.json", encoding="utf-8") as source:
+              metadata = json.load(source)
+          if metadata.get("channel") != "dev":
+              raise SystemExit("release-channel.json is not a dev release")
+          if str(metadata.get("version", "")) != version:
+              raise SystemExit(
+                  f"release version {metadata.get('version')!r} does not match checkout {version!r}"
+              )
+          commit = str(metadata.get("commit", ""))
+          if not re.fullmatch(r"[0-9a-fA-F]{7,64}", commit):
+              raise SystemExit("release-channel.json has an invalid source commit")
+          if not tag.endswith(commit[:12]):
+              raise SystemExit("release tag and release-channel.json source commit disagree")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"release_tag={tag}\n")
+              output.write(f"release_version={version}\n")
+              output.write(f"release_build={commit}\n")
+          PY
           python3 - "release-assets/release-channel.json" "$version" <<'PY'
           import json
           import sys
@@ -168,13 +269,8 @@ jobs:
             mv -- "${exes[0]}" release-assets/silicium-node-windows-dev.exe
           fi
           (( ${#exes[@]} == 1 )) || echo "::warning::This dev release has no Windows installer."
-          release_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])' release-assets/release-channel.json)"
-          release_build="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["commit"])' release-assets/release-channel.json)"
           release_staging="/tmp/silicium-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           {
-            echo "release_tag=$release_tag"
-            echo "release_version=$release_version"
-            echo "release_build=$release_build"
             echo "release_staging=$release_staging"
           } >> "$GITHUB_OUTPUT"
 
