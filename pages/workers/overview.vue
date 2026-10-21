@@ -24,6 +24,7 @@
         <div><dt>{{ t('observability.worker.accountWallet') }}</dt><dd class="mono">{{ user?.walletAddress || '—' }}</dd></div>
         <div><dt>{{ t('observability.worker.accountSilBalance') }}</dt><dd>{{ silBalance === null ? '—' : `${silBalance.toFixed(2)} SIL` }}</dd></div>
       </dl>
+      <p v-if="walletBalanceError" class="worker-account__balance-error">{{ walletBalanceError }}</p>
     </section>
 
     <section class="worker-devices surface" aria-labelledby="worker-devices-title">
@@ -36,7 +37,7 @@
         <div class="worker-section-head__actions">
           <UiButton variant="secondary" icon="refresh" :loading="devicesLoading" @click="loadDevices()">{{ t('observability.worker.refreshDevices') }}</UiButton>
           <UiButton v-if="isDevChannel" variant="secondary" icon="nodes" :loading="bulkPairingLoading" :disabled="!user?.walletAddress" @click="linkMiniworkers">{{ t('observability.worker.linkMiniworkers') }}</UiButton>
-          <UiButton icon="plus" :loading="pairingLoading" :disabled="!user?.walletAddress" @click="generatePairingCode">{{ t('observability.worker.generateCode') }}</UiButton>
+          <UiButton v-if="!isDevChannel" icon="plus" :loading="pairingLoading" :disabled="!user?.walletAddress" @click="generatePairingCode">{{ t('observability.worker.generateCode') }}</UiButton>
         </div>
       </div>
 
@@ -46,7 +47,7 @@
       </p>
       <UiNotice v-if="deviceError" tone="danger">{{ deviceError }}</UiNotice>
 
-      <div v-if="pairingCode" class="worker-pairing-code">
+      <div v-if="!isDevChannel && pairingCode" class="worker-pairing-code">
         <div>
           <strong>{{ t('observability.worker.pairingCodeTitle') }}</strong>
           <p>{{ t('observability.worker.pairingInstructions') }}</p>
@@ -57,11 +58,12 @@
         </div>
         <small>{{ t('observability.worker.codeExpires', { time: formatDate(pairingExpiresAt) }) }}</small>
       </div>
-      <div v-if="isDevChannel && miniworkerLinkRequested" class="worker-bulk-pairing">
+      <div v-if="isDevChannel" class="worker-bulk-pairing">
         <div class="worker-bulk-pairing__head">
           <div><strong>{{ t('observability.worker.miniworkerCodesTitle') }}</strong><p>{{ t('observability.worker.miniworkerCodesText') }}</p></div>
         </div>
         <p class="worker-bulk-pairing__progress">{{ t('observability.worker.miniworkerProgress', { linked: linkedMiniworkerCount, total: 20 }) }}</p>
+        <p class="worker-bulk-pairing__progress">{{ t('observability.worker.miniworkerNetworkProgress', { online: miniworkerOnlineCount, total: 20 }) }}</p>
       </div>
       <UiNotice v-if="pairingMessage" :tone="pairingMessageTone">{{ pairingMessage }}</UiNotice>
 
@@ -80,8 +82,9 @@
           <UiButton variant="ghost" size="small" icon="close" :loading="unlinkingId === device.id" :aria-label="t('observability.worker.unlinkDevice', { node: device.nodeId })" @click="unlinkDevice(device)">{{ t('observability.worker.unlink') }}</UiButton>
         </article>
       </div>
-      <UiEmptyState v-else-if="!devicesLoading && !deviceError" :title="t('observability.worker.noDevicesTitle')" :description="t('observability.worker.noDevicesText')" icon="nodes">
-        <UiButton icon="plus" :loading="pairingLoading" :disabled="!user?.walletAddress" @click="generatePairingCode">{{ t('observability.worker.generateCode') }}</UiButton>
+      <UiEmptyState v-else-if="!devicesLoading && !deviceError" :title="t('observability.worker.noDevicesTitle')" :description="isDevChannel ? t('observability.worker.miniworkerCodesText') : t('observability.worker.noDevicesText')" icon="nodes">
+        <UiButton v-if="isDevChannel" icon="nodes" :loading="bulkPairingLoading" :disabled="!user?.walletAddress" @click="linkMiniworkers">{{ t('observability.worker.linkMiniworkers') }}</UiButton>
+        <UiButton v-else icon="plus" :loading="pairingLoading" :disabled="!user?.walletAddress" @click="generatePairingCode">{{ t('observability.worker.generateCode') }}</UiButton>
       </UiEmptyState>
     </section>
 
@@ -150,7 +153,6 @@ interface UserDevice {
   linkedAt: string;
 }
 
-interface PairingCodeResponse { code: string; expiresAt: string }
 interface MiniworkerLinkResponse { nodeIds: string[]; count: number; expiresAt: string }
 const miniworkerNodeIDPattern = /^miniworker-(0[1-9]|1[0-9]|2[0-4])$/;
 
@@ -159,7 +161,7 @@ const route = useRoute();
 const runtimeConfig = useRuntimeConfig();
 const isDevChannel = computed(() => runtimeConfig.public.releaseChannel === 'dev');
 const { user, displayName, loadUser, authorizedFetch } = useSession();
-const { silBalance, loadBalance: loadWalletBalance } = useWallet();
+const { silBalance, balanceError: walletBalanceError, loadBalance: loadWalletBalance } = useWallet();
 const { peers, loading, error, lastUpdatedAt, loadNetwork } = useNetwork();
 const devices = ref<UserDevice[]>([]);
 const devicesLoading = ref(false);
@@ -172,11 +174,11 @@ const pairingCopied = ref(false);
 const pairingMessage = ref('');
 const pairingMessageTone = ref<'success' | 'warning' | 'danger'>('success');
 const bulkPairingLoading = ref(false);
-const miniworkerLinkRequested = ref(false);
 const unlinkingId = ref<number | null>(null);
 const selectedId = ref('');
 const selectedDevice = computed(() => devices.value.find(device => device.nodeId === selectedId.value) || null);
 const linkedMiniworkerCount = computed(() => devices.value.filter(device => miniworkerNodeIDPattern.test(device.nodeId)).length);
+const miniworkerOnlineCount = computed(() => peers.value.filter(peer => miniworkerNodeIDPattern.test(peerId(peer)) && peerAvailability(peer) === 'online').length);
 const selectedPeer = computed(() => {
   if (!selectedDevice.value) return undefined;
   return peers.value.find(peer => peerId(peer) === selectedDevice.value?.nodeId || String(peer.peer_id || peer.peerId || '') === selectedDevice.value?.peerId);
@@ -292,7 +294,6 @@ async function linkMiniworkers(): Promise<void> {
       method: 'POST',
       body: { nodeIds },
     });
-    miniworkerLinkRequested.value = true;
     pairingMessageTone.value = 'success';
     pairingMessage.value = t('observability.worker.miniworkerCodesReady', { count: response.count || response.nodeIds?.length || 0 });
     await loadDevices(true);
@@ -379,6 +380,7 @@ useSeoMeta({ title: () => t('observability.worker.nav') + ' — Silicium' });
 <style scoped>
 .worker-overview{gap:1.8rem}
 .worker-account{display:grid;grid-template-columns:minmax(16rem,.8fr) minmax(0,1.5fr);align-items:center;gap:2rem;padding:1.6rem}
+.worker-account__balance-error{grid-column:1/-1;margin:0;color:var(--warning-700,var(--ink-600));font-size:.9375rem;line-height:1.45}
 .worker-account__identity{display:flex;align-items:center;gap:1rem;min-width:0}
 .worker-account__avatar{display:grid;width:3.5rem;height:3.5rem;flex:0 0 auto;place-items:center;border:1px solid var(--glass-edge);border-radius:1.1rem;background:linear-gradient(145deg,rgba(255,255,255,.9),var(--mint-100));box-shadow:var(--glass-inset),var(--shadow-xs);color:var(--mint-700);font-size:1.2rem;font-weight:650}
 .worker-account__identity h2,.worker-section-head h2{margin:.2rem 0;font-size:1.25rem;line-height:1.35;font-weight:620;letter-spacing:-.025em}

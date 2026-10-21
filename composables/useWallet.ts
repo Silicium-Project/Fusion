@@ -15,6 +15,7 @@ export function useWallet() {
   const connecting = ref(false);
   const balance = ref<number | null>(null);
   const silBalance = ref<number | null>(null);
+  const balanceError = ref('');
   const error = ref('');
 
   async function balanceFor(address: string): Promise<number> {
@@ -47,6 +48,9 @@ export function useWallet() {
     const [sol, sil] = await Promise.allSettled([balanceFor(address), silBalanceFor(address)]);
     balance.value = sol.status === 'fulfilled' ? sol.value : null;
     silBalance.value = sil.status === 'fulfilled' ? sil.value : null;
+    balanceError.value = sil.status === 'rejected' || sil.status === 'fulfilled' && sil.value === null
+      ? translate('errors.walletBalanceUnavailable')
+      : '';
   }
 
   async function connect(): Promise<string> {
@@ -87,5 +91,5 @@ export function useWallet() {
     await refreshBalances(address);
   }
 
-  return { connecting, balance, silBalance, error, connect, loadBalance };
+  return { connecting, balance, silBalance, balanceError, error, connect, loadBalance };
 }

@@ -76,6 +76,7 @@ export const fr = {
     phantomRequired: 'Phantom n’est pas installé dans ce navigateur. Installez l’extension Phantom (phantom.com), rechargez la page puis réessayez.',
     walletRejected: 'Connexion annulée dans Phantom.',
     walletFailed: 'Le portefeuille ne peut pas être connecté.',
+    walletBalanceUnavailable: 'Le solde SIL est indisponible depuis le RPC Solana. Vérifiez le mint Devnet et réessayez.',
     cancelReason: 'Arrêt demandé depuis le site',
     serverError: 'Le serveur n’a pas pu traiter la demande. Réessayez dans quelques minutes ; si le problème continue, prévenez l’équipe Silicium.',
     tooLarge: 'Le fichier est trop volumineux pour être envoyé.',

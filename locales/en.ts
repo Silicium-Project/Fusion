@@ -75,6 +75,7 @@ export const en: Catalog<typeof fr> = {
     phantomRequired: 'Phantom is not installed in this browser. Install the Phantom extension (phantom.com), reload the page and try again.',
     walletRejected: 'Connection cancelled in Phantom.',
     walletFailed: 'The wallet cannot be connected.',
+    walletBalanceUnavailable: 'The SIL balance is unavailable from the Solana RPC. Check the Devnet mint and try again.',
     cancelReason: 'Stop requested from the website',
     serverError: 'The server could not handle the request. Try again in a few minutes; if it keeps happening, tell the Silicium team.',
     tooLarge: 'The file is too large to be sent.',
