@@ -190,6 +190,29 @@ pub(crate) fn of(task: &NetworkTask) -> Option<&'static dyn Workload> {
     find(task.workload.as_deref().unwrap_or(DEFAULT_WORKLOAD))
 }
 
+/// Whether this node accepts a task under its optional workload allowlist.
+///
+/// `SILICIUM_ALLOWED_WORKLOADS` is a comma-separated list of canonical
+/// workload IDs. It is useful for small or purpose-built workers that must
+/// not download models or run workloads outside their resource budget. An
+/// unset or empty value keeps the normal unrestricted behavior.
+pub(crate) fn is_allowed(task: &NetworkTask) -> bool {
+    let Ok(configured) = std::env::var("SILICIUM_ALLOWED_WORKLOADS") else {
+        return true;
+    };
+    if configured.trim().is_empty() {
+        return true;
+    }
+    let Some(workload) = of(task) else {
+        return false;
+    };
+    configured
+        .split(',')
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .any(|id| id == workload.id())
+}
+
 /// Identifiers of the known workloads, for error messages.
 pub(crate) fn known_ids() -> String {
     REGISTRY

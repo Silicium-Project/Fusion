@@ -21,6 +21,7 @@
  */
 
 import * as anchor from "@coral-xyz/anchor";
+import { quoteDevnetSilFragments } from "../silicium-sdk/src";
 import {
   Connection,
   Keypair,
@@ -47,10 +48,11 @@ const PROGRAM_ID = new PublicKey(
 );
 
 const STAKE_AMOUNT = new anchor.BN(1_000_000);
-const REWARD_PER_FRAGMENT = new anchor.BN(1_000_000);
-const VERIFIER_REWARD_PER_VOTE = new anchor.BN(100_000);
-const VERIFIER_REWARD_BUDGET = new anchor.BN(200_000);
-const FRAGMENT_QUORUM = 2;
+const DEVNET_QUOTE = quoteDevnetSilFragments(1);
+const REWARD_PER_FRAGMENT = new anchor.BN(DEVNET_QUOTE.rewardPerFragment.toString());
+const VERIFIER_REWARD_PER_VOTE = new anchor.BN(DEVNET_QUOTE.verifierRewardPerVote.toString());
+const VERIFIER_REWARD_BUDGET = new anchor.BN(DEVNET_QUOTE.verifierRewardBudget.toString());
+const FRAGMENT_QUORUM = DEVNET_QUOTE.fragmentQuorum;
 
 function logStep(title: string) {
   console.log(`\n=== ${title} ===`);

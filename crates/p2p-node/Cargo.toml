@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 base64 = "0.22.1"
+bs58 = "0.5.1"
 futures.workspace = true
 libp2p = { version = "0.56.0", features = ["tokio", "tcp", "quic", "dns", "websocket", "noise", "yamux", "gossipsub", "kad", "mdns", "macros", "identify", "autonat", "relay", "request-response", "cbor"] }
 serde.workspace = true

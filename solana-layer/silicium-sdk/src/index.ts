@@ -70,6 +70,29 @@ export const SOLANA_LAYER_PROGRAM_ID = SOLANA_LAYER_DEVNET_PROGRAM_ID;
 export const SOLANA_LAYER_DEVNET_RPC_URL = "https://api.devnet.solana.com";
 export const SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
 
+/** Devnet SIL mint denomination: one SIL is 10^6 SPL base units. */
+export const SIL_DECIMALS = 6;
+export const SIL_BASE_UNITS = 1_000_000n;
+export const DEVNET_FRAGMENT_QUORUM = 2;
+
+/** The selected test quote: 1 SIL compute + 1 SIL per accepted verifier. */
+export function quoteDevnetSilFragments(expectedFragments: number) {
+  if (!Number.isSafeInteger(expectedFragments) || expectedFragments < 1 || expectedFragments > 1_000) {
+    throw new Error("expectedFragments must be an integer from 1 through 1000");
+  }
+  const count = BigInt(expectedFragments);
+  const rewardPerFragment = SIL_BASE_UNITS;
+  const verifierRewardPerVote = SIL_BASE_UNITS;
+  const verifierRewardBudget = count * BigInt(DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote;
+  return {
+    rewardPerFragment,
+    verifierRewardPerVote,
+    verifierRewardBudget,
+    fragmentQuorum: DEVNET_FRAGMENT_QUORUM,
+    totalEscrow: count * (rewardPerFragment + BigInt(DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote),
+  };
+}
+
 export function getSolanaLayerProgramId(cluster: SolanaLayerCluster = "devnet"): PublicKey {
   return cluster === "localnet" ? SOLANA_LAYER_LOCALNET_PROGRAM_ID : SOLANA_LAYER_DEVNET_PROGRAM_ID;
 }

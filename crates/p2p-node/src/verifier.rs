@@ -60,6 +60,9 @@ pub(crate) async fn sweep(context: &NodeContext, memory: &VerifierMemory) {
         .map(|known| known.values().cloned().collect())
         .unwrap_or_default();
     for task in known {
+        if !crate::workload::is_allowed(&task) {
+            continue;
+        }
         let Some(state) = context.taskbook.state(&task.task_id).ok().flatten() else {
             continue;
         };
