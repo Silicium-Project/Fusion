@@ -27,6 +27,9 @@ fn trace_content(message: impl std::fmt::Display) {
 
 /// Request-response protocol name.
 pub(crate) const PROTOCOL: &str = "/silicium/content/1";
+/// Parallel probes keep one slow or unreachable peer from blocking every
+/// other content holder in the node's connection set.
+const MAX_IN_FLIGHT: usize = 4;
 
 /// Asks a peer for one content.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,8 +66,8 @@ struct Download {
     candidates: VecDeque<PeerId>,
     waiters: Vec<oneshot::Sender<bool>>,
     asked: Vec<PeerId>,
-    /// True while a request to a peer awaits its answer (one at a time).
-    in_flight: bool,
+    /// Number of requests awaiting answers for this content.
+    in_flight: usize,
     /// Connected peers when the lookup ended, asked once the holders failed.
     fallback: Vec<PeerId>,
 }
@@ -85,10 +88,10 @@ impl Fetcher {
         sha256: String,
         reply: oneshot::Sender<bool>,
         connected: Vec<PeerId>,
-    ) -> Option<(String, PeerId)> {
+    ) -> Vec<(String, PeerId)> {
         if let Some(download) = self.downloads.get_mut(&sha256) {
             download.waiters.push(reply);
-            return None;
+            return Vec::new();
         }
         let query = kademlia.get_providers(kad::RecordKey::new(&sha256));
         self.queries.insert(query, sha256.clone());
@@ -101,11 +104,11 @@ impl Fetcher {
                 candidates: connected.into(),
                 waiters: vec![reply],
                 asked: Vec::new(),
-                in_flight: false,
+                in_flight: 0,
                 fallback: Vec::new(),
             },
         );
-        self.next_candidate(&sha256)
+        self.next_candidates(&sha256)
     }
 
     /// Adds holders found in the DHT; returns the content to ask for next.
@@ -115,57 +118,82 @@ impl Fetcher {
         providers: impl IntoIterator<Item = PeerId>,
         finished: bool,
         connected: &[PeerId],
-    ) -> Option<(String, PeerId)> {
-        let sha256 = self.queries.get(&query)?.clone();
+    ) -> Vec<(String, PeerId)> {
+        let Some(sha256) = self.queries.get(&query).cloned() else {
+            return Vec::new();
+        };
         if finished {
             self.queries.remove(&query);
         }
-        let download = self.downloads.get_mut(&sha256)?;
+        let Some(download) = self.downloads.get_mut(&sha256) else {
+            return Vec::new();
+        };
+        let mut preferred = Vec::new();
         for peer in providers {
-            if !download.candidates.contains(&peer) && !download.asked.contains(&peer) {
-                download.candidates.push_back(peer);
+            if !download.asked.contains(&peer) && !preferred.contains(&peer) {
+                download.candidates.retain(|candidate| candidate != &peer);
+                preferred.push(peer);
             }
+        }
+        // A provider record is evidence that this peer has the content, so
+        // try it before the speculative direct-peer search already queued.
+        for peer in preferred.into_iter().rev() {
+            download.candidates.push_front(peer);
         }
         if finished {
             download.fallback = connected.to_vec();
         }
-        if download.in_flight {
-            return None;
-        }
-        self.next_candidate(&sha256)
+        self.next_candidates(&sha256)
     }
 
-    /// Picks the next peer to ask, or fails the download when none is left.
-    fn next_candidate(&mut self, sha256: &str) -> Option<(String, PeerId)> {
-        let download = self.downloads.get_mut(sha256)?;
-        if download.candidates.is_empty() {
-            // No holder left to ask: try the other connected peers.
-            let untried: Vec<PeerId> = std::mem::take(&mut download.fallback)
-                .into_iter()
-                .filter(|peer| !download.asked.contains(peer))
-                .collect();
-            download.candidates.extend(untried);
-        }
-        match download.candidates.pop_front() {
-            Some(peer) => {
-                download.asked.push(peer);
-                Some((sha256.to_string(), peer))
-            }
-            None => {
+    /// Fills the bounded request window, or fails once no peer can help.
+    fn next_candidates(&mut self, sha256: &str) -> Vec<(String, PeerId)> {
+        let mut next = Vec::new();
+        loop {
+            let candidate = {
+                let Some(download) = self.downloads.get_mut(sha256) else {
+                    break;
+                };
+                if download.in_flight >= MAX_IN_FLIGHT {
+                    break;
+                }
+                if download.candidates.is_empty() {
+                    // No holder left to ask: try the other connected peers.
+                    let untried: Vec<PeerId> = std::mem::take(&mut download.fallback)
+                        .into_iter()
+                        .filter(|peer| !download.asked.contains(peer))
+                        .collect();
+                    download.candidates.extend(untried);
+                }
+                match download.candidates.pop_front() {
+                    Some(peer) => {
+                        download.asked.push(peer);
+                        // Reserve this slot before producing the next candidate.
+                        download.in_flight += 1;
+                        Some(peer)
+                    }
+                    None => None,
+                }
+            };
+            if let Some(peer) = candidate {
+                next.push((sha256.to_string(), peer));
+            } else {
                 let still_querying = self.queries.values().any(|value| value == sha256);
-                if !still_querying && !download.in_flight {
+                let no_requests = self
+                    .downloads
+                    .get(sha256)
+                    .is_none_or(|download| download.in_flight == 0);
+                if !still_querying && no_requests {
                     self.finish(sha256, false);
                 }
-                None
+                break;
             }
         }
+        next
     }
 
     /// Remembers which content a sent request is for.
     pub(crate) fn sent(&mut self, request: OutboundRequestId, sha256: String) {
-        if let Some(download) = self.downloads.get_mut(&sha256) {
-            download.in_flight = true;
-        }
         self.requests.insert(request, sha256);
     }
 
@@ -173,7 +201,7 @@ impl Fetcher {
     fn answered(&mut self, request: OutboundRequestId) -> Option<String> {
         let sha256 = self.requests.remove(&request)?;
         if let Some(download) = self.downloads.get_mut(&sha256) {
-            download.in_flight = false;
+            download.in_flight = download.in_flight.saturating_sub(1);
         }
         Some(sha256)
     }
@@ -184,23 +212,27 @@ impl Fetcher {
         store: &ContentStore,
         request: OutboundRequestId,
         response: ContentResponse,
-    ) -> Option<(String, PeerId)> {
-        let sha256 = self.answered(request)?;
+    ) -> Vec<(String, PeerId)> {
+        let Some(sha256) = self.answered(request) else {
+            return Vec::new();
+        };
         let delivered = response.sha256 == sha256
             && response
                 .data
                 .is_some_and(|bytes| store.put_verified(&sha256, &bytes));
         if delivered {
             self.finish(&sha256, true);
-            return None;
+            return Vec::new();
         }
-        self.next_candidate(&sha256)
+        self.next_candidates(&sha256)
     }
 
     /// Handles a failed request; returns the next peer to ask.
-    pub(crate) fn on_failure(&mut self, request: OutboundRequestId) -> Option<(String, PeerId)> {
-        let sha256 = self.answered(request)?;
-        self.next_candidate(&sha256)
+    pub(crate) fn on_failure(&mut self, request: OutboundRequestId) -> Vec<(String, PeerId)> {
+        let Some(sha256) = self.answered(request) else {
+            return Vec::new();
+        };
+        self.next_candidates(&sha256)
     }
 
     fn finish(&mut self, sha256: &str, success: bool) {
@@ -209,6 +241,7 @@ impl Fetcher {
                 let _ = waiter.send(success);
             }
         }
+        self.requests.retain(|_, value| value != sha256);
         self.queries.retain(|_, value| value != sha256);
     }
 }
@@ -280,8 +313,8 @@ pub(crate) mod serde_bytes_compat {
 }
 
 /// Sends the request chosen by the fetcher, if any.
-fn ask(swarm: &mut Swarm<P2pBehaviour>, fetcher: &mut Fetcher, next: Option<(String, PeerId)>) {
-    if let Some((sha256, peer)) = next {
+fn ask(swarm: &mut Swarm<P2pBehaviour>, fetcher: &mut Fetcher, next: Vec<(String, PeerId)>) {
+    for (sha256, peer) in next {
         trace_content(format!("request {sha256} -> {peer}"));
         let request = swarm.behaviour_mut().content.send_request(
             &peer,
@@ -393,7 +426,7 @@ pub(crate) fn handle_content(
                 .behaviour_mut()
                 .content
                 .send_response(channel, response);
-            None
+            Vec::new()
         }
         request_response::Event::Message {
             peer,
@@ -422,7 +455,7 @@ pub(crate) fn handle_content(
             trace_content(format!("request {requested} -> {peer} failed: {error:?}"));
             fetcher.on_failure(request_id)
         }
-        _ => None,
+        _ => Vec::new(),
     };
     ask(swarm, fetcher, next);
 }
