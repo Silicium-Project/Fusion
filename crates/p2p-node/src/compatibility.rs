@@ -424,21 +424,10 @@ impl CompatibilityWriter {
         let target = job_dir
             .join("fragments")
             .join(format!("fragment-{index:03}.png"));
-        let source_modified = fs::metadata(source)
-            .and_then(|metadata| metadata.modified())
-            .ok();
-        // `refresh` runs once per second. Fragment result files are immutable
-        // once finalized, so keep their PNG preview until the source changes
-        // instead of recompressing every tile on every heartbeat. Re-encoding
-        // dozens of completed tiles can otherwise starve the P2P event loop.
-        if source_modified.is_some_and(|source_modified| {
-            fs::metadata(&target).is_ok_and(|preview| {
-                preview.is_file()
-                    && preview
-                        .modified()
-                        .is_ok_and(|preview_modified| preview_modified >= source_modified)
-            })
-        }) {
+        // `refresh` runs once per second, while finalized fragment results are
+        // immutable. Reuse their PNG previews instead of recompressing every
+        // tile on every heartbeat; dozens of previews can starve the P2P loop.
+        if fs::metadata(&target).is_ok_and(|preview| preview.is_file() && preview.len() > 0) {
             return;
         }
         let Ok(bytes) = fs::read(source) else { return };
