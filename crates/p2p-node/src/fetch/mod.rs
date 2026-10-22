@@ -1,11 +1,9 @@
 //! Downloading content from peers: find holders through DHT provider records
-//! (then every connected peer, when no holder answers: two home PCs often
-//! cannot reach each other, while both reach the publisher, which keeps the
-//! results of its tasks, see [`crate::results::Collector::prefetch`]), ask
-//! them one at a time over the
+//! and connected peers, ask them one at a time over the
 //! `/silicium/content/1` request-response protocol, keep the first answer
 //! that hashes to the requested value, and serve this node's own content to
-//! others.
+//! others. Connected peers are tried while the provider lookup runs, so a
+//! slow DHT cannot hold up a result that an online worker can already serve.
 
 use crate::{
     content::{ContentCommand, ContentStore, MAX_CONTENT_BYTES},
@@ -78,23 +76,28 @@ impl Fetcher {
         kademlia: &mut kad::Behaviour<kad::store::MemoryStore>,
         sha256: String,
         reply: oneshot::Sender<bool>,
-    ) {
+        connected: Vec<PeerId>,
+    ) -> Option<(String, PeerId)> {
         if let Some(download) = self.downloads.get_mut(&sha256) {
             download.waiters.push(reply);
-            return;
+            return None;
         }
         let query = kademlia.get_providers(kad::RecordKey::new(&sha256));
         self.queries.insert(query, sha256.clone());
         self.downloads.insert(
-            sha256,
+            sha256.clone(),
             Download {
-                candidates: VecDeque::new(),
+                // Ask currently connected peers immediately. The DHT query
+                // continues in parallel and adds announced providers as it
+                // discovers them.
+                candidates: connected.into(),
                 waiters: vec![reply],
                 asked: Vec::new(),
                 in_flight: false,
                 fallback: Vec::new(),
             },
         );
+        self.next_candidate(&sha256)
     }
 
     /// Adds holders found in the DHT; returns the content to ask for next.
@@ -289,7 +292,14 @@ pub(crate) fn handle_command(
 ) {
     match command {
         ContentCommand::Fetch { sha256, reply } => {
-            fetcher.start(&mut swarm.behaviour_mut().kademlia, sha256, reply);
+            let connected = swarm.connected_peers().copied().collect();
+            let next = fetcher.start(
+                &mut swarm.behaviour_mut().kademlia,
+                sha256,
+                reply,
+                connected,
+            );
+            ask(swarm, fetcher, next);
         }
         ContentCommand::Provide { sha256 } => {
             if let Err(err) = swarm
