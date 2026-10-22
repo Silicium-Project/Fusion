@@ -55,8 +55,7 @@ pub(crate) fn handle(
             // online again and can overwrite a newer runtime profile.
             let age = current_unix_seconds().saturating_sub(profile.last_seen_unix);
             if profile.last_seen_unix <= 0
-                || age > PROFILE_STALE_AFTER_SECONDS
-                || age < -PROFILE_MAX_FUTURE_SKEW_SECONDS
+                || !(-PROFILE_MAX_FUTURE_SKEW_SECONDS..=PROFILE_STALE_AFTER_SECONDS).contains(&age)
             {
                 println!(" Ignored stale heartbeat from {peer_id}");
                 return Vec::new();

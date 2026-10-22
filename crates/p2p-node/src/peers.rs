@@ -33,8 +33,7 @@ pub(crate) fn current_unix_seconds() -> i64 {
 pub(crate) fn profile_is_fresh(profile: &PeerProfile, now_unix: i64) -> bool {
     let age = now_unix.saturating_sub(profile.last_seen_unix);
     profile.last_seen_unix > 0
-        && age <= PROFILE_STALE_AFTER_SECONDS
-        && age >= -PROFILE_MAX_FUTURE_SKEW_SECONDS
+        && (-PROFILE_MAX_FUTURE_SKEW_SECONDS..=PROFILE_STALE_AFTER_SECONDS).contains(&age)
 }
 
 /// Roles this node takes on (`SILICIUM_NODE_ROLES`, default `compute,verify`).
