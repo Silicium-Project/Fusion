@@ -17,6 +17,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use tokio::sync::oneshot;
 
+fn trace_content(message: impl std::fmt::Display) {
+    if std::env::var("SILICIUM_P2P_CONTENT_TRACE")
+        .is_ok_and(|value| matches!(value.trim(), "1" | "true" | "yes" | "on"))
+    {
+        eprintln!(" P2P content: {message}");
+    }
+}
+
 /// Request-response protocol name.
 pub(crate) const PROTOCOL: &str = "/silicium/content/1";
 
@@ -274,6 +282,7 @@ pub(crate) mod serde_bytes_compat {
 /// Sends the request chosen by the fetcher, if any.
 fn ask(swarm: &mut Swarm<P2pBehaviour>, fetcher: &mut Fetcher, next: Option<(String, PeerId)>) {
     if let Some((sha256, peer)) = next {
+        trace_content(format!("request {sha256} -> {peer}"));
         let request = swarm.behaviour_mut().content.send_request(
             &peer,
             ContentRequest {
@@ -292,7 +301,11 @@ pub(crate) fn handle_command(
 ) {
     match command {
         ContentCommand::Fetch { sha256, reply } => {
-            let connected = swarm.connected_peers().copied().collect();
+            let connected: Vec<PeerId> = swarm.connected_peers().copied().collect();
+            trace_content(format!(
+                "start {sha256}; {} connected peer candidate(s)",
+                connected.len()
+            ));
             let next = fetcher.start(
                 &mut swarm.behaviour_mut().kademlia,
                 sha256,
@@ -330,6 +343,18 @@ pub(crate) fn handle_kademlia(
     else {
         return;
     };
+    if let Some(sha256) = fetcher.queries.get(&id) {
+        match &result {
+            Ok(kad::GetProvidersOk::FoundProviders { providers, .. }) => trace_content(format!(
+                "DHT providers for {sha256}: {}",
+                providers.len()
+            )),
+            Ok(kad::GetProvidersOk::FinishedWithNoAdditionalRecord { .. }) => {
+                trace_content(format!("DHT lookup finished without more providers for {sha256}"));
+            }
+            Err(error) => trace_content(format!("DHT lookup failed for {sha256}: {error:?}")),
+        }
+    }
     let connected: Vec<PeerId> = swarm.connected_peers().copied().collect();
     let next = match result {
         Ok(kad::GetProvidersOk::FoundProviders { providers, .. }) => {
@@ -351,27 +376,50 @@ pub(crate) fn handle_content(
 ) {
     let next = match event {
         request_response::Event::Message {
+            peer,
             message:
                 request_response::Message::Request {
                     request, channel, ..
                 },
             ..
         } => {
+            let response = serve(store, request);
+            trace_content(format!(
+                "serve {} to {peer}: {} byte(s)",
+                response.sha256,
+                response.data.as_ref().map_or(0, Vec::len)
+            ));
             let _ = swarm
                 .behaviour_mut()
                 .content
-                .send_response(channel, serve(store, request));
+                .send_response(channel, response);
             None
         }
         request_response::Event::Message {
+            peer,
             message:
                 request_response::Message::Response {
                     request_id,
                     response,
                 },
             ..
-        } => fetcher.on_response(store, request_id, response),
-        request_response::Event::OutboundFailure { request_id, .. } => {
+        } => {
+            let requested = fetcher.requests.get(&request_id).cloned().unwrap_or_default();
+            trace_content(format!(
+                "response {requested} <- {peer}: {} byte(s), response hash {}",
+                response.data.as_ref().map_or(0, Vec::len),
+                response.sha256
+            ));
+            fetcher.on_response(store, request_id, response)
+        }
+        request_response::Event::OutboundFailure {
+            peer,
+            request_id,
+            error,
+            ..
+        } => {
+            let requested = fetcher.requests.get(&request_id).cloned().unwrap_or_default();
+            trace_content(format!("request {requested} -> {peer} failed: {error:?}"));
             fetcher.on_failure(request_id)
         }
         _ => None,
