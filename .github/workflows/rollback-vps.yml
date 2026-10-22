@@ -15,9 +15,9 @@ on:
         required: false
         default: "prod"
       vps_user:
-        description: "SSH user on VPS"
+        description: "SSH user on VPS; blank uses the VPS_USER secret."
         required: false
-        default: "luis"
+        default: ""
       vps_port:
         description: "SSH port on VPS"
         required: false
@@ -42,7 +42,7 @@ jobs:
       RELEASE_VERSION: ${{ github.event.inputs.release_version }}
       RELEASE_CHANNEL: ${{ github.event.inputs.release_channel }}
       RELEASE_BUILD: ${{ github.sha }}
-      VPS_USER: ${{ github.event.inputs.vps_user }}
+      VPS_USER: ${{ github.event.inputs.vps_user || secrets.VPS_USER || 'luis' }}
       VPS_PORT: ${{ github.event.inputs.vps_port }}
       VPS_ROOT: ${{ github.event.inputs.vps_root }}
     steps:
