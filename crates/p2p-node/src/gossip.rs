@@ -5,8 +5,8 @@ use crate::{
     admission::SecurityConfig,
     backfill,
     peers::{
-        current_unix_seconds, online_compute_authors, PROFILE_MAX_FUTURE_SKEW_SECONDS,
-        PROFILE_STALE_AFTER_SECONDS,
+        PROFILE_MAX_FUTURE_SKEW_SECONDS, PROFILE_STALE_AFTER_SECONDS, current_unix_seconds,
+        online_compute_authors,
     },
     processing::NodeContext,
     task::{GossipMessage, PeerProfile},
@@ -62,12 +62,10 @@ pub(crate) fn handle(
                 return Vec::new();
             }
             if let Ok(mut profiles) = peer_profiles.lock() {
-                let should_replace = profiles
-                    .get(&profile.node_id)
-                    .is_none_or(|known| {
-                        known.peer_id != profile.peer_id
-                            || known.last_seen_unix <= profile.last_seen_unix
-                    });
+                let should_replace = profiles.get(&profile.node_id).is_none_or(|known| {
+                    known.peer_id != profile.peer_id
+                        || known.last_seen_unix <= profile.last_seen_unix
+                });
                 if should_replace {
                     profiles.insert(profile.node_id.clone(), profile);
                 }

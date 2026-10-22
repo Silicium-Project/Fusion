@@ -396,12 +396,13 @@ pub(crate) fn handle_kademlia(
     };
     if let Some(sha256) = fetcher.queries.get(&id) {
         match &result {
-            Ok(kad::GetProvidersOk::FoundProviders { providers, .. }) => trace_content(format!(
-                "DHT providers for {sha256}: {}",
-                providers.len()
-            )),
+            Ok(kad::GetProvidersOk::FoundProviders { providers, .. }) => {
+                trace_content(format!("DHT providers for {sha256}: {}", providers.len()))
+            }
             Ok(kad::GetProvidersOk::FinishedWithNoAdditionalRecord { .. }) => {
-                trace_content(format!("DHT lookup finished without more providers for {sha256}"));
+                trace_content(format!(
+                    "DHT lookup finished without more providers for {sha256}"
+                ));
             }
             Err(error) => trace_content(format!("DHT lookup failed for {sha256}: {error:?}")),
         }
@@ -455,7 +456,11 @@ pub(crate) fn handle_content(
                 },
             ..
         } => {
-            let requested = fetcher.requests.get(&request_id).cloned().unwrap_or_default();
+            let requested = fetcher
+                .requests
+                .get(&request_id)
+                .cloned()
+                .unwrap_or_default();
             trace_content(format!(
                 "response {requested} <- {peer}: {} byte(s), response hash {}",
                 response.data.as_ref().map_or(0, Vec::len),
@@ -469,7 +474,11 @@ pub(crate) fn handle_content(
             error,
             ..
         } => {
-            let requested = fetcher.requests.get(&request_id).cloned().unwrap_or_default();
+            let requested = fetcher
+                .requests
+                .get(&request_id)
+                .cloned()
+                .unwrap_or_default();
             trace_content(format!("request {requested} -> {peer} failed: {error:?}"));
             fetcher.on_failure(request_id)
         }
