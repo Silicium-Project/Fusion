@@ -303,8 +303,9 @@ pub(crate) fn handle_command(
     }
 }
 
-/// Handles the provider lookups of downloads; other Kademlia events are
-/// only logged.
+/// Handles provider lookups of downloads. Routine routing and inbound DHT
+/// events are intentionally ignored: workers generate them continuously, and
+/// logging every event can exhaust the VPS log volume.
 pub(crate) fn handle_kademlia(
     swarm: &mut Swarm<P2pBehaviour>,
     fetcher: &mut Fetcher,
@@ -317,10 +318,6 @@ pub(crate) fn handle_kademlia(
         ..
     } = event
     else {
-        // Records carry whole tasks: keep the log line short.
-        let text = format!("{event:?}");
-        let end = text.char_indices().nth(240).map_or(text.len(), |(i, _)| i);
-        println!(" Kademlia event: {}", &text[..end]);
         return;
     };
     let connected: Vec<PeerId> = swarm.connected_peers().copied().collect();
