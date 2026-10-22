@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use silicium_node_core::p2p::{ByteRange, Region};
 use silicium_raytracer::pipeline::tiles;
 
+use crate::task::NetworkTask;
+
 pub(crate) use store::JobStore;
 
 /// Suffix of a fragment task id; its width is reserved in job ids.
@@ -97,6 +99,17 @@ fn empty_region() -> Region {
 }
 
 impl FragmentRef {
+    /// Metadata for a runtime-delegated task, which is not in the initial job
+    /// manifest but still needs workload-specific result verification.
+    pub(crate) fn from_task(task: &NetworkTask) -> Option<Self> {
+        (task.region.is_some() || task.byte_range.is_some()).then(|| Self {
+            task_id: task.task_id.clone(),
+            region: task.region.unwrap_or_else(empty_region),
+            byte_range: task.byte_range,
+            items: None,
+        })
+    }
+
     /// Fragment covering a byte chunk of the input.
     pub(crate) fn chunk(task_id: String, range: ByteRange) -> Self {
         Self {

@@ -53,6 +53,14 @@ pub fn handler(ctx: Context<ApproveFragmentSplit>, approve: bool) -> Result<()> 
     let parent = &mut ctx.accounts.parent_fragment;
     let proposal = &mut ctx.accounts.split_proposal;
 
+    // V2.6 auto-approves an eligible split in the splitter's transaction.
+    // Keep this legacy client call idempotent for older SDK flows.
+    if proposal.approved
+        && matches!(parent.status, FragmentStatus::SplitApproved | FragmentStatus::SplitParent)
+    {
+        return Ok(());
+    }
+
     require!(parent.status == FragmentStatus::SplitPending, SiliciumError::BadFragmentState);
     require!(!proposal.approved, SiliciumError::SplitAlreadyResolved);
     require!(!proposal.rejected, SiliciumError::SplitAlreadyResolved);

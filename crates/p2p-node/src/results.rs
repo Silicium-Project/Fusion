@@ -17,7 +17,7 @@ use crate::{
     content::ContentStore,
     jobs::{JobStore, result_file, store::write_atomic},
     processing::NodeContext,
-    workload::{self, Workload},
+    workload,
 };
 use silicium_embedding::sampling::{sample_indices, sample_size};
 use silicium_node_core::taskbook::{DerivedTaskStatus, TaskEventBody};
@@ -185,11 +185,18 @@ async fn collect_one(context: &NodeContext, jobs: &JobStore, task_id: &str) -> O
     }
     let bytes = context.content.get(sha256)?;
     let job = jobs.fragment(task_id);
+    let known_task = context.known_tasks.lock().ok()?.get(task_id).cloned();
     let workload = job
         .as_ref()
         .and_then(|(job, _)| workload::find(&job.workload))
-        .or_else(|| known_workload(context, task_id))?;
-    let fragment = job.as_ref().map(|(_, fragment)| fragment);
+        .or_else(|| known_task.as_ref().and_then(workload::of))?;
+    let delegated_fragment = known_task
+        .as_ref()
+        .and_then(crate::jobs::FragmentRef::from_task);
+    let fragment = job
+        .as_ref()
+        .map(|(_, fragment)| fragment)
+        .or(delegated_fragment.as_ref());
     if !workload.accepts_result(fragment, &bytes, &result.milestones) {
         println!(" Result of {task_id} does not match its verified commitment");
         return None;
@@ -325,12 +332,6 @@ fn awaiting_verification(context: &NodeContext, task_id: &str) -> Option<String>
         .uri
         .strip_prefix(CONTENT_SCHEME)
         .map(str::to_string)
-}
-
-/// Workload of a task this node knows but that belongs to no job.
-fn known_workload(context: &NodeContext, task_id: &str) -> Option<&'static dyn Workload> {
-    let known = context.known_tasks.lock().ok()?;
-    known.get(task_id).and_then(workload::of)
 }
 
 #[cfg(test)]

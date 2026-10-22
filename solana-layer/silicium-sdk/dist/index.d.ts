@@ -15,11 +15,16 @@ export declare const SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
 export declare const SIL_DECIMALS = 6;
 export declare const SIL_BASE_UNITS = 1000000n;
 export declare const DEVNET_FRAGMENT_QUORUM = 2;
-/** The selected test quote: 1 SIL compute + 1 SIL per accepted verifier. */
+export declare const MAX_DEVNET_FRAGMENT_NODES = 1000;
+export declare function maxDevnetSilLeaves(initialFragments: number): number;
+/** The selected test quote reserves the full adaptive tree, then refunds unused escrow. */
 export declare function quoteDevnetSilFragments(expectedFragments: number): {
     rewardPerFragment: bigint;
     verifierRewardPerVote: bigint;
     verifierRewardBudget: bigint;
+    initialFragments: number;
+    maxFragments: number;
+    maxFragmentNodes: number;
     fragmentQuorum: number;
     totalEscrow: bigint;
 };

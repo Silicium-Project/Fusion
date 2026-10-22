@@ -21,6 +21,14 @@ use std::{
 /// Gossipsub topic shared by every Silicium node.
 pub(crate) const TOPIC: &str = "silicium-network";
 
+/// The default Kademlia cache of 1024 records fills during one 20-worker job
+/// with recursive delegation. Keep the in-memory cap bounded while allowing
+/// the task-book event set for a full dev job to fit.
+const DHT_MAX_RECORDS: usize = 8_192;
+/// Typical TaskBook records are a few KiB; cap each value so the enlarged
+/// record count cannot consume unbounded memory in the miniworker containers.
+const DHT_MAX_RECORD_BYTES: usize = 8 * 1024;
+
 #[derive(NetworkBehaviour)]
 pub(crate) struct P2pBehaviour {
     pub(crate) gossipsub: gossipsub::Behaviour,
@@ -78,7 +86,12 @@ pub(crate) fn build_swarm_with_mdns(
             )
             .expect("Valid gossipsub config");
 
-            let store = kad::store::MemoryStore::new(local_peer_id);
+            let store_config = kad::store::MemoryStoreConfig {
+                max_records: DHT_MAX_RECORDS,
+                max_value_bytes: DHT_MAX_RECORD_BYTES,
+                ..Default::default()
+            };
+            let store = kad::store::MemoryStore::with_config(local_peer_id, store_config);
             let mut kademlia = kad::Behaviour::new(local_peer_id, store);
             kademlia.set_mode(Some(kad::Mode::Server));
 
@@ -286,6 +299,7 @@ mod tests {
         let task = NetworkTask {
             task_id: "kademlia-smoke-task".to_string(),
             root_job_id: None,
+            parent_task_id: None,
             scene_path: "scene/smoke.blend".to_string(),
             output_path: "out/smoke.ppm".to_string(),
             seed: "1337".to_string(),
@@ -302,6 +316,7 @@ mod tests {
             solana_payment: None,
             byte_range: None,
             requested_fragment_count: None,
+            delegation_depth: 0,
         };
         let task_envelope: TaskEnvelope = task.clone().into();
         let task_record = task_envelope.to_dht_record();

@@ -247,13 +247,14 @@ fresh compute worker
 fresh verifier 1
 fresh verifier 2
 fragment_quorum = 2
-verifier_reward_budget >= verifier_reward_per_vote * 2
+verifier_reward_budget >= max_leaf_fragments * fragment_quorum * verifier_reward_per_vote
 ```
 
 The Devnet test quote is fixed at six decimal places: one SIL (1,000,000
 base units) for the accepted compute result and one SIL for each of two
-accepted verifier votes. The escrow reserves 3 SIL per expected fragment.
-Finalization returns any unspent balance. The cancellation refund rule is
+accepted verifier votes. The escrow reserves 3 SIL per maximum payable leaf.
+A binary split adds one payable leaf and two fragment accounts. Finalization
+or cancellation returns unused escrow. The cancellation refund rule is
 present in local program source and takes effect on Devnet only after that
 program update is deployed.
 
@@ -413,7 +414,7 @@ const created = await sdk.createJob({
   expectedFragments: 1,
   rewardPerFragment: 1_000_000,
   verifierRewardPerVote: 100_000,
-  verifierRewardBudget: 200_000,
+  verifierRewardBudget: 3_200_000,
   deadlineUnix,
   fragmentQuorum: 2,
   mint,
@@ -426,7 +427,7 @@ Requirements:
 
 ```txt
 fragmentQuorum >= 2
-verifierRewardBudget >= expectedFragments * fragmentQuorum * verifierRewardPerVote
+verifierRewardBudget >= maxLeafFragments(expectedFragments) * fragmentQuorum * verifierRewardPerVote
 ```
 
 ### Declare job storage
@@ -1078,7 +1079,7 @@ const expectedFragments = 1;
 const rewardPerFragment = 1_000_000;
 const verifierRewardPerVote = 100_000;
 const fragmentQuorum = 2;
-const verifierRewardBudget = expectedFragments * fragmentQuorum * verifierRewardPerVote;
+const verifierRewardBudget = maxLeafFragments(expectedFragments) * fragmentQuorum * verifierRewardPerVote;
 ```
 
 ### Program ID mismatch

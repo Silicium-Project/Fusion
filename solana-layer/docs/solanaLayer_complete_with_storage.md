@@ -232,14 +232,18 @@ Split constants:
 | Constant | Meaning | Local/test value |
 |---|---|---:|
 | `DEFAULT_MAX_FRAGMENT_DEPTH` | Max depth for fragment trees | `4` |
-| `DEFAULT_MAX_CHILDREN_PER_FRAGMENT` | Per-parent child cap | `8` |
-| `MAX_CHILDREN_PER_SPLIT` | Hard split child cap | `8` |
+| `DEFAULT_MAX_CHILDREN_PER_FRAGMENT` | Per-parent child cap | `2` |
+| `MAX_CHILDREN_PER_SPLIT` | Hard split child cap | `2` |
 | `SPLIT_MIN_REPUTATION` | Required compute reputation for split | `5_000` local |
-| `SPLIT_MIN_STAKE` | Required stake for split proposal | `1_000` |
+| `SPLIT_MIN_STAKE` | Required stake for split proposal | `0` for linked dev workers |
 | `SPLIT_MIN_COMPLEXITY` | Minimum complexity before split | `1_000` local |
 | `DEFAULT_ROOT_COMPLEXITY_SCORE` | Root fragment default complexity | `1_000` |
 
-For beta/mainnet, split reputation and complexity thresholds should be stricter than local values.
+The assigned worker can split its claimed fragment in the same transaction
+that creates both child accounts. The P2P scheduler uses the Beta(1,1)
+posterior from the replicated task book; the program still checks worker
+status and compute reputation. Linked Devnet test workers start without stake,
+so stake is not a split prerequisite in this build.
 
 ---
 
@@ -264,6 +268,8 @@ Important fields:
 | `mint` | SPL mint used for payment |
 | `escrow` | Token escrow |
 | `expected_fragments` | Number of required leaf fragments |
+| initial pre-split roots | Derived as `2 * expected_fragments - total_fragments_created`; this keeps older `Job` accounts readable |
+| `max_fragments` | Total account-index capacity, including internal split parents |
 | `verified_fragments` | Verified leaf fragment count |
 | `reward_per_fragment` | Worker reward |
 | `verifier_reward_per_vote` | Verifier reward |
@@ -794,7 +800,8 @@ expected_fragments > 0
 expected_fragments <= MAX_FRAGMENTS_PER_JOB
 reward_per_fragment > 0
 2 <= fragment_quorum <= MAX_FRAGMENT_QUORUM
-verifier_reward_budget >= expected_fragments * fragment_quorum * verifier_reward_per_vote
+verifier_reward_budget >= max_leaf_fragments * fragment_quorum * verifier_reward_per_vote
+worker reserve >= max_leaf_fragments * reward_per_fragment
 total deposit >= MIN_JOB_DEPOSIT
 job TTL within min/max bounds
 ```
@@ -916,7 +923,9 @@ vote is marked slashed
 
 ### 9.12 `propose_fragment_split(manifest_hash, child_count)`
 
-A trusted compute worker proposes a split.
+A compute worker that owns a claimed leaf proposes and auto-approves a binary
+split. The parent is no longer payable; its verified child leaves are. This
+avoids a client signature round trip during network delegation.
 
 Requirements include:
 
@@ -934,7 +943,8 @@ depth < DEFAULT_MAX_FRAGMENT_DEPTH
 
 ### 9.13 `approve_fragment_split`
 
-Approves the split and moves the parent to `SplitApproved`.
+Legacy client calls are idempotent for splits already auto-approved by the
+assigned worker.
 
 ### 9.14 `create_sub_fragment(...)`
 

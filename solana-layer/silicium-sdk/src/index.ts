@@ -79,13 +79,29 @@ export const SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
 export const SIL_DECIMALS = 6;
 export const SIL_BASE_UNITS = 1_000_000n;
 export const DEVNET_FRAGMENT_QUORUM = 2;
+export const MAX_DEVNET_FRAGMENT_NODES = 1_000;
+const MAX_DEVNET_LEAF_MULTIPLIER = 16;
 
-/** The selected test quote: 1 SIL compute + 1 SIL per accepted verifier. */
-export function quoteDevnetSilFragments(expectedFragments: number) {
-  if (!Number.isSafeInteger(expectedFragments) || expectedFragments < 1 || expectedFragments > 1_000) {
-    throw new Error("expectedFragments must be an integer from 1 through 1000");
+export function maxDevnetSilLeaves(initialFragments: number): number {
+  if (!Number.isSafeInteger(initialFragments) || initialFragments < 1 || initialFragments > 256) {
+    throw new Error("initialFragments must be an integer from 1 through 256");
   }
-  const count = BigInt(expectedFragments);
+  const childSlotsPerRoot = Math.floor((MAX_DEVNET_FRAGMENT_NODES - initialFragments) / initialFragments);
+  const leavesPerRoot = 1 + Math.floor(childSlotsPerRoot / 2);
+  return Math.min(
+    MAX_DEVNET_FRAGMENT_NODES,
+    initialFragments * MAX_DEVNET_LEAF_MULTIPLIER,
+    initialFragments * leavesPerRoot,
+  );
+}
+
+/** The selected test quote reserves the full adaptive tree, then refunds unused escrow. */
+export function quoteDevnetSilFragments(expectedFragments: number) {
+  if (!Number.isSafeInteger(expectedFragments) || expectedFragments < 1 || expectedFragments > 256) {
+    throw new Error("expectedFragments must be an integer from 1 through 256");
+  }
+  const maxFragments = maxDevnetSilLeaves(expectedFragments);
+  const count = BigInt(maxFragments);
   const rewardPerFragment = SIL_BASE_UNITS;
   const verifierRewardPerVote = SIL_BASE_UNITS;
   const verifierRewardBudget = count * BigInt(DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote;
@@ -93,6 +109,9 @@ export function quoteDevnetSilFragments(expectedFragments: number) {
     rewardPerFragment,
     verifierRewardPerVote,
     verifierRewardBudget,
+    initialFragments: expectedFragments,
+    maxFragments,
+    maxFragmentNodes: MAX_DEVNET_FRAGMENT_NODES,
     fragmentQuorum: DEVNET_FRAGMENT_QUORUM,
     totalEscrow: count * (rewardPerFragment + BigInt(DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote),
   };
@@ -367,6 +386,7 @@ export class SiliciumLayerSdk {
     const splitterWorker = this.pdas.worker(splitter);
     const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
     const splitProposal = this.pdas.splitProposal(parentFragment, round);
+    const jobAccount = await this.accounts.job.fetch(params.job);
 
     let builder = this.methods
       .proposeFragmentSplit(asHash32(params.manifestHash), params.childCount)
@@ -376,6 +396,7 @@ export class SiliciumLayerSdk {
         job: params.job,
         parentFragment,
         splitProposal,
+        escrow: jobAccount.escrow,
         systemProgram: SystemProgram.programId,
       });
 

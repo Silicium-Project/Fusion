@@ -3,16 +3,14 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::{
     constants::{
-        MAX_FRAGMENTS_PER_JOB, MAX_FRAGMENT_QUORUM, MAX_JOB_TTL_SECS, MIN_FRAGMENT_QUORUM,
-        MIN_JOB_DEPOSIT, MIN_JOB_TTL_SECS,
+        DEFAULT_MAX_FRAGMENT_DEPTH, DEFAULT_MAX_FRAGMENT_MULTIPLIER, MAX_FRAGMENTS_PER_JOB,
+        MAX_FRAGMENT_QUORUM, MAX_JOB_TTL_SECS, MIN_FRAGMENT_QUORUM, MIN_JOB_DEPOSIT,
+        MIN_JOB_TTL_SECS,
     },
     error::SiliciumError,
     events::JobCreated,
     state::job::{Job, JobStatus},
 };
-
-pub const DEFAULT_MAX_FRAGMENT_DEPTH: u8 = 4;
-pub const DEFAULT_MAX_FRAGMENT_MULTIPLIER: u32 = 8;
 
 #[derive(Accounts)]
 #[instruction(job_id: u64)]
@@ -93,7 +91,17 @@ pub fn handler(
     require!(ttl >= MIN_JOB_TTL_SECS, SiliciumError::InvalidDeadline);
     require!(ttl <= MAX_JOB_TTL_SECS, SiliciumError::InvalidDeadline);
 
-    let verifier_needed_u128 = (expected_fragments as u128)
+    // `max_fragments` reserves account indices for the entire binary tree,
+    // including internal split nodes. The escrow reserve below is based on
+    // the smaller maximum payable leaf count.
+    let max_fragments = MAX_FRAGMENTS_PER_JOB.max(expected_fragments);
+    let child_slots_per_root = max_fragments.saturating_sub(expected_fragments) / expected_fragments;
+    let max_leaf_fragments = expected_fragments
+        .saturating_mul(1 + child_slots_per_root / 2)
+        .min(expected_fragments.saturating_mul(DEFAULT_MAX_FRAGMENT_MULTIPLIER))
+        .min(MAX_FRAGMENTS_PER_JOB);
+
+    let verifier_needed_u128 = (max_leaf_fragments as u128)
         .checked_mul(fragment_quorum as u128)
         .ok_or(SiliciumError::InvalidParams)?
         .checked_mul(verifier_reward_per_vote as u128)
@@ -104,7 +112,7 @@ pub fn handler(
         SiliciumError::InsufficientVerifierBudget
     );
 
-    let worker_total_u128 = (expected_fragments as u128)
+    let worker_total_u128 = (max_leaf_fragments as u128)
         .checked_mul(reward_per_fragment as u128)
         .ok_or(SiliciumError::InvalidParams)?;
 
@@ -155,9 +163,7 @@ pub fn handler(
 
     job.fragment_quorum = fragment_quorum;
 
-    job.max_fragments = expected_fragments
-        .saturating_mul(DEFAULT_MAX_FRAGMENT_MULTIPLIER)
-        .max(expected_fragments);
+    job.max_fragments = max_fragments;
     job.total_fragments_created = expected_fragments;
     job.max_fragment_depth = DEFAULT_MAX_FRAGMENT_DEPTH;
     job.split_authority = ctx.accounts.client.key();

@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 
+use crate::constants::{DEFAULT_MAX_FRAGMENT_MULTIPLIER, MAX_FRAGMENTS_PER_JOB};
+
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq)]
 pub enum JobStatus {
     Open,
@@ -35,6 +37,7 @@ pub struct Job {
     pub fragment_quorum: u16,
 
     // V2: garde-fous de sous-fragmentation.
+    /// Maximum number of fragment accounts, including internal split nodes.
     pub max_fragments: u32,
     pub total_fragments_created: u32,
     pub max_fragment_depth: u8,
@@ -47,6 +50,35 @@ pub struct Job {
 }
 
 impl Job {
+    /// Reconstructs the original root count from the leaf and node totals.
+    /// For binary splits, each split adds one expected leaf and two created
+    /// fragment accounts, so `2 * leaves - nodes` stays equal to the roots.
+    pub fn initial_fragments(&self) -> u32 {
+        self.expected_fragments
+            .checked_mul(2)
+            .and_then(|value| value.checked_sub(self.total_fragments_created))
+            .unwrap_or(0)
+    }
+
+    /// Maximum payable leaves given the job's initial roots and reserved
+    /// binary-tree account range. A binary split consumes two child accounts
+    /// but adds only one payable leaf.
+    pub fn max_leaf_fragments(&self) -> u32 {
+        let initial_fragments = self.initial_fragments();
+        if initial_fragments == 0 {
+            return 0;
+        }
+        let child_slots_per_root = self
+            .max_fragments
+            .saturating_sub(initial_fragments)
+            / initial_fragments;
+        let leaves_per_root = 1 + child_slots_per_root / 2;
+        initial_fragments
+            .saturating_mul(leaves_per_root)
+            .min(initial_fragments.saturating_mul(DEFAULT_MAX_FRAGMENT_MULTIPLIER))
+            .min(MAX_FRAGMENTS_PER_JOB)
+    }
+
     pub const SPACE: usize = 8  // discriminator
         + 8                     // job_id
         + 32                    // client

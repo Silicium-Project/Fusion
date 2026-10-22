@@ -129,19 +129,24 @@ fn node(name: &str) -> Node {
     let taskbook = crate::storage::load_taskbook_state(&root.join("data"), &key).unwrap();
     let (tx_content, commands) = mpsc::channel(64);
     let (tx_events, _) = mpsc::channel(64);
+    let (tx_publish, _) = mpsc::channel(64);
     let context = NodeContext {
         local_peer_id: key.public().to_peer_id(),
         hardware: crate::config::read_hardware_bucket(),
         dispatcher_seed: 1,
         taskbook,
         tx_events,
+        tx_publish,
+        job_settings: crate::jobs::JobSettings::default(),
         compute_timeout_s: 60,
         known_tasks: Default::default(),
         content: ContentStore::new(root.join("work"), tx_content),
-        connected_workers: Default::default(),
+        online_workers: Default::default(),
+        available_compute_authors: Default::default(),
         compute_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
         roles: LocalRoles::parse("compute,verify"),
         active_tasks: Default::default(),
+        pending_admissions: Default::default(),
         activity: ActivityLog::at(None),
         data_dir: root.join("data"),
     };
@@ -174,6 +179,7 @@ fn submitted(sha256: &str, workload: &Hf) -> NetworkTask {
     NetworkTask {
         task_id: format!("{}.hf", "c".repeat(32)),
         root_job_id: Some("site-hf".into()),
+        parent_task_id: None,
         scene_path: ContentStore::relative_path(sha256),
         output_path: String::new(),
         seed: "7".into(),
@@ -190,6 +196,7 @@ fn submitted(sha256: &str, workload: &Hf) -> NetworkTask {
         solana_payment: None,
         byte_range: None,
         requested_fragment_count: Some(2),
+        delegation_depth: 0,
     }
 }
 

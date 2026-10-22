@@ -126,6 +126,9 @@ fn split_job(
             return Vec::new();
         }
         if let Some(payment) = task.solana_payment.as_mut() {
+            if payment.fragment_index.is_some() {
+                return vec![task];
+            }
             if payment.expected_fragments != 1 {
                 println!(
                     " Paid job {} expected {} fragments but this workload is not split",
@@ -138,8 +141,18 @@ fn split_job(
             }
             payment.fragment_index = Some(0);
         }
+        if task.parent_task_id.is_none() && task.delegation_depth == 0 {
+            task.root_job_id.get_or_insert_with(|| task.task_id.clone());
+        }
         return vec![task];
     };
+    let root_job_id = manifest.root_job_id.clone();
+    let mut fragments = fragments;
+    for fragment in &mut fragments {
+        fragment.root_job_id = Some(root_job_id.clone());
+        fragment.parent_task_id = None;
+        fragment.delegation_depth = 0;
+    }
     let count = fragments.len();
     let fragments = if let Some(payment) = task.solana_payment.as_ref() {
         if payment.expected_fragments as usize != count {

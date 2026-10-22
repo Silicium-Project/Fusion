@@ -2,9 +2,9 @@
 # End-to-end check of the dev network shape, on loopback:
 #   - an orchestrator (roles resource,storage, does not compute) publishes a
 #     raytracer job, split into fragments;
-#   - WORKERS desktop workers (default 1) start 5 s AFTER the publication,
-#     on the dev channel, trusting the orchestrator only through the pinned
-#     bootstrap address (/p2p/<peer id>).
+#   - WORKERS desktop workers (default 1) join on the dev channel, trusting
+#     the orchestrator only through the pinned bootstrap address
+#     (/p2p/<peer id>); set WORKERS_BEFORE_PUBLISH=1 to form the mesh first.
 # Passes when the orchestrator assembles the job result. With one worker,
 # the worker verifies its own fragments (lone-worker rule); with two or more,
 # each fragment is verified by another worker.
@@ -32,6 +32,9 @@ WORKERS=${WORKERS:-1}
 WORKLOAD=${WORKLOAD:-raytracer}
 OFFSET=${E2E_PORT_OFFSET:-0}
 JOB_TIMEOUT_SECS=${E2E_JOB_TIMEOUT_SECS:-240}
+WORKERS_BEFORE_PUBLISH=${WORKERS_BEFORE_PUBLISH:-0}
+REQUIRE_DELEGATION=${REQUIRE_DELEGATION:-0}
+REQUIRE_DHT_CAPACITY=${REQUIRE_DHT_CAPACITY:-0}
 API=$((19092 + OFFSET))
 P2P=$((46201 + OFFSET))
 COMPUTE_BASE=$((19100 + OFFSET))
@@ -113,15 +116,64 @@ until api_ready; do
   fi
   sleep 0.2
 done
+if [[ "$WORKERS_BEFORE_PUBLISH" == 1 ]]; then
+  for n in $(seq "$WORKERS"); do start_worker "$n" "$ORCHESTRATOR"; done
+  echo "workers started; waiting for signed compute profiles to cross the gossip mesh"
+  mesh_deadline=$((SECONDS + 60))
+  mesh_ready=0
+  while (( SECONDS < mesh_deadline )); do
+    if python3 - "$WORKERS" "$WORKER_API_BASE" <<'PY'
+import json, sys, urllib.request
+workers, base = map(int, sys.argv[1:])
+for worker in range(1, workers + 1):
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{base + worker}/v1/peers", timeout=2) as response:
+            peers = json.load(response)["peers"]
+    except Exception:
+        raise SystemExit(1)
+    online_workers = [
+        peer for peer in peers
+        if peer.get("online") and peer.get("profile_known") and not peer.get("self")
+        and peer.get("task_author")
+        and any(role.strip().lower() == "compute" for role in peer.get("roles", []))
+    ]
+    if len(online_workers) < workers - 1:
+        raise SystemExit(1)
+PY
+    then
+      mesh_ready=1
+      break
+    fi
+    sleep 1
+  done
+  if (( mesh_ready == 0 )); then
+    echo "FAIL: workers did not see all other compute profiles through gossip within 60 s"
+    for n in $(seq "$WORKERS"); do
+      echo "--- worker $n peer view"
+      curl -s --max-time 3 "http://127.0.0.1:$((WORKER_API_BASE + n))/v1/peers" || true
+      echo
+      echo "--- worker $n log"
+      tail -n 30 "$OUT/w$n/node.log"
+    done
+    exit 1
+  fi
+  echo "mesh ready: every worker sees $((WORKERS - 1)) other compute worker(s); publishing job"
+else
+  echo "job will be published before the workers join"
+fi
+
 curl -fsS --max-time 10 -X POST "http://127.0.0.1:$API/publish" -H 'content-type: application/json' \
   -d '{"task_id":"e2ejob","scene_path":"scenes/'"$INPUT_NAME"'","output_path":"out","seed":"42","workload":"'"$WORKLOAD"'"}' >/dev/null \
   || { echo "FAIL: the orchestrator refused the job"; tail -n 40 "$OUT/orchestrator.log"; exit 1; }
 sleep 0.5
 JOB=$(grep -o "Job [^ ]* split" "$OUT/orchestrator.log" | head -1 | awk '{print $2}')
-echo "job $JOB published by $ORCHESTRATOR; workers join in 5 s"
-
-sleep 5
-for n in $(seq "$WORKERS"); do start_worker "$n" "$ORCHESTRATOR"; done
+if [[ "$WORKERS_BEFORE_PUBLISH" == 1 ]]; then
+  echo "job $JOB published by $ORCHESTRATOR to the formed worker mesh"
+else
+  echo "job $JOB published by $ORCHESTRATOR; workers join in 5 s"
+  sleep 5
+  for n in $(seq "$WORKERS"); do start_worker "$n" "$ORCHESTRATOR"; done
+fi
 
 for second in $(seq "$JOB_TIMEOUT_SECS"); do
   sleep 1
@@ -165,10 +217,29 @@ PY
     fi
     for n in $(seq "$WORKERS"); do
       journal="$OUT/w$n/export/node.events.ndjson"
+      delegated=$(grep -c 'Delegated .* into .* child tasks' "$OUT/w$n/node.log" 2>/dev/null || true)
       echo "worker $n: computed $(grep '"kind":"task"' "$journal" | grep -c '"role":"compute"')," \
-        "verified $(grep '"kind":"task"' "$journal" | grep -c '"role":"verify"')" \
-        "(journal of the desktop app)"
+        "verified $(grep '"kind":"task"' "$journal" | grep -c '"role":"verify"')," \
+        "delegated ${delegated:-0} task(s)"
     done
+    delegated_total=$(python3 - "$OUT" "$WORKERS" <<'PY'
+import pathlib, re, sys
+root, workers = pathlib.Path(sys.argv[1]), int(sys.argv[2])
+pattern = re.compile(r"Delegated .* into \d+ child tasks")
+print(sum(len(pattern.findall((root / f"w{n}" / "node.log").read_text(errors="replace")))
+          for n in range(1, workers + 1)))
+PY
+)
+    if [[ "$REQUIRE_DELEGATION" == 1 && "$delegated_total" -lt 1 ]]; then
+      echo "FAIL: job assembled, but no worker logged a recursive delegation"
+      for n in $(seq "$WORKERS"); do tail -n 40 "$OUT/w$n/node.log"; done
+      exit 1
+    fi
+    echo "P2P recursive delegations observed: $delegated_total"
+    if [[ "$REQUIRE_DHT_CAPACITY" == 1 ]] && grep -h 'MaxRecords' "$OUT"/o/*.log "$OUT"/w*/node.log 2>/dev/null; then
+      echo "FAIL: the DHT record cache filled during this job"
+      exit 1
+    fi
     exit 0
   fi
 done

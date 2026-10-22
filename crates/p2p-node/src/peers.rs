@@ -13,7 +13,25 @@
 
 use crate::task::PeerProfile;
 use libp2p::PeerId;
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+/// Heartbeats are sent every five seconds; older profiles are treated as offline.
+pub(crate) const PROFILE_STALE_AFTER_SECONDS: i64 = 15;
+
+pub(crate) fn current_unix_seconds() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
+}
+
+pub(crate) fn profile_is_fresh(profile: &PeerProfile, now_unix: i64) -> bool {
+    profile.last_seen_unix > 0
+        && now_unix.saturating_sub(profile.last_seen_unix) <= PROFILE_STALE_AFTER_SECONDS
+}
 
 /// Roles this node takes on (`SILICIUM_NODE_ROLES`, default `compute,verify`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,27 +78,73 @@ pub(crate) fn profile_is_worker(profile: &PeerProfile) -> bool {
     })
 }
 
-/// Connected peers that are workers. A peer whose heartbeat was not received
-/// yet counts as a worker: in doubt, a node must not verify itself.
-pub(crate) fn count_connected_workers<'a>(
+/// Whether a peer can accept compute tasks. A verifier-only node must not
+/// increase the estimated value of delegation.
+fn profile_can_compute(profile: &PeerProfile) -> bool {
+    profile
+        .roles
+        .iter()
+        .any(|role| role.trim().eq_ignore_ascii_case("compute"))
+}
+
+/// Workers visible through live signed gossip or a direct connection. Unknown
+/// direct peers count as workers so missing profiles cannot enable self-checks.
+pub(crate) fn count_online_workers<'a>(
+    local_peer_id: &str,
     connected: impl Iterator<Item = &'a PeerId>,
     profiles: &BTreeMap<String, PeerProfile>,
+    now_unix: i64,
 ) -> usize {
-    connected
-        .filter(|peer_id| {
-            let peer_id = peer_id.to_string();
-            profiles
-                .values()
-                .find(|profile| profile.peer_id == peer_id)
-                .is_none_or(profile_is_worker)
+    let mut workers = BTreeSet::new();
+    for profile in profiles.values() {
+        if profile.peer_id != local_peer_id
+            && profile_is_worker(profile)
+            && profile_is_fresh(profile, now_unix)
+        {
+            workers.insert(profile.peer_id.clone());
+        }
+    }
+    for peer_id in connected {
+        let peer_id = peer_id.to_string();
+        if peer_id == local_peer_id {
+            continue;
+        }
+        let profile = profiles.values().find(|profile| profile.peer_id == peer_id);
+        if profile.is_none_or(profile_is_worker) {
+            workers.insert(peer_id);
+        }
+    }
+    workers.len()
+}
+
+/// Task-book authors for compute peers whose signed heartbeats recently
+/// crossed the gossip mesh. Direct connectivity is not required: task and
+/// TaskBook messages also cross that mesh through relays.
+pub(crate) fn online_compute_authors(
+    local_peer_id: &str,
+    profiles: &BTreeMap<String, PeerProfile>,
+    now_unix: i64,
+) -> Vec<Option<String>> {
+    let mut seen_peers = BTreeSet::new();
+    let mut seen_authors = BTreeSet::new();
+    profiles
+        .values()
+        .filter(|profile| {
+            profile.peer_id != local_peer_id
+                && profile_is_fresh(profile, now_unix)
+                && profile_can_compute(profile)
+                && !profile.task_author.trim().is_empty()
+                && seen_peers.insert(profile.peer_id.clone())
+                && seen_authors.insert(profile.task_author.clone())
         })
-        .count()
+        .map(|profile| Some(profile.task_author.clone()))
+        .collect()
 }
 
 /// Workers seen by this node at one instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct WorkerView {
-    /// Connected peers that are workers (this node excluded).
+    /// Other live workers visible through direct connection or signed gossip.
     pub(crate) others: usize,
     /// Whether this node is itself a worker.
     pub(crate) local_is_worker: bool,
@@ -109,6 +173,7 @@ mod tests {
         PeerProfile {
             node_id: format!("node-{peer_id}"),
             peer_id: peer_id.to_string(),
+            task_author: String::new(),
             roles: roles.iter().map(|role| (*role).to_string()).collect(),
             app_version: "test".to_string(),
             release_channel: "dev".to_string(),
@@ -141,16 +206,70 @@ mod tests {
     }
 
     #[test]
-    fn unknown_peers_count_as_workers() {
+    fn live_gossiped_workers_and_unknown_direct_peers_are_counted_once() {
         let orchestrator = PeerId::random();
         let worker = PeerId::random();
+        let relayed_worker = PeerId::random();
+        let stale_worker = PeerId::random();
+        let local = PeerId::random();
         let unknown = PeerId::random();
+        let mut live_worker = profile(&worker, &["compute"]);
+        live_worker.last_seen_unix = 990;
+        let mut relayed = profile(&relayed_worker, &["verify"]);
+        relayed.last_seen_unix = 995;
+        let mut stale = profile(&stale_worker, &["compute"]);
+        stale.last_seen_unix = 970;
+        let mut service = profile(&orchestrator, &["resource", "storage"]);
+        service.last_seen_unix = 999;
         let profiles = BTreeMap::from([
-            ("o".to_string(), profile(&orchestrator, &["resource"])),
-            ("w".to_string(), profile(&worker, &["compute"])),
+            ("o".to_string(), service),
+            ("w".to_string(), live_worker),
+            ("relay".to_string(), relayed),
+            ("stale".to_string(), stale),
+            ("self".to_string(), profile(&local, &["compute"])),
         ]);
         let connected = [orchestrator, worker, unknown];
-        assert_eq!(count_connected_workers(connected.iter(), &profiles), 2);
+        assert_eq!(
+            count_online_workers(&local.to_string(), connected.iter(), &profiles, 1_000),
+            3
+        );
+    }
+
+    #[test]
+    fn only_fresh_mesh_compute_peers_are_delegation_candidates() {
+        let compute = PeerId::random();
+        let verifier = PeerId::random();
+        let orchestrator = PeerId::random();
+        let local = PeerId::random();
+        let mut compute_profile = profile(&compute, &["compute", "verify"]);
+        compute_profile.task_author = "compute-author".to_string();
+        compute_profile.last_seen_unix = 999;
+        let mut verifier_profile = profile(&verifier, &["verify"]);
+        verifier_profile.task_author = "verify-author".to_string();
+        verifier_profile.last_seen_unix = 999;
+        let mut service_profile = profile(&orchestrator, &["resource", "storage"]);
+        service_profile.task_author = "service-author".to_string();
+        service_profile.last_seen_unix = 999;
+        let profiles = BTreeMap::from([
+            ("compute".to_string(), compute_profile),
+            ("verifier".to_string(), verifier_profile),
+            ("orchestrator".to_string(), service_profile),
+        ]);
+        assert_eq!(
+            online_compute_authors(&local.to_string(), &profiles, 1_000),
+            vec![Some("compute-author".to_string())]
+        );
+
+        let stale = PeerId::random();
+        let mut stale_profile = profile(&stale, &["compute"]);
+        stale_profile.task_author = "stale-author".to_string();
+        stale_profile.last_seen_unix = 970;
+        let mut profiles = profiles;
+        profiles.insert("stale".to_string(), stale_profile);
+        assert_eq!(
+            online_compute_authors(&local.to_string(), &profiles, 1_000),
+            vec![Some("compute-author".to_string())]
+        );
     }
 
     #[test]

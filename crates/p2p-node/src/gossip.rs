@@ -4,6 +4,7 @@
 use crate::{
     admission::SecurityConfig,
     backfill,
+    peers::{current_unix_seconds, online_compute_authors},
     processing::NodeContext,
     task::{GossipMessage, PeerProfile, utc_now},
     worker::process_task,
@@ -13,10 +14,12 @@ use silicium_node_core::{p2p::TaskEnvelope, taskbook::TaskEvent};
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 pub(crate) type PeerProfiles = Arc<Mutex<BTreeMap<String, PeerProfile>>>;
+const MAX_PENDING_ADMISSIONS: usize = 512;
+const DELEGATION_ADMISSION_RETRIES: usize = 80;
 
 /// Handles one gossip message; returns the messages to send back (stored
 /// events answering a backfill request).
@@ -48,6 +51,14 @@ pub(crate) fn handle(
             profile.last_seen_utc = utc_now();
             if let Ok(mut profiles) = peer_profiles.lock() {
                 profiles.insert(profile.node_id.clone(), profile);
+                let authors = online_compute_authors(
+                    &local_peer_id.to_string(),
+                    &profiles,
+                    current_unix_seconds(),
+                );
+                if let Ok(mut available) = context.available_compute_authors.lock() {
+                    *available = authors;
+                }
             }
             Vec::new()
         }
@@ -116,11 +127,69 @@ fn admit(
     source: Option<PeerId>,
     envelope: TaskEnvelope,
 ) {
-    match security.admit_remote(source, local_peer_id, envelope) {
-        Ok(task) => {
-            let context = context.clone();
-            tokio::spawn(async move { process_task(context, task).await });
+    let task_id = envelope.task_id.clone();
+    let Some(pending) = PendingAdmission::enter(context, &task_id) else {
+        return;
+    };
+    let context = context.clone();
+    let security = security.clone();
+    tokio::spawn(async move {
+        for retry in 0..=DELEGATION_ADMISSION_RETRIES {
+            match security.admit_received(&context, source.clone(), local_peer_id, envelope.clone())
+            {
+                Ok(task) => {
+                    drop(pending);
+                    process_task(context, task).await;
+                    return;
+                }
+                Err(reason)
+                    if retryable_delegation_admission(&reason)
+                        && retry < DELEGATION_ADMISSION_RETRIES =>
+                {
+                    tokio::time::sleep(Duration::from_millis(250)).await;
+                }
+                Err(reason) => {
+                    println!(" Ignored task from {peer_id}: {reason}");
+                    return;
+                }
+            }
         }
-        Err(reason) => println!(" Ignored task from {peer_id}: {reason}"),
+        println!(" Ignored task from {peer_id}: delegation_state_not_ready");
+    });
+}
+
+fn retryable_delegation_admission(reason: &str) -> bool {
+    matches!(
+        reason,
+        "delegation_parent_pending"
+            | "delegation_proposal_pending"
+            | "delegation_parent_proposal_pending"
+            | "delegation_author_not_accepted_parent_claimant"
+    )
+}
+
+struct PendingAdmission {
+    context: NodeContext,
+    task_id: String,
+}
+
+impl PendingAdmission {
+    fn enter(context: &NodeContext, task_id: &str) -> Option<Self> {
+        let mut pending = context.pending_admissions.lock().ok()?;
+        if pending.len() >= MAX_PENDING_ADMISSIONS || !pending.insert(task_id.to_string()) {
+            return None;
+        }
+        Some(Self {
+            context: context.clone(),
+            task_id: task_id.to_string(),
+        })
+    }
+}
+
+impl Drop for PendingAdmission {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.context.pending_admissions.lock() {
+            pending.remove(&self.task_id);
+        }
     }
 }

@@ -6,6 +6,7 @@
 use crate::{
     activity::ActivityLog,
     content::ContentStore,
+    jobs::JobSettings,
     peers::{LocalRoles, WorkerView},
     storage::TaskBookState,
     task::NetworkTask,
@@ -32,6 +33,9 @@ pub(crate) struct NodeContext {
     pub(crate) dispatcher_seed: u64,
     pub(crate) taskbook: TaskBookState,
     pub(crate) tx_events: mpsc::Sender<TaskEvent>,
+    /// Tasks recursively delegated by a worker that split its accepted task.
+    pub(crate) tx_publish: mpsc::Sender<NetworkTask>,
+    pub(crate) job_settings: JobSettings,
     /// Upper bound of one compute call, in seconds.
     pub(crate) compute_timeout_s: u64,
     /// Tasks this node knows (received or published), by task id: what a
@@ -40,10 +44,12 @@ pub(crate) struct NodeContext {
     /// Scenes and result images shared with peers, inside the compute work
     /// directory.
     pub(crate) content: ContentStore,
-    /// Connected peers that can independently compute or verify a result,
-    /// refreshed by the event loop. The orchestrator/storage peer is
-    /// deliberately excluded (see the lone-worker rule in [`crate::peers`]).
-    pub(crate) connected_workers: Arc<AtomicUsize>,
+    /// Other workers visible through direct connections or fresh signed
+    /// gossip, refreshed by the event loop.
+    pub(crate) online_workers: Arc<AtomicUsize>,
+    /// Task-book identities of live compute peers advertised through the
+    /// gossip mesh, used by the Bayesian delegation decision.
+    pub(crate) available_compute_authors: Arc<Mutex<Vec<Option<String>>>>,
     /// Free compute slots: a worker claims a task only once it holds one.
     pub(crate) compute_slots: Arc<tokio::sync::Semaphore>,
     /// Roles of this node (`SILICIUM_NODE_ROLES`).
@@ -51,6 +57,8 @@ pub(crate) struct NodeContext {
     /// Tasks being handled by [`crate::worker::process_task`]: a task
     /// announced again while it is handled is not claimed twice.
     pub(crate) active_tasks: Arc<Mutex<BTreeSet<String>>>,
+    /// Tasks awaiting their parent/proposal events during delegated admission.
+    pub(crate) pending_admissions: Arc<Mutex<BTreeSet<String>>>,
     /// Work in progress and work journal shown by the desktop app.
     pub(crate) activity: ActivityLog,
     /// Data directory of the node (identity, task book, models).
@@ -61,7 +69,7 @@ impl NodeContext {
     /// Workers seen by this node now (see [`crate::peers`]).
     pub(crate) fn worker_view(&self) -> WorkerView {
         WorkerView {
-            others: self.connected_workers.load(Ordering::Relaxed),
+            others: self.online_workers.load(Ordering::Relaxed),
             local_is_worker: self.roles.is_worker(),
         }
     }

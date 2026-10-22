@@ -33,6 +33,7 @@ use std::{
 pub(crate) const ID: &str = "calcul/integrity/sha256";
 /// Former identifier, still accepted.
 pub(crate) const ALIAS: &str = "calcul/hash/sha256";
+const DELEGATION_LEAF_BYTES: u64 = 4 * 1024 * 1024;
 
 /// The sha256 workload (see the module documentation).
 pub(crate) struct Sha256;
@@ -51,6 +52,9 @@ pub(crate) struct ChunkHash {
     pub(crate) offset: u64,
     pub(crate) length: u64,
     pub(crate) sha256: String,
+    /// Ordered child range commitments for a recursively delegated fragment.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) children: Vec<ChunkHash>,
 }
 
 /// Result of a job, assembled by the publisher.
@@ -126,6 +130,104 @@ impl Workload for Sha256 {
         Some((manifest, tasks))
     }
 
+    fn split_subtask(
+        &self,
+        task: &NetworkTask,
+        input: &Path,
+        _settings: &JobSettings,
+    ) -> Option<(JobManifest, Vec<NetworkTask>)> {
+        let parent = task.byte_range?;
+        let size = std::fs::metadata(input).ok()?.len();
+        if !parent.is_valid()
+            || parent.is_empty()
+            || parent.end > size
+            || parent.len() <= DELEGATION_LEAF_BYTES
+        {
+            return None;
+        }
+        let midpoint = parent.start + parent.len() / 2;
+        if midpoint <= parent.start || midpoint >= parent.end {
+            return None;
+        }
+        let ranges = [
+            ByteRange {
+                start: parent.start,
+                end: midpoint,
+            },
+            ByteRange {
+                start: midpoint,
+                end: parent.end,
+            },
+        ];
+        let mut fragments = Vec::with_capacity(2);
+        let mut tasks = Vec::with_capacity(2);
+        for (index, range) in ranges.into_iter().enumerate() {
+            let task_id = fragment_task_id(&task.task_id, index);
+            let mut fragment = task.clone();
+            fragment.task_id = task_id.clone();
+            fragment.output_path = TaskEnvelope::local_output_path_for(&task_id, Some(ID))?;
+            fragment.byte_range = Some(range);
+            fragment.requested_fragment_count = None;
+            fragments.push(FragmentRef::chunk(task_id, range));
+            tasks.push(fragment);
+        }
+        Some((
+            JobManifest {
+                job_id: task.task_id.clone(),
+                root_job_id: task.task_id.clone(),
+                workload: ID.to_string(),
+                width: 0,
+                height: 0,
+                input_bytes: parent.len(),
+                scene_sha256: task.scene_sha256.clone(),
+                fragments,
+            },
+            tasks,
+        ))
+    }
+
+    fn combine_subtask_results(
+        &self,
+        task: &NetworkTask,
+        child_results: &[Vec<u8>],
+    ) -> Option<Vec<u8>> {
+        let range = task.byte_range?;
+        if child_results.len() != 2 || range.len() <= DELEGATION_LEAF_BYTES {
+            return None;
+        }
+        let midpoint = range.start + range.len() / 2;
+        let children: Vec<ChunkHash> = child_results
+            .iter()
+            .map(|bytes| serde_json::from_slice(bytes).ok())
+            .collect::<Option<_>>()?;
+        let expected = [
+            ByteRange {
+                start: range.start,
+                end: midpoint,
+            },
+            ByteRange {
+                start: midpoint,
+                end: range.end,
+            },
+        ];
+        if children
+            .iter()
+            .zip(expected)
+            .any(|(child, range)| !valid_chunk_tree(child, range))
+        {
+            return None;
+        }
+        let parent = ChunkHash {
+            algorithm: "sha256".to_string(),
+            index: fragment_index(&task.task_id),
+            offset: range.start,
+            length: range.len(),
+            sha256: tree_digest(&children),
+            children,
+        };
+        serde_json::to_vec(&parent).ok()
+    }
+
     fn execute<'a>(
         &'a self,
         context: &'a NodeContext,
@@ -167,9 +269,7 @@ impl Workload for Sha256 {
             return false;
         };
         let range = fragment.and_then(|fragment| fragment.byte_range);
-        chunk.algorithm == "sha256"
-            && is_hex_hash(&chunk.sha256)
-            && range.is_none_or(|range| (chunk.offset, chunk.length) == (range.start, range.len()))
+        chunk.algorithm == "sha256" && range.is_none_or(|range| valid_chunk_tree(&chunk, range))
     }
 
     fn assemble(
@@ -178,10 +278,17 @@ impl Workload for Sha256 {
         _input: &Path,
         fragments: &[Vec<u8>],
     ) -> Result<Vec<OutputFile>, String> {
-        let chunks = fragments
+        let roots = fragments
             .iter()
             .map(|bytes| serde_json::from_slice::<ChunkHash>(bytes).map_err(|err| err.to_string()))
             .collect::<Result<Vec<_>, _>>()?;
+        let mut chunks = Vec::new();
+        for root in &roots {
+            flatten_chunks(root, &mut chunks);
+        }
+        for (index, chunk) in chunks.iter_mut().enumerate() {
+            chunk.index = index as u32;
+        }
         let covered: u64 = chunks.iter().map(|chunk| chunk.length).sum();
         if covered != job.input_bytes {
             return Err(format!(
@@ -247,7 +354,10 @@ async fn chunk_result(context: &NodeContext, task: &NetworkTask) -> Option<Vec<u
     let input = context.content.absolute(&task.scene_path);
     let range = task.byte_range;
     let index = fragment_index(&task.task_id);
-    let computed = tokio::task::spawn_blocking(move || hash_chunk(&input, range, index)).await;
+    let computed = tokio::task::spawn_blocking(move || {
+        hash_chunk_tree(&input, range, index, DELEGATION_LEAF_BYTES)
+    })
+    .await;
     match computed {
         Ok(Ok(chunk)) => serde_json::to_vec(&chunk).ok(),
         Ok(Err(err)) => {
@@ -299,7 +409,100 @@ pub(crate) fn hash_chunk(
         offset: range.start,
         length: range.len(),
         sha256: hex(&hasher.finalize()),
+        children: Vec::new(),
     })
+}
+
+fn hash_chunk_tree(
+    input: &Path,
+    range: Option<ByteRange>,
+    index: u32,
+    leaf_bytes: u64,
+) -> std::io::Result<ChunkHash> {
+    let size = File::open(input)?.metadata()?.len();
+    let range = range.unwrap_or(ByteRange {
+        start: 0,
+        end: size,
+    });
+    if range.len() <= leaf_bytes {
+        return hash_chunk(input, Some(range), index);
+    }
+    let midpoint = range.start + range.len() / 2;
+    let children = vec![
+        hash_chunk_tree(
+            input,
+            Some(ByteRange {
+                start: range.start,
+                end: midpoint,
+            }),
+            0,
+            leaf_bytes,
+        )?,
+        hash_chunk_tree(
+            input,
+            Some(ByteRange {
+                start: midpoint,
+                end: range.end,
+            }),
+            0,
+            leaf_bytes,
+        )?,
+    ];
+    Ok(ChunkHash {
+        algorithm: "sha256".to_string(),
+        index,
+        offset: range.start,
+        length: range.len(),
+        sha256: tree_digest(&children),
+        children,
+    })
+}
+
+fn valid_chunk_tree(chunk: &ChunkHash, range: ByteRange) -> bool {
+    if chunk.algorithm != "sha256"
+        || !is_hex_hash(&chunk.sha256)
+        || (chunk.offset, chunk.length) != (range.start, range.len())
+    {
+        return false;
+    }
+    if range.len() <= DELEGATION_LEAF_BYTES {
+        return chunk.children.is_empty();
+    }
+    if chunk.children.len() != 2 {
+        return false;
+    }
+    let midpoint = range.start + range.len() / 2;
+    let expected = [
+        ByteRange {
+            start: range.start,
+            end: midpoint,
+        },
+        ByteRange {
+            start: midpoint,
+            end: range.end,
+        },
+    ];
+    chunk
+        .children
+        .iter()
+        .zip(expected)
+        .all(|(child, expected)| valid_chunk_tree(child, expected))
+        && chunk.sha256 == tree_digest(&chunk.children)
+}
+
+fn tree_digest(children: &[ChunkHash]) -> String {
+    let bytes = serde_json::to_vec(children).unwrap_or_default();
+    sha256_hex(&bytes)
+}
+
+fn flatten_chunks(chunk: &ChunkHash, out: &mut Vec<ChunkHash>) {
+    if chunk.children.is_empty() {
+        out.push(chunk.clone());
+    } else {
+        for child in &chunk.children {
+            flatten_chunks(child, out);
+        }
+    }
 }
 
 fn write_output(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {

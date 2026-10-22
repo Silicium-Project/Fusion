@@ -95,6 +95,12 @@ pub struct HardwareNodeDescriptor {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskEnvelope {
     pub task_id: String,
+    /// Business identifier used for status and result aggregation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_job_id: Option<String>,
+    /// Parent fragment, present on tasks recursively delegated by a worker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_task_id: Option<String>,
     pub scene_path: String,
     pub output_path: String,
     pub seed: String,
@@ -132,6 +138,9 @@ pub struct TaskEnvelope {
     /// byte chunks; the whole input when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub byte_range: Option<ByteRange>,
+    /// Number of network-selected split levels below the initial pre-split.
+    #[serde(default)]
+    pub delegation_depth: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,6 +176,8 @@ pub enum RemoteTaskError {
     InvalidWorkload,
     #[error("remote_task_byte_range_invalid")]
     InvalidByteRange,
+    #[error("remote_task_delegation_lineage_invalid")]
+    InvalidDelegationLineage,
 }
 
 /// Longest workload identifier accepted from a peer.
@@ -216,6 +227,30 @@ impl TaskEnvelope {
         {
             return Err(RemoteTaskError::InvalidTaskId);
         }
+        let root_job_id = self
+            .root_job_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|root| !root.is_empty())
+            .map(str::to_string);
+        if root_job_id
+            .as_deref()
+            .is_some_and(|root| root.len() > 128 || root.chars().any(char::is_control))
+        {
+            return Err(RemoteTaskError::InvalidDelegationLineage);
+        }
+        let parent_task_id = match self.parent_task_id.as_deref().map(str::trim) {
+            Some(parent)
+                if !parent.is_empty() && crate::taskbook::TaskEvent::is_valid_task_id(parent) =>
+            {
+                Some(parent.to_string())
+            }
+            Some(_) => return Err(RemoteTaskError::InvalidDelegationLineage),
+            None => None,
+        };
+        if parent_task_id.is_some() != (self.delegation_depth > 0) {
+            return Err(RemoteTaskError::InvalidDelegationLineage);
+        }
         let workload = match self.workload.as_deref().map(str::trim) {
             None | Some("") => None,
             Some(id) if is_valid_workload_id(id) => Some(id.to_string()),
@@ -244,6 +279,8 @@ impl TaskEnvelope {
         };
         Ok(TaskEnvelope {
             task_id: task_id.to_string(),
+            root_job_id,
+            parent_task_id,
             scene_path: self.scene_path.trim().to_string(),
             output_path: Self::local_output_path_for(task_id, workload.as_deref())
                 .ok_or(RemoteTaskError::InvalidTaskId)?,
@@ -273,6 +310,7 @@ impl TaskEnvelope {
                 Some(range) if !range.is_valid() => return Err(RemoteTaskError::InvalidByteRange),
                 range => range,
             },
+            delegation_depth: self.delegation_depth,
         })
     }
 

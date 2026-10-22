@@ -1,9 +1,10 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::TokenAccount;
 
 use crate::{
     constants::{MAX_CHILDREN_PER_SPLIT, SPLIT_MIN_COMPLEXITY, SPLIT_MIN_REPUTATION, SPLIT_MIN_STAKE},
     error::SiliciumError,
-    events::FragmentSplitProposed,
+    events::{FragmentSplitApproved, FragmentSplitProposed},
     state::{
         fragment::{Fragment, FragmentStatus},
         job::{Job, JobStatus},
@@ -59,6 +60,12 @@ pub struct ProposeFragmentSplit<'info> {
     )]
     pub split_proposal: Account<'info, SplitProposal>,
 
+    #[account(
+        constraint = escrow.key() == job.escrow @ SiliciumError::InvalidParams,
+        constraint = escrow.mint == job.mint @ SiliciumError::InvalidParams
+    )]
+    pub escrow: Account<'info, TokenAccount>,
+
     pub system_program: Program<'info, System>,
 }
 
@@ -68,7 +75,7 @@ pub fn handler(
     child_count: u16,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    let job = &ctx.accounts.job;
+    let job = &mut ctx.accounts.job;
     let parent = &mut ctx.accounts.parent_fragment;
     let splitter_worker = &mut ctx.accounts.splitter_worker;
 
@@ -94,11 +101,31 @@ pub fn handler(
 
     require!(projected_total <= job.max_fragments, SiliciumError::TooManyFragments);
 
+    // The initial escrow reserves the maximum tree budget. Keep this check at
+    // the split boundary so a malformed or old quote cannot create work that
+    // can never be paid. Outstanding verifier claims remain included.
+    let max_leaf_fragments = job.max_leaf_fragments();
+    let remaining_compute = (max_leaf_fragments.saturating_sub(job.verified_fragments) as u128)
+        .checked_mul(job.reward_per_fragment as u128)
+        .ok_or(SiliciumError::InvalidParams)?;
+    let remaining_verifier = job
+        .verifier_reward_budget
+        .checked_sub(job.claimed_verifier_rewards_total)
+        .ok_or(SiliciumError::InvalidParams)? as u128;
+    let required_reserve = remaining_compute
+        .checked_add(remaining_verifier)
+        .ok_or(SiliciumError::InvalidParams)?;
+    require!(
+        ctx.accounts.escrow.amount as u128 >= required_reserve,
+        SiliciumError::InsufficientEscrow
+    );
+
     if parent.status == FragmentStatus::Claimed {
         splitter_worker.active_claims = splitter_worker.active_claims.saturating_sub(1);
     }
 
-    parent.status = FragmentStatus::SplitPending;
+    parent.status = FragmentStatus::SplitApproved;
+    parent.is_leaf = false;
     parent.split_manifest_hash = manifest_hash;
     parent.splitter_worker = ctx.accounts.splitter.key();
     parent.children_count = child_count;
@@ -109,7 +136,10 @@ pub fn handler(
     proposal.splitter_worker = ctx.accounts.splitter.key();
     proposal.manifest_hash = manifest_hash;
     proposal.child_count = child_count;
-    proposal.approved = false;
+    // The assigned worker was selected by the mesh's Bayesian delegation
+    // score. It may subdivide its own claimed work; no client/web-server
+    // signature is needed to keep the network moving.
+    proposal.approved = true;
     proposal.rejected = false;
     proposal.created_children = 0;
     proposal.bump = ctx.bumps.split_proposal;
@@ -124,6 +154,41 @@ pub fn handler(
         child_count,
         depth: parent.depth,
         complexity_score: parent.complexity_score,
+    });
+
+    let new_expected = job
+        .expected_fragments
+        .saturating_sub(1)
+        .checked_add(child_count as u32)
+        .ok_or(SiliciumError::InvalidParams)?;
+    require!(new_expected <= max_leaf_fragments, SiliciumError::TooManyFragments);
+    let max_required_compute = (max_leaf_fragments as u128)
+        .checked_mul(job.reward_per_fragment as u128)
+        .ok_or(SiliciumError::InvalidParams)?;
+    let max_required_verifiers = (max_leaf_fragments as u128)
+        .checked_mul(job.fragment_quorum as u128)
+        .and_then(|value| value.checked_mul(job.verifier_reward_per_vote as u128))
+        .ok_or(SiliciumError::InvalidParams)?;
+    require!(
+        job.verifier_reward_budget as u128 >= max_required_verifiers,
+        SiliciumError::InsufficientVerifierBudget
+    );
+    require!(
+        job.deposited_amount as u128 >= max_required_compute + max_required_verifiers,
+        SiliciumError::InsufficientEscrow
+    );
+    job.expected_fragments = new_expected;
+    job.total_fragments_created = projected_total;
+
+    emit!(FragmentSplitApproved {
+        job: job.key(),
+        parent_fragment: parent.key(),
+        parent_fragment_index: parent.fragment_index,
+        proposal: proposal.key(),
+        authority: ctx.accounts.splitter.key(),
+        child_count,
+        new_expected_fragments: new_expected,
+        total_fragments_created: projected_total,
     });
 
     Ok(())

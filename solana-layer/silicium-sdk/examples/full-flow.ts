@@ -16,6 +16,7 @@ import {
   EventSubscription,
   SiliciumLayerSdk,
   SdkEventName,
+  maxDevnetSilLeaves,
 } from "../src";
 
 type NodeWalletWithPayer = anchor.Wallet & { payer: Keypair };
@@ -226,10 +227,10 @@ async function main(): Promise<void> {
   const fragmentQuorum = 2;
 
   const verifierRewardBudget =
-    expectedFragments * fragmentQuorum * verifierRewardPerVote;
+    maxDevnetSilLeaves(expectedFragments) * fragmentQuorum * verifierRewardPerVote;
 
   const totalJobDeposit =
-    expectedFragments * rewardPerFragment + verifierRewardBudget;
+    maxDevnetSilLeaves(expectedFragments) * rewardPerFragment + verifierRewardBudget;
 
   console.log("Job deposit debug:");
   console.log("expectedFragments:", expectedFragments);

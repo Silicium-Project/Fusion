@@ -16,7 +16,7 @@ const program = anchor.workspace.SolanaLayer as Program;
 
 const ZERO_PUBKEY = new PublicKey(new Uint8Array(32));
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(100_000);
-const VERIFIER_REWARD_BUDGET = new anchor.BN(1_000_000);
+const VERIFIER_REWARD_BUDGET = new anchor.BN(1_600_000);
 
 let sharedWorkerToken: PublicKey;
 let sharedMint: PublicKey;
@@ -92,6 +92,11 @@ function escrowAuthPda(job: PublicKey): PublicKey {
     [Buffer.from("escrow_auth"), job.toBuffer()],
     program.programId
   )[0];
+}
+
+function maxLeafFragments(initialFragments: number): number {
+  const childSlotsPerRoot = Math.floor((1_000 - initialFragments) / initialFragments);
+  return Math.min(initialFragments * 16, initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)), 1_000);
 }
 
 function stakeAuthPda(workerAccount: PublicKey): PublicKey {
@@ -255,7 +260,7 @@ async function createTestJob(
   const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
 
   const totalToMint = rewardPerFragment
-    .mul(new anchor.BN(expectedFragments))
+    .mul(new anchor.BN(maxLeafFragments(expectedFragments)))
     .add(verifierRewardBudget)
     .add(new anchor.BN(1_000_000));
 

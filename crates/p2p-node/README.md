@@ -39,6 +39,18 @@ C'est le seul runtime réseau ; l'ancien nœud Python a été supprimé.
     qu'il voit (lui compris). Dès qu'un deuxième worker est présent, la
     vérification doit venir de lui. C'est moins fort qu'une vérification
     indépendante, et jamais rémunéré ;
+  - **délégation adaptative** (`src/worker.rs`) : après le premier découpage
+    défini par le workload, le compute compare son score bayésien à la
+    probabilité qu'au moins un pair compute actif du maillage réussisse,
+    identifié par son heartbeat signé récent, même si ce pair passe par un
+    relais et n'est pas directement connecté. S'il délègue, il publie deux
+    enfants sur le même topic P2P, attend leurs résultats vérifiés et recompose
+    le parent ; la profondeur est limitée à quatre.
+    SHA-256 redécoupe les plages de plus de 4 Mio et le raytracer les régions
+    de plus de 4 096 pixels. Les pairs « verify only » ne sont pas comptés
+    comme calculateurs disponibles. Un enfant n'est accepté que si sa
+    proposition TaskBook est signée par un claimant accepté sur le parent et
+    que son enveloppe correspond au split déterministe de ce parent ;
   - **contenus** (`src/content.rs`, `src/fetch/`) : scènes et images de
     résultat sont rangées par hash sous `content/<sha256>` dans le dossier de
     travail et annoncées dans la DHT (enregistrements de fournisseur) ; un
@@ -209,13 +221,20 @@ ses tests ; le BackEnd doit aussi l'accepter (`ValidateWorkload`).
 ## Construire, tester, conteneur
 
 Test de bout en bout du réseau dev en local (un orchestrateur qui ne calcule
-pas, des workers qui arrivent 5 s après la publication du job, confiance par
-adresse d'amorçage épinglée) :
+pas, confiance par adresse d'amorçage épinglée) :
 
 ```bash
 cargo build --release -p p2p_node -p compute_daemon -p silicium-raytracer
 WORKERS=1 crates/p2p-node/scripts/e2e-local.sh crates/raytracer/scenes/silicium-multi-fragment-scene.cfg
 WORKERS=2 crates/p2p-node/scripts/e2e-local.sh crates/raytracer/scenes/silicium-multi-fragment-scene.cfg
+```
+
+Pour vérifier la délégation récursive après formation du maillage, démarrer
+les workers avant de publier et exiger au moins une délégation :
+
+```bash
+WORKERS=20 WORKERS_BEFORE_PUBLISH=1 REQUIRE_DELEGATION=1 REQUIRE_DHT_CAPACITY=1 \
+  crates/p2p-node/scripts/e2e-local.sh crates/raytracer/scenes/silicium-multi-fragment-scene.cfg
 ```
 
 Avec un worker, il vérifie ses propres tuiles ; avec deux, chacun vérifie

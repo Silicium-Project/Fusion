@@ -23,6 +23,7 @@ fn task() -> NetworkTask {
     NetworkTask {
         task_id: format!("{}.hash", "a".repeat(32)),
         root_job_id: Some("site-1".into()),
+        parent_task_id: None,
         scene_path: "content/input".into(),
         output_path: String::new(),
         seed: "1".into(),
@@ -39,6 +40,7 @@ fn task() -> NetworkTask {
         solana_payment: None,
         byte_range: None,
         requested_fragment_count: None,
+        delegation_depth: 0,
     }
 }
 

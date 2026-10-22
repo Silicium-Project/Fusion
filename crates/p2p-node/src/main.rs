@@ -57,7 +57,7 @@ use crate::{
     },
     content::ContentStore,
     control::ControlRegistry,
-    peers::{LocalRoles, count_connected_workers},
+    peers::{LocalRoles, count_online_workers, current_unix_seconds, online_compute_authors},
     processing::NodeContext,
     storage::{load_or_generate_identity, load_taskbook_state},
     swarm::{
@@ -120,10 +120,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(" Task book: {}", taskbook.path.display());
 
     let (tx_events, mut rx_events) = mpsc::channel(64);
+    let (tx_publish, mut rx_publish) = mpsc::channel(32);
     let (tx_content, mut rx_content) = mpsc::channel(64);
     let (tx_models, mut rx_models) = mpsc::channel(256);
     model_share::connect(tx_models);
     let model_store_root = Some(workload::hf::shared_store_root(&data_dir));
+    let jobs = jobs::JobStore::open(read_compute_root_from_env());
+    let job_settings = jobs::JobSettings::from_env();
 
     let context = NodeContext {
         local_peer_id,
@@ -131,15 +134,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dispatcher_seed,
         taskbook: taskbook.clone(),
         tx_events,
+        tx_publish: tx_publish.clone(),
+        job_settings,
         compute_timeout_s: security.compute_timeout_s,
         known_tasks: Default::default(),
         content: ContentStore::new(read_compute_root_from_env(), tx_content),
-        connected_workers: Default::default(),
+        online_workers: Default::default(),
+        available_compute_authors: Default::default(),
         compute_slots: std::sync::Arc::new(tokio::sync::Semaphore::new(
             read_parallel_tasks_from_env(),
         )),
         roles: LocalRoles::from_env(),
         active_tasks: Default::default(),
+        pending_admissions: Default::default(),
         activity: activity::ActivityLog::from_env(),
         data_dir: data_dir.clone(),
     };
@@ -147,8 +154,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::iter::once(local_peer_id.to_string()).collect(),
     ));
     let mut telemetry = telemetry::Telemetry::new(read_compute_root_from_env());
-    let local_profile =
-        local_peer_profile(&local_peer_id.to_string(), Vec::new(), telemetry.sample());
+    let local_profile = local_peer_profile(
+        &local_peer_id.to_string(),
+        &taskbook.author(),
+        Vec::new(),
+        telemetry.sample(),
+    );
     let peer_profiles = std::sync::Arc::new(std::sync::Mutex::new(BTreeMap::from([(
         local_profile.node_id.clone(),
         local_profile,
@@ -156,14 +167,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let control = ControlRegistry::open(data_dir.join("control.tasks.json"));
     let compatibility = CompatibilityWriter::new(&local_peer_id.to_string());
     let verifier_memory = verifier::VerifierMemory::default();
-    let jobs = jobs::JobStore::open(read_compute_root_from_env());
     let publish_settings = publishing::PublishSettings {
         terms: TaskTerms {
             verifications_required: read_verifications_required_from_env(),
             allow_self_verification: read_allow_self_verification_from_env(),
             ..TaskTerms::default()
         },
-        jobs: jobs::JobSettings::from_env(),
+        jobs: job_settings,
         work_own_tasks: read_work_own_tasks_from_env(),
         control: control.clone(),
     };
@@ -212,12 +222,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &topic,
         &GossipMessage::PeerHeartbeat(local_peer_profile(
             &local_peer_id.to_string(),
+            &taskbook.author(),
             Vec::new(),
             telemetry.sample(),
         )),
     );
 
-    let (tx_publish, mut rx_publish) = mpsc::channel(32);
     let api_state = ApiState {
         tx_publish,
         taskbook: taskbook.clone(),
@@ -270,14 +280,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             _ = sweep_timer.tick() => {
                 // Poisoned lock: count every peer as a worker (no self-verification).
-                let worker_count = peer_profiles
+                let now_unix = current_unix_seconds();
+                let (worker_count, worker_authors) = peer_profiles
                     .lock()
-                    .map(|profiles| count_connected_workers(swarm.connected_peers(), &profiles))
-                    .unwrap_or_else(|_| swarm.connected_peers().count());
-                context.connected_workers.store(
+                    .map(|profiles| (
+                        count_online_workers(
+                            &local_peer_id.to_string(),
+                            swarm.connected_peers(),
+                            &profiles,
+                            now_unix,
+                        ),
+                        online_compute_authors(&local_peer_id.to_string(), &profiles, now_unix),
+                    ))
+                    .unwrap_or_else(|_| {
+                        let count = swarm.connected_peers().count();
+                        (count, Vec::new())
+                    });
+                context.online_workers.store(
                     worker_count,
                     std::sync::atomic::Ordering::Relaxed,
                 );
+                if let Ok(mut authors) = context.available_compute_authors.lock() {
+                    *authors = worker_authors;
+                }
                 if let Ok(mut peers) = known_peers.lock() {
                     peers.clear();
                     peers.insert(local_peer_id.to_string());
@@ -315,6 +340,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ = presence_timer.tick() => {
                 let profile = local_peer_profile(
                     &local_peer_id.to_string(),
+                    &taskbook.author(),
                     context.activity.active_tasks(),
                     telemetry.sample(),
                 );

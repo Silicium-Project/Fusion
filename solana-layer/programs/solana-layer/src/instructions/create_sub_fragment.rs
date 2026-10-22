@@ -77,7 +77,14 @@ pub fn handler(
     let proposal = &mut ctx.accounts.split_proposal;
     let child = &mut ctx.accounts.child_fragment;
 
-    require!(child_fragment_index < ctx.accounts.job.max_fragments, SiliciumError::InvalidChildFragmentIndex);
+    require!(
+        child_fragment_index < ctx.accounts.job.max_fragments,
+        SiliciumError::InvalidChildFragmentIndex
+    );
+    require!(
+        is_child_index(&ctx.accounts.job, parent.fragment_index, child_fragment_index),
+        SiliciumError::InvalidChildFragmentIndex
+    );
     require!(parent.status == FragmentStatus::SplitApproved, SiliciumError::ParentNotSplitApproved);
     require!(proposal.created_children < proposal.child_count, SiliciumError::SplitChildLimitExceeded);
     require!(required_compute_reputation >= 0, SiliciumError::InvalidParams);
@@ -139,4 +146,35 @@ pub fn handler(
     }
 
     Ok(())
+}
+
+/// Maps a binary split tree into a disjoint, pre-reserved index range for
+/// each initial root. Root indices stay stable as the leaf count changes.
+fn is_child_index(job: &Job, parent_index: u32, child_index: u32) -> bool {
+    let roots = job.initial_fragments();
+    if roots == 0 || parent_index >= job.max_fragments {
+        return false;
+    }
+    let per_root = job.max_fragments.saturating_sub(roots) / roots;
+    if per_root < 2 {
+        return false;
+    }
+    let (root, local) = if parent_index < roots {
+        (parent_index, 0)
+    } else {
+        let offset = parent_index - roots;
+        let root = offset / per_root;
+        if root >= roots {
+            return false;
+        }
+        (root, offset % per_root + 1)
+    };
+    let first_local = local.saturating_mul(2).saturating_add(1);
+    let second_local = first_local.saturating_add(1);
+    if second_local > per_root {
+        return false;
+    }
+    let first = roots + root * per_root + first_local - 1;
+    let second = roots + root * per_root + second_local - 1;
+    child_index == first || child_index == second
 }

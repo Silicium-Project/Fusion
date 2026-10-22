@@ -12,6 +12,7 @@ use crate::{
     control::{ControlRegistry, ControlTask, Submission},
     jobs::result_file,
     jobs::{FRAGMENT_SUFFIX_EXAMPLE, JobStore, MAX_FRAGMENTS_LIMIT},
+    peers::profile_is_fresh,
     publishing::{ImportError, import_input},
     storage::TaskBookState,
     task::{NetworkTask, PeerProfile, utc_now as task_utc_now},
@@ -33,8 +34,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::sync::mpsc;
-
-const PEER_STALE_AFTER_SECONDS: i64 = 15;
 
 fn solana_payments_enabled() -> bool {
     matches!(
@@ -226,6 +225,8 @@ async fn submit_control_task(
     };
     let envelope = silicium_node_core::p2p::TaskEnvelope {
         task_id: owned_task_id.clone(),
+        root_job_id: Some(root_job_id.to_string()),
+        parent_task_id: None,
         scene_path,
         output_path: String::new(),
         seed: if submission.seed.trim().is_empty() {
@@ -245,6 +246,7 @@ async fn submit_control_task(
         workload: Some(workload.id().to_string()),
         solana_payment,
         byte_range: None,
+        delegation_depth: 0,
     };
     let Ok(mut task) = state.security.admit_local(envelope) else {
         return api_error(StatusCode::BAD_REQUEST, "invalid task envelope");
@@ -353,9 +355,9 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
     let mut represented = BTreeSet::new();
     for profile in profiles.values() {
         let is_self = profile.peer_id == state.local_peer_id;
-        let online = is_self
-            || (connected.contains(&profile.peer_id)
-                && now.saturating_sub(profile.last_seen_unix) <= PEER_STALE_AFTER_SECONDS);
+        // Signed heartbeats are relayed over gossip, so an online mesh peer
+        // need not have a direct libp2p connection to this node.
+        let online = is_self || profile_is_fresh(profile, now);
         let telemetry = profile
             .activity
             .get("telemetry")
@@ -364,8 +366,11 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
         peers.push(serde_json::json!({
             "node_id": profile.node_id,
             "peer_id": profile.peer_id,
+            "task_author": profile.task_author,
+            "profile_known": true,
             "self": is_self,
             "online": online,
+            "direct_connection": connected.contains(&profile.peer_id),
             "status": if online { "connected" } else { "disconnected" },
             "last_seen_unix": profile.last_seen_unix,
             "last_seen_utc": profile.last_seen_utc,
@@ -389,10 +394,12 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
             "peer_id": peer_id,
             "self": peer_id == &state.local_peer_id,
             "online": true,
+            "direct_connection": true,
+            "profile_known": false,
             "status": "connected",
             "last_seen_unix": now,
             "last_seen_utc": task_utc_now(),
-            "roles": roles(),
+            "roles": Vec::<String>::new(),
         }));
     }
     let tasks = state.control.tasks_for_root(&state.taskbook, None);
@@ -425,16 +432,6 @@ async fn control_peers(State(state): State<ApiState>) -> impl IntoResponse {
 
 fn api_error(status: StatusCode, message: &str) -> Response {
     (status, Json(serde_json::json!({"error": message}))).into_response()
-}
-
-fn roles() -> Vec<String> {
-    std::env::var("SILICIUM_NODE_ROLES")
-        .unwrap_or_else(|_| "compute,verify".to_string())
-        .split(',')
-        .map(str::trim)
-        .filter(|role| !role.is_empty())
-        .map(str::to_string)
-        .collect()
 }
 
 fn unix_seconds() -> i64 {

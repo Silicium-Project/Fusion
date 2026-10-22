@@ -45,7 +45,7 @@ const programAny = program as any;
 
 const REWARD_PER_FRAGMENT = new anchor.BN(100_000);
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(100_000);
-const VERIFIER_REWARD_BUDGET = new anchor.BN(2_000_000);
+const VERIFIER_REWARD_BUDGET = new anchor.BN(3_200_000);
 const FRAGMENT_QUORUM = 2;
 
 function logStep(title: string) {
@@ -274,9 +274,14 @@ async function createJob(params: {
   const escrowAuth = escrowAuthPda(job);
   const escrow = anchor.web3.Keypair.generate();
   const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
+  const maxLeafFragments = Math.min(
+    params.expectedFragments * 16,
+    params.expectedFragments * (1 + Math.floor(Math.floor((1_000 - params.expectedFragments) / params.expectedFragments) / 2)),
+    1_000,
+  );
 
   const topUp = REWARD_PER_FRAGMENT
-    .mul(new anchor.BN(params.expectedFragments))
+    .mul(new anchor.BN(maxLeafFragments))
     .add(VERIFIER_REWARD_BUDGET)
     .add(new anchor.BN(2_000_000));
 
@@ -495,6 +500,7 @@ async function proposeAndCreateSplit(params: {
   childIndexes: number[];
 }): Promise<PublicKey[]> {
   const parentBefore = await programAny.account.fragment.fetch(params.parentFragment);
+  const jobAccount = await programAny.account.job.fetch(params.job);
   const parentRound = Number(parentBefore.round);
   const splitProposal = splitProposalPda(params.parentFragment, parentRound);
 
@@ -509,6 +515,7 @@ async function proposeAndCreateSplit(params: {
       job: params.job,
       parentFragment: params.parentFragment,
       splitProposal,
+      escrow: jobAccount.escrow,
       systemProgram: SystemProgram.programId,
     })
     .signers([params.splitter.keypair])

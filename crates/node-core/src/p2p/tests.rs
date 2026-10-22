@@ -27,6 +27,8 @@ fn task_event_record_key_is_content_addressed() {
 fn remote_task() -> TaskEnvelope {
     TaskEnvelope {
         task_id: "job-1-frag-000".to_string(),
+        root_job_id: None,
+        parent_task_id: None,
         scene_path: "scenes/demo.cfg".to_string(),
         output_path: "/etc/passwd".to_string(),
         seed: "7".to_string(),
@@ -42,6 +44,7 @@ fn remote_task() -> TaskEnvelope {
         workload: None,
         solana_payment: None,
         byte_range: None,
+        delegation_depth: 0,
     }
 }
 
@@ -152,6 +155,29 @@ fn remote_tasks_lose_the_fields_a_peer_must_not_control() {
     assert!(clean.runtime_args.is_empty());
     assert!(clean.runtime_envelope("peer").is_none());
     assert!(clean.scene_sha256.is_none(), "malformed scene hash dropped");
+}
+
+#[test]
+fn delegated_tasks_need_a_valid_parent_and_depth() {
+    let parent = TaskEvent::task_id_for(&"a".repeat(64), "parent");
+    let child = TaskEnvelope {
+        root_job_id: Some("site-job-1".to_string()),
+        parent_task_id: Some(parent.clone()),
+        delegation_depth: 1,
+        ..remote_task()
+    };
+    let sanitized = child.sanitize_remote(&RemoteTaskPolicy::default()).unwrap();
+    assert_eq!(sanitized.parent_task_id.as_deref(), Some(parent.as_str()));
+    assert_eq!(sanitized.root_job_id.as_deref(), Some("site-job-1"));
+
+    let missing_parent = TaskEnvelope {
+        delegation_depth: 1,
+        ..remote_task()
+    };
+    assert_eq!(
+        missing_parent.sanitize_remote(&RemoteTaskPolicy::default()),
+        Err(RemoteTaskError::InvalidDelegationLineage)
+    );
 }
 
 #[test]

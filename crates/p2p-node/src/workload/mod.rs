@@ -124,6 +124,40 @@ pub(crate) trait Workload: Send + Sync {
         settings: &JobSettings,
     ) -> Option<(JobManifest, Vec<NetworkTask>)>;
 
+    /// Lets the peer that accepted a large fragment subdivide it again. The
+    /// default keeps workloads whole; the network publisher then delegates
+    /// the returned children using its Bayesian claimant score.
+    fn split_subtask(
+        &self,
+        _task: &NetworkTask,
+        _input: &Path,
+        _settings: &JobSettings,
+    ) -> Option<(JobManifest, Vec<NetworkTask>)> {
+        None
+    }
+
+    /// Combines child payloads into the result expected for their parent
+    /// task. Workloads that do not support hierarchical results keep the
+    /// default and are never dynamically subdivided.
+    fn combine_subtask_results(
+        &self,
+        _task: &NetworkTask,
+        _children: &[Vec<u8>],
+    ) -> Option<Vec<u8>> {
+        None
+    }
+
+    /// Commitments attached to a parent result assembled from child results.
+    /// The default is empty for workloads checked by a complete deterministic
+    /// recomputation; image workloads provide row commitments here.
+    fn subtask_result_milestones(
+        &self,
+        _task: &NetworkTask,
+        _result: &[u8],
+    ) -> Vec<MilestoneSample> {
+        Vec::new()
+    }
+
     /// Computes `task` into its `output_path` (inside the work directory) and
     /// returns its commitment; `None` when it failed.
     fn execute<'a>(
@@ -286,6 +320,7 @@ mod tests {
         let task = NetworkTask {
             task_id: "sha256-1".to_string(),
             root_job_id: None,
+            parent_task_id: None,
             scene_path: "input.txt".to_string(),
             output_path: String::new(),
             seed: String::new(),
@@ -302,6 +337,7 @@ mod tests {
             solana_payment: None,
             byte_range: None,
             requested_fragment_count: None,
+            delegation_depth: 0,
         };
 
         assert!(is_allowed_with_config(&task, Some(sha256::ID)));

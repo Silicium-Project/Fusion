@@ -8,6 +8,7 @@ import {
   Transaction,
   TransactionInstruction,
 } from '@solana/web3.js';
+import { createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token';
 
 const PROGRAM_ID = new PublicKey(process.env.SILICIUM_SOLANA_PROGRAM_ID || 'A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2');
 const MINT = new PublicKey(process.env.SILICIUM_SOLANA_MINT || 'F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP');
@@ -16,6 +17,13 @@ const ATA_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
 const RPC_URL = process.env.SILICIUM_SOLANA_RPC || 'https://api.devnet.solana.com';
 const WALLET_PATH = process.env.SILICIUM_SOLANA_WALLET_PATH || '/data/solana-wallet.json';
 const TOKEN_UNIT = 1_000_000n;
+const MAX_FRAGMENTS = 1_000;
+const MAX_FRAGMENT_NODES = 1_000;
+
+function maxLeafFragments(initialFragments) {
+  const childSlotsPerRoot = Math.floor((MAX_FRAGMENT_NODES - initialFragments) / initialFragments);
+  return Math.min(initialFragments * 16, initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)), MAX_FRAGMENTS);
+}
 
 class SettlementError extends Error {
   constructor(code) { super(code); this.code = code; }
@@ -95,33 +103,57 @@ async function readJob(conn, jobAddress, expected) {
     fail('onchain_job_invalid');
   }
   if (!data.subarray(48, 80).equals(MINT.toBuffer())) fail('onchain_mint_mismatch');
-  if (data.readUInt32LE(112) !== expected || data[243] !== 0) fail('onchain_job_not_open');
+  const maxFragments = maxLeafFragments(expected);
+  const currentFragments = data.readUInt32LE(112);
+  const totalFragmentsCreated = data.readUInt32LE(206);
+  const derivedInitialFragments = currentFragments * 2 - totalFragmentsCreated;
+  if (derivedInitialFragments !== expected
+    || data.readUInt32LE(202) !== MAX_FRAGMENT_NODES
+    || currentFragments < expected || currentFragments > maxFragments
+    || data[243] !== 0) fail('onchain_job_not_open');
   if (data.readBigUInt64LE(120) !== TOKEN_UNIT
     || data.readBigUInt64LE(128) !== TOKEN_UNIT
-    || data.readBigUInt64LE(136) !== BigInt(expected) * 2n * TOKEN_UNIT
-    || data.readBigUInt64LE(144) !== BigInt(expected) * 3n * TOKEN_UNIT
+    || data.readBigUInt64LE(136) !== BigInt(maxFragments) * 2n * TOKEN_UNIT
+    || data.readBigUInt64LE(144) !== BigInt(maxFragments) * 3n * TOKEN_UNIT
     || data.readUInt16LE(200) !== 2) fail('onchain_payment_schedule_invalid');
   if (BigInt(data.readBigInt64LE(184)) <= BigInt(Math.floor(Date.now() / 1000))) fail('onchain_job_expired');
   if (!data.subarray(80, 112).equals(escrow.toBuffer())) fail('onchain_escrow_invalid');
   const escrowData = escrowInfo.data;
   if (escrowData.length < 72 || !escrowData.subarray(0, 32).equals(MINT.toBuffer())) fail('onchain_escrow_invalid');
-  const remaining = BigInt(data.readBigUInt64LE(144)) - BigInt(data.readBigUInt64LE(152));
-  if (BigInt(escrowData.readBigUInt64LE(64)) !== remaining) fail('onchain_escrow_balance_mismatch');
-  return { job, data, escrow };
+  const deposited = BigInt(data.readBigUInt64LE(144));
+  const paid = BigInt(data.readBigUInt64LE(152));
+  if (BigInt(escrowData.readBigUInt64LE(64)) !== deposited - paid) fail('onchain_escrow_balance_mismatch');
+  return { job, data, escrow, maxFragments, maxNodes: MAX_FRAGMENT_NODES };
 }
 
-async function readPayout(conn, worker) {
+async function readPayout(conn, wallet) {
+  const worker = wallet.publicKey;
   const address = workerPayout(worker);
   const data = await account(conn, address);
   if (data.length < 73 || !data.subarray(8, 40).equals(worker.toBuffer())) fail('worker_not_linked_to_account');
   const payoutWallet = new PublicKey(data.subarray(40, 72));
   const workerToken = tokenAddress(worker);
   const payoutToken = tokenAddress(payoutWallet);
+  const missing = [];
+  for (const [ata, owner] of [[workerToken, worker], [payoutToken, payoutWallet]]) {
+    let info;
+    try { info = await conn.getAccountInfo(ata, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+    if (!info) missing.push(createAssociatedTokenAccountIdempotentInstruction(
+      worker,
+      ata,
+      owner,
+      MINT,
+      TOKEN_PROGRAM,
+    ));
+  }
+  if (missing.length) await send(conn, wallet, missing);
   const workerTokenInfo = await account(conn, workerToken, TOKEN_PROGRAM);
   const payoutTokenInfo = await account(conn, payoutToken, TOKEN_PROGRAM);
   if (!workerTokenInfo.subarray(0, 32).equals(MINT.toBuffer()) || !payoutTokenInfo.subarray(0, 32).equals(MINT.toBuffer())) {
     fail('worker_sil_accounts_invalid');
   }
+  if (!workerTokenInfo.subarray(32, 64).equals(worker.toBuffer())
+    || !payoutTokenInfo.subarray(32, 64).equals(payoutWallet.toBuffer())) fail('worker_sil_accounts_invalid');
   return { address, payoutWallet, payoutToken };
 }
 
@@ -179,20 +211,157 @@ async function submit(conn, wallet, jobInfo, index, resultHash) {
   const workerToken = tokenAddress(wallet.publicKey);
   let prior;
   try { prior = await conn.getAccountInfo(fragment, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+  let priorStatus = 0;
   if (prior) {
     if (!prior.owner.equals(PROGRAM_ID) || prior.data.length < 205) fail('onchain_fragment_invalid');
     const status = prior.data[204];
+    priorStatus = status;
+    if (status === 7) return 'split_parent';
     const worker = new PublicKey(prior.data.subarray(76, 108));
     if ((status === 2 || status === 3) && worker.equals(wallet.publicKey) && prior.data.subarray(140, 172).equals(hash)) {
       return 'already_submitted';
     }
-    if (status !== 0) fail('onchain_fragment_unavailable');
+    if (status !== 0 && !(status === 1 && new PublicKey(prior.data.subarray(44, 76)).equals(wallet.publicKey))) {
+      fail('onchain_fragment_unavailable');
+    }
   }
-  const signature = await send(conn, wallet, [
-    claimFragmentInstruction(wallet.publicKey, workerToken, job, fragment, index),
-    submitResultInstruction(wallet.publicKey, workerToken, job, fragment, index, hash),
-  ]);
+  const instructions = [];
+  if (!prior || priorStatus === 0) instructions.push(claimFragmentInstruction(wallet.publicKey, workerToken, job, fragment, index));
+  instructions.push(submitResultInstruction(wallet.publicKey, workerToken, job, fragment, index, hash));
+  const signature = await send(conn, wallet, instructions);
   return signature;
+}
+
+function rootForFragment(initialFragments, maxFragments, fragmentIndex) {
+  const remaining = maxFragments - initialFragments;
+  if (initialFragments < 1 || remaining < initialFragments) fail('split_index_capacity_exhausted');
+  const perRoot = Math.floor(remaining / initialFragments);
+  if (fragmentIndex < initialFragments) return { root: fragmentIndex, local: 0, perRoot };
+  const offset = fragmentIndex - initialFragments;
+  const root = Math.floor(offset / perRoot);
+  if (root >= initialFragments) fail('split_fragment_index_invalid');
+  return { root, local: (offset % perRoot) + 1, perRoot };
+}
+
+function expectedChildIndexes(initialFragments, maxFragments, parentIndex) {
+  const { root, local, perRoot } = rootForFragment(initialFragments, maxFragments, parentIndex);
+  const firstLocal = local * 2 + 1;
+  const secondLocal = firstLocal + 1;
+  if (secondLocal > perRoot) fail('split_index_capacity_exhausted');
+  return [
+    initialFragments + root * perRoot + firstLocal - 1,
+    initialFragments + root * perRoot + secondLocal - 1,
+  ];
+}
+
+function proposeSplitInstruction(wallet, job, parent, proposal, escrow, manifestHash) {
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+      { pubkey: workerAccount(wallet.publicKey), isSigner: false, isWritable: true },
+      { pubkey: job, isSigner: false, isWritable: true },
+      { pubkey: parent, isSigner: false, isWritable: true },
+      { pubkey: proposal, isSigner: false, isWritable: true },
+      { pubkey: escrow, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: anchorData('propose_fragment_split', manifestHash, u16(2)),
+  });
+}
+
+function createSubFragmentInstruction(wallet, job, parent, proposal, index, inputHash) {
+  const hash = Buffer.from(inputHash, 'hex');
+  if (hash.length !== 32 || hash.equals(Buffer.alloc(32))) fail('split_input_hash_invalid');
+  return new TransactionInstruction({
+    programId: PROGRAM_ID,
+    keys: [
+      { pubkey: wallet.publicKey, isSigner: true, isWritable: true },
+      { pubkey: job, isSigner: false, isWritable: false },
+      { pubkey: parent, isSigner: false, isWritable: true },
+      { pubkey: proposal, isSigner: false, isWritable: true },
+      { pubkey: fragmentAccount(job, index), isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: anchorData('create_sub_fragment', u32(index), Buffer.alloc(8), Buffer.alloc(8), u32(1_000), hash),
+  });
+}
+
+async function claim(conn, wallet, jobInfo, index) {
+  if (!Number.isInteger(index) || index < 0 || index >= jobInfo.data.readUInt32LE(202)) fail('fragment_index_invalid');
+  const fragment = fragmentAccount(jobInfo.job, index);
+  const prior = await conn.getAccountInfo(fragment, 'confirmed');
+  if (prior?.owner.equals(PROGRAM_ID) && prior.data.length >= 205) {
+    const status = prior.data[204];
+    if (status === 1 && new PublicKey(prior.data.subarray(44, 76)).equals(wallet.publicKey)) return;
+    if (status !== 0) fail('onchain_fragment_unavailable');
+  } else if (prior) {
+    fail('onchain_fragment_invalid');
+  }
+  await send(conn, wallet, [claimFragmentInstruction(
+    wallet.publicKey,
+    tokenAddress(wallet.publicKey),
+    jobInfo.job,
+    fragment,
+    index,
+  )]);
+}
+
+async function split(conn, wallet, jobInfo, parentIndex, manifestHashText, children) {
+  if (!/^[0-9a-f]{64}$/i.test(manifestHashText || '') || children.length !== 2) fail('split_manifest_invalid');
+  const maxFragments = jobInfo.maxNodes;
+  const initialFragments = jobInfo.data.readUInt32LE(112) * 2 - jobInfo.data.readUInt32LE(206);
+  const parent = fragmentAccount(jobInfo.job, parentIndex);
+  const parentInfo = await conn.getAccountInfo(parent, 'confirmed');
+  if (parentInfo && (!parentInfo.owner.equals(PROGRAM_ID) || parentInfo.data.length < 229)) fail('onchain_fragment_unavailable');
+  const manifestHash = Buffer.from(manifestHashText, 'hex');
+  const childIndexes = expectedChildIndexes(initialFragments, maxFragments, parentIndex);
+  if (parentInfo?.data[204] === 7) {
+    if (!parentInfo.data.subarray(266, 298).equals(manifestHash)) fail('split_manifest_conflict');
+    for (const childIndex of childIndexes) {
+      const childInfo = await conn.getAccountInfo(fragmentAccount(jobInfo.job, childIndex), 'confirmed');
+      if (!childInfo?.owner.equals(PROGRAM_ID)) fail('onchain_fragment_unavailable');
+    }
+    return;
+  }
+  if (parentInfo && ![0, 1, 2].includes(parentInfo.data[204])) fail('split_parent_state_invalid');
+  if (parentInfo && parentInfo.data[204] !== 0
+    && !new PublicKey(parentInfo.data.subarray(44, 76)).equals(wallet.publicKey)) {
+    fail('split_requires_claimed_parent');
+  }
+  const childrenByIndex = [...children].sort((a, b) => a.index - b.index);
+  if (childrenByIndex.some((child, index) => child.index !== childIndexes[index])) fail('split_child_index_invalid');
+  const round = parentInfo ? parentInfo.data.readUInt16LE(227) : 0;
+  const proposal = pda([Buffer.from('split_proposal'), parent.toBuffer(), u16(round)]);
+  const instructions = [];
+  if (!parentInfo || parentInfo.data[204] === 0) {
+    instructions.push(claimFragmentInstruction(
+      wallet.publicKey,
+      tokenAddress(wallet.publicKey),
+      jobInfo.job,
+      parent,
+      parentIndex,
+    ));
+  }
+  instructions.push(proposeSplitInstruction(
+    wallet,
+    jobInfo.job,
+    parent,
+    proposal,
+    jobInfo.escrow,
+    manifestHash,
+  ));
+  for (const child of childrenByIndex) {
+    instructions.push(createSubFragmentInstruction(
+      wallet,
+      jobInfo.job,
+      parent,
+      proposal,
+      child.index,
+      child.inputHash,
+    ));
+  }
+  await send(conn, wallet, instructions);
 }
 
 function voteInstruction(accounts, approved) {
@@ -243,6 +412,7 @@ async function vote(conn, wallet, jobInfo, index, approved) {
   const job = jobInfo.job;
   const fragment = fragmentAccount(job, index);
   const fragmentData = await account(conn, fragment);
+  if (fragmentData.length >= 205 && fragmentData[204] === 7) return;
   if (fragmentData.length < 229 || fragmentData[204] !== 2) fail('onchain_fragment_not_submitted');
   const computeWorker = new PublicKey(fragmentData.subarray(76, 108));
   if (computeWorker.equals(wallet.publicKey) || new PublicKey(jobInfo.data.subarray(16, 48)).equals(wallet.publicKey)) {
@@ -283,17 +453,36 @@ async function vote(conn, wallet, jobInfo, index, approved) {
       || !existingVote.data.subarray(40, 72).equals(wallet.publicKey.toBuffer())
       || Boolean(existingVote.data[72]) !== approved) fail('onchain_vote_conflict');
   } else {
-    await send(conn, wallet, [voteInstruction(accounts, approved)]);
+    const instructions = [];
+    let computePayoutTokenInfo;
+    try { computePayoutTokenInfo = await conn.getAccountInfo(accounts.computePayoutToken, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+    if (!computePayoutTokenInfo) {
+      instructions.push(createAssociatedTokenAccountIdempotentInstruction(
+        wallet.publicKey,
+        accounts.computePayoutToken,
+        computePayoutWallet,
+        MINT,
+        TOKEN_PROGRAM,
+      ));
+    } else if (!computePayoutTokenInfo.owner.equals(TOKEN_PROGRAM)
+      || computePayoutTokenInfo.data.length < 72
+      || !computePayoutTokenInfo.data.subarray(0, 32).equals(MINT.toBuffer())
+      || !computePayoutTokenInfo.data.subarray(32, 64).equals(computePayoutWallet.toBuffer())) {
+      fail('worker_sil_accounts_invalid');
+    }
+    instructions.push(voteInstruction(accounts, approved));
+    await send(conn, wallet, instructions);
   }
 
-  // A verifier that votes first waits for the other accepted verifier. Both
-  // claim their own one-SIL reward as soon as the on-chain quorum resolves.
+  // A verifier that votes first waits for the other accepted verifier. The
+  // successful quorum's approving votes claim one SIL each; rejected rounds
+  // remain unpaid and preserve escrow for a retry.
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     const resolutionInfo = await conn.getAccountInfo(accounts.resolution, 'confirmed');
     if (resolutionInfo?.owner.equals(PROGRAM_ID) && resolutionInfo.data.length >= 49 && resolutionInfo.data[42] === 1) {
       const winning = resolutionInfo.data[43] === 1;
-      if (!winning || approved) {
+      if (winning && approved) {
         const voteInfo = await conn.getAccountInfo(accounts.vote, 'confirmed');
         if (voteInfo?.data[76] !== 1) await send(conn, wallet, [claimVerifierRewardInstruction(accounts)]);
       }
@@ -305,20 +494,32 @@ async function vote(conn, wallet, jobInfo, index, approved) {
 }
 
 async function main() {
-  const [command, jobAddress, expectedText, indexText, value] = process.argv.slice(2);
+  const [command, jobAddress, expectedText, indexText, value, ...extra] = process.argv.slice(2);
   const expected = Number(expectedText);
   const index = Number(indexText);
-  if (!['ready', 'submit', 'vote'].includes(command) || !jobAddress || !Number.isInteger(expected) || expected < 1 || expected > 256) {
+  if (!['ready', 'claim', 'split', 'submit', 'vote'].includes(command) || !jobAddress || !Number.isInteger(expected) || expected < 1 || expected > 256) {
     fail('worker_settlement_usage');
   }
   const conn = connection();
   const wallet = await loadWallet();
   const jobInfo = await readJob(conn, jobAddress, expected);
-  await readPayout(conn, wallet.publicKey);
+  await readPayout(conn, wallet);
   if (command === 'ready') {
     return;
   }
-  if (!Number.isInteger(index) || index < 0 || index >= expected) fail('fragment_index_invalid');
+  if (!Number.isInteger(index) || index < 0 || index >= jobInfo.maxNodes) fail('fragment_index_invalid');
+  if (command === 'claim') {
+    await claim(conn, wallet, jobInfo, index);
+    return;
+  }
+  if (command === 'split') {
+    if (extra.length !== 4) fail('worker_settlement_usage');
+    await split(conn, wallet, jobInfo, index, value, [
+      { index: Number(extra[0]), inputHash: extra[1] },
+      { index: Number(extra[2]), inputHash: extra[3] },
+    ]);
+    return;
+  }
   if (command === 'submit') {
     if (!/^[0-9a-f]{64}$/i.test(value || '')) fail('result_hash_invalid');
     await submit(conn, wallet, jobInfo, index, value.toLowerCase());

@@ -15,18 +15,29 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SiliciumLayerSdk = exports.DEVNET_FRAGMENT_QUORUM = exports.SIL_BASE_UNITS = exports.SIL_DECIMALS = exports.SOLANA_LAYER_LOCALNET_RPC_URL = exports.SOLANA_LAYER_DEVNET_RPC_URL = exports.SOLANA_LAYER_PROGRAM_ID = exports.SOLANA_LAYER_LOCALNET_PROGRAM_ID = exports.SOLANA_LAYER_DEVNET_PROGRAM_ID = void 0;
+exports.SiliciumLayerSdk = exports.MAX_DEVNET_FRAGMENT_NODES = exports.DEVNET_FRAGMENT_QUORUM = exports.SIL_BASE_UNITS = exports.SIL_DECIMALS = exports.SOLANA_LAYER_LOCALNET_RPC_URL = exports.SOLANA_LAYER_DEVNET_RPC_URL = exports.SOLANA_LAYER_PROGRAM_ID = exports.SOLANA_LAYER_LOCALNET_PROGRAM_ID = exports.SOLANA_LAYER_DEVNET_PROGRAM_ID = void 0;
+exports.maxDevnetSilLeaves = maxDevnetSilLeaves;
 exports.quoteDevnetSilFragments = quoteDevnetSilFragments;
 exports.getSolanaLayerProgramId = getSolanaLayerProgramId;
 exports.getSolanaLayerRpcUrl = getSolanaLayerRpcUrl;
@@ -49,12 +60,23 @@ exports.SOLANA_LAYER_LOCALNET_RPC_URL = "http://127.0.0.1:8899";
 exports.SIL_DECIMALS = 6;
 exports.SIL_BASE_UNITS = 1000000n;
 exports.DEVNET_FRAGMENT_QUORUM = 2;
-/** The selected test quote: 1 SIL compute + 1 SIL per accepted verifier. */
-function quoteDevnetSilFragments(expectedFragments) {
-    if (!Number.isSafeInteger(expectedFragments) || expectedFragments < 1 || expectedFragments > 1000) {
-        throw new Error("expectedFragments must be an integer from 1 through 1000");
+exports.MAX_DEVNET_FRAGMENT_NODES = 1000;
+const MAX_DEVNET_LEAF_MULTIPLIER = 16;
+function maxDevnetSilLeaves(initialFragments) {
+    if (!Number.isSafeInteger(initialFragments) || initialFragments < 1 || initialFragments > 256) {
+        throw new Error("initialFragments must be an integer from 1 through 256");
     }
-    const count = BigInt(expectedFragments);
+    const childSlotsPerRoot = Math.floor((exports.MAX_DEVNET_FRAGMENT_NODES - initialFragments) / initialFragments);
+    const leavesPerRoot = 1 + Math.floor(childSlotsPerRoot / 2);
+    return Math.min(exports.MAX_DEVNET_FRAGMENT_NODES, initialFragments * MAX_DEVNET_LEAF_MULTIPLIER, initialFragments * leavesPerRoot);
+}
+/** The selected test quote reserves the full adaptive tree, then refunds unused escrow. */
+function quoteDevnetSilFragments(expectedFragments) {
+    if (!Number.isSafeInteger(expectedFragments) || expectedFragments < 1 || expectedFragments > 256) {
+        throw new Error("expectedFragments must be an integer from 1 through 256");
+    }
+    const maxFragments = maxDevnetSilLeaves(expectedFragments);
+    const count = BigInt(maxFragments);
     const rewardPerFragment = exports.SIL_BASE_UNITS;
     const verifierRewardPerVote = exports.SIL_BASE_UNITS;
     const verifierRewardBudget = count * BigInt(exports.DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote;
@@ -62,6 +84,9 @@ function quoteDevnetSilFragments(expectedFragments) {
         rewardPerFragment,
         verifierRewardPerVote,
         verifierRewardBudget,
+        initialFragments: expectedFragments,
+        maxFragments,
+        maxFragmentNodes: exports.MAX_DEVNET_FRAGMENT_NODES,
         fragmentQuorum: exports.DEVNET_FRAGMENT_QUORUM,
         totalEscrow: count * (rewardPerFragment + BigInt(exports.DEVNET_FRAGMENT_QUORUM) * verifierRewardPerVote),
     };
@@ -275,6 +300,7 @@ class SiliciumLayerSdk {
         const splitterWorker = this.pdas.worker(splitter);
         const { parentFragment, round } = await this.resolveParentFragmentAndRound(params);
         const splitProposal = this.pdas.splitProposal(parentFragment, round);
+        const jobAccount = await this.accounts.job.fetch(params.job);
         let builder = this.methods
             .proposeFragmentSplit(asHash32(params.manifestHash), params.childCount)
             .accounts({
@@ -283,6 +309,7 @@ class SiliciumLayerSdk {
             job: params.job,
             parentFragment,
             splitProposal,
+            escrow: jobAccount.escrow,
             systemProgram: web3_js_1.SystemProgram.programId,
         });
         builder = appendSigners(builder, params.signers);

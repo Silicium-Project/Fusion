@@ -15,7 +15,7 @@ anchor.setProvider(provider);
 const program = anchor.workspace.SolanaLayer as Program<any>;
 
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(100_000);
-const VERIFIER_REWARD_BUDGET = new anchor.BN(2_000_000);
+const VERIFIER_REWARD_BUDGET = new anchor.BN(4_000_000);
 const DEFAULT_REWARD_PER_FRAGMENT = new anchor.BN(100_000);
 const DEFAULT_FRAGMENT_QUORUM = 2;
 
@@ -99,6 +99,11 @@ function roundResolutionPda(fragment: PublicKey, round: number): PublicKey {
     [Buffer.from("fragment_resolution"), fragment.toBuffer(), u16le(round)],
     program.programId
   )[0];
+}
+
+function maxLeafFragments(initialFragments: number): number {
+  const childSlotsPerRoot = Math.floor((1_000 - initialFragments) / initialFragments);
+  return Math.min(initialFragments * 16, initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)), 1_000);
 }
 
 function resultPda(job: PublicKey): PublicKey {
@@ -236,7 +241,7 @@ async function createTestJob(
   const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
 
   const topUp = rewardPerFragment
-    .mul(new anchor.BN(expectedFragments))
+    .mul(new anchor.BN(maxLeafFragments(expectedFragments)))
     .add(verifierRewardBudget)
     .add(new anchor.BN(1_000_000));
 
@@ -465,6 +470,7 @@ async function proposeSplit(
   childCount = 2
 ): Promise<PublicKey> {
   const parentBefore = await program.account.fragment.fetch(parentFragment);
+  const jobAccount = await program.account.job.fetch(job);
   const proposal = splitProposalPda(parentFragment, parentBefore.round);
 
   await program.methods
@@ -475,6 +481,7 @@ async function proposeSplit(
       job,
       parentFragment,
       splitProposal: proposal,
+      escrow: jobAccount.escrow,
       systemProgram: SystemProgram.programId,
     })
     .signers([splitter.keypair])
@@ -571,6 +578,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
   it("rejects split with empty manifest hash", async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2000);
     const parent = await program.account.fragment.fetch(parentFragment);
+    const jobAccount = await program.account.job.fetch(job);
     const proposal = splitProposalPda(parentFragment, parent.round);
 
     try {
@@ -582,6 +590,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
           job,
           parentFragment,
           splitProposal: proposal,
+          escrow: jobAccount.escrow,
           systemProgram: SystemProgram.programId,
         })
         .signers([splitter.keypair])
@@ -595,6 +604,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
   it("rejects split with less than two children", async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2001);
     const parent = await program.account.fragment.fetch(parentFragment);
+    const jobAccount = await program.account.job.fetch(job);
     const proposal = splitProposalPda(parentFragment, parent.round);
 
     try {
@@ -606,6 +616,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
           job,
           parentFragment,
           splitProposal: proposal,
+          escrow: jobAccount.escrow,
           systemProgram: SystemProgram.programId,
         })
         .signers([splitter.keypair])
@@ -619,6 +630,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
   it("rejects split with too many children", async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2002);
     const parent = await program.account.fragment.fetch(parentFragment);
+    const jobAccount = await program.account.job.fetch(job);
     const proposal = splitProposalPda(parentFragment, parent.round);
 
     try {
@@ -630,6 +642,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
           job,
           parentFragment,
           splitProposal: proposal,
+          escrow: jobAccount.escrow,
           systemProgram: SystemProgram.programId,
         })
         .signers([splitter.keypair])
@@ -644,6 +657,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
     const { job, parentFragment } = await setupClaimedParent(mint, clientToken, 2003);
     const unauthorizedSplitter = await createReadyWorker(mint, 1_000_000);
     const parent = await program.account.fragment.fetch(parentFragment);
+    const jobAccount = await program.account.job.fetch(job);
     const proposal = splitProposalPda(parentFragment, parent.round);
 
     try {
@@ -655,6 +669,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
           job,
           parentFragment,
           splitProposal: proposal,
+          escrow: jobAccount.escrow,
           systemProgram: SystemProgram.programId,
         })
         .signers([unauthorizedSplitter.keypair])
@@ -665,10 +680,11 @@ describe("silicium v2 - complete sub-fragment verification", () => {
     }
   });
 
-  it("rejects split from an unstaked worker account", async () => {
+  it("does not let an unstaked worker split a parent claimed by another worker", async () => {
     const { job, parentFragment } = await setupClaimedParent(mint, clientToken, 2004);
     const unstaked = await createRegisteredUnstakedWorker(mint);
     const parent = await program.account.fragment.fetch(parentFragment);
+    const jobAccount = await program.account.job.fetch(job);
     const proposal = splitProposalPda(parentFragment, parent.round);
 
     try {
@@ -680,43 +696,31 @@ describe("silicium v2 - complete sub-fragment verification", () => {
           job,
           parentFragment,
           splitProposal: proposal,
+          escrow: jobAccount.escrow,
           systemProgram: SystemProgram.programId,
         })
         .signers([unstaked.keypair])
         .rpc();
       assert.fail("unstaked worker should not propose split");
     } catch (e: any) {
-      assertAnchorError(e, "StakeTooLow");
+      assertAnchorError(e, "NotAuthorized");
     }
   });
 
-  it("rejects creating sub-fragments before split approval", async () => {
+  it("auto-approves a qualifying split for peer-to-peer delegation", async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2005);
     const proposal = await proposeSplit(splitter, job, parentFragment, 10, 2);
-
-    try {
-      await createSubFragment(job, parentFragment, proposal, 1);
-      assert.fail("create_sub_fragment should require approved split");
-    } catch (e: any) {
-      assertAnchorError(e, "SplitNotApproved");
-    }
+    const proposalState = await program.account.splitProposal.fetch(proposal);
+    const parentAfterProposal = await program.account.fragment.fetch(parentFragment);
+    assert.isTrue(proposalState.approved);
+    assert.deepEqual(parentAfterProposal.status, { splitApproved: {} });
   });
 
-  it("rejects approving the same split twice", async () => {
+  it("keeps legacy approval calls idempotent after network auto-approval", async () => {
     const { splitter, job, parentFragment } = await setupClaimedParent(mint, clientToken, 2006);
     const proposal = await proposeSplit(splitter, job, parentFragment, 11, 2);
     await approveSplit(job, parentFragment, proposal, true);
-
-    try {
-      await approveSplit(job, parentFragment, proposal, true);
-      assert.fail("second approval should be rejected");
-    } catch (e: any) {
-      const text = String(e);
-      assert.isTrue(
-        text.includes("BadFragmentState") || text.includes("SplitAlreadyResolved"),
-        `unexpected error: ${text}`
-      );
-    }
+    await approveSplit(job, parentFragment, proposal, true);
   });
 
   it("rejects creating more children than declared", async () => {

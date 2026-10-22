@@ -309,28 +309,15 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             expected_fragments: job.expected_fragments,
         });
     } else if fragment.no_votes >= quorum {
-        let next_claimable_total = job
-            .claimable_verifier_rewards_total
-            .checked_add(round_verifier_claimable)
-            .ok_or(SiliciumError::InvalidParams)?;
-
-        require!(
-            next_claimable_total <= job.verifier_reward_budget,
-            SiliciumError::InsufficientVerifierBudget
-        );
-
-        require!(
-            ctx.accounts.escrow.amount >= round_verifier_claimable,
-            SiliciumError::InsufficientEscrow
-        );
-
-        job.claimable_verifier_rewards_total = next_claimable_total;
-
+        // The quote reserves exactly one compute reward plus the successful
+        // quorum's verifier rewards per payable leaf. A rejected attempt is
+        // not paid, so retries cannot consume the fixed escrow before a valid
+        // result reaches quorum.
         fragment.status = FragmentStatus::Rejected;
 
         round_resolution.resolved = true;
         round_resolution.winning_choice = false;
-        round_resolution.eligible_rewards = quorum;
+        round_resolution.eligible_rewards = 0;
         round_resolution.claimed_rewards = 0;
 
         update_compute_reputation_weighted(
@@ -346,7 +333,7 @@ pub fn handler(ctx: Context<VoteFragment>, choice: bool) -> Result<()> {
             worker: fragment.worker,
             verifier: ctx.accounts.verifier.key(),
             verifier_reward_per_vote: job.verifier_reward_per_vote,
-            eligible_verifier_rewards: quorum,
+            eligible_verifier_rewards: 0,
             no_votes: fragment.no_votes,
             round: fragment.round,
         });

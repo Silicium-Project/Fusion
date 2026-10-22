@@ -15,6 +15,7 @@ pub const BPS_DENOM: u64 = 10_000;
 
 pub const MIN_JOB_DEPOSIT: u64 = 1_000_000;
 
+/// Maximum total fragment accounts, including internal split parents.
 pub const MAX_FRAGMENTS_PER_JOB: u32 = 1_000;
 
 pub const MIN_JOB_TTL_SECS: i64 = 60;
@@ -35,10 +36,18 @@ pub const UNSTAKE_COOLDOWN_SECS: i64 = 5;
 
 // V2: sous-fragmentation contrôlée.
 pub const DEFAULT_MAX_FRAGMENT_DEPTH: u8 = 4;
-pub const DEFAULT_MAX_FRAGMENT_MULTIPLIER: u32 = 8;
-pub const DEFAULT_MAX_CHILDREN_PER_FRAGMENT: u16 = 8;
-pub const MAX_CHILDREN_PER_SPLIT: u16 = 8;
+/// Maximum leaf payout slots relative to the initial pre-split count. This
+/// matches the four binary delegation levels (2^4 leaves per initial root).
+pub const DEFAULT_MAX_FRAGMENT_MULTIPLIER: u32 = 16;
+/// Maximum children on one approved split.
+pub const DEFAULT_MAX_CHILDREN_PER_FRAGMENT: u16 = 2;
+// Binary child slots have a deterministic index inside each root fragment's
+// reserved range, so independent splitters cannot allocate colliding PDAs.
+pub const MAX_CHILDREN_PER_SPLIT: u16 = 2;
 pub const SPLIT_MIN_REPUTATION: i64 = 5_000;
-pub const SPLIT_MIN_STAKE: u64 = 1_000;
+// Newly linked dev workers start with no stake. Bayesian reputation and the
+// assigned-worker check remain the split gate; requiring stake here would
+// make the 20 test workers unable to exercise recursive delegation.
+pub const SPLIT_MIN_STAKE: u64 = 0;
 pub const SPLIT_MIN_COMPLEXITY: u32 = 1_000;
 pub const DEFAULT_ROOT_COMPLEXITY_SCORE: u32 = 1_000;

@@ -13,6 +13,7 @@ fn task() -> NetworkTask {
     NetworkTask {
         task_id: format!("{}.job", "a".repeat(32)),
         root_job_id: None,
+        parent_task_id: None,
         scene_path: "content/scene".into(),
         output_path: "x/output.ppm".into(),
         seed: "1".into(),
@@ -29,6 +30,7 @@ fn task() -> NetworkTask {
         solana_payment: None,
         byte_range: None,
         requested_fragment_count: None,
+        delegation_depth: 0,
     }
 }
 

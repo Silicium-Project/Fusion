@@ -17,7 +17,7 @@ pub const DEFAULT_ROOT_REQUIRED_STAKE: u64 = 0;
 pub const CLAIM_TTL_SECS: i64 = 5;
 pub const DEFAULT_ROOT_REQUIRED_REPUTATION: i64 = MIN_COMPUTE_REPUTATION;
 pub const DEFAULT_ROOT_COMPLEXITY_SCORE: u32 = 1_000;
-pub const DEFAULT_MAX_CHILDREN: u16 = 8;
+pub const DEFAULT_MAX_CHILDREN: u16 = 2;
 
 #[derive(Accounts)]
 #[instruction(fragment_index: u32)]
@@ -86,7 +86,7 @@ pub fn handler(ctx: Context<ClaimFragment>, fragment_index: u32) -> Result<()> {
     if is_new {
         // Lazy root fragment creation. Child/sub-fragments are created by create_sub_fragment.
         require!(
-            fragment_index < ctx.accounts.job.expected_fragments,
+            fragment_index < ctx.accounts.job.initial_fragments(),
             SiliciumError::InvalidParams
         );
 
