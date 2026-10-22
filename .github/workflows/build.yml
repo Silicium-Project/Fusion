@@ -104,6 +104,16 @@ jobs:
           git submodule foreach --recursive 'git clean -ffd'
           df -h "$GITHUB_WORKSPACE"
 
+      - name: Restore complete desktop source after sparse checkouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Release metadata jobs reuse this self-hosted runner workspace and
+          # may leave sparse-checkout enabled for package.json only.
+          git sparse-checkout disable
+          git checkout HEAD -- apps/silicium-node
+          test -s apps/silicium-node/package-lock.json
+
       - name: Verify Linux prerequisites
         run: |
           set -euo pipefail
