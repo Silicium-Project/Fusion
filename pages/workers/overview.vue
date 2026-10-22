@@ -66,8 +66,9 @@
         <p class="worker-bulk-pairing__progress">{{ t('observability.worker.miniworkerNetworkProgress', { online: miniworkerOnlineCount, total: 20 }) }}</p>
         <p v-if="missingMiniworkerIds.length" class="worker-bulk-pairing__missing">{{ t('observability.worker.miniworkerMissing', { nodes: missingMiniworkerIds.join(', ') }) }}</p>
         <p class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutProofProgress', { ready: payoutProofDeviceCount, total: 20 }) }}</p>
-        <p class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutReadyProgress', { ready: payoutReadyCount, total: 20 }) }}</p>
-        <UiButton v-if="payoutProofDeviceCount > payoutReadyCount" variant="secondary" icon="wallet" :loading="payoutRegisterLoading" :disabled="!user?.walletAddress || payoutStatusLoading" @click="registerMiniworkerPayouts">{{ t('observability.worker.registerMiniworkerPayouts') }}</UiButton>
+        <p v-if="solanaPaymentsEnabled" class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutReadyProgress', { ready: payoutReadyCount, total: 20 }) }}</p>
+        <p v-else class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutsDisabled') }}</p>
+        <UiButton v-if="solanaPaymentsEnabled && payoutProofDeviceCount > payoutReadyCount" variant="secondary" icon="wallet" :loading="payoutRegisterLoading" :disabled="!user?.walletAddress || payoutStatusLoading" @click="registerMiniworkerPayouts">{{ t('observability.worker.registerMiniworkerPayouts') }}</UiButton>
       </div>
       <UiNotice v-if="pairingMessage" :tone="pairingMessageTone">{{ pairingMessage }}</UiNotice>
 
@@ -166,6 +167,7 @@ const { t } = useI18n();
 const route = useRoute();
 const runtimeConfig = useRuntimeConfig();
 const isDevChannel = computed(() => runtimeConfig.public.releaseChannel === 'dev');
+const solanaPaymentsEnabled = computed(() => runtimeConfig.public.solanaPaymentsEnabled === true);
 const { user, displayName, loadUser, authorizedFetch } = useSession();
 const { silBalance, balanceError: walletBalanceError, loadBalance: loadWalletBalance } = useWallet();
 const { peers, loading, error, lastUpdatedAt, loadNetwork } = useNetwork();
@@ -354,7 +356,7 @@ async function linkMiniworkers(): Promise<void> {
 }
 
 async function registerMiniworkerPayouts(): Promise<void> {
-  if (!import.meta.client || !user.value?.walletAddress || payoutRegisterLoading.value) return;
+  if (!import.meta.client || !solanaPaymentsEnabled.value || !user.value?.walletAddress || payoutRegisterLoading.value) return;
   const targets = devices.value.filter(device =>
     miniworkerNodeIDPattern.test(device.nodeId) && device.solanaWallet && device.payoutWallet && device.workerPayoutProof,
   );
