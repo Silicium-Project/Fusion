@@ -421,6 +421,26 @@ impl CompatibilityWriter {
     }
 
     fn write_fragment_preview(&self, index: usize, source: &Path, job_dir: &Path) {
+        let target = job_dir
+            .join("fragments")
+            .join(format!("fragment-{index:03}.png"));
+        let source_modified = fs::metadata(source)
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        // `refresh` runs once per second. Fragment result files are immutable
+        // once finalized, so keep their PNG preview until the source changes
+        // instead of recompressing every tile on every heartbeat. Re-encoding
+        // dozens of completed tiles can otherwise starve the P2P event loop.
+        if source_modified.is_some_and(|source_modified| {
+            fs::metadata(&target).is_ok_and(|preview| {
+                preview.is_file()
+                    && preview
+                        .modified()
+                        .is_ok_and(|preview_modified| preview_modified >= source_modified)
+            })
+        }) {
+            return;
+        }
         let Ok(bytes) = fs::read(source) else { return };
         let Ok(image) = silicium_raytracer::pipeline::ppm::parse(&bytes, "fragment") else {
             return;
@@ -430,12 +450,7 @@ impl CompatibilityWriter {
         else {
             return;
         };
-        write_bytes(
-            &job_dir
-                .join("fragments")
-                .join(format!("fragment-{index:03}.png")),
-            &png,
-        );
+        write_bytes(&target, &png);
     }
 
     /// Writes `fragments/fragment-NNN.jsonl`, the answered items of a
