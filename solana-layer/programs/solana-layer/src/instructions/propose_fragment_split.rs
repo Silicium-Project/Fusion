@@ -27,13 +27,13 @@ pub struct ProposeFragmentSplit<'info> {
         constraint = splitter_worker.compute_reputation >= SPLIT_MIN_REPUTATION @ SiliciumError::ComputeReputationTooLow,
         constraint = splitter_worker.stake_amount >= SPLIT_MIN_STAKE @ SiliciumError::StakeTooLow
     )]
-    pub splitter_worker: Account<'info, Worker>,
+    pub splitter_worker: Box<Account<'info, Worker>>,
 
     #[account(
         mut,
         constraint = job.status == JobStatus::Open @ SiliciumError::JobFinalized
     )]
-    pub job: Account<'info, Job>,
+    pub job: Box<Account<'info, Job>>,
 
     #[account(
         mut,
@@ -45,7 +45,7 @@ pub struct ProposeFragmentSplit<'info> {
         bump = parent_fragment.bump,
         constraint = parent_fragment.job == job.key() @ SiliciumError::InvalidParams
     )]
-    pub parent_fragment: Account<'info, Fragment>,
+    pub parent_fragment: Box<Account<'info, Fragment>>,
 
     #[account(
         init,
@@ -58,13 +58,13 @@ pub struct ProposeFragmentSplit<'info> {
         ],
         bump
     )]
-    pub split_proposal: Account<'info, SplitProposal>,
+    pub split_proposal: Box<Account<'info, SplitProposal>>,
 
     #[account(
         constraint = escrow.key() == job.escrow @ SiliciumError::InvalidParams,
         constraint = escrow.mint == job.mint @ SiliciumError::InvalidParams
     )]
-    pub escrow: Account<'info, TokenAccount>,
+    pub escrow: Box<Account<'info, TokenAccount>>,
 
     pub system_program: Program<'info, System>,
 }

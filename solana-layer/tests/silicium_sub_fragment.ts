@@ -15,7 +15,6 @@ anchor.setProvider(provider);
 const program = anchor.workspace.SolanaLayer as Program<any>;
 
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(100_000);
-const VERIFIER_REWARD_BUDGET = new anchor.BN(4_000_000);
 const DEFAULT_REWARD_PER_FRAGMENT = new anchor.BN(100_000);
 const DEFAULT_FRAGMENT_QUORUM = 2;
 
@@ -104,6 +103,16 @@ function roundResolutionPda(fragment: PublicKey, round: number): PublicKey {
 function maxLeafFragments(initialFragments: number): number {
   const childSlotsPerRoot = Math.floor((1_000 - initialFragments) / initialFragments);
   return Math.min(initialFragments * 16, initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)), 1_000);
+}
+
+function minimumVerifierRewardBudget(
+  initialFragments: number,
+  fragmentQuorum: number,
+  rewardPerVote = VERIFIER_REWARD_PER_VOTE
+): anchor.BN {
+  return new anchor.BN(maxLeafFragments(initialFragments))
+    .mul(new anchor.BN(fragmentQuorum))
+    .mul(rewardPerVote);
 }
 
 function resultPda(job: PublicKey): PublicKey {
@@ -231,7 +240,11 @@ async function createTestJob(
   fragmentQuorum = DEFAULT_FRAGMENT_QUORUM,
   rewardPerFragment = DEFAULT_REWARD_PER_FRAGMENT,
   verifierRewardPerVote = VERIFIER_REWARD_PER_VOTE,
-  verifierRewardBudget = VERIFIER_REWARD_BUDGET
+  verifierRewardBudget = minimumVerifierRewardBudget(
+    expectedFragments,
+    fragmentQuorum,
+    verifierRewardPerVote
+  )
 ) {
   const client = provider.wallet.publicKey;
   const payer = provider.wallet.payer as anchor.web3.Keypair;
@@ -811,7 +824,7 @@ describe("silicium v2 - complete sub-fragment verification", () => {
       DEFAULT_FRAGMENT_QUORUM,
       DEFAULT_REWARD_PER_FRAGMENT,
       VERIFIER_REWARD_PER_VOTE,
-      VERIFIER_REWARD_BUDGET
+      minimumVerifierRewardBudget(2, DEFAULT_FRAGMENT_QUORUM)
     );
 
     const parentFragment = await claimFragment(

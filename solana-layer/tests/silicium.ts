@@ -16,7 +16,7 @@ const program = anchor.workspace.SolanaLayer as Program;
 
 const ZERO_PUBKEY = new PublicKey(new Uint8Array(32));
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(100_000);
-const VERIFIER_REWARD_BUDGET = new anchor.BN(1_600_000);
+const VERIFIER_REWARD_BUDGET = new anchor.BN(3_200_000);
 
 let sharedWorkerToken: PublicKey;
 let sharedMint: PublicKey;
@@ -97,6 +97,16 @@ function escrowAuthPda(job: PublicKey): PublicKey {
 function maxLeafFragments(initialFragments: number): number {
   const childSlotsPerRoot = Math.floor((1_000 - initialFragments) / initialFragments);
   return Math.min(initialFragments * 16, initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)), 1_000);
+}
+
+function minimumVerifierRewardBudget(
+  initialFragments: number,
+  fragmentQuorum: number,
+  rewardPerVote = VERIFIER_REWARD_PER_VOTE
+): anchor.BN {
+  return new anchor.BN(maxLeafFragments(initialFragments))
+    .mul(new anchor.BN(fragmentQuorum))
+    .mul(rewardPerVote);
 }
 
 function stakeAuthPda(workerAccount: PublicKey): PublicKey {
@@ -248,7 +258,11 @@ async function createTestJob(
   fragmentQuorum = 2,
   rewardPerFragment = new anchor.BN(1_000_000),
   verifierRewardPerVote = VERIFIER_REWARD_PER_VOTE,
-  verifierRewardBudget = VERIFIER_REWARD_BUDGET
+  verifierRewardBudget = minimumVerifierRewardBudget(
+    expectedFragments,
+    fragmentQuorum,
+    verifierRewardPerVote
+  )
 ) {
   const client = provider.wallet.publicKey;
   const payer = provider.wallet.payer as anchor.web3.Keypair;
@@ -531,7 +545,7 @@ describe("silicium", () => {
       sharedMint,
       sharedWorkerToken,
       client,
-      10_000_000
+      60_000_000
     );
 
     const job = jobPda(client, jobId);
@@ -546,7 +560,7 @@ describe("silicium", () => {
         expectedFragments,
         rewardPerFragment,
         VERIFIER_REWARD_PER_VOTE,
-        VERIFIER_REWARD_BUDGET,
+        minimumVerifierRewardBudget(expectedFragments, fragmentQuorum),
         deadlineUnix,
         fragmentQuorum
       )
@@ -575,7 +589,10 @@ describe("silicium", () => {
     assert.equal(jobAccount.rewardPerFragment.toString(), rewardPerFragment.toString());
     assert.equal(
       jobAccount.depositedAmount.toString(),
-      rewardPerFragment.mul(new anchor.BN(expectedFragments)).add(VERIFIER_REWARD_BUDGET).toString()
+      rewardPerFragment
+        .mul(new anchor.BN(maxLeafFragments(expectedFragments)))
+        .add(minimumVerifierRewardBudget(expectedFragments, fragmentQuorum))
+        .toString()
     );
     assert.equal(jobAccount.paidAmount.toString(), "0");
     assert.equal(jobAccount.fragmentQuorum, fragmentQuorum);
@@ -777,7 +794,7 @@ describe("silicium", () => {
       sharedMint,
       sharedWorkerToken,
       client,
-      3_000_000
+      40_000_000
     );
 
     await program.methods
@@ -786,7 +803,7 @@ describe("silicium", () => {
         expectedFragments,
         rewardPerFragment,
         VERIFIER_REWARD_PER_VOTE,
-        VERIFIER_REWARD_BUDGET,
+        minimumVerifierRewardBudget(expectedFragments, fragmentQuorum),
         deadlineUnix,
         fragmentQuorum
       )
@@ -965,7 +982,7 @@ describe("silicium", () => {
       sharedMint,
       sharedWorkerToken,
       client,
-      4_000_000
+      40_000_000
     );
 
     await program.methods
@@ -974,7 +991,7 @@ describe("silicium", () => {
         expectedFragments,
         rewardPerFragment,
         VERIFIER_REWARD_PER_VOTE,
-        VERIFIER_REWARD_BUDGET,
+        minimumVerifierRewardBudget(expectedFragments, fragmentQuorum),
         deadlineUnix,
         fragmentQuorum
       )
@@ -1321,7 +1338,7 @@ await program.methods
       sharedMint,
       sharedWorkerToken,
       client,
-      3_000_000
+      40_000_000
     );
 
     await program.methods
@@ -1330,7 +1347,7 @@ await program.methods
         2,
         new anchor.BN(1_000_000),
         VERIFIER_REWARD_PER_VOTE,
-        VERIFIER_REWARD_BUDGET,
+        minimumVerifierRewardBudget(2, 2),
         new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
         2
       )
@@ -1730,7 +1747,7 @@ await program.methods
       sharedMint,
       sharedWorkerToken,
       client,
-      3_500_000
+      40_000_000
     );
 
     await program.methods
@@ -1739,7 +1756,7 @@ await program.methods
         2,
         new anchor.BN(1_000_000),
         VERIFIER_REWARD_PER_VOTE,
-        VERIFIER_REWARD_BUDGET,
+        minimumVerifierRewardBudget(2, 2),
         new anchor.BN(Math.floor(Date.now() / 1000) + 3600),
         2
       )

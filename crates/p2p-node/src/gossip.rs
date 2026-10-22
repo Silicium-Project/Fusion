@@ -135,8 +135,7 @@ fn admit(
     let security = security.clone();
     tokio::spawn(async move {
         for retry in 0..=DELEGATION_ADMISSION_RETRIES {
-            match security.admit_received(&context, source.clone(), local_peer_id, envelope.clone())
-            {
+            match security.admit_received(&context, source, local_peer_id, envelope.clone()) {
                 Ok(task) => {
                     drop(pending);
                     process_task(context, task).await;

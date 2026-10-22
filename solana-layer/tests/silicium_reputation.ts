@@ -21,7 +21,6 @@ anchor.setProvider(provider);
 const program = anchor.workspace.SolanaLayer as Program;
 
 const VERIFIER_REWARD_PER_VOTE = new anchor.BN(100_000);
-const VERIFIER_REWARD_BUDGET = new anchor.BN(1_000_000);
 
 let mint: PublicKey;
 let clientToken: PublicKey;
@@ -81,6 +80,17 @@ function escrowAuthPda(job: PublicKey): PublicKey {
     [Buffer.from("escrow_auth"), job.toBuffer()],
     program.programId
   )[0];
+}
+
+function maxLeafFragments(initialFragments: number): number {
+  const childSlotsPerRoot = Math.floor((1_000 - initialFragments) / initialFragments);
+  return Math.min(initialFragments * 16, initialFragments * (1 + Math.floor(childSlotsPerRoot / 2)), 1_000);
+}
+
+function minimumVerifierRewardBudget(initialFragments: number, fragmentQuorum: number): anchor.BN {
+  return new anchor.BN(maxLeafFragments(initialFragments))
+    .mul(new anchor.BN(fragmentQuorum))
+    .mul(VERIFIER_REWARD_PER_VOTE);
 }
 
 function stakeAuthPda(workerAccount: PublicKey): PublicKey {
@@ -294,6 +304,11 @@ async function createTestJob(expectedFragments = 1, fragmentQuorum = 2) {
   const escrow = anchor.web3.Keypair.generate();
   const rewardPerFragment = new anchor.BN(1_000_000);
   const deadlineUnix = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
+  const verifierRewardBudget = minimumVerifierRewardBudget(expectedFragments, fragmentQuorum);
+  const totalToMint = rewardPerFragment
+    .mul(new anchor.BN(maxLeafFragments(expectedFragments)))
+    .add(verifierRewardBudget)
+    .add(new anchor.BN(1_000_000));
 
   await mintTo(
     provider.connection,
@@ -301,7 +316,7 @@ async function createTestJob(expectedFragments = 1, fragmentQuorum = 2) {
     mint,
     clientToken,
     client,
-    5_000_000
+    Number(totalToMint.toString())
   );
 
   await program.methods
@@ -310,7 +325,7 @@ async function createTestJob(expectedFragments = 1, fragmentQuorum = 2) {
       expectedFragments,
       rewardPerFragment,
       VERIFIER_REWARD_PER_VOTE,
-      VERIFIER_REWARD_BUDGET,
+      verifierRewardBudget,
       deadlineUnix,
       fragmentQuorum
     )

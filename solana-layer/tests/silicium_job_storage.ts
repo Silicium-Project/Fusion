@@ -79,7 +79,7 @@ describe("silicium job storage", () => {
         1,
         new anchor.BN(1_000_000),
         new anchor.BN(100_000),
-        new anchor.BN(200_000),
+        new anchor.BN(3_200_000),
         deadlineUnix,
         2
       )
