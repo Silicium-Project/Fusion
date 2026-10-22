@@ -69,13 +69,18 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use ed25519_dalek::{Signer as _, SigningKey};
 use futures::prelude::*;
-use libp2p::{PeerId, gossipsub, identify, mdns, swarm::SwarmEvent};
+use libp2p::{
+    Multiaddr, PeerId, gossipsub, identify, mdns, multiaddr::Protocol, swarm::SwarmEvent,
+};
 use silicium_node_core::{
     beta::BetaPosterior,
     dispatch::{DispatchCandidate, Dispatcher},
     taskbook::TaskTerms,
 };
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::{BTreeMap, HashSet},
+    time::Duration,
+};
 use tokio::{net::TcpListener, select, sync::mpsc};
 
 /// Starts the node, then runs the event loop: task-book events to publish,
@@ -191,9 +196,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(" Silicium P2P Node running");
 
-    for bootstrap_addr in bootstrap_peers {
-        let _ = swarm.dial(bootstrap_addr);
-    }
+    // A worker may start before the VPS listener is ready, or a brief network
+    // interruption may drop its only route into the mesh. Keep retrying the
+    // pinned bootstrap addresses until connected, then resume after a close.
+    let mut pending_bootstrap_dials = HashSet::new();
+    dial_bootstrap_peers(&mut swarm, &bootstrap_peers, &mut pending_bootstrap_dials);
+    let mut bootstrap_retry_timer = tokio::time::interval_at(
+        tokio::time::Instant::now() + Duration::from_secs(10),
+        Duration::from_secs(10),
+    );
 
     publish_hardware_record(&mut swarm, &context);
     publish_gossip(
@@ -254,6 +265,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         select! {
+            _ = bootstrap_retry_timer.tick() => {
+                dial_bootstrap_peers(&mut swarm, &bootstrap_peers, &mut pending_bootstrap_dials);
+            }
             _ = sweep_timer.tick() => {
                 // Poisoned lock: count every peer as a worker (no self-verification).
                 let worker_count = peer_profiles
@@ -338,6 +352,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             event = swarm.select_next_some() => match event {
+                SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                    clear_bootstrap_pending(&mut pending_bootstrap_dials, &peer_id);
+                    println!(" P2P connection established with {peer_id}");
+                }
+                SwarmEvent::ConnectionClosed { peer_id, num_established, .. } => {
+                    if num_established == 0 {
+                        clear_bootstrap_pending(&mut pending_bootstrap_dials, &peer_id);
+                    }
+                    println!(" P2P connection closed with {peer_id}");
+                }
+                SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                    if let Some(peer_id) = peer_id.as_ref() {
+                        clear_bootstrap_pending(&mut pending_bootstrap_dials, peer_id);
+                    } else {
+                        // Unpinned bootstrap addresses cannot be correlated to
+                        // a PeerId; permit them to be retried on the next tick.
+                        pending_bootstrap_dials
+                            .retain(|address: &Multiaddr| bootstrap_peer_id(address).is_some());
+                    }
+                    eprintln!(" P2P outgoing connection failed for {:?}: {error}", peer_id);
+                }
                 SwarmEvent::NewListenAddr { address, .. } => {
                     println!(" Listening on {address}");
                 }
@@ -393,6 +428,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 _ => {}
             }
+        }
+    }
+}
+
+fn bootstrap_peer_id(address: &Multiaddr) -> Option<PeerId> {
+    address.iter().find_map(|protocol| match protocol {
+        Protocol::P2p(peer_id) => Some(peer_id),
+        _ => None,
+    })
+}
+
+fn clear_bootstrap_pending(pending: &mut HashSet<Multiaddr>, peer_id: &PeerId) {
+    pending.retain(|address| match bootstrap_peer_id(address) {
+        Some(bootstrap_id) => &bootstrap_id != peer_id,
+        None => false,
+    });
+}
+
+fn dial_bootstrap_peers(
+    swarm: &mut libp2p::Swarm<crate::swarm::P2pBehaviour>,
+    bootstrap_peers: &[Multiaddr],
+    pending: &mut HashSet<Multiaddr>,
+) {
+    for address in bootstrap_peers {
+        if pending.contains(address) {
+            continue;
+        }
+        if bootstrap_peer_id(address).is_some_and(|peer_id| swarm.is_connected(&peer_id)) {
+            continue;
+        }
+        match swarm.dial(address.clone()) {
+            Ok(()) => {
+                pending.insert(address.clone());
+                println!(" Dialing bootstrap peer at {address}");
+            }
+            Err(error) => eprintln!(" Could not dial bootstrap peer at {address}: {error}"),
         }
     }
 }
