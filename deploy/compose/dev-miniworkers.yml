@@ -2,7 +2,8 @@ name: silicium-dev-miniworkers
 
 x-miniworker-environment: &miniworker-environment
   SILICIUM_RELEASE_CHANNEL: dev
-  SILICIUM_RELEASE_BUILD: vps-miniworker
+  SILICIUM_APP_VERSION: ${SILICIUM_DEV_MINIWORKERS_APP_VERSION:-dev}
+  SILICIUM_RELEASE_BUILD: ${SILICIUM_DEV_MINIWORKERS_RELEASE_BUILD:-vps-miniworker}
   SILICIUM_NODE_ROLES: compute,verify
   # SHA-256 is also compiled into the miniworker and stays within the small
   # CPU/memory budget. Keep model workloads disabled on these containers.

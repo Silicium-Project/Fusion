@@ -9,6 +9,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE. Run prepare-dev-config.sh to create the persistent worker configuration." >&2
   exit 2
 fi
+ORCHESTRATOR_ENV="${SILICIUM_ORCHESTRATOR_ENV:-${SILICIUM_CONFIG_DIR:-/etc/silicium-dev}/orchestrator.env}"
+worker_version="${SILICIUM_DEV_MINIWORKERS_APP_VERSION:-${SILICIUM_APP_VERSION:-}}"
+if [[ -z "$worker_version" && -f "$ORCHESTRATOR_ENV" ]]; then
+  worker_version="$(sed -n 's/^SILICIUM_APP_VERSION=//p' "$ORCHESTRATOR_ENV" | head -n 1)"
+fi
+export SILICIUM_DEV_MINIWORKERS_APP_VERSION="${worker_version:-dev}"
+worker_build="${SILICIUM_DEV_MINIWORKERS_RELEASE_BUILD:-$(git -C "$ROOT_DIR/Network" rev-parse --short=12 HEAD 2>/dev/null || true)}"
+export SILICIUM_DEV_MINIWORKERS_RELEASE_BUILD="${worker_build:-local}"
 COUNT_IN_FILE="$(sed -n 's/^SILICIUM_DEV_MINIWORKERS=//p' "$ENV_FILE" | head -n 1)"
 COUNT="${SILICIUM_DEV_MINIWORKERS:-${COUNT_IN_FILE:-20}}"
 if [[ ! "$COUNT" =~ ^[0-9]+$ ]] || (( COUNT < 20 || COUNT > 24 )); then
