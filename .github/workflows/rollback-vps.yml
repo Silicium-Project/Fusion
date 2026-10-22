@@ -141,8 +141,9 @@ jobs:
           git_auth -C "$VPS_ROOT" submodule update --init --force --recursive
           unset GIT_AUTH VPS_GITHUB_TOKEN
 
-          sudo install -d -m 0755 /var/lib/silicium/releases
-          cat <<EOF | sudo tee /var/lib/silicium/releases/current.env >/dev/null
+          DATA_ROOT="$(python3 "$VPS_ROOT/deploy/release/channel.py" "$RELEASE_CHANNEL" --field data_dir)"
+          sudo install -d -m 0755 "$DATA_ROOT/releases"
+          cat <<EOF | sudo tee "$DATA_ROOT/releases/current.env" >/dev/null
           SILICIUM_RELEASE_VERSION=$RELEASE_VERSION
           SILICIUM_RELEASE_CHANNEL=$RELEASE_CHANNEL
           SILICIUM_RELEASE_BUILD=$RELEASE_BUILD
