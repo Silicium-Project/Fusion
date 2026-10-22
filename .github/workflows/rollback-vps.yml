@@ -99,7 +99,11 @@ jobs:
             exit 1
           fi
 
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+          ssh -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -i "$HOME/.ssh/id_ed25519" -p "$VPS_PORT" \
+            "$VPS_USER@$VPS_HOST" \
             "VPS_ROOT='$VPS_ROOT' VPS_GITHUB_TOKEN='$VPS_GITHUB_TOKEN' DEPLOY_REF='$DEPLOY_REF' RELEASE_VERSION='$RELEASE_VERSION' RELEASE_CHANNEL='$RELEASE_CHANNEL' RELEASE_BUILD='$RELEASE_BUILD' bash -s" <<'REMOTE'
           set -euo pipefail
           GIT_AUTH="$(printf 'x-access-token:%s' "$VPS_GITHUB_TOKEN" | base64 -w 0)"
