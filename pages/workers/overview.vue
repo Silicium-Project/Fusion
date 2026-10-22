@@ -167,7 +167,9 @@ const { t } = useI18n();
 const route = useRoute();
 const runtimeConfig = useRuntimeConfig();
 const isDevChannel = computed(() => runtimeConfig.public.releaseChannel === 'dev');
-const solanaPaymentsEnabled = computed(() => runtimeConfig.public.solanaPaymentsEnabled === true);
+const solanaPaymentsEnabled = computed(() => ['1', 'true', 'yes', 'on'].includes(
+  String(runtimeConfig.public.solanaPaymentsEnabled ?? '').trim().toLowerCase(),
+));
 const { user, displayName, loadUser, authorizedFetch } = useSession();
 const { silBalance, balanceError: walletBalanceError, loadBalance: loadWalletBalance } = useWallet();
 const { peers, loading, error, lastUpdatedAt, loadNetwork } = useNetwork();
