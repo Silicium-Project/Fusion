@@ -20,6 +20,8 @@ use std::{
 
 /// Heartbeats are sent every five seconds; older profiles are treated as offline.
 pub(crate) const PROFILE_STALE_AFTER_SECONDS: i64 = 15;
+/// Allow a small clock skew while rejecting timestamps far in the future.
+pub(crate) const PROFILE_MAX_FUTURE_SKEW_SECONDS: i64 = 5;
 
 pub(crate) fn current_unix_seconds() -> i64 {
     SystemTime::now()
@@ -29,8 +31,10 @@ pub(crate) fn current_unix_seconds() -> i64 {
 }
 
 pub(crate) fn profile_is_fresh(profile: &PeerProfile, now_unix: i64) -> bool {
+    let age = now_unix.saturating_sub(profile.last_seen_unix);
     profile.last_seen_unix > 0
-        && now_unix.saturating_sub(profile.last_seen_unix) <= PROFILE_STALE_AFTER_SECONDS
+        && age <= PROFILE_STALE_AFTER_SECONDS
+        && age >= -PROFILE_MAX_FUTURE_SKEW_SECONDS
 }
 
 /// Roles this node takes on (`SILICIUM_NODE_ROLES`, default `compute,verify`).

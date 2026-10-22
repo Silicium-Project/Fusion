@@ -4,9 +4,12 @@
 use crate::{
     admission::SecurityConfig,
     backfill,
-    peers::{current_unix_seconds, online_compute_authors},
+    peers::{
+        current_unix_seconds, online_compute_authors, PROFILE_MAX_FUTURE_SKEW_SECONDS,
+        PROFILE_STALE_AFTER_SECONDS,
+    },
     processing::NodeContext,
-    task::{GossipMessage, PeerProfile, utc_now},
+    task::{GossipMessage, PeerProfile},
     worker::process_task,
 };
 use libp2p::{PeerId, gossipsub};
@@ -14,7 +17,7 @@ use silicium_node_core::{p2p::TaskEnvelope, taskbook::TaskEvent};
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 pub(crate) type PeerProfiles = Arc<Mutex<BTreeMap<String, PeerProfile>>>;
@@ -36,7 +39,7 @@ pub(crate) fn handle(
             receive_event(context, peer_id, event);
             Vec::new()
         }
-        Ok(GossipMessage::PeerHeartbeat(mut profile)) => {
+        Ok(GossipMessage::PeerHeartbeat(profile)) => {
             // `peer_id` is the immediate propagation source, which may be a
             // relay forwarding another peer's signed heartbeat. Bind the
             // profile to the gossipsub message author instead.
@@ -47,10 +50,27 @@ pub(crate) fn handle(
                 println!(" Ignored invalid heartbeat from {peer_id}");
                 return Vec::new();
             }
-            profile.last_seen_unix = unix_seconds();
-            profile.last_seen_utc = utc_now();
+            // Keep the origin's signed timestamp. Re-stamping a relayed
+            // heartbeat here lets cached messages make offline peers appear
+            // online again and can overwrite a newer runtime profile.
+            let age = current_unix_seconds().saturating_sub(profile.last_seen_unix);
+            if profile.last_seen_unix <= 0
+                || age > PROFILE_STALE_AFTER_SECONDS
+                || age < -PROFILE_MAX_FUTURE_SKEW_SECONDS
+            {
+                println!(" Ignored stale heartbeat from {peer_id}");
+                return Vec::new();
+            }
             if let Ok(mut profiles) = peer_profiles.lock() {
-                profiles.insert(profile.node_id.clone(), profile);
+                let should_replace = profiles
+                    .get(&profile.node_id)
+                    .is_none_or(|known| {
+                        known.peer_id != profile.peer_id
+                            || known.last_seen_unix <= profile.last_seen_unix
+                    });
+                if should_replace {
+                    profiles.insert(profile.node_id.clone(), profile);
+                }
                 let authors = online_compute_authors(
                     &local_peer_id.to_string(),
                     &profiles,
@@ -96,13 +116,6 @@ pub(crate) fn handle(
             Vec::new()
         }
     }
-}
-
-fn unix_seconds() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or_default()
 }
 
 fn receive_event(context: &NodeContext, peer_id: PeerId, event: TaskEvent) {
