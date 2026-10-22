@@ -82,6 +82,14 @@ orchestrator_env="$CONFIG_DIR/orchestrator.env"
 updates_env="$CONFIG_DIR/update-channels.env"
 miniworkers_env="$CONFIG_DIR/miniworkers.env"
 
+# Never keep the example control token on a network-facing node API. Preserve
+# an operator-provided token, but replace missing and known placeholder values
+# with a fresh 256-bit random token during dev bootstrap.
+control_token="$(grep -E '^SILICIUM_NODE_CONTROL_TOKEN=' "$orchestrator_env" | tail -n 1 | cut -d= -f2- || true)"
+if [[ -z "$control_token" || "$control_token" == GENERATE_* || "$control_token" == change-me-* ]]; then
+  set_env_value "$orchestrator_env" SILICIUM_NODE_CONTROL_TOKEN "$(openssl rand -hex 32)"
+fi
+
 # Payment submission must remain closed until the Devnet program has been
 # upgraded and its worker-payout instruction is verified. Preserve an
 # operator's explicit opt-in, otherwise default every component to disabled.

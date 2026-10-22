@@ -143,7 +143,10 @@ set_env_value() {
 ensure_env_default SILICIUM_NODE_ADVERTISE_URL "https://vps-910c1dbc.vps.ovh.net/orchestrator"
 ensure_env_default SILICIUM_API_BIND "0.0.0.0"
 ensure_env_default SILICIUM_P2P_BIND "0.0.0.0"
-ensure_env_default SILICIUM_NODE_CONTROL_TOKEN "change-me-dev-control-token"
+control_token="$(grep -E '^SILICIUM_NODE_CONTROL_TOKEN=' "$ORCHESTRATOR_ENV" | tail -n 1 | cut -d= -f2- || true)"
+if [[ -z "$control_token" || "$control_token" == GENERATE_* || "$control_token" == change-me-* ]]; then
+  set_env_value_file "$ORCHESTRATOR_ENV" SILICIUM_NODE_CONTROL_TOKEN "$(openssl rand -hex 32)"
+fi
 ensure_env_default SILICIUM_DATA_DIR "$DATA_ROOT/network/orchestrator/state"
 ensure_env_default SILICIUM_COMPUTE_ROOT "$DATA_ROOT/network/orchestrator/work"
 ensure_env_default SILICIUM_WORKLOAD_STORAGE_DIR "$DATA_ROOT/site/runtime"
