@@ -2,8 +2,9 @@
 //! and connected peers, ask them one at a time over the
 //! `/silicium/content/1` request-response protocol, keep the first answer
 //! that hashes to the requested value, and serve this node's own content to
-//! others. Connected peers are tried while the provider lookup runs, so a
-//! slow DHT cannot hold up a result that an online worker can already serve.
+//! others. Connected peers are probed in bounded parallel groups while the
+//! provider lookup runs, so slow peers cannot hold up a result another worker
+//! can already serve.
 
 use crate::{
     content::{ContentCommand, ContentStore, MAX_CONTENT_BYTES},
@@ -89,9 +90,26 @@ impl Fetcher {
         reply: oneshot::Sender<bool>,
         connected: Vec<PeerId>,
     ) -> Vec<(String, PeerId)> {
-        if let Some(download) = self.downloads.get_mut(&sha256) {
-            download.waiters.push(reply);
-            return Vec::new();
+        let abandoned = if let Some(download) = self.downloads.get_mut(&sha256) {
+            // ContentStore::ensure gives each caller a bounded wait. A request
+            // or provider lookup can outlive that caller, so discard an old
+            // fetch once every waiter has gone away; otherwise later retries
+            // would keep joining a download that can no longer make progress.
+            download.waiters.retain(|waiter| !waiter.is_closed());
+            if download.waiters.is_empty() {
+                true
+            } else {
+                download.waiters.push(reply);
+                return Vec::new();
+            }
+        } else {
+            false
+        };
+        if abandoned {
+            trace_content(format!(
+                "restarting {sha256}; previous download has no live waiters"
+            ));
+            self.finish(&sha256, false);
         }
         let query = kademlia.get_providers(kad::RecordKey::new(&sha256));
         self.queries.insert(query, sha256.clone());
