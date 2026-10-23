@@ -15,10 +15,16 @@ Ce dépôt, **Fusion**, assemble tous les composants et contient le déploiement
 | [`BackEnd/`](BackEnd/) | sous-module | API Go : comptes, sessions JWT, jobs, pilotage du réseau |
 | [`FrontEnd/`](FrontEnd/) | sous-module | Site Nuxt 3 : création et suivi des calculs |
 | [`apps/silicium-node/`](apps/silicium-node/) | dossier | Application desktop Tauri qui installe et supervise un nœud chez l'utilisateur |
+| [`apps/silicium-ai-runtime/`](apps/silicium-ai-runtime/) | dossier | Runtime Python du catalogue IA expérimental (exception : [ADR-0001](docs/architecture/adr/0001-runtimes-ia.md)) |
+| [`design/`](design/) | dossier | Maquettes de la direction visuelle appliquée (precision-v4) |
 | [`deploy/`](deploy/) | dossier | Serveur (VPS) : Docker Compose, Nginx, systemd, VPN, canaux de release, scripts de CI, tests Python (`deploy/tests/`) |
 | [`.github/workflows/`](.github/workflows/) | dossier | CI/CD : Build, Test, Deploy, synchronisation des sous-modules |
 | [`docs/`](docs/) | dossier | Documentation transverse (architecture, exploitation, développement) |
 | `install-silicium-windows.*`, `start-silicium-local.*` | scripts | Installation et lancement de l'environnement local (Windows) |
+
+## Règles du projet
+
+Avant de contribuer (humain ou agent IA) : [`AGENTS.md`](AGENTS.md) et [`RULES.md`](RULES.md).
 
 ## Règle de langage
 

@@ -17,3 +17,5 @@ documentation : `Network/docs/`, `deploy/README.md`,
 - [operations/releases-and-submodules.md](operations/releases-and-submodules.md) — canaux `dev` / `prod`, composition des sous-modules
 - [development/local-setup.md](development/local-setup.md) — installer et lancer tout le projet en local
 - [../CONTRIBUTING.md](../CONTRIBUTING.md) — contribuer
+- [architecture/adr/](architecture/adr/) — décisions d'architecture (ADR-0001 : runtimes IA)
+- [../AGENTS.md](../AGENTS.md), [../RULES.md](../RULES.md) — consignes pour les agents IA et règles de maintenance
