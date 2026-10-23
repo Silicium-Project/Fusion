@@ -212,6 +212,20 @@ export interface NetworkQueueWorkloadDiagnostic {
   reason?: string;
 }
 
+export interface JobVerifierTrace {
+  author?: string;
+  verdict?: boolean | null;
+  verification_event?: string;
+  self_verification?: boolean;
+}
+
+export interface JobTaskTrace {
+  worker?: string;
+  verifiers?: JobVerifierTrace[];
+  attempt?: number;
+  finalized?: boolean;
+}
+
 export interface JobFragment {
   fragment_index?: number;
   fragmentIndex?: number;
@@ -221,6 +235,8 @@ export interface JobFragment {
   handledBy?: string;
   /** Task-book author id of the worker (Rust node). */
   worker?: string;
+  /** Signed compute and verification participants for this attempt. */
+  trace?: JobTaskTrace;
   x_start?: number;
   x_end?: number;
   y_start?: number;
