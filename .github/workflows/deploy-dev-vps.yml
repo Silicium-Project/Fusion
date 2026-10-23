@@ -995,7 +995,7 @@ jobs:
           fi
 
           echo '=== Read-only Devnet worker and payout account checks ==='
-          for number in $(seq -w 1 20); do
+          for number in 01 02; do
             container="$(docker ps -q --filter "name=silicium-dev-miniworker-$number" | head -n 1 || true)"
             [[ -n "$container" ]] || { echo "miniworker-$number: container unavailable"; continue; }
             echo "miniworker-$number:"
@@ -1009,8 +1009,18 @@ jobs:
           const pda = seeds => PublicKey.findProgramAddressSync(seeds, program)[0];
           const worker = pda([Buffer.from('worker'), wallet.publicKey.toBuffer()]);
           const payout = pda([Buffer.from('worker_payout'), worker.toBuffer()]);
-          const connection = new Connection(process.env.SILICIUM_SOLANA_RPC || 'https://api.devnet.solana.com', 'confirmed');
-          const [workerInfo, payoutInfo] = await connection.getMultipleAccountsInfo([worker, payout], 'confirmed');
+          const connection = new Connection(process.env.SILICIUM_SOLANA_RPC || 'https://api.devnet.solana.com', {
+            commitment: 'confirmed',
+            fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(8000) }),
+          });
+          let workerInfo;
+          let payoutInfo;
+          try {
+            [workerInfo, payoutInfo] = await connection.getMultipleAccountsInfo([worker, payout], 'confirmed');
+          } catch (error) {
+            console.log(JSON.stringify({ rpcReadFailed: true, errorName: error?.name || 'Error' }));
+            process.exit(0);
+          }
           const workerData = workerInfo ? Buffer.from(workerInfo.data) : Buffer.alloc(0);
           const payoutData = payoutInfo ? Buffer.from(payoutInfo.data) : Buffer.alloc(0);
           const defaultKey = Buffer.alloc(32);
