@@ -6,7 +6,7 @@ from tools.dev.release import solana_devnet_preflight
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-CANONICAL_PROGRAM_ID = "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2"
+CANONICAL_PROGRAM_ID = "64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG"
 
 
 def test_preflight_accepts_an_executable_program(monkeypatch) -> None:

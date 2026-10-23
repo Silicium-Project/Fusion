@@ -5,7 +5,7 @@ Anchor program: `solana-layer`
 Current Devnet Program ID:
 
 ```txt
-A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG
 ```
 
 Keep the following files and tools aligned with the same Program ID:
@@ -1462,7 +1462,7 @@ solana program deploy target/deploy/solana_layer.so \
 Check:
 
 ```bash
-solana program show A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2 --url devnet
+solana program show 64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG --url devnet
 ```
 
 Run smoke tests:

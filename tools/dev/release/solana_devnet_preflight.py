@@ -11,7 +11,7 @@ import urllib.request
 
 
 DEFAULT_RPC = "https://api.devnet.solana.com"
-DEFAULT_PROGRAM_ID = "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2"
+DEFAULT_PROGRAM_ID = "64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG"
 
 
 def rpc_call(rpc_url: str, method: str, params: list[Any] | None = None) -> Any:

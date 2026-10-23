@@ -5,7 +5,7 @@ TypeScript SDK for interacting with the **Silicium Solana Layer** Anchor program
 Current Devnet Program ID:
 
 ```txt
-A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG
 ```
 
 Keep this value aligned between `Anchor.toml`, `programs/solana-layer/src/lib.rs`, the generated IDL, SDK configuration and smoke tests.
@@ -170,7 +170,7 @@ anchor build
 Check the deployed program:
 
 ```bash
-solana program show A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2 --url devnet
+solana program show 64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG --url devnet
 ```
 
 Check that local files match:

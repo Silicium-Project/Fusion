@@ -10,7 +10,7 @@ import {
 } from '@solana/web3.js';
 import { createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token';
 
-const PROGRAM_ID = new PublicKey(process.env.SILICIUM_SOLANA_PROGRAM_ID || 'A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2');
+const PROGRAM_ID = new PublicKey(process.env.SILICIUM_SOLANA_PROGRAM_ID || '64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG');
 const MINT = new PublicKey(process.env.SILICIUM_SOLANA_MINT || 'F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP');
 const TOKEN_PROGRAM = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ATA_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');

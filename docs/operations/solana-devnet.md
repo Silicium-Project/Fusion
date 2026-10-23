@@ -1,6 +1,19 @@
 # Connexion Solana Devnet et rémunération
 
-Le programme de référence est `A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2`.
+Le programme de référence est `64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG`.
+L'ancien programme `A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2` reste présent
+sur Devnet, mais ses comptes ne sont pas migrés vers cette nouvelle adresse.
+Les nouveaux clients doivent cibler le nouveau programme après confirmation de
+son déploiement on-chain.
+
+Les keypairs de déploiement sont conservées hors du dépôt, dans
+`~/.config/solana/silicium-devnet-program-id.json` et
+`~/.config/solana/silicium-devnet-upgrade-candidate.json` (permissions `0600`,
+répertoire `~/.config/solana` en `0700`). Ne jamais les copier dans les sources,
+les artefacts CI ou le VPS. Les adresses publiques sont respectivement
+`64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG` et
+`TzkEJNsTVA2Z9E39dLHuyHpMkUz9WLiD6VRPhkjz8Fs`.
+
 Le contrôle sans écriture est reproductible depuis la racine de Network :
 
 ```bash

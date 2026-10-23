@@ -45,7 +45,7 @@ import path from "path";
 
 const DEVNET_RPC = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 const PROGRAM_ID = new PublicKey(
-  process.env.SOLANA_LAYER_PROGRAM_ID ?? "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2",
+  process.env.SOLANA_LAYER_PROGRAM_ID ?? "64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG",
 );
 
 const STAKE_AMOUNT = new anchor.BN(1_000_000);
