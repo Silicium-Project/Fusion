@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from deploy.release import solana_wallet
 
@@ -38,7 +38,7 @@ def test_ensure_creates_a_private_keypair_once(tmp_path: Path, capsys: pytest.Ca
 
 
 def test_deploy_enables_the_trace_only_with_a_wallet() -> None:
-    deploy = (Path(__file__).resolve().parents[1] / "deploy/compose/deploy.sh").read_text(encoding="utf-8")
+    deploy = (Path(__file__).resolve().parents[2] / "deploy/compose/deploy.sh").read_text(encoding="utf-8")
     assert "solana_wallet.py\" ensure" in deploy
     assert "SILICIUM_DEVNET_TRACE=$devnet_trace" in deploy
     assert "'SILICIUM_DEVNET_TRACE=0'" not in deploy
