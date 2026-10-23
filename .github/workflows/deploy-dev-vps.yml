@@ -994,6 +994,44 @@ jobs:
             echo 'Miniworker 01 is not running; cannot inspect its effective Solana configuration.'
           fi
 
+          echo '=== Read-only Devnet worker and payout account checks ==='
+          for number in $(seq -w 1 20); do
+            container="$(docker ps -q --filter "name=silicium-dev-miniworker-$number" | head -n 1 || true)"
+            [[ -n "$container" ]] || { echo "miniworker-$number: container unavailable"; continue; }
+            echo "miniworker-$number:"
+            docker exec -i -w /opt/worker-solana "$container" node --input-type=module <<'SOLANA_DIAG' 2>&1 || true
+          import { readFile } from 'node:fs/promises';
+          import { Connection, Keypair, PublicKey } from '@solana/web3.js';
+          const program = new PublicKey(process.env.SILICIUM_SOLANA_PROGRAM_ID || '64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG');
+          const walletPath = process.env.SILICIUM_SOLANA_WALLET_PATH || '/data/solana-wallet.json';
+          const secret = JSON.parse(await readFile(walletPath, 'utf8'));
+          const wallet = Keypair.fromSecretKey(Uint8Array.from(secret));
+          const pda = seeds => PublicKey.findProgramAddressSync(seeds, program)[0];
+          const worker = pda([Buffer.from('worker'), wallet.publicKey.toBuffer()]);
+          const payout = pda([Buffer.from('worker_payout'), worker.toBuffer()]);
+          const connection = new Connection(process.env.SILICIUM_SOLANA_RPC || 'https://api.devnet.solana.com', 'confirmed');
+          const [workerInfo, payoutInfo] = await connection.getMultipleAccountsInfo([worker, payout], 'confirmed');
+          const workerData = workerInfo ? Buffer.from(workerInfo.data) : Buffer.alloc(0);
+          const payoutData = payoutInfo ? Buffer.from(payoutInfo.data) : Buffer.alloc(0);
+          const defaultKey = Buffer.alloc(32);
+          console.log(JSON.stringify({
+            workerExists: Boolean(workerInfo),
+            workerOwnerMatchesProgram: Boolean(workerInfo && workerInfo.owner.equals(program)),
+            workerDataLength: workerData.length,
+            verifyReputation: workerData.length >= 128 ? Number(workerData.readBigInt64LE(120)) : null,
+            verifyRole: workerData.length > 196 ? Boolean(workerData[196] & 2) : null,
+            workerStatus: workerData.length > 198 ? workerData[198] : null,
+            payoutExists: Boolean(payoutInfo),
+            payoutOwnerMatchesProgram: Boolean(payoutInfo && payoutInfo.owner.equals(program)),
+            payoutDataLength: payoutData.length,
+            payoutWorkerMatches: payoutData.length >= 40 && payoutData.subarray(8, 40).equals(wallet.publicKey.toBuffer()),
+            payoutWalletBytes: Math.max(0, Math.min(32, payoutData.length - 40)),
+            payoutWalletIsDefault: payoutData.length >= 72 && payoutData.subarray(40, 72).equals(defaultKey),
+          }));
+          SOLANA_DIAG
+            sleep 0.2
+          done
+
           echo '=== Miniworker startup and payment errors ==='
           for container in $(docker ps -aq --filter name=silicium-dev-miniworker 2>/dev/null); do
             docker logs --tail=100 "$container" 2>&1 \
