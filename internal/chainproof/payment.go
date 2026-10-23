@@ -3,9 +3,9 @@ package chainproof
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,17 +14,34 @@ import (
 )
 
 const (
-	DevnetSILMint       = "F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP"
-	DefaultProgramID    = "A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2"
-	splTokenProgramID   = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-	silDecimals    uint64 = 1_000_000
-	paidVerifierQuorum  = 2
+	DevnetSILMint                  = "F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP"
+	DefaultProgramID               = "64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG"
+	splTokenProgramID              = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+	silDecimals             uint64 = 1_000_000
+	paidVerifierQuorum             = 2
+	maxPaidInitialFragments        = 256
 )
 
 // PaymentsEnabled reports whether this deployment accepts SIL escrow jobs.
 func PaymentsEnabled() bool {
 	value := strings.ToLower(strings.TrimSpace(os.Getenv("SILICIUM_SOLANA_PAYMENTS_ENABLED")))
 	return value == "1" || value == "true" || value == "yes" || value == "on"
+}
+
+func maxAdaptiveLeafFragments(initial uint32) uint32 {
+	if initial == 0 || initial > maxPaidInitialFragments {
+		return 0
+	}
+	const maxFragmentNodes uint32 = 1000
+	childSlotsPerRoot := (maxFragmentNodes - initial) / initial
+	maximum := initial * (1 + childSlotsPerRoot/2)
+	if multiplier := initial * 16; maximum > multiplier {
+		maximum = multiplier
+	}
+	if maximum > maxFragmentNodes {
+		maximum = maxFragmentNodes
+	}
+	return maximum
 }
 
 // VerifySILProgramInstruction binds a confirmed wallet signature to the
@@ -43,16 +60,18 @@ func VerifySILProgramInstruction(ctx context.Context, rpcURL, programID, signatu
 	var result *struct {
 		Transaction struct {
 			Signatures []string `json:"signatures"`
-			Message struct {
-				AccountKeys []string `json:"accountKeys"`
+			Message    struct {
+				AccountKeys  []string `json:"accountKeys"`
 				Instructions []struct {
-					ProgramIDIndex int   `json:"programIdIndex"`
-					Accounts       []int `json:"accounts"`
+					ProgramIDIndex int    `json:"programIdIndex"`
+					Accounts       []int  `json:"accounts"`
 					Data           string `json:"data"`
 				} `json:"instructions"`
 			} `json:"message"`
 		} `json:"transaction"`
-		Meta *struct { Err json.RawMessage `json:"err"` } `json:"meta"`
+		Meta *struct {
+			Err json.RawMessage `json:"err"`
+		} `json:"meta"`
 	}
 	client := RPC{URL: rpcURL}
 	params := []any{signature, map[string]any{"encoding": "json", "commitment": "confirmed", "maxSupportedTransactionVersion": 0}}
@@ -75,9 +94,13 @@ func VerifySILProgramInstruction(ctx context.Context, rpcURL, programID, signatu
 			continue
 		}
 		accountAt := func(position int) string {
-			if position >= len(ix.Accounts) { return "" }
+			if position >= len(ix.Accounts) {
+				return ""
+			}
 			index := ix.Accounts[position]
-			if index < 0 || index >= len(keys) { return "" }
+			if index < 0 || index >= len(keys) {
+				return ""
+			}
 			return keys[index]
 		}
 		if instruction == "create_job" && accountAt(0) == clientAddress && accountAt(2) == jobAddress {
@@ -139,14 +162,22 @@ func VerifyOpenSILEscrow(ctx context.Context, rpcURL, programID, jobAddress, cli
 	if string(jobData[48:80]) != string(mint) {
 		return errors.New("chainproof: escrow uses a different token mint")
 	}
+	maxFragmentNodes := uint32(1000)
+	maxFragments := maxAdaptiveLeafFragments(expectedFragments)
+	currentFragments := binary.LittleEndian.Uint32(jobData[112:116])
+	totalFragmentsCreated := binary.LittleEndian.Uint32(jobData[206:210])
+	if uint64(currentFragments)*2 < uint64(totalFragmentsCreated) || uint64(currentFragments)*2-uint64(totalFragmentsCreated) != uint64(expectedFragments) {
+		return errors.New("chainproof: escrow initial fragment count is invalid")
+	}
 	if binary.LittleEndian.Uint32(jobData[112:116]) != expectedFragments ||
 		binary.LittleEndian.Uint32(jobData[116:120]) != 0 ||
+		binary.LittleEndian.Uint32(jobData[202:206]) != maxFragmentNodes ||
 		binary.LittleEndian.Uint64(jobData[120:128]) != silDecimals ||
 		binary.LittleEndian.Uint64(jobData[128:136]) != silDecimals {
 		return errors.New("chainproof: escrow quote does not match the fragment schedule")
 	}
-	verifierBudget := uint64(expectedFragments) * paidVerifierQuorum * silDecimals
-	deposit := uint64(expectedFragments) * (1 + paidVerifierQuorum) * silDecimals
+	verifierBudget := uint64(maxFragments) * paidVerifierQuorum * silDecimals
+	deposit := uint64(maxFragments) * (1 + paidVerifierQuorum) * silDecimals
 	if binary.LittleEndian.Uint64(jobData[136:144]) != verifierBudget ||
 		binary.LittleEndian.Uint64(jobData[144:152]) != deposit ||
 		jobData[243] != 0 {
@@ -192,12 +223,21 @@ func VerifyClosedSILEscrow(ctx context.Context, rpcURL, programID, jobAddress, c
 		return errors.New("chainproof: terminal Solana job account is invalid")
 	}
 	mint, _ := Base58Decode(mintAddress)
+	maxFragmentNodes := uint32(1000)
+	maxFragments := maxAdaptiveLeafFragments(expectedFragments)
+	currentFragments := binary.LittleEndian.Uint32(jobData[112:116])
+	totalFragmentsCreated := binary.LittleEndian.Uint32(jobData[206:210])
+	if uint64(currentFragments)*2 < uint64(totalFragmentsCreated) || uint64(currentFragments)*2-uint64(totalFragmentsCreated) != uint64(expectedFragments) {
+		return errors.New("chainproof: terminal escrow initial fragment count is invalid")
+	}
 	if string(jobData[16:48]) != string(client) || string(jobData[48:80]) != string(mint) ||
-		binary.LittleEndian.Uint32(jobData[112:116]) != expectedFragments ||
+		currentFragments < expectedFragments || currentFragments > maxFragments ||
+		binary.LittleEndian.Uint32(jobData[202:206]) != maxFragmentNodes ||
+		(expectedStatus == 1 && binary.LittleEndian.Uint32(jobData[116:120]) != currentFragments) ||
 		binary.LittleEndian.Uint64(jobData[120:128]) != silDecimals ||
 		binary.LittleEndian.Uint64(jobData[128:136]) != silDecimals ||
-		binary.LittleEndian.Uint64(jobData[136:144]) != uint64(expectedFragments)*paidVerifierQuorum*silDecimals ||
-		binary.LittleEndian.Uint64(jobData[144:152]) != uint64(expectedFragments)*3*silDecimals || jobData[243] != expectedStatus {
+		binary.LittleEndian.Uint64(jobData[136:144]) != uint64(maxFragments)*paidVerifierQuorum*silDecimals ||
+		binary.LittleEndian.Uint64(jobData[144:152]) != uint64(maxFragments)*3*silDecimals || jobData[243] != expectedStatus {
 		return errors.New("chainproof: terminal escrow state does not match this account and quote")
 	}
 	if signature != "" {
