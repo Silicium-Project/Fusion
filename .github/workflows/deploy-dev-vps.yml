@@ -963,8 +963,51 @@ jobs:
             docker inspect --format '{{.Name}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}' "$container" 2>&1 || true
           done
 
-          echo '=== Miniworker Solana public-key configuration ==='
+          echo '=== Devnet RPC egress from VPS host ==='
+          python3 - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          request = urllib.request.Request(
+              'https://api.devnet.solana.com',
+              data=json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'getHealth'}).encode(),
+              headers={'Content-Type': 'application/json'},
+              method='POST',
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=5) as response:
+                  body = json.loads(response.read(512))
+                  print(f"host_rpc_status={response.status} healthy={body.get('result') == 'ok'}")
+          except urllib.error.HTTPError as error:
+              print(f'host_rpc_status={error.code} healthy=false')
+          except Exception as error:
+              print(f'host_rpc_error={type(error).__name__} healthy=false')
+          PY
+
+          echo '=== Devnet RPC egress from miniworker 01 ==='
           first_worker="$(docker ps -q --filter name=silicium-dev-miniworker-01 | head -n 1 || true)"
+          if [[ -n "$first_worker" ]]; then
+            docker exec -i "$first_worker" node --input-type=module <<'RPC_DIAG' 2>&1 || true
+          const endpoint = new URL(process.env.SILICIUM_SOLANA_RPC || 'https://api.devnet.solana.com');
+          try {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getHealth' }),
+              signal: AbortSignal.timeout(5000),
+            });
+            const body = await response.json().catch(() => ({}));
+            console.log(JSON.stringify({ host: endpoint.hostname, status: response.status, healthy: body.result === 'ok' }));
+          } catch (error) {
+            console.log(JSON.stringify({ host: endpoint.hostname, errorName: error?.name || 'Error', causeCode: error?.cause?.code || null }));
+          }
+          RPC_DIAG
+          else
+            echo 'Miniworker 01 is not running; cannot test container RPC egress.'
+          fi
+
+          echo '=== Miniworker Solana public-key configuration ==='
           if [[ -n "$first_worker" ]]; then
             docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$first_worker" 2>&1 \
               | python3 -c '
