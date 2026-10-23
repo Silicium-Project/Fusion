@@ -24,6 +24,10 @@ on:
           - full
           - diagnose
         default: frontend
+      network_job_id:
+        description: "Optional network job ID to inspect in read-only diagnostics."
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -705,12 +709,17 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          NETWORK_JOB_ID: ${{ github.event.inputs.network_job_id }}
         run: |
           set -euo pipefail
           [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" && -n "${VPS_KNOWN_HOSTS:-}" ]] || {
             echo "Missing VPS SSH configuration." >&2
             exit 1
           }
+          if [[ -n "${NETWORK_JOB_ID:-}" && ! "$NETWORK_JOB_ID" =~ ^[A-Za-z0-9._-]{1,180}$ ]]; then
+            echo "Invalid network job ID for diagnostics." >&2
+            exit 1
+          fi
           ssh_dir="$RUNNER_TEMP/silicium-dev-diagnose-ssh"
           install -d -m 0700 "$ssh_dir"
           printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
@@ -720,11 +729,12 @@ jobs:
             -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
             -i "$ssh_dir/id_ed25519")
           ssh "${ssh_opts[@]}" -p "${VPS_PORT:-22}" \
-            "${VPS_USER:-luis}@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
+            "${VPS_USER:-luis}@$VPS_HOST" "sudo -n env SILICIUM_DIAGNOSTIC_JOB_ID='${NETWORK_JOB_ID:-}' bash -s" <<'REMOTE'
           set -u
           vps_root=/opt/silicium-dev
           compose_file="$vps_root/deploy/compose/docker-compose.yml"
           compose_env=/etc/silicium-dev/compose.env
+          job_id="${SILICIUM_DIAGNOSTIC_JOB_ID:-}"
 
           echo '=== Dev WireGuard interface ==='
           ip -4 -brief addr show dev wg0 2>&1 || true
@@ -737,6 +747,56 @@ jobs:
               -f "$compose_file" ps 2>&1 || true
           else
             echo 'Dev Compose file or environment is missing.'
+          fi
+
+          echo '=== Dev orchestrator service ==='
+          systemctl show silicium-orchestrator-dev.service \
+            --property=ActiveState,SubState,MainPID,ExecMainStatus,NRestarts 2>&1 || true
+          systemctl is-active silicium-orchestrator-dev.service 2>&1 || true
+          journalctl -u silicium-orchestrator-dev.service --since '30 minutes ago' \
+            --no-pager -o cat 2>&1 \
+            | grep -iE 'error|warn|panic|bootstrap|peer|claim|verdict|verif|solana|payment|publish|timeout' \
+            | tail -n 80 || true
+
+          echo '=== Dev miniworker containers ==='
+          docker ps -a --filter name=silicium-dev-miniworker \
+            --format '{{.Names}} {{.Status}}' 2>&1 || true
+          for container in $(docker ps -aq --filter name=silicium-dev-miniworker 2>/dev/null); do
+            docker inspect --format '{{.Name}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}' "$container" 2>&1 || true
+          done
+
+          echo '=== Miniworker startup and payment errors ==='
+          for container in $(docker ps -aq --filter name=silicium-dev-miniworker 2>/dev/null); do
+            docker logs --since 30m "$container" 2>&1 \
+              | grep -iE 'bootstrap|peer|claim|verdict|verif|solana|payment|insufficient|failed|error|panic|timeout' \
+              | tail -n 8 | sed "s#^#${container}: #" || true
+          done
+
+          echo '=== Dev P2P control API ==='
+          orchestrator_env=/etc/silicium-dev/orchestrator.env
+          if [[ -f "$orchestrator_env" ]]; then
+            node_port="$(sed -n 's/^SILICIUM_NODE_PORT=//p' "$orchestrator_env" | tail -n 1)"
+            node_port="${node_port:-46200}"
+            node_token="$(sed -n 's/^SILICIUM_NODE_CONTROL_TOKEN=//p' "$orchestrator_env" | tail -n 1)"
+            if [[ "$node_port" =~ ^[0-9]{1,5}$ ]] && [[ -n "$node_token" ]]; then
+              curl --noproxy '*' -fsS --connect-timeout 3 --max-time 8 \
+                -H "Authorization: Bearer $node_token" "http://127.0.0.1:${node_port}/v1/peers" 2>&1 \
+                | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("metrics",{}); print("metrics="+json.dumps(m,sort_keys=True)); print("peers="+json.dumps([{k:p.get(k) for k in ("node_id","online","direct_connection","profile_known","roles","last_seen_utc","app_version","release_build")} for p in d.get("peers",[])],sort_keys=True))' \
+                || echo 'Could not read peer profiles from the orchestrator API.'
+              if [[ -n "$job_id" ]]; then
+                echo "=== TaskBook state for $job_id ==="
+                curl --noproxy '*' -fsS --connect-timeout 3 --max-time 12 \
+                  -H "Authorization: Bearer $node_token" --get \
+                  --data-urlencode "root_job_id=$job_id" \
+                  "http://127.0.0.1:${node_port}/v1/tasks" 2>&1 \
+                  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(json.dumps([{"task_id":t.get("task_id"),"status":t.get("status"),"handled_by":t.get("handled_by"),"error":(t.get("error") or "")[:240],"updated_unix":t.get("updated_unix"),"fragment_index":(t.get("task") or {}).get("fragment_index"),"trace":{"attempt":(t.get("trace") or {}).get("attempt"),"finalized":(t.get("trace") or {}).get("finalized"),"worker_suffix":((t.get("trace") or {}).get("worker") or "")[-12:],"verifiers":[{"author_suffix":(v.get("author") or "")[-12:],"self_verification":v.get("self_verification"),"verdict":v.get("verdict"),"has_event":bool(v.get("verification_event"))} for v in (t.get("trace") or {}).get("verifiers",[])]}} for t in d.get("tasks",[])],sort_keys=True))' \
+                  || echo 'Could not read TaskBook state for the supplied job ID.'
+              fi
+            else
+              echo 'Orchestrator API port or control token is missing or invalid.'
+            fi
+          else
+            echo 'Dev orchestrator environment is missing.'
           fi
 
           echo '=== Listening ports ==='
