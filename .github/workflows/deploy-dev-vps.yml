@@ -741,16 +741,29 @@ jobs:
           git -c "http.https://github.com/.extraHeader=Authorization: Basic $git_auth" \
             submodule update --init --depth=1 -- Network
 
-      - name: Build the miniworker image on GitHub-hosted infrastructure
+      - name: Define the miniworker image tag
         id: worker-image
         shell: bash
         run: |
           set -euo pipefail
           image="silicium-dev-miniworker:${GITHUB_SHA:0:12}"
-          docker build --pull --platform linux/amd64 \
-            --tag "$image" \
-            --file Network/infra/miniworker.Dockerfile Network
           echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build the miniworker image on GitHub-hosted infrastructure
+        uses: docker/build-push-action@v7
+        with:
+          context: Network
+          file: Network/infra/miniworker.Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: false
+          load: true
+          tags: ${{ steps.worker-image.outputs.image }}
+          cache-from: type=gha,scope=silicium-dev-miniworker
+          cache-to: type=gha,scope=silicium-dev-miniworker,mode=max,ignore-error=true
 
       - name: Smoke-check the built miniworker image
         shell: bash
