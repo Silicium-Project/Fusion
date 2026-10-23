@@ -76,7 +76,6 @@
       "source": "/home/lfernandes/.codex/generated_images/01a1548c-ee15-7f03-b95d-1ea9d900ee8c/exec-9d7dc0b6-ae1c-4a90-9d57-869667dd8947.png"
     }
   ],
-  "complements": "../glass-v3-2026-10-20/index.html",
   "implementationConstraints": [
     "Only received telemetry; no fabricated 24h history.",
     "Work units are not a currency; no payment amount in the API.",
