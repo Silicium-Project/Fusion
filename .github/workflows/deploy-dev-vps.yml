@@ -525,6 +525,61 @@ jobs:
             exit 1
           }
 
+          read_compose_value() {
+            local key="$1"
+            sed -n "s/^${key}=//p" "$compose_env" | tail -n 1
+          }
+          orchestrator_port="$(read_compose_value SILICIUM_ORCHESTRATOR_PORT)"
+          orchestrator_port="${orchestrator_port:-46200}"
+          [[ "$orchestrator_port" =~ ^[0-9]{1,5}$ ]] && (( orchestrator_port > 0 && orchestrator_port <= 65535 )) || {
+            echo "Invalid dev orchestrator port." >&2
+            exit 1
+          }
+          backend_network="$(read_compose_value SILICIUM_BACKEND_NETWORK_NAME)"
+          backend_network="${backend_network:-silicium-dev-backend}"
+          [[ "$backend_network" =~ ^silicium-dev-[A-Za-z0-9_.-]+$ ]] || {
+            echo "Invalid dev backend network name." >&2
+            exit 1
+          }
+          backend_gateway="$(docker network inspect --format '{{(index .IPAM.Config 0).Gateway}}' "$backend_network")"
+          [[ "$backend_gateway" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || {
+            echo "Could not resolve the dev backend bridge gateway." >&2
+            exit 1
+          }
+          config_dir="$(read_compose_value SILICIUM_CONFIG_DIR)"
+          config_dir="${config_dir:-/etc/silicium-dev}"
+          [[ "$config_dir" == /etc/silicium-dev ]] || {
+            echo "Unexpected dev config directory." >&2
+            exit 1
+          }
+          nginx_config_path="$config_dir/nginx.conf"
+          tls_root="$(read_compose_value SILICIUM_TLS_ROOT)"
+          if [[ -z "$tls_root" ]]; then
+            data_root="$(read_compose_value SILICIUM_DATA_ROOT)"
+            tls_root="${data_root:-/var/lib/silicium-dev}/tls"
+          fi
+          [[ -d "$tls_root" ]] || { echo "Missing dev TLS directory." >&2; exit 1; }
+          nginx_template="$vps_root/deploy/compose/nginx.conf"
+          nginx_staged="/tmp/silicium-dev-nginx-${RUN_ID}.conf"
+          [[ -f "$nginx_template" ]] || { echo "Missing dev Nginx template." >&2; exit 1; }
+          sed \
+            -e "s#__SILICIUM_ORCHESTRATOR_PORT__#$orchestrator_port#g" \
+            -e "s#host.docker.internal#$backend_gateway#g" \
+            "$nginx_template" > "$nginx_staged"
+          if grep -Eq '__SILICIUM_[A-Z0-9_]+__|host\.docker\.internal' "$nginx_staged"; then
+            echo "The rendered dev Nginx config still has unresolved placeholders." >&2
+            exit 1
+          fi
+          docker run --rm \
+            --volume "$nginx_staged:/etc/nginx/nginx.conf:ro" \
+            --volume "$tls_root:/etc/letsencrypt:ro" \
+            nginx:1.27-alpine nginx -t
+          install -d -m 0750 "$config_dir"
+          install -m 0644 "$nginx_staged" "$nginx_config_path"
+          rm -f "$nginx_staged"
+          export SILICIUM_NGINX_CONFIG="$nginx_config_path"
+          export SILICIUM_HOST_GATEWAY="$backend_gateway"
+
           compose_base=(docker compose --project-name silicium-dev --env-file "$compose_env" -f "$compose_file")
           "${compose_base[@]}" config --services | grep -Fxq frontend || {
             echo "The dev Compose project has no frontend service." >&2
@@ -577,6 +632,21 @@ jobs:
             done
             return 1
           }
+          wait_proxy() {
+            local container status
+            container="$("${compose_base[@]}" ps -aq proxy | head -n 1 || true)"
+            [[ -n "$container" ]] || return 1
+            for attempt in $(seq 1 30); do
+              status="$(docker inspect --format '{{.State.Status}}' "$container" 2>/dev/null || true)"
+              if [[ "$status" == running ]]; then
+                docker exec "$container" nginx -t >/dev/null 2>&1
+                return $?
+              fi
+              [[ "$status" == dead ]] && return 1
+              sleep 2
+            done
+            return 1
+          }
           compose=(docker compose --project-name silicium-dev --env-file "$compose_env" -f "$compose_file" -f "$override_file")
           rollback() {
             if [[ -n "$rollback_tag" ]]; then
@@ -599,11 +669,25 @@ jobs:
             echo "The dev proxy could not be restarted after the frontend update." >&2
             exit 1
           fi
+          if ! wait_proxy; then
+            rollback
+            echo "The dev proxy did not stay up with a valid Nginx config." >&2
+            exit 1
+          fi
           port="$(sed -nE 's/^SILICIUM_FRONTEND_HTTP_PORT=([0-9]+)$/\1/p' "$compose_env" | tail -n 1)"
           port="${port:-3000}"
           curl --fail --silent --show-error "http://127.0.0.1:${port}/" >/dev/null || {
             rollback
             echo "The dev frontend did not respond on its host port." >&2
+            exit 1
+          }
+          proxy_port="$(read_compose_value SILICIUM_PROXY_HTTPS_PORT)"
+          proxy_port="${proxy_port:-8443}"
+          [[ "$proxy_port" =~ ^[0-9]{1,5}$ ]] || { echo "Invalid dev HTTPS ingress port." >&2; exit 1; }
+          curl --noproxy '*' --insecure --fail --silent --show-error \
+            --connect-timeout 4 --max-time 10 "https://10.77.0.1:${proxy_port}/" >/dev/null || {
+            rollback
+            echo "The dev HTTPS ingress did not respond on 10.77.0.1:${proxy_port}." >&2
             exit 1
           }
           "${compose[@]}" ps frontend proxy
