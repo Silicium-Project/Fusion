@@ -22,6 +22,7 @@ on:
         options:
           - frontend
           - full
+          - diagnose
         default: frontend
 
 permissions:
@@ -33,7 +34,7 @@ concurrency:
 
 jobs:
   preflight:
-    if: ${{ github.event.inputs.deployment_target != 'frontend' }}
+    if: ${{ github.event.inputs.deployment_target == 'full' }}
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 10
     steps:
@@ -86,7 +87,7 @@ jobs:
           echo "Development preflight passed; no VPS state was changed."
 
   deploy:
-    if: ${{ github.event.inputs.deployment_target != 'frontend' }}
+    if: ${{ github.event.inputs.deployment_target == 'full' }}
     needs: [preflight]
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 60
@@ -607,4 +608,73 @@ jobs:
           }
           "${compose[@]}" ps frontend proxy
           echo "GitHub-hosted frontend deployed: $FRONTEND_VERSION ($FRONTEND_BUILD)"
+          REMOTE
+
+  diagnose-dev:
+    if: ${{ github.event.inputs.deployment_target == 'diagnose' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: development
+    steps:
+      - name: Inspect the private dev ingress over SSH
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" && -n "${VPS_KNOWN_HOSTS:-}" ]] || {
+            echo "Missing VPS SSH configuration." >&2
+            exit 1
+          }
+          ssh_dir="$RUNNER_TEMP/silicium-dev-diagnose-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
+            -i "$ssh_dir/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "${VPS_PORT:-22}" \
+            "${VPS_USER:-luis}@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
+          set -u
+          vps_root=/opt/silicium-dev
+          compose_file="$vps_root/deploy/compose/docker-compose.yml"
+          compose_env=/etc/silicium-dev/compose.env
+
+          echo '=== Dev WireGuard interface ==='
+          ip -4 -brief addr show dev wg0 2>&1 || true
+          systemctl is-active wg-quick@wg0.service 2>&1 || true
+          wg show wg0 2>&1 || true
+
+          echo '=== Dev Compose services ==='
+          if [[ -f "$compose_file" && -f "$compose_env" ]]; then
+            docker compose --project-name silicium-dev --env-file "$compose_env" \
+              -f "$compose_file" ps 2>&1 || true
+          else
+            echo 'Dev Compose file or environment is missing.'
+          fi
+
+          echo '=== Listening ports ==='
+          ss -lntp 2>&1 | grep -E ':(22|80|443|8081|8443|3000|3300)([[:space:]]|$)' || true
+
+          echo '=== Nginx configuration ==='
+          docker exec silicium-dev-proxy-1 nginx -t 2>&1 || true
+
+          echo '=== Frontend health ==='
+          docker inspect --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} ports={{json .NetworkSettings.Ports}}' \
+            silicium-dev-frontend-1 2>&1 || true
+
+          echo '=== Proxy health and port bindings ==='
+          docker inspect --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} ports={{json .NetworkSettings.Ports}}' \
+            silicium-dev-proxy-1 2>&1 || true
+
+          echo '=== Host HTTP probes ==='
+          for url in http://10.77.0.1:8081/ https://10.77.0.1:8443/; do
+            curl --noproxy '*' -kSs --connect-timeout 3 --max-time 6 \
+              -o /dev/null -w "$url -> HTTP %{http_code}\n" "$url" || true
+          done
           REMOTE
