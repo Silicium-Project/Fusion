@@ -55,30 +55,6 @@ function Test-Command($Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-function Find-OpenSsl {
-    $cmd = Get-Command "openssl" -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return $cmd.Source
-    }
-    $candidates = @(
-        "$env:ProgramFiles\OpenSSL-Win64\bin\openssl.exe",
-        "$env:ProgramFiles\OpenSSL-Win32\bin\openssl.exe",
-        "${env:ProgramFiles(x86)}\OpenSSL-Win32\bin\openssl.exe",
-        "$env:ProgramFiles\Git\usr\bin\openssl.exe",
-        "${env:ProgramFiles(x86)}\Git\usr\bin\openssl.exe"
-    )
-    foreach ($candidate in $candidates) {
-        if ($candidate -and (Test-Path $candidate)) {
-            $dir = Split-Path -Parent $candidate
-            if (($env:PATH -split ';') -notcontains $dir) {
-                $env:PATH = "$dir;$env:PATH"
-            }
-            return $candidate
-        }
-    }
-    return $null
-}
-
 function Install-WingetPackage($Id, $Name) {
     if (-not (Test-Command "winget")) {
         Write-Warning "winget is not available. Install $Name manually."
@@ -206,36 +182,6 @@ function Install-RaytracerRuntime {
             }
         }
 
-    $msysUcrtBin = "C:\msys64\ucrt64\bin"
-    if (Test-Path -LiteralPath $msysUcrtBin -PathType Container) {
-        $runtimeDlls = @(
-            "libgcc_s_seh-1.dll",
-            "libwinpthread-1.dll",
-            "libstdc++-6.dll",
-            "libsfml-system-3.dll",
-            "libsfml-window-3.dll",
-            "libsfml-graphics-3.dll",
-            "libfreetype-6.dll",
-            "libbz2-1.dll",
-            "libbrotlidec.dll",
-            "libbrotlicommon.dll",
-            "zlib1.dll",
-            "libpng16-16.dll",
-            "libharfbuzz-0.dll",
-            "libgraphite2.dll",
-            "libglib-2.0-0.dll",
-            "libintl-8.dll",
-            "libiconv-2.dll",
-            "libpcre2-8-0.dll"
-        )
-        foreach ($dll in $runtimeDlls) {
-            $dllPath = Join-Path $msysUcrtBin $dll
-            if (Test-Path -LiteralPath $dllPath -PathType Leaf) {
-                Copy-Item -LiteralPath $dllPath -Destination (Join-Path $runtimeDir $dll) -Force
-            }
-        }
-    }
-
     $assetsSource = ""
     if ($RaytracerAssetsDir -and (Test-Path -LiteralPath $RaytracerAssetsDir -PathType Container)) {
         $assetsSource = (Resolve-Path -LiteralPath $RaytracerAssetsDir).Path
@@ -270,12 +216,6 @@ Write-Step "Checking system tools"
 Ensure-Tool "git" "Git.Git" "Git" | Out-Null
 Ensure-Tool "node" "OpenJS.NodeJS.LTS" "Node.js LTS" | Out-Null
 Ensure-Tool "npm.cmd" "OpenJS.NodeJS.LTS" "npm" | Out-Null
-$opensslPath = Find-OpenSsl
-if ($opensslPath) {
-    Write-Host "[ok] OpenSSL -> $opensslPath"
-} else {
-    Ensure-Tool "openssl" "ShiningLight.OpenSSL.Light" "OpenSSL" | Out-Null
-}
 Ensure-Tool "go" "GoLang.Go" "Go" | Out-Null
 Ensure-Tool "rustup" "Rustlang.Rustup" "Rustup/Rust" | Out-Null
 Ensure-Tool "cargo" "" "Cargo" -Optional | Out-Null
@@ -299,7 +239,6 @@ Write-Step "Tool versions"
 Show-Version "git"
 Show-Version "node"
 Show-Version "npm.cmd" @("--version")
-Show-Version "openssl" @("version")
 Show-Version "go" @("version")
 Show-Version "solana" @("--version")
 

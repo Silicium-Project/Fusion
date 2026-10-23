@@ -35,10 +35,10 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["curl", "openssl", "ca-certificates"]
+        "depends": ["curl", "ca-certificates"]
       },
       "rpm": {
-        "depends": ["curl", "openssl", "ca-certificates"]
+        "depends": ["curl", "ca-certificates"]
       },
       "appimage": {
         "bundleMediaFramework": false
