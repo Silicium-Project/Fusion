@@ -68,7 +68,7 @@ export async function inspectWorkerPayouts(
   return ready;
 }
 
-const SILICIUM_PROGRAM_ID = new PublicKey('A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2');
+const SILICIUM_PROGRAM_ID = new PublicKey('64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG');
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const INSTRUCTIONS_SYSVAR_ID = new PublicKey('Sysvar1nstructions1111111111111111111111111');

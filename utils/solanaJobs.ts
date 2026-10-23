@@ -10,13 +10,29 @@ import { Buffer } from 'buffer';
 import type { PhantomProvider } from '~/types/wallet';
 
 export const DEVNET_SIL_MINT = 'F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP';
-export const SILICIUM_PROGRAM_ID = 'A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2';
+export const SILICIUM_PROGRAM_ID = '64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG';
 export const SIL_PER_FRAGMENT = 3;
+export const MAX_SIL_FRAGMENTS = 1_000;
+export const MAX_SIL_FRAGMENT_NODES = 1_000;
+const MAX_SIL_LEAF_MULTIPLIER = 16;
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const TOKEN_UNIT = 1_000_000n;
 
 export interface CreatedSILEscrow { jobAddress: string; signature: string }
+
+export function maxSILFragments(initialFragments: number): number {
+  if (!Number.isInteger(initialFragments) || initialFragments < 1 || initialFragments > 256) {
+    throw new Error('Invalid SIL quote fragment count.');
+  }
+  const childSlotsPerRoot = Math.floor((MAX_SIL_FRAGMENT_NODES - initialFragments) / initialFragments);
+  const leavesPerRoot = 1 + Math.floor(childSlotsPerRoot / 2);
+  return Math.min(
+    MAX_SIL_FRAGMENTS,
+    initialFragments * MAX_SIL_LEAF_MULTIPLIER,
+    initialFragments * leavesPerRoot,
+  );
+}
 
 function programId(): PublicKey { return new PublicKey(SILICIUM_PROGRAM_ID); }
 function mintId(value = DEVNET_SIL_MINT): PublicKey { return new PublicKey(value); }
@@ -92,14 +108,15 @@ export async function createSILEscrow(
   const [escrowAuth] = PublicKey.findProgramAddressSync([Buffer.from('escrow_auth'), job.toBuffer()], programId());
   const escrow = Keypair.generate();
   const clientToken = associatedTokenAddress(client, mint);
-  const deposit = BigInt(expectedFragments) * 3n * TOKEN_UNIT;
+  const maxFragments = maxSILFragments(expectedFragments);
+  const deposit = BigInt(maxFragments) * BigInt(SIL_PER_FRAGMENT) * TOKEN_UNIT;
   const data = Buffer.concat([
     await anchorDiscriminator('create_job'),
     jobSeed,
     u32(expectedFragments),
     u64(TOKEN_UNIT),
     u64(TOKEN_UNIT),
-    u64(BigInt(expectedFragments) * 2n * TOKEN_UNIT),
+    u64(BigInt(maxFragments) * 2n * TOKEN_UNIT),
     i64(BigInt(deadlineUnix)),
     u16(2),
   ]);
@@ -126,16 +143,27 @@ export async function createSILEscrow(
   return { jobAddress: job.toBase58(), signature };
 }
 
-function readOpenJob(data: Buffer, jobAddress: PublicKey, client: PublicKey, expectedFragments: number): { mint: PublicKey; escrow: PublicKey } {
+function readOpenJob(data: Buffer, jobAddress: PublicKey, client: PublicKey, expectedFragments: number): { mint: PublicKey; escrow: PublicKey; currentFragments: number } {
   if (data.length < 246 || !data.subarray(0, 8).equals(Buffer.from('4b7c50cba1b4ca50', 'hex')) || data[243] !== 0) throw new Error('The Devnet job escrow is not open.');
   if (!new PublicKey(data.subarray(16, 48)).equals(client)) throw new Error('This escrow belongs to another wallet.');
-  if (data.readUInt32LE(112) !== expectedFragments || data.readUInt16LE(200) !== 2
+  const maxFragments = maxSILFragments(expectedFragments);
+  const maxFragmentNodes = MAX_SIL_FRAGMENT_NODES;
+  const currentFragments = data.readUInt32LE(112);
+  const totalFragmentsCreated = data.readUInt32LE(206);
+  const initialFragments = currentFragments * 2 - totalFragmentsCreated;
+  if (initialFragments !== expectedFragments || currentFragments < expectedFragments
+    || currentFragments > maxFragments || data.readUInt32LE(202) !== maxFragmentNodes
+    || data.readUInt16LE(200) !== 2
     || data.readBigUInt64LE(120) !== TOKEN_UNIT || data.readBigUInt64LE(128) !== TOKEN_UNIT
-    || data.readBigUInt64LE(136) !== BigInt(expectedFragments) * 2n * TOKEN_UNIT
-    || data.readBigUInt64LE(144) !== BigInt(expectedFragments) * 3n * TOKEN_UNIT) {
+    || data.readBigUInt64LE(136) !== BigInt(maxFragments) * 2n * TOKEN_UNIT
+    || data.readBigUInt64LE(144) !== BigInt(maxFragments) * BigInt(SIL_PER_FRAGMENT) * TOKEN_UNIT) {
     throw new Error('The Devnet escrow does not match the 3 SIL per fragment quote.');
   }
-  return { mint: new PublicKey(data.subarray(48, 80)), escrow: new PublicKey(data.subarray(80, 112)) };
+  return {
+    mint: new PublicKey(data.subarray(48, 80)),
+    escrow: new PublicKey(data.subarray(80, 112)),
+    currentFragments,
+  };
 }
 
 export async function cancelSILEscrow(
@@ -190,8 +218,8 @@ export async function finalizeSILEscrow(
   if (!info || !info.owner.equals(programId())) throw new Error('The Devnet job escrow was not found.');
   if (info.data[243] === 1) return null;
   if (info.data[243] !== 0) throw new Error('This Devnet job has already been cancelled.');
-  const { mint, escrow } = readOpenJob(info.data, job, client, expectedFragments);
-  if (info.data.readUInt32LE(116) !== expectedFragments) throw new Error('The on-chain job has not verified all fragments yet.');
+  const { mint, escrow, currentFragments } = readOpenJob(info.data, job, client, expectedFragments);
+  if (info.data.readUInt32LE(116) !== currentFragments) throw new Error('The on-chain job has not verified all fragments yet.');
   if (info.data.readBigUInt64LE(160) !== info.data.readBigUInt64LE(168)) throw new Error('Waiting for the accepted verifier rewards to be claimed before finalizing.');
   const [escrowAuth] = PublicKey.findProgramAddressSync([Buffer.from('escrow_auth'), job.toBuffer()], programId());
   const [result] = PublicKey.findProgramAddressSync([Buffer.from('result'), job.toBuffer()], programId());

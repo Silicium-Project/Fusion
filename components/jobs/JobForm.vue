@@ -108,6 +108,7 @@ import { editorLimits, sceneFileName, sceneFromText, sceneToCfg, type SceneModel
 import { checkScene } from '~/utils/sceneCheck';
 import { sceneTemplate } from '~/utils/sceneTemplates';
 import { firstProblem, jobDescriptionProblem, jobTitleProblem, LIMITS } from '~/utils/validation';
+import { maxSILFragments } from '~/utils/solanaJobs';
 
 const props = withDefaults(defineProps<{ submitting?: boolean; error?: string; initialWorkload?: string; collectionId?: string; paymentsEnabled?: boolean; silBalance?: number | null; walletAddress?: string }>(), { submitting: false, error: '', initialWorkload: '', collectionId: '', paymentsEnabled: false, silBalance: null, walletAddress: '' });
 const emit = defineEmits<{ submit: [input: CreateJobInput] }>();
@@ -146,7 +147,7 @@ const batchState = ref<BatchAIState | null>(null);
 const catalogMode = computed(() => form.workload === HF_WORKLOAD);
 const catalogState = ref<CatalogAIState | null>(null);
 const hashMode = computed(() => isHashWorkload(form.workload));
-const paymentFragments = computed(() => Math.min(256, Math.max(1, Math.trunc(form.fragmentCount)), Math.max(1, file.value?.size || 0)));
+const paymentFragments = computed(() => maxSILFragments(Math.min(256, Math.max(1, Math.trunc(form.fragmentCount)), Math.max(1, file.value?.size || 0))));
 const paymentTotal = computed(() => paymentFragments.value * 3);
 const raytracerMode = computed(() => form.workload === 'raytracer');
 const composeMode = computed(() => raytracerMode.value && sceneSource.value === 'compose');

@@ -11,7 +11,7 @@
         <div class="payment-actions">
           <span v-if="dashboard.job.solanaFinalized">{{ t('jobForm.paymentFinalizeButton') }} · {{ dashboard.job.solanaFinalizeSignature ? compactIdentifier(dashboard.job.solanaFinalizeSignature, 12, 8) : t('status.completed') }}</span>
           <span v-else-if="dashboard.job.solanaRefunded">{{ t('jobForm.paymentRefundButton') }} · {{ dashboard.job.solanaRefundSignature ? compactIdentifier(dashboard.job.solanaRefundSignature, 12, 8) : t('status.completed') }}</span>
-          <span v-else>{{ dashboard.job.solanaExpectedFragments || 0 }} fragments · {{ (dashboard.job.solanaExpectedFragments || 0) * 3 }} SIL · Devnet</span>
+          <span v-else>{{ t('jobForm.paymentReserve', { fragments: silMaxFragments, total: silMaxFragments * 3 }) }} · Devnet</span>
           <UiButton v-if="canFinalizePayment" variant="secondary" icon="wallet" :loading="paymentSettling" @click="finalizePayment">{{ t('jobForm.paymentFinalizeButton') }}</UiButton>
           <UiButton v-else-if="canRefundPayment" variant="secondary" icon="wallet" :loading="paymentSettling" @click="refundPayment">{{ t('jobForm.paymentRefundButton') }}</UiButton>
         </div>
@@ -54,12 +54,14 @@ import { isBatchAIWorkload } from '~/utils/batchAI';
 import { isHFWorkload } from '~/utils/hfCatalog';
 import { awaitingChainAnchor, compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, jobPartCount, shouldRefreshJob } from '~/utils/jobs';
 import { parseHashReport } from '~/utils/jobs';
+import { maxSILFragments } from '~/utils/solanaJobs';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const { t } = useI18n();
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();
 const dashboard = ref<JobDashboard | null>(null); const loading = ref(true); const error = ref(''); const confirmOpen = ref(false); const cancelling = ref(false); const resultPreview = ref(''); const previewAttempts = ref(0);
 const paymentSettling = ref(false); const paymentError = ref(''); const paymentMessage = ref('');
 const visibleLimit = 80;
+const silMaxFragments = computed(() => dashboard.value?.job.solanaExpectedFragments ? maxSILFragments(dashboard.value.job.solanaExpectedFragments) : 0);
 const imageJob = computed(() => isImageWorkload(dashboard.value?.job.workload));
 const hashJob = computed(() => isHashWorkload(dashboard.value?.job.workload));
 const documentJob = computed(() => isDocumentSearchWorkload(dashboard.value?.job.workload));
