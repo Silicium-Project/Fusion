@@ -570,10 +570,6 @@ jobs:
             echo "The rendered dev Nginx config still has unresolved placeholders." >&2
             exit 1
           fi
-          docker run --rm \
-            --volume "$nginx_staged:/etc/nginx/nginx.conf:ro" \
-            --volume "$tls_root:/etc/letsencrypt:ro" \
-            nginx:1.27-alpine nginx -t
           install -d -m 0750 "$config_dir"
           install -m 0644 "$nginx_staged" "$nginx_config_path"
           rm -f "$nginx_staged"
@@ -585,6 +581,7 @@ jobs:
             echo "The dev Compose project has no frontend service." >&2
             exit 1
           }
+          "${compose_base[@]}" run --rm --no-deps --entrypoint nginx proxy -t
           docker image inspect "$FRONTEND_IMAGE" >/dev/null
 
           override_file="/tmp/silicium-dev-frontend-${RUN_ID}.yaml"
