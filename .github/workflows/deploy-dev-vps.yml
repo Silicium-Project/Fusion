@@ -963,10 +963,41 @@ jobs:
             docker inspect --format '{{.Name}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}' "$container" 2>&1 || true
           done
 
+          echo '=== Miniworker Solana public-key configuration ==='
+          first_worker="$(docker ps -q --filter name=silicium-dev-miniworker-01 | head -n 1 || true)"
+          if [[ -n "$first_worker" ]]; then
+            docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$first_worker" 2>&1 \
+              | python3 -c '
+          import sys
+          alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+          def decode(value):
+              number = 0
+              for char in value:
+                  number = number * 58 + alphabet.index(char)
+              leading = len(value) - len(value.lstrip("1"))
+              body = number.to_bytes((number.bit_length() + 7) // 8, "big") if number else b""
+              return b"\0" * leading + body
+          values = dict(line.rstrip().split("=", 1) for line in sys.stdin if "=" in line)
+          expected = {
+              "SILICIUM_SOLANA_PROGRAM_ID": ("64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG", "64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG"),
+              "SILICIUM_SOLANA_MINT": ("F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP", "F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP"),
+          }
+          for name, (fallback, canonical) in expected.items():
+              value = values.get(name, "") or fallback
+              try:
+                  valid = len(decode(value)) == 32
+              except (ValueError, IndexError):
+                  valid = False
+              print(f"{name}: present={name in values and bool(values[name])} valid_32_byte_key={valid} matches_current_deployment={valid and value == canonical}")
+          '
+          else
+            echo 'Miniworker 01 is not running; cannot inspect its effective Solana configuration.'
+          fi
+
           echo '=== Miniworker startup and payment errors ==='
           for container in $(docker ps -aq --filter name=silicium-dev-miniworker 2>/dev/null); do
             docker logs --tail=100 "$container" 2>&1 \
-              | grep -iE 'bootstrap|peer|claim|verdict|verif|solana|payment|insufficient|failed|error|panic|timeout' \
+              | grep -iE 'bootstrap|peer|claim|verdict|verif|solana|payment|insufficient|invalid public key|failed|error|panic|timeout' \
               | tail -n 8 | sed "s#^#${container}: #" || true
           done
 
