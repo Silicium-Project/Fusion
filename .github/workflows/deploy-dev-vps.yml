@@ -15,6 +15,14 @@ on:
         description: "Existing dev GitHub Release tag to install. Blank selects the newest published dev release."
         required: false
         default: ""
+      deployment_target:
+        description: "GitHub-hosted frontend image deploy, or the legacy full-channel rollout."
+        required: true
+        type: choice
+        options:
+          - frontend
+          - full
+        default: frontend
 
 permissions:
   contents: read
@@ -25,6 +33,7 @@ concurrency:
 
 jobs:
   preflight:
+    if: ${{ github.event.inputs.deployment_target != 'frontend' }}
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 10
     steps:
@@ -77,6 +86,7 @@ jobs:
           echo "Development preflight passed; no VPS state was changed."
 
   deploy:
+    if: ${{ github.event.inputs.deployment_target != 'frontend' }}
     needs: [preflight]
     runs-on: [self-hosted, fusion-linux]
     timeout-minutes: 60
@@ -366,3 +376,235 @@ jobs:
           sudo systemctl start silicium-update-manifest-dev.service
           sudo SILICIUM_RELEASE_CHANNEL=dev bash "$VPS_ROOT/deploy/linux/post-deploy-check.sh" "$VPS_ROOT"
           echo "Development channel deployed: $RELEASE_VERSION ($RELEASE_BUILD)"
+
+  frontend-deploy:
+    if: ${{ github.event.inputs.deployment_target == 'frontend' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: development
+    steps:
+      - name: Create read-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,FrontEnd
+
+      - name: Check out the selected development ref
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ github.event.inputs.ref || 'dev' }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Restrict this deployment to the dev branch
+        shell: bash
+        env:
+          DEPLOY_REF: ${{ github.event.inputs.ref || 'dev' }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_REF" == dev ]] || {
+            echo "The development workflow only deploys the dev ref." >&2
+            exit 1
+          }
+
+      - name: Check out the pinned FrontEnd submodule
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git submodule sync -- FrontEnd
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)"
+          git -c "http.https://github.com/.extraHeader=Authorization: Basic $git_auth" \
+            submodule update --init --depth=1 -- FrontEnd
+
+      - name: Build the frontend image on GitHub-hosted infrastructure
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/silicium-node/package.json').version")"
+          image="silicium-dev-frontend:${GITHUB_SHA:0:12}"
+          docker build --pull --platform linux/amd64 \
+            --tag "$image" \
+            --file FrontEnd/Dockerfile FrontEnd
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-check the built frontend image
+        shell: bash
+        env:
+          FRONTEND_IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          name="silicium-frontend-smoke-${GITHUB_RUN_ID}"
+          cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker run --detach --name "$name" --publish 127.0.0.1:38080:3000 \
+            --env NUXT_PUBLIC_SOLANA_CLUSTER=devnet \
+            --env NUXT_PUBLIC_SIL_POOL_ID=66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS \
+            "$FRONTEND_IMAGE" >/dev/null
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent --show-error http://127.0.0.1:38080/ >/dev/null; then
+              echo "GitHub-built frontend returned HTTP successfully."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs "$name"
+          echo "GitHub-built frontend did not become reachable." >&2
+          exit 1
+
+      - name: Transfer the image and restart only the dev website
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          FRONTEND_IMAGE: ${{ steps.image.outputs.image }}
+          FRONTEND_VERSION: ${{ steps.image.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST." >&2; exit 1; }
+          [[ -n "${VPS_SSH_KEY:-}" ]] || { echo "Missing VPS_SSH_KEY." >&2; exit 1; }
+          [[ -n "${VPS_KNOWN_HOSTS:-}" ]] || { echo "Missing VPS_KNOWN_HOSTS." >&2; exit 1; }
+          [[ "$FRONTEND_IMAGE" =~ ^silicium-dev-frontend:[0-9a-f]{12}$ ]] || {
+            echo "Invalid frontend image tag." >&2
+            exit 1
+          }
+          [[ "$FRONTEND_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || {
+            echo "Invalid frontend release version." >&2
+            exit 1
+          }
+
+          ssh_dir="$RUNNER_TEMP/silicium-dev-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o IdentitiesOnly=yes -i "$ssh_dir/id_ed25519")
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+
+          docker save "$FRONTEND_IMAGE" | gzip -1 | \
+            ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+              "sudo -n docker load"
+
+          ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+            "sudo -n env FRONTEND_IMAGE='$FRONTEND_IMAGE' FRONTEND_VERSION='$FRONTEND_VERSION' FRONTEND_BUILD='$GITHUB_SHA' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          vps_root=/opt/silicium-dev
+          compose_file="$vps_root/deploy/compose/docker-compose.yml"
+          compose_env=/etc/silicium-dev/compose.env
+          [[ -f "$compose_file" ]] || { echo "Missing dev Compose file." >&2; exit 1; }
+          [[ -f "$compose_env" ]] || { echo "Missing dev Compose environment." >&2; exit 1; }
+          [[ "$FRONTEND_IMAGE" =~ ^silicium-dev-frontend:[0-9a-f]{12}$ ]] || {
+            echo "Invalid frontend image tag." >&2
+            exit 1
+          }
+          [[ "$FRONTEND_VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || {
+            echo "Invalid frontend release version." >&2
+            exit 1
+          }
+          [[ "$FRONTEND_BUILD" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Invalid frontend build SHA." >&2
+            exit 1
+          }
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid GitHub run ID." >&2; exit 1; }
+          grep -Eq '^SILICIUM_RELEASE_CHANNEL=dev$' "$compose_env" || {
+            echo "Compose config is not the isolated dev channel." >&2
+            exit 1
+          }
+
+          compose_base=(docker compose --project-name silicium-dev --env-file "$compose_env" -f "$compose_file")
+          "${compose_base[@]}" config --services | grep -Fxq frontend || {
+            echo "The dev Compose project has no frontend service." >&2
+            exit 1
+          }
+          docker image inspect "$FRONTEND_IMAGE" >/dev/null
+
+          override_file="/tmp/silicium-dev-frontend-${RUN_ID}.yaml"
+          trap 'rm -f "$override_file"' EXIT
+          old_container="$("${compose_base[@]}" ps -q frontend | head -n 1 || true)"
+          rollback_tag=""
+          if [[ -n "$old_container" ]]; then
+            old_image="$(docker inspect --format '{{.Image}}' "$old_container")"
+            rollback_tag="silicium-dev-frontend:rollback-${RUN_ID}"
+            docker image tag "$old_image" "$rollback_tag"
+          fi
+
+          write_override() {
+            local image="$1"
+            local with_release_metadata="$2"
+            if [[ "$with_release_metadata" == true ]]; then
+              cat <<EOF | tee "$override_file" >/dev/null
+          services:
+            frontend:
+              image: $image
+              environment:
+                NUXT_PUBLIC_RELEASE_CHANNEL: dev
+                NUXT_PUBLIC_RELEASE_VERSION: $FRONTEND_VERSION
+                NUXT_PUBLIC_RELEASE_BUILD: $FRONTEND_BUILD
+                NUXT_PUBLIC_SOLANA_CLUSTER: devnet
+                NUXT_PUBLIC_SIL_POOL_ID: 66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS
+          EOF
+            else
+              cat <<EOF | tee "$override_file" >/dev/null
+          services:
+            frontend:
+              image: $image
+          EOF
+            fi
+          }
+          wait_frontend() {
+            local container status
+            container="$("${compose[@]}" ps -q frontend | head -n 1 || true)"
+            [[ -n "$container" ]] || return 1
+            for attempt in $(seq 1 60); do
+              status="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+              [[ "$status" == healthy || "$status" == running ]] && return 0
+              [[ "$status" == unhealthy || "$status" == exited || "$status" == dead ]] && return 1
+              sleep 2
+            done
+            return 1
+          }
+          compose=(docker compose --project-name silicium-dev --env-file "$compose_env" -f "$compose_file" -f "$override_file")
+          rollback() {
+            if [[ -n "$rollback_tag" ]]; then
+              echo "Restoring the previous frontend image."
+              write_override "$rollback_tag" false
+              "${compose[@]}" up -d --no-build --no-deps frontend
+              wait_frontend || true
+              "${compose[@]}" up -d --no-build --no-deps --force-recreate proxy || true
+            fi
+          }
+
+          write_override "$FRONTEND_IMAGE" true
+          if ! "${compose[@]}" up -d --no-build --no-deps frontend || ! wait_frontend; then
+            rollback
+            echo "The new frontend failed its container health check." >&2
+            exit 1
+          fi
+          if ! "${compose[@]}" up -d --no-build --no-deps --force-recreate proxy; then
+            rollback
+            echo "The dev proxy could not be restarted after the frontend update." >&2
+            exit 1
+          fi
+          port="$(sed -nE 's/^SILICIUM_FRONTEND_HTTP_PORT=([0-9]+)$/\1/p' "$compose_env" | tail -n 1)"
+          port="${port:-3000}"
+          curl --fail --silent --show-error "http://127.0.0.1:${port}/" >/dev/null || {
+            rollback
+            echo "The dev frontend did not respond on its host port." >&2
+            exit 1
+          }
+          "${compose[@]}" ps frontend proxy
+          echo "GitHub-hosted frontend deployed: $FRONTEND_VERSION ($FRONTEND_BUILD)"
+          REMOTE
