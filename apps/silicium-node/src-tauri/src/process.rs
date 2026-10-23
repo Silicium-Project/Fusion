@@ -11,9 +11,6 @@ pub(crate) fn cleanup_node_installation(repo_root: &Path) -> Result<(), String> 
 }
 
 pub(crate) fn stop_node_processes(repo_root: &Path) -> Result<(), String> {
-    if let Ok(config) = read_service_config(repo_root) {
-        notify_peer_leave(&config);
-    }
     if let Some(pid) = read_supervisor_pid(repo_root)? {
         let _ = kill_process_tree(pid);
     }
@@ -38,32 +35,6 @@ pub(crate) fn cleanup_previous_node_processes(repo_root: &Path) {
     kill_known_silicium_processes(Some(repo_root));
     remove_pid(repo_root);
     remove_supervisor_pid(repo_root);
-}
-
-pub(crate) fn notify_peer_leave(config: &NodeConfig) {
-    if !cfg!(target_os = "windows") {
-        return;
-    }
-    let url = format!(
-        "{}/peers/leave",
-        config.orchestrator_url.trim().trim_end_matches('/')
-    );
-    let node_id = normalized_node_id(&config.node_id).replace('\'', "''");
-    let script = format!(
-        "$body = @{{ node_id = '{node_id}' }} | ConvertTo-Json -Compress; Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 -Method Post -Uri '{url}' -Headers @{{ Authorization = 'Bearer demo-mesh' }} -ContentType 'application/json' -Body $body | Out-Null"
-    );
-    let mut command = Command::new("powershell.exe");
-    command
-        .arg("-NoProfile")
-        .arg("-ExecutionPolicy")
-        .arg("Bypass")
-        .arg("-Command")
-        .arg(script)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    configure_detached_process(&mut command);
-    let _ = command.status();
 }
 
 pub fn run_cleanup_cli() -> i32 {

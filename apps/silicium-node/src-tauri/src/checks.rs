@@ -77,10 +77,3 @@ pub(crate) fn identity_mode_check() -> CheckItem {
     }
 }
 
-pub(crate) fn path_check(name: &str, path: &Path) -> CheckItem {
-    CheckItem {
-        name: name.to_string(),
-        ok: path.exists(),
-        detail: path.display().to_string(),
-    }
-}

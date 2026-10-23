@@ -38,12 +38,6 @@ pub(crate) fn read_node_log_tail(repo_root: &Path) -> Option<String> {
         }
     }
     let network_export = runtime_export_dir(repo_root);
-    let claim_health = network_export.join("claim-poll.health.json");
-    if let Ok(content) = fs::read_to_string(claim_health) {
-        if !content.trim().is_empty() {
-            parts.push(format!("scheduler claim health:\n{}", content.trim()));
-        }
-    }
     let claim_events = network_export.join("node.events.ndjson");
     if let Ok(content) = fs::read_to_string(claim_events) {
         let tail = content

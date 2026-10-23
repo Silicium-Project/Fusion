@@ -73,13 +73,12 @@ pub fn run_supervisor_cli() -> i32 {
             .unwrap_or(false);
         let mut node_running = pid_running;
         if node_running
-            && node_started_at.elapsed() >= CLAIM_POLL_STALE_AFTER
+            && node_started_at.elapsed() >= NODE_HEALTH_GRACE
             && !local_network_node_ready(NODE_API_PORT)
-            && !claim_poll_is_fresh(&repo_root, CLAIM_POLL_STALE_AFTER)
         {
             let _ = append_supervisor_log(
                 &repo_root,
-                "claim_poll_stale: restarting the managed network node",
+                "node_unhealthy: restarting the managed network node",
             );
             if let Ok(Some(pid)) = read_pid(&repo_root) {
                 let _ = kill_process_tree(pid);
@@ -128,31 +127,6 @@ pub fn run_supervisor_cli() -> i32 {
         let delay = if restart_attempts > 3 { 20 } else { 5 };
         thread::sleep(Duration::from_secs(delay));
     }
-}
-
-pub(crate) fn claim_poll_health_path(repo_root: &Path) -> PathBuf {
-    repo_root
-        .join("Network")
-        .join(".silicium")
-        .join("networked")
-        .join("silicium-desktop-node")
-        .join("export")
-        .join("claim-poll.health.json")
-}
-
-pub(crate) fn claim_poll_is_fresh(repo_root: &Path, maximum_age: Duration) -> bool {
-    let path = claim_poll_health_path(repo_root);
-    if !path.exists() {
-        // The caller already applies a bootstrap grace period. Beyond it, a
-        // missing file means that the scheduler pull loop never became live.
-        return false;
-    }
-    fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
-        .ok()
-        .and_then(|modified| SystemTime::now().duration_since(modified).ok())
-        .map(|age| age <= maximum_age)
-        .unwrap_or(false)
 }
 
 pub(crate) fn detect_local_ip() -> Option<String> {

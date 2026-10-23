@@ -64,7 +64,7 @@ pub(crate) fn default_node_bootstrap_peers() -> &'static str {
 // NAT/ICE discovery and the first scheduler poll can legitimately take longer
 // than a short watchdog interval.  Restarting during that bootstrap period
 // prevents a node from ever becoming available to claim work.
-pub(crate) const CLAIM_POLL_STALE_AFTER: Duration = Duration::from_secs(90);
+pub(crate) const NODE_HEALTH_GRACE: Duration = Duration::from_secs(90);
 
 pub(crate) const NODE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 

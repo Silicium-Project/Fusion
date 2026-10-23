@@ -165,19 +165,6 @@ pub fn stop_node(repo_root: Option<String>, state: State<ProcessState>) -> Resul
 }
 
 #[tauri::command]
-pub fn check_environment(repo_root: String) -> Result<Vec<CheckItem>, String> {
-    let root = resolve_repo_root(&repo_root)?;
-    let mut checks = vec![identity_mode_check()];
-
-    checks.push(path_check("Repo Silicium", &root.join("Network")));
-    checks.push(path_check(
-        "Raytracer runtime",
-        &root.join(".silicium").join("env").join("raytracer.env"),
-    ));
-    Ok(checks)
-}
-
-#[tauri::command]
 pub fn node_activity(repo_root: String) -> Result<NodeActivity, String> {
     let root = resolve_repo_root_readonly(&repo_root)?;
     validate_repo_root(&root)?;

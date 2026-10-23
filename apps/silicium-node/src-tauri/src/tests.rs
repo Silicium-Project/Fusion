@@ -323,19 +323,6 @@ fn managed_runtime_cleanup_removes_the_python_runtime_and_keeps_the_node() {
 }
 
 #[test]
-fn missing_claim_health_is_stale_after_the_supervisor_grace_period() {
-    let directory = env::temp_dir().join(format!("silicium-claim-health-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&directory);
-    assert!(!claim_poll_is_fresh(&directory, Duration::from_secs(60)));
-
-    let health_path = claim_poll_health_path(&directory);
-    fs::create_dir_all(health_path.parent().unwrap()).unwrap();
-    fs::write(&health_path, b"{}").unwrap();
-    assert!(claim_poll_is_fresh(&directory, Duration::from_secs(60)));
-    fs::remove_dir_all(directory).unwrap();
-}
-
-#[test]
 fn readiness_requires_the_integrated_network_health_response() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();

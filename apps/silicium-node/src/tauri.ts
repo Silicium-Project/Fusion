@@ -239,9 +239,6 @@ export async function nodeStatus(repoRoot?: string): Promise<NodeStatus> {
   return await invoke<NodeStatus>('node_status', { repoRoot });
 }
 
-export async function checkEnvironment(repoRoot: string): Promise<CheckItem[]> {
-  return await invoke<CheckItem[]>('check_environment', { repoRoot });
-}
 
 export async function nodeActivity(repoRoot: string): Promise<NodeActivity> {
   return await invoke<NodeActivity>('node_activity', { repoRoot });
