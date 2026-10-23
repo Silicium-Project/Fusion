@@ -671,6 +671,13 @@ jobs:
           echo '=== Proxy health and port bindings ==='
           docker inspect --format 'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} ports={{json .NetworkSettings.Ports}}' \
             silicium-dev-proxy-1 2>&1 || true
+          docker inspect --format 'exit={{.State.ExitCode}} restarts={{.RestartCount}} oom={{.State.OOMKilled}} error={{.State.Error}}' \
+            silicium-dev-proxy-1 2>&1 || true
+
+          echo '=== Proxy startup errors ==='
+          docker logs --tail=120 silicium-dev-proxy-1 2>&1 \
+            | grep -iE 'emerg|alert|crit|error|failed|fatal|warn' \
+            | tail -n 40 || true
 
           echo '=== Host HTTP probes ==='
           for url in http://10.77.0.1:8081/ https://10.77.0.1:8443/; do
