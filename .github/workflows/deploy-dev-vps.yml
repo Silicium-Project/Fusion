@@ -16,11 +16,12 @@ on:
         required: false
         default: ""
       deployment_target:
-        description: "GitHub-hosted frontend image deploy, or the legacy full-channel rollout."
+        description: "GitHub-hosted frontend or worker image deploy, or the legacy full-channel rollout."
         required: true
         type: choice
         options:
           - frontend
+          - workers
           - full
           - diagnose
         default: frontend
@@ -693,6 +694,203 @@ jobs:
           }
           "${compose[@]}" ps frontend proxy
           echo "GitHub-hosted frontend deployed: $FRONTEND_VERSION ($FRONTEND_BUILD)"
+          REMOTE
+
+  workers-deploy:
+    if: ${{ github.event.inputs.deployment_target == 'workers' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: development
+    steps:
+      - name: Create read-only GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.SILICIUM_DEPLOY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILICIUM_DEPLOY_APP_PRIVATE_KEY }}
+          owner: Silicium-Project
+          repositories: Fusion,Network
+
+      - name: Check out the selected development ref
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          ref: ${{ github.event.inputs.ref || 'dev' }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Restrict this deployment to the dev branch
+        shell: bash
+        env:
+          DEPLOY_REF: ${{ github.event.inputs.ref || 'dev' }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_REF" == dev ]] || {
+            echo "The development workflow only deploys the dev ref." >&2
+            exit 1
+          }
+
+      - name: Check out the pinned Network submodule
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git submodule sync -- Network
+          git_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)"
+          git -c "http.https://github.com/.extraHeader=Authorization: Basic $git_auth" \
+            submodule update --init --depth=1 -- Network
+
+      - name: Build the miniworker image on GitHub-hosted infrastructure
+        id: worker-image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="silicium-dev-miniworker:${GITHUB_SHA:0:12}"
+          docker build --pull --platform linux/amd64 \
+            --tag "$image" \
+            --file Network/infra/miniworker.Dockerfile Network
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-check the built miniworker image
+        shell: bash
+        env:
+          WORKER_IMAGE: ${{ steps.worker-image.outputs.image }}
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/sh "$WORKER_IMAGE" -ec '
+            test -x /usr/local/bin/p2p_node
+            test -x /usr/local/bin/compute_daemon
+            test -x /usr/local/bin/solana-worker-wallet
+            node --check /opt/worker-solana/solana-worker-settlement.mjs
+          '
+
+      - name: Transfer image and roll miniworkers one at a time
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          WORKER_IMAGE: ${{ steps.worker-image.outputs.image }}
+          WORKER_BUILD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST." >&2; exit 1; }
+          [[ -n "${VPS_SSH_KEY:-}" ]] || { echo "Missing VPS_SSH_KEY." >&2; exit 1; }
+          [[ -n "${VPS_KNOWN_HOSTS:-}" ]] || { echo "Missing VPS_KNOWN_HOSTS." >&2; exit 1; }
+          [[ "$WORKER_IMAGE" =~ ^silicium-dev-miniworker:[0-9a-f]{12}$ ]] || {
+            echo "Invalid miniworker image tag." >&2
+            exit 1
+          }
+          [[ "$WORKER_BUILD" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Invalid miniworker build SHA." >&2
+            exit 1
+          }
+
+          ssh_dir="$RUNNER_TEMP/silicium-dev-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o IdentitiesOnly=yes -i "$ssh_dir/id_ed25519")
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+
+          docker save "$WORKER_IMAGE" | gzip -1 | \
+            ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+              "sudo -n docker load"
+
+          ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+            "sudo -n env WORKER_IMAGE='$WORKER_IMAGE' WORKER_BUILD='$WORKER_BUILD' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          vps_root=/opt/silicium-dev
+          compose_file="$vps_root/deploy/compose/dev-miniworkers.yml"
+          worker_env=/etc/silicium-dev/miniworkers.env
+          [[ -f "$compose_file" ]] || { echo "Missing dev miniworker Compose file." >&2; exit 1; }
+          [[ -f "$worker_env" ]] || { echo "Missing dev miniworker environment." >&2; exit 1; }
+          [[ "$WORKER_IMAGE" =~ ^silicium-dev-miniworker:[0-9a-f]{12}$ ]] || {
+            echo "Invalid miniworker image tag." >&2
+            exit 1
+          }
+          [[ "$WORKER_BUILD" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "Invalid miniworker build SHA." >&2
+            exit 1
+          }
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid GitHub run ID." >&2; exit 1; }
+
+          compose=(docker compose --project-name silicium-dev-miniworkers --env-file "$worker_env" -f "$compose_file")
+          export SILICIUM_DEV_MINIWORKERS_RELEASE_BUILD="$WORKER_BUILD"
+          services=()
+          for number in $(seq -w 1 20); do services+=("miniworker-$number"); done
+          configured_services="$("${compose[@]}" config --services)"
+          declare -A old_images=()
+          common_old_image=""
+          for service in "${services[@]}"; do
+            grep -Fxq "$service" <<<"$configured_services" || {
+              echo "Missing expected dev miniworker service: $service" >&2
+              exit 1
+            }
+            container="$("${compose[@]}" ps -q "$service" | head -n 1 || true)"
+            [[ -n "$container" ]] || { echo "Miniworker is not running: $service" >&2; exit 1; }
+            state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")"
+            [[ "$state" == healthy || "$state" == running ]] || {
+              echo "Miniworker is not healthy before rollout: $service ($state)" >&2
+              exit 1
+            }
+            old_images[$service]="$(docker inspect --format '{{.Image}}' "$container")"
+            if [[ -z "$common_old_image" ]]; then
+              common_old_image="${old_images[$service]}"
+            elif [[ "$common_old_image" != "${old_images[$service]}" ]]; then
+              echo "Miniworker image versions differ; refusing a non-uniform rollout." >&2
+              exit 1
+            fi
+          done
+          docker image inspect "$WORKER_IMAGE" >/dev/null
+          rollback_image="silicium-dev-miniworker:rollback-$RUN_ID"
+          docker image tag "$common_old_image" "$rollback_image"
+          docker image tag "$WORKER_IMAGE" silicium-dev-miniworker:local
+
+          updated=()
+          wait_worker() {
+            local service="$1" container state
+            container="$("${compose[@]}" ps -q "$service" | head -n 1 || true)"
+            [[ -n "$container" ]] || return 1
+            for attempt in $(seq 1 60); do
+              state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+              [[ "$state" == healthy || "$state" == running ]] && return 0
+              [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]] && return 1
+              sleep 2
+            done
+            return 1
+          }
+          rollback() {
+            local service
+            echo "Rolling back the miniworkers already changed."
+            docker image tag "$common_old_image" silicium-dev-miniworker:local
+            for service in "${updated[@]}"; do
+              "${compose[@]}" up -d --no-build --no-deps --force-recreate "$service" || true
+              wait_worker "$service" || true
+            done
+          }
+          for service in "${services[@]}"; do
+            updated+=("$service")
+            if ! "${compose[@]}" up -d --no-build --no-deps --force-recreate "$service" || ! wait_worker "$service"; then
+              rollback
+              echo "Miniworker rollout failed at $service; earlier nodes were restored." >&2
+              exit 1
+            fi
+            echo "Healthy after update: $service"
+          done
+
+          "${compose[@]}" ps "${services[@]}"
+          while IFS= read -r prior_rollback; do
+            [[ "$prior_rollback" == "$rollback_image" ]] || docker image rm "$prior_rollback" >/dev/null 2>&1 || true
+          done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | awk '$1 ~ /^silicium-dev-miniworker:rollback-/')
+          echo "GitHub-hosted miniworker image deployed to 20 nodes: $WORKER_BUILD"
           REMOTE
 
   diagnose-dev:
