@@ -142,10 +142,9 @@ sudo nano /etc/silicium/frontend.env
 sudo nano /etc/silicium/orchestrator.env
 ```
 
-Build the backend binary and install the host-side control-plane services:
+Install the host-side control-plane services:
 
 ```bash
-sudo bash deploy/linux/build-site.sh /opt/silicium
 sudo bash deploy/linux/install-services.sh /opt/silicium
 ```
 
@@ -160,21 +159,13 @@ Do not reinstall or enable the removed `silicium-backend`,
 `silicium-frontend`, or `silicium-dashboard` systemd units. They are legacy
 duplicates and would compete with Compose for ports 8080 and 3000.
 
-Install Nginx config after replacing domains:
+TLS and routing are handled by the `proxy` service of Docker Compose
+(`deploy/compose/nginx.conf`), which owns ports 80 and 443. Do not install a
+host-side Nginx: it would compete with Compose for those ports.
 
-```bash
-sudo cp deploy/nginx/silicium.conf /etc/nginx/sites-available/silicium.conf
-sudo nano /etc/nginx/sites-available/silicium.conf
-sudo ln -s /etc/nginx/sites-available/silicium.conf /etc/nginx/sites-enabled/silicium.conf
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-For HTTPS, use certbot:
-
-```bash
-sudo certbot --nginx -d silicium.example.com -d api.silicium.example.com
-```
+Certificates are read from `/etc/letsencrypt` (`SILICIUM_TLS_ROOT`) and mounted
+read-only into the proxy. Obtain or renew them with certbot on the host, for
+example `certbot certonly --standalone` while the proxy is stopped.
 
 ## Node installers
 
