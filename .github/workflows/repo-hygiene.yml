@@ -1,0 +1,31 @@
+name: Repo hygiene
+
+# Cheap guards from RULES.md (G1, G3) and the deploy/ Python tests.
+# Runs on GitHub-hosted runners only: it executes code from pull requests.
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-hygiene-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: false
+          persist-credentials: false
+      - name: Check tracked files
+        run: bash deploy/ci/check-repo-hygiene.sh
+      - name: Run deploy tests
+        run: |
+          python3 -m pip install --quiet pytest
+          python3 -m pytest -q deploy/tests
