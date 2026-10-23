@@ -753,7 +753,7 @@ jobs:
           systemctl show silicium-orchestrator-dev.service \
             --property=ActiveState,SubState,MainPID,ExecMainStatus,NRestarts 2>&1 || true
           systemctl is-active silicium-orchestrator-dev.service 2>&1 || true
-          journalctl -u silicium-orchestrator-dev.service --since '30 minutes ago' \
+          journalctl -u silicium-orchestrator-dev.service --since '30 minutes ago' -n 240 \
             --no-pager -o cat 2>&1 \
             | grep -iE 'error|warn|panic|bootstrap|peer|claim|verdict|verif|solana|payment|publish|timeout' \
             | tail -n 80 || true
@@ -767,7 +767,7 @@ jobs:
 
           echo '=== Miniworker startup and payment errors ==='
           for container in $(docker ps -aq --filter name=silicium-dev-miniworker 2>/dev/null); do
-            docker logs --since 30m "$container" 2>&1 \
+            docker logs --tail=100 "$container" 2>&1 \
               | grep -iE 'bootstrap|peer|claim|verdict|verif|solana|payment|insufficient|failed|error|panic|timeout' \
               | tail -n 8 | sed "s#^#${container}: #" || true
           done
