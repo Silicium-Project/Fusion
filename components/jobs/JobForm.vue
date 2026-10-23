@@ -78,6 +78,7 @@
       <section v-if="paymentsEnabled" class="payment-review" aria-live="polite">
         <div class="payment-review__head"><UiIcon name="wallet"/><strong>{{ t('jobForm.paymentTitle') }}</strong></div>
         <p>{{ t('jobForm.paymentQuote', { fragments: paymentFragments, total: paymentTotal }) }}</p>
+        <p v-if="paymentUsdEstimate !== null" class="payment-review__estimate">{{ t('jobForm.paymentUsdEstimate', { amount: paymentUsdEstimate }) }}</p>
         <div class="payment-review__facts"><span>{{ t('jobForm.paymentBalance') }}</span><strong>{{ silBalance === null ? '—' : `${silBalance.toFixed(2)} SIL` }}</strong></div>
         <p v-if="!walletAddress" class="payment-review__notice"><NuxtLink to="/profile">{{ t('jobForm.paymentWalletRequired') }}</NuxtLink></p>
         <p v-else-if="silBalance !== null && silBalance < paymentTotal" class="payment-review__notice">{{ t('jobForm.paymentInsufficient') }}</p>
@@ -110,7 +111,7 @@ import { sceneTemplate } from '~/utils/sceneTemplates';
 import { firstProblem, jobDescriptionProblem, jobTitleProblem, LIMITS } from '~/utils/validation';
 import { maxSILFragments } from '~/utils/solanaJobs';
 
-const props = withDefaults(defineProps<{ submitting?: boolean; error?: string; initialWorkload?: string; collectionId?: string; paymentsEnabled?: boolean; silBalance?: number | null; walletAddress?: string }>(), { submitting: false, error: '', initialWorkload: '', collectionId: '', paymentsEnabled: false, silBalance: null, walletAddress: '' });
+const props = withDefaults(defineProps<{ submitting?: boolean; error?: string; initialWorkload?: string; collectionId?: string; paymentsEnabled?: boolean; silBalance?: number | null; silUsdPrice?: number | null; walletAddress?: string }>(), { submitting: false, error: '', initialWorkload: '', collectionId: '', paymentsEnabled: false, silBalance: null, silUsdPrice: null, walletAddress: '' });
 const emit = defineEmits<{ submit: [input: CreateJobInput] }>();
 const { t, tl, formatBytes } = useI18n();
 const MAX_INPUT_BYTES = 16 * 1024 * 1024;
@@ -149,6 +150,11 @@ const catalogState = ref<CatalogAIState | null>(null);
 const hashMode = computed(() => isHashWorkload(form.workload));
 const paymentFragments = computed(() => maxSILFragments(Math.min(256, Math.max(1, Math.trunc(form.fragmentCount)), Math.max(1, file.value?.size || 0))));
 const paymentTotal = computed(() => paymentFragments.value * 3);
+const paymentUsdEstimate = computed(() => {
+  const price = props.silUsdPrice;
+  if (price === null || price === undefined || !Number.isFinite(price) || price <= 0) return null;
+  return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(paymentTotal.value * price);
+});
 const raytracerMode = computed(() => form.workload === 'raytracer');
 const composeMode = computed(() => raytracerMode.value && sceneSource.value === 'compose');
 const sceneReport = computed(() => (raytracerMode.value && sceneText.value ? checkScene(sceneText.value) : null));

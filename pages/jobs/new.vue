@@ -1,7 +1,7 @@
 <template>
   <div class="app-page new-job-page">
     <header><NuxtLink to="/jobs" class="back-link"><UiIcon name="arrow"/>{{ t('newJob.back') }}</NuxtLink><span class="eyebrow">{{ t('common.newJob') }}</span><h1 class="page-title">{{ t('newJob.title') }}</h1><p class="page-intro">{{ t('newJob.intro') }}</p><p class="new-job-help">{{ t('newJob.help') }} {{ t('newJob.helpText') }} <NuxtLink to="/workloads" class="inline-link">{{ t('newJob.helpLink') }}</NuxtLink></p></header>
-    <UiCard :title="t('newJob.card')" :description="t('newJob.cardText')" padded><JobForm :submitting="submitting" :error="error" :initial-workload="initialWorkload" :collection-id="collectionId" :payments-enabled="paymentsEnabled" :sil-balance="silBalance" :wallet-address="user?.walletAddress || ''" @submit="submit" /></UiCard>
+    <UiCard :title="t('newJob.card')" :description="t('newJob.cardText')" padded><JobForm :submitting="submitting" :error="error" :initial-workload="initialWorkload" :collection-id="collectionId" :payments-enabled="paymentsEnabled" :sil-balance="silBalance" :sil-usd-price="silUsdPrice" :wallet-address="user?.walletAddress || ''" @submit="submit" /></UiCard>
   </div>
 </template>
 
@@ -19,6 +19,8 @@ const session = useSession();
 const wallet = useWallet();
 const { user } = session;
 const { silBalance } = wallet;
+const { market, refreshMarket } = useSILEconomy();
+const silUsdPrice = computed(() => market.value?.silUsd ?? null);
 // `?workload=documents` opens the document search; `&collection=…` adds
 // documents to an existing one ("Ajouter des documents"); `?workload=ai`
 // opens the batch AI processing, `?workload=catalog` the AI catalogue.
@@ -36,7 +38,15 @@ const { t } = useI18n();
 onMounted(async () => {
   await session.loadUser().catch(() => undefined);
   await wallet.loadBalance(user.value?.walletAddress);
+  if (paymentsEnabled.value) {
+    await refreshMarket();
+    marketTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshMarket(true);
+    }, 30_000);
+  }
 });
+let marketTimer: ReturnType<typeof setInterval> | undefined;
+onBeforeUnmount(() => { if (marketTimer) clearInterval(marketTimer); });
 async function submit(input: CreateJobInput) { submitting.value = true; error.value = ''; try { const job = await createJob(input); await router.push(`/jobs/${job.id}`); } catch (failure) { error.value = extractJobError(failure); } finally { submitting.value = false; } }
 useSeoMeta({ title: () => `${t('common.newJob')} — Silicium` });
 </script>
