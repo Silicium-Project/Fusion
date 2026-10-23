@@ -581,7 +581,7 @@ jobs:
             echo "The dev Compose project has no frontend service." >&2
             exit 1
           }
-          "${compose_base[@]}" run --rm --no-deps --entrypoint nginx proxy -t
+          "${compose_base[@]}" run --rm --no-deps --entrypoint nginx proxy -t </dev/null
           docker image inspect "$FRONTEND_IMAGE" >/dev/null
 
           override_file="/tmp/silicium-dev-frontend-${RUN_ID}.yaml"
