@@ -71,6 +71,32 @@ function connection() {
   return new Connection(RPC_URL, 'confirmed');
 }
 
+function safeTransactionFailure(error) {
+  let serialized = '';
+  try { serialized = JSON.stringify(error); } catch {}
+  const detail = [
+    typeof error?.message === 'string' ? error.message : '',
+    ...(Array.isArray(error?.logs) ? error.logs.filter(line => typeof line === 'string') : []),
+    serialized,
+  ].join('\n');
+  const instruction = detail.match(/(?:Error processing Instruction\s+|InstructionError["']?\s*:\s*\[?)(\d+)/i)?.[1];
+  const suffix = instruction === undefined ? '' : `_instruction_${instruction}`;
+  const custom = detail.match(/custom program error:\s*(0x[0-9a-f]+)|["']?Custom["']?\s*:\s*(\d+)/i);
+  if (custom) return `solana_program_error_${(custom[1] || custom[2]).toLowerCase()}${suffix}`;
+  if (/insufficient funds for fee|insufficient lamports|attempt to debit an account/i.test(detail)) {
+    return 'solana_fee_payer_insufficient_sol';
+  }
+  if (/blockhash not found|block height exceeded|blockhash expired/i.test(detail)) {
+    return 'solana_blockhash_expired';
+  }
+  if (/accountnotinitialized|account is not initialized/i.test(detail)) return 'solana_account_not_initialized';
+  if (/incorrectprogramid|incorrect program id/i.test(detail)) return 'solana_incorrect_program_id';
+  if (/invalidaccountowner|invalid account owner/i.test(detail)) return 'solana_invalid_account_owner';
+  if (/429|rate limit|too many requests/i.test(detail)) return 'solana_rpc_rate_limited';
+  if (/failed to fetch|econnreset|econnrefused|etimedout|\b50[234]\b/i.test(detail)) return 'solana_rpc_unavailable';
+  return 'solana_transaction_failed';
+}
+
 async function ensureFeeBalance(conn, wallet) {
   let balance;
   try { balance = await conn.getBalance(wallet.publicKey, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
@@ -166,11 +192,11 @@ async function send(conn, wallet, instructions) {
   try {
     const signature = await conn.sendRawTransaction(tx.serialize(), { maxRetries: 3, preflightCommitment: 'confirmed' });
     const confirmation = await conn.confirmTransaction({ signature, ...latest }, 'confirmed');
-    if (confirmation.value.err) fail('solana_transaction_rejected');
+    if (confirmation.value.err) fail(safeTransactionFailure(confirmation.value.err));
     return signature;
   } catch (error) {
     if (error instanceof SettlementError) throw error;
-    fail('solana_transaction_failed');
+    fail(safeTransactionFailure(error));
   }
 }
 
