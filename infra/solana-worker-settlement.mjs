@@ -31,6 +31,39 @@ class SettlementError extends Error {
 
 const fail = code => { throw new SettlementError(code); };
 const pda = (seeds) => PublicKey.findProgramAddressSync(seeds, PROGRAM_ID)[0];
+
+function retryAfterMs(response) {
+  const value = response.headers.get('retry-after');
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : null;
+}
+
+async function rateLimitAwareFetch(input, init) {
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(input, init);
+    if (response.status !== 429 || attempt >= 4) return response;
+    const advertised = retryAfterMs(response);
+    const fallback = Math.min(1_000 * (2 ** attempt), 15_000);
+    const delay = Math.min(30_000, Math.max(advertised ?? fallback, fallback)
+      + Math.floor(Math.random() * 5_000));
+    await response.body?.cancel().catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, delay));
+  }
+}
+
+function rpcFailureCode(error) {
+  const detail = [error?.message, error?.cause?.message, error?.status, error?.cause?.status]
+    .filter(value => value !== undefined && value !== null)
+    .join(' ');
+  if (/\b429\b|rate limit|too many requests/i.test(detail)) return 'devnet_rpc_rate_limited';
+  if (/\b403\b|forbidden|blocked/i.test(detail)) return 'devnet_rpc_rejected';
+  return 'devnet_rpc_unavailable';
+}
+
+const failRpc = error => fail(rpcFailureCode(error));
 const u16 = value => { const out = Buffer.alloc(2); out.writeUInt16LE(value); return out; };
 const u32 = value => { const out = Buffer.alloc(4); out.writeUInt32LE(value); return out; };
 const anchorData = (name, ...parts) => Buffer.concat([
@@ -68,7 +101,11 @@ async function loadWallet() {
 
 function connection() {
   if (!RPC_URL.toLowerCase().includes('devnet')) fail('payments_require_devnet');
-  return new Connection(RPC_URL, 'confirmed');
+  return new Connection(RPC_URL, {
+    commitment: 'confirmed',
+    disableRetryOnRateLimit: true,
+    fetch: rateLimitAwareFetch,
+  });
 }
 
 function safeTransactionFailure(error) {
@@ -99,7 +136,7 @@ function safeTransactionFailure(error) {
 
 async function ensureFeeBalance(conn, wallet) {
   let balance;
-  try { balance = await conn.getBalance(wallet.publicKey, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+  try { balance = await conn.getBalance(wallet.publicKey, 'confirmed'); } catch (error) { failRpc(error); }
   if (balance >= 1_000_000) return;
   try {
     const signature = await conn.requestAirdrop(wallet.publicKey, 5_000_000);
@@ -109,7 +146,7 @@ async function ensureFeeBalance(conn, wallet) {
 
 async function account(conn, address, owner = PROGRAM_ID) {
   let info;
-  try { info = await conn.getAccountInfo(address, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+  try { info = await conn.getAccountInfo(address, 'confirmed'); } catch (error) { failRpc(error); }
   if (!info || !info.owner.equals(owner)) fail('onchain_account_unavailable');
   return info.data;
 }
@@ -120,7 +157,7 @@ async function readJob(conn, jobAddress, expected) {
   if (initial.length < 246) fail('onchain_job_invalid');
   const escrow = new PublicKey(initial.subarray(80, 112));
   let infos;
-  try { infos = await conn.getMultipleAccountsInfo([job, escrow], 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+  try { infos = await conn.getMultipleAccountsInfo([job, escrow], 'confirmed'); } catch (error) { failRpc(error); }
   const jobInfo = infos[0];
   const escrowInfo = infos[1];
   if (!jobInfo?.owner.equals(PROGRAM_ID) || !escrowInfo?.owner.equals(TOKEN_PROGRAM)) fail('onchain_account_unavailable');
@@ -163,7 +200,7 @@ async function readPayout(conn, wallet) {
   const missing = [];
   for (const [ata, owner] of [[workerToken, worker], [payoutToken, payoutWallet]]) {
     let info;
-    try { info = await conn.getAccountInfo(ata, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+    try { info = await conn.getAccountInfo(ata, 'confirmed'); } catch (error) { failRpc(error); }
     if (!info) missing.push(createAssociatedTokenAccountIdempotentInstruction(
       worker,
       ata,
@@ -185,7 +222,8 @@ async function readPayout(conn, wallet) {
 
 async function send(conn, wallet, instructions) {
   await ensureFeeBalance(conn, wallet);
-  const latest = await conn.getLatestBlockhash('confirmed');
+  let latest;
+  try { latest = await conn.getLatestBlockhash('confirmed'); } catch (error) { failRpc(error); }
   const tx = new Transaction({ feePayer: wallet.publicKey, recentBlockhash: latest.blockhash });
   tx.add(...instructions);
   tx.sign(wallet);
@@ -236,7 +274,7 @@ async function submit(conn, wallet, jobInfo, index, resultHash) {
   if (hash.length !== 32) fail('result_hash_invalid');
   const workerToken = tokenAddress(wallet.publicKey);
   let prior;
-  try { prior = await conn.getAccountInfo(fragment, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+  try { prior = await conn.getAccountInfo(fragment, 'confirmed'); } catch (error) { failRpc(error); }
   let priorStatus = 0;
   if (prior) {
     if (!prior.owner.equals(PROGRAM_ID) || prior.data.length < 205) fail('onchain_fragment_invalid');
@@ -466,6 +504,7 @@ async function vote(conn, wallet, jobInfo, index, approved) {
     account(conn, accounts.computePayout),
     account(conn, accounts.verifierPayout),
   ]);
+  if (computePayoutData.length < 73 || verifierPayoutData.length < 73) fail('worker_payout_account_invalid');
   if (!computePayoutData.subarray(8, 40).equals(computeWorker.toBuffer())
     || !verifierPayoutData.subarray(8, 40).equals(wallet.publicKey.toBuffer())) fail('worker_not_linked_to_account');
   const computePayoutWallet = new PublicKey(computePayoutData.subarray(40, 72));
@@ -473,7 +512,8 @@ async function vote(conn, wallet, jobInfo, index, approved) {
   accounts.computePayoutToken = tokenAddress(computePayoutWallet);
   accounts.verifierPayoutToken = tokenAddress(verifierPayoutWallet);
 
-  const existingVote = await conn.getAccountInfo(accounts.vote, 'confirmed');
+  let existingVote;
+  try { existingVote = await conn.getAccountInfo(accounts.vote, 'confirmed'); } catch (error) { failRpc(error); }
   if (existingVote) {
     if (!existingVote.owner.equals(PROGRAM_ID) || existingVote.data.length < 78
       || !existingVote.data.subarray(40, 72).equals(wallet.publicKey.toBuffer())
@@ -481,7 +521,7 @@ async function vote(conn, wallet, jobInfo, index, approved) {
   } else {
     const instructions = [];
     let computePayoutTokenInfo;
-    try { computePayoutTokenInfo = await conn.getAccountInfo(accounts.computePayoutToken, 'confirmed'); } catch { fail('devnet_rpc_unavailable'); }
+    try { computePayoutTokenInfo = await conn.getAccountInfo(accounts.computePayoutToken, 'confirmed'); } catch (error) { failRpc(error); }
     if (!computePayoutTokenInfo) {
       instructions.push(createAssociatedTokenAccountIdempotentInstruction(
         wallet.publicKey,
@@ -504,17 +544,28 @@ async function vote(conn, wallet, jobInfo, index, approved) {
   // successful quorum's approving votes claim one SIL each; rejected rounds
   // remain unpaid and preserve escrow for a retry.
   const deadline = Date.now() + 120_000;
+  let pollDelayMs = 1_000;
   while (Date.now() < deadline) {
-    const resolutionInfo = await conn.getAccountInfo(accounts.resolution, 'confirmed');
+    let resolutionInfo;
+    let voteInfo;
+    try {
+      [resolutionInfo, voteInfo] = await conn.getMultipleAccountsInfo(
+        [accounts.resolution, accounts.vote],
+        'confirmed',
+      );
+    } catch (error) {
+      failRpc(error);
+    }
     if (resolutionInfo?.owner.equals(PROGRAM_ID) && resolutionInfo.data.length >= 49 && resolutionInfo.data[42] === 1) {
       const winning = resolutionInfo.data[43] === 1;
       if (winning && approved) {
-        const voteInfo = await conn.getAccountInfo(accounts.vote, 'confirmed');
         if (voteInfo?.data[76] !== 1) await send(conn, wallet, [claimVerifierRewardInstruction(accounts)]);
       }
       return;
     }
-    await new Promise(resolve => setTimeout(resolve, 2_000));
+    const jitterMs = Math.floor(Math.random() * Math.min(3_000, pollDelayMs));
+    await new Promise(resolve => setTimeout(resolve, pollDelayMs + jitterMs));
+    pollDelayMs = Math.min(pollDelayMs * 2, 30_000);
   }
   fail('verification_quorum_not_reached');
 }
