@@ -480,6 +480,7 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          SILICIUM_SOLANA_RPC: ${{ secrets.SILICIUM_SOLANA_RPC }}
           FRONTEND_IMAGE: ${{ steps.image.outputs.image }}
           FRONTEND_VERSION: ${{ steps.image.outputs.version }}
         run: |
@@ -506,6 +507,12 @@ jobs:
             -o IdentitiesOnly=yes -i "$ssh_dir/id_ed25519")
           vps_user="${VPS_USER:-luis}"
           vps_port="${VPS_PORT:-22}"
+
+          if [[ -n "${SILICIUM_SOLANA_RPC:-}" ]]; then
+            printf '%s' "$SILICIUM_SOLANA_RPC" | \
+              ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+                "sudo -n python3 -c 'import os,pathlib,stat,sys,tempfile,urllib.parse; p=pathlib.Path(\"/etc/silicium-dev/compose.env\"); value=sys.stdin.read(); parsed=urllib.parse.urlsplit(value); assert parsed.scheme == \"https\" and parsed.netloc and \"devnet\" in value.lower() and \"\\n\" not in value and \"\\r\" not in value, \"expected an HTTPS Devnet RPC URL\"; lines=[line for line in p.read_text().splitlines() if not line.startswith(\"SILICIUM_SOLANA_RPC=\")]; lines.append(\"SILICIUM_SOLANA_RPC=\"+value); fd,name=tempfile.mkstemp(dir=str(p.parent),prefix=\".compose.env.\"); f=os.fdopen(fd,\"w\"); f.write(\"\\n\".join(lines)+\"\\n\"); f.close(); os.chmod(name,stat.S_IMODE(p.stat().st_mode)); os.replace(name,p)'"
+          fi
 
           docker save "$FRONTEND_IMAGE" | gzip -1 | \
             ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
