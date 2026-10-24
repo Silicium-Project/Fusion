@@ -1622,24 +1622,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      actions: read
       contents: read
     environment: development
     steps:
-      - name: Require the Fusion VPS runner to be idle
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100" \
-            --jq '.runners[] | select(.name == "fusion-linux-vps") | .busy' | head -n 1)"
-          [[ "$state" == false ]] || {
-            echo "Fusion VPS runner is busy or not registered; refusing to stop its child process." >&2
-            exit 1
-          }
-          echo 'Fusion VPS runner is idle.'
-
       - name: Stop only the verified stale restore process over SSH
         shell: bash
         env:
@@ -1685,6 +1670,11 @@ jobs:
           [[ "$ppid" == 1 ]] || { echo "Target is no longer an orphan." >&2; exit 1; }
           [[ "$cgroup" == *'/system.slice/actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service'* ]] || {
             echo "Target is not inside the Fusion VPS runner cgroup." >&2
+            exit 1
+          }
+          runner_main_pid="$(systemctl show actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service --property=MainPID --value)"
+          [[ "$runner_main_pid" =~ ^[0-9]+$ && "$pid" != "$runner_main_pid" ]] || {
+            echo "Target is the runner service process or its MainPID could not be verified." >&2
             exit 1
           }
           [[ "$exe" =~ ^/home/luis/externals\.[^/]*/node24/bin/node$ ]] || {
