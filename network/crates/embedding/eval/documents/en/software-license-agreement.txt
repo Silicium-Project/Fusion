@@ -1,0 +1,71 @@
+LedgerLoom Desktop — End User Software Licence Agreement (version 4.2, effective 1 March 2025)
+Fictional agreement, written to measure the quality of the Silicium search.
+
+Clause 1 - Definitions
+In this Agreement, "Licensor" means Northwind Quillsoft Ltd, registered in Dublin under company number 604418. "Licensee" means the person or organisation that accepts these terms. "Software" means the LedgerLoom Desktop accounting application, including updates, documentation and sample data. "Seat" means one named user authorised to run the Software.
+
+Clause 2 - Grant of licence
+The Licensor grants the Licensee a non-exclusive, non-transferable licence to install and use the Software for internal business purposes only. Each Seat may install the Software on up to three devices, provided that it is not used on more than one device at the same time.
+
+Clause 3 - Licence tiers
+The Software is offered in three tiers: Solo (1 Seat, maximum 2 company files), Team (up to 15 Seats, unlimited company files) and Enterprise (16 Seats or more, with single sign-on and audit logs). Features of a higher tier may not be unlocked by any means other than purchasing that tier.
+
+Clause 4 - Fees and payment
+The annual fee is EUR 189 per Seat for Solo, EUR 149 per Seat for Team and is quoted individually for Enterprise. Invoices are payable within 30 days. Late payments bear interest at 8 percentage points above the European Central Bank reference rate, and the Licensor may suspend access after 45 days of non-payment.
+
+Clause 5 - Trial period
+A free evaluation licence is available for 21 days. Data created during the trial is kept for 60 days after the trial ends and is then permanently deleted unless a paid licence is purchased.
+
+Clause 6 - Restrictions
+The Licensee shall not decompile, disassemble or reverse engineer the Software, except to the extent expressly permitted by applicable law. The Licensee shall not rent, lease, sublicense or offer the Software as a hosted service to third parties.
+
+Clause 7 - Activation and licence keys
+The Software must be activated online within 7 days of installation using the licence key supplied. A device that has not connected to the activation server for 30 consecutive days will switch to read-only mode until it reconnects.
+
+Clause 8 - Updates and upgrades
+Minor updates (for example 4.2 to 4.3) are included in the annual fee. Major upgrades (for example 4.x to 5.0) are included only if the subscription is active on the release date of the new major version.
+
+Clause 9 - Support
+Standard support is provided by e-mail with a first response within two business days. Team and Enterprise licences include telephone support from 9:00 to 17:30 CET on business days. Enterprise licences additionally benefit from a four-hour response time for incidents classified as Severity 1.
+
+Clause 10 - Data ownership
+All accounting data entered into the Software remains the property of the Licensee. The Licensor acquires no rights over such data other than those strictly necessary to provide the optional cloud backup service.
+
+Clause 11 - Cloud backup
+If the optional cloud backup is enabled, encrypted backups are stored in data centres located in the European Union and retained for 90 days. The Licensee may request a full export of its backups at any time, free of charge, once per calendar quarter.
+
+Clause 12 - Telemetry
+The Software collects anonymous usage statistics such as crash reports and feature counters. Telemetry can be disabled at any time under Settings > Privacy > Diagnostics without affecting the functionality of the Software.
+
+Clause 13 - Intellectual property
+The Software is licensed, not sold. All copyrights, trademarks and other intellectual property rights in the Software remain with the Licensor and its suppliers. The LedgerLoom name and logo may not be used without prior written consent.
+
+Clause 14 - Third-party components
+The Software includes open-source components listed in the file NOTICES.txt in the installation directory. Those components are governed by their own licences, which prevail over this Agreement to the extent of any conflict.
+
+Clause 15 - Limited warranty
+The Licensor warrants that the Software will perform substantially in accordance with its documentation for 90 days from the date of first activation. The Licensee's sole remedy for a breach of this warranty is repair, replacement or a refund of the fee paid for the affected period.
+
+Clause 16 - Limitation of liability
+The Licensor's total liability under this Agreement is limited to the fees paid by the Licensee in the twelve months preceding the event giving rise to the claim. The Licensor is not liable for loss of profits, loss of data or indirect damages, except in cases of gross negligence or wilful misconduct.
+
+Clause 17 - Audit
+Once per year, with at least 15 business days' written notice, the Licensor may verify the number of Seats in use. If the audit reveals an under-licensing of more than 5 %, the Licensee shall bear the cost of the audit in addition to the missing fees.
+
+Clause 18 - Term and termination
+This Agreement runs for the subscription period and renews automatically for successive periods of one year unless either party gives notice at least 60 days before the renewal date. The Licensor may terminate with immediate effect if the Licensee breaches Clause 6.
+
+Clause 19 - Effects of termination
+Upon termination, the Licensee must uninstall the Software from all devices within 14 days. A read-only export tool remains available for 180 days so that the Licensee can retrieve its accounting data.
+
+Clause 20 - Export control
+The Licensee shall comply with all applicable export control and sanctions laws and shall not use the Software in any country subject to a comprehensive embargo by the European Union.
+
+Clause 21 - Assignment
+The Licensee may not assign or transfer this Agreement without the Licensor's prior written consent, which shall not be unreasonably withheld in the case of a merger or the sale of the Licensee's business.
+
+Clause 22 - Governing law and jurisdiction
+This Agreement is governed by the laws of Ireland. Any dispute shall be submitted to the exclusive jurisdiction of the courts of Dublin, without prejudice to the mandatory consumer protection rules of the Licensee's country of residence.
+
+Clause 23 - Contact
+Notices under this Agreement must be sent by e-mail to legal@ledgerloom.example or by registered letter to Northwind Quillsoft Ltd, 12 Harcourt Lane, Dublin 2, Ireland.

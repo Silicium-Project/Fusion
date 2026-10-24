@@ -1,0 +1,32 @@
+Vielen Dank, dass Sie sich für die Luft-Wasser-Wärmepumpe Thermalis WP9 entschieden haben. Das Gerät ist für die Beheizung von Ein- und Zweifamilienhäusern sowie für die Warmwasserbereitung bestimmt. Es besteht aus einer Außeneinheit mit Verdichter und Ventilator und einer Inneneinheit mit Bedienteil, Umwälzpumpe und einem 180-Liter-Warmwasserspeicher. Die Nennheizleistung beträgt 9 kW bei einer Außentemperatur von 2 °C und einer Vorlauftemperatur von 35 °C. Das Gerät arbeitet mit dem natürlichen Kältemittel R290 (Propan), Füllmenge 1,1 kg. Lesen Sie diese Anleitung vollständig, bevor Sie Einstellungen verändern, und bewahren Sie sie in der Nähe der Inneneinheit auf.
+
+Die Außeneinheit muss auf einem frostfreien Betonsockel oder einer Wandkonsole mindestens 30 cm über dem Boden stehen, damit Tauwasser ungehindert ablaufen kann und die Einheit bei Schneefall nicht einschneit. Zu Fenstern, Lichtschächten und Kellertüren ist wegen des brennbaren Kältemittels ein Abstand von mindestens 1 Meter einzuhalten. Vor der Luftansaugseite müssen 40 cm frei bleiben, vor der Ausblasseite 1,5 Meter. Stellen Sie die Außeneinheit möglichst nicht direkt unter ein Schlafzimmerfenster; der Schallleistungspegel liegt im Nachtbetrieb bei 49 dB(A), im Volllastbetrieb bei 58 dB(A).
+
+Die Bedienung erfolgt über das Farbdisplay an der Inneneinheit oder über die App Thermalis Home. Im Hauptmenü wählen Sie zwischen den Betriebsarten Automatik, Nur Heizen, Nur Warmwasser, Kühlen und Standby. Im Automatikbetrieb schaltet das Gerät die Heizung ab, sobald der gleitende Mittelwert der Außentemperatur über 16 °C steigt, und wieder ein, wenn er unter 15 °C fällt. Die Heizkurve ist werkseitig auf Steilheit 0,6 eingestellt, was für Fußbodenheizungen geeignet ist. Bei Heizkörpern empfehlen wir eine Steilheit zwischen 0,9 und 1,2. Verändern Sie die Heizkurve stets nur in kleinen Schritten von 0,1 und warten Sie danach mindestens zwei Tage, bevor Sie erneut nachjustieren.
+
+Die Warmwassertemperatur ist ab Werk auf 48 °C eingestellt. Zum Schutz vor Legionellen erhitzt das Gerät den Speicher einmal pro Woche, standardmäßig in der Nacht von Sonntag auf Montag um 2 Uhr, mithilfe des elektrischen Heizstabs auf 60 °C. Diese Funktion kann im Menü Warmwasser > Legionellenschutz verschoben, aber nicht dauerhaft abgeschaltet werden. Der Heizstab mit 3 kW Leistung dient außerdem als Notheizung, wenn die Wärmepumpe ausfällt oder die Außentemperatur unter minus 20 °C sinkt.
+
+Für einen möglichst günstigen Betrieb können Sie im Menü Energie den SG-Ready-Eingang aktivieren. Ist eine Photovoltaikanlage angeschlossen, hebt die Wärmepumpe bei Stromüberschuss die Speichertemperatur um bis zu 5 K an. Über die Funktion Flüsterbetrieb wird die Verdichterleistung zwischen 22 und 6 Uhr auf 70 Prozent begrenzt; dadurch kann es in sehr kalten Nächten zu einem Einsatz des Heizstabs kommen.
+
+Bei einer Störung zeigt das Display einen Fehlercode an und das Statuslicht blinkt rot. Viele Störungen beheben sich selbst; quittieren Sie den Code erst nach Beseitigung der Ursache durch langes Drücken der Taste OK. Die wichtigsten Fehlercodes lauten:
+
+F03: Außentemperaturfühler defekt oder Kabelbruch, die Anlage läuft mit einem Ersatzwert von 0 °C weiter.
+F07: Hochdruckstörung im Kältekreis, häufig durch einen verschmutzten Schmutzfänger oder geschlossene Heizkreisventile verursacht.
+F12: Durchfluss zu gering, prüfen Sie den Anlagendruck und entlüften Sie die Heizkörper.
+F15: Niederdruckstörung, möglicherweise ist der Verdampfer der Außeneinheit vereist oder durch Laub verstopft.
+F21: Warmwasserspeicher überhitzt, der Sicherheitstemperaturbegrenzer hat bei 85 °C ausgelöst.
+F28: Keine Kommunikation zwischen Inneneinheit und Außeneinheit, kontrollieren Sie die Busleitung und die Sicherung.
+F33: Abtauvorgang dauert länger als 20 Minuten, die Außeneinheit wird nach einer Pause neu gestartet.
+F40: Heizstab ohne Funktion, verständigen Sie einen Elektriker.
+
+Tritt derselbe Fehler innerhalb von 24 Stunden dreimal auf, sperrt sich das Gerät und kann nur noch vom Fachbetrieb entriegelt werden. Schalten Sie in diesem Fall die Anlage nicht wiederholt aus und ein, sondern notieren Sie den Code und die Uhrzeit und wenden Sie sich an die Service-Hotline unter 0800 4417 900, die montags bis samstags von 7 bis 20 Uhr erreichbar ist.
+
+Der Anlagendruck im Heizkreis soll im kalten Zustand zwischen 1,2 und 2,0 bar liegen und wird am Manometer unterhalb des Bedienteils abgelesen. Fällt er unter 1,0 bar, füllen Sie über den Füll- und Entleerungshahn Heizungswasser nach, bis wieder 1,5 bar erreicht sind. Verwenden Sie dazu enthärtetes Wasser nach VDI 2035. Häufiges Nachfüllen deutet auf ein Leck hin.
+
+Zur regelmäßigen Pflege durch den Betreiber gehört es, den Schmutzfänger im Rücklauf alle drei Monate zu kontrollieren und bei Bedarf zu reinigen. Die Lamellen des Verdampfers an der Außeneinheit sind im Herbst von Laub und im Winter von Schnee freizuhalten; reinigen Sie sie niemals mit einem Hochdruckreiniger, sondern nur mit einer weichen Bürste. Den Kondensatablauf prüfen Sie zweimal jährlich, vor und nach der Heizperiode.
+
+Eine Wartung durch einen zertifizierten Fachbetrieb ist einmal jährlich vorgeschrieben, damit die Herstellergarantie von sieben Jahren erhalten bleibt. Dabei werden die Dichtheit des Kältekreises geprüft, die Schutzanode des Warmwasserspeichers kontrolliert und das Sicherheitsventil betätigt. Die Magnesium-Schutzanode ist spätestens alle fünf Jahre auszutauschen, bei hartem Wasser bereits nach drei Jahren. Das Ausdehnungsgefäß wird alle zwei Jahre auf seinen Vordruck von 1,0 bar überprüft.
+
+Wollen Sie das Haus längere Zeit verlassen, schalten Sie die Anlage nicht aus, sondern wählen die Betriebsart Urlaub. Die Raumtemperatur wird dann auf 15 °C abgesenkt und der Frostschutz bleibt aktiv. Wird die Anlage im Winter vollständig vom Netz getrennt, muss die Außeneinheit entleert werden, da sonst der Wärmetauscher einfrieren und platzen kann.
+
+Ausgediente Geräte enthalten brennbares Kältemittel und dürfen nicht über den Hausmüll entsorgt werden. Der Hersteller nimmt Altgeräte über seine Fachpartner kostenlos zurück.

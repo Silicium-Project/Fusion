@@ -1,0 +1,542 @@
+name: Network CI
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - "issue/**"
+      - "codex/**"
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: "Release channel to validate."
+        required: true
+        type: choice
+        options: [dev, prod]
+        default: dev
+  workflow_call:
+    inputs:
+      release_channel:
+        description: "Release channel to validate."
+        required: false
+        type: string
+        default: dev
+
+permissions:
+  contents: read
+
+env:
+  SILICIUM_RELEASE_CHANNEL: ${{ inputs.release_channel || github.event.inputs.release_channel || (github.ref_name == 'main' && 'prod' || 'dev') }}
+
+concurrency:
+  group: network-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.detect.outputs.python }}
+      e2e: ${{ steps.detect.outputs.e2e }}
+      javascript: ${{ steps.detect.outputs.javascript }}
+      rust: ${{ steps.detect.outputs.rust }}
+      solana: ${{ steps.detect.outputs.solana }}
+      docker: ${{ steps.detect.outputs.docker }}
+      p2p: ${{ steps.detect.outputs.p2p }}
+      rust_crates: ${{ steps.detect.outputs.rust_crates }}
+      codeql: ${{ steps.detect.outputs.codeql }}
+      test_jobs: ${{ steps.detect.outputs.test_jobs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          clean: false
+
+      - name: Classify changed surfaces
+        id: detect
+        shell: bash
+        env:
+          EVENT_BEFORE: ${{ github.event.before || '' }}
+        run: |
+          set -euo pipefail
+          force_all=false
+          base="${EVENT_BEFORE:-}"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" || "$GITHUB_EVENT_NAME" == "workflow_call" || -z "$base" || "$base" =~ ^0+$ ]]; then
+            force_all=true
+          else
+            git fetch --no-tags --depth=1 origin "$base"
+          fi
+          if [[ "$force_all" == true ]]; then
+            changed_paths="__all__"
+          else
+            changed_paths="$(git diff --name-only "$base" "$GITHUB_SHA")"
+          fi
+          matches() {
+            [[ "$force_all" == true ]] || printf '%s\n' "$changed_paths" | grep -Eq "$1"
+          }
+          python=false
+          javascript=false
+          rust=false
+          solana=false
+          docker=false
+          p2p=false
+          e2e=false
+          # Python is only developer tooling now (tools/dev/, tests/).
+          if matches '^(tools|tests|i18n)/|^requirements-dev\.txt$'; then python=true; fi
+          if matches '^solana-layer/|\.(js|jsx|ts|tsx)$|(^|/)(package|yarn)\.json$'; then javascript=true; fi
+          if matches '^crates/|(^|/)Cargo\.(toml|lock)$'; then rust=true; fi
+          if matches '^solana-layer/'; then solana=true; fi
+          if matches '^(infra/|tests/smoke/|crates/.*/Dockerfile)|docker-compose'; then docker=true; fi
+          if matches '^crates/(p2p-node|node-core)/|^ci/p2p_kademlia_smoke\.sh$'; then p2p=true; fi
+          if matches '^crates/|(^|/)Cargo\.(toml|lock)$|^ci/(e2e|core_check)\.sh$'; then e2e=true; fi
+          if matches '^\.github/workflows/'; then
+            python=true; javascript=true; rust=true; solana=true; docker=true; p2p=true; e2e=true
+          fi
+          rust_crates='[]'
+          add_rust_crate() {
+            local crate="$1"
+            if [[ "$rust_crates" == '[]' ]]; then
+              rust_crates="[\"$crate\"]"
+            else
+              rust_crates="${rust_crates%]},\"$crate\"]"
+            fi
+          }
+          if matches '^crates/|(^|/)Cargo\.(toml|lock)$'; then
+            # Single Cargo workspace (Network/Cargo.toml): one job checks every crate.
+            add_rust_crate workspace
+          fi
+          codeql='[]'
+          if [[ "$javascript" == true && "$python" == true ]]; then
+            codeql='["javascript-typescript","python"]'
+          elif [[ "$javascript" == true ]]; then
+            codeql='["javascript-typescript"]'
+          elif [[ "$python" == true ]]; then
+            codeql='["python"]'
+          fi
+          test_jobs='[]'
+          add_test_job() {
+            local name="$1"
+            if [[ "$test_jobs" == '[]' ]]; then
+              test_jobs="[\"$name\"]"
+            else
+              test_jobs="${test_jobs%]},\"$name\"]"
+            fi
+          }
+          if [[ "$python" == true ]]; then add_test_job pytest; fi
+          if [[ "$e2e" == true ]]; then add_test_job e2e; fi
+          if [[ "$docker" == true ]]; then add_test_job smoke; fi
+          # The p2p-node workspace job already runs this smoke after its Rust
+          # tests. Keep the standalone matrix entry for smoke-script-only edits.
+          if [[ "$p2p" == true && "$rust_crates" == '[]' ]]; then add_test_job p2p-kademlia-smoke; fi
+          printf 'Changed paths:\n%s\n' "$changed_paths"
+          printf 'codeql=%s\n' "$codeql"
+          printf 'test_jobs=%s\n' "$test_jobs"
+          printf 'rust_crates=%s\n' "$rust_crates"
+          for name in python javascript rust solana docker p2p e2e rust_crates codeql test_jobs; do
+            printf '%s=%s\n' "$name" "${!name}" >> "$GITHUB_OUTPUT"
+          done
+
+  codeql:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.codeql != '[]' }}
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.changes.outputs.codeql) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: false
+
+      - name: Set up Node.js
+        if: matrix.language == 'javascript-typescript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: solana-layer/silicium-sdk/package-lock.json
+
+      - name: Set up Python
+        if: matrix.language == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install JavaScript dependencies
+        if: matrix.language == 'javascript-typescript'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd solana-layer/silicium-sdk >/dev/null
+          npm ci
+          npm run build
+          popd >/dev/null
+
+      - name: Python syntax check
+        if: matrix.language == 'python'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall tools tests ci/runner
+
+  p2p-node:
+    needs: [changes]
+    if: ${{ needs.changes.outputs.rust_crates != '[]' }}
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: ${{ fromJSON(needs.changes.outputs.rust_crates) }}
+
+    env:
+      RUSTUP_TOOLCHAIN: stable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: false
+      - name: Set up Rust
+        shell: bash
+        run: bash ci/runner/install_rust_toolchain.sh stable clippy,rustfmt
+
+      - name: Expose Rust toolchain to shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+          export PATH="$cargo_bin:$PATH"
+          rustup run stable rustc --version
+          rustup run stable cargo --version
+
+      - name: Repair runner Rust state
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ci/runner/repair_rust_toolchains.sh
+          python3 ci/runner/repair_cargo_sources.py
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: bash ci/runner/retry_on_corruption.sh -- cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Tests
+        run: bash ci/runner/retry_on_corruption.sh -- cargo test --workspace --all-features --locked
+
+      - name: P2P Kademlia smoke
+        if: matrix.crate == 'workspace'
+        run: bash ci/runner/retry_on_corruption.sh -- bash ./ci/p2p_kademlia_smoke.sh
+
+  solana-layer:
+    needs: [changes, p2p-node, tests]
+    if: ${{ always() && needs.changes.outputs.solana == 'true' }}
+    name: Build and test Anchor program
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: solana-layer
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "yarn"
+          cache-dependency-path: solana-layer/yarn.lock
+
+      - name: Install Rust toolchain
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/ci/runner/install_rust_toolchain.sh" 1.89.0
+
+      - name: Expose rustup cargo
+        run: |
+          cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+          export PATH="$cargo_bin:$PATH"
+          rustup override set 1.89.0
+          cargo --version
+          rustc --version
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-solana-layer-v2-${{ hashFiles('solana-layer/Cargo.lock', 'solana-layer/programs/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-solana-layer-v2-
+
+      - name: Repair runner Rust state
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/ci/runner/repair_rust_toolchains.sh"
+          python3 "$GITHUB_WORKSPACE/ci/runner/repair_cargo_sources.py"
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.3.0/install)"
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          solana --version
+
+      - name: Install Anchor CLI
+        run: |
+          export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$HOME/.avm/bin:$PATH"
+          retry="$GITHUB_WORKSPACE/ci/runner/retry_on_corruption.sh"
+          # avm and anchor are built from source (slow, and exposed to corrupted
+          # Cargo sources): keep the installed ones when the version is right.
+          if ! command -v avm >/dev/null 2>&1; then
+            bash "$retry" -- rustup run stable cargo install --git https://github.com/coral-xyz/anchor avm --locked
+          fi
+          if ! anchor --version 2>/dev/null | grep -q ' 0\.32\.1$'; then
+            bash "$retry" -- avm install 0.32.1 --force
+          fi
+          avm use 0.32.1
+          anchor --version
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+
+      - name: Install JavaScript dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Create temporary local wallet
+        run: |
+          mkdir -p ~/.config/solana
+          solana-keygen new --no-bip39-passphrase --force -o ~/.config/solana/id.json
+          solana config set --url localhost
+          solana address
+
+      - name: Sync Anchor program IDs for localnet
+        run: anchor keys sync --provider.cluster localnet
+
+      - name: Check program ID alignment
+        run: |
+          anchor keys list
+          grep -R "declare_id" programs/solana-layer/src/lib.rs
+          grep -n "solana_layer" Anchor.toml
+
+      - name: Build Anchor program
+        env:
+          RUSTUP_TOOLCHAIN: "1.89.0"
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup run 1.89.0 cargo --version
+          rustup run 1.89.0 rustc --version
+          bash "$GITHUB_WORKSPACE/ci/runner/retry_on_corruption.sh" -- rustup run 1.89.0 anchor build --provider.cluster localnet
+
+      - name: Run Anchor tests on localnet
+        env:
+          RUSTUP_TOOLCHAIN: "1.89.0"
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rustup run 1.89.0 cargo --version
+          rustup run 1.89.0 rustc --version
+          if ! bash "$GITHUB_WORKSPACE/ci/runner/retry_on_corruption.sh" -- rustup run 1.89.0 anchor test --provider.cluster localnet; then
+            echo "Anchor localnet test failed; validator diagnostics follow."
+            for log_file in .anchor/test-ledger/test-ledger-log.txt .anchor/test-ledger/validator.log; do
+              if [[ -f "$log_file" ]]; then
+                echo "--- $log_file ---"
+                tail -n 200 "$log_file"
+              fi
+            done
+            echo "--- validator processes ---"
+            pgrep -af 'solana-test-validator' || true
+            echo "--- local RPC listeners ---"
+            ss -ltnp '( sport = :8899 or sport = :8900 )' || true
+            exit 1
+          fi
+
+      - name: Upload IDL artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: solana-layer-idl
+          path: |
+            solana-layer/target/idl/*.json
+            solana-layer/target/types/*.ts
+          if-no-files-found: warn
+
+      - name: Upload program binary artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: solana-layer-program-binary
+          path: solana-layer/target/deploy/*.so
+          if-no-files-found: warn
+
+  tests:
+    needs: [changes, p2p-node]
+    if: ${{ always() && needs.changes.outputs.test_jobs != '[]' }}
+    name: EntryPoint Tests / ${{ matrix.job }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      # Keep resource-intensive network checks serial within this matrix.
+      max-parallel: 1
+      matrix:
+        job: ${{ fromJSON(needs.changes.outputs.test_jobs) }}
+
+    env:
+      RUSTUP_TOOLCHAIN: stable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          clean: false
+
+      - name: Clean legacy workspace artifacts
+        if: matrix.job == 'pytest'
+        shell: bash
+        run: git clean -ffdx
+
+      - name: Set up Rust
+        if: matrix.job == 'e2e' || matrix.job == 'p2p-kademlia-smoke'
+        shell: bash
+        run: bash ci/runner/install_rust_toolchain.sh stable
+
+      - name: Expose Rust toolchain to shell
+        if: matrix.job == 'e2e' || matrix.job == 'p2p-kademlia-smoke'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup run stable rustc --version
+          rustup run stable cargo --version
+          if command -v cargo >/dev/null 2>&1; then
+            cargo_bin="$(dirname "$(command -v cargo)")"
+          else
+            cargo_bin="$RUNNER_TEMP/rust-toolchain-bin"
+            mkdir -p "$cargo_bin"
+            printf '%s\n' '#!/usr/bin/env bash' 'exec rustup run stable cargo "$@"' > "$cargo_bin/cargo"
+            chmod +x "$cargo_bin/cargo"
+          fi
+          echo "$cargo_bin" >> "$GITHUB_PATH"
+          export PATH="$cargo_bin:$PATH"
+          cargo --version
+
+      - name: Repair runner Rust state
+        if: matrix.job == 'e2e' || matrix.job == 'p2p-kademlia-smoke'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ci/runner/repair_rust_toolchains.sh
+          python3 ci/runner/repair_cargo_sources.py
+
+      - name: Cache Rust build
+        if: matrix.job == 'e2e' || matrix.job == 'p2p-kademlia-smoke'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Set up Python
+        if: matrix.job == 'pytest'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Prepare Docker access
+        if: matrix.job == 'smoke'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker_path="$(command -v docker)"
+          if docker info >/dev/null 2>&1; then
+            exit 0
+          fi
+          if ! sudo -n "$docker_path" info >/dev/null 2>&1; then
+            echo "Docker is unavailable and passwordless sudo cannot access it." >&2
+            echo "Add the runner user to the docker group and restart the runner service." >&2
+            exit 1
+          fi
+          wrapper_dir="$RUNNER_TEMP/docker-bin"
+          mkdir -p "$wrapper_dir"
+          printf '%s\n' '#!/usr/bin/env bash' "exec sudo -n \"$docker_path\" \"\$@\"" > "$wrapper_dir/docker"
+          chmod +x "$wrapper_dir/docker"
+          echo "$wrapper_dir" >> "$GITHUB_PATH"
+
+      - name: Normalize shared workspace ownership
+        if: matrix.job == 'smoke'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            busybox:1.36 \
+            chown -R "$(id -u):$(id -g)" /workspace
+          git clean -ffdx
+
+      - name: Install dev dependencies
+        if: matrix.job == 'pytest'
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Validate UTF-8 files
+        if: matrix.job == 'pytest'
+        run: python tools/dev/quality/check_utf8.py
+
+      - name: Validate i18n locale packs
+        if: matrix.job == 'pytest'
+        run: python tools/dev/quality/check_i18n_locales.py --strict
+
+      - name: Test developer tooling
+        if: matrix.job == 'pytest'
+        run: python -m pytest -q
+
+      # Orchestrator + workers on loopback with the release binaries:
+      # raytracer (1 and 2 workers) and sha256.
+      - name: End-to-end network check
+        if: matrix.job == 'e2e'
+        run: bash ci/runner/retry_on_corruption.sh -- bash ci/e2e.sh
+
+      - name: Upload e2e logs
+        if: failure() && matrix.job == 'e2e'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: target/e2e/**/*.log
+          if-no-files-found: ignore
+
+      - name: Run Kademlia smoke test
+        if: matrix.job == 'p2p-kademlia-smoke'
+        run: bash ci/runner/retry_on_corruption.sh -- bash ./ci/p2p_kademlia_smoke.sh
+
+      - name: Smoke test proxy + TLS
+        if: matrix.job == 'smoke'
+        run: bash tests/smoke/run_proxy_smoke.sh

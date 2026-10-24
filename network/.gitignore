@@ -1,0 +1,39 @@
+# Local IDE / tooling state
+.vscode/
+.pytest_cache/
+.pytest-basetemp*/
+.pytest_tmp*/
+.pytest-*/
+__pycache__/
+*.py[cod]
+.cache/
+.tmp/
+.tmp*/
+tmp/
+tmp_pytest_root/
+build/
+
+# Local runtime and validator output
+.silicium/
+*.log
+Network-*.ndjson
+solana-validator-*.log
+
+# Secrets generated for the reverse proxy (certificates/private keys)
+infra/docker/reverse-proxy/certs/*.crt
+infra/docker/reverse-proxy/certs/*.key
+infra/docker/reverse-proxy/certs/*.pem
+infra/docker/reverse-proxy/certs/*.pfx
+infra/docker/reverse-proxy/certs/*.p12
+infra/docker/reverse-proxy/certs/*.csr
+
+# Anchor / Solana / Rust build state
+**/target/
+.target/
+Cargo.lock
+!/Cargo.lock
+.anchor/
+node_modules/
+.yarn/
+.yarn-cache/
+.yarn-install-state.gz

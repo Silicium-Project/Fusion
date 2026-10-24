@@ -1,0 +1,69 @@
+name: Solana SBF build
+
+on:
+  push:
+    branches:
+      - dev
+      - codex/solana-devnet-program-id
+    paths:
+      - "solana-layer/**"
+      - ".github/workflows/solana-sbf-build.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: solana-sbf-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Anchor program
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out Network
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.89.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup default 1.89.0
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          rustc --version
+          cargo --version
+
+      - name: Install Solana CLI and SBF tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.3.0/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/share/solana/install/active_release/bin/solana" --version
+
+      - name: Install Anchor CLI 0.32.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$HOME/.avm/bin:$PATH"
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked
+          avm install 0.32.1 --force
+          avm use 0.32.1
+          echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+          anchor --version
+
+      - name: Build program
+        working-directory: solana-layer
+        env:
+          RUSTUP_TOOLCHAIN: "1.89.0"
+        run: anchor build --provider.cluster localnet
+
+      - name: Upload program binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: silicium-solana-layer-devnet
+          path: solana-layer/target/deploy/solana_layer.so
+          if-no-files-found: error
+          retention-days: 2

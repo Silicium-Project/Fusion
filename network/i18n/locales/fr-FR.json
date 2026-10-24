@@ -1,0 +1,21 @@
+{
+  "meta": {
+    "locale": "fr-FR",
+    "fallback": "fr",
+    "version": 1
+  },
+  "messages": {
+    "core.ok": "OK",
+    "core.error": "Erreur",
+    "infra.compose.service_unavailable": "Service indisponible.",
+    "infra.proxy.compose_not_found": "Fichier compose introuvable a %s",
+    "infra.proxy.usage": "Usage: infra/bin/run-with-proxy.sh [service-name]\n\nDemarre le service Silicium demande avec le proxy TLS, genere automatiquement\nun certificat autosigne quand PROXY_TLS_MODE=local (defaut), puis attend la\nreponse de l'endpoint de health du proxy.\n\nVariables d'environnement:\n  PROXY_COMPOSE_PROFILES  Liste de profiles compose (separes par virgule)\n                          (defaut \"proxy\").\n  PROXY_UPSTREAM_HOST     Host du service cible (defaut nom du service).\n  PROXY_UPSTREAM_PORT     Port RPC cible (defaut 8899).\n  PROXY_TLS_MODE          local | acme | internal (defaut local).\n  PROXY_TLS_EMAIL         Email requis en mode ACME.\n  PROXY_TLS_CERT_PATH     Chemin cert TLS dans le container proxy\n                          (defaut /etc/caddy/certs/tls.crt).\n  PROXY_TLS_KEY_PATH      Chemin cle TLS dans le container proxy\n                          (defaut /etc/caddy/certs/tls.key).\n  PROXY_TLS_CERT_PATH_HOST  Chemin host cert genere (mode local).\n  PROXY_TLS_KEY_PATH_HOST   Chemin host cle generee (mode local).\n  PROXY_SITE_ADDRESS      Adresse servie par Caddy (defaut :443).\n  PROXY_HTTP_PORT         Port host mappe vers le port 80 proxy (defaut 9080).\n  PROXY_HTTPS_PORT        Port host mappe vers le port 443 proxy (defaut 9443).\n  PROXY_TEST_URL          URL pour sonder le proxy (defaut https://localhost:9443/healthz, lie a PROXY_HTTPS_PORT).\n  PROXY_SELF_SIGN_CN      Common Name cert autosigne (defaut rpc.local.silicium).\n  PROXY_SELF_SIGN_DAYS    Duree de validite en jours (defaut 30).",
+    "infra.proxy.docker_missing": "CLI docker introuvable.",
+    "infra.proxy.openssl_missing": "CLI openssl introuvable (requis pour le mode TLS local).",
+    "infra.proxy.gen_self_signed": "Generation certificat autosigne pour %s (%s jours)",
+    "infra.proxy.start_service": "Demarrage de %s avec proxy (profiles: %s)",
+    "infra.proxy.wait_health": "Attente du health proxy sur %s ...",
+    "infra.proxy.up": "Proxy operationnel: %s",
+    "infra.proxy.not_ready": "Le proxy n'a pas ete pret a temps. Verifiez les logs docker compose."
+  }
+}
