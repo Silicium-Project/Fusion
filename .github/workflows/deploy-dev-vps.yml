@@ -928,13 +928,12 @@ jobs:
               echo "Missing expected dev miniworker service: $service" >&2
               exit 1
             }
-            container="$("${compose[@]}" ps -q "$service" | head -n 1 || true)"
+            container="$("${compose[@]}" ps --all --quiet "$service" | head -n 1 || true)"
             [[ -n "$container" ]] || { echo "Miniworker is not running: $service" >&2; exit 1; }
             state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")"
-            [[ "$state" == healthy || "$state" == running ]] || {
-              echo "Miniworker is not healthy before rollout: $service ($state)" >&2
-              exit 1
-            }
+            if [[ "$state" != healthy && "$state" != running ]]; then
+              echo "Existing $service is $state; the one-at-a-time rollout will attempt recovery."
+            fi
             old_images[$service]="$(docker inspect --format '{{.Image}}' "$container")"
             if [[ -z "$common_old_image" ]]; then
               common_old_image="${old_images[$service]}"
