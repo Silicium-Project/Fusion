@@ -26,7 +26,11 @@ ALLOWED_CIDRS = tuple(
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 RETRYABLE_STATUS = {429, 502, 503, 504}
-UPSTREAM_SLOTS = threading.BoundedSemaphore(4)
+UPSTREAM_SLOTS = threading.BoundedSemaphore(2)
+UPSTREAM_PACE_LOCK = threading.Lock()
+UPSTREAM_MIN_INTERVAL = 0.2
+NEXT_UPSTREAM_START = 0.0
+UPSTREAM_BACKOFF_UNTIL = 0.0
 
 upstream = urlsplit(UPSTREAM)
 if upstream.scheme != "https" or not upstream.hostname or "devnet" not in upstream.hostname.lower():
@@ -54,6 +58,24 @@ def is_json_rpc_rate_limit(payload: bytes) -> bool:
         return False
     error = body.get("error") if isinstance(body, dict) else None
     return isinstance(error, dict) and error.get("code") == 429
+
+
+def pace_upstream_request() -> None:
+    global NEXT_UPSTREAM_START
+    while True:
+        with UPSTREAM_PACE_LOCK:
+            now = time.monotonic()
+            wait_until = max(NEXT_UPSTREAM_START, UPSTREAM_BACKOFF_UNTIL)
+            if wait_until <= now:
+                NEXT_UPSTREAM_START = now + UPSTREAM_MIN_INTERVAL
+                return
+        time.sleep(wait_until - now)
+
+
+def back_off_upstream(delay: float) -> None:
+    global UPSTREAM_BACKOFF_UNTIL
+    with UPSTREAM_PACE_LOCK:
+        UPSTREAM_BACKOFF_UNTIL = max(UPSTREAM_BACKOFF_UNTIL, time.monotonic() + delay)
 
 
 class RelayHandler(BaseHTTPRequestHandler):
@@ -121,6 +143,7 @@ class RelayHandler(BaseHTTPRequestHandler):
             response_headers = None
             try:
                 with UPSTREAM_SLOTS:
+                    pace_upstream_request()
                     with urlopen(request, timeout=25) as response:
                         status = response.status
                         response_headers = response.headers
@@ -135,13 +158,20 @@ class RelayHandler(BaseHTTPRequestHandler):
                 self._respond(502, b'{"error":"upstream response too large"}')
                 return
             should_retry = status in RETRYABLE_STATUS or (status == 200 and is_json_rpc_rate_limit(body))
-            if not should_retry or attempt == 3:
+            if not should_retry:
                 content_type = "application/json"
                 if response_headers:
                     content_type = response_headers.get("Content-Type", content_type)
                 self._respond(status, body, content_type)
                 return
-            time.sleep(retry_delay(response_headers, attempt))
+            delay = retry_delay(response_headers, attempt)
+            back_off_upstream(delay)
+            if attempt == 3:
+                content_type = "application/json"
+                if response_headers:
+                    content_type = response_headers.get("Content-Type", content_type)
+                self._respond(status, body, content_type)
+                return
 
     def log_message(self, _format: str, *_args) -> None:
         return

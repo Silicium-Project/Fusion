@@ -483,7 +483,6 @@ jobs:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
           SILICIUM_SOLANA_RPC: ${{ secrets.SILICIUM_SOLANA_RPC }}
-          SILICIUM_SOLANA_BROWSER_RPC: ${{ secrets.SILICIUM_SOLANA_BROWSER_RPC }}
           FRONTEND_IMAGE: ${{ steps.image.outputs.image }}
           FRONTEND_VERSION: ${{ steps.image.outputs.version }}
         run: |
@@ -515,13 +514,6 @@ jobs:
             printf '%s' "$SILICIUM_SOLANA_RPC" | \
               ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
                 "sudo -n python3 -c 'import os,pathlib,stat,sys,tempfile,urllib.parse; p=pathlib.Path(\"/etc/silicium-dev/compose.env\"); value=sys.stdin.read(); parsed=urllib.parse.urlsplit(value); assert parsed.scheme == \"https\" and parsed.netloc and \"devnet\" in value.lower() and \"\\n\" not in value and \"\\r\" not in value, \"expected an HTTPS Devnet RPC URL\"; lines=[line for line in p.read_text().splitlines() if not line.startswith(\"SILICIUM_SOLANA_RPC=\")]; lines.append(\"SILICIUM_SOLANA_RPC=\"+value); fd,name=tempfile.mkstemp(dir=str(p.parent),prefix=\".compose.env.\"); f=os.fdopen(fd,\"w\"); f.write(\"\\n\".join(lines)+\"\\n\"); f.close(); os.chmod(name,stat.S_IMODE(p.stat().st_mode)); os.replace(name,p)'"
-          fi
-
-          if [[ -n "${SILICIUM_SOLANA_BROWSER_RPC:-}" ]]; then
-            printf '%s' "$SILICIUM_SOLANA_BROWSER_RPC" | \
-              ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
-                "sudo -n python3 -c 'import os,pathlib,stat,sys,tempfile,urllib.parse; p=pathlib.Path(\"/etc/silicium-dev/compose.env\"); value=sys.stdin.read(); parsed=urllib.parse.urlsplit(value); assert parsed.scheme == \"https\" and parsed.netloc and \"devnet\" in value.lower() and \"\\n\" not in value and \"\\r\" not in value, \"expected an HTTPS Devnet browser RPC URL\"; lines=[line for line in p.read_text().splitlines() if not line.startswith(\"SILICIUM_SOLANA_BROWSER_RPC=\")]; lines.append(\"SILICIUM_SOLANA_BROWSER_RPC=\"+value); fd,name=tempfile.mkstemp(dir=str(p.parent),prefix=\".compose.env.\"); f=os.fdopen(fd,\"w\"); f.write(\"\\n\".join(lines)+\"\\n\"); f.close(); os.chmod(name,stat.S_IMODE(p.stat().st_mode)); os.replace(name,p)'"
-            echo "Configured the origin-restricted browser Devnet RPC from GitHub."
           fi
 
           docker save "$FRONTEND_IMAGE" | gzip -1 | \
@@ -575,6 +567,19 @@ jobs:
             echo "Could not resolve the dev backend bridge gateway." >&2
             exit 1
           }
+          worker_network=silicium-dev-miniworkers
+          worker_gateway="$(docker network inspect --format '{{(index .IPAM.Config 0).Gateway}}' "$worker_network")"
+          [[ "$worker_gateway" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || {
+            echo "Could not resolve the private Devnet relay gateway." >&2
+            exit 1
+          }
+          systemctl is-active --quiet silicium-devnet-rpc-relay.service || {
+            echo "The private Devnet RPC relay is unavailable; deploy rpc-relay first." >&2
+            exit 1
+          }
+          relay_health="$(curl --noproxy '*' --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+            "http://$worker_gateway:8899/healthz")"
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("status") == "ok" and d.get("cluster") == "devnet", d' <<<"$relay_health"
           config_dir="$(read_compose_value SILICIUM_CONFIG_DIR)"
           config_dir="${config_dir:-/etc/silicium-dev}"
           [[ "$config_dir" == /etc/silicium-dev ]] || {
@@ -595,6 +600,40 @@ jobs:
             -e "s#__SILICIUM_ORCHESTRATOR_PORT__#$orchestrator_port#g" \
             -e "s#host.docker.internal#$backend_gateway#g" \
             "$nginx_template" > "$nginx_staged"
+          python3 - "$nginx_staged" "$worker_gateway" <<'PY'
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          gateway = sys.argv[2]
+          config = path.read_text()
+          http_marker = "http {\n"
+          server_marker = "    location / {\n"
+          if config.count(http_marker) != 1 or config.count(server_marker) != 1:
+              raise SystemExit("Could not safely add the private Devnet RPC route to Nginx.")
+          config = config.replace(
+              http_marker,
+              http_marker + "  limit_req_zone $binary_remote_addr zone=solana_devnet:10m rate=4r/s;\n",
+              1,
+          )
+          route = f'''    location = /solana-devnet {{
+            limit_req zone=solana_devnet burst=12 nodelay;
+            limit_req_status 429;
+            client_max_body_size 2m;
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 30s;
+            proxy_buffering off;
+            proxy_next_upstream off;
+            proxy_pass http://{gateway}:8899/devnet;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+          }}
+
+          '''
+          config = config.replace(server_marker, route + server_marker, 1)
+          path.write_text(config)
+          PY
           if grep -Eq '__SILICIUM_[A-Z0-9_]+__|host\.docker\.internal' "$nginx_staged"; then
             echo "The rendered dev Nginx config still has unresolved placeholders." >&2
             exit 1
@@ -637,7 +676,7 @@ jobs:
                 NUXT_PUBLIC_RELEASE_BUILD: $FRONTEND_BUILD
                 NUXT_PUBLIC_SOLANA_CLUSTER: devnet
                 NUXT_PUBLIC_SIL_POOL_ID: 66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS
-                NUXT_PUBLIC_SOLANA_RPC: \${SILICIUM_SOLANA_BROWSER_RPC:-https://api.devnet.solana.com}
+                NUXT_PUBLIC_SOLANA_RPC: /solana-devnet
           EOF
             else
               cat <<EOF | tee "$override_file" >/dev/null
@@ -645,7 +684,7 @@ jobs:
             frontend:
               image: $image
               environment:
-                NUXT_PUBLIC_SOLANA_RPC: \${SILICIUM_SOLANA_BROWSER_RPC:-https://api.devnet.solana.com}
+                NUXT_PUBLIC_SOLANA_RPC: /solana-devnet
           EOF
             fi
           }
@@ -717,6 +756,19 @@ jobs:
             --connect-timeout 4 --max-time 10 "https://10.77.0.1:${proxy_port}/" >/dev/null || {
             rollback
             echo "The dev HTTPS ingress did not respond on 10.77.0.1:${proxy_port}." >&2
+            exit 1
+          }
+          rpc_response="$(curl --noproxy '*' --insecure --fail --silent --show-error \
+            --connect-timeout 4 --max-time 35 -H 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":"frontend-deploy","method":"getHealth"}' \
+            "https://10.77.0.1:${proxy_port}/solana-devnet")" || {
+            rollback
+            echo "The website could not reach the private Devnet RPC relay." >&2
+            exit 1
+          }
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("result") == "ok", d; print("website_rpc_relay=healthy")' <<<"$rpc_response" || {
+            rollback
+            echo "The website RPC relay returned an invalid Devnet response." >&2
             exit 1
           }
           "${compose[@]}" ps frontend proxy
@@ -1166,6 +1218,20 @@ jobs:
             echo "The miniworker Docker bridge has no IPv4 gateway." >&2
             exit 1
           }
+          backend_network_id="$(docker network ls -q --filter label=com.docker.compose.project=silicium-dev --filter label=com.docker.compose.network=backend | head -n 1)"
+          frontend_network_id="$(docker network ls -q --filter label=com.docker.compose.project=silicium-dev --filter label=com.docker.compose.network=frontend | head -n 1)"
+          [[ -n "$backend_network_id" && -n "$frontend_network_id" ]] || {
+            echo "The dev website Docker networks are missing; refusing to expose the private relay." >&2
+            exit 1
+          }
+          backend_details="$(docker network inspect --format '{{range .IPAM.Config}}{{if .Subnet}}{{printf "%s %s" .Subnet .Gateway}}{{end}}{{end}}' "$backend_network_id")"
+          frontend_details="$(docker network inspect --format '{{range .IPAM.Config}}{{if .Subnet}}{{printf "%s %s" .Subnet .Gateway}}{{end}}{{end}}' "$frontend_network_id")"
+          read -r backend_subnet backend_gateway <<<"$backend_details"
+          read -r frontend_subnet frontend_gateway <<<"$frontend_details"
+          [[ -n "$backend_subnet" && -n "$backend_gateway" && -n "$frontend_subnet" && -n "$frontend_gateway" ]] || {
+            echo "The dev website Docker networks have no IPv4 configuration." >&2
+            exit 1
+          }
           python3 - "$worker_subnet" "$worker_gateway" <<'PY'
           import ipaddress
           import sys
@@ -1174,6 +1240,16 @@ jobs:
           gateway = ipaddress.ip_address(sys.argv[2])
           if subnet.version != 4 or gateway != subnet.network_address + 1:
               raise SystemExit("Unexpected worker bridge gateway; refusing to expose the relay.")
+          PY
+          python3 - "$backend_subnet" "$backend_gateway" "$frontend_subnet" "$frontend_gateway" <<'PY'
+          import ipaddress
+          import sys
+
+          for subnet_value, gateway_value in zip(sys.argv[1::2], sys.argv[2::2]):
+              subnet = ipaddress.ip_network(subnet_value, strict=False)
+              gateway = ipaddress.ip_address(gateway_value)
+              if subnet.version != 4 or gateway != subnet.network_address + 1:
+                  raise SystemExit("Unexpected dev website bridge; refusing to expose the relay.")
           PY
 
           if ! command -v ufw >/dev/null 2>&1 || ! ufw status 2>/dev/null | grep -q '^Status: active'; then
@@ -1194,13 +1270,35 @@ jobs:
             exit 1
           }
           echo "ufw_worker_relay_rule=verified interface=$bridge source=$worker_subnet destination=$worker_gateway port=8899/tcp"
+          for network_role in backend frontend; do
+            if [[ "$network_role" == backend ]]; then
+              source_subnet="$backend_subnet"
+              source_network_id="$backend_network_id"
+            else
+              source_subnet="$frontend_subnet"
+              source_network_id="$frontend_network_id"
+            fi
+            source_bridge="br-${source_network_id:0:12}"
+            ip link show dev "$source_bridge" >/dev/null 2>&1 || {
+              echo "The expected dev $network_role bridge interface is missing: $source_bridge" >&2
+              exit 1
+            }
+            ufw allow in on "$source_bridge" from "$source_subnet" to "$worker_gateway" port 8899 proto tcp \
+              comment 'Silicium website Devnet RPC relay' >/dev/null
+            ufw status numbered | grep -F "$source_bridge" | grep -F "$source_subnet" | grep -F "$worker_gateway" | grep -F '8899/tcp' >/dev/null || {
+              echo "UFW did not install the scoped website-to-relay rule for $network_role." >&2
+              ufw status verbose >&2 || true
+              exit 1
+            }
+            echo "ufw_website_relay_rule=verified role=$network_role interface=$source_bridge source=$source_subnet destination=$worker_gateway port=8899/tcp"
+          done
 
           install -d -m 0755 /usr/local/libexec
           install -o root -g root -m 0755 "$RELAY_STAGING" /usr/local/libexec/silicium-devnet-rpc-relay.py
           rm -f "$RELAY_STAGING"
           cat > /etc/systemd/system/silicium-devnet-rpc-relay.service <<UNIT
           [Unit]
-          Description=Private Solana Devnet RPC relay for Silicium miniworkers
+          Description=Private Solana Devnet RPC relay for Silicium miniworkers and website
           Wants=docker.service
           After=docker.service
 
@@ -1208,7 +1306,7 @@ jobs:
           Type=simple
           DynamicUser=yes
           Environment=SILICIUM_DEVNET_RPC_BIND=$worker_gateway
-          Environment=SILICIUM_DEVNET_RPC_ALLOWED_CIDRS=$worker_subnet
+          Environment=SILICIUM_DEVNET_RPC_ALLOWED_CIDRS=$worker_subnet,$backend_subnet,$frontend_subnet
           Environment=SILICIUM_DEVNET_RPC_UPSTREAM=https://api.devnet.solana.com
           ExecStart=/usr/bin/python3 -B /usr/local/libexec/silicium-devnet-rpc-relay.py
           Restart=on-failure
