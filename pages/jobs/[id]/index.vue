@@ -54,7 +54,7 @@ import { isBatchAIWorkload } from '~/utils/batchAI';
 import { isHFWorkload } from '~/utils/hfCatalog';
 import { awaitingChainAnchor, compactJobError, fragmentStateLabel, fragmentVisualState, isHashWorkload, isImageWorkload, isJobCancellable, jobPartCount, shouldRefreshJob } from '~/utils/jobs';
 import { parseHashReport } from '~/utils/jobs';
-import { maxSILFragments } from '~/utils/solanaJobs';
+import { maxSILFragments } from '~/utils/solanaQuote';
 definePageMeta({ layout: 'app', middleware: 'auth' });
 const { t } = useI18n();
 const route = useRoute(); const jobsStore = useJobs(); const session = useSession(); const config = useRuntimeConfig();

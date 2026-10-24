@@ -9,31 +9,18 @@ import {
 } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import type { PhantomProvider } from '~/types/wallet';
+import { MAX_SIL_FRAGMENT_NODES, maxSILFragments } from './solanaQuote';
+
+export { MAX_SIL_FRAGMENTS, MAX_SIL_FRAGMENT_NODES, maxSILFragments } from './solanaQuote';
 
 export const DEVNET_SIL_MINT = 'F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP';
 export const SILICIUM_PROGRAM_ID = '64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG';
 export const SIL_PER_FRAGMENT = 3;
-export const MAX_SIL_FRAGMENTS = 1_000;
-export const MAX_SIL_FRAGMENT_NODES = 1_000;
-const MAX_SIL_LEAF_MULTIPLIER = 16;
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const TOKEN_UNIT = 1_000_000n;
 
 export interface CreatedSILEscrow { jobAddress: string; signature: string }
-
-export function maxSILFragments(initialFragments: number): number {
-  if (!Number.isInteger(initialFragments) || initialFragments < 1 || initialFragments > 256) {
-    throw new Error('Invalid SIL quote fragment count.');
-  }
-  const childSlotsPerRoot = Math.floor((MAX_SIL_FRAGMENT_NODES - initialFragments) / initialFragments);
-  const leavesPerRoot = 1 + Math.floor(childSlotsPerRoot / 2);
-  return Math.min(
-    MAX_SIL_FRAGMENTS,
-    initialFragments * MAX_SIL_LEAF_MULTIPLIER,
-    initialFragments * leavesPerRoot,
-  );
-}
 
 function programId(): PublicKey { return new PublicKey(SILICIUM_PROGRAM_ID); }
 function mintId(value = DEVNET_SIL_MINT): PublicKey { return new PublicKey(value); }

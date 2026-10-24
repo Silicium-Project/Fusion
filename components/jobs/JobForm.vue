@@ -109,7 +109,7 @@ import { editorLimits, sceneFileName, sceneFromText, sceneToCfg, type SceneModel
 import { checkScene } from '~/utils/sceneCheck';
 import { sceneTemplate } from '~/utils/sceneTemplates';
 import { firstProblem, jobDescriptionProblem, jobTitleProblem, LIMITS } from '~/utils/validation';
-import { maxSILFragments } from '~/utils/solanaJobs';
+import { maxSILFragments } from '~/utils/solanaQuote';
 
 const props = withDefaults(defineProps<{ submitting?: boolean; error?: string; initialWorkload?: string; collectionId?: string; paymentsEnabled?: boolean; silBalance?: number | null; silUsdPrice?: number | null; walletAddress?: string }>(), { submitting: false, error: '', initialWorkload: '', collectionId: '', paymentsEnabled: false, silBalance: null, silUsdPrice: null, walletAddress: '' });
 const emit = defineEmits<{ submit: [input: CreateJobInput] }>();
