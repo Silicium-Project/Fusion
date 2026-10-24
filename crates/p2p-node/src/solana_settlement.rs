@@ -5,13 +5,62 @@
 //! this process or the logs.
 
 use silicium_node_core::p2p::SolanaPaymentRef;
-use std::process::Stdio;
+use std::{
+    collections::HashMap,
+    process::Stdio,
+    sync::OnceLock,
+    time::Duration,
+};
 use tokio::process::Command;
 
 const DEFAULT_SETTLEMENT_SCRIPT: &str = "/opt/worker-solana/solana-worker-settlement.mjs";
+const READY_CACHE_TTL: Duration = Duration::from_secs(30);
+const NOT_READY_CACHE_TTL: Duration = Duration::from_secs(15);
+
+#[derive(Clone, Copy)]
+struct CachedReadiness {
+    ready: bool,
+    expires_at: tokio::time::Instant,
+}
+
+type ReadinessKey = (String, u32);
+
+static READINESS_CACHE: OnceLock<tokio::sync::Mutex<HashMap<ReadinessKey, CachedReadiness>>> =
+    OnceLock::new();
+static READINESS_CHECK_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 
 pub(crate) async fn ready(payment: &SolanaPaymentRef) -> bool {
-    run("ready", payment, &[]).await
+    let key = (payment.job.clone(), payment.expected_fragments);
+    // All fragments in one escrow share this check. Serialize cache misses so
+    // simultaneous announcements do not spawn a burst of Node/RPC processes.
+    let _check = READINESS_CHECK_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    let cache = READINESS_CACHE.get_or_init(|| tokio::sync::Mutex::new(HashMap::new()));
+    let now = tokio::time::Instant::now();
+    {
+        let mut entries = cache.lock().await;
+        entries.retain(|_, entry| entry.expires_at > now);
+        if let Some(entry) = entries.get(&key) {
+            return entry.ready;
+        }
+    }
+
+    let is_ready = run("ready", payment, &[]).await;
+    let ttl = if is_ready {
+        READY_CACHE_TTL
+    } else {
+        NOT_READY_CACHE_TTL
+    };
+    cache.lock().await.insert(
+        key,
+        CachedReadiness {
+            ready: is_ready,
+            expires_at: tokio::time::Instant::now() + ttl,
+        },
+    );
+    is_ready
 }
 
 pub(crate) async fn submit(payment: &SolanaPaymentRef, result_hash: &str) -> bool {

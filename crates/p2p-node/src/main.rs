@@ -210,6 +210,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // interruption may drop its only route into the mesh. Keep retrying the
     // pinned bootstrap addresses until connected, then resume after a close.
     let mut pending_bootstrap_dials = HashSet::new();
+    let mut kademlia_bootstrap_started = false;
     dial_bootstrap_peers(&mut swarm, &bootstrap_peers, &mut pending_bootstrap_dials);
     let mut bootstrap_retry_timer = tokio::time::interval_at(
         tokio::time::Instant::now() + Duration::from_secs(10),
@@ -439,7 +440,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     for addr in info.listen_addrs {
                         swarm.behaviour_mut().kademlia.add_address(&peer_id, addr);
                     }
-                    let _ = swarm.behaviour_mut().kademlia.bootstrap();
+                    // One Identify event is delivered for every peer. Starting
+                    // a full DHT bootstrap for each one creates a quadratic dial
+                    // storm in a worker pool and repeatedly retries stale
+                    // container addresses. Bootstrap once after the first peer
+                    // is known; later Identify events still populate the routing
+                    // table without restarting the whole lookup.
+                    if !kademlia_bootstrap_started {
+                        match swarm.behaviour_mut().kademlia.bootstrap() {
+                            Ok(_) => kademlia_bootstrap_started = true,
+                            Err(error) => eprintln!(" Kademlia bootstrap deferred: {error}"),
+                        }
+                    }
                 }
                 SwarmEvent::Behaviour(P2pBehaviourEvent::Kademlia(event)) => {
                     if let Some(event) = model_share.on_kademlia(&swarm, event) {
