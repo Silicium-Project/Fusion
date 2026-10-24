@@ -169,59 +169,70 @@ export async function buildWorkerPayoutTransactions(
   const payoutWallet = new PublicKey(payoutWalletAddress);
   const mint = new PublicKey(mintAddress);
   const tokenAddress = associatedTokenAddress(payoutWallet, mint);
-  const [tokenAccountInfo, accountRows] = await Promise.all([
-    connection.getAccountInfo(tokenAddress, 'confirmed'),
-    Promise.all(devices.map(async device => {
-      if (!device.solanaWallet || !device.payoutWallet || !device.workerPayoutProof) {
-        throw new Error(`Missing signed payout proof for ${device.nodeId}.`);
+  const accountRows = devices.map(device => {
+    if (!device.solanaWallet || !device.payoutWallet || !device.workerPayoutProof) {
+      throw new Error(`Missing signed payout proof for ${device.nodeId}.`);
+    }
+    if (device.payoutWallet !== payoutWalletAddress) {
+      throw new Error(`The payout wallet for ${device.nodeId} differs from this account.`);
+    }
+    const worker = new PublicKey(device.solanaWallet);
+    const messageLines = device.workerPayoutProof.message.split('\n');
+    if (messageLines.length !== 6
+      || messageLines[0] !== 'silicium-device-payout-v1'
+      || messageLines[2] !== device.nodeId
+      || messageLines[3] !== device.peerId
+      || messageLines[4] !== worker.toBase58()
+      || messageLines[5] !== payoutWalletAddress
+      || !/^[0-9a-fA-F]{64}$/.test(messageLines[1] || '')) {
+      throw new Error(`The signed payout proof for ${device.nodeId} does not match this device and account.`);
+    }
+    const workerAccount = workerAccountForPayout(worker);
+    const [payout] = PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode('worker_payout'), workerAccount.toBytes()],
+      SILICIUM_PROGRAM_ID,
+    );
+    return {
+      device,
+      worker,
+      payout,
+      workerAccount,
+      workerTokenAddress: associatedTokenAddress(worker, mint),
+    };
+  });
+
+  // One RPC request replaces 3 account lookups per worker. The 20-worker pool
+  // uses 61 addresses, below Solana's 100-account getMultipleAccounts limit.
+  const infos = await connection.getMultipleAccountsInfo([
+    tokenAddress,
+    ...accountRows.flatMap(row => [row.payout, row.workerAccount, row.workerTokenAddress]),
+  ], 'confirmed');
+  const tokenAccountInfo = infos[0];
+  const resolvedRows = accountRows.map((row, index) => {
+    const info = infos[1 + index * 3];
+    const workerInfo = infos[2 + index * 3];
+    const workerTokenInfo = infos[3 + index * 3];
+    let alreadyLinked = false;
+    if (info) {
+      if (!info.owner.equals(SILICIUM_PROGRAM_ID) || info.data.length < 73
+        || !new PublicKey(info.data.subarray(8, 40)).equals(row.worker)) {
+        throw new Error(`The on-chain payout record for ${row.device.nodeId} has an unexpected layout.`);
       }
-      if (device.payoutWallet !== payoutWalletAddress) {
-        throw new Error(`The payout wallet for ${device.nodeId} differs from this account.`);
+      const currentPayoutWallet = new PublicKey(info.data.subarray(40, 72));
+      if (currentPayoutWallet.equals(payoutWallet)) alreadyLinked = true;
+      else if (!currentPayoutWallet.equals(row.worker)) {
+        throw new Error(`The payout for ${row.device.nodeId} is already assigned to another wallet. Both wallet owners must authorize a change.`);
       }
-      const worker = new PublicKey(device.solanaWallet);
-      const messageLines = device.workerPayoutProof.message.split('\n');
-      if (messageLines.length !== 6
-        || messageLines[0] !== 'silicium-device-payout-v1'
-        || messageLines[2] !== device.nodeId
-        || messageLines[3] !== device.peerId
-        || messageLines[4] !== worker.toBase58()
-        || messageLines[5] !== payoutWalletAddress
-        || !/^[0-9a-fA-F]{64}$/.test(messageLines[1] || '')) {
-        throw new Error(`The signed payout proof for ${device.nodeId} does not match this device and account.`);
-      }
-      const [pda] = PublicKey.findProgramAddressSync(
-        [new TextEncoder().encode('worker_payout'), workerAccountForPayout(worker).toBytes()],
-        SILICIUM_PROGRAM_ID,
-      );
-      const workerAccount = workerAccountForPayout(worker);
-      const workerTokenAddress = associatedTokenAddress(worker, mint);
-      const [info, workerInfo, workerTokenInfo] = await Promise.all([
-        connection.getAccountInfo(pda, 'confirmed'),
-        connection.getAccountInfo(workerAccount, 'confirmed'),
-        connection.getAccountInfo(workerTokenAddress, 'confirmed'),
-      ]);
-      let alreadyLinked = false;
-      if (info) {
-        if (!info.owner.equals(SILICIUM_PROGRAM_ID) || info.data.length < 73
-          || !new PublicKey(info.data.subarray(8, 40)).equals(worker)) {
-          throw new Error(`The on-chain payout record for ${device.nodeId} has an unexpected layout.`);
-        }
-        const currentPayoutWallet = new PublicKey(info.data.subarray(40, 72));
-        if (currentPayoutWallet.equals(payoutWallet)) alreadyLinked = true;
-        else if (!currentPayoutWallet.equals(worker)) {
-          throw new Error(`The payout for ${device.nodeId} is already assigned to another wallet. Both wallet owners must authorize a change.`);
-        }
-      }
-      return { device, worker, info, workerAccount, workerTokenAddress, workerInfo, workerTokenInfo, alreadyLinked };
-    })),
-  ]);
+    }
+    return { ...row, info, workerInfo, workerTokenInfo, alreadyLinked };
+  });
 
   // Older versions could store the payout PDA without creating the Worker
   // profile. Re-submit the proof-bound instruction in that case so the
   // contract can accept this device in compute and verification calls.
-  const rows = accountRows.filter(row => !row.alreadyLinked || !row.workerInfo);
-  const alreadyLinked = accountRows.filter(row => row.alreadyLinked).length;
-  const tokenRows = accountRows.filter(row => !row.workerTokenInfo);
+  const rows = resolvedRows.filter(row => !row.alreadyLinked || !row.workerInfo);
+  const alreadyLinked = resolvedRows.filter(row => row.alreadyLinked).length;
+  const tokenRows = resolvedRows.filter(row => !row.workerTokenInfo);
   const missingTokenAccount = tokenAccountInfo === null;
   if (!rows.length && !tokenRows.length && !missingTokenAccount) {
     return { transactions: [], registered: 0, alreadyLinked };
@@ -229,7 +240,7 @@ export async function buildWorkerPayoutTransactions(
 
   const pending: Array<{ transaction: Transaction; blockhash: string; lastValidBlockHeight: number }> = [];
   const registrationByWorker = new Map(rows.map(row => [row.worker.toBase58(), row]));
-  const rowsByWorker = new Map(accountRows.map(row => [row.worker.toBase58(), row]));
+  const rowsByWorker = new Map(resolvedRows.map(row => [row.worker.toBase58(), row]));
   const transactionWorkers = new Set([...registrationByWorker.keys(), ...tokenRows.map(row => row.worker.toBase58())]);
   if (!transactionWorkers.size && missingTokenAccount) {
     const block = await connection.getLatestBlockhash('confirmed');
