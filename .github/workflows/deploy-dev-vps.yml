@@ -1782,17 +1782,20 @@ jobs:
           dockerd_pid="$(systemctl show docker.service --property=MainPID --value 2>/dev/null || true)"
           if command -v perf >/dev/null 2>&1 && [[ "$dockerd_pid" =~ ^[1-9][0-9]*$ ]]; then
             profile="$(mktemp /tmp/silicium-dockerd.XXXXXX.data)"
+            report="$(mktemp /tmp/silicium-dockerd.XXXXXX.report)"
             if timeout 12 perf record -F 49 -g -p "$dockerd_pid" -o "$profile" -- sleep 5 >/dev/null 2>&1; then
-              timeout 5 perf report -i "$profile" --stdio --no-children --sort comm,dso,symbol | head -n 45
+              if timeout 5 perf report -i "$profile" --stdio --no-children --sort comm,dso,symbol > "$report" 2>&1; then
+                sed -n '1,45p' "$report"
+              fi
               if command -v go >/dev/null 2>&1; then
                 echo '=== Go symbol lookup for dockerd sampled addresses ==='
                 go version
-                python3 - "$dockerd_pid" "$profile" <<'PY'
+                python3 - "$dockerd_pid" "$report" <<'PY'
           import re
           import subprocess
           import sys
 
-          pid, profile = sys.argv[1:]
+          pid, report = sys.argv[1:]
           bias = None
           executable_range = None
           try:
@@ -1808,31 +1811,26 @@ jobs:
                           break
           except (OSError, ValueError):
               pass
-          if bias is None:
+          if bias is None or executable_range is None:
               print('Could not determine dockerd PIE load bias.')
               raise SystemExit(0)
 
-          sampled = subprocess.run(
-              ['perf', 'script', '-i', profile, '-F', 'ip,dso'],
-              capture_output=True,
-              text=True,
-              timeout=8,
-          )
           addresses = []
           start, end, offset = executable_range
-          for line in sampled.stdout.splitlines():
-              if 'dockerd' not in line:
-                  continue
-              match = re.search(r'\b0x([0-9a-fA-F]+)\b', line)
-              if match:
-                  address = int(match.group(1), 16)
-                  if start <= address < end:
-                      addresses.append(address - bias)
-                  elif offset <= address < offset + end - start:
-                      addresses.append(address)
+          try:
+              contents = open(report, encoding='utf-8', errors='replace').read()
+          except OSError as failure:
+              print(f'Could not read perf report: {failure}')
+              raise SystemExit(0)
+          for match in re.finditer(r'\b0x([0-9a-fA-F]+)\b', contents):
+              address = int(match.group(1), 16)
+              if start <= address < end:
+                  addresses.append(address - bias)
+              elif offset <= address < offset + end - start:
+                  addresses.append(address)
           unique = list(dict.fromkeys(addresses))[:40]
           if not unique:
-              print('No dockerd instruction addresses were captured by perf script.')
+              print('No dockerd instruction addresses were captured in perf report.')
               raise SystemExit(0)
           lookup = subprocess.run(
               ['go', 'tool', 'addr2line', '/usr/bin/dockerd'],
@@ -1854,7 +1852,7 @@ jobs:
             else
               echo 'perf sampling was blocked or unavailable on this host.'
             fi
-            rm -f "$profile"
+            rm -f "$profile" "$report"
           else
             echo 'perf is not installed or dockerd is not running.'
           fi
