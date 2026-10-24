@@ -5,12 +5,7 @@
 //! this process or the logs.
 
 use silicium_node_core::p2p::SolanaPaymentRef;
-use std::{
-    collections::HashMap,
-    process::Stdio,
-    sync::OnceLock,
-    time::Duration,
-};
+use std::{collections::HashMap, process::Stdio, sync::OnceLock, time::Duration};
 use tokio::process::Command;
 
 const DEFAULT_SETTLEMENT_SCRIPT: &str = "/opt/worker-solana/solana-worker-settlement.mjs";
