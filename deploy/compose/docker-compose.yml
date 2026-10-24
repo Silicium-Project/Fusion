@@ -113,7 +113,7 @@ services:
       # The browser endpoint is public by definition; use a provider key
       # restricted to the website origin. Keep the unrestricted server key in
       # SILICIUM_SOLANA_RPC for backend and worker traffic.
-      NUXT_PUBLIC_SOLANA_RPC: ${SILICIUM_SOLANA_BROWSER_RPC:-https://api.devnet.solana.com}
+      NUXT_PUBLIC_SOLANA_RPC: ${SILICIUM_SOLANA_BROWSER_RPC:-https://solana-devnet.api.onfinality.io/public}
       NUXT_PUBLIC_SOLANA_CLUSTER: ${SILICIUM_SOLANA_CLUSTER:-devnet}
       NUXT_PUBLIC_SIL_POOL_ID: ${SILICIUM_SIL_POOL_ID:-66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS}
       NUXT_PUBLIC_SOLANA_PAYMENTS_ENABLED: ${SILICIUM_SOLANA_PAYMENTS_ENABLED:-0}
