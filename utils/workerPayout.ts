@@ -74,10 +74,11 @@ export async function sendWorkerPayoutBatch(
         signed = await provider.signAllTransactions(pending);
         if (signed.length !== pending.length) throw new Error('Phantom returned an incomplete transaction batch.');
       }
-      const signature = await connection.sendRawTransaction(signed[0]!.serialize(), {
-        maxRetries: 3,
-        preflightCommitment: 'confirmed',
-      });
+      const transaction = signed[0]!;
+      const signature = await retryRateLimitedRpc(() => connection.sendRawTransaction(
+        transaction.serialize(),
+        { maxRetries: 3, preflightCommitment: 'confirmed' },
+      ));
       signatures.push(signature);
       index += 1;
       pending = pending.slice(1);

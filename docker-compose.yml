@@ -6,7 +6,7 @@ services:
       container_name: silicium_frontend
       environment:
         NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-http://localhost:8080}
-        NUXT_PUBLIC_SOLANA_RPC: ${NUXT_PUBLIC_SOLANA_RPC:-https://solana-devnet.api.onfinality.io/public}
+        NUXT_PUBLIC_SOLANA_RPC: ${NUXT_PUBLIC_SOLANA_RPC:-https://api.devnet.solana.com}
         NUXT_PUBLIC_UPDATE_MANIFEST_URL: ${NUXT_PUBLIC_UPDATE_MANIFEST_URL:-/downloads/update-manifest.json}
         NUXT_PUBLIC_STATUS_REFRESH_SECONDS: ${NUXT_PUBLIC_STATUS_REFRESH_SECONDS:-30}
       ports:

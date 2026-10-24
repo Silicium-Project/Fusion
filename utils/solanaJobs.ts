@@ -114,7 +114,10 @@ async function sendWithWallet(connection: Connection, provider: PhantomProvider,
     if (signers.length) fresh.partialSign(...signers);
     try {
       const signed = await provider.signTransaction(fresh);
-      signature = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 3, preflightCommitment: 'confirmed' });
+      signature = await retryRateLimitedRpc(() => connection.sendRawTransaction(signed.serialize(), {
+        maxRetries: 3,
+        preflightCommitment: 'confirmed',
+      }));
       break;
     } catch (failure) {
       // A stale hash can be rejected by Phantom during signing or by RPC
@@ -123,7 +126,10 @@ async function sendWithWallet(connection: Connection, provider: PhantomProvider,
     }
   }
   if (!signature || !latest) throw new Error('SOLANA_BLOCKHASH_EXPIRED');
-  const confirmation = await connection.confirmTransaction({ signature, ...latest }, 'confirmed');
+  const confirmation = await retryRateLimitedRpc(() => connection.confirmTransaction(
+    { signature, ...latest! },
+    'confirmed',
+  ));
   if (confirmation.value.err) throw new Error('Solana rejected the transaction.');
   return signature;
 }
