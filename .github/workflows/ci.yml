@@ -3,7 +3,7 @@ name: Frontend CI
 on:
   pull_request:
   push:
-    branches: [main, dev]
+    branches: [main, dev, 'codex/**']
   workflow_dispatch:
     inputs:
       release_channel:
@@ -18,7 +18,7 @@ env:
 
 jobs:
   changes:
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
     outputs:
       javascript: ${{ steps.detect.outputs.javascript }}
     steps:
@@ -56,7 +56,7 @@ jobs:
   unit:
     needs: [changes]
     if: ${{ needs.changes.outputs.javascript == 'true' }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -70,7 +70,7 @@ jobs:
   build:
     needs: [changes, unit]
     if: ${{ needs.changes.outputs.javascript == 'true' }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -84,7 +84,7 @@ jobs:
   functional:
     needs: [changes, build]
     if: ${{ needs.changes.outputs.javascript == 'true' }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
