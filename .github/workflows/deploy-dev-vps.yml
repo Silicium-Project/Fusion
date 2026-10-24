@@ -1714,6 +1714,13 @@ jobs:
             profile="$(mktemp /tmp/silicium-dockerd.XXXXXX.data)"
             if timeout 12 perf record -F 49 -g -p "$dockerd_pid" -o "$profile" -- sleep 5 >/dev/null 2>&1; then
               timeout 5 perf report -i "$profile" --stdio --no-children --sort comm,dso,symbol | head -n 45
+              if command -v go >/dev/null 2>&1; then
+                echo '=== Go symbol lookup for the dominant dockerd address ==='
+                go version
+                printf '0x85038e\n' | go tool addr2line /usr/bin/dockerd || true
+              else
+                echo 'Go toolchain is absent; dockerd remains unsymbolized.'
+              fi
             else
               echo 'perf sampling was blocked or unavailable on this host.'
             fi
