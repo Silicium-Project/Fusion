@@ -143,6 +143,7 @@
 </template>
 
 <script setup lang="ts">
+import { resolveSolanaRpcEndpoint } from '~/utils/solanaRpc';
 import type { Connection } from '@solana/web3.js';
 import { compactIdentifier, formatDate, formatDuration, networkRoleGroup, peerAvailability, peerId, peerRoles } from '~/utils/format';
 import { metricNumber, metricPercent, peerTelemetry, pendingTaskCount, publishedCount } from '~/utils/telemetry';
@@ -367,7 +368,7 @@ async function refreshPayoutStatus(targets: UserDevice[], force = false): Promis
       import('@solana/web3.js'),
       import('~/utils/workerPayout'),
     ]);
-    const connection = new Connection(String(runtime.public.solanaRpc), 'confirmed');
+    const connection = new Connection(resolveSolanaRpcEndpoint(runtime.public.solanaRpc), 'confirmed');
     payoutReadyIds.value = await inspectWorkerPayouts(connection, walletAddress, mint, eligible);
     payoutStatusFingerprint.value = fingerprint;
   } catch {
@@ -439,7 +440,7 @@ async function registerMiniworkerPayouts(): Promise<void> {
       import('@solana/web3.js'),
       import('~/utils/workerPayout'),
     ]);
-    const connection = new Connection(String(config.public.solanaRpc), 'confirmed');
+    const connection = new Connection(resolveSolanaRpcEndpoint(config.public.solanaRpc), 'confirmed');
     const built = await buildWorkerPayoutTransactions(connection, user.value.walletAddress, mint, targets);
     if (!built.transactions.length) {
       pairingMessageTone.value = 'success';

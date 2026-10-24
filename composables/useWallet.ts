@@ -2,6 +2,7 @@ import type { WalletChallenge } from '~/types/api';
 import { isUserRejection, phantomProvider } from '~/utils/wallet';
 import { extractJobError } from '~/utils/jobs';
 import { translate } from '~/utils/i18n';
+import { resolveSolanaRpcEndpoint } from '~/utils/solanaRpc';
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
@@ -20,7 +21,7 @@ export function useWallet() {
 
   async function balanceFor(address: string): Promise<number> {
     const { Connection, PublicKey, LAMPORTS_PER_SOL } = await import('@solana/web3.js');
-    const connection = new Connection(String(config.public.solanaRpc), 'confirmed');
+    const connection = new Connection(resolveSolanaRpcEndpoint(config.public.solanaRpc), 'confirmed');
     return (await connection.getBalance(new PublicKey(address))) / LAMPORTS_PER_SOL;
   }
 
@@ -28,7 +29,7 @@ export function useWallet() {
     const mintAddress = String(config.public.silMint || '').trim();
     if (!mintAddress) return null;
     const { Connection, PublicKey } = await import('@solana/web3.js');
-    const connection = new Connection(String(config.public.solanaRpc), 'confirmed');
+    const connection = new Connection(resolveSolanaRpcEndpoint(config.public.solanaRpc), 'confirmed');
     const accounts = await connection.getParsedTokenAccountsByOwner(
       new PublicKey(address),
       { mint: new PublicKey(mintAddress) },

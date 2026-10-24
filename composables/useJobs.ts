@@ -6,6 +6,7 @@ import type { Job, JobDashboard, JobList } from '~/types/api';
 import { clientCache } from '~/services/cache';
 import { translate } from '~/utils/i18n';
 import { phantomProvider } from '~/utils/wallet';
+import { resolveSolanaRpcEndpoint } from '~/utils/solanaRpc';
 
 export interface CreateJobInput {
   title: string;
@@ -111,7 +112,7 @@ export function useJobs() {
       let escrow: Awaited<ReturnType<typeof createSILEscrow>>;
       try {
         escrow = await createSILEscrow(
-          new Connection(String(runtime.public.solanaRpc), 'confirmed'),
+          new Connection(resolveSolanaRpcEndpoint(runtime.public.solanaRpc), 'confirmed'),
           provider,
           user.value.walletAddress,
           expectedFragments,
@@ -166,7 +167,7 @@ export function useJobs() {
                 import('~/utils/solanaJobs'),
               ]);
               await provider.connect();
-              await cancelSILEscrow(new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider, user.value.walletAddress, payment.jobAddress, payment.expectedFragments);
+              await cancelSILEscrow(new Connection(resolveSolanaRpcEndpoint(runtime.public.solanaRpc), 'confirmed'), provider, user.value.walletAddress, payment.jobAddress, payment.expectedFragments);
               await walletState.loadBalance(user.value.walletAddress);
             }
           } catch {
@@ -202,7 +203,7 @@ export function useJobs() {
       let signature: string | null;
       try {
         signature = await cancelSILEscrow(
-          new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider,
+          new Connection(resolveSolanaRpcEndpoint(runtime.public.solanaRpc), 'confirmed'), provider,
           user.value.walletAddress, existing.solanaJob, existing.solanaExpectedFragments,
         );
       } catch (failure) {
@@ -237,7 +238,7 @@ export function useJobs() {
     let signature: string | null;
     try {
       signature = await finalizeSILEscrow(
-        new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider,
+          new Connection(resolveSolanaRpcEndpoint(runtime.public.solanaRpc), 'confirmed'), provider,
         user.value.walletAddress, existing.solanaJob, existing.solanaExpectedFragments, resultHash,
       );
     } catch (failure) {

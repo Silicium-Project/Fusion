@@ -10,6 +10,7 @@
 //   3. the root is the one written on-chain in the transaction's memo.
 
 import type { ChainProofStep, ChainTask } from '~/types/api';
+import { resolveSolanaRpcEndpoint } from '~/utils/solanaRpc';
 
 /** SPL Memo program (v2), which carries the anchored text. */
 export const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
@@ -132,7 +133,7 @@ export function parseMemo(memo: string | null | undefined): AnchoredMemo | null 
 /** Memo text of the transaction `signature`, read from a Solana RPC. */
 export async function fetchOnChainMemo(signature: string, rpcUrl: string): Promise<string | null> {
   const { Connection } = await import('@solana/web3.js');
-  const connection = new Connection(rpcUrl, 'confirmed');
+  const connection = new Connection(resolveSolanaRpcEndpoint(rpcUrl), 'confirmed');
   const transaction = await connection.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
   for (const instruction of transaction?.transaction.message.instructions || []) {
     if (instruction.programId.toBase58() !== MEMO_PROGRAM_ID) continue;

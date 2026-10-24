@@ -5,6 +5,7 @@ import type {
   VersionedTransaction as SolanaVersionedTransaction,
 } from '@solana/web3.js';
 import { phantomProvider } from '~/utils/wallet';
+import { resolveSolanaRpcEndpoint } from '~/utils/solanaRpc';
 
 export type SILSwapDirection = 'buy' | 'sell';
 
@@ -128,7 +129,7 @@ export function useSILEconomy() {
 
   function rpcForDevnet(): string {
     const cluster = String(runtime.public.solanaCluster || 'devnet').trim().toLowerCase();
-    const rpc = String(runtime.public.solanaRpc || '').trim();
+    const rpc = resolveSolanaRpcEndpoint(runtime.public.solanaRpc);
     if (cluster !== 'devnet' || !rpc || new URL(rpc).hostname.toLowerCase().includes('mainnet')) {
       throw new Error('SIL exchange is available only on Solana Devnet.');
     }
