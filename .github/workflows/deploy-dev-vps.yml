@@ -1413,6 +1413,21 @@ jobs:
           for percent, pid, name, exe, cgroup in sorted(rows, reverse=True)[:20]:
               print(f'one_core_cpu={percent:.1f}% pid={pid} comm={name} exe={exe} cgroup={cgroup}')
           PY
+          echo '=== Runner and Docker service accounting ==='
+          systemctl list-units --all 'actions.runner.*.service' --no-legend --plain 2>&1 || true
+          for unit in docker.service actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service actions.runner.Silicium-Project-Fusion.fusion-vps-fusion-extra-1.service; do
+            systemctl show "$unit" --property=ActiveState,MainPID,CPUAccounting,CPUUsageNSec,ControlGroup 2>&1 || true
+          done
+          echo '=== Hot process details and busiest dockerd threads ==='
+          for pid in $(ps -eo pid=,comm=,pcpu= --sort=-pcpu | awk '$2 == "dockerd" || $2 == "node" {print $1}' | head -n 5); do
+            ps -p "$pid" -o pid,ppid,stat,comm,etime,pcpu
+            printf 'exe='; readlink "/proc/$pid/exe" 2>/dev/null || true
+            printf 'cwd='; readlink "/proc/$pid/cwd" 2>/dev/null || true
+            printf 'cgroup='; tr '\n' ' ' < "/proc/$pid/cgroup" 2>/dev/null || true; printf '\n'
+            if [[ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" == dockerd ]]; then
+              ps -L -p "$pid" -o pid,tid,stat,pcpu,comm --sort=-pcpu | head -n 12
+            fi
+          done
           echo '=== P2P process cgroups ==='
           ps -eo pid=,comm=,pcpu= --sort=-pcpu \
             | awk '$2 == "p2p_node" {print $1}' | head -n 10 \
