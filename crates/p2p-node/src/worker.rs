@@ -163,9 +163,9 @@ async fn execute_task(
         " Delegation assessment for {}: {} live compute peer(s), remote {:.3}, local {:.3}",
         task.task_id, available_peers, remote_score, local_score
     );
-    if remote_score < local_score {
+    if remote_score <= local_score {
         println!(
-            " Keeping {} local: Bayesian delegation score {:.3} is below local {:.3}",
+            " Keeping {} local: Bayesian delegation score {:.3} does not beat local {:.3}",
             task.task_id, remote_score, local_score
         );
         return workload.execute(context, task).await;
