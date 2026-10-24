@@ -2,7 +2,7 @@
 
 This separate Compose project creates 20 to 24 dev-only worker identities on
 the VPS. They use an isolated bridge network, have no published ports, accept
-raytracer and chunked SHA-256 workloads, and are capped at 0.10 vCPU and
+raytracer and chunked SHA-256 workloads, and are capped at 0.05 vCPU and
 160 MiB each.
 Each peer has a dedicated named `/data` volume, so its libp2p identity and
 taskbook persist across container and Compose recreation. Startup also creates

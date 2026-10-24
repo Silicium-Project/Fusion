@@ -22,6 +22,7 @@ on:
         options:
           - frontend
           - workers
+          - worker-resources
           - full
           - diagnose
         default: frontend
@@ -912,6 +913,113 @@ jobs:
             [[ "$prior_rollback" == "$rollback_image" ]] || docker image rm "$prior_rollback" >/dev/null 2>&1 || true
           done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | awk '$1 ~ /^silicium-dev-miniworker:rollback-/')
           echo "GitHub-hosted miniworker image deployed to 20 nodes: $WORKER_BUILD"
+          REMOTE
+
+  worker-resources:
+    if: ${{ github.event.inputs.deployment_target == 'worker-resources' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: development
+    steps:
+      - name: Apply bounded miniworker CPU limits over SSH
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" && -n "${VPS_KNOWN_HOSTS:-}" ]] || {
+            echo "Missing VPS SSH configuration." >&2
+            exit 1
+          }
+          ssh_dir="$RUNNER_TEMP/silicium-dev-worker-resources-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
+            -i "$ssh_dir/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "${VPS_PORT:-22}" \
+            "${VPS_USER:-luis}@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
+          set -euo pipefail
+          compose_file=/opt/silicium-dev/deploy/compose/dev-miniworkers.yml
+          worker_env=/etc/silicium-dev/miniworkers.env
+          [[ -f "$compose_file" && -f "$worker_env" ]] || {
+            echo "Development miniworker Compose configuration is missing." >&2
+            exit 1
+          }
+          compose=(docker compose --project-name silicium-dev-miniworkers --env-file "$worker_env" -f "$compose_file")
+          for number in $(seq -w 1 20); do
+            service="miniworker-$number"
+            container="$("${compose[@]}" ps -q "$service" | head -n 1 || true)"
+            [[ -n "$container" ]] || { echo "Miniworker is not running: $service" >&2; exit 1; }
+            state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")"
+            [[ "$state" == healthy || "$state" == running ]] || {
+              echo "Miniworker is not healthy before quota change: $service ($state)" >&2
+              exit 1
+            }
+          done
+
+          python3 - "$compose_file" <<'PY'
+          import os
+          import pathlib
+          import re
+          import stat
+          import sys
+          import tempfile
+
+          path = pathlib.Path(sys.argv[1])
+          original = path.read_text(encoding="utf-8")
+          prior = re.compile(r'(?m)^(\s*cpus:\s*)["\']?0\.10["\']?\s*$')
+          target = re.compile(r'(?m)^\s*cpus:\s*["\']?0\.05["\']?\s*$')
+          if len(prior.findall(original)) == 1:
+              updated = prior.sub(r'\g<1>"0.05"', original, count=1)
+          elif len(target.findall(original)) == 1:
+              updated = original
+          else:
+              raise SystemExit("Expected exactly one miniworker CPU limit of 0.10 or 0.05.")
+          if updated != original:
+              mode = stat.S_IMODE(path.stat().st_mode)
+              fd, temporary = tempfile.mkstemp(prefix=".dev-miniworkers.", dir=path.parent)
+              with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                  stream.write(updated)
+              os.chmod(temporary, mode)
+              os.replace(temporary, path)
+          print("Persistent miniworker CPU limit set to 0.05 vCPU each.")
+          PY
+
+          configured_services="$("${compose[@]}" config --services)"
+          for number in $(seq -w 1 20); do
+            service="miniworker-$number"
+            grep -Fxq "$service" <<<"$configured_services" || {
+              echo "Missing miniworker Compose service: $service" >&2
+              exit 1
+            }
+            "${compose[@]}" up -d --no-build --no-deps --force-recreate "$service"
+            container="$("${compose[@]}" ps -q "$service" | head -n 1 || true)"
+            [[ -n "$container" ]] || { echo "Miniworker did not return: $service" >&2; exit 1; }
+            ready=false
+            for attempt in $(seq 1 90); do
+              state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+              if [[ "$state" == healthy || "$state" == running ]]; then ready=true; break; fi
+              if [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]]; then break; fi
+              sleep 2
+            done
+            [[ "$ready" == true ]] || { echo "Miniworker failed its health check: $service" >&2; exit 1; }
+            quota="$(docker inspect --format '{{.HostConfig.NanoCpus}}' "$container")"
+            [[ "$quota" == 50000000 ]] || {
+              echo "Unexpected CPU quota for $service: $quota" >&2
+              exit 1
+            }
+            echo "Healthy with 0.05 CPU: $service"
+          done
+          "${compose[@]}" ps
+          docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' \
+            $("${compose[@]}" ps -q miniworker-01 miniworker-02 miniworker-03 miniworker-04 miniworker-05 miniworker-06 miniworker-07 miniworker-08 miniworker-09 miniworker-10 miniworker-11 miniworker-12 miniworker-13 miniworker-14 miniworker-15 miniworker-16 miniworker-17 miniworker-18 miniworker-19 miniworker-20)
           REMOTE
 
   diagnose-dev:

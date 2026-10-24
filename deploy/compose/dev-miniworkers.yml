@@ -52,7 +52,7 @@ x-miniworker-defaults: &miniworker-defaults
   deploy:
     resources:
       limits:
-        cpus: "0.10"
+        cpus: "0.05"
         memory: 256M
         pids: 64
   tmpfs:
