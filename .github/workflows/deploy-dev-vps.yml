@@ -1220,9 +1220,18 @@ jobs:
             exit 1
           fi
 
-          if ! curl --noproxy '*' --fail --silent --show-error --connect-timeout 2 --max-time 5 \
-            "http://$worker_gateway:8899/healthz" | python3 -c \
-            'import json,sys; d=json.load(sys.stdin); assert d.get("status") == "ok" and d.get("cluster") == "devnet"; print("private_rpc_relay=healthy")'; then
+          relay_healthy=false
+          for attempt in $(seq 1 15); do
+            if relay_health="$(curl --noproxy '*' --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+              "http://$worker_gateway:8899/healthz" 2>/dev/null)" \
+              && python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("status") == "ok" and d.get("cluster") == "devnet"' <<<"$relay_health"; then
+              relay_healthy=true
+              echo "private_rpc_relay=healthy"
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$relay_healthy" != true ]]; then
             systemctl status silicium-devnet-rpc-relay.service --no-pager >&2 || true
             journalctl -u silicium-devnet-rpc-relay.service -n 80 --no-pager -o cat >&2 || true
             ip -4 -brief addr >&2 || true
