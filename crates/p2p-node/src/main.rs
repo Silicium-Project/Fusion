@@ -216,6 +216,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tokio::time::Instant::now() + Duration::from_secs(10),
         Duration::from_secs(10),
     );
+    bootstrap_retry_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     publish_hardware_record(&mut swarm, &context);
     publish_gossip(
@@ -255,8 +256,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let dispatcher = Dispatcher::with_seed(context.dispatcher_seed);
     let mut pending = Vec::<NetworkTask>::new();
-    let mut sweep_timer = tokio::time::interval(Duration::from_secs(1));
+    // A full verifier/publisher sweep also refreshes compatibility files. On
+    // workers that have many historical tasks, running that scan every
+    // second wastes CPU while idle. Five seconds keeps assignment responsive
+    // without replaying the task book continuously.
+    let mut sweep_timer = tokio::time::interval(Duration::from_secs(5));
+    sweep_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut presence_timer = tokio::time::interval(Duration::from_secs(5));
+    presence_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut announcer = publisher::Reannouncer::default();
     let mut gap_requests = BTreeMap::new();
     let mut fetcher = fetch::Fetcher::default();
