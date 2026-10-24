@@ -1213,10 +1213,22 @@ jobs:
           systemctl daemon-reload
           systemctl enable --now silicium-devnet-rpc-relay.service
           systemctl restart silicium-devnet-rpc-relay.service
+          if ! systemctl is-active --quiet silicium-devnet-rpc-relay.service; then
+            systemctl status silicium-devnet-rpc-relay.service --no-pager >&2 || true
+            journalctl -u silicium-devnet-rpc-relay.service -n 80 --no-pager -o cat >&2 || true
+            ip -4 -brief addr >&2 || true
+            exit 1
+          fi
 
-          curl --noproxy '*' --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+          if ! curl --noproxy '*' --fail --silent --show-error --connect-timeout 2 --max-time 5 \
             "http://$worker_gateway:8899/healthz" | python3 -c \
-            'import json,sys; d=json.load(sys.stdin); assert d.get("status") == "ok" and d.get("cluster") == "devnet"; print("private_rpc_relay=healthy")'
+            'import json,sys; d=json.load(sys.stdin); assert d.get("status") == "ok" and d.get("cluster") == "devnet"; print("private_rpc_relay=healthy")'; then
+            systemctl status silicium-devnet-rpc-relay.service --no-pager >&2 || true
+            journalctl -u silicium-devnet-rpc-relay.service -n 80 --no-pager -o cat >&2 || true
+            ip -4 -brief addr >&2 || true
+            ss -lntp >&2 || true
+            exit 1
+          fi
 
           first_worker="$(docker ps -q --filter name=silicium-dev-miniworker-01 | head -n 1 || true)"
           [[ -n "$first_worker" ]] || { echo "Miniworker 01 is unavailable for the bridge check." >&2; exit 1; }
