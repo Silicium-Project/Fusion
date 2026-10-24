@@ -24,11 +24,16 @@ on:
           - workers
           - worker-resources
           - cpu-diagnose
+          - cpu-reclaim
           - full
           - diagnose
         default: frontend
       network_job_id:
         description: "Optional network job ID to inspect in read-only diagnostics."
+        required: false
+        default: ""
+      process_id:
+        description: "PID of a stale Fusion runner restore.js process for guarded CPU recovery."
         required: false
         default: ""
 
@@ -1610,4 +1615,125 @@ jobs:
           for container in $(docker ps -q --filter name=silicium-dev-miniworker-); do
             docker inspect --format '{{.Name}} pid={{.State.Pid}} cpus={{.HostConfig.NanoCpus}}' "$container"
           done
+          REMOTE
+
+  cpu-reclaim:
+    if: ${{ github.event.inputs.deployment_target == 'cpu-reclaim' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    environment: development
+    steps:
+      - name: Require the Fusion VPS runner to be idle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100" \
+            --jq '.runners[] | select(.name == "fusion-linux-vps") | .busy' | head -n 1)"
+          [[ "$state" == false ]] || {
+            echo "Fusion VPS runner is busy or not registered; refusing to stop its child process." >&2
+            exit 1
+          }
+          echo 'Fusion VPS runner is idle.'
+
+      - name: Stop only the verified stale restore process over SSH
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          PROCESS_ID: ${{ github.event.inputs.process_id }}
+        run: |
+          set -euo pipefail
+          [[ "${PROCESS_ID:-}" =~ ^[1-9][0-9]{0,9}$ ]] || {
+            echo "A numeric process_id is required." >&2
+            exit 1
+          }
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" && -n "${VPS_KNOWN_HOSTS:-}" ]] || {
+            echo "Missing VPS SSH configuration." >&2
+            exit 1
+          }
+          ssh_dir="$RUNNER_TEMP/silicium-dev-cpu-reclaim-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
+            -i "$ssh_dir/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "${VPS_PORT:-22}" \
+            "${VPS_USER:-luis}@$VPS_HOST" \
+            "sudo -n bash -s -- '$PROCESS_ID'" <<'REMOTE'
+          set -euo pipefail
+          pid="$1"
+          proc="/proc/$pid"
+          [[ -r "$proc/status" && -r "$proc/cgroup" && -r "$proc/cmdline" ]] || {
+            echo "Target process has already exited." >&2
+            exit 1
+          }
+          ppid="$(awk '/^PPid:/ {print $2}' "$proc/status")"
+          exe="$(readlink "$proc/exe")"
+          cwd="$(readlink "$proc/cwd")"
+          cgroup="$(cat "$proc/cgroup")"
+          elapsed="$(ps -o etimes= -p "$pid" | tr -d '[:space:]')"
+          [[ "$ppid" == 1 ]] || { echo "Target is no longer an orphan." >&2; exit 1; }
+          [[ "$cgroup" == *'/system.slice/actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service'* ]] || {
+            echo "Target is not inside the Fusion VPS runner cgroup." >&2
+            exit 1
+          }
+          [[ "$exe" =~ ^/home/luis/externals\.[^/]*/node24/bin/node$ ]] || {
+            echo "Target executable does not match the Node 24 runner child." >&2
+            exit 1
+          }
+          [[ "$cwd" == /home/luis/_work/Fusion/Fusion ]] || {
+            echo "Target is outside the Fusion runner workspace." >&2
+            exit 1
+          }
+          [[ "$elapsed" =~ ^[0-9]+$ ]] && (( elapsed >= 86400 )) || {
+            echo "Target process is not at least 24 hours old." >&2
+            exit 1
+          }
+          python3 - "$pid" <<'PY'
+          import sys
+
+          raw = open(f'/proc/{sys.argv[1]}/cmdline', 'rb').read().split(b'\0')
+          argv = [item.decode('utf-8', 'replace') for item in raw if item]
+          if len(argv) != 2 or argv[0].rsplit('/', 1)[-1] != 'node' or argv[1].rsplit('/', 1)[-1] != 'restore.js':
+              raise SystemExit('Target command is not exactly node restore.js.')
+          PY
+          printf 'Stopping verified orphan: pid=%s age_seconds=%s cgroup=Fusion-runner command=node-restore.js\n' "$pid" "$elapsed"
+          kill -TERM "$pid"
+          for _ in $(seq 1 10); do
+            if ! kill -0 "$pid" 2>/dev/null; then
+              echo 'Orphaned restore process exited after SIGTERM.'
+              break
+            fi
+            sleep 1
+          done
+          if kill -0 "$pid" 2>/dev/null; then
+            echo 'The orphan did not exit after SIGTERM; no stronger signal was sent.' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import time
+
+          with open('/proc/stat', encoding='ascii') as stream:
+              first = [int(value) for value in stream.readline().split()[1:]]
+          total_a, idle_a = sum(first), first[3] + first[4]
+          time.sleep(2)
+          with open('/proc/stat', encoding='ascii') as stream:
+              second = [int(value) for value in stream.readline().split()[1:]]
+          total_b, idle_b = sum(second), second[3] + second[4]
+          total_delta = total_b - total_a
+          idle_delta = idle_b - idle_a
+          busy = 100 * (1 - idle_delta / total_delta) if total_delta else 0
+          print(f'host_cpu_busy_percent_after_reclaim={busy:.1f}')
+          PY
+          cat /proc/pressure/cpu 2>/dev/null || true
           REMOTE
