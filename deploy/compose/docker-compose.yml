@@ -110,7 +110,12 @@ services:
       NUXT_PUBLIC_RELEASE_VERSION: ${SILICIUM_RELEASE_VERSION:-unknown}
       NUXT_PUBLIC_RELEASE_BUILD: ${SILICIUM_RELEASE_BUILD:-local}
       NUXT_PUBLIC_SIL_MINT: ${SILICIUM_SIL_MINT:-}
-      NUXT_PUBLIC_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://api.devnet.solana.com}
+      # The browser endpoint is public by definition; use a provider key
+      # restricted to the website origin. Keep the unrestricted server key in
+      # SILICIUM_SOLANA_RPC for backend and worker traffic.
+      NUXT_PUBLIC_SOLANA_RPC: ${SILICIUM_SOLANA_BROWSER_RPC:-https://api.devnet.solana.com}
+      NUXT_PUBLIC_SOLANA_CLUSTER: ${SILICIUM_SOLANA_CLUSTER:-devnet}
+      NUXT_PUBLIC_SIL_POOL_ID: ${SILICIUM_SIL_POOL_ID:-66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS}
       NUXT_PUBLIC_SOLANA_PAYMENTS_ENABLED: ${SILICIUM_SOLANA_PAYMENTS_ENABLED:-0}
     ports:
     - 127.0.0.1:${SILICIUM_FRONTEND_HTTP_PORT:-3000}:3000
