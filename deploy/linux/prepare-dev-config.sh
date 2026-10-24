@@ -104,7 +104,7 @@ case "${payments_enabled,,}" in
   *) payments_enabled=0 ;;
 esac
 
-set_env_value "$miniworkers_env" SILICIUM_SOLANA_RPC https://solana-devnet.api.onfinality.io/public
+set_env_value "$miniworkers_env" SILICIUM_SOLANA_RPC http://172.23.0.1:8899/devnet
 set_env_value "$miniworkers_env" SILICIUM_VERIFICATIONS_REQUIRED 2
 set_env_value "$miniworkers_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
 set_env_value "$miniworkers_env" SILICIUM_SOLANA_PROGRAM_ID 64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG
@@ -124,7 +124,7 @@ set_env_value "$compose_env" POSTGRES_USER silicium_dev
 set_env_value "$compose_env" POSTGRES_PASSWORD "$db_password"
 set_env_value "$compose_env" SILICIUM_RELEASE_CHANNEL dev
 set_env_value "$compose_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
-set_env_value "$compose_env" SILICIUM_SOLANA_RPC https://solana-devnet.api.onfinality.io/public
+set_env_value "$compose_env" SILICIUM_SOLANA_RPC https://api.devnet.solana.com
 set_env_value "$compose_env" SILICIUM_SOLANA_CLUSTER devnet
 set_env_value "$compose_env" SILICIUM_SIL_POOL_ID 66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS
 set_env_value "$compose_env" SILICIUM_SOLANA_PROGRAM_ID 64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG
@@ -177,7 +177,7 @@ set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_HOST "$VPN_SERVER_ADDRESS"
 set_env_value "$backend_env" SILICIUM_SOLANA_WALLET /var/lib/silicium/solana/id.json
 set_env_value "$backend_env" SILICIUM_DEVNET_TRACE 0
 set_env_value "$backend_env" SILICIUM_DEVNET_TRACE_MODE devnet
-set_env_value "$backend_env" SILICIUM_SOLANA_RPC https://solana-devnet.api.onfinality.io/public
+set_env_value "$backend_env" SILICIUM_SOLANA_RPC https://api.devnet.solana.com
 set_env_value "$backend_env" SILICIUM_SOLANA_PROGRAM_ID 64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG
 set_env_value "$backend_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
 set_env_value "$backend_env" SILICIUM_SOLANA_PAYMENTS_ENABLED "$payments_enabled"
@@ -188,7 +188,7 @@ set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_CHANNEL dev
 set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_VERSION "$release_version"
 set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_BUILD "$release_build"
 set_env_value "$frontend_env" NUXT_PUBLIC_API_BASE /api
-set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_RPC https://solana-devnet.api.onfinality.io/public
+set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_RPC https://api.devnet.solana.com
 set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_CLUSTER devnet
 set_env_value "$frontend_env" NUXT_PUBLIC_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
 set_env_value "$frontend_env" NUXT_PUBLIC_SIL_POOL_ID 66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS

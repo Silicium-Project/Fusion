@@ -16,11 +16,12 @@ on:
         required: false
         default: ""
       deployment_target:
-        description: "GitHub-hosted website, P2P runtime/worker, resource, or diagnostic rollout."
+        description: "GitHub-hosted website, worker RPC recovery, P2P runtime, resource, or diagnostic rollout."
         required: true
         type: choice
         options:
           - frontend
+          - rpc-relay
           - workers
           - worker-resources
           - cpu-diagnose
@@ -636,7 +637,7 @@ jobs:
                 NUXT_PUBLIC_RELEASE_BUILD: $FRONTEND_BUILD
                 NUXT_PUBLIC_SOLANA_CLUSTER: devnet
                 NUXT_PUBLIC_SIL_POOL_ID: 66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS
-                NUXT_PUBLIC_SOLANA_RPC: \${SILICIUM_SOLANA_BROWSER_RPC:-https://solana-devnet.api.onfinality.io/public}
+                NUXT_PUBLIC_SOLANA_RPC: \${SILICIUM_SOLANA_BROWSER_RPC:-https://api.devnet.solana.com}
           EOF
             else
               cat <<EOF | tee "$override_file" >/dev/null
@@ -644,7 +645,7 @@ jobs:
             frontend:
               image: $image
               environment:
-                NUXT_PUBLIC_SOLANA_RPC: \${SILICIUM_SOLANA_BROWSER_RPC:-https://solana-devnet.api.onfinality.io/public}
+                NUXT_PUBLIC_SOLANA_RPC: \${SILICIUM_SOLANA_BROWSER_RPC:-https://api.devnet.solana.com}
           EOF
             fi
           }
@@ -831,7 +832,6 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-          SILICIUM_SOLANA_RPC: ${{ secrets.SILICIUM_SOLANA_RPC }}
           WORKER_IMAGE: ${{ steps.worker-image.outputs.image }}
           WORKER_BUILD: ${{ github.sha }}
           ORCHESTRATOR_BINARY: ${{ runner.temp }}/silicium-dev-orchestrator/p2p_node
@@ -865,12 +865,6 @@ jobs:
           vps_port="${VPS_PORT:-22}"
           orchestrator_staging="/tmp/silicium-dev-p2p-node-$GITHUB_RUN_ID"
           compose_staging="/tmp/silicium-dev-miniworkers-$GITHUB_RUN_ID.yml"
-
-          worker_rpc="${SILICIUM_SOLANA_RPC:-https://solana-devnet.api.onfinality.io/public}"
-          printf '%s' "$worker_rpc" | \
-            ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
-              "sudo -n python3 -c 'import os,pathlib,sys,tempfile; p=pathlib.Path(\"/etc/silicium-dev/miniworkers.env\"); value=sys.stdin.read(); assert value.startswith(\"https://\") and \"devnet\" in value.lower() and \"\\n\" not in value and \"\\r\" not in value, \"expected an HTTPS Devnet RPC URL\"; keys=(\"SILICIUM_SOLANA_RPC=\",\"SILICIUM_VERIFICATIONS_REQUIRED=\"); lines=[line for line in p.read_text().splitlines() if not line.startswith(keys)]; lines.extend((\"SILICIUM_SOLANA_RPC=\"+value,\"SILICIUM_VERIFICATIONS_REQUIRED=2\")); fd,name=tempfile.mkstemp(dir=str(p.parent),prefix=\".miniworkers.env.\"); f=os.fdopen(fd,\"w\"); f.write(\"\\n\".join(lines)+\"\\n\"); f.close(); os.chmod(name,0o600); os.replace(name,p)'"
-          echo "Configured worker Devnet RPC and a two-verifier policy."
 
           scp "${ssh_opts[@]}" -P "$vps_port" deploy/compose/dev-miniworkers.yml \
             "$vps_user@$VPS_HOST:$compose_staging"
@@ -907,8 +901,12 @@ jobs:
             echo "GitHub miniworker Compose file does not require two verifiers." >&2
             exit 1
           }
-          grep -Fq 'SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://solana-devnet.api.onfinality.io/public}' "$COMPOSE_STAGING" || {
-            echo "GitHub miniworker Compose file does not configure the Devnet RPC fallback." >&2
+          grep -Fq 'SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-http://172.23.0.1:8899/devnet}' "$COMPOSE_STAGING" || {
+            echo "GitHub miniworker Compose file does not configure the private Devnet RPC relay." >&2
+            exit 1
+          }
+          systemctl is-active --quiet silicium-devnet-rpc-relay.service || {
+            echo "The private Devnet RPC relay is not active; deploy the rpc-relay target first." >&2
             exit 1
           }
           trap 'rm -f "$COMPOSE_STAGING"' EXIT
@@ -1087,6 +1085,247 @@ jobs:
             [[ "$prior_rollback" == "$rollback_image" ]] || docker image rm "$prior_rollback" >/dev/null 2>&1 || true
           done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | awk '$1 ~ /^silicium-dev-miniworker:rollback-/')
           echo "GitHub-built P2P runtime deployed to the dev orchestrator and all 20 miniworkers: $WORKER_BUILD"
+          REMOTE
+
+  solana-rpc-relay:
+    if: ${{ github.event.inputs.deployment_target == 'rpc-relay' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: development
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+      VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+      DEPLOY_REF: ${{ github.event.inputs.ref || 'dev' }}
+      VPS_ROOT: ${{ github.event.inputs.vps_root || '/opt/silicium-dev' }}
+    steps:
+      - name: Check out the selected development ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || 'dev' }}
+          fetch-depth: 1
+
+      - name: Restrict this deployment to the dev branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_REF" == dev ]] || { echo "The development workflow only deploys the dev ref." >&2; exit 1; }
+          [[ "$VPS_ROOT" == /opt/silicium-dev ]] || { echo "The development workflow is restricted to /opt/silicium-dev." >&2; exit 1; }
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" && -n "${VPS_KNOWN_HOSTS:-}" ]] || {
+            echo "Missing a required development VPS SSH setting." >&2
+            exit 1
+          }
+
+      - name: Install the private Devnet relay and restore worker RPC access
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh_dir="$RUNNER_TEMP/silicium-dev-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
+            -i "$ssh_dir/id_ed25519")
+          vps_user="${VPS_USER:-luis}"
+          vps_port="${VPS_PORT:-22}"
+          staging="/tmp/silicium-devnet-rpc-relay-$GITHUB_RUN_ID.py"
+          compose_staging="/tmp/silicium-dev-miniworkers-$GITHUB_RUN_ID.yml"
+          scp "${ssh_opts[@]}" -P "$vps_port" deploy/devnet-rpc-relay.py \
+            "$vps_user@$VPS_HOST:$staging"
+          scp "${ssh_opts[@]}" -P "$vps_port" deploy/compose/dev-miniworkers.yml \
+            "$vps_user@$VPS_HOST:$compose_staging"
+
+          ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+            "sudo -n env RUN_ID='$GITHUB_RUN_ID' RELAY_STAGING='$staging' COMPOSE_STAGING='$compose_staging' bash -s" <<'REMOTE'
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid GitHub run ID." >&2; exit 1; }
+          [[ "$RELAY_STAGING" == "/tmp/silicium-devnet-rpc-relay-${RUN_ID}.py" && -s "$RELAY_STAGING" ]] || {
+            echo "Missing the GitHub-built Devnet relay source." >&2
+            exit 1
+          }
+          [[ "$COMPOSE_STAGING" == "/tmp/silicium-dev-miniworkers-${RUN_ID}.yml" && -s "$COMPOSE_STAGING" ]] || {
+            echo "Missing the GitHub miniworker Compose file." >&2
+            exit 1
+          }
+          grep -Fq 'SILICIUM_VERIFICATIONS_REQUIRED: ${SILICIUM_VERIFICATIONS_REQUIRED:-2}' "$COMPOSE_STAGING" || {
+            echo "The GitHub miniworker config does not set a two-verifier policy." >&2
+            exit 1
+          }
+          grep -Fq 'SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-http://172.23.0.1:8899/devnet}' "$COMPOSE_STAGING" || {
+            echo "The GitHub miniworker config does not use the private Devnet RPC relay." >&2
+            exit 1
+          }
+          network=silicium-dev-miniworkers
+          network_config="$(docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{.Gateway}}{{end}}' "$network")"
+          read -r worker_subnet worker_gateway <<<"$network_config"
+          [[ -n "$worker_subnet" && -n "$worker_gateway" ]] || {
+            echo "The miniworker Docker bridge has no IPv4 gateway." >&2
+            exit 1
+          }
+          python3 - "$worker_subnet" "$worker_gateway" <<'PY'
+          import ipaddress
+          import sys
+
+          subnet = ipaddress.ip_network(sys.argv[1], strict=False)
+          gateway = ipaddress.ip_address(sys.argv[2])
+          if subnet.version != 4 or gateway != subnet.network_address + 1:
+              raise SystemExit("Unexpected worker bridge gateway; refusing to expose the relay.")
+          PY
+
+          install -d -m 0755 /usr/local/libexec
+          install -o root -g root -m 0755 "$RELAY_STAGING" /usr/local/libexec/silicium-devnet-rpc-relay.py
+          rm -f "$RELAY_STAGING"
+          cat > /etc/systemd/system/silicium-devnet-rpc-relay.service <<UNIT
+          [Unit]
+          Description=Private Solana Devnet RPC relay for Silicium miniworkers
+          Wants=docker.service
+          After=docker.service
+
+          [Service]
+          Type=simple
+          DynamicUser=yes
+          Environment=SILICIUM_DEVNET_RPC_BIND=$worker_gateway
+          Environment=SILICIUM_DEVNET_RPC_ALLOWED_CIDRS=$worker_subnet
+          Environment=SILICIUM_DEVNET_RPC_UPSTREAM=https://api.devnet.solana.com
+          ExecStart=/usr/bin/python3 -B /usr/local/libexec/silicium-devnet-rpc-relay.py
+          Restart=on-failure
+          RestartSec=2
+          NoNewPrivileges=yes
+          PrivateDevices=yes
+          PrivateTmp=yes
+          ProtectHome=yes
+          ProtectSystem=strict
+          ProtectKernelTunables=yes
+          ProtectKernelModules=yes
+          ProtectControlGroups=yes
+          RestrictSUIDSGID=yes
+          LockPersonality=yes
+          RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          chmod 0644 /etc/systemd/system/silicium-devnet-rpc-relay.service
+          systemctl daemon-reload
+          systemctl enable --now silicium-devnet-rpc-relay.service
+          systemctl restart silicium-devnet-rpc-relay.service
+
+          curl --noproxy '*' --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+            "http://$worker_gateway:8899/healthz" | python3 -c \
+            'import json,sys; d=json.load(sys.stdin); assert d.get("status") == "ok" and d.get("cluster") == "devnet"; print("private_rpc_relay=healthy")'
+
+          first_worker="$(docker ps -q --filter name=silicium-dev-miniworker-01 | head -n 1 || true)"
+          [[ -n "$first_worker" ]] || { echo "Miniworker 01 is unavailable for the bridge check." >&2; exit 1; }
+          response="$(docker exec "$first_worker" curl --noproxy '*' --fail --silent --show-error \
+            --connect-timeout 3 --max-time 12 -H 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
+            "http://$worker_gateway:8899/devnet")"
+          python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("result") == "ok", d; print("miniworker_rpc=healthy")' <<<"$response"
+
+          orchestrator_env=/etc/silicium-dev/orchestrator.env
+          [[ -f "$orchestrator_env" ]] || { echo "Missing dev orchestrator environment." >&2; exit 1; }
+          node_port="$(sed -n 's/^SILICIUM_NODE_PORT=//p' "$orchestrator_env" | tail -n 1)"
+          node_port="${node_port:-46200}"
+          node_token="$(sed -n 's/^SILICIUM_NODE_CONTROL_TOKEN=//p' "$orchestrator_env" | tail -n 1)"
+          [[ "$node_port" =~ ^[0-9]{1,5}$ && -n "$node_token" ]] || {
+            echo "The orchestrator control API is not configured; refusing to restart active workers." >&2
+            exit 1
+          }
+          curl --noproxy '*' --fail --silent --show-error --connect-timeout 3 --max-time 8 \
+            -H "Authorization: Bearer $node_token" "http://127.0.0.1:${node_port}/v1/peers" \
+            | python3 -c 'import json,sys; d=json.load(sys.stdin); n=d.get("metrics",{}).get("active_tasks"); print(f"active_tasks={n}"); assert n == 0, "Refusing worker restart while tasks are active."'
+
+          compose_file=/opt/silicium-dev/deploy/compose/dev-miniworkers.yml
+          worker_env=/etc/silicium-dev/miniworkers.env
+          install -m 0644 "$COMPOSE_STAGING" "$compose_file.new-$RUN_ID"
+          mv -f "$compose_file.new-$RUN_ID" "$compose_file"
+          rm -f "$COMPOSE_STAGING"
+
+          python3 - "$worker_subnet" "$worker_gateway" <<'PY'
+          import os
+          import pathlib
+          import stat
+          import sys
+          import tempfile
+
+          path = pathlib.Path("/etc/silicium-dev/miniworkers.env")
+          subnet, gateway = sys.argv[1:]
+          keys = ("SILICIUM_SOLANA_RPC=", "SILICIUM_VERIFICATIONS_REQUIRED=")
+          lines = [line for line in path.read_text().splitlines() if not line.startswith(keys)]
+          lines.extend((f"SILICIUM_SOLANA_RPC=http://{gateway}:8899/devnet", "SILICIUM_VERIFICATIONS_REQUIRED=2"))
+          fd, temporary = tempfile.mkstemp(prefix=".miniworkers.env.", dir=path.parent)
+          try:
+              with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                  stream.write("\n".join(lines) + "\n")
+              os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+              os.replace(temporary, path)
+          finally:
+              if os.path.exists(temporary):
+                  os.unlink(temporary)
+          print(f"worker_rpc_endpoint=http://{gateway}:8899/devnet")
+          print(f"worker_bridge_subnet={subnet}")
+          PY
+
+          compose=(docker compose --project-name silicium-dev-miniworkers --env-file "$worker_env" -f "$compose_file")
+          configured_services="$("${compose[@]}" config --services)"
+          for number in $(seq -w 1 20); do
+            service="miniworker-$number"
+            grep -Fxq "$service" <<<"$configured_services" || { echo "Missing $service." >&2; exit 1; }
+            "${compose[@]}" up -d --no-build --no-deps --force-recreate "$service"
+            container="$("${compose[@]}" ps -q "$service" | head -n 1 || true)"
+            [[ -n "$container" ]] || { echo "Container was not created: $service" >&2; exit 1; }
+            state="$(docker inspect --format '{{.State.Status}}' "$container")"
+            [[ "$state" == running ]] || { echo "$service did not start: $state" >&2; exit 1; }
+            echo "Restarted with private RPC: $service"
+          done
+
+          orchestrator_env_backup="/var/lib/silicium-dev/releases/orchestrator.env.rpc-relay-$RUN_ID"
+          install -d -m 0700 /var/lib/silicium-dev/releases
+          cp -p "$orchestrator_env" "$orchestrator_env_backup"
+          python3 - "$orchestrator_env" <<'PY'
+          import os
+          import pathlib
+          import stat
+          import sys
+          import tempfile
+
+          path = pathlib.Path(sys.argv[1])
+          key = "SILICIUM_VERIFICATIONS_REQUIRED="
+          lines = [line for line in path.read_text().splitlines() if not line.startswith(key)]
+          lines.append(f"{key}2")
+          fd, temporary = tempfile.mkstemp(prefix=".orchestrator.env.", dir=path.parent)
+          try:
+              with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                  stream.write("\n".join(lines) + "\n")
+              os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+              os.replace(temporary, path)
+          finally:
+              if os.path.exists(temporary):
+                  os.unlink(temporary)
+          PY
+          systemctl restart silicium-orchestrator-dev.service
+          orchestrator_healthy=false
+          for attempt in $(seq 1 30); do
+            if systemctl is-active --quiet silicium-orchestrator-dev.service \
+              && curl --noproxy '*' --fail --silent --show-error --max-time 2 \
+                "http://127.0.0.1:${node_port}/healthz" >/dev/null; then
+              orchestrator_healthy=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$orchestrator_healthy" != true ]]; then
+            cp -p "$orchestrator_env_backup" "$orchestrator_env"
+            systemctl restart silicium-orchestrator-dev.service || true
+            echo "The orchestrator did not recover after the two-verifier update." >&2
+            exit 1
+          fi
+
+          echo "Workers restarted with the VPS RPC relay; the dev orchestrator is healthy with two required verifiers."
           REMOTE
 
   worker-resources:
