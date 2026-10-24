@@ -66,6 +66,8 @@ class RelayHandler(BaseHTTPRequestHandler):
             address = ipaddress.ip_address(self.client_address[0])
         except ValueError:
             return False
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+            address = address.ipv4_mapped
         return address in ipaddress.ip_network("127.0.0.0/8") or any(
             address in network for network in ALLOWED_CIDRS
         )
@@ -80,7 +82,7 @@ class RelayHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
-        if self.path == "/healthz" and self._allowed():
+        if self.path == "/healthz":
             self._respond(200, b'{"status":"ok","cluster":"devnet"}')
             return
         self._respond(404, b'{"error":"not found"}')
