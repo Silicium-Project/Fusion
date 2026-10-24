@@ -13,7 +13,7 @@ export default defineNuxtConfig({
       releaseChannel: process.env.NUXT_PUBLIC_RELEASE_CHANNEL === 'prod' ? 'prod' : 'dev',
       releaseVersion: process.env.NUXT_PUBLIC_RELEASE_VERSION || 'unknown',
       releaseBuild: process.env.NUXT_PUBLIC_RELEASE_BUILD || 'local',
-      solanaRpc: process.env.NUXT_PUBLIC_SOLANA_RPC || 'https://api.devnet.solana.com',
+      solanaRpc: process.env.NUXT_PUBLIC_SOLANA_RPC || 'https://solana-devnet.api.onfinality.io/public',
       solanaCluster: process.env.NUXT_PUBLIC_SOLANA_CLUSTER || 'devnet',
       silMint: process.env.NUXT_PUBLIC_SIL_MINT || '',
       silPoolId: process.env.NUXT_PUBLIC_SIL_POOL_ID || '66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS',
