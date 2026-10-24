@@ -636,12 +636,15 @@ jobs:
                 NUXT_PUBLIC_RELEASE_BUILD: $FRONTEND_BUILD
                 NUXT_PUBLIC_SOLANA_CLUSTER: devnet
                 NUXT_PUBLIC_SIL_POOL_ID: 66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS
+                NUXT_PUBLIC_SOLANA_RPC: \${SILICIUM_SOLANA_BROWSER_RPC:-https://solana-devnet.api.onfinality.io/public}
           EOF
             else
               cat <<EOF | tee "$override_file" >/dev/null
           services:
             frontend:
               image: $image
+              environment:
+                NUXT_PUBLIC_SOLANA_RPC: \${SILICIUM_SOLANA_BROWSER_RPC:-https://solana-devnet.api.onfinality.io/public}
           EOF
             fi
           }
