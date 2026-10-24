@@ -23,6 +23,7 @@ on:
           - frontend
           - workers
           - worker-resources
+          - cpu-diagnose
           - full
           - diagnose
         default: frontend
@@ -1304,5 +1305,82 @@ jobs:
           for url in http://10.77.0.1:8081/ https://10.77.0.1:8443/; do
             curl --noproxy '*' -kSs --connect-timeout 3 --max-time 6 \
               -o /dev/null -w "$url -> HTTP %{http_code}\n" "$url" || true
+          done
+          REMOTE
+
+  cpu-diagnose:
+    if: ${{ github.event.inputs.deployment_target == 'cpu-diagnose' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: development
+    steps:
+      - name: Measure host and container CPU over SSH
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" && -n "${VPS_KNOWN_HOSTS:-}" ]] || {
+            echo "Missing VPS SSH configuration." >&2
+            exit 1
+          }
+          ssh_dir="$RUNNER_TEMP/silicium-dev-cpu-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
+            -i "$ssh_dir/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "${VPS_PORT:-22}" \
+            "${VPS_USER:-luis}@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
+          set -u
+          echo '=== CPU inventory and cgroup limit ==='
+          nproc
+          grep -E '^(processor|model name)' /proc/cpuinfo | awk 'NR <= 8 {print}'
+          cat /sys/fs/cgroup/cpu.max 2>/dev/null || true
+          cat /proc/loadavg
+          echo '=== Host CPU busy sample (2 seconds) ==='
+          python3 - <<'PY'
+          import time
+
+          def read_cpu():
+              with open('/proc/stat', encoding='ascii') as stream:
+                  values = [int(value) for value in stream.readline().split()[1:]]
+              return sum(values), values[3] + values[4]
+
+          total_a, idle_a = read_cpu()
+          time.sleep(2)
+          total_b, idle_b = read_cpu()
+          total_delta = total_b - total_a
+          idle_delta = idle_b - idle_a
+          busy = 100 * (1 - idle_delta / total_delta) if total_delta else 0
+          print(f'host_cpu_busy_percent={busy:.1f}')
+          PY
+          cat /proc/pressure/cpu 2>/dev/null || true
+          echo '=== Top host processes ==='
+          ps -eo pid,ppid,stat,comm,pcpu,pmem --sort=-pcpu | head -n 26
+          echo '=== P2P process cgroups ==='
+          ps -eo pid=,comm=,pcpu= --sort=-pcpu \
+            | awk '$2 == "p2p_node" {print $1}' | head -n 10 \
+            | while read -r pid; do
+                [[ -r "/proc/$pid/cgroup" ]] || continue
+                printf 'pid=%s ' "$pid"
+                tr '\n' ' ' < "/proc/$pid/cgroup"
+                printf '\n'
+              done
+          echo '=== Dev orchestrator service accounting ==='
+          systemctl show silicium-orchestrator-dev.service \
+            --property=ActiveState,MainPID,CPUAccounting,CPUUsageNSec,ControlGroup 2>&1 || true
+          echo '=== Container CPU snapshot ==='
+          docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' \
+            | sort -k2,2nr | head -n 28
+          echo '=== Miniworker configured quotas ==='
+          for container in $(docker ps -q --filter name=silicium-dev-miniworker-); do
+            docker inspect --format '{{.Name}} pid={{.State.Pid}} cpus={{.HostConfig.NanoCpus}}' "$container"
           done
           REMOTE
