@@ -98,14 +98,20 @@ export function useJobs() {
       ]);
       const expectedFragments = Math.min(256, Math.max(1, Math.trunc(input.fragmentCount)), Math.max(1, input.file.size));
       const deadlineUnix = Math.floor(Date.now() / 1000) + Math.min(7 * 24 * 60 * 60, Math.max(600, input.maxRuntimeSeconds + 120));
-      const escrow = await createSILEscrow(
-        new Connection(String(runtime.public.solanaRpc), 'confirmed'),
-        provider,
-        user.value.walletAddress,
-        expectedFragments,
-        deadlineUnix,
-        String(runtime.public.silMint || 'F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP'),
-      );
+      let escrow: Awaited<ReturnType<typeof createSILEscrow>>;
+      try {
+        escrow = await createSILEscrow(
+          new Connection(String(runtime.public.solanaRpc), 'confirmed'),
+          provider,
+          user.value.walletAddress,
+          expectedFragments,
+          deadlineUnix,
+          String(runtime.public.silMint || 'F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP'),
+        );
+      } catch (failure) {
+        if (isSolanaRpcRateLimitFailure(failure)) throw new Error(translate('jobForm.paymentRpcRateLimited'));
+        throw failure;
+      }
       payment = { ...escrow, expectedFragments };
     }
     const form = new FormData();
