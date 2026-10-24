@@ -1241,10 +1241,20 @@ jobs:
 
           first_worker="$(docker ps -q --filter name=silicium-dev-miniworker-01 | head -n 1 || true)"
           [[ -n "$first_worker" ]] || { echo "Miniworker 01 is unavailable for the bridge check." >&2; exit 1; }
-          response="$(docker exec "$first_worker" curl --noproxy '*' --fail --silent --show-error \
+          if ! response="$(docker exec "$first_worker" curl --noproxy '*' --fail --silent --show-error \
             --connect-timeout 3 --max-time 12 -H 'Content-Type: application/json' \
             --data '{"jsonrpc":"2.0","id":1,"method":"getHealth"}' \
-            "http://$worker_gateway:8899/devnet")"
+            "http://$worker_gateway:8899/devnet")"; then
+            echo 'Miniworker could not reach the host relay; inspecting bridge firewall and routes.' >&2
+            docker exec "$first_worker" ip -4 route >&2 || true
+            iptables -S INPUT >&2 || true
+            iptables -L INPUT -n -v --line-numbers >&2 || true
+            iptables -S DOCKER-USER >&2 || true
+            iptables -t nat -S POSTROUTING >&2 || true
+            if command -v ufw >/dev/null 2>&1; then ufw status verbose >&2 || true; fi
+            if command -v nft >/dev/null 2>&1; then nft list ruleset >&2 || true; fi
+            exit 1
+          fi
           python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("result") == "ok", d; print("miniworker_rpc=healthy")' <<<"$response"
 
           orchestrator_env=/etc/silicium-dev/orchestrator.env
