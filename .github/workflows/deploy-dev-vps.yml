@@ -1176,6 +1176,25 @@ jobs:
               raise SystemExit("Unexpected worker bridge gateway; refusing to expose the relay.")
           PY
 
+          if ! command -v ufw >/dev/null 2>&1 || ! ufw status 2>/dev/null | grep -q '^Status: active'; then
+            echo "UFW is not active; refusing to change the worker RPC firewall implicitly." >&2
+            exit 1
+          fi
+          network_id="$(docker network inspect --format '{{.Id}}' "$network")"
+          bridge="br-${network_id:0:12}"
+          ip link show dev "$bridge" >/dev/null 2>&1 || {
+            echo "The expected miniworker bridge interface is missing: $bridge" >&2
+            exit 1
+          }
+          ufw allow in on "$bridge" from "$worker_subnet" to "$worker_gateway" port 8899 proto tcp \
+            comment 'Silicium private Devnet RPC relay' >/dev/null
+          ufw status numbered | grep -F "$bridge" | grep -F "$worker_subnet" | grep -F "$worker_gateway" | grep -F '8899/tcp' >/dev/null || {
+            echo "UFW did not install the scoped miniworker RPC rule." >&2
+            ufw status verbose >&2 || true
+            exit 1
+          }
+          echo "ufw_worker_relay_rule=verified interface=$bridge source=$worker_subnet destination=$worker_gateway port=8899/tcp"
+
           install -d -m 0755 /usr/local/libexec
           install -o root -g root -m 0755 "$RELAY_STAGING" /usr/local/libexec/silicium-devnet-rpc-relay.py
           rm -f "$RELAY_STAGING"
