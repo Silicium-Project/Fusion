@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer';
-import { Connection, PublicKey, Transaction, VersionedTransaction } from '@solana/web3.js';
+import type { PublicKey as SolanaPublicKey } from '@solana/web3.js';
 import { phantomProvider } from '~/utils/wallet';
 
 export type SILSwapDirection = 'buy' | 'sell';
@@ -28,13 +28,13 @@ export interface SILSwapQuote {
   direction: SILSwapDirection;
 }
 
-const DEVNET_CPMM_PROGRAM = new PublicKey('DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpYb');
-const DEVNET_SIL_MINT = new PublicKey('F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP');
-const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
-const SPL_TOKEN_PROGRAM = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
-const ASSOCIATED_TOKEN_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
-const PYTH_RECEIVER_PROGRAM = new PublicKey('rec2HHDDnjLfj4kE7VyEtFA1HPGQLK33259532cRyHp');
-const PYTH_SOL_USD_ACCOUNT = new PublicKey('7AviUf9nL62mcxNbQGKm4nKDQnPjswo6c5MX4D57HmyE');
+const DEVNET_CPMM_PROGRAM_ID = 'DRaycpLY18LhpbydsBWbVJtxpNv9oXPgjRSfpF2bWpYb';
+const DEVNET_SIL_MINT_ID = 'F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP';
+const WSOL_MINT_ID = 'So11111111111111111111111111111111111111112';
+const SPL_TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const ASSOCIATED_TOKEN_PROGRAM_ID = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
+const PYTH_RECEIVER_PROGRAM_ID = 'rec2HHDDnjLfj4kE7VyEtFA1HPGQLK33259532cRyHp';
+const PYTH_SOL_USD_ACCOUNT_ID = '7AviUf9nL62mcxNbQGKm4nKDQnPjswo6c5MX4D57HmyE';
 const PYTH_SOL_USD_FEED = Buffer.from('ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d', 'hex');
 const FEE_DENOMINATOR = BigInt(1_000_000);
 const ZERO = BigInt(0);
@@ -43,21 +43,34 @@ const SWAP_SLIPPAGE_BPS = 50;
 const TOKEN_ACCOUNT_AMOUNT_OFFSET = 64;
 const MAX_PYTH_AGE_SECONDS = 180;
 
-function publicKeyAt(data: Buffer, offset: number): PublicKey {
+function publicKeyAt(
+  data: Buffer,
+  offset: number,
+  PublicKey: typeof import('@solana/web3.js').PublicKey,
+): SolanaPublicKey {
   return new PublicKey(data.subarray(offset, offset + 32));
 }
 
-function tokenAmount(account: { owner: PublicKey; data: Buffer }, mint: PublicKey, authority: PublicKey): bigint {
-  if (!account.owner.equals(SPL_TOKEN_PROGRAM) || account.data.length < 165
-    || !publicKeyAt(account.data, 0).equals(mint)
-    || !publicKeyAt(account.data, 32).equals(authority)) {
+function tokenAmount(
+  account: { owner: SolanaPublicKey; data: Buffer },
+  mint: SolanaPublicKey,
+  authority: SolanaPublicKey,
+  tokenProgram: SolanaPublicKey,
+  PublicKey: typeof import('@solana/web3.js').PublicKey,
+): bigint {
+  if (!account.owner.equals(tokenProgram) || account.data.length < 165
+    || !publicKeyAt(account.data, 0, PublicKey).equals(mint)
+    || !publicKeyAt(account.data, 32, PublicKey).equals(authority)) {
     throw new Error('The SIL/SOL pool vault does not match its on-chain mint or authority.');
   }
   return account.data.readBigUInt64LE(TOKEN_ACCOUNT_AMOUNT_OFFSET);
 }
 
-function parsePyth(account: { owner: PublicKey; data: Buffer } | null): { price: number; publishedAt: number; ageSeconds: number } | null {
-  if (!account || !account.owner.equals(PYTH_RECEIVER_PROGRAM) || account.data.length < 134) return null;
+function parsePyth(
+  account: { owner: SolanaPublicKey; data: Buffer } | null,
+  pythProgram: SolanaPublicKey,
+): { price: number; publishedAt: number; ageSeconds: number } | null {
+  if (!account || !account.owner.equals(pythProgram) || account.data.length < 134) return null;
   const data = account.data;
   const variant = data[40];
   // The sponsored Devnet feed is fully verified. Partial accounts are ignored.
@@ -76,10 +89,16 @@ function parsePyth(account: { owner: PublicKey; data: Buffer } | null): { price:
   return { price, publishedAt, ageSeconds };
 }
 
-function associatedTokenAddress(owner: PublicKey, mint: PublicKey): PublicKey {
+function associatedTokenAddress(
+  owner: SolanaPublicKey,
+  mint: SolanaPublicKey,
+  PublicKey: typeof import('@solana/web3.js').PublicKey,
+  tokenProgram: SolanaPublicKey,
+  associatedProgram: SolanaPublicKey,
+): SolanaPublicKey {
   return PublicKey.findProgramAddressSync(
-    [owner.toBuffer(), SPL_TOKEN_PROGRAM.toBuffer(), mint.toBuffer()],
-    ASSOCIATED_TOKEN_PROGRAM,
+    [owner.toBuffer(), tokenProgram.toBuffer(), mint.toBuffer()],
+    associatedProgram,
   )[0];
 }
 
@@ -103,13 +122,13 @@ export function useSILEconomy() {
   const swapLoading = ref(false);
   const swapError = ref('');
 
-  function connectionForDevnet(): Connection {
+  function rpcForDevnet(): string {
     const cluster = String(runtime.public.solanaCluster || 'devnet').trim().toLowerCase();
     const rpc = String(runtime.public.solanaRpc || '').trim();
     if (cluster !== 'devnet' || !rpc || new URL(rpc).hostname.toLowerCase().includes('mainnet')) {
       throw new Error('SIL exchange is available only on Solana Devnet.');
     }
-    return new Connection(rpc, 'confirmed');
+    return rpc;
   }
 
   async function refreshMarket(force = false): Promise<void> {
@@ -118,40 +137,50 @@ export function useSILEconomy() {
     marketLoading.value = true;
     marketError.value = '';
     try {
-      const connection = connectionForDevnet();
+      // Load web3.js only in the browser. Importing it during Nuxt SSR pulls
+      // Jayson's browser client into Node's ESM module loader.
+      const rpc = rpcForDevnet();
+      const { Connection, PublicKey } = await import('@solana/web3.js');
+      const connection = new Connection(rpc, 'confirmed');
+      const devnetProgram = new PublicKey(DEVNET_CPMM_PROGRAM_ID);
+      const silMint = new PublicKey(DEVNET_SIL_MINT_ID);
+      const wsolMint = new PublicKey(WSOL_MINT_ID);
+      const tokenProgram = new PublicKey(SPL_TOKEN_PROGRAM_ID);
+      const associatedProgram = new PublicKey(ASSOCIATED_TOKEN_PROGRAM_ID);
+      const pythProgram = new PublicKey(PYTH_RECEIVER_PROGRAM_ID);
       const poolId = new PublicKey(String(runtime.public.silPoolId || '66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS'));
       const poolResult = await connection.getAccountInfoAndContext(poolId, 'confirmed');
       const pool = poolResult.value;
-      if (!pool || !pool.owner.equals(DEVNET_CPMM_PROGRAM) || pool.data.length !== 637) {
+      if (!pool || !pool.owner.equals(devnetProgram) || pool.data.length !== 637) {
         throw new Error('The SIL/SOL Devnet pool is not available.');
       }
       const poolData = pool.data;
-      const vaultSol = publicKeyAt(poolData, 72);
-      const vaultSil = publicKeyAt(poolData, 104);
-      const mintSol = publicKeyAt(poolData, 168);
-      const mintSil = publicKeyAt(poolData, 200);
-      if (!mintSol.equals(WSOL_MINT) || !mintSil.equals(DEVNET_SIL_MINT) || (poolData[329]! & 0x04) !== 0) {
+      const vaultSol = publicKeyAt(poolData, 72, PublicKey);
+      const vaultSil = publicKeyAt(poolData, 104, PublicKey);
+      const mintSol = publicKeyAt(poolData, 168, PublicKey);
+      const mintSil = publicKeyAt(poolData, 200, PublicKey);
+      if (!mintSol.equals(wsolMint) || !mintSil.equals(silMint) || (poolData[329]! & 0x04) !== 0) {
         throw new Error('The configured Devnet pool does not match the SIL/SOL market.');
       }
 
       const poolAuthority = PublicKey.findProgramAddressSync(
         [Buffer.from('vault_and_lp_mint_auth_seed')],
-        DEVNET_CPMM_PROGRAM,
+        devnetProgram,
       )[0];
-      const configId = publicKeyAt(poolData, 8);
+      const configId = publicKeyAt(poolData, 8, PublicKey);
       const [solVault, silVault, configAccount, pythAccount] = await connection.getMultipleAccountsInfo([
         vaultSol,
         vaultSil,
         configId,
-        PYTH_SOL_USD_ACCOUNT,
+        new PublicKey(PYTH_SOL_USD_ACCOUNT_ID),
       ], 'confirmed');
-      if (!solVault || !silVault || !configAccount || !configAccount.owner.equals(DEVNET_CPMM_PROGRAM)
+      if (!solVault || !silVault || !configAccount || !configAccount.owner.equals(devnetProgram)
         || configAccount.data.length < 20) {
         throw new Error('The SIL/SOL pool reserves could not be read from Devnet.');
       }
 
-      const rawSol = tokenAmount(solVault, WSOL_MINT, poolAuthority);
-      const rawSil = tokenAmount(silVault, DEVNET_SIL_MINT, poolAuthority);
+      const rawSol = tokenAmount(solVault, wsolMint, poolAuthority, tokenProgram, PublicKey);
+      const rawSil = tokenAmount(silVault, silMint, poolAuthority, tokenProgram, PublicKey);
       // The pool keeps protocol and fund fees in its vaults; subtract those amounts
       // so the displayed spot price follows tradable reserves.
       const owedSol = poolData.readBigUInt64LE(341) + poolData.readBigUInt64LE(357) + poolData.readBigUInt64LE(397);
@@ -164,7 +193,7 @@ export function useSILEconomy() {
 
       const feeRate = Number(configAccount.data.readBigUInt64LE(12));
       const creatorFeeRate = poolData[390] === 1 ? Number(configAccount.data.readBigUInt64LE(108)) : 0;
-      const pyth = parsePyth(pythAccount);
+      const pyth = parsePyth(pythAccount, pythProgram);
       const silPerSol = silReserve / solReserve;
       market.value = {
         poolId: poolId.toBase58(),
@@ -223,15 +252,21 @@ export function useSILEconomy() {
     swapError.value = '';
     swapLoading.value = true;
     try {
-      const connection = connectionForDevnet();
+      const rpc = rpcForDevnet();
+      const { Connection, PublicKey, Transaction, VersionedTransaction } = await import('@solana/web3.js');
+      const connection = new Connection(rpc, 'confirmed');
+      const devnetSilMint = new PublicKey(DEVNET_SIL_MINT_ID);
+      const wsolMint = new PublicKey(WSOL_MINT_ID);
+      const tokenProgram = new PublicKey(SPL_TOKEN_PROGRAM_ID);
+      const associatedProgram = new PublicKey(ASSOCIATED_TOKEN_PROGRAM_ID);
       const provider = import.meta.client ? phantomProvider(window) : null;
       if (!provider?.signTransaction) throw new Error('Install Phantom to sign the swap.');
       const connected = await provider.connect();
       const owner = new PublicKey(connected.publicKey.toString());
       if (!linkedWallet || owner.toBase58() !== linkedWallet) throw new Error('Connect the wallet linked to this account.');
       const buying = direction === 'buy';
-      const inputMint = buying ? WSOL_MINT : DEVNET_SIL_MINT;
-      const outputMint = buying ? DEVNET_SIL_MINT : WSOL_MINT;
+      const inputMint = buying ? wsolMint : devnetSilMint;
+      const outputMint = buying ? devnetSilMint : wsolMint;
       const amount = rawAmount(input, buying ? 9 : 6);
       const params = new URLSearchParams({
         inputMint: inputMint.toBase58(),
@@ -246,8 +281,8 @@ export function useSILEconomy() {
       const swapQuote = await quoteResponse.json();
       if (!swapQuote.success || !swapQuote.data) throw new Error('No executable SIL/SOL route is available yet.');
 
-      const inputAccount = buying ? undefined : associatedTokenAddress(owner, DEVNET_SIL_MINT).toBase58();
-      const outputAccount = buying ? associatedTokenAddress(owner, DEVNET_SIL_MINT).toBase58() : undefined;
+      const inputAccount = buying ? undefined : associatedTokenAddress(owner, devnetSilMint, PublicKey, tokenProgram, associatedProgram).toBase58();
+      const outputAccount = buying ? associatedTokenAddress(owner, devnetSilMint, PublicKey, tokenProgram, associatedProgram).toBase58() : undefined;
       const buildResponse = await fetch(`${api}/transaction/swap-base-in`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

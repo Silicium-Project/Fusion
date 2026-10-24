@@ -55,10 +55,6 @@ export default defineNuxtConfig({
   components: [{ path: '~/components', pathPrefix: false }],
 
   nitro: {
-    // Keep web3.js and its Jayson HTTP client inside Nitro's server bundle.
-    // Externalizing web3.js makes Node load Jayson's browser client through a
-    // directory import, which Node ESM rejects when rendering pages in SSR.
-    externals: { inline: ['@solana/web3.js', 'jayson'] },
     routeRules: {
       '/auth': { headers: { 'Cache-Control': 'no-store' } },
       '/dashboard': { headers: { 'Cache-Control': 'no-store' } },
@@ -69,6 +65,7 @@ export default defineNuxtConfig({
       '/workers/overview': { headers: { 'Cache-Control': 'no-store' } },
       '/downloads/update-manifest.json': { headers: { 'Cache-Control': 'no-cache, must-revalidate' } },
     },
+    externals: { external: ['@solana/web3.js'] },
   },
 
   vite: {
@@ -78,7 +75,7 @@ export default defineNuxtConfig({
       esbuildOptions: { define: { global: 'globalThis' } },
     },
     resolve: { alias: { buffer: 'buffer' } },
-    ssr: { noExternal: ['@solana/web3.js', 'jayson'] },
+    ssr: { external: ['@solana/web3.js'] },
   },
 
   typescript: { typeCheck: true },
