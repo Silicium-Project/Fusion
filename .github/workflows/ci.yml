@@ -6,6 +6,7 @@ on:
       - main
       - dev
       - "issue/**"
+      - "codex/**"
   pull_request:
     branches: [main, dev]
   workflow_dispatch:
@@ -36,7 +37,7 @@ concurrency:
 
 jobs:
   changes:
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.detect.outputs.python }}
       e2e: ${{ steps.detect.outputs.e2e }}
@@ -143,7 +144,7 @@ jobs:
     needs: [changes]
     if: ${{ needs.changes.outputs.codeql != '[]' }}
     name: Analyze (${{ matrix.language }})
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -195,7 +196,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -253,7 +254,7 @@ jobs:
     needs: [changes, p2p-node, tests]
     if: ${{ always() && needs.changes.outputs.solana == 'true' }}
     name: Build and test Anchor program
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
 
     defaults:
       run:
@@ -400,11 +401,11 @@ jobs:
     needs: [changes, p2p-node]
     if: ${{ always() && needs.changes.outputs.test_jobs != '[]' }}
     name: EntryPoint Tests / ${{ matrix.job }}
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      # Rust jobs share the self-hosted runner's Cargo home.
+      # Keep resource-intensive network checks serial within this matrix.
       max-parallel: 1
       matrix:
         job: ${{ fromJSON(needs.changes.outputs.test_jobs) }}
