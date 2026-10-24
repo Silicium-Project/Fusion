@@ -1,25 +1,38 @@
-**Description**
-Please include a summary of the change and which issue is fixed. Include relevant motivation and context.
+## Issue et périmètre
 
-**Fixes Issue:** #[Issue Number]
+Refs https://github.com/Silicium-Project/Fusion/issues/NUMERO
 
-**Type of change**
-Please delete options that are not relevant.
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation update
+<!-- Une modification cohérente ; liens complets entre dépôts. Utiliser Refs tant que la fusion ne suffit pas à accepter le résultat. -->
 
-**How Has This Been Tested?**
-Please describe the tests that you ran to verify your changes.
-- [ ] Test A
-- [ ] Test B
+## Changement et raison
 
-**Checklist:**
-- [ ] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
+<!-- Comportement attendu, code touché et consommateurs. -->
+
+## Critères d'acceptation couverts
+
+<!-- Pour chaque critère : lien vers l'issue, résultat et preuve ; expliciter ce qui reste à qualifier. -->
+
+## Validation réellement effectuée
+
+| Vérification / commande | Environnement et SHA | Résultat / preuve |
+| --- | --- | --- |
+| À compléter | À compléter | Exécuté, non exécuté ou non applicable — préciser |
+
+<!-- Ne pas cocher ou annoncer des tests qui n'ont pas été exécutés. Une revue documentaire peut suffire à un changement documentaire. -->
+
+## Risques, compatibilité et restauration
+
+<!-- Sécurité, données, contrats, migrations et retour à une version compatible ; indiquer non applicable avec raison si pertinent. -->
+
+## Qualification restante après fusion
+
+<!-- Déploiement, parcours réel, intégration d'autres dépôts, validation humaine, ou aucune avec justification. -->
+
+- [ ] Auto-relecture effectuée et périmètre relisible.
+- [ ] Préconditions et dépendances applicables satisfaites.
+- [ ] Critères, contrôles pertinents et documentation traités.
+- [ ] Aucune donnée secrète dans le diff ou les preuves.
+- [ ] Après fusion : passage en Validation ; clôture de l'issue après preuves d'acceptation.
+
+Workflow commun : https://github.com/Silicium-Project/Fusion/issues/208
+Project : https://github.com/orgs/Silicium-Project/projects/12

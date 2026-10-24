@@ -1,0 +1,46 @@
+name: Décision d’architecture ou arbitrage
+description: Documenter les options, preuves et décision attendue.
+title: '[Décision] '
+type: Task
+projects:
+- Silicium-Project/12
+body:
+- type: markdown
+  attributes:
+    value: Consultez les issues existantes et le Project commun. Ne publiez aucune clé, jeton, donnée
+      personnelle ou contenu confidentiel. Une demande est à qualifier avant tout engagement.
+- type: textarea
+  id: decision
+  attributes:
+    label: Décision attendue et décideur
+    description: Question exacte, périmètre et personne dont la décision est nécessaire.
+  validations:
+    required: true
+- type: textarea
+  id: constraints
+  attributes:
+    label: Invariants et contraintes
+    description: Sécurité, coût, vitesse, décentralisation, compatibilité et exigences utilisateur applicables.
+  validations:
+    required: true
+- type: textarea
+  id: options
+  attributes:
+    label: Options et éléments de preuve
+    description: Compromis, risques, coûts et réversibilité de chaque option ; séparer faits et hypothèses.
+  validations:
+    required: true
+- type: textarea
+  id: criteria
+  attributes:
+    label: Critères de choix et validation
+    description: Preuves nécessaires pour choisir, éventuelle expérimentation et condition de réexamen.
+  validations:
+    required: true
+- type: textarea
+  id: links
+  attributes:
+    label: Issues affectées et migration
+    description: Liens complets ; impact du choix et séquence de migration/retour arrière si nécessaire.
+  validations:
+    required: true

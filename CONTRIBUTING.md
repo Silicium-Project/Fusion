@@ -235,7 +235,7 @@ docs(deploy): clarify VPS Nginx setup steps
 ## Pull Request Process
 
 - Fill in the [PR template](.github/pull_request_template.md) completely.
-- Link the issue your PR addresses with `Closes #<number>`.
+- Link the issue your PR addresses with `Refs https://github.com/Silicium-Project/REPO/issues/<number>`.
 - Keep PRs **small and focused** — one logical change per PR.
 - Add or update tests for every changed behavior.
 - Update documentation if your change affects the public API or user-facing
@@ -282,8 +282,8 @@ act pull_request --job fast-check
 
 ## Reporting Issues
 
-- **Bugs:** Use the [Bug Report](.github/ISSUE_TEMPLATE/bug_report.md) template.
-- **Feature requests:** Use the [Feature Request](.github/ISSUE_TEMPLATE/feature_request.md) template.
+- **Bugs:** Use the [Bug Report](.github/ISSUE_TEMPLATE/01-bug.yml) template.
+- **Feature requests:** Use the [Feature Request](.github/ISSUE_TEMPLATE/02-feature.yml) template.
 - **Security vulnerabilities:** **Do not open a public issue.** Please report
   security issues by emailing the maintainers directly (see the repository
   contact information). We aim to respond within 72 hours.
@@ -295,3 +295,17 @@ act pull_request --job fast-check
 This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
 By participating, you agree to uphold this standard. Please report unacceptable
 behavior to the maintainers.
+
+
+## Issue management and repository metadata
+
+Use the shared [Project](https://github.com/orgs/Silicium-Project/projects/12) and
+[issue workflow](docs/development/issue-workflow.md) for roadmap, backlog,
+readiness, ownership, review and acceptance. Link PRs with `Refs` and the full
+issue URL while qualification remains outstanding. A merged PR moves to
+Validation; close the issue after its acceptance criteria are evidenced.
+
+GitHub reads issue forms from the default branch. A metadata-only PR based on
+that branch may target it directly after maintainer review; its diff must be
+limited to issue forms, PR templates and contributor/process documentation.
+This exception does not promote application commits from dev or bypass checks.
