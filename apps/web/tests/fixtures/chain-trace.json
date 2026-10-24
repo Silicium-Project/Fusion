@@ -1,0 +1,114 @@
+{
+  "schema": "silicium.chain-trace.v1",
+  "status": "anchored",
+  "ok": true,
+  "enabled": true,
+  "job": "site-render-7-1791973084",
+  "workload": "raytracer",
+  "program_id": "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+  "rpc": "",
+  "cluster": "",
+  "payer": "",
+  "signatures": [
+    "5sig"
+  ],
+  "memo": "silicium.job-proof.v1 job=site-render-7-1791973084 tasks=3 root=56d1b95c987731cec7846ae4e1340f1118746946aad5dd52fad321db24fc8d8a final=ffee",
+  "merkle_root": "56d1b95c987731cec7846ae4e1340f1118746946aad5dd52fad321db24fc8d8a",
+  "final_sha256": "ffee",
+  "receipt_set_hash": "5b1f",
+  "task_count": 3,
+  "fragments": [
+    {
+      "task_id": "9f1c2a.f000",
+      "fragment_index": 0,
+      "status": "completed",
+      "result_sha256": "aa11",
+      "publisher": "0a0b",
+      "proposal_event": "p0",
+      "spec_sha256": "s0",
+      "attempt": 1,
+      "worker": "w0 \u003c\u0026\u003e",
+      "claim_event": "c0",
+      "result_event": "e0",
+      "verifiers": [
+        {
+          "author": "v0",
+          "verdict": true,
+          "verification_event": "x0",
+          "self_verification": false
+        }
+      ],
+      "leaf_hash": "5b583ba36812104c2a104a4a0e258d4de3794d3435bea0087c88871ad1536c16",
+      "proof": [
+        {
+          "sibling": "784cf67bfd000bd07bb42eb65c74265429f1d8fc4264ecd224378888baff3a3c",
+          "left": false
+        },
+        {
+          "sibling": "37eb0be9a1b17ceee0a1b23e2411398af5a653651b37960dbba585e772461121",
+          "left": false
+        }
+      ]
+    },
+    {
+      "task_id": "9f1c2a.f001",
+      "fragment_index": 1,
+      "status": "completed",
+      "result_sha256": "bb22",
+      "publisher": "0a0b",
+      "proposal_event": "p1",
+      "spec_sha256": "s1",
+      "attempt": 2,
+      "worker": "w1",
+      "claim_event": "c1",
+      "result_event": "e1",
+      "verifiers": [
+        {
+          "author": "w1",
+          "verdict": true,
+          "verification_event": "x1",
+          "self_verification": true
+        },
+        {
+          "author": "v2",
+          "verdict": null,
+          "verification_event": "",
+          "self_verification": false
+        }
+      ],
+      "leaf_hash": "784cf67bfd000bd07bb42eb65c74265429f1d8fc4264ecd224378888baff3a3c",
+      "proof": [
+        {
+          "sibling": "5b583ba36812104c2a104a4a0e258d4de3794d3435bea0087c88871ad1536c16",
+          "left": true
+        },
+        {
+          "sibling": "37eb0be9a1b17ceee0a1b23e2411398af5a653651b37960dbba585e772461121",
+          "left": false
+        }
+      ]
+    },
+    {
+      "task_id": "9f1c2a.f002",
+      "fragment_index": 2,
+      "status": "completed",
+      "result_sha256": "cc33",
+      "publisher": "",
+      "proposal_event": "",
+      "spec_sha256": "",
+      "attempt": 0,
+      "worker": "w2",
+      "claim_event": "",
+      "result_event": "",
+      "verifiers": [],
+      "leaf_hash": "37eb0be9a1b17ceee0a1b23e2411398af5a653651b37960dbba585e772461121",
+      "proof": [
+        {
+          "sibling": "6ace382316e2d2a7a2ce75ca33af0f39d29cfd631ebfc4a2cf0f649bb12786e7",
+          "left": true
+        }
+      ]
+    }
+  ],
+  "updated_utc": ""
+}
