@@ -1561,6 +1561,46 @@ jobs:
             printf 'cgroup='; tr '\n' ' ' < "/proc/$pid/cgroup" 2>/dev/null || true; printf '\n'
             if [[ "$(cat "/proc/$pid/comm" 2>/dev/null || true)" == dockerd ]]; then
               ps -L -p "$pid" -o pid,tid,stat,pcpu,comm --sort=-pcpu | head -n 12
+              python3 - "$pid" <<'PY'
+          import os
+          import sys
+          import time
+
+          process = sys.argv[1]
+          clock_ticks = os.sysconf('SC_CLK_TCK')
+
+          def read_threads():
+              rows = {}
+              root = f'/proc/{process}/task'
+              try:
+                  tids = os.listdir(root)
+              except OSError:
+                  return rows
+              for tid in tids:
+                  try:
+                      stat = open(f'{root}/{tid}/stat', encoding='ascii').read()
+                      tail = stat[stat.rfind(')') + 2:].split()
+                      ticks = int(tail[11]) + int(tail[12])
+                      name = open(f'{root}/{tid}/comm', encoding='utf-8').read().strip()
+                      rows[tid] = (ticks, name)
+                  except (OSError, ValueError, IndexError):
+                      continue
+              return rows
+
+          before = read_threads()
+          started = time.monotonic()
+          time.sleep(3)
+          elapsed = time.monotonic() - started
+          after = read_threads()
+          rows = []
+          for tid, (ticks, name) in after.items():
+              old = before.get(tid)
+              if old and ticks > old[0]:
+                  rows.append((100 * (ticks - old[0]) / clock_ticks / elapsed, tid, name))
+          print('dockerd_thread_cpu_sample=')
+          for percent, tid, name in sorted(rows, reverse=True)[:12]:
+              print(f'  tid={tid} cpu_one_core={percent:.1f}% comm={name}')
+          PY
             fi
           done
           echo '=== Orphaned Fusion runner Node process candidates ==='
