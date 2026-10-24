@@ -1364,6 +1364,55 @@ jobs:
           cat /proc/pressure/cpu 2>/dev/null || true
           echo '=== Top host processes ==='
           ps -eo pid,ppid,stat,comm,pcpu,pmem --sort=-pcpu | head -n 26
+          echo '=== Measured CPU consumers and owning cgroups (2 seconds) ==='
+          python3 - <<'PY'
+          import os
+          import time
+
+          def total_ticks():
+              with open('/proc/stat', encoding='ascii') as stream:
+                  return sum(map(int, stream.readline().split()[1:]))
+
+          def process_ticks(path):
+              try:
+                  stat = open(path, encoding='ascii').read()
+                  tail = stat[stat.rfind(')') + 2:].split()
+                  return int(tail[11]) + int(tail[12])
+              except (OSError, ValueError, IndexError):
+                  return None
+
+          before_total = total_ticks()
+          before = {}
+          for entry in os.scandir('/proc'):
+              if entry.name.isdigit():
+                  ticks = process_ticks(f'{entry.path}/stat')
+                  if ticks is not None:
+                      before[entry.name] = ticks
+          time.sleep(2)
+          elapsed_total = total_ticks() - before_total
+          cores = os.cpu_count() or 1
+          rows = []
+          for pid, old_ticks in before.items():
+              ticks = process_ticks(f'/proc/{pid}/stat')
+              if ticks is None or ticks <= old_ticks:
+                  continue
+              percent = (ticks - old_ticks) / elapsed_total * cores * 100 if elapsed_total else 0
+              try:
+                  name = open(f'/proc/{pid}/comm', encoding='utf-8').read().strip()
+              except OSError:
+                  name = '?'
+              try:
+                  exe = os.path.basename(os.readlink(f'/proc/{pid}/exe'))
+              except OSError:
+                  exe = '?'
+              try:
+                  cgroup = next(line.split(':', 2)[2] for line in open(f'/proc/{pid}/cgroup', encoding='ascii') if line.startswith('0::'))
+              except (OSError, StopIteration):
+                  cgroup = '?'
+              rows.append((percent, pid, name, exe, cgroup))
+          for percent, pid, name, exe, cgroup in sorted(rows, reverse=True)[:20]:
+              print(f'one_core_cpu={percent:.1f}% pid={pid} comm={name} exe={exe} cgroup={cgroup}')
+          PY
           echo '=== P2P process cgroups ==='
           ps -eo pid=,comm=,pcpu= --sort=-pcpu \
             | awk '$2 == "p2p_node" {print $1}' | head -n 10 \
