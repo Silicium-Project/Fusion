@@ -36,6 +36,16 @@ function isSolanaRpcRateLimitFailure(failure: unknown): boolean {
   );
 }
 
+function isSolanaBlockhashFailure(failure: unknown): boolean {
+  const error = failure as { message?: unknown; cause?: { message?: unknown }; logs?: unknown };
+  const logs = Array.isArray(error?.logs) ? error.logs.filter(line => typeof line === 'string') : [];
+  return /SOLANA_BLOCKHASH_EXPIRED|blockhash not found|block height exceeded|blockhash expired/i.test(
+    [error?.message, error?.cause?.message, ...logs]
+      .filter(value => value !== undefined && value !== null)
+      .join('\n'),
+  );
+}
+
 /** A file name from a project title: no path separators or reserved characters. */
 const safeDownloadName = (title: string): string =>
   (title || 'silicium-result').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim().slice(0, 80) || 'silicium-result';
@@ -110,6 +120,7 @@ export function useJobs() {
         );
       } catch (failure) {
         if (isSolanaRpcRateLimitFailure(failure)) throw new Error(translate('jobForm.paymentRpcRateLimited'));
+        if (isSolanaBlockhashFailure(failure)) throw new Error(translate('jobForm.paymentBlockhashExpired'));
         throw failure;
       }
       payment = { ...escrow, expectedFragments };
@@ -196,6 +207,7 @@ export function useJobs() {
         );
       } catch (failure) {
         if (isSolanaRpcRateLimitFailure(failure)) throw new Error(translate('jobForm.paymentRpcRateLimited'));
+        if (isSolanaBlockhashFailure(failure)) throw new Error(translate('jobForm.paymentBlockhashExpired'));
         throw failure;
       }
       solanaRefundSignature = signature || '';
@@ -230,6 +242,7 @@ export function useJobs() {
       );
     } catch (failure) {
       if (isSolanaRpcRateLimitFailure(failure)) throw new Error(translate('jobForm.paymentRpcRateLimited'));
+      if (isSolanaBlockhashFailure(failure)) throw new Error(translate('jobForm.paymentBlockhashExpired'));
       throw failure;
     }
     const job = await authorizedFetch<Job>(`/jobs/${id}/finalize`, {

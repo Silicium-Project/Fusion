@@ -270,6 +270,16 @@ function isSolanaRpcRateLimited(failure: unknown): boolean {
   ].filter(value => value !== undefined && value !== null).join(' '));
 }
 
+function isSolanaBlockhashFailure(failure: unknown): boolean {
+  const error = failure as { message?: unknown; cause?: { message?: unknown }; logs?: unknown };
+  const logs = Array.isArray(error?.logs) ? error.logs.filter(line => typeof line === 'string') : [];
+  return /SOLANA_BLOCKHASH_EXPIRED|blockhash not found|block height exceeded|blockhash expired/i.test([
+    error?.message,
+    error?.cause?.message,
+    ...logs,
+  ].filter(value => value !== undefined && value !== null).join('\n'));
+}
+
 async function retrySolanaRpc<T>(operation: () => Promise<T>): Promise<T> {
   const delays = [500, 1_000, 2_000, 4_000];
   for (let attempt = 0; ; attempt += 1) {
@@ -425,7 +435,7 @@ async function registerMiniworkerPayouts(): Promise<void> {
     const config = useRuntimeConfig();
     const mint = String(config.public.silMint || '').trim();
     if (!mint) throw new Error(t('errors.walletBalanceUnavailable'));
-    const [{ Connection }, { buildWorkerPayoutTransactions }] = await Promise.all([
+    const [{ Connection }, { buildWorkerPayoutTransactions, sendWorkerPayoutBatch }] = await Promise.all([
       import('@solana/web3.js'),
       import('~/utils/workerPayout'),
     ]);
@@ -438,16 +448,7 @@ async function registerMiniworkerPayouts(): Promise<void> {
     }
     pairingMessageTone.value = 'warning';
     pairingMessage.value = t('observability.worker.workerPayoutSubmitting', { count: built.transactions.length });
-    const signed = await provider.signAllTransactions(built.transactions.map(item => item.transaction));
-    if (signed.length !== built.transactions.length) throw new Error('Phantom returned an incomplete transaction batch.');
-    const signatures: string[] = [];
-    for (const [index, signedTransaction] of signed.entries()) {
-      const signature = await retrySolanaRpc(() => connection.sendRawTransaction(
-        signedTransaction.serialize(),
-        { maxRetries: 3, preflightCommitment: 'confirmed' },
-      ));
-      signatures.push(signature);
-    }
+    const signatures = await sendWorkerPayoutBatch(connection, provider, built.transactions);
     await confirmWorkerPayoutBatch(connection, signatures);
     pairingMessageTone.value = 'success';
     pairingMessage.value = built.registered
@@ -460,6 +461,8 @@ async function registerMiniworkerPayouts(): Promise<void> {
     const code = (failure as { message?: unknown })?.message;
     pairingMessage.value = isSolanaRpcRateLimited(failure)
       ? t('observability.worker.workerPayoutRpcLimited')
+      : isSolanaBlockhashFailure(failure)
+        ? t('observability.worker.workerPayoutBlockhashExpired')
       : code === 'SOLANA_RPC_CONFIRMATION_PENDING'
         ? t('observability.worker.workerPayoutConfirmationPending')
         : apiMessage(failure, t('observability.worker.workerPayoutFailed'));

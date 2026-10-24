@@ -761,6 +761,7 @@ export const de: Catalog<typeof fr> = {
     paymentSubmissionCheck: 'Die Serverantwort ist unklar. Prüfen Sie die Auftragsliste, bevor Sie dieses Escrow schließen: {job}.',
     paymentJobMissing: 'Dieses SIL-Escrow ist keinem Auftrag zugeordnet.',
     paymentRpcRateLimited: 'Der Solana-Devnet-RPC ist vorübergehend ausgelastet. Es wurde keine Transaktion gesendet. Bitte versuchen Sie es in einigen Sekunden erneut.',
+    paymentBlockhashExpired: 'Der Devnet-RPC hat den Blockhash auch nach der Erneuerung abgelehnt. Aktualisieren Sie Projekt und Kontostand, bevor Sie es erneut versuchen, um den Transaktionsstatus zu prüfen.',
     paymentFinalizeTitle: 'Berechnung abschließen',
     paymentFinalizeText: 'Sobald alle Fragmente validiert sind, schließt Ihre Wallet-Signatur das Escrow und sendet den Rest an das Konto-Wallet zurück. Die Website erhält dadurch keinen dauerhaften Zugriff auf Ihr Wallet.',
     paymentFinalizeButton: 'Abschließen und Rest zurückholen',

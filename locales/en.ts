@@ -761,6 +761,7 @@ export const en: Catalog<typeof fr> = {
     paymentSubmissionCheck: 'The site response is uncertain. Check your project list before closing this escrow: {job}.',
     paymentJobMissing: 'This SIL escrow is not linked to the job.',
     paymentRpcRateLimited: 'The Solana Devnet RPC is temporarily rate limited. No transaction was sent; please retry in a few seconds.',
+    paymentBlockhashExpired: 'The Devnet RPC rejected the blockhash even after it was refreshed. Refresh the project and balance before retrying to check whether the transaction went through.',
     paymentFinalizeTitle: 'Close the job',
     paymentFinalizeText: 'After every fragment is validated, your wallet signature closes the escrow and returns the remainder to the account wallet. It does not give the site ongoing access to your wallet.',
     paymentFinalizeButton: 'Close and reclaim remainder',

@@ -762,6 +762,7 @@ export const fr = {
     paymentSubmissionCheck: 'La réponse du site est incertaine. Vérifiez la liste des projets avant de fermer cet escrow : {job}.',
     paymentJobMissing: 'Cet escrow SIL n’est pas lié au projet.',
     paymentRpcRateLimited: 'Le RPC Solana Devnet est temporairement saturé. Aucune transaction n’a été envoyée ; réessayez dans quelques secondes.',
+    paymentBlockhashExpired: 'Le RPC Devnet a refusé le blockhash, même après son renouvellement. Actualisez le projet et le solde avant de réessayer pour vérifier si la transaction est passée.',
     paymentFinalizeTitle: 'Clôturer le calcul',
     paymentFinalizeText: 'Après validation de tous les fragments, votre signature clôt l’escrow et renvoie le reliquat au wallet du compte. Elle n’accorde pas au site d’accès permanent à votre wallet.',
     paymentFinalizeButton: 'Clôturer et récupérer le reliquat',

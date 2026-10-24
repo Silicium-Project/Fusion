@@ -71,6 +71,16 @@ function isRateLimitedRpcFailure(failure: unknown): boolean {
   ].filter(value => value !== undefined && value !== null).join(' '));
 }
 
+function isBlockhashFailure(failure: unknown): boolean {
+  const error = failure as { message?: unknown; logs?: unknown; cause?: { message?: unknown } };
+  const logs = Array.isArray(error?.logs) ? error.logs.filter(line => typeof line === 'string') : [];
+  return /blockhash not found|block height exceeded|blockhash expired/i.test([
+    error?.message,
+    error?.cause?.message,
+    ...logs,
+  ].filter(value => value !== undefined && value !== null).join('\n'));
+}
+
 async function getAccountInfoWithBackoff(connection: Connection, address: PublicKey) {
   return retryRateLimitedRpc(() => connection.getAccountInfo(address, 'confirmed'));
 }
@@ -92,14 +102,27 @@ async function retryRateLimitedRpc<T>(operation: () => Promise<T>): Promise<T> {
 
 async function sendWithWallet(connection: Connection, provider: PhantomProvider, transaction: Transaction, signers: Keypair[] = []): Promise<string> {
   if (!provider.signTransaction) throw new Error('Phantom must support transaction signing.');
-  // Some RPCs return a JSON-RPC 429 (HTTP 200), which web3.js's HTTP-level
-  // retry does not catch. Fetching a blockhash is safe to retry before signing.
-  const latest = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
-  transaction.feePayer = new PublicKey(provider.publicKey?.toString() || '11111111111111111111111111111111');
-  transaction.recentBlockhash = latest.blockhash;
-  if (signers.length) transaction.partialSign(...signers);
-  const signed = await provider.signTransaction(transaction);
-  const signature = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 3, preflightCommitment: 'confirmed' });
+  const feePayer = new PublicKey(provider.publicKey?.toString() || '11111111111111111111111111111111');
+  const instructions = transaction.instructions.slice();
+  let signature = '';
+  let latest: Awaited<ReturnType<Connection['getLatestBlockhash']>> | undefined;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    // Some RPCs return a JSON-RPC 429 (HTTP 200), which web3.js's HTTP-level
+    // retry does not catch. Fetch a fresh blockhash before each signing attempt.
+    latest = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
+    const fresh = new Transaction({ feePayer, recentBlockhash: latest.blockhash }).add(...instructions);
+    if (signers.length) fresh.partialSign(...signers);
+    const signed = await provider.signTransaction(fresh);
+    try {
+      signature = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 3, preflightCommitment: 'confirmed' });
+      break;
+    } catch (failure) {
+      // A preflight BlockhashNotFound means this transaction was not accepted
+      // by the cluster. Rebuild and re-sign once; never replay other failures.
+      if (attempt > 0 || !isBlockhashFailure(failure)) throw failure;
+    }
+  }
+  if (!signature || !latest) throw new Error('SOLANA_BLOCKHASH_EXPIRED');
   const confirmation = await connection.confirmTransaction({ signature, ...latest }, 'confirmed');
   if (confirmation.value.err) throw new Error('Solana rejected the transaction.');
   return signature;
