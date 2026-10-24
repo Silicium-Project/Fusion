@@ -1,5 +1,9 @@
 import { Buffer } from 'buffer';
-import type { PublicKey as SolanaPublicKey } from '@solana/web3.js';
+import type {
+  PublicKey as SolanaPublicKey,
+  Transaction as SolanaTransaction,
+  VersionedTransaction as SolanaVersionedTransaction,
+} from '@solana/web3.js';
 import { phantomProvider } from '~/utils/wallet';
 
 export type SILSwapDirection = 'buy' | 'sell';
@@ -305,7 +309,7 @@ export function useSILEconomy() {
       for (const row of transactionRows) {
         if (typeof row?.transaction !== 'string') throw new Error('Raydium returned an invalid swap transaction.');
         const serialized = Buffer.from(row.transaction, 'base64');
-        let transaction: Transaction | VersionedTransaction;
+        let transaction: SolanaTransaction | SolanaVersionedTransaction;
         try {
           transaction = Transaction.from(serialized);
         } catch {
