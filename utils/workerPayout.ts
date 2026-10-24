@@ -17,10 +17,8 @@ export interface WorkerPayoutDevice {
   workerPayoutProof?: { message: string; signature: string };
 }
 
-export interface SignedPayoutTransaction {
+export interface WorkerPayoutTransaction {
   transaction: Transaction;
-  blockhash: string;
-  lastValidBlockHeight: number;
 }
 
 function isRateLimitedRpcFailure(failure: unknown): boolean {
@@ -56,46 +54,66 @@ function isBlockhashFailure(failure: unknown): boolean {
   ].filter(value => value !== undefined && value !== null).join('\n'));
 }
 
-/** Send the signed registration batch, refreshing expired blockhashes safely. */
+/** Sign and submit short batches so wallet approval cannot age every blockhash. */
 export async function sendWorkerPayoutBatch(
   connection: Connection,
   provider: PhantomProvider,
-  transactions: SignedPayoutTransaction[],
+  transactions: WorkerPayoutTransaction[],
 ): Promise<string[]> {
   if (!provider.signAllTransactions) throw new Error('Phantom must support signing worker-link transactions as a group.');
   const signatures: string[] = [];
-  let index = 0;
+  const maxBatchSize = 4;
+  let batchSize = maxBatchSize;
   let blockhashRefreshes = 0;
   let pending = transactions.map(item => item.transaction);
-  let signed: Transaction[] | undefined;
-  while (index < transactions.length) {
+
+  while (pending.length) {
+    const latest = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
+    const batch = pending.slice(0, batchSize).map(transaction => (
+      new Transaction({
+        feePayer: transaction.feePayer || undefined,
+        recentBlockhash: latest.blockhash,
+      }).add(...transaction.instructions)
+    ));
+    let signed: Transaction[];
     try {
-      if (!signed) {
-        signed = await provider.signAllTransactions(pending);
-        if (signed.length !== pending.length) throw new Error('Phantom returned an incomplete transaction batch.');
-      }
-      const transaction = signed[0]!;
-      const signature = await retryRateLimitedRpc(() => connection.sendRawTransaction(
-        transaction.serialize(),
-        { maxRetries: 3, preflightCommitment: 'confirmed' },
-      ));
-      signatures.push(signature);
-      index += 1;
-      pending = pending.slice(1);
-      signed = signed.slice(1);
-      if (!signed.length) signed = undefined;
-      blockhashRefreshes = 0;
+      signed = await provider.signAllTransactions(batch);
     } catch (failure) {
       if (!isBlockhashFailure(failure) || blockhashRefreshes >= 2) throw failure;
       blockhashRefreshes += 1;
-      const latest = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
-      pending = pending.map(transaction => (
-        new Transaction({ feePayer: transaction.feePayer, recentBlockhash: latest.blockhash })
-          .add(...transaction.instructions)
-      ));
-      signed = undefined;
+      batchSize = Math.max(1, Math.ceil(batchSize / 2));
+      continue;
     }
+    if (signed.length !== batch.length) throw new Error('Phantom returned an incomplete transaction batch.');
+
+    const results = await Promise.allSettled(signed.map(transaction => retryRateLimitedRpc(() => connection.sendRawTransaction(
+      transaction.serialize(),
+      { maxRetries: 3, preflightCommitment: 'confirmed' },
+    ))));
+    const failed: unknown[] = [];
+    const retryBatch: Transaction[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') signatures.push(result.value);
+      else {
+        failed.push(result.reason);
+        retryBatch.push(pending[index]!);
+      }
+    });
+
+    pending = [...retryBatch, ...pending.slice(batch.length)];
+    if (!failed.length) {
+      blockhashRefreshes = 0;
+      batchSize = Math.min(maxBatchSize, batchSize + 1);
+      continue;
+    }
+
+    const nonBlockhashFailure = failed.find(failure => !isBlockhashFailure(failure));
+    if (nonBlockhashFailure) throw nonBlockhashFailure;
+    if (blockhashRefreshes >= 2) throw failed[0];
+    blockhashRefreshes += 1;
+    batchSize = Math.max(1, Math.ceil(batchSize / 2));
   }
+
   return signatures;
 }
 
@@ -245,7 +263,7 @@ export async function buildWorkerPayoutTransactions(
   payoutWalletAddress: string,
   mintAddress: string,
   devices: WorkerPayoutDevice[],
-): Promise<{ transactions: SignedPayoutTransaction[]; registered: number; alreadyLinked: number }> {
+): Promise<{ transactions: WorkerPayoutTransaction[]; registered: number; alreadyLinked: number }> {
   const payoutWallet = new PublicKey(payoutWalletAddress);
   const mint = new PublicKey(mintAddress);
   const tokenAddress = associatedTokenAddress(payoutWallet, mint);
@@ -318,24 +336,21 @@ export async function buildWorkerPayoutTransactions(
     return { transactions: [], registered: 0, alreadyLinked };
   }
 
-  const pending: Array<{ transaction: Transaction; blockhash: string; lastValidBlockHeight: number }> = [];
-  // All registrations can share one recent blockhash. Fetching a blockhash for
-  // each of 20 workers needlessly multiplies public Devnet RPC traffic.
-  const block = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
+  const pending: WorkerPayoutTransaction[] = [];
   const registrationByWorker = new Map(rows.map(row => [row.worker.toBase58(), row]));
   const rowsByWorker = new Map(resolvedRows.map(row => [row.worker.toBase58(), row]));
   const transactionWorkers = new Set([...registrationByWorker.keys(), ...tokenRows.map(row => row.worker.toBase58())]);
   if (!transactionWorkers.size && missingTokenAccount) {
-    const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
+    const transaction = new Transaction({ feePayer: payoutWallet });
     transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
-    pending.push({ transaction, ...block });
+    pending.push({ transaction });
   }
 
   let payoutAtaAdded = !missingTokenAccount;
   for (const workerAddress of transactionWorkers) {
     const row = rowsByWorker.get(workerAddress)!;
     const registration = registrationByWorker.get(workerAddress);
-    const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
+    const transaction = new Transaction({ feePayer: payoutWallet });
     if (!payoutAtaAdded) {
       transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
       payoutAtaAdded = true;
@@ -366,13 +381,13 @@ export async function buildWorkerPayoutTransactions(
       );
       transaction.add(proofInstruction, anchorInstruction);
     }
-    pending.push({ transaction, ...block });
+    pending.push({ transaction });
   }
 
   if (missingTokenAccount && !payoutAtaAdded) {
-    const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
+    const transaction = new Transaction({ feePayer: payoutWallet });
     transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
-    pending.push({ transaction, ...block });
+    pending.push({ transaction });
   }
 
   return { transactions: pending, registered: rows.length, alreadyLinked };
