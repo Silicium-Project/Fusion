@@ -10,7 +10,7 @@
 //   3. the root is the one written on-chain in the transaction's memo.
 
 import type { ChainProofStep, ChainTask } from '~/types/api';
-import { resolveSolanaRpcEndpoint } from '~/utils/solanaRpc';
+import { resolveSolanaRpcEndpoint } from './solanaRpc';
 
 /** SPL Memo program (v2), which carries the anchored text. */
 export const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
