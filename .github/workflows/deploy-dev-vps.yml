@@ -16,7 +16,7 @@ on:
         required: false
         default: ""
       deployment_target:
-        description: "GitHub-hosted frontend or worker image deploy, or the legacy full-channel rollout."
+        description: "GitHub-hosted website, P2P runtime/worker, resource, or diagnostic rollout."
         required: true
         type: choice
         options:
@@ -780,6 +780,25 @@ jobs:
             node --check /opt/worker-solana/solana-worker-settlement.mjs
           '
 
+      - name: Build the portable orchestrator binary on GitHub
+        uses: docker/build-push-action@v7
+        with:
+          context: Network
+          file: Network/infra/orchestrator-musl.Dockerfile
+          platforms: linux/amd64
+          pull: true
+          target: artifact
+          outputs: type=local,dest=${{ runner.temp }}/silicium-dev-orchestrator
+          cache-from: type=gha,scope=silicium-dev-orchestrator
+          cache-to: type=gha,scope=silicium-dev-orchestrator,mode=max,ignore-error=true
+
+      - name: Check the portable orchestrator artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/silicium-dev-orchestrator/p2p_node"
+          chmod 0755 "$RUNNER_TEMP/silicium-dev-orchestrator/p2p_node"
+
       - name: Transfer image and roll miniworkers one at a time
         shell: bash
         env:
@@ -791,6 +810,7 @@ jobs:
           SILICIUM_SOLANA_RPC: ${{ secrets.SILICIUM_SOLANA_RPC }}
           WORKER_IMAGE: ${{ steps.worker-image.outputs.image }}
           WORKER_BUILD: ${{ github.sha }}
+          ORCHESTRATOR_BINARY: ${{ runner.temp }}/silicium-dev-orchestrator/p2p_node
         run: |
           set -euo pipefail
           [[ -n "${VPS_HOST:-}" ]] || { echo "Missing VPS_HOST." >&2; exit 1; }
@@ -804,6 +824,10 @@ jobs:
             echo "Invalid miniworker build SHA." >&2
             exit 1
           }
+          [[ -s "$ORCHESTRATOR_BINARY" && -x "$ORCHESTRATOR_BINARY" ]] || {
+            echo "Missing portable orchestrator binary." >&2
+            exit 1
+          }
 
           ssh_dir="$RUNNER_TEMP/silicium-dev-ssh"
           install -d -m 0700 "$ssh_dir"
@@ -815,6 +839,7 @@ jobs:
             -o IdentitiesOnly=yes -i "$ssh_dir/id_ed25519")
           vps_user="${VPS_USER:-luis}"
           vps_port="${VPS_PORT:-22}"
+          orchestrator_staging="/tmp/silicium-dev-p2p-node-$GITHUB_RUN_ID"
 
           if [[ -n "${SILICIUM_SOLANA_RPC:-}" ]]; then
             printf '%s' "$SILICIUM_SOLANA_RPC" | \
@@ -826,6 +851,9 @@ jobs:
           docker save "$WORKER_IMAGE" | gzip -1 | \
             ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
               "sudo -n docker load"
+
+          scp "${ssh_opts[@]}" -P "$vps_port" "$ORCHESTRATOR_BINARY" \
+            "$vps_user@$VPS_HOST:$orchestrator_staging"
 
           ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
             "sudo -n env WORKER_IMAGE='$WORKER_IMAGE' WORKER_BUILD='$WORKER_BUILD' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
@@ -909,11 +937,113 @@ jobs:
             echo "Healthy after update: $service"
           done
 
+          orchestrator_unit=silicium-orchestrator-dev.service
+          orchestrator_env=/etc/silicium-dev/orchestrator.env
+          main_pid="$(systemctl show --property=MainPID --value "$orchestrator_unit")"
+          [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || {
+            rollback
+            echo "The dev orchestrator has no active process; rolled back the workers." >&2
+            exit 1
+          }
+          orchestrator_binary="$(readlink -f "/proc/$main_pid/exe")"
+          case "$orchestrator_binary" in
+            "$vps_root"/Network/*/p2p_node) ;;
+            *)
+              rollback
+              echo "The active dev orchestrator binary is outside the pinned Network checkout; rolled back the workers." >&2
+              exit 1
+              ;;
+          esac
+          [[ -f "$orchestrator_env" ]] || {
+            rollback
+            echo "Missing dev orchestrator environment; rolled back the workers." >&2
+            exit 1
+          }
+          release_dir=/var/lib/silicium-dev/releases
+          install -d -m 0700 "$release_dir"
+          previous_binary="$release_dir/p2p_node.previous"
+          previous_env="$release_dir/orchestrator.env.previous"
+          install -m 0755 "$orchestrator_binary" "$previous_binary"
+          cp -p "$orchestrator_env" "$previous_env"
+          candidate_binary="$orchestrator_binary.new-$RUN_ID"
+          install -m 0755 "/tmp/silicium-dev-p2p-node-$RUN_ID" "$candidate_binary"
+          if ! python3 - "$orchestrator_env" "$WORKER_BUILD" <<'PY'
+          import os
+          import pathlib
+          import stat
+          import sys
+          import tempfile
+
+          path = pathlib.Path(sys.argv[1])
+          build = sys.argv[2]
+          if len(build) != 40 or any(char not in "0123456789abcdef" for char in build):
+              raise SystemExit("Invalid orchestrator build identifier.")
+          lines = [line for line in path.read_text().splitlines() if not line.startswith("SILICIUM_RELEASE_BUILD=")]
+          lines.append(f"SILICIUM_RELEASE_BUILD={build}")
+          fd, temporary = tempfile.mkstemp(prefix=".orchestrator.env.", dir=path.parent)
+          try:
+              with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                  stream.write("\n".join(lines) + "\n")
+              os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+              os.replace(temporary, path)
+          finally:
+              if os.path.exists(temporary):
+                  os.unlink(temporary)
+          PY
+          then
+            cp -p "$previous_env" "$orchestrator_env"
+            rm -f "$candidate_binary" "/tmp/silicium-dev-p2p-node-$RUN_ID"
+            rollback
+            echo "Could not update orchestrator build metadata; rolled back the workers." >&2
+            exit 1
+          fi
+          mv -f "$candidate_binary" "$orchestrator_binary"
+
+          restore_orchestrator() {
+            local restore_candidate="${orchestrator_binary}.restore-$RUN_ID"
+            install -m 0755 "$previous_binary" "$restore_candidate"
+            mv -f "$restore_candidate" "$orchestrator_binary"
+            cp -p "$previous_env" "$orchestrator_env"
+            systemctl restart "$orchestrator_unit" || true
+          }
+          if ! systemctl restart "$orchestrator_unit"; then
+            restore_orchestrator
+            rollback
+            echo "Orchestrator restart failed; restored its previous binary and rolled back the workers." >&2
+            exit 1
+          fi
+          orchestrator_port="$(sed -n 's/^SILICIUM_NODE_PORT=//p' "$orchestrator_env" | tail -n 1)"
+          orchestrator_port="${orchestrator_port:-46200}"
+          [[ "$orchestrator_port" =~ ^[0-9]{1,5}$ ]] && (( orchestrator_port > 0 && orchestrator_port <= 65535 )) || {
+            restore_orchestrator
+            rollback
+            echo "Invalid dev orchestrator port; restored the previous runtime and workers." >&2
+            exit 1
+          }
+          orchestrator_healthy=false
+          for attempt in $(seq 1 30); do
+            if systemctl is-active --quiet "$orchestrator_unit" \
+              && curl --fail --silent --show-error --max-time 2 \
+                "http://127.0.0.1:${orchestrator_port}/healthz" >/dev/null; then
+              orchestrator_healthy=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$orchestrator_healthy" != true ]]; then
+            restore_orchestrator
+            rollback
+            rm -f "/tmp/silicium-dev-p2p-node-$RUN_ID"
+            echo "The updated orchestrator did not become healthy; restored the prior runtime and workers." >&2
+            exit 1
+          fi
+          rm -f "/tmp/silicium-dev-p2p-node-$RUN_ID"
+
           "${compose[@]}" ps "${services[@]}"
           while IFS= read -r prior_rollback; do
             [[ "$prior_rollback" == "$rollback_image" ]] || docker image rm "$prior_rollback" >/dev/null 2>&1 || true
           done < <(docker image ls --format '{{.Repository}}:{{.Tag}}' | awk '$1 ~ /^silicium-dev-miniworker:rollback-/')
-          echo "GitHub-hosted miniworker image deployed to 20 nodes: $WORKER_BUILD"
+          echo "GitHub-built P2P runtime deployed to the dev orchestrator and all 20 miniworkers: $WORKER_BUILD"
           REMOTE
 
   worker-resources:
