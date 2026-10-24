@@ -22,6 +22,29 @@ export interface SignedPayoutTransaction {
   lastValidBlockHeight: number;
 }
 
+function isRateLimitedRpcFailure(failure: unknown): boolean {
+  const error = failure as { message?: unknown; code?: unknown; cause?: { message?: unknown; code?: unknown } };
+  return /429|too many requests|rate limit/i.test([
+    error?.message,
+    error?.code,
+    error?.cause?.message,
+    error?.cause?.code,
+  ].filter(value => value !== undefined && value !== null).join(' '));
+}
+
+async function retryRateLimitedRpc<T>(operation: () => Promise<T>): Promise<T> {
+  const delays = [500, 1_000, 2_000, 4_000];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (failure) {
+      if (!isRateLimitedRpcFailure(failure)) throw failure;
+      if (attempt >= delays.length) throw new Error('SOLANA_RPC_RATE_LIMITED');
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]! + Math.floor(Math.random() * 500)));
+    }
+  }
+}
+
 export async function inspectWorkerPayouts(
   connection: Connection,
   payoutWalletAddress: string,
@@ -46,7 +69,10 @@ export async function inspectWorkerPayouts(
       payoutToken: associatedTokenAddress(payoutWallet, mint),
     };
   });
-  const infos = await connection.getMultipleAccountsInfo(accountRows.flatMap(row => [row.payout, row.workerAccount, row.workerToken, row.payoutToken]), 'confirmed');
+  const infos = await retryRateLimitedRpc(() => connection.getMultipleAccountsInfo(
+    accountRows.flatMap(row => [row.payout, row.workerAccount, row.workerToken, row.payoutToken]),
+    'confirmed',
+  ));
   const ready: string[] = [];
   accountRows.forEach((row, index) => {
     const payoutInfo = infos[index * 4];
@@ -203,10 +229,10 @@ export async function buildWorkerPayoutTransactions(
 
   // One RPC request replaces 3 account lookups per worker. The 20-worker pool
   // uses 61 addresses, below Solana's 100-account getMultipleAccounts limit.
-  const infos = await connection.getMultipleAccountsInfo([
+  const infos = await retryRateLimitedRpc(() => connection.getMultipleAccountsInfo([
     tokenAddress,
     ...accountRows.flatMap(row => [row.payout, row.workerAccount, row.workerTokenAddress]),
-  ], 'confirmed');
+  ], 'confirmed'));
   const tokenAccountInfo = infos[0];
   const resolvedRows = accountRows.map((row, index) => {
     const info = infos[1 + index * 3];
@@ -239,11 +265,13 @@ export async function buildWorkerPayoutTransactions(
   }
 
   const pending: Array<{ transaction: Transaction; blockhash: string; lastValidBlockHeight: number }> = [];
+  // All registrations can share one recent blockhash. Fetching a blockhash for
+  // each of 20 workers needlessly multiplies public Devnet RPC traffic.
+  const block = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
   const registrationByWorker = new Map(rows.map(row => [row.worker.toBase58(), row]));
   const rowsByWorker = new Map(resolvedRows.map(row => [row.worker.toBase58(), row]));
   const transactionWorkers = new Set([...registrationByWorker.keys(), ...tokenRows.map(row => row.worker.toBase58())]);
   if (!transactionWorkers.size && missingTokenAccount) {
-    const block = await connection.getLatestBlockhash('confirmed');
     const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
     transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
     pending.push({ transaction, ...block });
@@ -253,7 +281,6 @@ export async function buildWorkerPayoutTransactions(
   for (const workerAddress of transactionWorkers) {
     const row = rowsByWorker.get(workerAddress)!;
     const registration = registrationByWorker.get(workerAddress);
-    const block = await connection.getLatestBlockhash('confirmed');
     const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
     if (!payoutAtaAdded) {
       transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
@@ -289,7 +316,6 @@ export async function buildWorkerPayoutTransactions(
   }
 
   if (missingTokenAccount && !payoutAtaAdded) {
-    const block = await connection.getLatestBlockhash('confirmed');
     const transaction = new Transaction({ feePayer: payoutWallet, recentBlockhash: block.blockhash });
     transaction.add(createAssociatedTokenInstruction(payoutWallet, payoutWallet, mint, tokenAddress));
     pending.push({ transaction, ...block });

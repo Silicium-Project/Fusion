@@ -68,6 +68,7 @@
         <p class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutProofProgress', { ready: payoutProofDeviceCount, total: 20 }) }}</p>
         <p v-if="solanaPaymentsEnabled" class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutReadyProgress', { ready: payoutReadyCount, total: 20 }) }}</p>
         <p v-else class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutsDisabled') }}</p>
+        <p v-if="solanaPaymentsEnabled && payoutProofDeviceCount > payoutReadyCount" class="worker-bulk-pairing__progress">{{ t('observability.worker.workerPayoutAuthorizationNote') }}</p>
         <UiButton v-if="solanaPaymentsEnabled && payoutProofDeviceCount > payoutReadyCount" variant="secondary" icon="wallet" :loading="payoutRegisterLoading" :disabled="!user?.walletAddress || payoutStatusLoading" @click="registerMiniworkerPayouts">{{ t('observability.worker.registerMiniworkerPayouts') }}</UiButton>
       </div>
       <UiNotice v-if="pairingMessage" :tone="pairingMessageTone">{{ pairingMessage }}</UiNotice>
@@ -142,6 +143,7 @@
 </template>
 
 <script setup lang="ts">
+import type { Connection } from '@solana/web3.js';
 import { compactIdentifier, formatDate, formatDuration, networkRoleGroup, peerAvailability, peerId, peerRoles } from '~/utils/format';
 import { metricNumber, metricPercent, peerTelemetry, pendingTaskCount, publishedCount } from '~/utils/telemetry';
 import { intlLocale } from '~/utils/i18n';
@@ -256,6 +258,52 @@ watch(selectedId, () => clear());
 function apiMessage(error: unknown, fallback: string): string {
   const failure = error as { data?: { message?: string }; response?: { _data?: { message?: string } }; message?: string };
   return failure?.data?.message || failure?.response?._data?.message || failure?.message || fallback;
+}
+
+function isSolanaRpcRateLimited(failure: unknown): boolean {
+  const error = failure as { message?: unknown; code?: unknown; cause?: { message?: unknown; code?: unknown } };
+  return /SOLANA_RPC_RATE_LIMITED|429|too many requests|rate limit/i.test([
+    error?.message,
+    error?.code,
+    error?.cause?.message,
+    error?.cause?.code,
+  ].filter(value => value !== undefined && value !== null).join(' '));
+}
+
+async function retrySolanaRpc<T>(operation: () => Promise<T>): Promise<T> {
+  const delays = [500, 1_000, 2_000, 4_000];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (failure) {
+      if (!isSolanaRpcRateLimited(failure)) throw failure;
+      if (attempt >= delays.length) throw new Error('SOLANA_RPC_RATE_LIMITED');
+      await new Promise(resolve => setTimeout(resolve, delays[attempt]! + Math.floor(Math.random() * 500)));
+    }
+  }
+}
+
+async function confirmWorkerPayoutBatch(connection: Connection, signatures: string[]): Promise<void> {
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    const { value } = await retrySolanaRpc(() => connection.getSignatureStatuses(
+      signatures,
+      { searchTransactionHistory: true },
+    ));
+    let pending = false;
+    value.forEach((status, index) => {
+      if (status?.err) throw new Error(`Solana rejected worker payout transaction ${index + 1}.`);
+      const confirmed = status && (
+        status.confirmationStatus === 'confirmed'
+        || status.confirmationStatus === 'finalized'
+        || status.confirmations === null
+      );
+      if (!confirmed) pending = true;
+    });
+    if (!pending) return;
+    await new Promise(resolve => setTimeout(resolve, 1_800 + Math.floor(Math.random() * 400)));
+  }
+  throw new Error('SOLANA_RPC_CONFIRMATION_PENDING');
 }
 
 async function loadDevices(background = false): Promise<void> {
@@ -392,16 +440,15 @@ async function registerMiniworkerPayouts(): Promise<void> {
     pairingMessage.value = t('observability.worker.workerPayoutSubmitting', { count: built.transactions.length });
     const signed = await provider.signAllTransactions(built.transactions.map(item => item.transaction));
     if (signed.length !== built.transactions.length) throw new Error('Phantom returned an incomplete transaction batch.');
+    const signatures: string[] = [];
     for (const [index, signedTransaction] of signed.entries()) {
-      const details = built.transactions[index]!;
-      const signature = await connection.sendRawTransaction(signedTransaction.serialize(), { maxRetries: 3 });
-      const confirmation = await connection.confirmTransaction({
-        signature,
-        blockhash: details.blockhash,
-        lastValidBlockHeight: details.lastValidBlockHeight,
-      }, 'confirmed');
-      if (confirmation.value.err) throw new Error(`Solana rejected worker payout transaction ${index + 1}.`);
+      const signature = await retrySolanaRpc(() => connection.sendRawTransaction(
+        signedTransaction.serialize(),
+        { maxRetries: 3, preflightCommitment: 'confirmed' },
+      ));
+      signatures.push(signature);
     }
+    await confirmWorkerPayoutBatch(connection, signatures);
     pairingMessageTone.value = 'success';
     pairingMessage.value = built.registered
       ? t('observability.worker.workerPayoutComplete', { count: built.registered, already: built.alreadyLinked })
@@ -411,7 +458,12 @@ async function registerMiniworkerPayouts(): Promise<void> {
     await Promise.all([loadDevices(true), loadWalletBalance(user.value.walletAddress)]);
   } catch (failure) {
     pairingMessageTone.value = 'danger';
-    pairingMessage.value = apiMessage(failure, t('observability.worker.workerPayoutFailed'));
+    const code = (failure as { message?: unknown })?.message;
+    pairingMessage.value = isSolanaRpcRateLimited(failure)
+      ? t('observability.worker.workerPayoutRpcLimited')
+      : code === 'SOLANA_RPC_CONFIRMATION_PENDING'
+        ? t('observability.worker.workerPayoutConfirmationPending')
+        : apiMessage(failure, t('observability.worker.workerPayoutFailed'));
   } finally {
     payoutRegisterLoading.value = false;
   }
