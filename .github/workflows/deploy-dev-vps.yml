@@ -953,17 +953,6 @@ jobs:
             exit 1
           }
           compose=(docker compose --project-name silicium-dev-miniworkers --env-file "$worker_env" -f "$compose_file")
-          for number in $(seq -w 1 20); do
-            service="miniworker-$number"
-            container="$("${compose[@]}" ps -q "$service" | head -n 1 || true)"
-            [[ -n "$container" ]] || { echo "Miniworker is not running: $service" >&2; exit 1; }
-            state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container")"
-            [[ "$state" == healthy || "$state" == running ]] || {
-              echo "Miniworker is not healthy before quota change: $service ($state)" >&2
-              exit 1
-            }
-          done
-
           python3 - "$compose_file" <<'PY'
           import os
           import pathlib
@@ -999,27 +988,40 @@ jobs:
               echo "Missing miniworker Compose service: $service" >&2
               exit 1
             }
-            "${compose[@]}" up -d --no-build --no-deps --force-recreate "$service"
-            container="$("${compose[@]}" ps -q "$service" | head -n 1 || true)"
-            [[ -n "$container" ]] || { echo "Miniworker did not return: $service" >&2; exit 1; }
-            ready=false
-            for attempt in $(seq 1 90); do
-              state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
-              if [[ "$state" == healthy || "$state" == running ]]; then ready=true; break; fi
-              if [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]]; then break; fi
-              sleep 2
-            done
-            [[ "$ready" == true ]] || { echo "Miniworker failed its health check: $service" >&2; exit 1; }
+            container="$(docker ps -aq --filter "name=silicium-dev-miniworker-$number" | head -n 1 || true)"
+            if [[ -z "$container" ]]; then
+              "${compose[@]}" up -d --no-build --no-deps "$service"
+              container="$(docker ps -q --filter "name=silicium-dev-miniworker-$number" | head -n 1 || true)"
+            fi
+            [[ -n "$container" ]] || { echo "Miniworker is unavailable: $service" >&2; exit 1; }
+            state="$(docker inspect --format '{{.State.Status}}' "$container")"
+            if [[ "$state" != running ]]; then
+              "${compose[@]}" up -d --no-build --no-deps "$service"
+              container="$(docker ps -q --filter "name=silicium-dev-miniworker-$number" | head -n 1 || true)"
+            fi
+            [[ -n "$container" ]] || { echo "Miniworker did not start: $service" >&2; exit 1; }
+            docker update --cpus 0.05 "$container" >/dev/null
             quota="$(docker inspect --format '{{.HostConfig.NanoCpus}}' "$container")"
             [[ "$quota" == 50000000 ]] || {
               echo "Unexpected CPU quota for $service: $quota" >&2
               exit 1
             }
-            echo "Healthy with 0.05 CPU: $service"
+            ready=false
+            for attempt in $(seq 1 15); do
+              state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || true)"
+              if [[ "$state" == healthy || "$state" == running ]]; then ready=true; break; fi
+              if [[ "$state" == unhealthy || "$state" == exited || "$state" == dead ]]; then break; fi
+              sleep 2
+            done
+            [[ "$ready" == true ]] || {
+              echo "Miniworker is not healthy after CPU quota update: $service ($state)" >&2
+              exit 1
+            }
+            echo "CPU quota updated without restart: $service"
           done
           "${compose[@]}" ps
           docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' \
-            $("${compose[@]}" ps -q miniworker-01 miniworker-02 miniworker-03 miniworker-04 miniworker-05 miniworker-06 miniworker-07 miniworker-08 miniworker-09 miniworker-10 miniworker-11 miniworker-12 miniworker-13 miniworker-14 miniworker-15 miniworker-16 miniworker-17 miniworker-18 miniworker-19 miniworker-20)
+            $(docker ps -q --filter name=silicium-dev-miniworker-)
           REMOTE
 
   diagnose-dev:
