@@ -74,6 +74,30 @@ function requireDevnet(connection: Connection): void {
   if (!connection.rpcEndpoint.toLowerCase().includes('devnet')) throw new Error('SIL payments are restricted to Solana Devnet.');
 }
 
+function isRateLimitedRpcFailure(failure: unknown): boolean {
+  const error = failure as { message?: unknown; code?: unknown; cause?: { message?: unknown; code?: unknown } };
+  return /429|too many requests|rate limit/i.test([
+    error?.message,
+    error?.code,
+    error?.cause?.message,
+    error?.cause?.code,
+  ].filter(value => value !== undefined && value !== null).join(' '));
+}
+
+async function getAccountInfoWithBackoff(connection: Connection, address: PublicKey) {
+  const delays = [500, 1_000, 2_000, 4_000];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await connection.getAccountInfo(address, 'confirmed');
+    } catch (failure) {
+      if (!isRateLimitedRpcFailure(failure)) throw failure;
+      if (attempt >= delays.length) throw new Error('SOLANA_RPC_RATE_LIMITED');
+      const delay = delays[attempt]! + Math.floor(Math.random() * 500);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
 async function sendWithWallet(connection: Connection, provider: PhantomProvider, transaction: Transaction, signers: Keypair[] = []): Promise<string> {
   if (!provider.signTransaction) throw new Error('Phantom must support transaction signing.');
   const latest = await connection.getLatestBlockhash('confirmed');
@@ -178,7 +202,7 @@ export async function cancelSILEscrow(
   const client = new PublicKey(clientAddress);
   if (provider.publicKey?.toString() !== client.toBase58()) throw new Error('Connect the verified wallet of this account in Phantom.');
   const job = new PublicKey(jobAddress);
-  const info = await connection.getAccountInfo(job, 'confirmed');
+  const info = await getAccountInfoWithBackoff(connection, job);
   if (!info || !info.owner.equals(programId())) throw new Error('The Devnet job escrow was not found.');
   if (info.data[243] === 2) return null;
   if (info.data[243] !== 0) throw new Error('This Devnet job has already been finalized.');
@@ -215,7 +239,7 @@ export async function finalizeSILEscrow(
   if (provider.publicKey?.toString() !== client.toBase58()) throw new Error('Connect the verified wallet of this account in Phantom.');
   if (!/^[0-9a-f]{64}$/i.test(resultHash)) throw new Error('A final SHA-256 result is required to close this escrow.');
   const job = new PublicKey(jobAddress);
-  const info = await connection.getAccountInfo(job, 'confirmed');
+  const info = await getAccountInfoWithBackoff(connection, job);
   if (!info || !info.owner.equals(programId())) throw new Error('The Devnet job escrow was not found.');
   if (info.data[243] === 1) return null;
   if (info.data[243] !== 0) throw new Error('This Devnet job has already been cancelled.');

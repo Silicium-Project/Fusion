@@ -760,6 +760,7 @@ export const de: Catalog<typeof fr> = {
     paymentRefundRecovery: 'Der Auftrag wurde nicht übermittelt. Zu erstattendes Escrow: {job}. Öffnen Sie die Seite mit Ihrem Konto-Wallet erneut.',
     paymentSubmissionCheck: 'Die Serverantwort ist unklar. Prüfen Sie die Auftragsliste, bevor Sie dieses Escrow schließen: {job}.',
     paymentJobMissing: 'Dieses SIL-Escrow ist keinem Auftrag zugeordnet.',
+    paymentRpcRateLimited: 'Der Solana-Devnet-RPC ist vorübergehend ausgelastet. Es wurde keine Transaktion gesendet. Bitte versuchen Sie es in einigen Sekunden erneut.',
     paymentFinalizeTitle: 'Auftrag abrechnen',
     paymentFinalizeText: 'Sobald alle Fragmente validiert sind, schließt die Abrechnung das Escrow und sendet den Rest automatisch an das Konto-Wallet zurück.',
     paymentFinalizeButton: 'Abrechnen und Rest zurückholen',

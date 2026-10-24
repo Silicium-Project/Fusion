@@ -760,6 +760,7 @@ export const en: Catalog<typeof fr> = {
     paymentRefundRecovery: 'The job was not submitted. Escrow to refund: {job}. Return with the account wallet to retry.',
     paymentSubmissionCheck: 'The site response is uncertain. Check your project list before closing this escrow: {job}.',
     paymentJobMissing: 'This SIL escrow is not linked to the job.',
+    paymentRpcRateLimited: 'The Solana Devnet RPC is temporarily rate limited. No transaction was sent; please retry in a few seconds.',
     paymentFinalizeTitle: 'Settle this job',
     paymentFinalizeText: 'After every fragment is validated, finalization closes the escrow and automatically returns the remainder to the account wallet.',
     paymentFinalizeButton: 'Finalize and reclaim remainder',

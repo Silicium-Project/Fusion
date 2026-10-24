@@ -761,6 +761,7 @@ export const fr = {
     paymentRefundRecovery: 'Le calcul n’a pas été envoyé. Escrow à rembourser : {job}. Revenez ici avec le wallet du compte pour réessayer.',
     paymentSubmissionCheck: 'La réponse du site est incertaine. Vérifiez la liste des projets avant de fermer cet escrow : {job}.',
     paymentJobMissing: 'Cet escrow SIL n’est pas lié au projet.',
+    paymentRpcRateLimited: 'Le RPC Solana Devnet est temporairement saturé. Aucune transaction n’a été envoyée ; réessayez dans quelques secondes.',
     paymentFinalizeTitle: 'Régler les paiements du calcul',
     paymentFinalizeText: 'Après validation de tous les fragments, la finalisation ferme l’escrow et renvoie automatiquement le reliquat au wallet du compte.',
     paymentFinalizeButton: 'Finaliser et récupérer le reliquat',

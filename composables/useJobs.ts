@@ -29,6 +29,13 @@ export class SearchPreparingError extends Error {
   constructor() { super(translate('errors.searchPreparing')); }
 }
 
+function isSolanaRpcRateLimitFailure(failure: unknown): boolean {
+  const error = failure as { message?: unknown; code?: unknown };
+  return /SOLANA_RPC_RATE_LIMITED|429|too many requests|rate limit/i.test(
+    [error?.message, error?.code].filter(value => value !== undefined && value !== null).join(' '),
+  );
+}
+
 /** A file name from a project title: no path separators or reserved characters. */
 const safeDownloadName = (title: string): string =>
   (title || 'silicium-result').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '_').trim().slice(0, 80) || 'silicium-result';
@@ -175,10 +182,16 @@ export function useJobs() {
         import('@solana/web3.js'),
         import('~/utils/solanaJobs'),
       ]);
-      const signature = await cancelSILEscrow(
-        new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider,
-        user.value.walletAddress, existing.solanaJob, existing.solanaExpectedFragments,
-      );
+      let signature: string | null;
+      try {
+        signature = await cancelSILEscrow(
+          new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider,
+          user.value.walletAddress, existing.solanaJob, existing.solanaExpectedFragments,
+        );
+      } catch (failure) {
+        if (isSolanaRpcRateLimitFailure(failure)) throw new Error(translate('jobForm.paymentRpcRateLimited'));
+        throw failure;
+      }
       solanaRefundSignature = signature || '';
       await walletState.loadBalance(user.value.walletAddress);
     }
@@ -203,10 +216,16 @@ export function useJobs() {
       import('@solana/web3.js'),
       import('~/utils/solanaJobs'),
     ]);
-    const signature = await finalizeSILEscrow(
-      new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider,
-      user.value.walletAddress, existing.solanaJob, existing.solanaExpectedFragments, resultHash,
-    );
+    let signature: string | null;
+    try {
+      signature = await finalizeSILEscrow(
+        new Connection(String(runtime.public.solanaRpc), 'confirmed'), provider,
+        user.value.walletAddress, existing.solanaJob, existing.solanaExpectedFragments, resultHash,
+      );
+    } catch (failure) {
+      if (isSolanaRpcRateLimitFailure(failure)) throw new Error(translate('jobForm.paymentRpcRateLimited'));
+      throw failure;
+    }
     const job = await authorizedFetch<Job>(`/jobs/${id}/finalize`, {
       method: 'POST', body: signature ? { signature } : {},
     });
