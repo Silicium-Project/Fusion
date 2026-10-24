@@ -1558,6 +1558,39 @@ jobs:
               ps -L -p "$pid" -o pid,tid,stat,pcpu,comm --sort=-pcpu | head -n 12
             fi
           done
+          echo '=== Orphaned Fusion runner Node process candidates ==='
+          for pid in $(ps -eo pid=,ppid=,comm= | awk '$2 == 1 && $3 == "MainThread" {print $1}'); do
+            [[ -r "/proc/$pid/cgroup" ]] || continue
+            if ! grep -Fq '/system.slice/actions.runner.Silicium-Project-Fusion.fusion-linux-vps.service' "/proc/$pid/cgroup"; then
+              continue
+            fi
+            ps -p "$pid" -o pid,ppid,pgid,sid,stat,comm,etime,pcpu
+            printf 'exe='; readlink "/proc/$pid/exe" 2>/dev/null || true
+            printf 'cwd='; readlink "/proc/$pid/cwd" 2>/dev/null || true
+            python3 - "$pid" <<'PY'
+          import json
+          import os
+          import sys
+
+          pid = sys.argv[1]
+          try:
+              raw = open(f'/proc/{pid}/cmdline', 'rb').read().split(b'\0')
+              argv = [item.decode('utf-8', 'replace') for item in raw if item]
+          except OSError:
+              argv = []
+          summary = []
+          for index, item in enumerate(argv):
+              if index == 0:
+                  summary.append(os.path.basename(item)[:80])
+              elif item.startswith('-'):
+                  summary.append(item.split('=', 1)[0][:80])
+              elif item.endswith(('.js', '.mjs', '.cjs')):
+                  summary.append(os.path.basename(item)[:120])
+              else:
+                  summary.append('<redacted>')
+          print('argv_summary=' + json.dumps(summary))
+          PY
+          done
           echo '=== P2P process cgroups ==='
           ps -eo pid=,comm=,pcpu= --sort=-pcpu \
             | awk '$2 == "p2p_node" {print $1}' | head -n 10 \
