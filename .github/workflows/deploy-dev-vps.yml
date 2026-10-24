@@ -25,6 +25,7 @@ on:
           - worker-resources
           - cpu-diagnose
           - cpu-reclaim
+          - docker-log-reclaim
           - full
           - diagnose
         default: frontend
@@ -1984,6 +1985,122 @@ jobs:
           idle_delta = idle_b - idle_a
           busy = 100 * (1 - idle_delta / total_delta) if total_delta else 0
           print(f'host_cpu_busy_percent_after_reclaim={busy:.1f}')
+          PY
+          cat /proc/pressure/cpu 2>/dev/null || true
+          REMOTE
+
+  docker-log-reclaim:
+    if: ${{ github.event.inputs.deployment_target == 'docker-log-reclaim' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    environment: development
+    steps:
+      - name: Stop only abandoned non-following logs for the dev miniworker
+        shell: bash
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER || 'luis' }}
+          VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [[ -n "${VPS_HOST:-}" && -n "${VPS_SSH_KEY:-}" && -n "${VPS_KNOWN_HOSTS:-}" ]] || {
+            echo "Missing VPS SSH configuration." >&2
+            exit 1
+          }
+          ssh_dir="$RUNNER_TEMP/silicium-dev-log-reclaim-ssh"
+          install -d -m 0700 "$ssh_dir"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          chmod 0600 "$ssh_dir/id_ed25519" "$ssh_dir/known_hosts"
+          ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" -o IdentitiesOnly=yes \
+            -i "$ssh_dir/id_ed25519")
+          ssh "${ssh_opts[@]}" -p "${VPS_PORT:-22}" \
+            "${VPS_USER:-luis}@$VPS_HOST" "sudo -n bash -s" <<'REMOTE'
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import signal
+          import time
+
+          target_name = 'silicium-dev-miniworker-01'
+          clock_ticks = os.sysconf('SC_CLK_TCK')
+          uptime = float(open('/proc/uptime', encoding='ascii').read().split()[0])
+
+          def inspect(pid):
+              base = f'/proc/{pid}'
+              try:
+                  executable = os.path.basename(os.readlink(f'{base}/exe'))
+                  argv = [item.decode('utf-8', 'replace') for item in open(f'{base}/cmdline', 'rb').read().split(b'\0') if item]
+                  stat = open(f'{base}/stat', encoding='ascii').read().split(') ', 1)[1].split()
+                  cgroup = next(line.split(':', 2)[2].strip() for line in open(f'{base}/cgroup', encoding='ascii') if line.startswith('0::'))
+                  start_ticks = int(stat[19])
+                  age = max(0, int(uptime - start_ticks / clock_ticks))
+                  return executable, argv, stat, cgroup, start_ticks, age
+              except (OSError, StopIteration, ValueError, IndexError):
+                  return None
+
+          candidates = []
+          for entry in os.scandir('/proc'):
+              if not entry.name.isdigit():
+                  continue
+              row = inspect(entry.name)
+              if row is None:
+                  continue
+              executable, argv, stat, cgroup, start_ticks, age = row
+              flags = {item.split('=', 1)[0] for item in argv}
+              if executable != 'docker' or len(argv) < 3 or argv[1] != 'logs':
+                  continue
+              if target_name not in argv or not ({'--tail', '-n'} & flags):
+                  continue
+              if '--follow' in flags or '-f' in flags:
+                  continue
+              if stat[0] != 'S' or int(stat[4]) != 0 or age < 3600:
+                  continue
+              if not cgroup.startswith('/user.slice/user-1001.slice/session-'):
+                  continue
+              candidates.append((int(entry.name), start_ticks, age))
+
+          print(f'abandoned_log_readers={len(candidates)} target={target_name}')
+          for pid, start_ticks, age in candidates:
+              row = inspect(pid)
+              if row is None:
+                  print(f'pid={pid} already exited')
+                  continue
+              executable, argv, stat, cgroup, current_start, current_age = row
+              flags = {item.split('=', 1)[0] for item in argv}
+              if (executable != 'docker' or argv[1:2] != ['logs'] or target_name not in argv
+                  or not ({'--tail', '-n'} & flags) or '--follow' in flags or '-f' in flags
+                  or stat[0] != 'S' or int(stat[4]) != 0 or current_start != start_ticks
+                  or not cgroup.startswith('/user.slice/user-1001.slice/session-')):
+                  raise SystemExit(f'pid={pid} changed after inspection; refusing to signal it')
+              print(f'sending_SIGTERM pid={pid} age_seconds={current_age} target={target_name} action=docker-logs-only')
+              os.kill(pid, signal.SIGTERM)
+
+          deadline = time.monotonic() + 8
+          remaining = [pid for pid, _, _ in candidates if os.path.exists(f'/proc/{pid}')]
+          while remaining and time.monotonic() < deadline:
+              time.sleep(0.5)
+              remaining = [pid for pid, _, _ in candidates if os.path.exists(f'/proc/{pid}')]
+          if remaining:
+              raise SystemExit(f'Log readers did not exit after SIGTERM: {remaining}; no stronger signal sent')
+          print('all_selected_log_readers_exited=true; containers_and_services_restarted=false')
+
+          def read_cpu():
+              with open('/proc/stat', encoding='ascii') as stream:
+                  values = [int(value) for value in stream.readline().split()[1:]]
+              return sum(values), values[3] + values[4]
+
+          total_a, idle_a = read_cpu()
+          time.sleep(3)
+          total_b, idle_b = read_cpu()
+          total_delta, idle_delta = total_b - total_a, idle_b - idle_a
+          busy = 100 * (1 - idle_delta / total_delta) if total_delta else 0
+          print(f'host_cpu_busy_percent_after_log_cleanup={busy:.1f}')
           PY
           cat /proc/pressure/cpu 2>/dev/null || true
           REMOTE
