@@ -425,7 +425,7 @@ async function registerMiniworkerPayouts(): Promise<void> {
     const config = useRuntimeConfig();
     const mint = String(config.public.silMint || '').trim();
     if (!mint) throw new Error(t('errors.walletBalanceUnavailable'));
-    const [{ Connection }, { buildWorkerPayoutTransactions, inspectWorkerPayouts }] = await Promise.all([
+    const [{ Connection }, { buildWorkerPayoutTransactions }] = await Promise.all([
       import('@solana/web3.js'),
       import('~/utils/workerPayout'),
     ]);
@@ -453,7 +453,6 @@ async function registerMiniworkerPayouts(): Promise<void> {
     pairingMessage.value = built.registered
       ? t('observability.worker.workerPayoutComplete', { count: built.registered, already: built.alreadyLinked })
       : t('observability.worker.workerPayoutAlreadyLinked', { count: built.alreadyLinked });
-    payoutReadyIds.value = await inspectWorkerPayouts(connection, user.value.walletAddress, mint, targets);
     payoutStatusFingerprint.value = '';
     await Promise.all([loadDevices(true), loadWalletBalance(user.value.walletAddress)]);
   } catch (failure) {
