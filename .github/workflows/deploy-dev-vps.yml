@@ -1662,6 +1662,52 @@ jobs:
           for container in $(docker ps -q --filter name=silicium-dev-miniworker-); do
             docker inspect --format '{{.Name}} pid={{.State.Pid}} cpus={{.HostConfig.NanoCpus}}' "$container"
           done
+          echo '=== Docker daemon churn and connection counts ==='
+          docker info --format 'logging_driver={{.LoggingDriver}} storage_driver={{.Driver}}'
+          docker events --since 5m --until "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --format '{{.Type}} {{.Action}} {{.Actor.Attributes.name}}' \
+            | sort | uniq -c | sort -nr | head -n 20
+          printf 'established_tcp_sockets='
+          ss -Htan state established 2>/dev/null | wc -l
+          printf 'udp_sockets='
+          ss -Huan 2>/dev/null | wc -l
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          import time
+
+          containers = subprocess.check_output(
+              ['docker', 'ps', '-q', '--filter', 'name=silicium-dev-miniworker-'],
+              text=True,
+          ).split()
+          paths = {}
+          for container in containers:
+              raw = subprocess.check_output(['docker', 'inspect', container], text=True)
+              data = json.loads(raw)[0]
+              path = data.get('LogPath')
+              if path:
+                  paths[data.get('Name', container)] = path
+
+          def sizes():
+              result = {}
+              for name, path in paths.items():
+                  try:
+                      result[name] = os.stat(path).st_size
+                  except OSError:
+                      result[name] = 0
+              return result
+
+          before = sizes()
+          time.sleep(3)
+          after = sizes()
+          rates = sorted(
+              ((after[name] - before.get(name, 0)) / 3 for name in after),
+              reverse=True,
+          )
+          print(f'miniworker_log_growth_total_bytes_per_second={sum(rates):.0f}')
+          print(f'miniworker_log_growth_peak_bytes_per_second={(rates[0] if rates else 0):.0f}')
+          PY
           REMOTE
 
   cpu-reclaim:
