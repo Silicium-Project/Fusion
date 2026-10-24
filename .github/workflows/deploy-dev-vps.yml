@@ -1694,6 +1694,7 @@ jobs:
                   comm = open(f'{base}/comm', encoding='utf-8').read().strip()
                   raw = open(f'{base}/cmdline', 'rb').read().split(b'\0')
                   argv = [item.decode('utf-8', 'replace') for item in raw if item]
+                  stat_fields = open(f'{base}/stat', encoding='ascii').read().split(') ', 1)[1].split()
                   cgroup = next(
                       line.split(':', 2)[2].strip()
                       for line in open(f'{base}/cgroup', encoding='ascii')
@@ -1706,7 +1707,22 @@ jobs:
               if executable in {'docker', 'docker-compose'} and len(argv) > 1:
                   action = next((item for item in argv[1:] if not item.startswith('-')), '')
               flags = sorted({item.split('=', 1)[0] for item in argv if item.startswith('-')})
-              return f'{executable} action={action or "-"} flags={",".join(flags)} cgroup={cgroup}'
+              targets = [
+                  item for item in argv
+                  if item.startswith('silicium-')
+                  and all(char.isalnum() or char in '-_.' for char in item)
+              ]
+              state = stat_fields[0]
+              session = stat_fields[3]
+              tty = stat_fields[4]
+              elapsed = 0
+              try:
+                  started_ticks = int(stat_fields[19])
+                  uptime = float(open('/proc/uptime', encoding='ascii').read().split()[0])
+                  elapsed = max(0, int(uptime - started_ticks / os.sysconf('SC_CLK_TCK')))
+              except (OSError, ValueError, IndexError):
+                  pass
+              return f'{executable} action={action or "-"} flags={",".join(flags)} targets={",".join(targets)} state={state} session={session} tty={tty} elapsed_seconds={elapsed} cgroup={cgroup}'
 
           for entry in os.scandir('/proc'):
               if not entry.name.isdigit():
@@ -1723,14 +1739,17 @@ jobs:
                           if target.startswith('socket:[') and target.endswith(']'):
                               inode = target[8:-1]
                               if inode in peer_inodes:
-                                  parent = open(f'{entry.path}/stat', encoding='ascii').read().split(') ', 1)[1].split()[1]
-                                  matches.append((inode, pid, parent, process_summary(pid), process_summary(parent)))
-              except OSError:
+                                  parent_fields = open(f'{entry.path}/stat', encoding='ascii').read().split(') ', 1)[1].split()
+                                  parent = parent_fields[1]
+                                  grandparent_fields = open(f'/proc/{parent}/stat', encoding='ascii').read().split(') ', 1)[1].split()
+                                  grandparent = grandparent_fields[1]
+                                  matches.append((inode, pid, parent, grandparent, process_summary(pid), process_summary(parent), process_summary(grandparent)))
+              except (OSError, IndexError):
                   continue
 
           print('docker_socket_clients=')
-          for inode, pid, parent, process, parent_process in sorted(matches):
-              print(f'  pid={pid} process={process} ppid={parent} parent={parent_process} peer_inode={inode}')
+          for inode, pid, parent, grandparent, process, parent_process, grandparent_process in sorted(matches):
+              print(f'  pid={pid} process={process} ppid={parent} parent={parent_process} grandparent_pid={grandparent} grandparent={grandparent_process} peer_inode={inode}')
           if not matches:
               print('  no client fd matched the active dockerd peers')
           PY
