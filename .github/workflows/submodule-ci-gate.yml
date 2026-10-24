@@ -14,7 +14,8 @@ permissions:
 
 jobs:
   gate:
-    runs-on: [self-hosted, fusion-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -42,45 +43,11 @@ jobs:
           fi
           test -s .gitmodules
           test -s .github/scripts/check-submodule-ci.mjs
-          test -s deploy/linux/bootstrap-submodule-runners.sh
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Ensure submodule runners are provisioned on the VPS
-        shell: bash
-        env:
-          GITHUB_RUNNER_BOOTSTRAP_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${GITHUB_RUNNER_BOOTSTRAP_TOKEN:-}" ]]; then
-            echo "::error title=Missing secret::Configure SILICIUM_SYNC_PUSH_TOKEN to provision BackEnd and FrontEnd VPS runners."
-            exit 1
-          fi
-          if sudo -n true 2>/dev/null; then
-            sudo -E bash deploy/linux/bootstrap-submodule-runners.sh
-            exit 0
-          fi
-
-          echo "::notice::Passwordless sudo is unavailable; validating already provisioned submodule runner services."
-          required_services=(
-            "actions.runner.Silicium-Project-BackEnd.fusion-vps-backend.service"
-            "actions.runner.Silicium-Project-FrontEnd.fusion-vps-frontend.service"
-          )
-          missing_services=()
-          for service in "${required_services[@]}"; do
-            if ! systemctl is-active --quiet "$service"; then
-              missing_services+=("$service")
-            fi
-          done
-          if (( ${#missing_services[@]} > 0 )); then
-            printf 'Missing active submodule runner services: %s\n' "${missing_services[*]}" >&2
-            echo "Passwordless sudo is required to provision missing VPS runners." >&2
-            exit 1
-          fi
-          echo "Required BackEnd and FrontEnd runner services are already active."
 
       - name: Require healthy submodule mains
         shell: bash
@@ -88,9 +55,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.SILICIUM_SYNC_PUSH_TOKEN || steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          # The Solana Anchor build and the FrontEnd browser suite can take
-          # longer than 45 minutes on the shared VPS runners. Keep the exact
-          # commit checks, but give those required validations room to finish.
+          # The Solana Anchor build and browser suite run on GitHub-hosted
+          # runners. Keep exact pinned-commit checks and allow them to finish.
           deadline=$(( $(date +%s) + 5400 ))
           report="$RUNNER_TEMP/submodule-ci-gate.log"
           submodule_paths="$RUNNER_TEMP/submodule-ci-paths.txt"
