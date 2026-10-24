@@ -984,6 +984,35 @@ jobs:
             docker inspect --format '{{.Name}} status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}' "$container" 2>&1 || true
           done
 
+          echo '=== VPS CPU utilization sample (2 seconds) ==='
+          python3 - <<'PY'
+          import time
+
+          def counters():
+              with open('/proc/stat', encoding='ascii') as stream:
+                  values = [int(value) for value in stream.readline().split()[1:]]
+              return sum(values), values[3] + values[4]
+
+          total_before, idle_before = counters()
+          time.sleep(2)
+          total_after, idle_after = counters()
+          total_delta = total_after - total_before
+          idle_delta = idle_after - idle_before
+          busy = 100 * (1 - idle_delta / total_delta) if total_delta else 0
+          print(f'host_cpu_busy_percent={busy:.1f}')
+          PY
+          echo '=== CPU pressure ==='
+          cat /proc/pressure/cpu 2>&1 || true
+          echo '=== Top host processes by CPU ==='
+          ps -eo pid,ppid,comm,pcpu,pmem --sort=-pcpu 2>&1 | head -n 18 || true
+          echo '=== Container CPU and memory (highest CPU first) ==='
+          docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}' 2>&1 \
+            | sort -k2,2nr | head -n 28 || true
+          echo '=== Miniworker CPU quotas ==='
+          for container in $(docker ps -q --filter name=silicium-dev-miniworker 2>/dev/null); do
+            docker inspect --format '{{.Name}} cpus={{.HostConfig.NanoCpus}} quota={{.HostConfig.CpuQuota}} period={{.HostConfig.CpuPeriod}} cpuset={{.HostConfig.CpusetCpus}}' "$container" 2>&1 || true
+          done
+
           echo '=== Devnet RPC egress from VPS host ==='
           python3 - <<'PY'
           import json
