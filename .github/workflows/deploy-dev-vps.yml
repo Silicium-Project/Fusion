@@ -1708,6 +1708,19 @@ jobs:
           print(f'miniworker_log_growth_total_bytes_per_second={sum(rates):.0f}')
           print(f'miniworker_log_growth_peak_bytes_per_second={(rates[0] if rates else 0):.0f}')
           PY
+          echo '=== dockerd sampled call stacks ==='
+          dockerd_pid="$(systemctl show docker.service --property=MainPID --value 2>/dev/null || true)"
+          if command -v perf >/dev/null 2>&1 && [[ "$dockerd_pid" =~ ^[1-9][0-9]*$ ]]; then
+            profile="$(mktemp /tmp/silicium-dockerd.XXXXXX.data)"
+            if timeout 12 perf record -F 49 -g -p "$dockerd_pid" -o "$profile" -- sleep 5 >/dev/null 2>&1; then
+              timeout 5 perf report -i "$profile" --stdio --no-children --sort comm,dso,symbol | head -n 45
+            else
+              echo 'perf sampling was blocked or unavailable on this host.'
+            fi
+            rm -f "$profile"
+          else
+            echo 'perf is not installed or dockerd is not running.'
+          fi
           REMOTE
 
   cpu-reclaim:
