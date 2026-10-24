@@ -253,7 +253,7 @@ if ! docker run --rm \
   -v "$SILICIUM_RUNTIME_ROOT/Network:/src" \
   -v silicium-cargo-registry:/usr/local/cargo/registry \
   -w /src \
-  rust:1-alpine \
+  rust:1.94-alpine \
   sh -c 'apk add --no-cache musl-dev >/dev/null && cargo build --release --locked -p p2p_node -p compute_daemon --target-dir /src/target/node-alpine' \
   || [[ ! -x "$node_target/release/p2p_node" ]]; then
   echo "Rust p2p node build failed; refusing to deploy." >&2
