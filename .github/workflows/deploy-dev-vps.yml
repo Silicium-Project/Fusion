@@ -1664,6 +1664,14 @@ jobs:
           done
           echo '=== Docker daemon churn and connection counts ==='
           docker info --format 'logging_driver={{.LoggingDriver}} storage_driver={{.Driver}}'
+          echo '=== Docker daemon executable and Unix-socket clients ==='
+          dockerd_pid="$(systemctl show docker.service --property=MainPID --value 2>/dev/null || true)"
+          file /usr/bin/dockerd 2>&1 || true
+          readelf -h /usr/bin/dockerd 2>/dev/null | grep -E 'Type:|Entry point address:' || true
+          if [[ "$dockerd_pid" =~ ^[1-9][0-9]*$ ]]; then
+            grep '/usr/bin/dockerd' "/proc/$dockerd_pid/maps" 2>/dev/null | head -n 8 || true
+          fi
+          ss -xap 2>/dev/null | grep -F 'docker.sock' | head -n 30 || true
           docker events --since 5m --until "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --format '{{.Type}} {{.Action}} {{.Actor.Attributes.name}}' \
             | sort | uniq -c | sort -nr | head -n 20
@@ -1717,7 +1725,7 @@ jobs:
               if command -v go >/dev/null 2>&1; then
                 echo '=== Go symbol lookup for the dominant dockerd address ==='
                 go version
-                printf '0x85038e\n' | go tool addr2line /usr/bin/dockerd || true
+                printf '0x85038e\n0x485038e\n0xc5038e\n' | go tool addr2line /usr/bin/dockerd || true
               else
                 echo 'Go toolchain is absent; dockerd remains unsymbolized.'
               fi
