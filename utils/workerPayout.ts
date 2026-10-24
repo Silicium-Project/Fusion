@@ -63,32 +63,36 @@ export async function sendWorkerPayoutBatch(
   transactions: SignedPayoutTransaction[],
 ): Promise<string[]> {
   if (!provider.signAllTransactions) throw new Error('Phantom must support signing worker-link transactions as a group.');
-  let signed = await provider.signAllTransactions(transactions.map(item => item.transaction));
-  if (signed.length !== transactions.length) throw new Error('Phantom returned an incomplete transaction batch.');
-
   const signatures: string[] = [];
   let index = 0;
   let blockhashRefreshes = 0;
+  let pending = transactions.map(item => item.transaction);
+  let signed: Transaction[] | undefined;
   while (index < transactions.length) {
     try {
-      const signature = await connection.sendRawTransaction(signed[index]!.serialize(), {
+      if (!signed) {
+        signed = await provider.signAllTransactions(pending);
+        if (signed.length !== pending.length) throw new Error('Phantom returned an incomplete transaction batch.');
+      }
+      const signature = await connection.sendRawTransaction(signed[0]!.serialize(), {
         maxRetries: 3,
         preflightCommitment: 'confirmed',
       });
       signatures.push(signature);
       index += 1;
+      pending = pending.slice(1);
+      signed = signed.slice(1);
+      if (!signed.length) signed = undefined;
       blockhashRefreshes = 0;
     } catch (failure) {
       if (!isBlockhashFailure(failure) || blockhashRefreshes >= 2) throw failure;
       blockhashRefreshes += 1;
       const latest = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
-      const refreshed = transactions.slice(index).map(({ transaction }) => (
+      pending = pending.map(transaction => (
         new Transaction({ feePayer: transaction.feePayer, recentBlockhash: latest.blockhash })
           .add(...transaction.instructions)
       ));
-      const resigned = await provider.signAllTransactions(refreshed);
-      if (resigned.length !== refreshed.length) throw new Error('Phantom returned an incomplete refreshed transaction batch.');
-      signed = [...signed.slice(0, index), ...resigned];
+      signed = undefined;
     }
   }
   return signatures;

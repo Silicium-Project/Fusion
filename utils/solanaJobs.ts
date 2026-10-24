@@ -112,13 +112,13 @@ async function sendWithWallet(connection: Connection, provider: PhantomProvider,
     latest = await retryRateLimitedRpc(() => connection.getLatestBlockhash('confirmed'));
     const fresh = new Transaction({ feePayer, recentBlockhash: latest.blockhash }).add(...instructions);
     if (signers.length) fresh.partialSign(...signers);
-    const signed = await provider.signTransaction(fresh);
     try {
+      const signed = await provider.signTransaction(fresh);
       signature = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 3, preflightCommitment: 'confirmed' });
       break;
     } catch (failure) {
-      // A preflight BlockhashNotFound means this transaction was not accepted
-      // by the cluster. Rebuild and re-sign once; never replay other failures.
+      // A stale hash can be rejected by Phantom during signing or by RPC
+      // preflight. Rebuild and re-sign once; never replay other failures.
       if (attempt > 0 || !isBlockhashFailure(failure)) throw failure;
     }
   }
