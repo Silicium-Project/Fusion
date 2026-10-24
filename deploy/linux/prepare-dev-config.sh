@@ -89,6 +89,11 @@ control_token="$(grep -E '^SILICIUM_NODE_CONTROL_TOKEN=' "$orchestrator_env" | t
 if [[ -z "$control_token" || "$control_token" == GENERATE_* || "$control_token" == change-me-* ]]; then
   set_env_value "$orchestrator_env" SILICIUM_NODE_CONTROL_TOKEN "$(openssl rand -hex 32)"
 fi
+control_token="$(grep -E '^SILICIUM_NODE_CONTROL_TOKEN=' "$orchestrator_env" | tail -n 1 | cut -d= -f2- || true)"
+[[ -n "$control_token" ]] || { echo "Could not provision the node control token." >&2; exit 1; }
+# Keep manual Compose invocations aligned with the host orchestrator. The
+# deploy script also sources orchestrator.env, which remains canonical.
+set_env_value "$compose_env" SILICIUM_NODE_CONTROL_TOKEN "$control_token"
 
 # Payment submission must remain closed until the Devnet program has been
 # upgraded and its worker-payout instruction is verified. Preserve an
@@ -99,9 +104,11 @@ case "${payments_enabled,,}" in
   *) payments_enabled=0 ;;
 esac
 
-set_env_value "$miniworkers_env" SILICIUM_SOLANA_RPC https://api.devnet.solana.com
+set_env_value "$miniworkers_env" SILICIUM_SOLANA_RPC https://solana-devnet.api.onfinality.io/public
+set_env_value "$miniworkers_env" SILICIUM_VERIFICATIONS_REQUIRED 2
 set_env_value "$miniworkers_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
-set_env_value "$miniworkers_env" SILICIUM_SOLANA_PROGRAM_ID A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+set_env_value "$miniworkers_env" SILICIUM_SOLANA_PROGRAM_ID 64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG
+set_env_value "$miniworkers_env" SILICIUM_SOLANA_PAYMENTS_ENABLED "$payments_enabled"
 
 db_password="$(grep -E '^POSTGRES_PASSWORD=' "$compose_env" | tail -n 1 | cut -d= -f2- || true)"
 if [[ -z "$db_password" || "$db_password" == GENERATE_* || "$db_password" == CHANGE_* ]]; then
@@ -117,8 +124,10 @@ set_env_value "$compose_env" POSTGRES_USER silicium_dev
 set_env_value "$compose_env" POSTGRES_PASSWORD "$db_password"
 set_env_value "$compose_env" SILICIUM_RELEASE_CHANNEL dev
 set_env_value "$compose_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
-set_env_value "$compose_env" SILICIUM_SOLANA_RPC https://api.devnet.solana.com
-set_env_value "$compose_env" SILICIUM_SOLANA_PROGRAM_ID A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+set_env_value "$compose_env" SILICIUM_SOLANA_RPC https://solana-devnet.api.onfinality.io/public
+set_env_value "$compose_env" SILICIUM_SOLANA_CLUSTER devnet
+set_env_value "$compose_env" SILICIUM_SIL_POOL_ID 66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS
+set_env_value "$compose_env" SILICIUM_SOLANA_PROGRAM_ID 64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG
 set_env_value "$compose_env" SILICIUM_SOLANA_PAYMENTS_ENABLED "$payments_enabled"
 set_env_value "$compose_env" SILICIUM_RELEASE_VERSION "$release_version"
 set_env_value "$compose_env" SILICIUM_RELEASE_BUILD "$release_build"
@@ -168,8 +177,8 @@ set_env_value "$backend_env" SILICIUM_ORCHESTRATOR_HOST "$VPN_SERVER_ADDRESS"
 set_env_value "$backend_env" SILICIUM_SOLANA_WALLET /var/lib/silicium/solana/id.json
 set_env_value "$backend_env" SILICIUM_DEVNET_TRACE 0
 set_env_value "$backend_env" SILICIUM_DEVNET_TRACE_MODE devnet
-set_env_value "$backend_env" SILICIUM_SOLANA_RPC https://api.devnet.solana.com
-set_env_value "$backend_env" SILICIUM_SOLANA_PROGRAM_ID A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2
+set_env_value "$backend_env" SILICIUM_SOLANA_RPC https://solana-devnet.api.onfinality.io/public
+set_env_value "$backend_env" SILICIUM_SOLANA_PROGRAM_ID 64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG
 set_env_value "$backend_env" SILICIUM_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
 set_env_value "$backend_env" SILICIUM_SOLANA_PAYMENTS_ENABLED "$payments_enabled"
 
@@ -179,8 +188,10 @@ set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_CHANNEL dev
 set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_VERSION "$release_version"
 set_env_value "$frontend_env" NUXT_PUBLIC_RELEASE_BUILD "$release_build"
 set_env_value "$frontend_env" NUXT_PUBLIC_API_BASE /api
-set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_RPC https://api.devnet.solana.com
+set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_RPC https://solana-devnet.api.onfinality.io/public
+set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_CLUSTER devnet
 set_env_value "$frontend_env" NUXT_PUBLIC_SIL_MINT F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP
+set_env_value "$frontend_env" NUXT_PUBLIC_SIL_POOL_ID 66Un5iGRBuzE4kcVQkDkKrtZUVnTiXnxpUHoFL3mEsdS
 set_env_value "$frontend_env" NUXT_PUBLIC_SOLANA_PAYMENTS_ENABLED "$payments_enabled"
 set_env_value "$frontend_env" NUXT_PUBLIC_UPDATE_MANIFEST_URL /downloads/update-manifest.json
 set_env_value "$frontend_env" NUXT_PUBLIC_ORCHESTRATOR_URL "$PUBLIC_BASE_URL/orchestrator"
@@ -194,6 +205,7 @@ set_env_value "$orchestrator_env" SILICIUM_NODE_ID orchestrator-dev-1
 set_env_value "$orchestrator_env" SILICIUM_NODE_ROLES resource,storage
 set_env_value "$orchestrator_env" SILICIUM_ENABLE_MDNS 0
 set_env_value "$orchestrator_env" SILICIUM_SOLANA_PAYMENTS_ENABLED "$payments_enabled"
+set_env_value "$orchestrator_env" SILICIUM_VERIFICATIONS_REQUIRED 2
 set_env_value "$orchestrator_env" SILICIUM_NODE_PORT "$ORCHESTRATOR_PORT"
 set_env_value "$orchestrator_env" SILICIUM_P2P_PORT "$((ORCHESTRATOR_PORT + 1))"
 set_env_value "$orchestrator_env" SILICIUM_RELEASE_CHANNEL dev

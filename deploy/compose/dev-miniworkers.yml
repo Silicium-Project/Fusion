@@ -5,6 +5,7 @@ x-miniworker-environment: &miniworker-environment
   SILICIUM_APP_VERSION: ${SILICIUM_DEV_MINIWORKERS_APP_VERSION:-dev}
   SILICIUM_RELEASE_BUILD: ${SILICIUM_DEV_MINIWORKERS_RELEASE_BUILD:-vps-miniworker}
   SILICIUM_NODE_ROLES: compute,verify
+  SILICIUM_VERIFICATIONS_REQUIRED: ${SILICIUM_VERIFICATIONS_REQUIRED:-2}
   # SHA-256 is also compiled into the miniworker and stays within the small
   # CPU/memory budget. Keep model workloads disabled on these containers.
   SILICIUM_ALLOWED_WORKLOADS: raytracer,calcul/integrity/sha256
@@ -21,9 +22,10 @@ x-miniworker-environment: &miniworker-environment
   SILICIUM_DEVICE_PAIRING_API_URL: ${SILICIUM_DEVICE_PAIRING_API_URL:-http://pairing-relay:8080/devices/pair}
   SILICIUM_DEVICE_PAIRING_CODE_FILE: /run/secrets/device-pairing-code
   SILICIUM_SOLANA_CLUSTER: devnet
-  SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://api.devnet.solana.com}
+  SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://solana-devnet.api.onfinality.io/public}
   SILICIUM_SOLANA_MINT: ${SILICIUM_SIL_MINT:-F5zPejtGPm2eqG1hwFGof6uWVJ79LDKeKYDVifXqhPRP}
-  SILICIUM_SOLANA_PROGRAM_ID: ${SILICIUM_SOLANA_PROGRAM_ID:-A9bxX9KwPHFP8S4bMPWVzStpq4uMsC7BU15vw2J6Hnz2}
+  SILICIUM_SOLANA_PROGRAM_ID: ${SILICIUM_SOLANA_PROGRAM_ID:-64Jj7p4MESFndrvB2PNGre4jehyPCF8PYrRyk93FAXCG}
+  SILICIUM_SOLANA_PAYMENTS_ENABLED: ${SILICIUM_SOLANA_PAYMENTS_ENABLED:-0}
   SILICIUM_SOLANA_WALLET_PATH: /data/solana-wallet.json
   SILICIUM_RAYTRACER_BIN: /usr/local/bin/silicium-raytracer
   SILICIUM_COMPUTE_BIND: 127.0.0.1:9090

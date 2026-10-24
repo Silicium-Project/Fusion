@@ -864,13 +864,16 @@ jobs:
           vps_user="${VPS_USER:-luis}"
           vps_port="${VPS_PORT:-22}"
           orchestrator_staging="/tmp/silicium-dev-p2p-node-$GITHUB_RUN_ID"
+          compose_staging="/tmp/silicium-dev-miniworkers-$GITHUB_RUN_ID.yml"
 
-          if [[ -n "${SILICIUM_SOLANA_RPC:-}" ]]; then
-            printf '%s' "$SILICIUM_SOLANA_RPC" | \
-              ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
-                "sudo -n python3 -c 'import os,pathlib,sys,tempfile; p=pathlib.Path(\"/etc/silicium-dev/miniworkers.env\"); value=sys.stdin.read(); assert value.startswith(\"https://\") and \"devnet\" in value.lower() and \"\\n\" not in value and \"\\r\" not in value, \"expected an HTTPS Devnet RPC URL\"; lines=[line for line in p.read_text().splitlines() if not line.startswith(\"SILICIUM_SOLANA_RPC=\")]; lines.append(\"SILICIUM_SOLANA_RPC=\"+value); fd,name=tempfile.mkstemp(dir=str(p.parent),prefix=\".miniworkers.env.\"); f=os.fdopen(fd,\"w\"); f.write(\"\\n\".join(lines)+\"\\n\"); f.close(); os.chmod(name,0o600); os.replace(name,p)'"
-            echo "Configured the Devnet RPC from the GitHub development secret."
-          fi
+          worker_rpc="${SILICIUM_SOLANA_RPC:-https://solana-devnet.api.onfinality.io/public}"
+          printf '%s' "$worker_rpc" | \
+            ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
+              "sudo -n python3 -c 'import os,pathlib,sys,tempfile; p=pathlib.Path(\"/etc/silicium-dev/miniworkers.env\"); value=sys.stdin.read(); assert value.startswith(\"https://\") and \"devnet\" in value.lower() and \"\\n\" not in value and \"\\r\" not in value, \"expected an HTTPS Devnet RPC URL\"; keys=(\"SILICIUM_SOLANA_RPC=\",\"SILICIUM_VERIFICATIONS_REQUIRED=\"); lines=[line for line in p.read_text().splitlines() if not line.startswith(keys)]; lines.extend((\"SILICIUM_SOLANA_RPC=\"+value,\"SILICIUM_VERIFICATIONS_REQUIRED=2\")); fd,name=tempfile.mkstemp(dir=str(p.parent),prefix=\".miniworkers.env.\"); f=os.fdopen(fd,\"w\"); f.write(\"\\n\".join(lines)+\"\\n\"); f.close(); os.chmod(name,0o600); os.replace(name,p)'"
+          echo "Configured worker Devnet RPC and a two-verifier policy."
+
+          scp "${ssh_opts[@]}" -P "$vps_port" deploy/compose/dev-miniworkers.yml \
+            "$vps_user@$VPS_HOST:$compose_staging"
 
           docker save "$WORKER_IMAGE" | gzip -1 | \
             ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
@@ -880,7 +883,7 @@ jobs:
             "$vps_user@$VPS_HOST:$orchestrator_staging"
 
           ssh "${ssh_opts[@]}" -p "$vps_port" "$vps_user@$VPS_HOST" \
-            "sudo -n env WORKER_IMAGE='$WORKER_IMAGE' WORKER_BUILD='$WORKER_BUILD' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+            "sudo -n env WORKER_IMAGE='$WORKER_IMAGE' WORKER_BUILD='$WORKER_BUILD' RUN_ID='$GITHUB_RUN_ID' COMPOSE_STAGING='$compose_staging' bash -s" <<'REMOTE'
           set -euo pipefail
           vps_root=/opt/silicium-dev
           compose_file="$vps_root/deploy/compose/dev-miniworkers.yml"
@@ -896,6 +899,22 @@ jobs:
             exit 1
           }
           [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "Invalid GitHub run ID." >&2; exit 1; }
+          [[ "$COMPOSE_STAGING" == "/tmp/silicium-dev-miniworkers-${RUN_ID}.yml" && -s "$COMPOSE_STAGING" ]] || {
+            echo "Missing staged GitHub miniworker Compose file." >&2
+            exit 1
+          }
+          grep -Fq 'SILICIUM_VERIFICATIONS_REQUIRED: ${SILICIUM_VERIFICATIONS_REQUIRED:-2}' "$COMPOSE_STAGING" || {
+            echo "GitHub miniworker Compose file does not require two verifiers." >&2
+            exit 1
+          }
+          grep -Fq 'SILICIUM_SOLANA_RPC: ${SILICIUM_SOLANA_RPC:-https://solana-devnet.api.onfinality.io/public}' "$COMPOSE_STAGING" || {
+            echo "GitHub miniworker Compose file does not configure the Devnet RPC fallback." >&2
+            exit 1
+          }
+          trap 'rm -f "$COMPOSE_STAGING"' EXIT
+          install -m 0644 "$COMPOSE_STAGING" "$compose_file.new-$RUN_ID"
+          mv -f "$compose_file.new-$RUN_ID" "$compose_file"
+          rm -f "$COMPOSE_STAGING"
 
           compose=(docker compose --project-name silicium-dev-miniworkers --env-file "$worker_env" -f "$compose_file")
           export SILICIUM_DEV_MINIWORKERS_RELEASE_BUILD="$WORKER_BUILD"
@@ -1002,8 +1021,9 @@ jobs:
           build = sys.argv[2]
           if len(build) != 40 or any(char not in "0123456789abcdef" for char in build):
               raise SystemExit("Invalid orchestrator build identifier.")
-          lines = [line for line in path.read_text().splitlines() if not line.startswith("SILICIUM_RELEASE_BUILD=")]
-          lines.append(f"SILICIUM_RELEASE_BUILD={build}")
+          keys = ("SILICIUM_RELEASE_BUILD=", "SILICIUM_VERIFICATIONS_REQUIRED=")
+          lines = [line for line in path.read_text().splitlines() if not line.startswith(keys)]
+          lines.extend((f"SILICIUM_RELEASE_BUILD={build}", "SILICIUM_VERIFICATIONS_REQUIRED=2"))
           fd, temporary = tempfile.mkstemp(prefix=".orchestrator.env.", dir=path.parent)
           try:
               with os.fdopen(fd, "w", encoding="utf-8") as stream:
